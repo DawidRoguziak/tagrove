@@ -1,0 +1,307 @@
+{
+  "common": {
+    "back": "Zpět",
+    "cancel": "Zrušit",
+    "close": "Zavřít",
+    "remove": "Odstranit",
+    "apply": "Použít",
+    "loading": "Načítání...",
+    "yes": "ANO",
+    "no": "Ne"
+  },
+  "topBar": {
+    "openSettings": "Otevřít nastavení"
+  },
+  "tagList": {
+    "open": "Otevrit seznam tagu",
+    "modalTitle": "Seznam tagu",
+    "closeModal": "Zavrit seznam tagu",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Velikost dlaždic",
+    "enableSelectionMode": "Zapnout režim výběru",
+    "disableSelectionMode": "Vypnout režim výběru",
+    "loadMore": "Načíst více"
+  },
+  "search": {
+    "placeholder": "Tagy: kočka dovolená -pes | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Návrhy tagů",
+    "mediaKind": "Typ média",
+    "mediaKinds": {
+      "all": "Vše",
+      "image": "Obrázky",
+      "gif": "GIF",
+      "video": "Video"
+    },
+    "clearFilters": "Vymazat všechny filtry vyhledávání",
+    "clear": "Vymazat",
+    "favoritesOnly": {
+      "enable": "Zobrazit pouze oblíbené",
+      "disable": "Vypnout pouze oblíbené",
+      "enabled": "Pouze oblíbené zapnuto",
+      "label": "Pouze oblíbené"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "Nejsou připojené žádné složky",
+    "noFoldersDescription": "Přidejte první složku, abyste mohli začít procházet a označovat média.",
+    "addFirstFolder": "Přidat první složku",
+    "noResultsTitle": "Žádné výsledky",
+    "noResultsDescription": "Zkuste změnit filtry nebo spusťte nové skenování pro indexování dalších souborů.",
+    "videoChip": "Video",
+    "gifChip": "GIF",
+    "groupedChip": "Součást skupiny médií",
+    "generatingThumbnails": "Generování náhledů pro {{count}} položek ve frontě.",
+    "noMoreItems": "Žádné další položky k načtení"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Vybráno: {{count}}",
+      "addTag": "Přidat tag",
+      "addGroup": "Přidat skupinu",
+      "ariaLabel": "Hromadné akce",
+      "heading": "Hromadné akce",
+      "groupHeading": "Skupina médií",
+      "groupDescription": "Nastavte jednu skupinu pro výběr nebo odeberte přiřazení ke skupině.",
+      "groupConflictTitle": "Více přiřazení ke skupinám",
+      "groupConflictDescription": "Vybrané položky patří do různých skupin nebo obsahují položky bez skupiny. Zadejte klíč pro nahrazení, nebo pole ponechte prázdné pro odebrání přiřazení.",
+      "saveFailedTitle": "Změny se nepodařilo uložit",
+      "groupSaveFailed": "Změna skupiny nebyla uložena. Koncept zůstal zachován.",
+      "removeGroup": "Odebrat ze skupiny",
+      "removeGroups": "Odebrat ze skupin",
+      "orderHeading": "Pořadí skupiny",
+      "orderDescription": "Přetažením položek za úchyty nastavte jejich pořadí.",
+      "dragHandleAria": "Přetažením položky {{position}} změňte pořadí",
+      "tagsHeading": "Tagy",
+      "tagsMultipleDescription": "Nové tagy se přidají ke všem vybraným položkám. Stávající tagy zůstanou zachovány.",
+      "tagsSingleDescription": "Přidejte tagy nebo odeberte aktuální tagy vybrané položky.",
+      "loadingTags": "Načítání tagů...",
+      "selectItemsPrompt": "Vyberte alespoň jednu položku",
+      "noBulkTagsAdded": "Pro tento výběr nebyly přidány žádné tagy",
+      "tagSaveFailed": "Změna tagů nebyla uložena. Zkuste to znovu.",
+      "tagLoadFailedTitle": "Tagy se nepodařilo načíst",
+      "tagLoadFailed": "Úplný seznam tagů se nepodařilo načíst. Úpravy zůstávají zakázané.",
+      "retryTagDetails": "Znovu načíst tagy"
+    },
+    "tagModal": {
+      "ariaLabel": "Hromadné přidání tagů",
+      "heading": "Hromadné přidání tagů",
+      "description": "Použít tagy na {{count}} vybraných položek.",
+      "noTagsQueued": "Žádné tagy ve frontě",
+      "addTag": "Přidat tag",
+      "tagInputPlaceholder": "Pište pro přidání tagu",
+      "suggestions": "Návrhy pro hromadné tagování",
+      "removeTagAria": "Odstranit tag {{tag}}",
+      "applyInProgress": "Používá se..."
+    },
+    "groupModal": {
+      "ariaLabel": "Hromadné přidání skupiny médií",
+      "heading": "Hromadné přidání skupiny médií",
+      "description": "Nastavte jednu skupinu pro {{count}} vybraných položek a seřaďte je přetažením.",
+      "groupKeyPlaceholder": "Klíč skupiny (uuid nebo vlastní)",
+      "groupKeyAria": "Klíč skupiny médií",
+      "generateGroupAria": "Vygenerovat klíč skupiny médií",
+      "generateUuid": "Vygenerovat UUID",
+      "overwriteWarningTitle": "Tato akce přepíše existující hodnoty skupiny.",
+      "overwriteWarningDescription": "Alespoň jedna vybraná položka již má klíč/pořadí skupiny médií. Použitím budou všechny vybrané položky nahrazeny touto skupinou a novým pořadím.",
+      "applyGroup": "Použít skupinu",
+      "applyInProgress": "Používá se..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Přidat do oblíbených",
+      "remove": "Odebrat z oblíbených",
+      "on": "Oblíbené: zapnuto",
+      "off": "Oblíbené: vypnuto"
+    },
+    "resetZoom": "Resetovat přiblížení",
+    "reset": "Reset",
+    "toggleFullscreen": "Přepnout celou obrazovku",
+    "fullscreen": "Celá obrazovka (F)",
+    "exitFullscreen": "Ukončit celou obrazovku (F)",
+    "deleteMedia": "Smazat médium",
+    "closePreview": "Zavřít náhled",
+    "showTagging": "Zobrazit tagování",
+    "tags": "Tagy",
+    "taggingHeading": "Tagování",
+    "noTags": "Žádné tagy",
+    "addTag": "Přidat tag",
+    "tagInputPlaceholder": "Pište pro přidání tagu",
+    "taggingSuggestions": "Návrhy tagování",
+    "mediaGroup": "Skupina médií",
+    "removeTagAria": "Odstranit tag {{tag}}",
+    "showInfo": "Zobrazit informace",
+    "info": "Informace",
+    "infoHeading": "Informace",
+    "type": "Typ",
+    "size": "Velikost",
+    "dimensions": "Rozměry",
+    "duration": "Délka",
+    "path": "Cesta",
+    "mediaGroupKeyPlaceholder": "Klíč skupiny (uuid nebo vlastní)",
+    "mediaGroupKeyAria": "Klíč skupiny médií",
+    "generateGroupAria": "Vygenerovat klíč skupiny médií",
+    "mediaGroupOrderPlaceholder": "Pořadí",
+    "mediaGroupOrderAria": "Pořadí ve skupině médií",
+    "copyMediaGroup": {
+      "title": "Kopirovat nazev skupiny",
+      "copied": "Nazev skupiny zkopirovan",
+      "unavailable": "Neni zadny nazev skupiny ke kopirovani"
+    },
+    "deleteConfirm": {
+      "heading": "Opravdu chcete toto médium smazat?",
+      "description": "Tato operace odstraní záznam v databázi, náhled i původní soubor z disku.",
+      "confirmWord": "Ano",
+      "typeYesLabel": "Napište \"{{value}}\"",
+      "typeYesPlaceholder": "Napište \"{{value}}\"",
+      "confirm": "Potvrdit"
+    },
+    "tagSaving": "Ukládání tagů...",
+    "retryTagSave": "Zkusit znovu",
+    "tagDetailsLoading": "Načítání úplného seznamu tagů...",
+    "tagDetailsLoadFailedTitle": "Tagy se nepodařilo načíst",
+    "tagDetailsLoadFailed": "Úplný seznam tagů se nepodařilo načíst. Úpravy zůstávají zakázané.",
+    "retryTagDetails": "Znovu načíst tagy"
+  },
+  "settings": {
+    "page": {
+      "heading": "Nastavení",
+      "description": "Spravujte vzhled, zdroje knihovny a data aplikace."
+    },
+    "appearance": {
+      "heading": "Vzhled",
+      "description": "Vyberte motiv aplikace a jazyk.",
+      "theme": {
+        "label": "Motiv",
+        "ariaLabel": "Vyberte motiv",
+        "light": "Světlý",
+        "dark": "Tmavý"
+      },
+      "language": {
+        "label": "Jazyk",
+        "ariaLabel": "Vyberte jazyk",
+        "en": "Angličtina",
+        "pl": "Polština",
+        "fr": "Francouzština",
+        "de": "Němčina",
+        "it": "Italština",
+        "es": "Španělština",
+        "ru": "Ruština",
+        "zh": "Čínština (zjednodušená)",
+        "ja": "Japonština",
+        "ko": "Korejština"
+      }
+    },
+    "scan": {
+      "heading": "Nastavení skenování",
+      "description": "Vyberte složku, přidejte ji do seznamu skenování a poté spusťte ruční skenování všech složek.",
+      "chooseFolder": "Vybrat složku",
+      "attachedPaths": "Připojené cesty ke skenování",
+      "noPaths": "Žádné cesty ke skenování",
+      "rescan": "Znovu prohledat",
+      "remove": "Odstranit",
+      "rescanAll": "Znovu prohledat vše",
+      "renderAllThumbnails": "Vygenerovat náhledy pro všechna indexovaná média",
+      "retryFailedThumbnails": "Zkusit znovu pouze neúspěšné náhledy",
+      "stopThumbnailRender": "Zastavit generování náhledů"
+    },
+    "importExport": {
+      "heading": "Import / Export",
+      "exportCsv": "Exportovat CSV s tagy",
+      "importCsv": "Importovat CSV s tagy",
+      "exportDbBundle": "Exportovat DB + náhledy",
+      "importDbBundle": "Importovat DB + náhledy",
+      "hint": "Import CSV sloučí tagy a příznak oblíbených a aplikuje klíč/pořadí skupiny médií podle názvů souborů. Import databáze nahradí aktuální databázi a náhledy."
+    },
+    "danger": {
+      "heading": "Nebezpečná zóna",
+      "clearLibrary": "Odstranit všechny náhledy, indexovaná média a cesty skenování",
+      "hint": "Operace mazání ovlivňují pouze databázi/cache aplikace. Původní fotografie a videa nejsou nikdy upravovány ani mazány."
+    },
+    "duplicates": {
+      "heading": "Správce duplicit",
+      "description": "Najděte média se stejným názvem souboru a vyřešte každou duplicitu přejmenováním nebo smazáním souborů.",
+      "start": "Spustit",
+      "lastResult": "Poslední výsledek: {{groups}} skupin / {{assets}} médií",
+      "resolverHeading": "Řešení duplicit",
+      "resolverSummary": "Nalezené skupiny: {{groups}}, duplicitní média: {{assets}}",
+      "saveAll": "Uložit vše",
+      "discardChanges": "Zahodit změny",
+      "queueHint": "Zařaďte změny do fronty po blocích a poté klikněte na Uložit vše.",
+      "queuedReady": "Změny ve frontě: {{count}}. Připraveno k použití.",
+      "noGroups": "Nebyly nalezeny žádné skupiny duplicit.",
+      "readyBadge": "Připraveno",
+      "resolve": "Vyřešit",
+      "pendingRename": "Čeká: přejmenovat na {{name}}",
+      "pendingDelete": "Čeká: smazat soubor",
+      "pendingNone": "Čeká: nic",
+      "renamePlaceholder": "novy-nazev-souboru.jpg",
+      "generateUuid": "Vygenerovat UUID",
+      "queueRename": "Zařadit přejmenování",
+      "queueDelete": "Zařadit smazání",
+      "unmarkDelete": "Zrušit označení smazání",
+      "clearAction": "Vymazat akci"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "Smazat všechna data knihovny?",
+        "description": "Tímto odstraníte náhledy, indexovaná média a připojené cesty skenování z databáze/cache aplikace. Původní soubory nebudou smazány."
+      },
+      "removeScanRoot": {
+        "heading": "Odstranit cestu skenování?",
+        "description": "Tímto odstraníte cestu ze seznamu skenování a smažete související záznamy z databáze aplikace. Původní soubory na disku nebudou smazány."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "Připraveno ke skenování",
+        "importExport": "Připraveno pro import/export",
+        "danger": "Neběží žádná destruktivní operace",
+        "duplicates": "Připraveno ke skenování duplicit"
+      }
+    },
+    "validation": {
+      "fileNameCannotBeEmpty": "Název souboru nemůže být prázdný",
+      "fileNameInvalid": "Název souboru je neplatný",
+      "fileNameInvalidCharacters": "Název souboru obsahuje neplatné znaky",
+      "duplicatePayloadInvalid": "Neplatný payload změn duplicit",
+      "unknownAssetInChanges": "Neznámé médium ve změnách: {{assetId}}",
+      "duplicateGroupStillUnresolved": "Skupina \"{{fileName}}\": změny stále zanechávají duplicitní názvy souborů. Přejmenujte nebo smažte další položky v tomto bloku."
+    },
+    "actions": {
+      "summary": {
+        "folderAddedWithSkipped": "Slozka pridana do seznamu skenovani: {{path}}. Preskoceno jiz pripojenych: {{skipped}}.",
+        "foldersAdded": "Do seznamu skenovani bylo pridano {{count}} slozek.",
+        "foldersAddedWithSkipped": "Do seznamu skenovani bylo pridano {{count}} slozek. Preskoceno jiz pripojenych: {{skipped}}.",
+        "noNewFoldersAdded": "Do seznamu skenovani nebyly pridany zadne nove slozky.",
+        "noNewFoldersAddedWithSkipped": "Do seznamu skenovani nebyly pridany zadne nove slozky. Jiz pripojeno: {{skipped}}.",
+        "doneIndexedPartial": "Částečné skenování. Indexováno: {{indexed}}, odstraněno: {{removed}}, upozornění: {{failed}}. Čištění neúplných složek bylo přeskočeno a existující záznamy byly zachovány."
+      }
+    }
+  }
+}

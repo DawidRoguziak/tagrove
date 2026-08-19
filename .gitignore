@@ -1,0 +1,38 @@
+# Dependencies and generated builds
+/node_modules/
+/dist/
+/artifacts/
+/target/
+/src-tauri/target/
+/src-tauri/target-tests/
+/src-tauri/target-e2e/
+*.tsbuildinfo
+/coverage/
+/.nyc_output/
+/src-tauri/binaries/*.exe
+
+# Local tools, editors, and agent state
+/.idea/
+/.vscode/
+/.vs/
+/.agents/
+/.codex/
+/msedgedriver.exe
+*.swp
+
+# Local configuration and logs
+/.env
+/.env.*
+!/.env.example
+*.log
+
+# Local application data
+/media.db*
+/thumbs/
+/restore-staging/
+/instance.lock
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

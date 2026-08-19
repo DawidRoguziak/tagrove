@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "Atrás",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "remove": "Eliminar",
+    "apply": "Aplicar",
+    "loading": "Cargando...",
+    "yes": "SÍ",
+    "no": "No"
+  },
+  "topBar": {
+    "openSettings": "Abrir ajustes"
+  },
+  "tagList": {
+    "open": "Abrir lista de etiquetas",
+    "modalTitle": "Lista de etiquetas",
+    "closeModal": "Cerrar lista de etiquetas",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Tamaño de las miniaturas",
+    "enableSelectionMode": "Activar modo de selección",
+    "disableSelectionMode": "Desactivar modo de selección",
+    "loadMore": "Cargar más"
+  },
+  "search": {
+    "placeholder": "Etiquetas: gato vacaciones -perro | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Sugerencias de etiquetas",
+    "mediaKind": "Tipo de medio",
+    "mediaKinds": {
+      "all": "Todo",
+      "image": "Imágenes",
+      "gif": "GIF",
+      "video": "Vídeo"
+    },
+    "clearFilters": "Borrar todos los filtros de búsqueda",
+    "clear": "Borrar",
+    "favoritesOnly": {
+      "enable": "Mostrar solo favoritos",
+      "disable": "Desactivar solo favoritos",
+      "enabled": "Solo favoritos activado",
+      "label": "Solo favoritos"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "No hay carpetas adjuntas",
+    "noFoldersDescription": "Añade tu primera carpeta para empezar a explorar y etiquetar contenido multimedia.",
+    "addFirstFolder": "Añadir primera carpeta",
+    "noResultsTitle": "Sin resultados",
+    "noResultsDescription": "Prueba a cambiar los filtros o ejecuta un reescaneo para indexar más archivos.",
+    "videoChip": "Vídeo",
+    "gifChip": "GIF",
+    "groupedChip": "Parte de un grupo multimedia",
+    "generatingThumbnails": "Generando miniaturas para {{count}} elementos en cola.",
+    "noMoreItems": "No hay más elementos para cargar"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Seleccionados: {{count}}",
+      "addTag": "Añadir etiqueta",
+      "addGroup": "Añadir grupo",
+      "ariaLabel": "Acciones masivas",
+      "heading": "Acciones masivas",
+      "groupHeading": "Grupo de medios",
+      "groupDescription": "Establece un grupo para la selección o elimina su asignación.",
+      "groupConflictTitle": "Varias asignaciones de grupo",
+      "groupConflictDescription": "Los elementos seleccionados pertenecen a grupos diferentes o mezclan elementos agrupados y sin grupo. Introduce una clave para reemplazarlos o déjala vacía para eliminar las asignaciones.",
+      "saveFailedTitle": "No se pudieron guardar los cambios",
+      "groupSaveFailed": "El cambio de grupo no se guardó. El borrador sigue disponible.",
+      "removeGroup": "Quitar del grupo",
+      "removeGroups": "Quitar de los grupos",
+      "orderHeading": "Orden del grupo",
+      "orderDescription": "Arrastra los elementos por sus asas para definir el orden.",
+      "dragHandleAria": "Arrastra el elemento {{position}} para cambiar el orden",
+      "tagsHeading": "Etiquetas",
+      "tagsMultipleDescription": "Las nuevas etiquetas se añaden a todos los elementos seleccionados. Las existentes se conservan.",
+      "tagsSingleDescription": "Añade etiquetas o elimina las actuales del elemento seleccionado.",
+      "loadingTags": "Cargando etiquetas...",
+      "selectItemsPrompt": "Selecciona al menos un elemento",
+      "noBulkTagsAdded": "No se añadieron etiquetas para esta selección",
+      "tagSaveFailed": "El cambio de etiquetas no se guardó. Inténtalo de nuevo.",
+      "tagLoadFailedTitle": "No se pudieron cargar las etiquetas",
+      "tagLoadFailed": "No se pudo cargar la lista completa de etiquetas. La edición permanece desactivada.",
+      "retryTagDetails": "Reintentar la carga"
+    },
+    "tagModal": {
+      "ariaLabel": "Añadir etiquetas en lote",
+      "heading": "Añadir etiquetas en lote",
+      "description": "Aplicar etiquetas a {{count}} elementos seleccionados.",
+      "noTagsQueued": "No hay etiquetas en cola",
+      "addTag": "Añadir etiqueta",
+      "tagInputPlaceholder": "Escribe para añadir una etiqueta",
+      "suggestions": "Sugerencias para etiquetado en lote",
+      "removeTagAria": "Eliminar etiqueta {{tag}}",
+      "applyInProgress": "Aplicando..."
+    },
+    "groupModal": {
+      "ariaLabel": "Añadir grupo multimedia en lote",
+      "heading": "Añadir grupo multimedia en lote",
+      "description": "Establece un único grupo para {{count}} elementos seleccionados y reordénalos arrastrando y soltando.",
+      "groupKeyPlaceholder": "Clave de grupo (uuid o personalizada)",
+      "groupKeyAria": "Clave de grupo multimedia",
+      "generateGroupAria": "Generar clave de grupo multimedia",
+      "generateUuid": "Generar UUID",
+      "overwriteWarningTitle": "Esta acción sobrescribirá los valores de grupo existentes.",
+      "overwriteWarningDescription": "Al menos un elemento seleccionado ya tiene clave/orden de grupo multimedia. Al aplicar, se reemplazarán todos los elementos seleccionados con este grupo y el nuevo orden.",
+      "applyGroup": "Aplicar grupo",
+      "applyInProgress": "Aplicando..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Añadir a favoritos",
+      "remove": "Quitar de favoritos",
+      "on": "Favorito: activado",
+      "off": "Favorito: desactivado"
+    },
+    "resetZoom": "Restablecer zoom",
+    "reset": "Restablecer",
+    "toggleFullscreen": "Alternar pantalla completa",
+    "fullscreen": "Pantalla completa (F)",
+    "exitFullscreen": "Salir de pantalla completa (F)",
+    "deleteMedia": "Eliminar contenido multimedia",
+    "closePreview": "Cerrar vista previa",
+    "showTagging": "Mostrar etiquetado",
+    "tags": "Etiquetas",
+    "taggingHeading": "Etiquetado",
+    "noTags": "Sin etiquetas",
+    "addTag": "Añadir etiqueta",
+    "tagInputPlaceholder": "Escribe para añadir una etiqueta",
+    "taggingSuggestions": "Sugerencias de etiquetado",
+    "mediaGroup": "Grupo multimedia",
+    "removeTagAria": "Eliminar etiqueta {{tag}}",
+    "showInfo": "Mostrar información",
+    "info": "Información",
+    "infoHeading": "Información",
+    "type": "Tipo",
+    "size": "Tamaño",
+    "dimensions": "Dimensiones",
+    "duration": "Duración",
+    "path": "Ruta",
+    "mediaGroupKeyPlaceholder": "Clave de grupo (uuid o personalizada)",
+    "mediaGroupKeyAria": "Clave de grupo multimedia",
+    "generateGroupAria": "Generar clave de grupo multimedia",
+    "mediaGroupOrderPlaceholder": "Orden",
+    "mediaGroupOrderAria": "Orden del grupo multimedia",
+    "copyMediaGroup": {
+      "title": "Copiar nombre del grupo",
+      "copied": "Nombre del grupo copiado",
+      "unavailable": "No hay nombre de grupo para copiar"
+    },
+    "deleteConfirm": {
+      "heading": "¿Seguro que quieres eliminar este contenido multimedia?",
+      "description": "Esta operación elimina la entrada de la base de datos, la miniatura y el archivo original del disco.",
+      "confirmWord": "Sí",
+      "typeYesLabel": "Escribe \"{{value}}\"",
+      "typeYesPlaceholder": "Escribe \"{{value}}\"",
+      "confirm": "Confirmar"
+    },
+    "tagSaving": "Guardando etiquetas...",
+    "retryTagSave": "Reintentar",
+    "tagDetailsLoading": "Cargando la lista completa de etiquetas...",
+    "tagDetailsLoadFailedTitle": "No se pudieron cargar las etiquetas",
+    "tagDetailsLoadFailed": "No se pudo cargar la lista completa de etiquetas. La edición permanece desactivada.",
+    "retryTagDetails": "Reintentar la carga"
+  },
+  "settings": {
+    "page": {
+      "heading": "Ajustes",
+      "description": "Gestiona la apariencia, las fuentes de la biblioteca y los datos de la aplicación."
+    },
+    "appearance": {
+      "heading": "Apariencia",
+      "description": "Elige el tema y el idioma de la aplicación.",
+      "theme": {
+        "label": "Tema",
+        "ariaLabel": "Seleccionar tema",
+        "light": "Claro",
+        "dark": "Oscuro"
+      },
+      "language": {
+        "label": "Idioma",
+        "ariaLabel": "Seleccionar idioma",
+        "en": "Inglés",
+        "pl": "Polaco",
+        "fr": "Francés",
+        "de": "Alemán",
+        "it": "Italiano",
+        "es": "Español",
+        "ru": "Ruso",
+        "zh": "Chino (simplificado)",
+        "ja": "Japonés",
+        "ko": "Coreano"
+      }
+    },
+    "scan": {
+      "heading": "Ajustes de escaneo",
+      "description": "Elige una carpeta para adjuntarla a la lista de escaneo y luego ejecuta un reescaneo manual de todas las carpetas.",
+      "chooseFolder": "Elegir carpeta",
+      "attachedPaths": "Rutas de escaneo adjuntas",
+      "noPaths": "Sin rutas de escaneo",
+      "rescan": "Reescanear",
+      "remove": "Eliminar",
+      "rescanAll": "Reescanear todo",
+      "renderAllThumbnails": "Generar miniaturas para todos los recursos indexados",
+      "retryFailedThumbnails": "Reintentar solo las miniaturas fallidas",
+      "stopThumbnailRender": "Detener la generación de miniaturas"
+    },
+    "importExport": {
+      "heading": "Importar / Exportar",
+      "exportCsv": "Exportar CSV de etiquetas",
+      "importCsv": "Importar CSV de etiquetas",
+      "exportDbBundle": "Exportar BD + miniaturas",
+      "importDbBundle": "Importar BD + miniaturas",
+      "hint": "La importación de CSV fusiona etiquetas y la marca de favorito, y aplica la clave/orden del grupo multimedia haciendo coincidir los nombres de archivo. La importación de base de datos reemplaza la base de datos actual y las miniaturas."
+    },
+    "danger": {
+      "heading": "Zona de peligro",
+      "clearLibrary": "Eliminar todas las miniaturas, recursos indexados y rutas de escaneo",
+      "hint": "Las operaciones de eliminación solo afectan a la base de datos/caché de la app. Las fotos y vídeos originales nunca se editan ni se eliminan."
+    },
+    "duplicates": {
+      "heading": "Gestor de duplicados",
+      "description": "Encuentra recursos con el mismo nombre de archivo y resuelve cada duplicado renombrando o eliminando archivos.",
+      "start": "Iniciar",
+      "lastResult": "Último resultado: {{groups}} grupos / {{assets}} recursos",
+      "resolverHeading": "Resolutor de duplicados",
+      "resolverSummary": "Grupos encontrados: {{groups}}, recursos duplicados: {{assets}}",
+      "saveAll": "Guardar todo",
+      "discardChanges": "Descartar cambios",
+      "queueHint": "Pon los cambios en cola por bloques y luego haz clic en Guardar todo.",
+      "queuedReady": "Cambios en cola: {{count}}. Listo para aplicar.",
+      "noGroups": "No se encontraron grupos de duplicados.",
+      "readyBadge": "Listo",
+      "resolve": "Resolver",
+      "pendingRename": "Pendiente: renombrar a {{name}}",
+      "pendingDelete": "Pendiente: eliminar archivo",
+      "pendingNone": "Pendiente: ninguno",
+      "renamePlaceholder": "nuevo-nombre-archivo.jpg",
+      "generateUuid": "Generar UUID",
+      "queueRename": "Poner renombrado en cola",
+      "queueDelete": "Poner eliminación en cola",
+      "unmarkDelete": "Desmarcar eliminación",
+      "clearAction": "Borrar acción"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "¿Eliminar todos los datos de la biblioteca?",
+        "description": "Esto elimina miniaturas, recursos indexados y rutas de escaneo adjuntas de la base de datos/caché de la app. Los archivos originales no se eliminan."
+      },
+      "removeScanRoot": {
+        "heading": "¿Eliminar ruta de escaneo?",
+        "description": "Esto elimina la ruta de la lista de escaneo y borra los registros indexados relacionados de la base de datos de la app. Los archivos originales en el disco no se eliminan."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "Listo para escanear",
+        "importExport": "Listo para importar/exportar",
+        "danger": "No hay ninguna operación destructiva en curso",
+        "duplicates": "Listo para escanear duplicados"
+      }
+    },
+    "progress": {
+      "counting": "Contando archivos {{processed}}/{{total}}",
+      "scanning": "Escaneando {{processed}}/{{total}}",
+      "cleanup": "Limpieza {{processed}}/{{total}}",
+      "scanEmpty": "No hay carpetas de escaneo configuradas",
+      "scanSkip": "Omitiendo carpeta no válida",
+      "thumbsStart": "La generación de miniaturas ha comenzado",
+      "thumbs": "Generando miniaturas {{processed}}/{{total}}",
+      "thumbsDone": "La generación de miniaturas ha finalizado",
+      "thumbsFailedStart": "Reintento de miniaturas fallidas iniciado",
+      "thumbsFailed": "Reintentando miniaturas fallidas {{processed}}/{{total}}",
+      "thumbsFailedDone": "Reintento de miniaturas fallidas finalizado",
+      "libraryClear": "Vaciando biblioteca {{processed}}/{{total}}",
+      "libraryClearDone": "Vaciado de biblioteca finalizado",
+      "duplicatesScan": "Escaneando duplicados {{processed}}/{{total}}",
+      "duplicatesScanDone": "Escaneo de duplicados finalizado",
+      "thumbnailSummary": {
+        "ready": "Listas: {{count}}",
+        "failed": "fallidas: {{count}}",
+        "skippedFailed": "fallidas omitidas: {{count}}",
+        "cancelledAt": "Cancelado en {{processed}}/{{total}}.",
+        "processed": "Procesadas: {{processed}}/{{total}}."
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "Esperando selección de carpeta...",
+        "removeFolder": "Eliminando carpeta de la lista de escaneo: {{path}}",
+        "rescanAll": "Reescaneando todas las carpetas...",
+        "rescanFolder": "Reescaneando carpeta: {{path}}",
+        "renderAllThumbs": "Generando miniaturas para todos los recursos indexados...",
+        "retryFailedThumbs": "Reintentando miniaturas fallidas...",
+        "clearLibrary": "Eliminando datos de la biblioteca...",
+        "findDuplicates": "Buscando nombres de archivo duplicados...",
+        "applyDuplicateChanges": "Aplicando cambios de duplicados...",
+        "prepareCsvExport": "Preparando exportación de CSV...",
+        "prepareCsvImport": "Preparando importación de CSV...",
+        "prepareDbExport": "Preparando exportación de copia de seguridad de la base de datos...",
+        "prepareDbImport": "Preparando importación de copia de seguridad de la base de datos..."
+      },
+      "errorPrefix": {
+        "addFolder": "Error al añadir carpeta",
+        "removeFolder": "Error al eliminar carpeta",
+        "rescan": "Error de reescaneo",
+        "rescanFolder": "Error al reescanear carpeta",
+        "renderThumbs": "Error al generar miniaturas",
+        "retryThumbs": "Error al reintentar miniaturas fallidas",
+        "clearLibrary": "Error al vaciar la biblioteca",
+        "duplicateScan": "Error de escaneo de duplicados",
+        "saveDuplicateChanges": "Error al guardar cambios de duplicados",
+        "exportCsv": "Error al exportar CSV",
+        "importCsv": "Error al importar CSV",
+        "exportDb": "Error al exportar copia de seguridad de la base de datos",
+        "importDb": "Error al importar copia de seguridad de la base de datos",
+        "cancelThumbRender": "Error al cancelar la generación de miniaturas"
+      },
+      "summary": {
+        "folderAdded": "Carpeta añadida a la lista de escaneo: {{path}}",
+        "folderSelectionCancelled": "Selección de carpeta cancelada.",
+        "removedRoot": "Raíz eliminada. Recursos: {{assets}}, miniaturas: {{thumbnails}}",
+        "doneIndexed": "Hecho. Indexados: {{indexed}}, eliminados: {{removed}}, fallidos: {{failed}}",
+        "doneIndexedPartial": "Escaneo parcial. Indexados: {{indexed}}, eliminados: {{removed}}, avisos: {{failed}}. Se omitió la limpieza de las carpetas incompletas y se conservaron los registros existentes.",
+        "allThumbnailsLabel": "Todas las miniaturas",
+        "failedRetryLabel": "Reintento de miniaturas fallidas",
+        "stopRequested": "Se solicitó detener. Finalizando tareas de miniaturas en curso...",
+        "noThumbRenderRunning": "No hay una generación masiva de miniaturas en curso.",
+        "libraryCleared": "Biblioteca vaciada. Recursos: {{assets}}, raíces: {{roots}}, miniaturas: {{thumbnails}}",
+        "duplicateScanComplete": "Escaneo de duplicados completado. Grupos: {{groups}}, recursos: {{assets}}",
+        "noDuplicateChanges": "No hay cambios de duplicados pendientes por aplicar",
+        "duplicateApplyCancelled": "Aplicación de cambios de duplicados cancelada.",
+        "duplicateApplied": "Se aplicaron {{count}} cambios. Grupos restantes: {{groups}}",
+        "csvExportCancelled": "Exportación de CSV cancelada.",
+        "csvExporting": "Exportando CSV de etiquetas...",
+        "csvExported": "CSV exportado. Filas: {{rows}}",
+        "csvImportCancelled": "Importación de CSV cancelada.",
+        "csvImporting": "Importando CSV de etiquetas...",
+        "csvImported": "CSV importado. Filas leídas: {{rowsRead}}, aplicadas: {{rowsApplied}}, recursos coincidentes: {{assetsMatched}}, recursos actualizados: {{assetsUpdated}}",
+        "dbExportCancelled": "Exportación de copia de seguridad de la base de datos cancelada.",
+        "dbExporting": "Exportando base de datos y miniaturas...",
+        "dbExported": "Archivo de copia de seguridad de la base de datos exportado. Archivos: {{files}}, miniaturas: {{thumbnails}}",
+        "dbImportCancelled": "Importación de copia de seguridad de la base de datos cancelada.",
+        "dbImporting": "Importando base de datos y miniaturas...",
+        "dbImported": "Archivo de copia de seguridad de la base de datos importado. Archivos: {{files}}, miniaturas: {{thumbnails}}",
+        "folderAddedWithSkipped": "Carpeta a?adida a la lista de escaneo: {{path}}. Ya existentes omitidas: {{skipped}}.",
+        "foldersAdded": "Se a?adieron {{count}} carpetas a la lista de escaneo.",
+        "foldersAddedWithSkipped": "Se a?adieron {{count}} carpetas a la lista de escaneo. Ya existentes omitidas: {{skipped}}.",
+        "noNewFoldersAdded": "No se a?adieron carpetas nuevas a la lista de escaneo.",
+        "noNewFoldersAddedWithSkipped": "No se a?adieron carpetas nuevas a la lista de escaneo. Ya adjuntas: {{skipped}}."
+      },
+      "dialogs": {
+        "selectMediaFolder": "Seleccionar carpeta multimedia",
+        "exportTagsCsv": "Exportar CSV de etiquetas",
+        "importTagsCsv": "Importar CSV de etiquetas",
+        "exportDbArchive": "Exportar archivo de copia de seguridad de la BD",
+        "selectDbArchive": "Seleccionar archivo de copia de seguridad de la BD",
+        "confirmDuplicateChanges": "¿Aplicar {{count}} cambios en cola?\n\nEsto eliminará permanentemente {{deleteCount}} archivos del disco.",
+        "confirmDbImportOverwrite": "Importar la base de datos desde el archivo sobrescribirá la base de datos actual y las miniaturas. ¿Continuar?"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "El nombre de archivo no puede estar vacío",
+    "fileNameInvalid": "El nombre de archivo no es válido",
+    "fileNameInvalidCharacters": "El nombre de archivo contiene caracteres no válidos",
+    "duplicatePayloadInvalid": "Carga útil de cambios de duplicados no válida",
+    "unknownAssetInChanges": "Recurso desconocido en los cambios en cola: {{assetId}}",
+    "duplicateGroupStillUnresolved": "Grupo \"{{fileName}}\": los cambios en cola aún dejan nombres de archivo duplicados. Renombra o elimina más elementos en este bloque."
+  }
+}

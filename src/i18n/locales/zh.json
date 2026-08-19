@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "返回",
+    "cancel": "取消",
+    "close": "关闭",
+    "remove": "移除",
+    "apply": "应用",
+    "loading": "加载中...",
+    "yes": "是",
+    "no": "否"
+  },
+  "topBar": {
+    "openSettings": "打开设置"
+  },
+  "tagList": {
+    "open": "打开标签列表",
+    "modalTitle": "标签列表",
+    "closeModal": "关闭标签列表",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "缩略图大小",
+    "enableSelectionMode": "启用选择模式",
+    "disableSelectionMode": "禁用选择模式",
+    "loadMore": "加载更多"
+  },
+  "search": {
+    "placeholder": "标签: cat vacation -dog | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "标签建议",
+    "mediaKind": "媒体类型",
+    "mediaKinds": {
+      "all": "全部",
+      "image": "图片",
+      "gif": "GIF",
+      "video": "视频"
+    },
+    "clearFilters": "清除所有搜索筛选",
+    "clear": "清除",
+    "favoritesOnly": {
+      "enable": "仅显示收藏",
+      "disable": "取消仅显示收藏",
+      "enabled": "仅显示收藏已启用",
+      "label": "仅收藏"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "未添加任何文件夹",
+    "noFoldersDescription": "添加第一个文件夹以开始浏览和标记媒体。",
+    "addFirstFolder": "添加第一个文件夹",
+    "noResultsTitle": "没有结果",
+    "noResultsDescription": "尝试更改筛选条件或运行重新扫描以索引更多文件。",
+    "videoChip": "视频",
+    "gifChip": "GIF",
+    "groupedChip": "属于媒体分组的一部分",
+    "generatingThumbnails": "正在为 {{count}} 个排队项目生成缩略图。",
+    "noMoreItems": "没有更多项目可加载"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "已选择: {{count}}",
+      "addTag": "添加标签",
+      "addGroup": "添加分组",
+      "ariaLabel": "批量操作",
+      "heading": "批量操作",
+      "groupHeading": "媒体组",
+      "groupDescription": "为当前选择设置同一组，或清除组分配。",
+      "groupConflictTitle": "存在多个组分配",
+      "groupConflictDescription": "所选项目属于不同组，或同时包含已分组和未分组项目。输入键以替换，或留空以移除所有组分配。",
+      "saveFailedTitle": "无法保存更改",
+      "groupSaveFailed": "组更改未保存，草稿仍然保留。",
+      "removeGroup": "从组中移除",
+      "removeGroups": "从各组中移除",
+      "orderHeading": "组内顺序",
+      "orderDescription": "拖动项目的手柄以设置顺序。",
+      "dragHandleAria": "拖动第 {{position}} 项以调整顺序",
+      "tagsHeading": "标签",
+      "tagsMultipleDescription": "新标签会添加到所有选定项目，现有标签将保留。",
+      "tagsSingleDescription": "为所选项目添加标签或移除当前标签。",
+      "loadingTags": "正在加载标签...",
+      "selectItemsPrompt": "请至少选择一个项目",
+      "noBulkTagsAdded": "尚未为此选择添加标签",
+      "tagSaveFailed": "标签更改未保存，请重试。",
+      "tagLoadFailedTitle": "无法加载标签",
+      "tagLoadFailed": "无法加载完整标签列表。编辑功能仍处于禁用状态。",
+      "retryTagDetails": "重试加载标签"
+    },
+    "tagModal": {
+      "ariaLabel": "批量添加标签",
+      "heading": "批量添加标签",
+      "description": "为 {{count}} 个已选择项目应用标签。",
+      "noTagsQueued": "没有排队的标签",
+      "addTag": "添加标签",
+      "tagInputPlaceholder": "输入以添加标签",
+      "suggestions": "批量标签建议",
+      "removeTagAria": "移除标签 {{tag}}",
+      "applyInProgress": "正在应用..."
+    },
+    "groupModal": {
+      "ariaLabel": "批量添加媒体分组",
+      "heading": "批量添加媒体分组",
+      "description": "为 {{count}} 个已选择项目设置一个分组，并通过拖放重新排序。",
+      "groupKeyPlaceholder": "分组键 (uuid 或自定义)",
+      "groupKeyAria": "媒体分组键",
+      "generateGroupAria": "生成媒体分组键",
+      "generateUuid": "生成 UUID",
+      "overwriteWarningTitle": "此操作将覆盖现有分组值。",
+      "overwriteWarningDescription": "至少有一个已选择项目已经具有媒体分组键/顺序。应用后将使用此分组和新顺序替换所有已选择项目。",
+      "applyGroup": "应用分组",
+      "applyInProgress": "正在应用..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "添加到收藏",
+      "remove": "从收藏中移除",
+      "on": "收藏：开启",
+      "off": "收藏：关闭"
+    },
+    "resetZoom": "重置缩放",
+    "reset": "重置",
+    "toggleFullscreen": "切换全屏",
+    "fullscreen": "全屏 (F)",
+    "exitFullscreen": "退出全屏 (F)",
+    "deleteMedia": "删除媒体",
+    "closePreview": "关闭预览",
+    "showTagging": "显示标签",
+    "tags": "标签",
+    "taggingHeading": "标签管理",
+    "noTags": "没有标签",
+    "addTag": "添加标签",
+    "tagInputPlaceholder": "输入以添加标签",
+    "taggingSuggestions": "标签建议",
+    "mediaGroup": "媒体分组",
+    "removeTagAria": "移除标签 {{tag}}",
+    "showInfo": "显示信息",
+    "info": "信息",
+    "infoHeading": "信息",
+    "type": "类型",
+    "size": "大小",
+    "dimensions": "尺寸",
+    "duration": "时长",
+    "path": "路径",
+    "mediaGroupKeyPlaceholder": "分组键 (uuid 或自定义)",
+    "mediaGroupKeyAria": "媒体分组键",
+    "generateGroupAria": "生成媒体分组键",
+    "mediaGroupOrderPlaceholder": "顺序",
+    "mediaGroupOrderAria": "媒体分组顺序",
+    "copyMediaGroup": {
+      "title": "??????",
+      "copied": "???????",
+      "unavailable": "??????????"
+    },
+    "deleteConfirm": {
+      "heading": "确定要删除此媒体吗？",
+      "description": "此操作会从磁盘删除数据库条目、缩略图和原始文件。",
+      "confirmWord": "是",
+      "typeYesLabel": "输入 \"{{value}}\"",
+      "typeYesPlaceholder": "输入 \"{{value}}\"",
+      "confirm": "确认"
+    },
+    "tagSaving": "正在保存标签...",
+    "retryTagSave": "重试",
+    "tagDetailsLoading": "正在加载完整标签列表...",
+    "tagDetailsLoadFailedTitle": "无法加载标签",
+    "tagDetailsLoadFailed": "无法加载完整标签列表。编辑功能仍处于禁用状态。",
+    "retryTagDetails": "重试加载标签"
+  },
+  "settings": {
+    "page": {
+      "heading": "设置",
+      "description": "管理外观、媒体库来源和应用数据。"
+    },
+    "appearance": {
+      "heading": "外观",
+      "description": "选择应用主题和语言。",
+      "theme": {
+        "label": "主题",
+        "ariaLabel": "选择主题",
+        "light": "浅色",
+        "dark": "深色"
+      },
+      "language": {
+        "label": "语言",
+        "ariaLabel": "选择语言",
+        "en": "英语",
+        "pl": "波兰语",
+        "fr": "法语",
+        "de": "德语",
+        "it": "意大利语",
+        "es": "西班牙语",
+        "ru": "俄语",
+        "zh": "中文（简体）",
+        "ja": "日语",
+        "ko": "韩语"
+      }
+    },
+    "scan": {
+      "heading": "扫描设置",
+      "description": "选择一个文件夹并将其添加到扫描列表，然后手动重新扫描所有文件夹。",
+      "chooseFolder": "选择文件夹",
+      "attachedPaths": "已附加的扫描路径",
+      "noPaths": "没有扫描路径",
+      "rescan": "重新扫描",
+      "remove": "移除",
+      "rescanAll": "重新扫描全部",
+      "renderAllThumbnails": "为所有已索引资源生成缩略图",
+      "retryFailedThumbnails": "仅重试失败的缩略图",
+      "stopThumbnailRender": "停止缩略图生成"
+    },
+    "importExport": {
+      "heading": "导入 / 导出",
+      "exportCsv": "导出标签 CSV",
+      "importCsv": "导入标签 CSV",
+      "exportDbBundle": "导出数据库 + 缩略图",
+      "importDbBundle": "导入数据库 + 缩略图",
+      "hint": "CSV 导入会合并标签和收藏标记，并通过匹配文件名应用媒体分组键/顺序。数据库导入会替换当前数据库和缩略图。"
+    },
+    "danger": {
+      "heading": "危险区域",
+      "clearLibrary": "删除所有缩略图、已索引资源和扫描路径",
+      "hint": "删除操作仅影响应用数据库/缓存。原始照片和视频不会被编辑或删除。"
+    },
+    "duplicates": {
+      "heading": "重复文件管理",
+      "description": "查找具有相同文件名的资源，并通过重命名或删除文件解决重复。",
+      "start": "开始",
+      "lastResult": "上次结果：{{groups}} 组 / {{assets}} 个资源",
+      "resolverHeading": "重复文件处理",
+      "resolverSummary": "找到组数：{{groups}}，重复资源：{{assets}}",
+      "saveAll": "全部保存",
+      "discardChanges": "放弃更改",
+      "queueHint": "将更改排队，然后点击“全部保存”。",
+      "queuedReady": "已排队更改：{{count}}。准备应用。",
+      "noGroups": "未找到重复文件组。",
+      "readyBadge": "就绪",
+      "resolve": "处理",
+      "pendingRename": "待处理：重命名为 {{name}}",
+      "pendingDelete": "待处理：删除文件",
+      "pendingNone": "待处理：无",
+      "renamePlaceholder": "new-file-name.jpg",
+      "generateUuid": "生成 UUID",
+      "queueRename": "排队重命名",
+      "queueDelete": "排队删除",
+      "unmarkDelete": "取消删除标记",
+      "clearAction": "清除操作"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "删除所有库数据？",
+        "description": "这将从应用数据库/缓存中删除缩略图、已索引资源和附加的扫描路径。原始文件不会被删除。"
+      },
+      "removeScanRoot": {
+        "heading": "移除扫描路径？",
+        "description": "这将从扫描列表中删除该路径，并从应用数据库中删除相关索引记录。磁盘上的原始文件不会被删除。"
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "准备扫描",
+        "importExport": "准备导入/导出",
+        "danger": "没有正在运行的危险操作",
+        "duplicates": "准备扫描重复文件"
+      }
+    },
+    "progress": {
+      "counting": "正在统计文件 {{processed}}/{{total}}",
+      "scanning": "正在扫描 {{processed}}/{{total}}",
+      "cleanup": "清理 {{processed}}/{{total}}",
+      "scanEmpty": "未配置扫描文件夹",
+      "scanSkip": "跳过无效文件夹",
+      "thumbsStart": "缩略图生成已开始",
+      "thumbs": "正在生成缩略图 {{processed}}/{{total}}",
+      "thumbsDone": "缩略图生成完成",
+      "thumbsFailedStart": "失败缩略图重试已开始",
+      "thumbsFailed": "正在重试失败的缩略图 {{processed}}/{{total}}",
+      "thumbsFailedDone": "失败缩略图重试完成",
+      "libraryClear": "正在清理库 {{processed}}/{{total}}",
+      "libraryClearDone": "库清理完成",
+      "duplicatesScan": "扫描重复文件 {{processed}}/{{total}}",
+      "duplicatesScanDone": "重复扫描完成",
+      "thumbnailSummary": {
+        "ready": "就绪：{{count}}",
+        "failed": "失败：{{count}}",
+        "skippedFailed": "跳过失败：{{count}}",
+        "cancelledAt": "在 {{processed}}/{{total}} 时取消。",
+        "processed": "已处理：{{processed}}/{{total}}。"
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "等待选择文件夹...",
+        "removeFolder": "从扫描列表中移除文件夹：{{path}}",
+        "rescanAll": "重新扫描所有文件夹...",
+        "rescanFolder": "重新扫描文件夹：{{path}}",
+        "renderAllThumbs": "为所有已索引资源生成缩略图...",
+        "retryFailedThumbs": "重试失败的缩略图...",
+        "clearLibrary": "清理库数据...",
+        "findDuplicates": "搜索重复文件名...",
+        "applyDuplicateChanges": "应用重复文件更改...",
+        "prepareCsvExport": "准备 CSV 导出...",
+        "prepareCsvImport": "准备 CSV 导入...",
+        "prepareDbExport": "准备数据库备份导出...",
+        "prepareDbImport": "准备数据库备份导入..."
+      },
+      "errorPrefix": {
+        "addFolder": "添加文件夹错误",
+        "removeFolder": "移除文件夹错误",
+        "rescan": "重新扫描错误",
+        "rescanFolder": "扫描文件夹错误",
+        "renderThumbs": "生成缩略图错误",
+        "retryThumbs": "重试失败缩略图错误",
+        "clearLibrary": "清理库错误",
+        "duplicateScan": "重复扫描错误",
+        "saveDuplicateChanges": "保存重复更改错误",
+        "exportCsv": "CSV 导出错误",
+        "importCsv": "CSV 导入错误",
+        "exportDb": "数据库备份导出错误",
+        "importDb": "数据库备份导入错误",
+        "cancelThumbRender": "取消缩略图生成错误"
+      },
+      "summary": {
+        "folderAdded": "文件夹已添加到扫描列表：{{path}}",
+        "folderSelectionCancelled": "文件夹选择已取消。",
+        "removedRoot": "已移除根目录。资源：{{assets}}，缩略图：{{thumbnails}}",
+        "doneIndexed": "完成。已索引：{{indexed}}，已移除：{{removed}}，失败：{{failed}}",
+        "doneIndexedPartial": "扫描不完整。已索引：{{indexed}}，已移除：{{removed}}，警告：{{failed}}。已跳过不完整文件夹的清理并保留现有记录。",
+        "allThumbnailsLabel": "全部缩略图",
+        "failedRetryLabel": "失败缩略图重试",
+        "stopRequested": "已请求停止。正在完成正在运行的缩略图任务...",
+        "noThumbRenderRunning": "当前没有运行的缩略图批量生成。",
+        "libraryCleared": "库已清理。资源：{{assets}}，根目录：{{roots}}，缩略图：{{thumbnails}}",
+        "duplicateScanComplete": "重复扫描完成。组：{{groups}}，资源：{{assets}}",
+        "noDuplicateChanges": "没有待应用的重复更改",
+        "duplicateApplyCancelled": "应用重复更改已取消。",
+        "duplicateApplied": "已应用 {{count}} 个更改。剩余组：{{groups}}",
+        "csvExportCancelled": "CSV 导出已取消。",
+        "csvExporting": "正在导出标签 CSV...",
+        "csvExported": "CSV 已导出。行数：{{rows}}",
+        "csvImportCancelled": "CSV 导入已取消。",
+        "csvImporting": "正在导入标签 CSV...",
+        "csvImported": "CSV 已导入。读取行：{{rowsRead}}，应用：{{rowsApplied}}，匹配资源：{{assetsMatched}}，更新资源：{{assetsUpdated}}",
+        "dbExportCancelled": "数据库备份导出已取消。",
+        "dbExporting": "正在导出数据库和缩略图...",
+        "dbExported": "数据库备份归档已导出。文件：{{files}}，缩略图：{{thumbnails}}",
+        "dbImportCancelled": "数据库备份导入已取消。",
+        "dbImporting": "正在导入数据库和缩略图...",
+        "dbImported": "数据库备份归档已导入。文件：{{files}}，缩略图：{{thumbnails}}",
+        "folderAddedWithSkipped": "????????????{{path}}????????{{skipped}}?",
+        "foldersAdded": "?? {{count}} ????????????",
+        "foldersAddedWithSkipped": "?? {{count}} ???????????????????{{skipped}}?",
+        "noNewFoldersAdded": "???????????????",
+        "noNewFoldersAddedWithSkipped": "???????????????????{{skipped}}?"
+      },
+      "dialogs": {
+        "selectMediaFolder": "选择媒体文件夹",
+        "exportTagsCsv": "导出标签 CSV",
+        "importTagsCsv": "导入标签 CSV",
+        "exportDbArchive": "导出数据库备份归档",
+        "selectDbArchive": "选择数据库备份归档",
+        "confirmDuplicateChanges": "应用 {{count}} 个排队更改？\n\n这将永久从磁盘删除 {{deleteCount}} 个文件。",
+        "confirmDbImportOverwrite": "从归档导入数据库将覆盖当前数据库和缩略图。继续？"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "文件名不能为空",
+    "fileNameInvalid": "文件名无效",
+    "fileNameInvalidCharacters": "文件名包含无效字符",
+    "duplicatePayloadInvalid": "重复更改数据无效",
+    "unknownAssetInChanges": "更改队列中存在未知资源：{{assetId}}",
+    "duplicateGroupStillUnresolved": "组 \"{{fileName}}\"：排队的更改仍然留下重复文件名。请在此块中重命名或删除更多项目。"
+  }
+}

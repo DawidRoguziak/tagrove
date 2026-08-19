@@ -1,0 +1,15 @@
+.git
+.agents
+.codex
+.idea
+.vscode
+artifacts
+dist
+node_modules
+target
+src-tauri/target
+src-tauri/target-*
+src-tauri/binaries/*.exe
+*.log
+.env
+.env.*

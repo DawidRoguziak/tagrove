@@ -1,0 +1,253 @@
+import { memo, useRef } from "react";
+import type { RefObject } from "react";
+import type { Asset } from "../../types";
+import { GalleryEmptyState } from "./GalleryEmptyState";
+import { GalleryStatusFooter } from "./GalleryStatusFooter";
+import { GalleryTile } from "./GalleryTile";
+import { useGalleryGridHandlers } from "./hooks/useGalleryGridHandlers";
+import { useGalleryVirtualGrid } from "./hooks/useGalleryVirtualGrid";
+import { useTranslation } from "react-i18next";
+import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+
+const EMPTY_SELECTED_IDS = new Set<number>();
+const GROUP_BACKPLATE_EDGE = 4;
+
+function getMediaGroupKey(asset: Asset | undefined): string | null {
+  const mediaGroupKey = asset?.media_group_key?.trim();
+  return mediaGroupKey || null;
+}
+
+interface GalleryGroupBackplate {
+  groupKey: string;
+  startIndex: number;
+  endIndex: number;
+  startLane: number;
+  endLane: number;
+  itemStart: number;
+}
+
+export interface BulkSelectionInteraction {
+  assetId: number;
+  assetIndex: number;
+  ctrlLike: boolean;
+  shift: boolean;
+  viaDrag: boolean;
+}
+
+interface GalleryGridProps {
+  assets: Asset[];
+  assetCount?: number;
+  getAssetAt?: (index: number) => Asset | undefined;
+  selectedId: number | null;
+  thumbs: Record<number, string>;
+  tileSize: number;
+  hasMore: boolean;
+  isLoading: boolean;
+  isGeneratingThumbnails: boolean;
+  pendingThumbnailCount: number;
+  renderingThumbnailIds: Record<number, true>;
+  thumbnailStore?: ThumbnailStore;
+  scrollContainerRef?: RefObject<HTMLElement | null>;
+  onReachEnd: () => void;
+  onVirtualRangeChange?: (startIndex: number, endIndex: number) => void;
+  onCtrlWheelZoom?: (deltaY: number) => void;
+  onSelect: (asset: Asset) => void;
+  hasScanRoots?: boolean;
+  onAddFirstFolder?: () => void;
+  selectionModeEnabled?: boolean;
+  selectedAssetIds?: Set<number>;
+  onBulkSelectionInteraction?: (interaction: BulkSelectionInteraction) => void;
+}
+
+export const GalleryGrid = memo(function GalleryGrid({
+  assets,
+  assetCount,
+  getAssetAt,
+  selectedId,
+  thumbs,
+  tileSize,
+  hasMore,
+  isLoading,
+  isGeneratingThumbnails,
+  pendingThumbnailCount,
+  renderingThumbnailIds,
+  thumbnailStore,
+  scrollContainerRef,
+  onReachEnd,
+  onVirtualRangeChange,
+  onCtrlWheelZoom,
+  onSelect,
+  hasScanRoots = true,
+  onAddFirstFolder,
+  selectionModeEnabled = false,
+  selectedAssetIds = EMPTY_SELECTED_IDS,
+  onBulkSelectionInteraction
+}: GalleryGridProps) {
+  const resolvedAssetCount = assetCount ?? assets.length;
+  const resolvedGetAssetAt = getAssetAt ?? ((index: number) => assets[index]);
+  const { t } = useTranslation();
+  const groupedDescription = t("gallery.groupedChip");
+  const videoChipLabel = t("gallery.videoChip");
+  const gifChipLabel = t("gallery.gifChip");
+  const galleryRef = useRef<HTMLDivElement | null>(null);
+
+  const handlers = useGalleryGridHandlers({
+    assets,
+    getAssetAt: resolvedGetAssetAt,
+    selectionModeEnabled,
+    onCtrlWheelZoom,
+    onSelect,
+    onBulkSelectionInteraction
+  });
+
+  const virtualGrid = useGalleryVirtualGrid({
+    assetCount: resolvedAssetCount,
+    getAssetAt: resolvedGetAssetAt,
+    tileSize,
+    hasMore,
+    isLoading,
+    galleryRef,
+    scrollContainerRef,
+    onReachEnd,
+    onVirtualRangeChange
+  });
+  const virtualEntries = virtualGrid.virtualItems.map((item) => ({
+    asset: resolvedGetAssetAt(item.index),
+    item,
+    itemLane:
+      typeof item.lane === "number"
+        ? item.lane
+        : virtualGrid.columnCount > 0
+          ? item.index % virtualGrid.columnCount
+          : 0
+  }));
+  const groupBackplates: GalleryGroupBackplate[] = [];
+
+  for (const { asset, item, itemLane } of virtualEntries) {
+    const groupKey = getMediaGroupKey(asset);
+    if (!groupKey) {
+      continue;
+    }
+
+    const currentBackplate = groupBackplates[groupBackplates.length - 1];
+    if (
+      currentBackplate &&
+      currentBackplate.groupKey === groupKey &&
+      currentBackplate.endIndex + 1 === item.index &&
+      currentBackplate.endLane + 1 === itemLane &&
+      currentBackplate.itemStart === item.start
+    ) {
+      currentBackplate.endIndex = item.index;
+      currentBackplate.endLane = itemLane;
+      continue;
+    }
+
+    groupBackplates.push({
+      groupKey,
+      startIndex: item.index,
+      endIndex: item.index,
+      startLane: itemLane,
+      endLane: itemLane,
+      itemStart: item.start
+    });
+  }
+
+  return (
+    <section
+      className={`mx-auto min-h-0 w-full max-w-[1920px] p-3 sm:p-4 ${
+        selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""
+      }`}
+      ref={galleryRef}
+      onWheel={handlers.handleGalleryWheel}
+      data-testid="gallery-grid"
+    >
+      {!resolvedAssetCount ? (
+        <GalleryEmptyState
+          hasScanRoots={hasScanRoots}
+          onAddFirstFolder={onAddFirstFolder}
+          noFoldersTitle={t("gallery.noFoldersTitle")}
+          noFoldersDescription={t("gallery.noFoldersDescription")}
+          addFirstFolderLabel={t("gallery.addFirstFolder")}
+          noResultsTitle={t("gallery.noResultsTitle")}
+          noResultsDescription={t("gallery.noResultsDescription")}
+        />
+      ) : (
+        <>
+          <div style={{ height: virtualGrid.itemVirtualizer.getTotalSize(), position: "relative" }}>
+            {groupBackplates.map((backplate) => {
+              const tileCount = backplate.endLane - backplate.startLane + 1;
+              return (
+                <div
+                  key={`group-backplate-${backplate.startIndex}`}
+                  className="pointer-events-none absolute z-0 rounded-[calc(var(--radius-surface)+4px)] bg-accent/30"
+                  style={{
+                    width:
+                      tileCount * virtualGrid.tilePixelSize +
+                      (tileCount - 1) * virtualGrid.tileGap +
+                      GROUP_BACKPLATE_EDGE * 2,
+                    height: virtualGrid.tilePixelSize + GROUP_BACKPLATE_EDGE * 2,
+                    transform: `translate3d(${backplate.startLane * (virtualGrid.tilePixelSize + virtualGrid.tileGap) - GROUP_BACKPLATE_EDGE}px, ${backplate.itemStart - GROUP_BACKPLATE_EDGE}px, 0)`
+                  }}
+                  aria-hidden="true"
+                />
+              );
+            })}
+            {virtualEntries.map(({ asset, item, itemLane }) => {
+              if (!asset) {
+                return (
+                  <div
+                    key={item.key}
+                    className="absolute z-[1] animate-pulse rounded-[var(--radius-surface)] bg-base-300/70"
+                    style={{
+                      width: virtualGrid.tilePixelSize,
+                      height: virtualGrid.tilePixelSize,
+                      transform: `translate3d(${itemLane * (virtualGrid.tilePixelSize + virtualGrid.tileGap)}px, ${item.start}px, 0)`
+                    }}
+                    aria-hidden="true"
+                  />
+                );
+              }
+
+              const showRenderLoader = Boolean(renderingThumbnailIds[asset.id]) && !thumbs[asset.id];
+              const isBulkSelected = selectionModeEnabled && selectedAssetIds.has(asset.id);
+              const isLightboxSelected = !selectionModeEnabled && selectedId === asset.id;
+
+              return (
+                <GalleryTile
+                  key={item.key}
+                  itemKey={item.key}
+                  itemIndex={item.index}
+                  itemLane={itemLane}
+                  itemStart={item.start}
+                  tilePixelSize={virtualGrid.tilePixelSize}
+                  tileGap={virtualGrid.tileGap}
+                  asset={asset}
+                  thumbPath={thumbs[asset.id]}
+                  shouldAnimateGif={virtualGrid.shouldAnimateGif(asset, item.index)}
+                  showRenderLoader={showRenderLoader}
+                  isBulkSelected={isBulkSelected}
+                  isLightboxSelected={isLightboxSelected}
+                  groupedDescription={groupedDescription}
+                  videoChipLabel={videoChipLabel}
+                  gifChipLabel={gifChipLabel}
+                  thumbnailStore={thumbnailStore}
+                  onMouseDown={handlers.handleTileMouseDown}
+                  onMouseEnter={handlers.handleTileMouseEnter}
+                  onClick={handlers.handleTileClick}
+                />
+              );
+            })}
+          </div>
+          <GalleryStatusFooter
+            isGeneratingThumbnails={isGeneratingThumbnails}
+            hasMore={hasMore}
+            generatingLabel={t("gallery.generatingThumbnails", { count: pendingThumbnailCount })}
+            noMoreLabel={t("gallery.noMoreItems")}
+          />
+        </>
+      )}
+    </section>
+  );
+});
+
+GalleryGrid.displayName = "GalleryGrid";

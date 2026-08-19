@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "뒤로",
+    "cancel": "취소",
+    "close": "닫기",
+    "remove": "제거",
+    "apply": "적용",
+    "loading": "로딩 중...",
+    "yes": "예",
+    "no": "아니요"
+  },
+  "topBar": {
+    "openSettings": "설정 열기"
+  },
+  "tagList": {
+    "open": "태그 목록 열기",
+    "modalTitle": "태그 목록",
+    "closeModal": "태그 목록 닫기",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "타일 크기",
+    "enableSelectionMode": "선택 모드 활성화",
+    "disableSelectionMode": "선택 모드 비활성화",
+    "loadMore": "더 불러오기"
+  },
+  "search": {
+    "placeholder": "태그: cat vacation -dog | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "태그 제안",
+    "mediaKind": "미디어 종류",
+    "mediaKinds": {
+      "all": "전체",
+      "image": "이미지",
+      "gif": "GIF",
+      "video": "비디오"
+    },
+    "clearFilters": "모든 검색 필터 지우기",
+    "clear": "지우기",
+    "favoritesOnly": {
+      "enable": "즐겨찾기만 표시",
+      "disable": "즐겨찾기 전용 해제",
+      "enabled": "즐겨찾기만 표시가 활성화됨",
+      "label": "즐겨찾기만"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "연결된 폴더가 없습니다",
+    "noFoldersDescription": "첫 번째 폴더를 추가하여 미디어를 둘러보고 태그를 지정하세요.",
+    "addFirstFolder": "첫 번째 폴더 추가",
+    "noResultsTitle": "결과 없음",
+    "noResultsDescription": "필터를 변경하거나 재스캔을 실행하여 더 많은 파일을 인덱싱해 보세요.",
+    "videoChip": "비디오",
+    "gifChip": "GIF",
+    "groupedChip": "미디어 그룹의 일부",
+    "generatingThumbnails": "대기열에 있는 {{count}}개 항목의 썸네일을 생성하는 중입니다.",
+    "noMoreItems": "더 이상 불러올 항목이 없습니다"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "선택됨: {{count}}",
+      "addTag": "태그 추가",
+      "addGroup": "그룹 추가",
+      "ariaLabel": "일괄 작업",
+      "heading": "일괄 작업",
+      "groupHeading": "미디어 그룹",
+      "groupDescription": "현재 선택 항목에 하나의 그룹을 설정하거나 그룹 지정을 해제합니다.",
+      "groupConflictTitle": "여러 그룹 지정",
+      "groupConflictDescription": "선택 항목이 서로 다른 그룹에 속하거나 그룹 지정 항목과 미지정 항목이 섞여 있습니다. 바꿀 키를 입력하거나 비워 두어 모든 그룹 지정을 해제하세요.",
+      "saveFailedTitle": "변경 사항을 저장할 수 없습니다",
+      "groupSaveFailed": "그룹 변경이 저장되지 않았습니다. 입력 내용은 유지됩니다.",
+      "removeGroup": "그룹에서 제거",
+      "removeGroups": "그룹에서 제거",
+      "orderHeading": "그룹 순서",
+      "orderDescription": "항목의 핸들을 드래그하여 순서를 설정하세요.",
+      "dragHandleAria": "항목 {{position}}을 드래그하여 순서 변경",
+      "tagsHeading": "태그",
+      "tagsMultipleDescription": "새 태그가 선택한 모든 항목에 추가됩니다. 기존 태그는 유지됩니다.",
+      "tagsSingleDescription": "선택 항목의 태그를 추가하거나 현재 태그를 제거합니다.",
+      "loadingTags": "태그 불러오는 중...",
+      "selectItemsPrompt": "하나 이상의 항목을 선택하세요",
+      "noBulkTagsAdded": "이 선택 항목에 추가된 태그가 없습니다",
+      "tagSaveFailed": "태그 변경이 저장되지 않았습니다. 다시 시도하세요.",
+      "tagLoadFailedTitle": "태그를 불러올 수 없습니다",
+      "tagLoadFailed": "전체 태그 목록을 불러올 수 없습니다. 편집은 비활성화된 상태로 유지됩니다.",
+      "retryTagDetails": "태그 다시 불러오기"
+    },
+    "tagModal": {
+      "ariaLabel": "일괄 태그 추가",
+      "heading": "일괄 태그 추가",
+      "description": "선택한 {{count}}개 항목에 태그를 적용합니다.",
+      "noTagsQueued": "대기 중인 태그가 없습니다",
+      "addTag": "태그 추가",
+      "tagInputPlaceholder": "입력하여 태그 추가",
+      "suggestions": "일괄 태깅 제안",
+      "removeTagAria": "태그 {{tag}} 제거",
+      "applyInProgress": "적용 중..."
+    },
+    "groupModal": {
+      "ariaLabel": "일괄 미디어 그룹 추가",
+      "heading": "일괄 미디어 그룹 추가",
+      "description": "선택한 {{count}}개 항목에 하나의 그룹을 설정하고 드래그 앤 드롭으로 순서를 재정렬합니다.",
+      "groupKeyPlaceholder": "그룹 키 (uuid 또는 사용자 지정)",
+      "groupKeyAria": "미디어 그룹 키",
+      "generateGroupAria": "미디어 그룹 키 생성",
+      "generateUuid": "UUID 생성",
+      "overwriteWarningTitle": "이 작업은 기존 그룹 값을 덮어씁니다.",
+      "overwriteWarningDescription": "선택한 항목 중 최소 하나에 이미 미디어 그룹 키/순서가 있습니다. 적용하면 선택된 모든 항목이 이 그룹과 새 순서로 교체됩니다.",
+      "applyGroup": "그룹 적용",
+      "applyInProgress": "적용 중..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "즐겨찾기에 추가",
+      "remove": "즐겨찾기에서 제거",
+      "on": "즐겨찾기: 켜짐",
+      "off": "즐겨찾기: 꺼짐"
+    },
+    "resetZoom": "줌 초기화",
+    "reset": "초기화",
+    "toggleFullscreen": "전체 화면 전환",
+    "fullscreen": "전체 화면 (F)",
+    "exitFullscreen": "전체 화면 종료 (F)",
+    "deleteMedia": "미디어 삭제",
+    "closePreview": "미리보기 닫기",
+    "showTagging": "태깅 표시",
+    "tags": "태그",
+    "taggingHeading": "태깅",
+    "noTags": "태그 없음",
+    "addTag": "태그 추가",
+    "tagInputPlaceholder": "입력하여 태그 추가",
+    "taggingSuggestions": "태깅 제안",
+    "mediaGroup": "미디어 그룹",
+    "removeTagAria": "태그 {{tag}} 제거",
+    "showInfo": "정보 표시",
+    "info": "정보",
+    "infoHeading": "정보",
+    "type": "유형",
+    "size": "크기",
+    "dimensions": "해상도",
+    "duration": "길이",
+    "path": "경로",
+    "mediaGroupKeyPlaceholder": "그룹 키 (uuid 또는 사용자 지정)",
+    "mediaGroupKeyAria": "미디어 그룹 키",
+    "generateGroupAria": "미디어 그룹 키 생성",
+    "mediaGroupOrderPlaceholder": "순서",
+    "mediaGroupOrderAria": "미디어 그룹 순서",
+    "copyMediaGroup": {
+      "title": "?? ?? ??",
+      "copied": "?? ??? ??????",
+      "unavailable": "??? ?? ??? ????"
+    },
+    "deleteConfirm": {
+      "heading": "이 미디어를 삭제하시겠습니까?",
+      "description": "이 작업은 데이터베이스 항목, 썸네일, 그리고 원본 파일을 디스크에서 제거합니다.",
+      "confirmWord": "예",
+      "typeYesLabel": "\"{{value}}\"를 입력하세요",
+      "typeYesPlaceholder": "\"{{value}}\"를 입력하세요",
+      "confirm": "확인"
+    },
+    "tagSaving": "태그 저장 중...",
+    "retryTagSave": "다시 시도",
+    "tagDetailsLoading": "전체 태그 목록 불러오는 중...",
+    "tagDetailsLoadFailedTitle": "태그를 불러올 수 없습니다",
+    "tagDetailsLoadFailed": "전체 태그 목록을 불러올 수 없습니다. 편집은 비활성화된 상태로 유지됩니다.",
+    "retryTagDetails": "태그 다시 불러오기"
+  },
+  "settings": {
+    "page": {
+      "heading": "설정",
+      "description": "화면, 라이브러리 소스 및 앱 데이터를 관리합니다."
+    },
+    "appearance": {
+      "heading": "모양",
+      "description": "애플리케이션 테마와 언어를 선택하세요.",
+      "theme": {
+        "label": "테마",
+        "ariaLabel": "테마 선택",
+        "light": "라이트",
+        "dark": "다크"
+      },
+      "language": {
+        "label": "언어",
+        "ariaLabel": "언어 선택",
+        "en": "영어",
+        "pl": "폴란드어",
+        "fr": "프랑스어",
+        "de": "독일어",
+        "it": "이탈리아어",
+        "es": "스페인어",
+        "ru": "러시아어",
+        "zh": "중국어(간체)",
+        "ja": "일본어",
+        "ko": "한국어"
+      }
+    },
+    "scan": {
+      "heading": "스캔 설정",
+      "description": "폴더를 선택해 스캔 목록에 추가한 뒤, 모든 폴더에 대해 수동 재스캔을 실행하세요.",
+      "chooseFolder": "폴더 선택",
+      "attachedPaths": "연결된 스캔 경로",
+      "noPaths": "스캔 경로 없음",
+      "rescan": "재스캔",
+      "remove": "제거",
+      "rescanAll": "모두 재스캔",
+      "renderAllThumbnails": "인덱싱된 모든 자산의 썸네일 렌더링",
+      "retryFailedThumbnails": "실패한 썸네일만 재시도",
+      "stopThumbnailRender": "썸네일 렌더링 중지"
+    },
+    "importExport": {
+      "heading": "가져오기 / 내보내기",
+      "exportCsv": "태그 CSV 내보내기",
+      "importCsv": "태그 CSV 가져오기",
+      "exportDbBundle": "DB + 썸네일 내보내기",
+      "importDbBundle": "DB + 썸네일 가져오기",
+      "hint": "CSV 가져오기는 태그와 즐겨찾기 플래그를 병합하고, 파일 이름 일치로 미디어 그룹 키/순서를 적용합니다. 데이터베이스 가져오기는 현재 데이터베이스와 썸네일을 대체합니다."
+    },
+    "danger": {
+      "heading": "위험 구역",
+      "clearLibrary": "모든 썸네일, 인덱싱된 자산 및 스캔 경로 제거",
+      "hint": "삭제 작업은 앱 데이터베이스/캐시에만 영향을 줍니다. 원본 사진과 동영상은 절대 편집되거나 삭제되지 않습니다."
+    },
+    "duplicates": {
+      "heading": "중복 관리자",
+      "description": "같은 파일 이름을 가진 자산을 찾아, 각 중복 항목을 이름 변경 또는 삭제로 해결합니다.",
+      "start": "시작",
+      "lastResult": "최근 결과: {{groups}}개 그룹 / {{assets}}개 자산",
+      "resolverHeading": "중복 해결기",
+      "resolverSummary": "찾은 그룹: {{groups}}, 중복 자산: {{assets}}",
+      "saveAll": "모두 저장",
+      "discardChanges": "변경 사항 버리기",
+      "queueHint": "변경 사항을 블록 단위로 대기열에 추가한 뒤, '모두 저장'을 클릭하세요.",
+      "queuedReady": "대기 중인 변경 사항: {{count}}. 적용할 준비가 되었습니다.",
+      "noGroups": "중복 그룹을 찾지 못했습니다.",
+      "readyBadge": "준비됨",
+      "resolve": "해결",
+      "pendingRename": "대기 중: {{name}}(으)로 이름 변경",
+      "pendingDelete": "대기 중: 파일 삭제",
+      "pendingNone": "대기 중: 없음",
+      "renamePlaceholder": "new-file-name.jpg",
+      "generateUuid": "UUID 생성",
+      "queueRename": "이름 변경 대기열에 추가",
+      "queueDelete": "삭제 대기열에 추가",
+      "unmarkDelete": "삭제 표시 해제",
+      "clearAction": "작업 지우기"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "라이브러리 데이터를 모두 삭제할까요?",
+        "description": "이 작업은 앱 데이터베이스/캐시에서 썸네일, 인덱싱된 자산 및 연결된 스캔 경로를 제거합니다. 원본 파일은 삭제되지 않습니다."
+      },
+      "removeScanRoot": {
+        "heading": "스캔 경로를 제거할까요?",
+        "description": "이 작업은 스캔 목록에서 경로를 제거하고, 앱 데이터베이스에서 관련 인덱스 레코드를 삭제합니다. 디스크의 원본 파일은 삭제되지 않습니다."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "스캔 준비됨",
+        "importExport": "가져오기/내보내기 준비됨",
+        "danger": "진행 중인 파괴적 작업 없음",
+        "duplicates": "중복 스캔 준비됨"
+      }
+    },
+    "progress": {
+      "counting": "파일 개수 세는 중 {{processed}}/{{total}}",
+      "scanning": "스캔 중 {{processed}}/{{total}}",
+      "cleanup": "정리 중 {{processed}}/{{total}}",
+      "scanEmpty": "스캔 폴더가 구성되지 않았습니다",
+      "scanSkip": "유효하지 않은 폴더 건너뜀",
+      "thumbsStart": "썸네일 렌더링 시작됨",
+      "thumbs": "썸네일 렌더링 중 {{processed}}/{{total}}",
+      "thumbsDone": "썸네일 렌더링 완료",
+      "thumbsFailedStart": "실패한 썸네일 재시도 시작됨",
+      "thumbsFailed": "실패한 썸네일 재시도 중 {{processed}}/{{total}}",
+      "thumbsFailedDone": "실패한 썸네일 재시도 완료",
+      "libraryClear": "라이브러리 정리 중 {{processed}}/{{total}}",
+      "libraryClearDone": "라이브러리 정리 완료",
+      "duplicatesScan": "중복 검색 중 {{processed}}/{{total}}",
+      "duplicatesScanDone": "중복 검색 완료",
+      "thumbnailSummary": {
+        "ready": "준비됨: {{count}}",
+        "failed": "실패: {{count}}",
+        "skippedFailed": "실패로 건너뜀: {{count}}",
+        "cancelledAt": "{{processed}}/{{total}}에서 취소됨.",
+        "processed": "처리됨: {{processed}}/{{total}}."
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "폴더 선택 대기 중...",
+        "removeFolder": "스캔 목록에서 폴더 제거 중: {{path}}",
+        "rescanAll": "모든 폴더 재스캔 중...",
+        "rescanFolder": "폴더 재스캔 중: {{path}}",
+        "renderAllThumbs": "인덱싱된 모든 자산의 썸네일 렌더링 중...",
+        "retryFailedThumbs": "실패한 썸네일 재시도 중...",
+        "clearLibrary": "라이브러리 데이터 정리 중...",
+        "findDuplicates": "중복 파일 이름 검색 중...",
+        "applyDuplicateChanges": "중복 변경 사항 적용 중...",
+        "prepareCsvExport": "CSV 내보내기 준비 중...",
+        "prepareCsvImport": "CSV 가져오기 준비 중...",
+        "prepareDbExport": "데이터베이스 백업 내보내기 준비 중...",
+        "prepareDbImport": "데이터베이스 백업 가져오기 준비 중..."
+      },
+      "errorPrefix": {
+        "addFolder": "폴더 추가 오류",
+        "removeFolder": "폴더 제거 오류",
+        "rescan": "재스캔 오류",
+        "rescanFolder": "폴더 재스캔 오류",
+        "renderThumbs": "썸네일 렌더링 오류",
+        "retryThumbs": "실패한 썸네일 재시도 오류",
+        "clearLibrary": "라이브러리 정리 오류",
+        "duplicateScan": "중복 스캔 오류",
+        "saveDuplicateChanges": "중복 변경 사항 저장 오류",
+        "exportCsv": "CSV 내보내기 오류",
+        "importCsv": "CSV 가져오기 오류",
+        "exportDb": "데이터베이스 백업 내보내기 오류",
+        "importDb": "데이터베이스 백업 가져오기 오류",
+        "cancelThumbRender": "썸네일 렌더링 취소 오류"
+      },
+      "summary": {
+        "folderAdded": "스캔 목록에 폴더가 추가됨: {{path}}",
+        "folderSelectionCancelled": "폴더 선택이 취소되었습니다.",
+        "removedRoot": "루트 제거됨. 자산: {{assets}}, 썸네일: {{thumbnails}}",
+        "doneIndexed": "완료. 인덱싱됨: {{indexed}}, 제거됨: {{removed}}, 실패: {{failed}}",
+        "doneIndexedPartial": "부분 스캔. 인덱싱: {{indexed}}, 제거: {{removed}}, 경고: {{failed}}. 불완전한 폴더의 정리를 건너뛰고 기존 레코드를 보존했습니다.",
+        "allThumbnailsLabel": "모든 썸네일",
+        "failedRetryLabel": "실패한 썸네일 재시도",
+        "stopRequested": "중지 요청됨. 진행 중인 썸네일 작업을 마무리하는 중...",
+        "noThumbRenderRunning": "실행 중인 썸네일 일괄 렌더링이 없습니다.",
+        "libraryCleared": "라이브러리 정리됨. 자산: {{assets}}, 루트: {{roots}}, 썸네일: {{thumbnails}}",
+        "duplicateScanComplete": "중복 스캔 완료. 그룹: {{groups}}, 자산: {{assets}}",
+        "noDuplicateChanges": "적용할 대기 중인 중복 변경 사항이 없습니다",
+        "duplicateApplyCancelled": "중복 변경 사항 적용이 취소되었습니다.",
+        "duplicateApplied": "{{count}}개 변경 사항이 적용되었습니다. 남은 그룹: {{groups}}",
+        "csvExportCancelled": "CSV 내보내기가 취소되었습니다.",
+        "csvExporting": "태그 CSV 내보내는 중...",
+        "csvExported": "CSV 내보내기 완료. 행: {{rows}}",
+        "csvImportCancelled": "CSV 가져오기가 취소되었습니다.",
+        "csvImporting": "태그 CSV 가져오는 중...",
+        "csvImported": "CSV 가져오기 완료. 읽은 행: {{rowsRead}}, 적용됨: {{rowsApplied}}, 일치한 자산: {{assetsMatched}}, 업데이트된 자산: {{assetsUpdated}}",
+        "dbExportCancelled": "데이터베이스 백업 내보내기가 취소되었습니다.",
+        "dbExporting": "데이터베이스와 썸네일 내보내는 중...",
+        "dbExported": "데이터베이스 백업 아카이브 내보내기 완료. 파일: {{files}}, 썸네일: {{thumbnails}}",
+        "dbImportCancelled": "데이터베이스 백업 가져오기가 취소되었습니다.",
+        "dbImporting": "데이터베이스와 썸네일 가져오는 중...",
+        "dbImported": "데이터베이스 백업 아카이브 가져오기 완료. 파일: {{files}}, 썸네일: {{thumbnails}}",
+        "folderAddedWithSkipped": "?? ??? ??? ???: {{path}}. ?? ?? ???: {{skipped}}.",
+        "foldersAdded": "?? {{count}}?? ?? ??? ???.",
+        "foldersAddedWithSkipped": "?? {{count}}?? ?? ??? ???. ?? ?? ???: {{skipped}}.",
+        "noNewFoldersAdded": "?? ??? ? ??? ???? ?????.",
+        "noNewFoldersAddedWithSkipped": "?? ??? ? ??? ???? ?????. ?? ???: {{skipped}}."
+      },
+      "dialogs": {
+        "selectMediaFolder": "미디어 폴더 선택",
+        "exportTagsCsv": "태그 CSV 내보내기",
+        "importTagsCsv": "태그 CSV 가져오기",
+        "exportDbArchive": "DB 백업 아카이브 내보내기",
+        "selectDbArchive": "DB 백업 아카이브 선택",
+        "confirmDuplicateChanges": "{{count}}개의 대기 중인 변경 사항을 적용할까요?\n\n이 작업은 {{deleteCount}}개의 파일을 디스크에서 영구적으로 삭제합니다.",
+        "confirmDbImportOverwrite": "아카이브에서 데이터베이스를 가져오면 현재 데이터베이스와 썸네일이 덮어써집니다. 계속할까요?"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "파일 이름은 비어 있을 수 없습니다",
+    "fileNameInvalid": "파일 이름이 올바르지 않습니다",
+    "fileNameInvalidCharacters": "파일 이름에 유효하지 않은 문자가 포함되어 있습니다",
+    "duplicatePayloadInvalid": "중복 변경 페이로드가 올바르지 않습니다",
+    "unknownAssetInChanges": "대기 중인 변경 사항에 알 수 없는 자산이 있습니다: {{assetId}}",
+    "duplicateGroupStillUnresolved": "그룹 \"{{fileName}}\": 대기 중인 변경 사항 적용 후에도 중복 파일 이름이 남습니다. 이 블록에서 더 많은 항목을 이름 변경하거나 삭제하세요."
+  }
+}

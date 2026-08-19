@@ -1,0 +1,299 @@
+{
+  "common": {
+    "back": "Retour",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "remove": "Supprimer",
+    "apply": "Appliquer",
+    "loading": "Chargement...",
+    "yes": "OUI",
+    "no": "Non"
+  },
+  "topBar": {
+    "openSettings": "Ouvrir les paramètres"
+  },
+  "tagList": {
+    "open": "Ouvrir la liste des tags",
+    "modalTitle": "Liste des tags",
+    "closeModal": "Fermer la liste des tags",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Taille des vignettes",
+    "enableSelectionMode": "Activer le mode de sélection",
+    "disableSelectionMode": "Désactiver le mode de sélection",
+    "loadMore": "Charger plus"
+  },
+  "search": {
+    "placeholder": "Tags : chat vacances -chien | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Suggestions de tags",
+    "mediaKind": "Type de média",
+    "mediaKinds": {
+      "all": "Tout",
+      "image": "Images",
+      "gif": "Gif",
+      "video": "Vidéo"
+    },
+    "clearFilters": "Effacer tous les filtres de recherche",
+    "clear": "Effacer",
+    "favoritesOnly": {
+      "enable": "Afficher seulement les favoris",
+      "disable": "Désactiver les favoris uniquement",
+      "enabled": "Mode favoris uniquement activé",
+      "label": "Favoris uniquement"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "Aucun dossier attaché",
+    "noFoldersDescription": "Ajoutez votre premier dossier pour commencer à parcourir et taguer les médias.",
+    "addFirstFolder": "Ajouter le premier dossier",
+    "noResultsTitle": "Aucun résultat",
+    "noResultsDescription": "Essayez de modifier les filtres ou lancez un rescannage pour indexer plus de fichiers.",
+    "videoChip": "Vidéo",
+    "gifChip": "GIF",
+    "groupedChip": "Fait partie d'un groupe de médias",
+    "generatingThumbnails": "Génération des miniatures pour {{count}} éléments en attente.",
+    "noMoreItems": "Plus d’éléments à charger"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Sélectionné : {{count}}",
+      "addTag": "Ajouter un tag",
+      "addGroup": "Ajouter un groupe",
+      "ariaLabel": "Actions groupées",
+      "heading": "Actions groupées",
+      "groupHeading": "Groupe de médias",
+      "groupDescription": "Définissez un groupe pour la sélection ou supprimez son affectation.",
+      "groupConflictTitle": "Plusieurs affectations de groupe",
+      "groupConflictDescription": "Les éléments sélectionnés appartiennent à différents groupes ou mélangent des éléments groupés et non groupés. Saisissez une clé pour les remplacer ou laissez vide pour supprimer les affectations.",
+      "saveFailedTitle": "Impossible d’enregistrer les modifications",
+      "groupSaveFailed": "La modification du groupe n’a pas été enregistrée. Le brouillon est conservé.",
+      "removeGroup": "Retirer du groupe",
+      "removeGroups": "Retirer des groupes",
+      "orderHeading": "Ordre du groupe",
+      "orderDescription": "Faites glisser les éléments par leur poignée pour définir leur ordre.",
+      "dragHandleAria": "Faites glisser l’élément {{position}} pour modifier l’ordre",
+      "tagsHeading": "Tags",
+      "tagsMultipleDescription": "Les nouveaux tags sont ajoutés à tous les éléments sélectionnés. Les tags existants sont conservés.",
+      "tagsSingleDescription": "Ajoutez des tags ou supprimez les tags actuels de l’élément sélectionné.",
+      "loadingTags": "Chargement des tags...",
+      "selectItemsPrompt": "Sélectionnez au moins un élément",
+      "noBulkTagsAdded": "Aucun tag ajouté pour cette sélection",
+      "tagSaveFailed": "La modification des tags n’a pas été enregistrée. Réessayez.",
+      "tagLoadFailedTitle": "Impossible de charger les tags",
+      "tagLoadFailed": "La liste complète des tags n’a pas pu être chargée. La modification reste désactivée.",
+      "retryTagDetails": "Réessayer le chargement"
+    },
+    "tagModal": {
+      "ariaLabel": "Ajout de tags en masse",
+      "heading": "Ajout de tags en masse",
+      "description": "Appliquer des tags à {{count}} éléments sélectionnés.",
+      "noTagsQueued": "Aucun tag en attente",
+      "addTag": "Ajouter un tag",
+      "tagInputPlaceholder": "Tapez pour ajouter un tag",
+      "suggestions": "Suggestions de tags en masse",
+      "removeTagAria": "Supprimer le tag {{tag}}",
+      "applyInProgress": "Application..."
+    },
+    "groupModal": {
+      "ariaLabel": "Ajout de groupe média en masse",
+      "heading": "Ajout de groupe média en masse",
+      "description": "Définissez un groupe pour {{count}} éléments sélectionnés et réorganisez-les par glisser-déposer.",
+      "groupKeyPlaceholder": "Clé de groupe (uuid ou personnalisée)",
+      "groupKeyAria": "Clé du groupe média",
+      "generateGroupAria": "Générer une clé de groupe média",
+      "generateUuid": "Générer un UUID",
+      "overwriteWarningTitle": "Cette action écrasera les valeurs de groupe existantes.",
+      "overwriteWarningDescription": "Au moins un élément sélectionné possède déjà une clé/ordre de groupe média. L’application remplacera tous les éléments sélectionnés par ce groupe et ce nouvel ordre.",
+      "applyGroup": "Appliquer le groupe",
+      "applyInProgress": "Application..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Ajouter aux favoris",
+      "remove": "Retirer des favoris",
+      "on": "Favori : activé",
+      "off": "Favori : désactivé"
+    },
+    "resetZoom": "Réinitialiser le zoom",
+    "reset": "Réinitialiser",
+    "toggleFullscreen": "Basculer en plein écran",
+    "fullscreen": "Plein écran (F)",
+    "exitFullscreen": "Quitter le plein écran (F)",
+    "deleteMedia": "Supprimer le média",
+    "closePreview": "Fermer l’aperçu",
+    "showTagging": "Afficher les tags",
+    "tags": "Tags",
+    "taggingHeading": "Tagging",
+    "noTags": "Aucun tag",
+    "addTag": "Ajouter un tag",
+    "tagInputPlaceholder": "Tapez pour ajouter un tag",
+    "taggingSuggestions": "Suggestions de tags",
+    "mediaGroup": "Groupe de médias",
+    "removeTagAria": "Supprimer le tag {{tag}}",
+    "showInfo": "Afficher les informations",
+    "info": "Infos",
+    "infoHeading": "Informations",
+    "type": "Type",
+    "size": "Taille",
+    "dimensions": "Dimensions",
+    "duration": "Durée",
+    "path": "Chemin",
+    "mediaGroupKeyPlaceholder": "Clé de groupe (uuid ou personnalisée)",
+    "mediaGroupKeyAria": "Clé du groupe média",
+    "generateGroupAria": "Générer une clé de groupe média",
+    "mediaGroupOrderPlaceholder": "Ordre",
+    "mediaGroupOrderAria": "Ordre du groupe média",
+    "copyMediaGroup": {
+      "title": "Copier le nom du groupe",
+      "copied": "Nom du groupe copie",
+      "unavailable": "Aucun nom de groupe a copier"
+    },
+    "deleteConfirm": {
+      "heading": "Êtes-vous sûr de vouloir supprimer ce média ?",
+      "description": "Cette opération supprime l’entrée de la base de données, la miniature et le fichier original du disque.",
+      "confirmWord": "Oui",
+      "typeYesLabel": "Tapez \"{{value}}\"",
+      "typeYesPlaceholder": "Tapez \"{{value}}\"",
+      "confirm": "Confirmer"
+    },
+    "tagSaving": "Enregistrement des tags...",
+    "retryTagSave": "Réessayer",
+    "tagDetailsLoading": "Chargement de la liste complète des tags...",
+    "tagDetailsLoadFailedTitle": "Impossible de charger les tags",
+    "tagDetailsLoadFailed": "La liste complète des tags n’a pas pu être chargée. La modification reste désactivée.",
+    "retryTagDetails": "Réessayer le chargement"
+  },
+  "settings": {
+    "page": {
+      "heading": "Paramètres",
+      "description": "Gérez l’apparence, les sources de la bibliothèque et les données de l’application."
+    },
+    "appearance": {
+      "heading": "Apparence",
+      "description": "Choisissez le thème de l’application et la langue.",
+      "theme": {
+        "label": "Thème",
+        "ariaLabel": "Sélectionner le thème",
+        "light": "Clair",
+        "dark": "Sombre"
+      },
+      "language": {
+        "label": "Langue",
+        "ariaLabel": "Sélectionner la langue",
+        "en": "Anglais",
+        "pl": "Polonais",
+        "fr": "Français",
+        "de": "Allemand",
+        "it": "Italien",
+        "es": "Espagnol",
+        "ru": "Russe",
+        "zh": "Chinois (simplifié)",
+        "ja": "Japonais",
+        "ko": "Coréen"
+      }
+    },
+    "scan": {
+      "heading": "Paramètres d’analyse",
+      "description": "Choisissez un dossier à ajouter à la liste d’analyse, puis lancez un rescannage manuel pour tous les dossiers.",
+      "chooseFolder": "Choisir un dossier",
+      "attachedPaths": "Chemins d’analyse attachés",
+      "noPaths": "Aucun chemin d’analyse",
+      "rescan": "Réanalyser",
+      "remove": "Supprimer",
+      "rescanAll": "Réanalyser tout",
+      "renderAllThumbnails": "Générer les miniatures pour tous les éléments indexés",
+      "retryFailedThumbnails": "Réessayer uniquement les miniatures échouées",
+      "stopThumbnailRender": "Arrêter la génération des miniatures"
+    },
+    "importExport": {
+      "heading": "Import / Export",
+      "exportCsv": "Exporter les tags CSV",
+      "importCsv": "Importer les tags CSV",
+      "exportDbBundle": "Exporter DB + miniatures",
+      "importDbBundle": "Importer DB + miniatures",
+      "hint": "L’import CSV fusionne les tags et le statut favori et applique la clé/ordre de groupe média en faisant correspondre les noms de fichiers. L’import de base de données remplace la base actuelle et les miniatures."
+    },
+    "danger": {
+      "heading": "Zone dangereuse",
+      "clearLibrary": "Supprimer toutes les miniatures, éléments indexés et chemins d’analyse",
+      "hint": "Les opérations de suppression affectent uniquement la base/cache de l’application. Les photos et vidéos originales ne sont jamais modifiées ni supprimées."
+    },
+    "duplicates": {
+      "heading": "Gestionnaire de doublons",
+      "description": "Trouver les éléments avec le même nom de fichier et résoudre chaque doublon en renommant ou supprimant des fichiers.",
+      "start": "Démarrer",
+      "lastResult": "Dernier résultat : {{groups}} groupes / {{assets}} éléments",
+      "resolverHeading": "Résolveur de doublons",
+      "resolverSummary": "Groupes trouvés : {{groups}}, éléments en doublon : {{assets}}",
+      "saveAll": "Tout enregistrer",
+      "discardChanges": "Annuler les modifications",
+      "queueHint": "Mettre les modifications en file par blocs puis cliquer sur Tout enregistrer.",
+      "queuedReady": "Modifications en file : {{count}}. Prêtes à appliquer.",
+      "noGroups": "Aucun groupe de doublons trouvé.",
+      "readyBadge": "Prêt",
+      "resolve": "Résoudre",
+      "pendingRename": "En attente : renommer en {{name}}",
+      "pendingDelete": "En attente : supprimer le fichier",
+      "pendingNone": "En attente : aucune",
+      "renamePlaceholder": "nouveau-nom-de-fichier.jpg",
+      "generateUuid": "Générer un UUID",
+      "queueRename": "Mettre renommage en file",
+      "queueDelete": "Mettre suppression en file",
+      "unmarkDelete": "Annuler la suppression",
+      "clearAction": "Effacer l’action"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "Supprimer toutes les données de la bibliothèque ?",
+        "description": "Cela supprime les miniatures, éléments indexés et chemins d’analyse de la base/cache de l’application. Les fichiers originaux ne sont pas supprimés."
+      },
+      "removeScanRoot": {
+        "heading": "Supprimer le chemin d’analyse ?",
+        "description": "Cela retire le chemin de la liste d’analyse et supprime les enregistrements indexés associés de la base de données de l’application. Les fichiers originaux sur disque ne sont pas supprimés."
+      }
+    },
+    "actions": {
+      "summary": {
+        "folderAddedWithSkipped": "Dossier ajoute a la liste d analyse : {{path}}. Existants ignores : {{skipped}}.",
+        "foldersAdded": "{{count}} dossiers ajoutes a la liste d analyse.",
+        "foldersAddedWithSkipped": "{{count}} dossiers ajoutes a la liste d analyse. Existants ignores : {{skipped}}.",
+        "noNewFoldersAdded": "Aucun nouveau dossier n a ete ajoute a la liste d analyse.",
+        "noNewFoldersAddedWithSkipped": "Aucun nouveau dossier n a ete ajoute a la liste d analyse. Deja attaches : {{skipped}}.",
+        "doneIndexedPartial": "Analyse partielle. Indexés : {{indexed}}, supprimés : {{removed}}, avertissements : {{failed}}. Le nettoyage a été ignoré pour les dossiers incomplets et les enregistrements existants ont été conservés."
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "Le nom du fichier ne peut pas être vide",
+    "fileNameInvalid": "Le nom du fichier est invalide",
+    "fileNameInvalidCharacters": "Le nom du fichier contient des caractères invalides",
+    "duplicatePayloadInvalid": "Payload de modifications de doublons invalide",
+    "unknownAssetInChanges": "Élément inconnu dans les modifications en file : {{assetId}}",
+    "duplicateGroupStillUnresolved": "Groupe \"{{fileName}}\" : les modifications en file laissent encore des noms de fichiers en double. Renommez ou supprimez davantage d’éléments dans ce bloc."
+  }
+}

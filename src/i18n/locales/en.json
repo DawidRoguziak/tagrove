@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "Back",
+    "cancel": "Cancel",
+    "close": "Close",
+    "remove": "Remove",
+    "apply": "Apply",
+    "loading": "Loading...",
+    "yes": "YES",
+    "no": "No"
+  },
+  "topBar": {
+    "openSettings": "Open settings"
+  },
+  "tagList": {
+    "open": "Open tag list",
+    "modalTitle": "Tag list",
+    "closeModal": "Close tag list",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Tile size",
+    "enableSelectionMode": "Enable selection mode",
+    "disableSelectionMode": "Disable selection mode",
+    "loadMore": "Load more"
+  },
+  "search": {
+    "placeholder": "Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Tag suggestions",
+    "mediaKind": "Media kind",
+    "mediaKinds": {
+      "all": "All",
+      "image": "Images",
+      "gif": "Gif",
+      "video": "Video"
+    },
+    "clearFilters": "Clear all search filters",
+    "clear": "Clear",
+    "favoritesOnly": {
+      "enable": "Show favorites only",
+      "disable": "Disable favorites only",
+      "enabled": "Favorites only enabled",
+      "label": "Favorites only"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "No folders attached",
+    "noFoldersDescription": "Add your first folder to start browsing and tagging media.",
+    "addFirstFolder": "Add first folder",
+    "noResultsTitle": "No results",
+    "noResultsDescription": "Try changing filters or run rescan to index more files.",
+    "videoChip": "Video",
+    "gifChip": "GIF",
+    "groupedChip": "Part of a media group",
+    "generatingThumbnails": "Generating thumbnails for {{count}} queued items.",
+    "noMoreItems": "No more items to load"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Selected: {{count}}",
+      "addTag": "Add tag",
+      "addGroup": "Add group",
+      "ariaLabel": "Bulk actions",
+      "heading": "Bulk actions",
+      "groupHeading": "Media group",
+      "groupDescription": "Set one group for the current selection or clear its group assignment.",
+      "groupConflictTitle": "Multiple group assignments",
+      "groupConflictDescription": "The selected items belong to different groups or mix grouped and ungrouped items. Enter a key to replace them, or leave it blank to remove all group assignments.",
+      "saveFailedTitle": "Could not save changes",
+      "groupSaveFailed": "The group change was not saved. Your draft is still available.",
+      "removeGroup": "Remove from group",
+      "removeGroups": "Remove from groups",
+      "orderHeading": "Group order",
+      "orderDescription": "Drag items by their handles to set their order.",
+      "dragHandleAria": "Drag item {{position}} to reorder",
+      "tagsHeading": "Tags",
+      "tagsMultipleDescription": "New tags are added to every selected item. Existing tags are kept.",
+      "tagsSingleDescription": "Add tags or remove the current tags from the selected item.",
+      "loadingTags": "Loading tags...",
+      "selectItemsPrompt": "Select at least one item",
+      "noBulkTagsAdded": "No tags added during this selection",
+      "tagSaveFailed": "The tag change was not saved. Try again.",
+      "tagLoadFailedTitle": "Could not load tags",
+      "tagLoadFailed": "The complete tag list could not be loaded. Editing remains disabled.",
+      "retryTagDetails": "Retry loading tags"
+    },
+    "tagModal": {
+      "ariaLabel": "Bulk add tags",
+      "heading": "Bulk add tags",
+      "description": "Apply tags to {{count}} selected items.",
+      "noTagsQueued": "No tags queued",
+      "addTag": "Add tag",
+      "tagInputPlaceholder": "Type to add tag",
+      "suggestions": "Bulk tagging suggestions",
+      "removeTagAria": "Remove tag {{tag}}",
+      "applyInProgress": "Applying..."
+    },
+    "groupModal": {
+      "ariaLabel": "Bulk add media group",
+      "heading": "Bulk add media group",
+      "description": "Set one group for {{count}} selected items and reorder them by drag and drop.",
+      "groupKeyPlaceholder": "Group key (uuid or custom)",
+      "groupKeyAria": "Media group key",
+      "generateGroupAria": "Generate media group key",
+      "generateUuid": "Generate UUID",
+      "overwriteWarningTitle": "This action will overwrite existing group values.",
+      "overwriteWarningDescription": "At least one selected item already has media group key/order. Applying will replace all selected items with this group and new order.",
+      "applyGroup": "Apply group",
+      "applyInProgress": "Applying..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Add to favorites",
+      "remove": "Remove from favorites",
+      "on": "Favorite: on",
+      "off": "Favorite: off"
+    },
+    "resetZoom": "Reset zoom",
+    "reset": "Reset",
+    "toggleFullscreen": "Toggle fullscreen",
+    "fullscreen": "Fullscreen (F)",
+    "exitFullscreen": "Exit fullscreen (F)",
+    "deleteMedia": "Delete media",
+    "closePreview": "Close preview",
+    "showTagging": "Show tagging",
+    "tags": "Tags",
+    "taggingHeading": "Tagging",
+    "noTags": "No tags",
+    "addTag": "Add tag",
+    "tagInputPlaceholder": "Type to add tag",
+    "taggingSuggestions": "Tagging suggestions",
+    "mediaGroup": "Media group",
+    "removeTagAria": "Remove tag {{tag}}",
+    "showInfo": "Show info",
+    "info": "Info",
+    "infoHeading": "Information",
+    "type": "Type",
+    "size": "Size",
+    "dimensions": "Dimensions",
+    "duration": "Duration",
+    "path": "Path",
+    "mediaGroupKeyPlaceholder": "Group key (uuid or custom)",
+    "mediaGroupKeyAria": "Media group key",
+    "generateGroupAria": "Generate media group key",
+    "mediaGroupOrderPlaceholder": "Order",
+    "mediaGroupOrderAria": "Media group order",
+    "copyMediaGroup": {
+      "title": "Copy group name",
+      "copied": "Group name copied",
+      "unavailable": "No group name to copy"
+    },
+    "deleteConfirm": {
+      "heading": "Are you sure you want to delete this media?",
+      "description": "This operation removes the database entry, thumbnail, and original file from disk.",
+      "confirmWord": "Yes",
+      "typeYesLabel": "Type \"{{value}}\"",
+      "typeYesPlaceholder": "Type \"{{value}}\"",
+      "confirm": "Confirm"
+    },
+    "tagSaving": "Saving tags...",
+    "retryTagSave": "Retry",
+    "tagDetailsLoading": "Loading complete tag list...",
+    "tagDetailsLoadFailedTitle": "Could not load tags",
+    "tagDetailsLoadFailed": "The complete tag list could not be loaded. Editing remains disabled.",
+    "retryTagDetails": "Retry loading tags"
+  },
+  "settings": {
+    "page": {
+      "heading": "Settings",
+      "description": "Manage appearance, library sources and application data."
+    },
+    "appearance": {
+      "heading": "Appearance",
+      "description": "Choose application theme and language.",
+      "theme": {
+        "label": "Theme",
+        "ariaLabel": "Select theme",
+        "light": "Light",
+        "dark": "Dark"
+      },
+      "language": {
+        "label": "Language",
+        "ariaLabel": "Select language",
+        "en": "English",
+        "pl": "Polish",
+        "fr": "French",
+        "de": "German",
+        "it": "Italian",
+        "es": "Spanish",
+        "ru": "Russian",
+        "zh": "Chinese (Simplified)",
+        "ja": "Japanese",
+        "ko": "Korean"
+      }
+    },
+    "scan": {
+      "heading": "Scan settings",
+      "description": "Choose a folder to attach it to the scan list, then run manual rescan for all folders.",
+      "chooseFolder": "Choose folder",
+      "attachedPaths": "Attached scan paths",
+      "noPaths": "No scan paths",
+      "rescan": "Rescan",
+      "remove": "Remove",
+      "rescanAll": "Rescan all",
+      "renderAllThumbnails": "Render thumbnails for all indexed assets",
+      "retryFailedThumbnails": "Retry failed thumbnails only",
+      "stopThumbnailRender": "Stop thumbnail render"
+    },
+    "importExport": {
+      "heading": "Import / Export",
+      "exportCsv": "Export tags CSV",
+      "importCsv": "Import tags CSV",
+      "exportDbBundle": "Export DB + thumbnails",
+      "importDbBundle": "Import DB + thumbnails",
+      "hint": "CSV import merges tags and favorite flag, and applies media group key/order by matching file names. Database import replaces current database and thumbnails."
+    },
+    "danger": {
+      "heading": "Danger zone",
+      "clearLibrary": "Remove all thumbnails, indexed assets and scan paths",
+      "hint": "Deletion operations affect only app database/cache. Original photos and videos are never edited or removed."
+    },
+    "duplicates": {
+      "heading": "Duplicate manager",
+      "description": "Find assets with the same file name and resolve each duplicate by renaming or deleting files.",
+      "start": "Start",
+      "lastResult": "Last result: {{groups}} groups / {{assets}} assets",
+      "resolverHeading": "Duplicate resolver",
+      "resolverSummary": "Found groups: {{groups}}, duplicate assets: {{assets}}",
+      "saveAll": "Save all",
+      "discardChanges": "Discard changes",
+      "queueHint": "Queue changes in blocks, then click Save all.",
+      "queuedReady": "Queued changes: {{count}}. Ready to apply.",
+      "noGroups": "No duplicate groups found.",
+      "readyBadge": "Ready",
+      "resolve": "Resolve",
+      "pendingRename": "Pending: rename to {{name}}",
+      "pendingDelete": "Pending: delete file",
+      "pendingNone": "Pending: none",
+      "renamePlaceholder": "new-file-name.jpg",
+      "generateUuid": "Generate UUID",
+      "queueRename": "Queue rename",
+      "queueDelete": "Queue delete",
+      "unmarkDelete": "Unmark delete",
+      "clearAction": "Clear action"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "Delete all library data?",
+        "description": "This removes thumbnails, indexed assets and attached scan paths from app database/cache. Original files are not deleted."
+      },
+      "removeScanRoot": {
+        "heading": "Remove scan path?",
+        "description": "This removes the path from scan list and deletes related indexed records from app database. Original files on disk are not deleted."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "Ready to scan",
+        "importExport": "Ready for import/export",
+        "danger": "No destructive operation running",
+        "duplicates": "Ready to scan duplicates"
+      }
+    },
+    "progress": {
+      "counting": "Counting files {{processed}}/{{total}}",
+      "scanning": "Scanning {{processed}}/{{total}}",
+      "cleanup": "Cleanup {{processed}}/{{total}}",
+      "scanEmpty": "No scan folders configured",
+      "scanSkip": "Skipping invalid folder",
+      "thumbsStart": "Thumbnail render started",
+      "thumbs": "Rendering thumbnails {{processed}}/{{total}}",
+      "thumbsDone": "Thumbnail render finished",
+      "thumbsFailedStart": "Failed-thumbnail retry started",
+      "thumbsFailed": "Retrying failed thumbnails {{processed}}/{{total}}",
+      "thumbsFailedDone": "Failed-thumbnail retry finished",
+      "libraryClear": "Clearing library {{processed}}/{{total}}",
+      "libraryClearDone": "Library clear finished",
+      "duplicatesScan": "Scanning duplicates {{processed}}/{{total}}",
+      "duplicatesScanDone": "Duplicate scan finished",
+      "thumbnailSummary": {
+        "ready": "Ready: {{count}}",
+        "failed": "failed: {{count}}",
+        "skippedFailed": "skipped failed: {{count}}",
+        "cancelledAt": "Cancelled at {{processed}}/{{total}}.",
+        "processed": "Processed: {{processed}}/{{total}}."
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "Waiting for folder selection...",
+        "removeFolder": "Removing folder from scan list: {{path}}",
+        "rescanAll": "Rescanning all folders...",
+        "rescanFolder": "Rescanning folder: {{path}}",
+        "renderAllThumbs": "Rendering thumbnails for all indexed assets...",
+        "retryFailedThumbs": "Retrying failed thumbnails...",
+        "clearLibrary": "Clearing library data...",
+        "findDuplicates": "Searching duplicate file names...",
+        "applyDuplicateChanges": "Applying duplicate changes...",
+        "prepareCsvExport": "Preparing CSV export...",
+        "prepareCsvImport": "Preparing CSV import...",
+        "prepareDbExport": "Preparing database backup export...",
+        "prepareDbImport": "Preparing database backup import..."
+      },
+      "errorPrefix": {
+        "addFolder": "Add folder error",
+        "removeFolder": "Remove folder error",
+        "rescan": "Rescan error",
+        "rescanFolder": "Rescan folder error",
+        "renderThumbs": "Render thumbnails error",
+        "retryThumbs": "Retry failed thumbnails error",
+        "clearLibrary": "Clear library error",
+        "duplicateScan": "Duplicate scan error",
+        "saveDuplicateChanges": "Save duplicate changes error",
+        "exportCsv": "CSV export error",
+        "importCsv": "CSV import error",
+        "exportDb": "Database backup export error",
+        "importDb": "Database backup import error",
+        "cancelThumbRender": "Cancel thumbnail render error"
+      },
+      "summary": {
+        "folderAdded": "Folder added to scan list: {{path}}",
+        "folderAddedWithSkipped": "Folder added to scan list: {{path}}. Skipped existing: {{skipped}}.",
+        "foldersAdded": "{{count}} folders added to scan list.",
+        "foldersAddedWithSkipped": "{{count}} folders added to scan list. Skipped existing: {{skipped}}.",
+        "noNewFoldersAdded": "No new folders were added to the scan list.",
+        "noNewFoldersAddedWithSkipped": "No new folders were added to the scan list. Already attached: {{skipped}}.",
+        "folderSelectionCancelled": "Folder selection cancelled.",
+        "removedRoot": "Removed root. Assets: {{assets}}, thumbnails: {{thumbnails}}",
+        "doneIndexed": "Done. Indexed: {{indexed}}, removed: {{removed}}, failed: {{failed}}",
+        "doneIndexedPartial": "Partial scan. Indexed: {{indexed}}, removed: {{removed}}, warnings: {{failed}}. Cleanup was skipped for incomplete folders and existing records were preserved.",
+        "allThumbnailsLabel": "All thumbnails",
+        "failedRetryLabel": "Failed thumbnails retry",
+        "stopRequested": "Stop requested. Finishing in-flight thumbnail tasks...",
+        "noThumbRenderRunning": "No thumbnail bulk render is running.",
+        "libraryCleared": "Library cleared. Assets: {{assets}}, roots: {{roots}}, thumbnails: {{thumbnails}}",
+        "duplicateScanComplete": "Duplicate scan complete. Groups: {{groups}}, assets: {{assets}}",
+        "noDuplicateChanges": "No pending duplicate changes to apply",
+        "duplicateApplyCancelled": "Applying duplicate changes cancelled.",
+        "duplicateApplied": "Applied {{count}} changes. Remaining groups: {{groups}}",
+        "csvExportCancelled": "CSV export cancelled.",
+        "csvExporting": "Exporting tags CSV...",
+        "csvExported": "CSV exported. Rows: {{rows}}",
+        "csvImportCancelled": "CSV import cancelled.",
+        "csvImporting": "Importing tags CSV...",
+        "csvImported": "CSV imported. Rows read: {{rowsRead}}, applied: {{rowsApplied}}, assets matched: {{assetsMatched}}, assets updated: {{assetsUpdated}}",
+        "dbExportCancelled": "Database backup export cancelled.",
+        "dbExporting": "Exporting database and thumbnails...",
+        "dbExported": "Database backup archive exported. Files: {{files}}, thumbnails: {{thumbnails}}",
+        "dbImportCancelled": "Database backup import cancelled.",
+        "dbImporting": "Importing database and thumbnails...",
+        "dbImported": "Database backup archive imported. Files: {{files}}, thumbnails: {{thumbnails}}"
+      },
+      "dialogs": {
+        "selectMediaFolder": "Select media folder",
+        "exportTagsCsv": "Export tags CSV",
+        "importTagsCsv": "Import tags CSV",
+        "exportDbArchive": "Export DB backup archive",
+        "selectDbArchive": "Select DB backup archive",
+        "confirmDuplicateChanges": "Apply {{count}} queued changes?\n\nThis will permanently delete {{deleteCount}} files from disk.",
+        "confirmDbImportOverwrite": "Importing database from archive will overwrite the current database and thumbnails. Continue?"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "File name cannot be empty",
+    "fileNameInvalid": "File name is invalid",
+    "fileNameInvalidCharacters": "File name contains invalid characters",
+    "duplicatePayloadInvalid": "Invalid duplicate changes payload",
+    "unknownAssetInChanges": "Unknown asset in queued changes: {{assetId}}",
+    "duplicateGroupStillUnresolved": "Group \"{{fileName}}\": queued changes still leave duplicate file names. Rename or delete more items in this block."
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "name": "media-tagger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19 <21 || >=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "node --max-old-space-size=8192 ./node_modules/vitest/vitest.mjs run",
+    "test:watch": "vitest",
+    "test:backend": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:backend:integration": "cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration",
+    "test:backend:e2e": "cargo test --manifest-path src-tauri/Cargo.toml --test backend_e2e",
+    "test:all": "bun run test && bun run test:backend && bun run test:e2e:tauri",
+    "test:e2e:tauri": "wdio run ./e2e/wdio.conf.js",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.conf.dev.json",
+    "tauri:build:release": "tauri build",
+    "tauri:build:linux": "tauri build --bundles appimage",
+    "tauri:build:e2e": "node ./e2e/build-e2e.js",
+    "build:linux:docker": "bash ./scripts/build-linux-docker.sh",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.5",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@vidstack/react": "^1.15.6",
+    "fuse.js": "^7.4.2",
+    "i18next": "^25.10.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^16.6.6",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.2",
+    "@tauri-apps/cli": "^2.11.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^6.0.3",
+    "@wdio/cli": "^9.29.1",
+    "@wdio/local-runner": "^9.29.1",
+    "@wdio/mocha-framework": "^9.29.1",
+    "@wdio/spec-reporter": "^9.29.1",
+    "daisyui": "^5.6.16",
+    "jsdom": "^25.0.1",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10",
+    "webdriverio": "^9.29.1"
+  }
+}

@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "Zurück",
+    "cancel": "Abbrechen",
+    "close": "Schließen",
+    "remove": "Entfernen",
+    "apply": "Anwenden",
+    "loading": "Laden...",
+    "yes": "JA",
+    "no": "Nein"
+  },
+  "topBar": {
+    "openSettings": "Einstellungen öffnen"
+  },
+  "tagList": {
+    "open": "Tagliste öffnen",
+    "modalTitle": "Tagliste",
+    "closeModal": "Tagliste schließen",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Kachelgröße",
+    "enableSelectionMode": "Auswahlmodus aktivieren",
+    "disableSelectionMode": "Auswahlmodus deaktivieren",
+    "loadMore": "Mehr laden"
+  },
+  "search": {
+    "placeholder": "Tags: katze urlaub -hund | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Tag-Vorschläge",
+    "mediaKind": "Medientyp",
+    "mediaKinds": {
+      "all": "Alle",
+      "image": "Bilder",
+      "gif": "GIF",
+      "video": "Video"
+    },
+    "clearFilters": "Alle Suchfilter löschen",
+    "clear": "Löschen",
+    "favoritesOnly": {
+      "enable": "Nur Favoriten anzeigen",
+      "disable": "Nur Favoriten deaktivieren",
+      "enabled": "Nur Favoriten aktiviert",
+      "label": "Nur Favoriten"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "Keine Ordner verbunden",
+    "noFoldersDescription": "Fügen Sie Ihren ersten Ordner hinzu, um Medien zu durchsuchen und zu taggen.",
+    "addFirstFolder": "Ersten Ordner hinzufügen",
+    "noResultsTitle": "Keine Ergebnisse",
+    "noResultsDescription": "Versuchen Sie die Filter zu ändern oder führen Sie einen erneuten Scan aus, um mehr Dateien zu indexieren.",
+    "videoChip": "Video",
+    "gifChip": "GIF",
+    "groupedChip": "Teil einer Mediengruppe",
+    "generatingThumbnails": "Erstelle Vorschaubilder für {{count}} Elemente in der Warteschlange.",
+    "noMoreItems": "Keine weiteren Elemente zum Laden"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Ausgewählt: {{count}}",
+      "addTag": "Tag hinzufügen",
+      "addGroup": "Gruppe hinzufügen",
+      "ariaLabel": "Stapelaktionen",
+      "heading": "Stapelaktionen",
+      "groupHeading": "Mediengruppe",
+      "groupDescription": "Eine Gruppe für die Auswahl festlegen oder die Gruppenzuordnung entfernen.",
+      "groupConflictTitle": "Mehrere Gruppenzuordnungen",
+      "groupConflictDescription": "Die ausgewählten Elemente gehören zu verschiedenen Gruppen oder enthalten Elemente ohne Gruppe. Schlüssel eingeben, um sie zu ersetzen, oder leer lassen, um alle Zuordnungen zu entfernen.",
+      "saveFailedTitle": "Änderungen konnten nicht gespeichert werden",
+      "groupSaveFailed": "Die Gruppenänderung wurde nicht gespeichert. Der Entwurf bleibt erhalten.",
+      "removeGroup": "Aus Gruppe entfernen",
+      "removeGroups": "Aus Gruppen entfernen",
+      "orderHeading": "Gruppenreihenfolge",
+      "orderDescription": "Elemente an ihren Griffen ziehen, um die Reihenfolge festzulegen.",
+      "dragHandleAria": "Element {{position}} ziehen, um die Reihenfolge zu ändern",
+      "tagsHeading": "Tags",
+      "tagsMultipleDescription": "Neue Tags werden allen ausgewählten Elementen hinzugefügt. Bestehende Tags bleiben erhalten.",
+      "tagsSingleDescription": "Tags hinzufügen oder aktuelle Tags des ausgewählten Elements entfernen.",
+      "loadingTags": "Tags werden geladen...",
+      "selectItemsPrompt": "Mindestens ein Element auswählen",
+      "noBulkTagsAdded": "Für diese Auswahl wurden keine Tags hinzugefügt",
+      "tagSaveFailed": "Die Tag-Änderung wurde nicht gespeichert. Erneut versuchen.",
+      "tagLoadFailedTitle": "Tags konnten nicht geladen werden",
+      "tagLoadFailed": "Die vollständige Tag-Liste konnte nicht geladen werden. Die Bearbeitung bleibt deaktiviert.",
+      "retryTagDetails": "Tags erneut laden"
+    },
+    "tagModal": {
+      "ariaLabel": "Tags in Massen hinzufügen",
+      "heading": "Tags in Massen hinzufügen",
+      "description": "Tags auf {{count}} ausgewählte Elemente anwenden.",
+      "noTagsQueued": "Keine Tags in der Warteschlange",
+      "addTag": "Tag hinzufügen",
+      "tagInputPlaceholder": "Tippen, um Tag hinzuzufügen",
+      "suggestions": "Vorschläge für Massen-Tagging",
+      "removeTagAria": "Tag {{tag}} entfernen",
+      "applyInProgress": "Wird angewendet..."
+    },
+    "groupModal": {
+      "ariaLabel": "Mediengruppe in Massen hinzufügen",
+      "heading": "Mediengruppe in Massen hinzufügen",
+      "description": "Setzen Sie eine Gruppe für {{count}} ausgewählte Elemente und ordnen Sie sie per Drag & Drop neu.",
+      "groupKeyPlaceholder": "Gruppenschlüssel (UUID oder benutzerdefiniert)",
+      "groupKeyAria": "Mediengruppenschlüssel",
+      "generateGroupAria": "Mediengruppenschlüssel generieren",
+      "generateUuid": "UUID generieren",
+      "overwriteWarningTitle": "Diese Aktion überschreibt bestehende Gruppenwerte.",
+      "overwriteWarningDescription": "Mindestens ein ausgewähltes Element hat bereits einen Mediengruppenschlüssel oder eine Reihenfolge. Beim Anwenden werden alle ausgewählten Elemente durch diese Gruppe und neue Reihenfolge ersetzt.",
+      "applyGroup": "Gruppe anwenden",
+      "applyInProgress": "Wird angewendet..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Zu Favoriten hinzufügen",
+      "remove": "Aus Favoriten entfernen",
+      "on": "Favorit: an",
+      "off": "Favorit: aus"
+    },
+    "resetZoom": "Zoom zurücksetzen",
+    "reset": "Zurücksetzen",
+    "toggleFullscreen": "Vollbild umschalten",
+    "fullscreen": "Vollbild (F)",
+    "exitFullscreen": "Vollbild verlassen (F)",
+    "deleteMedia": "Medium löschen",
+    "closePreview": "Vorschau schließen",
+    "showTagging": "Tagging anzeigen",
+    "tags": "Tags",
+    "taggingHeading": "Tagging",
+    "noTags": "Keine Tags",
+    "addTag": "Tag hinzufügen",
+    "tagInputPlaceholder": "Tippen, um Tag hinzuzufügen",
+    "taggingSuggestions": "Tagging-Vorschläge",
+    "mediaGroup": "Mediengruppe",
+    "removeTagAria": "Tag {{tag}} entfernen",
+    "showInfo": "Informationen anzeigen",
+    "info": "Info",
+    "infoHeading": "Informationen",
+    "type": "Typ",
+    "size": "Größe",
+    "dimensions": "Abmessungen",
+    "duration": "Dauer",
+    "path": "Pfad",
+    "mediaGroupKeyPlaceholder": "Gruppenschlüssel (UUID oder benutzerdefiniert)",
+    "mediaGroupKeyAria": "Mediengruppenschlüssel",
+    "generateGroupAria": "Mediengruppenschlüssel generieren",
+    "mediaGroupOrderPlaceholder": "Reihenfolge",
+    "mediaGroupOrderAria": "Mediengruppenreihenfolge",
+    "copyMediaGroup": {
+      "title": "Gruppenname kopieren",
+      "copied": "Gruppenname kopiert",
+      "unavailable": "Kein Gruppenname zum Kopieren"
+    },
+    "deleteConfirm": {
+      "heading": "Möchten Sie dieses Medium wirklich löschen?",
+      "description": "Dieser Vorgang entfernt den Datenbankeintrag, das Vorschaubild und die Originaldatei von der Festplatte.",
+      "confirmWord": "Ja",
+      "typeYesLabel": "Geben Sie \"{{value}}\" ein",
+      "typeYesPlaceholder": "Geben Sie \"{{value}}\" ein",
+      "confirm": "Bestätigen"
+    },
+    "tagSaving": "Tags werden gespeichert...",
+    "retryTagSave": "Erneut versuchen",
+    "tagDetailsLoading": "Vollständige Tag-Liste wird geladen...",
+    "tagDetailsLoadFailedTitle": "Tags konnten nicht geladen werden",
+    "tagDetailsLoadFailed": "Die vollständige Tag-Liste konnte nicht geladen werden. Die Bearbeitung bleibt deaktiviert.",
+    "retryTagDetails": "Tags erneut laden"
+  },
+  "settings": {
+    "page": {
+      "heading": "Einstellungen",
+      "description": "Darstellung, Bibliotheksquellen und Anwendungsdaten verwalten."
+    },
+    "appearance": {
+      "heading": "Darstellung",
+      "description": "Wählen Sie das Anwendungsthema und die Sprache.",
+      "theme": {
+        "label": "Thema",
+        "ariaLabel": "Thema auswählen",
+        "light": "Hell",
+        "dark": "Dunkel"
+      },
+      "language": {
+        "label": "Sprache",
+        "ariaLabel": "Sprache auswählen",
+        "en": "Englisch",
+        "pl": "Polnisch",
+        "fr": "Französisch",
+        "de": "Deutsch",
+        "it": "Italienisch",
+        "es": "Spanisch",
+        "ru": "Russisch",
+        "zh": "Chinesisch (Vereinfacht)",
+        "ja": "Japanisch",
+        "ko": "Koreanisch"
+      }
+    },
+    "scan": {
+      "heading": "Scan-Einstellungen",
+      "description": "Wählen Sie einen Ordner aus, um ihn zur Scanliste hinzuzufügen, und führen Sie dann einen manuellen Rescan für alle Ordner aus.",
+      "chooseFolder": "Ordner auswählen",
+      "attachedPaths": "Verbundene Scanpfade",
+      "noPaths": "Keine Scanpfade",
+      "rescan": "Neu scannen",
+      "remove": "Entfernen",
+      "rescanAll": "Alle neu scannen",
+      "renderAllThumbnails": "Vorschaubilder für alle indizierten Assets erstellen",
+      "retryFailedThumbnails": "Nur fehlgeschlagene Vorschaubilder erneut versuchen",
+      "stopThumbnailRender": "Vorschaubild-Erstellung stoppen"
+    },
+    "importExport": {
+      "heading": "Import / Export",
+      "exportCsv": "Tags als CSV exportieren",
+      "importCsv": "Tags aus CSV importieren",
+      "exportDbBundle": "DB + Vorschaubilder exportieren",
+      "importDbBundle": "DB + Vorschaubilder importieren",
+      "hint": "Der CSV-Import führt Tags und Favoritenstatus zusammen und wendet Mediengruppenschlüssel/Reihenfolge anhand von Dateinamen an. Datenbankimport ersetzt die aktuelle Datenbank und Vorschaubilder."
+    },
+    "danger": {
+      "heading": "Gefahrenbereich",
+      "clearLibrary": "Alle Vorschaubilder, indizierten Assets und Scanpfade entfernen",
+      "hint": "Löschvorgänge betreffen nur die App-Datenbank/Cache. Originale Fotos und Videos werden niemals geändert oder gelöscht."
+    },
+    "duplicates": {
+      "heading": "Duplikat-Manager",
+      "description": "Finden Sie Assets mit demselben Dateinamen und lösen Sie jedes Duplikat durch Umbenennen oder Löschen.",
+      "start": "Starten",
+      "lastResult": "Letztes Ergebnis: {{groups}} Gruppen / {{assets}} Assets",
+      "resolverHeading": "Duplikat-Resolver",
+      "resolverSummary": "Gefundene Gruppen: {{groups}}, doppelte Assets: {{assets}}",
+      "saveAll": "Alle speichern",
+      "discardChanges": "Änderungen verwerfen",
+      "queueHint": "Änderungen blockweise in die Warteschlange stellen, dann auf „Alle speichern“ klicken.",
+      "queuedReady": "Änderungen in Warteschlange: {{count}}. Bereit zur Anwendung.",
+      "noGroups": "Keine Duplikatgruppen gefunden.",
+      "readyBadge": "Bereit",
+      "resolve": "Lösen",
+      "pendingRename": "Ausstehend: umbenennen zu {{name}}",
+      "pendingDelete": "Ausstehend: Datei löschen",
+      "pendingNone": "Ausstehend: keine",
+      "renamePlaceholder": "neuer-dateiname.jpg",
+      "generateUuid": "UUID generieren",
+      "queueRename": "Umbenennung vormerken",
+      "queueDelete": "Löschen vormerken",
+      "unmarkDelete": "Löschen-Markierung entfernen",
+      "clearAction": "Aktion löschen"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "Alle Bibliotheksdaten löschen?",
+        "description": "Dies entfernt Vorschaubilder, indizierte Assets und verbundene Scanpfade aus der App-Datenbank/Cache. Originaldateien werden nicht gelöscht."
+      },
+      "removeScanRoot": {
+        "heading": "Scanpfad entfernen?",
+        "description": "Dies entfernt den Pfad aus der Scanliste und löscht zugehörige indizierte Datensätze aus der App-Datenbank. Originaldateien auf der Festplatte werden nicht gelöscht."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "Bereit zum Scannen",
+        "importExport": "Bereit für Import/Export",
+        "danger": "Keine destruktive Operation läuft",
+        "duplicates": "Bereit zum Duplikatscan"
+      }
+    },
+    "progress": {
+      "counting": "Zähle Dateien {{processed}}/{{total}}",
+      "scanning": "Scanne {{processed}}/{{total}}",
+      "cleanup": "Bereinigen {{processed}}/{{total}}",
+      "scanEmpty": "Keine Scanordner konfiguriert",
+      "scanSkip": "Ungültiger Ordner wird übersprungen",
+      "thumbsStart": "Vorschaubild-Erstellung gestartet",
+      "thumbs": "Erstelle Vorschaubilder {{processed}}/{{total}}",
+      "thumbsDone": "Vorschaubild-Erstellung abgeschlossen",
+      "thumbsFailedStart": "Wiederholung fehlgeschlagener Vorschaubilder gestartet",
+      "thumbsFailed": "Fehlgeschlagene Vorschaubilder werden erneut versucht {{processed}}/{{total}}",
+      "thumbsFailedDone": "Wiederholung fehlgeschlagener Vorschaubilder abgeschlossen",
+      "libraryClear": "Bibliothek wird geleert {{processed}}/{{total}}",
+      "libraryClearDone": "Bibliotheksbereinigung abgeschlossen",
+      "duplicatesScan": "Suche nach Duplikaten {{processed}}/{{total}}",
+      "duplicatesScanDone": "Duplikatscan abgeschlossen",
+      "thumbnailSummary": {
+        "ready": "Bereit: {{count}}",
+        "failed": "fehlgeschlagen: {{count}}",
+        "skippedFailed": "fehlgeschlagene übersprungen: {{count}}",
+        "cancelledAt": "Abgebrochen bei {{processed}}/{{total}}.",
+        "processed": "Verarbeitet: {{processed}}/{{total}}."
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "Warten auf Ordnerauswahl...",
+        "removeFolder": "Ordner wird aus der Scanliste entfernt: {{path}}",
+        "rescanAll": "Alle Ordner werden neu gescannt...",
+        "rescanFolder": "Ordner wird neu gescannt: {{path}}",
+        "renderAllThumbs": "Vorschaubilder für alle indizierten Assets werden erstellt...",
+        "retryFailedThumbs": "Fehlgeschlagene Vorschaubilder werden erneut versucht...",
+        "clearLibrary": "Bibliotheksdaten werden gelöscht...",
+        "findDuplicates": "Suche nach doppelten Dateinamen...",
+        "applyDuplicateChanges": "Duplikatänderungen werden angewendet...",
+        "prepareCsvExport": "CSV-Export wird vorbereitet...",
+        "prepareCsvImport": "CSV-Import wird vorbereitet...",
+        "prepareDbExport": "Export der Datenbanksicherung wird vorbereitet...",
+        "prepareDbImport": "Import der Datenbanksicherung wird vorbereitet..."
+      },
+      "errorPrefix": {
+        "addFolder": "Fehler beim Hinzufügen eines Ordners",
+        "removeFolder": "Fehler beim Entfernen eines Ordners",
+        "rescan": "Fehler beim Rescan",
+        "rescanFolder": "Fehler beim Rescan des Ordners",
+        "renderThumbs": "Fehler beim Erstellen der Vorschaubilder",
+        "retryThumbs": "Fehler beim erneuten Versuch der Vorschaubilder",
+        "clearLibrary": "Fehler beim Löschen der Bibliothek",
+        "duplicateScan": "Fehler beim Duplikatscan",
+        "saveDuplicateChanges": "Fehler beim Speichern der Duplikatänderungen",
+        "exportCsv": "CSV-Exportfehler",
+        "importCsv": "CSV-Importfehler",
+        "exportDb": "Fehler beim Export der Datenbanksicherung",
+        "importDb": "Fehler beim Import der Datenbanksicherung",
+        "cancelThumbRender": "Fehler beim Abbrechen der Vorschaubild-Erstellung"
+      },
+      "summary": {
+        "folderAdded": "Ordner zur Scanliste hinzugefügt: {{path}}",
+        "folderSelectionCancelled": "Ordnerauswahl abgebrochen.",
+        "removedRoot": "Root entfernt. Assets: {{assets}}, Vorschaubilder: {{thumbnails}}",
+        "doneIndexed": "Fertig. Indiziert: {{indexed}}, entfernt: {{removed}}, fehlgeschlagen: {{failed}}",
+        "doneIndexedPartial": "Teilweiser Scan. Indiziert: {{indexed}}, entfernt: {{removed}}, Warnungen: {{failed}}. Die Bereinigung wurde für unvollständige Ordner übersprungen und vorhandene Einträge wurden beibehalten.",
+        "allThumbnailsLabel": "Alle Vorschaubilder",
+        "failedRetryLabel": "Wiederholung fehlgeschlagener Vorschaubilder",
+        "stopRequested": "Stopp angefordert. Laufende Vorschaubild-Aufgaben werden abgeschlossen...",
+        "noThumbRenderRunning": "Keine Massen-Vorschaubild-Erstellung läuft.",
+        "libraryCleared": "Bibliothek geleert. Assets: {{assets}}, Roots: {{roots}}, Vorschaubilder: {{thumbnails}}",
+        "duplicateScanComplete": "Duplikatscan abgeschlossen. Gruppen: {{groups}}, Assets: {{assets}}",
+        "noDuplicateChanges": "Keine ausstehenden Duplikatänderungen zum Anwenden",
+        "duplicateApplyCancelled": "Anwendung der Duplikatänderungen abgebrochen.",
+        "duplicateApplied": " {{count}} Änderungen angewendet. Verbleibende Gruppen: {{groups}}",
+        "csvExportCancelled": "CSV-Export abgebrochen.",
+        "csvExporting": "Tags CSV wird exportiert...",
+        "csvExported": "CSV exportiert. Zeilen: {{rows}}",
+        "csvImportCancelled": "CSV-Import abgebrochen.",
+        "csvImporting": "Tags CSV wird importiert...",
+        "csvImported": "CSV importiert. Gelesene Zeilen: {{rowsRead}}, angewendet: {{rowsApplied}}, gefundene Assets: {{assetsMatched}}, aktualisierte Assets: {{assetsUpdated}}",
+        "dbExportCancelled": "Export der Datenbanksicherung abgebrochen.",
+        "dbExporting": "Datenbank und Vorschaubilder werden exportiert...",
+        "dbExported": "Datenbanksicherungsarchiv exportiert. Dateien: {{files}}, Vorschaubilder: {{thumbnails}}",
+        "dbImportCancelled": "Import der Datenbanksicherung abgebrochen.",
+        "dbImporting": "Datenbank und Vorschaubilder werden importiert...",
+        "dbImported": "Datenbanksicherungsarchiv importiert. Dateien: {{files}}, Vorschaubilder: {{thumbnails}}",
+        "folderAddedWithSkipped": "Ordner zur Scanliste hinzugef?gt: {{path}}. Bereits vorhandene ?bersprungen: {{skipped}}.",
+        "foldersAdded": "{{count}} Ordner zur Scanliste hinzugef?gt.",
+        "foldersAddedWithSkipped": "{{count}} Ordner zur Scanliste hinzugef?gt. Bereits vorhandene ?bersprungen: {{skipped}}.",
+        "noNewFoldersAdded": "Es wurden keine neuen Ordner zur Scanliste hinzugef?gt.",
+        "noNewFoldersAddedWithSkipped": "Es wurden keine neuen Ordner zur Scanliste hinzugef?gt. Bereits angeh?ngt: {{skipped}}."
+      },
+      "dialogs": {
+        "selectMediaFolder": "Medienordner auswählen",
+        "exportTagsCsv": "Tags CSV exportieren",
+        "importTagsCsv": "Tags CSV importieren",
+        "exportDbArchive": "DB-Sicherungsarchiv exportieren",
+        "selectDbArchive": "DB-Sicherungsarchiv auswählen",
+        "confirmDuplicateChanges": " {{count}} vorgemerkte Änderungen anwenden?\n\nDabei werden {{deleteCount}} Dateien dauerhaft von der Festplatte gelöscht.",
+        "confirmDbImportOverwrite": "Der Import der Datenbank aus dem Archiv überschreibt die aktuelle Datenbank und Vorschaubilder. Fortfahren?"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "Dateiname darf nicht leer sein",
+    "fileNameInvalid": "Dateiname ist ungültig",
+    "fileNameInvalidCharacters": "Dateiname enthält ungültige Zeichen",
+    "duplicatePayloadInvalid": "Ungültige Duplikatänderungsdaten",
+    "unknownAssetInChanges": "Unbekanntes Asset in den vorgemerkten Änderungen: {{assetId}}",
+    "duplicateGroupStillUnresolved": "Gruppe \"{{fileName}}\": Vorgemerkte Änderungen lassen weiterhin doppelte Dateinamen bestehen. Benennen Sie weitere Elemente um oder löschen Sie sie in diesem Block."
+  }
+}

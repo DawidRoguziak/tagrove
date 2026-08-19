@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "Indietro",
+    "cancel": "Annulla",
+    "close": "Chiudi",
+    "remove": "Rimuovi",
+    "apply": "Applica",
+    "loading": "Caricamento...",
+    "yes": "SÌ",
+    "no": "No"
+  },
+  "topBar": {
+    "openSettings": "Apri impostazioni"
+  },
+  "tagList": {
+    "open": "Apri elenco tag",
+    "modalTitle": "Elenco tag",
+    "closeModal": "Chiudi elenco tag",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Dimensione riquadri",
+    "enableSelectionMode": "Abilita modalità selezione",
+    "disableSelectionMode": "Disabilita modalità selezione",
+    "loadMore": "Carica altro"
+  },
+  "search": {
+    "placeholder": "Tag: gatto vacanza -cane | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Suggerimenti tag",
+    "mediaKind": "Tipo di media",
+    "mediaKinds": {
+      "all": "Tutti",
+      "image": "Immagini",
+      "gif": "GIF",
+      "video": "Video"
+    },
+    "clearFilters": "Cancella tutti i filtri di ricerca",
+    "clear": "Cancella",
+    "favoritesOnly": {
+      "enable": "Mostra solo preferiti",
+      "disable": "Disattiva solo preferiti",
+      "enabled": "Solo preferiti attivo",
+      "label": "Solo preferiti"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "Nessuna cartella collegata",
+    "noFoldersDescription": "Aggiungi la prima cartella per iniziare a sfogliare e taggare i media.",
+    "addFirstFolder": "Aggiungi prima cartella",
+    "noResultsTitle": "Nessun risultato",
+    "noResultsDescription": "Prova a cambiare i filtri o esegui una nuova scansione per indicizzare più file.",
+    "videoChip": "Video",
+    "gifChip": "GIF",
+    "groupedChip": "Parte di un gruppo multimediale",
+    "generatingThumbnails": "Generazione miniature per {{count}} elementi in coda.",
+    "noMoreItems": "Nessun altro elemento da caricare"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Selezionati: {{count}}",
+      "addTag": "Aggiungi tag",
+      "addGroup": "Aggiungi gruppo",
+      "ariaLabel": "Azioni multiple",
+      "heading": "Azioni multiple",
+      "groupHeading": "Gruppo multimediale",
+      "groupDescription": "Imposta un gruppo per la selezione o rimuovi l’assegnazione.",
+      "groupConflictTitle": "Più assegnazioni di gruppo",
+      "groupConflictDescription": "Gli elementi selezionati appartengono a gruppi diversi o includono elementi senza gruppo. Inserisci una chiave per sostituirli o lascia vuoto per rimuovere le assegnazioni.",
+      "saveFailedTitle": "Impossibile salvare le modifiche",
+      "groupSaveFailed": "La modifica del gruppo non è stata salvata. La bozza è ancora disponibile.",
+      "removeGroup": "Rimuovi dal gruppo",
+      "removeGroups": "Rimuovi dai gruppi",
+      "orderHeading": "Ordine del gruppo",
+      "orderDescription": "Trascina gli elementi dalle maniglie per impostare l’ordine.",
+      "dragHandleAria": "Trascina l’elemento {{position}} per riordinarlo",
+      "tagsHeading": "Tag",
+      "tagsMultipleDescription": "I nuovi tag vengono aggiunti a tutti gli elementi selezionati. I tag esistenti vengono mantenuti.",
+      "tagsSingleDescription": "Aggiungi tag o rimuovi quelli correnti dall’elemento selezionato.",
+      "loadingTags": "Caricamento tag...",
+      "selectItemsPrompt": "Seleziona almeno un elemento",
+      "noBulkTagsAdded": "Nessun tag aggiunto per questa selezione",
+      "tagSaveFailed": "La modifica dei tag non è stata salvata. Riprova.",
+      "tagLoadFailedTitle": "Impossibile caricare i tag",
+      "tagLoadFailed": "Non è stato possibile caricare l’elenco completo dei tag. La modifica resta disabilitata.",
+      "retryTagDetails": "Riprova a caricare i tag"
+    },
+    "tagModal": {
+      "ariaLabel": "Aggiunta tag in blocco",
+      "heading": "Aggiungi tag in blocco",
+      "description": "Applica tag a {{count}} elementi selezionati.",
+      "noTagsQueued": "Nessun tag in coda",
+      "addTag": "Aggiungi tag",
+      "tagInputPlaceholder": "Digita per aggiungere tag",
+      "suggestions": "Suggerimenti per tagging di massa",
+      "removeTagAria": "Rimuovi tag {{tag}}",
+      "applyInProgress": "Applicazione..."
+    },
+    "groupModal": {
+      "ariaLabel": "Aggiungi gruppo media in blocco",
+      "heading": "Aggiungi gruppo media in blocco",
+      "description": "Imposta un gruppo per {{count}} elementi selezionati e riordinali tramite drag and drop.",
+      "groupKeyPlaceholder": "Chiave gruppo (uuid o personalizzata)",
+      "groupKeyAria": "Chiave gruppo media",
+      "generateGroupAria": "Genera chiave gruppo media",
+      "generateUuid": "Genera UUID",
+      "overwriteWarningTitle": "Questa azione sovrascriverà i valori di gruppo esistenti.",
+      "overwriteWarningDescription": "Almeno un elemento selezionato ha già chiave/ordine di gruppo. Applicando verranno sostituiti con questo gruppo e il nuovo ordine.",
+      "applyGroup": "Applica gruppo",
+      "applyInProgress": "Applicazione..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Aggiungi ai preferiti",
+      "remove": "Rimuovi dai preferiti",
+      "on": "Preferito: attivo",
+      "off": "Preferito: disattivo"
+    },
+    "resetZoom": "Reimposta zoom",
+    "reset": "Reimposta",
+    "toggleFullscreen": "Attiva/disattiva schermo intero",
+    "fullscreen": "Schermo intero (F)",
+    "exitFullscreen": "Esci da schermo intero (F)",
+    "deleteMedia": "Elimina media",
+    "closePreview": "Chiudi anteprima",
+    "showTagging": "Mostra tagging",
+    "tags": "Tag",
+    "taggingHeading": "Tagging",
+    "noTags": "Nessun tag",
+    "addTag": "Aggiungi tag",
+    "tagInputPlaceholder": "Digita per aggiungere tag",
+    "taggingSuggestions": "Suggerimenti tagging",
+    "mediaGroup": "Gruppo media",
+    "removeTagAria": "Rimuovi tag {{tag}}",
+    "showInfo": "Mostra informazioni",
+    "info": "Informazioni",
+    "infoHeading": "Informazioni",
+    "type": "Tipo",
+    "size": "Dimensione",
+    "dimensions": "Dimensioni",
+    "duration": "Durata",
+    "path": "Percorso",
+    "mediaGroupKeyPlaceholder": "Chiave gruppo (uuid o personalizzata)",
+    "mediaGroupKeyAria": "Chiave gruppo media",
+    "generateGroupAria": "Genera chiave gruppo media",
+    "mediaGroupOrderPlaceholder": "Ordine",
+    "mediaGroupOrderAria": "Ordine gruppo media",
+    "copyMediaGroup": {
+      "title": "Copia nome gruppo",
+      "copied": "Nome gruppo copiato",
+      "unavailable": "Nessun nome gruppo da copiare"
+    },
+    "deleteConfirm": {
+      "heading": "Sei sicuro di voler eliminare questo media?",
+      "description": "Questa operazione rimuove la voce dal database, la miniatura e il file originale dal disco.",
+      "confirmWord": "Sì",
+      "typeYesLabel": "Digita \"{{value}}\"",
+      "typeYesPlaceholder": "Digita \"{{value}}\"",
+      "confirm": "Conferma"
+    },
+    "tagSaving": "Salvataggio tag...",
+    "retryTagSave": "Riprova",
+    "tagDetailsLoading": "Caricamento dell’elenco completo dei tag...",
+    "tagDetailsLoadFailedTitle": "Impossibile caricare i tag",
+    "tagDetailsLoadFailed": "Non è stato possibile caricare l’elenco completo dei tag. La modifica resta disabilitata.",
+    "retryTagDetails": "Riprova a caricare i tag"
+  },
+  "settings": {
+    "page": {
+      "heading": "Impostazioni",
+      "description": "Gestisci aspetto, origini della libreria e dati dell’applicazione."
+    },
+    "appearance": {
+      "heading": "Aspetto",
+      "description": "Scegli il tema e la lingua dell'applicazione.",
+      "theme": {
+        "label": "Tema",
+        "ariaLabel": "Seleziona tema",
+        "light": "Chiaro",
+        "dark": "Scuro"
+      },
+      "language": {
+        "label": "Lingua",
+        "ariaLabel": "Seleziona lingua",
+        "en": "Inglese",
+        "pl": "Polacco",
+        "fr": "Francese",
+        "de": "Tedesco",
+        "it": "Italiano",
+        "es": "Spagnolo",
+        "ru": "Russo",
+        "zh": "Cinese (Semplificato)",
+        "ja": "Giapponese",
+        "ko": "Coreano"
+      }
+    },
+    "scan": {
+      "heading": "Impostazioni scansione",
+      "description": "Scegli una cartella da aggiungere alla lista di scansione, quindi esegui una nuova scansione manuale.",
+      "chooseFolder": "Scegli cartella",
+      "attachedPaths": "Percorsi di scansione collegati",
+      "noPaths": "Nessun percorso di scansione",
+      "rescan": "Riscansiona",
+      "remove": "Rimuovi",
+      "rescanAll": "Riscansiona tutto",
+      "renderAllThumbnails": "Genera miniature per tutte le risorse indicizzate",
+      "retryFailedThumbnails": "Riprova solo miniature fallite",
+      "stopThumbnailRender": "Ferma generazione miniature"
+    },
+    "importExport": {
+      "heading": "Importa / Esporta",
+      "exportCsv": "Esporta CSV dei tag",
+      "importCsv": "Importa CSV dei tag",
+      "exportDbBundle": "Esporta DB + miniature",
+      "importDbBundle": "Importa DB + miniature",
+      "hint": "L'importazione CSV unisce tag e preferiti e applica chiave/ordine gruppo confrontando i nomi file. L'importazione database sostituisce database e miniature correnti."
+    },
+    "danger": {
+      "heading": "Zona pericolosa",
+      "clearLibrary": "Rimuovi tutte le miniature, risorse indicizzate e percorsi di scansione",
+      "hint": "Le operazioni di eliminazione riguardano solo database/cache dell'app. Foto e video originali non vengono mai modificati o eliminati."
+    },
+    "duplicates": {
+      "heading": "Gestore duplicati",
+      "description": "Trova risorse con lo stesso nome file e risolvi ogni duplicato rinominando o eliminando file.",
+      "start": "Avvia",
+      "lastResult": "Ultimo risultato: {{groups}} gruppi / {{assets}} risorse",
+      "resolverHeading": "Risolutore duplicati",
+      "resolverSummary": "Gruppi trovati: {{groups}}, risorse duplicate: {{assets}}",
+      "saveAll": "Salva tutto",
+      "discardChanges": "Annulla modifiche",
+      "queueHint": "Accoda modifiche a blocchi, poi clicca Salva tutto.",
+      "queuedReady": "Modifiche in coda: {{count}}. Pronte da applicare.",
+      "noGroups": "Nessun gruppo duplicato trovato.",
+      "readyBadge": "Pronto",
+      "resolve": "Risolvi",
+      "pendingRename": "In attesa: rinomina in {{name}}",
+      "pendingDelete": "In attesa: elimina file",
+      "pendingNone": "In attesa: nessuna",
+      "renamePlaceholder": "nuovo-nome-file.jpg",
+      "generateUuid": "Genera UUID",
+      "queueRename": "Accoda rinomina",
+      "queueDelete": "Accoda eliminazione",
+      "unmarkDelete": "Annulla eliminazione",
+      "clearAction": "Cancella azione"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "Eliminare tutti i dati della libreria?",
+        "description": "Rimuove miniature, risorse indicizzate e percorsi di scansione dal database/cache dell'app. I file originali non vengono eliminati."
+      },
+      "removeScanRoot": {
+        "heading": "Rimuovere percorso di scansione?",
+        "description": "Rimuove il percorso dalla lista di scansione e cancella i record indicizzati correlati dal database dell'app. I file originali sul disco non vengono eliminati."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "Pronto per la scansione",
+        "importExport": "Pronto per importazione/esportazione",
+        "danger": "Nessuna operazione distruttiva in esecuzione",
+        "duplicates": "Pronto per scansione duplicati"
+      }
+    },
+    "progress": {
+      "counting": "Conteggio file {{processed}}/{{total}}",
+      "scanning": "Scansione {{processed}}/{{total}}",
+      "cleanup": "Pulizia {{processed}}/{{total}}",
+      "scanEmpty": "Nessuna cartella di scansione configurata",
+      "scanSkip": "Cartella non valida saltata",
+      "thumbsStart": "Generazione miniature avviata",
+      "thumbs": "Generazione miniature {{processed}}/{{total}}",
+      "thumbsDone": "Generazione miniature completata",
+      "thumbsFailedStart": "Riavvio miniature fallite",
+      "thumbsFailed": "Riprovo miniature fallite {{processed}}/{{total}}",
+      "thumbsFailedDone": "Riprova miniature completata",
+      "libraryClear": "Pulizia libreria {{processed}}/{{total}}",
+      "libraryClearDone": "Pulizia libreria completata",
+      "duplicatesScan": "Scansione duplicati {{processed}}/{{total}}",
+      "duplicatesScanDone": "Scansione duplicati completata",
+      "thumbnailSummary": {
+        "ready": "Pronte: {{count}}",
+        "failed": "fallite: {{count}}",
+        "skippedFailed": "fallite saltate: {{count}}",
+        "cancelledAt": "Annullato a {{processed}}/{{total}}.",
+        "processed": "Elaborate: {{processed}}/{{total}}."
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "In attesa selezione cartella...",
+        "removeFolder": "Rimozione cartella dalla lista: {{path}}",
+        "rescanAll": "Riscansione di tutte le cartelle...",
+        "rescanFolder": "Riscansione cartella: {{path}}",
+        "renderAllThumbs": "Generazione miniature per tutte le risorse indicizzate...",
+        "retryFailedThumbs": "Riprovo miniature fallite...",
+        "clearLibrary": "Pulizia dati libreria...",
+        "findDuplicates": "Ricerca nomi file duplicati...",
+        "applyDuplicateChanges": "Applicazione modifiche duplicati...",
+        "prepareCsvExport": "Preparazione esportazione CSV...",
+        "prepareCsvImport": "Preparazione importazione CSV...",
+        "prepareDbExport": "Preparazione esportazione backup database...",
+        "prepareDbImport": "Preparazione importazione backup database..."
+      },
+      "errorPrefix": {
+        "addFolder": "Errore aggiunta cartella",
+        "removeFolder": "Errore rimozione cartella",
+        "rescan": "Errore scansione",
+        "rescanFolder": "Errore scansione cartella",
+        "renderThumbs": "Errore generazione miniature",
+        "retryThumbs": "Errore riprova miniature",
+        "clearLibrary": "Errore pulizia libreria",
+        "duplicateScan": "Errore scansione duplicati",
+        "saveDuplicateChanges": "Errore salvataggio modifiche duplicati",
+        "exportCsv": "Errore esportazione CSV",
+        "importCsv": "Errore importazione CSV",
+        "exportDb": "Errore esportazione database",
+        "importDb": "Errore importazione database",
+        "cancelThumbRender": "Errore annullamento generazione miniature"
+      },
+      "summary": {
+        "folderAdded": "Cartella aggiunta alla lista di scansione: {{path}}",
+        "folderSelectionCancelled": "Selezione cartella annullata.",
+        "removedRoot": "Radice rimossa. Risorse: {{assets}}, miniature: {{thumbnails}}",
+        "doneIndexed": "Completato. Indicizzate: {{indexed}}, rimosse: {{removed}}, fallite: {{failed}}",
+        "doneIndexedPartial": "Scansione parziale. Indicizzati: {{indexed}}, rimossi: {{removed}}, avvisi: {{failed}}. La pulizia è stata ignorata per le cartelle incomplete e i record esistenti sono stati conservati.",
+        "allThumbnailsLabel": "Tutte le miniature",
+        "failedRetryLabel": "Riprova miniature fallite",
+        "stopRequested": "Arresto richiesto. Completamento operazioni miniature in corso...",
+        "noThumbRenderRunning": "Nessuna generazione massiva di miniature in esecuzione.",
+        "libraryCleared": "Libreria pulita. Risorse: {{assets}}, radici: {{roots}}, miniature: {{thumbnails}}",
+        "duplicateScanComplete": "Scansione duplicati completata. Gruppi: {{groups}}, risorse: {{assets}}",
+        "noDuplicateChanges": "Nessuna modifica duplicati in attesa",
+        "duplicateApplyCancelled": "Applicazione modifiche duplicati annullata.",
+        "duplicateApplied": "Applicate {{count}} modifiche. Gruppi rimanenti: {{groups}}",
+        "csvExportCancelled": "Esportazione CSV annullata.",
+        "csvExporting": "Esportazione CSV dei tag...",
+        "csvExported": "CSV esportato. Righe: {{rows}}",
+        "csvImportCancelled": "Importazione CSV annullata.",
+        "csvImporting": "Importazione CSV dei tag...",
+        "csvImported": "CSV importato. Righe lette: {{rowsRead}}, applicate: {{rowsApplied}}, risorse trovate: {{assetsMatched}}, risorse aggiornate: {{assetsUpdated}}",
+        "dbExportCancelled": "Esportazione backup database annullata.",
+        "dbExporting": "Esportazione database e miniature...",
+        "dbExported": "Archivio backup database esportato. File: {{files}}, miniature: {{thumbnails}}",
+        "dbImportCancelled": "Importazione backup database annullata.",
+        "dbImporting": "Importazione database e miniature...",
+        "dbImported": "Archivio backup database importato. File: {{files}}, miniature: {{thumbnails}}",
+        "folderAddedWithSkipped": "Cartella aggiunta alla lista di scansione: {{path}}. Esistenti saltate: {{skipped}}.",
+        "foldersAdded": "Aggiunte {{count}} cartelle alla lista di scansione.",
+        "foldersAddedWithSkipped": "Aggiunte {{count}} cartelle alla lista di scansione. Esistenti saltate: {{skipped}}.",
+        "noNewFoldersAdded": "Nessuna nuova cartella e stata aggiunta alla lista di scansione.",
+        "noNewFoldersAddedWithSkipped": "Nessuna nuova cartella e stata aggiunta alla lista di scansione. Gia collegate: {{skipped}}."
+      },
+      "dialogs": {
+        "selectMediaFolder": "Seleziona cartella media",
+        "exportTagsCsv": "Esporta CSV tag",
+        "importTagsCsv": "Importa CSV tag",
+        "exportDbArchive": "Esporta archivio backup DB",
+        "selectDbArchive": "Seleziona archivio backup DB",
+        "confirmDuplicateChanges": "Applicare {{count}} modifiche in coda?\n\nQuesto eliminerà permanentemente {{deleteCount}} file dal disco.",
+        "confirmDbImportOverwrite": "Importare il database dall'archivio sovrascriverà il database e le miniature correnti. Continuare?"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "Il nome del file non può essere vuoto",
+    "fileNameInvalid": "Il nome del file non è valido",
+    "fileNameInvalidCharacters": "Il nome del file contiene caratteri non validi",
+    "duplicatePayloadInvalid": "Payload modifiche duplicati non valido",
+    "unknownAssetInChanges": "Risorsa sconosciuta nelle modifiche in coda: {{assetId}}",
+    "duplicateGroupStillUnresolved": "Gruppo \"{{fileName}}\": le modifiche in coda lasciano ancora nomi file duplicati. Rinomina o elimina più elementi in questo blocco."
+  }
+}

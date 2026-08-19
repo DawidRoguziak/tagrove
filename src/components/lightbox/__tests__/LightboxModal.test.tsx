@@ -1,0 +1,459 @@
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Asset } from "../../../types";
+import { LightboxModal } from "../LightboxModal";
+
+vi.mock("../../../api", () => ({
+  toMediaSrc: (path: string) => `media://${path}`
+}));
+
+const selectedAsset: Asset = {
+  id: 1,
+  path: "C:/media/1.jpg",
+  kind: "image",
+  size_bytes: 1024,
+  modified_at: 1700000000,
+  width: 1200,
+  height: 800,
+  duration_ms: null,
+  thumb_path: null,
+  is_favorite: false,
+  media_group_key: null,
+  media_group_order: null,
+  tags: []
+};
+
+const selectedVideoAsset: Asset = {
+  ...selectedAsset,
+  path: "C:/media/1.mp4",
+  kind: "video",
+  duration_ms: 20_000
+};
+
+describe("LightboxModal", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("handles left and right arrow navigation", async () => {
+    const onNavigatePrevious = vi.fn();
+    const onNavigateNext = vi.fn();
+
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={onNavigatePrevious}
+        onNavigateNext={onNavigateNext}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.keyboard("{ArrowRight}");
+    await userEvent.keyboard("{ArrowLeft}");
+
+    expect(onNavigateNext).toHaveBeenCalledTimes(1);
+    expect(onNavigatePrevious).toHaveBeenCalledTimes(1);
+  });
+
+  it("loops video playback in lightbox", () => {
+    const { container } = render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    const video = container.querySelector("video");
+    expect(video).toHaveAttribute("loop");
+  });
+
+  it("does not navigate with arrows while editing tags", async () => {
+    const onNavigatePrevious = vi.fn();
+    const onNavigateNext = vi.fn();
+
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={onNavigatePrevious}
+        onNavigateNext={onNavigateNext}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    const tagsInput = screen.getByLabelText("Add tag");
+    tagsInput.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await userEvent.keyboard("{ArrowLeft}");
+
+    expect(onNavigateNext).not.toHaveBeenCalled();
+    expect(onNavigatePrevious).not.toHaveBeenCalled();
+  });
+
+  it("removes tag chip and autosaves", async () => {
+    const onTagEditorChange = vi.fn();
+    const onSaveTags = vi.fn();
+
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={["cat", "dog"]}
+        onTagEditorChange={onTagEditorChange}
+        onSaveTags={onSaveTags}
+        knownTags={["cat", "dog", "sunset"]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    expect(screen.getByTestId("lightbox-tag-list")).toHaveClass(
+      "min-h-[48px]",
+      "px-0",
+      "py-2",
+      "overflow-auto"
+    );
+    expect(screen.getByTestId("lightbox-tag-list")).not.toHaveClass("p-1", "w-fit");
+    expect(screen.getByTestId("lightbox-tag-list")).toHaveAttribute(
+      "data-ui",
+      "assigned-tag-list"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Remove tag dog" }));
+
+    expect(onTagEditorChange).toHaveBeenCalledWith(["cat"]);
+    expect(onSaveTags).toHaveBeenCalledWith(["cat"]);
+  });
+
+  it("hides already selected tags from suggestions", async () => {
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={["cat"]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={["cat", "car", "castle"]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    const tagsInput = screen.getByPlaceholderText("Type to add tag");
+    await userEvent.type(tagsInput, "ca");
+
+    const suggestions = screen.getByRole("listbox", { name: "Tagging suggestions" });
+    expect(within(suggestions).queryByRole("option", { name: /cat/i })).not.toBeInTheDocument();
+    expect(within(suggestions).getByRole("option", { name: /ca\s*r/i })).toBeInTheDocument();
+  });
+
+  it("adds suggested tag with keyboard enter, clears input and keeps tagging panel open", async () => {
+    const onTagEditorChange = vi.fn();
+    const onSaveTags = vi.fn();
+
+    const { rerender } = render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={["cat"]}
+        onTagEditorChange={onTagEditorChange}
+        onSaveTags={onSaveTags}
+        knownTags={["cat", "car", "castle"]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    const tagsInput = screen.getByLabelText("Add tag");
+    await userEvent.type(tagsInput, "ca");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(tagsInput).toHaveValue("");
+
+    expect(onTagEditorChange).toHaveBeenCalledTimes(1);
+    const savedEditor = onTagEditorChange.mock.calls[0]?.[0] as string[];
+    expect(savedEditor[0]).toBe("cat");
+    expect(savedEditor[1]).toMatch(/^ca/);
+
+    expect(onSaveTags).toHaveBeenCalledTimes(1);
+    const savedTags = onSaveTags.mock.calls[0]?.[0] as string[];
+    expect(savedTags[0]).toBe("cat");
+    expect(savedTags[1]).toMatch(/^ca/);
+
+    rerender(
+      <LightboxModal
+        selected={{ ...selectedAsset, tags: savedTags }}
+        tagEditor={savedTags}
+        onTagEditorChange={onTagEditorChange}
+        onSaveTags={onSaveTags}
+        knownTags={["cat", "car", "castle"]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    const taggingPanel = screen.getByRole("heading", { name: "Tagging" }).closest("aside");
+    expect(taggingPanel?.className).toContain("pointer-events-auto");
+    expect(screen.getByLabelText("Add tag")).toHaveFocus();
+  });
+
+  it("moves highlighted suggestion with arrow up and down", async () => {
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={["cat", "castle", "car"]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    const tagsInput = screen.getByLabelText("Add tag");
+    await userEvent.type(tagsInput, "ca");
+
+    const suggestions = within(screen.getByRole("listbox", { name: "Tagging suggestions" })).getAllByRole("option");
+    expect(suggestions[0]).toHaveAttribute("aria-selected", "false");
+    expect(suggestions[1]).toHaveAttribute("aria-selected", "false");
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(suggestions[0]).toHaveAttribute("aria-selected", "true");
+    expect(suggestions[1]).toHaveAttribute("aria-selected", "false");
+
+    await userEvent.keyboard("{ArrowDown}");
+    expect(suggestions[0]).toHaveAttribute("aria-selected", "false");
+    expect(suggestions[1]).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.keyboard("{ArrowUp}");
+    expect(suggestions[0]).toHaveAttribute("aria-selected", "true");
+    expect(suggestions[1]).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("focuses tag input on open so arrow keys work immediately", async () => {
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={["cat", "castle", "car"]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+
+    const tagInput = screen.getByLabelText("Add tag");
+    await userEvent.type(tagInput, "ca");
+
+    const suggestionsList = await screen.findByRole("listbox", { name: "Tagging suggestions" });
+    const suggestions = within(suggestionsList).getAllByRole("option");
+
+    expect(tagInput).toHaveFocus();
+    expect(suggestions[0]).toHaveAttribute("aria-selected", "false");
+    expect(suggestions[1]).toHaveAttribute("aria-selected", "false");
+
+    await userEvent.keyboard("{ArrowDown}");
+
+    expect(suggestions[0]).toHaveAttribute("aria-selected", "true");
+    expect(suggestions[1]).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("generates media group uuid and applies media group values", async () => {
+    const generatedUuid = "123e4567-e89b-12d3-a456-426614174000";
+    const randomUuidSpy = vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(generatedUuid);
+    const onMediaGroupKeyEditorChange = vi.fn();
+    const onSaveMediaGroup = vi.fn();
+
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        mediaGroupKeyEditor="custom-group"
+        mediaGroupOrderEditor="12.5"
+        onMediaGroupKeyEditorChange={onMediaGroupKeyEditorChange}
+        onMediaGroupOrderEditorChange={() => {}}
+        onSaveMediaGroup={onSaveMediaGroup}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate media group key" }));
+    expect(onMediaGroupKeyEditorChange).toHaveBeenCalledWith(generatedUuid);
+
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onSaveMediaGroup).toHaveBeenCalledWith({ key: "custom-group", order: 12.5 });
+
+    randomUuidSpy.mockRestore();
+  });
+
+  it("toggles favorite from heart button", async () => {
+    const onToggleFavorite = vi.fn();
+
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={onToggleFavorite}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Add to favorites" }));
+    expect(onToggleFavorite).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes popovers when clicking outside their container", async () => {
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    const taggingPanel = screen.getByRole("heading", { name: "Tagging" }).closest("aside");
+    expect(taggingPanel?.className).toContain("pointer-events-auto");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
+    expect(taggingPanel?.className).toContain("pointer-events-none");
+
+    await userEvent.click(screen.getByRole("button", { name: "Show info" }));
+    const infoPanel = screen.getByRole("heading", { name: "Information" }).closest("aside");
+    expect(infoPanel?.className).toContain("pointer-events-auto");
+
+    await userEvent.click(screen.getByRole("button", { name: "Add to favorites" }));
+    expect(infoPanel?.className).toContain("pointer-events-none");
+  });
+
+  it("disables tag editing while complete details are loading", async () => {
+    const onSaveTags = vi.fn();
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={onSaveTags}
+        tagDetailsLoading
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    expect(screen.getByLabelText("Add tag")).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading complete tag list");
+    expect(onSaveTags).not.toHaveBeenCalled();
+  });
+
+  it("shows a details-specific error and delegates its retry separately", async () => {
+    const onRetryTagDetails = vi.fn();
+    const onRetryTags = vi.fn();
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        onRetryTags={onRetryTags}
+        tagDetailsFailed
+        onRetryTagDetails={onRetryTagDetails}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    expect(screen.getByText("The complete tag list could not be loaded. Editing remains disabled.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry loading tags" }));
+    expect(onRetryTagDetails).toHaveBeenCalledTimes(1);
+    expect(onRetryTags).not.toHaveBeenCalled();
+  });
+
+  it("opens delete confirmation and confirms after typing Yes", async () => {
+    const onDeleteMedia = vi.fn();
+
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onDeleteMedia={onDeleteMedia}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete media" }));
+
+    const confirmButton = screen.getByRole("button", { name: "Confirm" });
+    expect(confirmButton).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Type "Yes"'), "yEs");
+    expect(confirmButton).toBeEnabled();
+
+    await userEvent.click(confirmButton);
+    expect(onDeleteMedia).toHaveBeenCalledTimes(1);
+  });
+});

@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "Назад",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "remove": "Удалить",
+    "apply": "Применить",
+    "loading": "Загрузка...",
+    "yes": "ДА",
+    "no": "Нет"
+  },
+  "topBar": {
+    "openSettings": "Открыть настройки"
+  },
+  "tagList": {
+    "open": "Открыть список тегов",
+    "modalTitle": "Список тегов",
+    "closeModal": "Закрыть список тегов",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Размер плиток",
+    "enableSelectionMode": "Включить режим выбора",
+    "disableSelectionMode": "Отключить режим выбора",
+    "loadMore": "Загрузить еще"
+  },
+  "search": {
+    "placeholder": "Теги: кот отпуск -собака | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Подсказки тегов",
+    "mediaKind": "Тип медиа",
+    "mediaKinds": {
+      "all": "Все",
+      "image": "Изображения",
+      "gif": "GIF",
+      "video": "Видео"
+    },
+    "clearFilters": "Сбросить все фильтры поиска",
+    "clear": "Очистить",
+    "favoritesOnly": {
+      "enable": "Показывать только избранное",
+      "disable": "Отключить только избранное",
+      "enabled": "Включено только избранное",
+      "label": "Только избранное"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "Папки не подключены",
+    "noFoldersDescription": "Добавьте первую папку, чтобы начать просмотр и добавление тегов к медиа.",
+    "addFirstFolder": "Добавить первую папку",
+    "noResultsTitle": "Нет результатов",
+    "noResultsDescription": "Попробуйте изменить фильтры или запустите повторное сканирование, чтобы проиндексировать больше файлов.",
+    "videoChip": "Видео",
+    "gifChip": "GIF",
+    "groupedChip": "Часть медиагруппы",
+    "generatingThumbnails": "Создание миниатюр для {{count}} элементов в очереди.",
+    "noMoreItems": "Больше нет элементов для загрузки"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Выбрано: {{count}}",
+      "addTag": "Добавить тег",
+      "addGroup": "Добавить группу",
+      "ariaLabel": "Массовые действия",
+      "heading": "Массовые действия",
+      "groupHeading": "Группа медиа",
+      "groupDescription": "Назначьте одну группу выбранным элементам или удалите назначение группы.",
+      "groupConflictTitle": "Несколько назначений групп",
+      "groupConflictDescription": "Выбранные элементы относятся к разным группам или включают элементы без группы. Введите ключ для замены или оставьте поле пустым, чтобы удалить назначения.",
+      "saveFailedTitle": "Не удалось сохранить изменения",
+      "groupSaveFailed": "Изменение группы не сохранено. Черновик остался доступен.",
+      "removeGroup": "Удалить из группы",
+      "removeGroups": "Удалить из групп",
+      "orderHeading": "Порядок в группе",
+      "orderDescription": "Перетаскивайте элементы за маркеры, чтобы задать порядок.",
+      "dragHandleAria": "Перетащите элемент {{position}}, чтобы изменить порядок",
+      "tagsHeading": "Теги",
+      "tagsMultipleDescription": "Новые теги добавляются ко всем выбранным элементам. Существующие теги сохраняются.",
+      "tagsSingleDescription": "Добавляйте теги или удаляйте текущие теги выбранного элемента.",
+      "loadingTags": "Загрузка тегов...",
+      "selectItemsPrompt": "Выберите хотя бы один элемент",
+      "noBulkTagsAdded": "Для этого выбора теги не добавлены",
+      "tagSaveFailed": "Изменение тегов не сохранено. Повторите попытку.",
+      "tagLoadFailedTitle": "Не удалось загрузить теги",
+      "tagLoadFailed": "Не удалось загрузить полный список тегов. Редактирование отключено.",
+      "retryTagDetails": "Повторить загрузку тегов"
+    },
+    "tagModal": {
+      "ariaLabel": "Массовое добавление тегов",
+      "heading": "Массовое добавление тегов",
+      "description": "Применить теги к {{count}} выбранным элементам.",
+      "noTagsQueued": "Нет тегов в очереди",
+      "addTag": "Добавить тег",
+      "tagInputPlaceholder": "Введите, чтобы добавить тег",
+      "suggestions": "Подсказки для массового тегирования",
+      "removeTagAria": "Удалить тег {{tag}}",
+      "applyInProgress": "Применение..."
+    },
+    "groupModal": {
+      "ariaLabel": "Массовое добавление группы медиа",
+      "heading": "Массовое добавление группы медиа",
+      "description": "Задать одну группу для {{count}} выбранных элементов и изменить их порядок перетаскиванием.",
+      "groupKeyPlaceholder": "Ключ группы (uuid или пользовательский)",
+      "groupKeyAria": "Ключ группы медиа",
+      "generateGroupAria": "Сгенерировать ключ группы медиа",
+      "generateUuid": "Сгенерировать UUID",
+      "overwriteWarningTitle": "Это действие перезапишет существующие значения группы.",
+      "overwriteWarningDescription": "Как минимум у одного выбранного элемента уже есть ключ/порядок группы медиа. Применение заменит все выбранные элементы на эту группу и новый порядок.",
+      "applyGroup": "Применить группу",
+      "applyInProgress": "Применение..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Добавить в избранное",
+      "remove": "Удалить из избранного",
+      "on": "Избранное: вкл.",
+      "off": "Избранное: выкл."
+    },
+    "resetZoom": "Сбросить масштаб",
+    "reset": "Сбросить",
+    "toggleFullscreen": "Переключить полноэкранный режим",
+    "fullscreen": "Полноэкранный режим (F)",
+    "exitFullscreen": "Выйти из полноэкранного режима (F)",
+    "deleteMedia": "Удалить медиа",
+    "closePreview": "Закрыть просмотр",
+    "showTagging": "Показать тегирование",
+    "tags": "Теги",
+    "taggingHeading": "Тегирование",
+    "noTags": "Нет тегов",
+    "addTag": "Добавить тег",
+    "tagInputPlaceholder": "Введите, чтобы добавить тег",
+    "taggingSuggestions": "Подсказки тегирования",
+    "mediaGroup": "Группа медиа",
+    "removeTagAria": "Удалить тег {{tag}}",
+    "showInfo": "Показать информацию",
+    "info": "Информация",
+    "infoHeading": "Сведения",
+    "type": "Тип",
+    "size": "Размер",
+    "dimensions": "Размеры",
+    "duration": "Длительность",
+    "path": "Путь",
+    "mediaGroupKeyPlaceholder": "Ключ группы (uuid или пользовательский)",
+    "mediaGroupKeyAria": "Ключ группы медиа",
+    "generateGroupAria": "Сгенерировать ключ группы медиа",
+    "mediaGroupOrderPlaceholder": "Порядок",
+    "mediaGroupOrderAria": "Порядок в группе медиа",
+    "copyMediaGroup": {
+      "title": "?????????? ???????? ??????",
+      "copied": "???????? ?????? ???????????",
+      "unavailable": "??? ???????? ?????? ??? ???????????"
+    },
+    "deleteConfirm": {
+      "heading": "Вы уверены, что хотите удалить это медиа?",
+      "description": "Эта операция удаляет запись из базы данных, миниатюру и исходный файл с диска.",
+      "confirmWord": "Да",
+      "typeYesLabel": "Введите \"{{value}}\"",
+      "typeYesPlaceholder": "Введите \"{{value}}\"",
+      "confirm": "Подтвердить"
+    },
+    "tagSaving": "Сохранение тегов...",
+    "retryTagSave": "Повторить",
+    "tagDetailsLoading": "Загрузка полного списка тегов...",
+    "tagDetailsLoadFailedTitle": "Не удалось загрузить теги",
+    "tagDetailsLoadFailed": "Не удалось загрузить полный список тегов. Редактирование отключено.",
+    "retryTagDetails": "Повторить загрузку тегов"
+  },
+  "settings": {
+    "page": {
+      "heading": "Настройки",
+      "description": "Управляйте оформлением, источниками библиотеки и данными приложения."
+    },
+    "appearance": {
+      "heading": "Внешний вид",
+      "description": "Выберите тему приложения и язык.",
+      "theme": {
+        "label": "Тема",
+        "ariaLabel": "Выберите тему",
+        "light": "Светлая",
+        "dark": "Темная"
+      },
+      "language": {
+        "label": "Язык",
+        "ariaLabel": "Выберите язык",
+        "en": "Английский",
+        "pl": "Польский",
+        "fr": "Французский",
+        "de": "Немецкий",
+        "it": "Итальянский",
+        "es": "Испанский",
+        "ru": "Русский",
+        "zh": "Китайский (упрощенный)",
+        "ja": "Японский",
+        "ko": "Корейский"
+      }
+    },
+    "scan": {
+      "heading": "Настройки сканирования",
+      "description": "Выберите папку, чтобы добавить ее в список сканирования, затем запустите ручное повторное сканирование для всех папок.",
+      "chooseFolder": "Выбрать папку",
+      "attachedPaths": "Подключенные пути сканирования",
+      "noPaths": "Нет путей сканирования",
+      "rescan": "Повторное сканирование",
+      "remove": "Удалить",
+      "rescanAll": "Пересканировать все",
+      "renderAllThumbnails": "Создать миниатюры для всех проиндексированных ресурсов",
+      "retryFailedThumbnails": "Повторить только неудавшиеся миниатюры",
+      "stopThumbnailRender": "Остановить создание миниатюр"
+    },
+    "importExport": {
+      "heading": "Импорт / Экспорт",
+      "exportCsv": "Экспортировать CSV тегов",
+      "importCsv": "Импортировать CSV тегов",
+      "exportDbBundle": "Экспортировать БД + миниатюры",
+      "importDbBundle": "Импортировать БД + миниатюры",
+      "hint": "Импорт CSV объединяет теги и флаг избранного, а также применяет ключ/порядок группы медиа по совпадению имен файлов. Импорт базы данных заменяет текущую базу данных и миниатюры."
+    },
+    "danger": {
+      "heading": "Опасная зона",
+      "clearLibrary": "Удалить все миниатюры, проиндексированные ресурсы и пути сканирования",
+      "hint": "Операции удаления затрагивают только базу данных/кэш приложения. Оригинальные фото и видео никогда не редактируются и не удаляются."
+    },
+    "duplicates": {
+      "heading": "Менеджер дубликатов",
+      "description": "Найти ресурсы с одинаковым именем файла и решить каждый дубликат путем переименования или удаления файлов.",
+      "start": "Начать",
+      "lastResult": "Последний результат: {{groups}} групп / {{assets}} ресурсов",
+      "resolverHeading": "Разрешение дубликатов",
+      "resolverSummary": "Найдено групп: {{groups}}, дублирующихся ресурсов: {{assets}}",
+      "saveAll": "Сохранить все",
+      "discardChanges": "Отменить изменения",
+      "queueHint": "Ставьте изменения в очередь блоками, затем нажмите «Сохранить все».",
+      "queuedReady": "Изменения в очереди: {{count}}. Готово к применению.",
+      "noGroups": "Группы дубликатов не найдены.",
+      "readyBadge": "Готово",
+      "resolve": "Разрешить",
+      "pendingRename": "В ожидании: переименовать в {{name}}",
+      "pendingDelete": "В ожидании: удалить файл",
+      "pendingNone": "В ожидании: нет",
+      "renamePlaceholder": "new-file-name.jpg",
+      "generateUuid": "Сгенерировать UUID",
+      "queueRename": "Поставить переименование в очередь",
+      "queueDelete": "Поставить удаление в очередь",
+      "unmarkDelete": "Снять отметку удаления",
+      "clearAction": "Очистить действие"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "Удалить все данные библиотеки?",
+        "description": "Это удалит миниатюры, проиндексированные ресурсы и подключенные пути сканирования из базы данных/кэша приложения. Оригинальные файлы не удаляются."
+      },
+      "removeScanRoot": {
+        "heading": "Удалить путь сканирования?",
+        "description": "Это удалит путь из списка сканирования и удалит связанные индексированные записи из базы данных приложения. Оригинальные файлы на диске не удаляются."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "Готово к сканированию",
+        "importExport": "Готово к импорту/экспорту",
+        "danger": "Нет выполняемых разрушительных операций",
+        "duplicates": "Готово к поиску дубликатов"
+      }
+    },
+    "progress": {
+      "counting": "Подсчет файлов {{processed}}/{{total}}",
+      "scanning": "Сканирование {{processed}}/{{total}}",
+      "cleanup": "Очистка {{processed}}/{{total}}",
+      "scanEmpty": "Папки для сканирования не настроены",
+      "scanSkip": "Пропуск недействительной папки",
+      "thumbsStart": "Создание миниатюр начато",
+      "thumbs": "Создание миниатюр {{processed}}/{{total}}",
+      "thumbsDone": "Создание миниатюр завершено",
+      "thumbsFailedStart": "Повторная попытка для неудавшихся миниатюр начата",
+      "thumbsFailed": "Повтор неудавшихся миниатюр {{processed}}/{{total}}",
+      "thumbsFailedDone": "Повтор неудавшихся миниатюр завершен",
+      "libraryClear": "Очистка библиотеки {{processed}}/{{total}}",
+      "libraryClearDone": "Очистка библиотеки завершена",
+      "duplicatesScan": "Поиск дубликатов {{processed}}/{{total}}",
+      "duplicatesScanDone": "Поиск дубликатов завершен",
+      "thumbnailSummary": {
+        "ready": "Готово: {{count}}",
+        "failed": "неудачно: {{count}}",
+        "skippedFailed": "пропущено неудачных: {{count}}",
+        "cancelledAt": "Отменено на {{processed}}/{{total}}.",
+        "processed": "Обработано: {{processed}}/{{total}}."
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "Ожидание выбора папки...",
+        "removeFolder": "Удаление папки из списка сканирования: {{path}}",
+        "rescanAll": "Повторное сканирование всех папок...",
+        "rescanFolder": "Повторное сканирование папки: {{path}}",
+        "renderAllThumbs": "Создание миниатюр для всех проиндексированных ресурсов...",
+        "retryFailedThumbs": "Повтор неудавшихся миниатюр...",
+        "clearLibrary": "Очистка данных библиотеки...",
+        "findDuplicates": "Поиск дубликатов имен файлов...",
+        "applyDuplicateChanges": "Применение изменений дубликатов...",
+        "prepareCsvExport": "Подготовка экспорта CSV...",
+        "prepareCsvImport": "Подготовка импорта CSV...",
+        "prepareDbExport": "Подготовка экспорта резервной копии базы данных...",
+        "prepareDbImport": "Подготовка импорта резервной копии базы данных..."
+      },
+      "errorPrefix": {
+        "addFolder": "Ошибка добавления папки",
+        "removeFolder": "Ошибка удаления папки",
+        "rescan": "Ошибка повторного сканирования",
+        "rescanFolder": "Ошибка повторного сканирования папки",
+        "renderThumbs": "Ошибка создания миниатюр",
+        "retryThumbs": "Ошибка повтора неудавшихся миниатюр",
+        "clearLibrary": "Ошибка очистки библиотеки",
+        "duplicateScan": "Ошибка поиска дубликатов",
+        "saveDuplicateChanges": "Ошибка сохранения изменений дубликатов",
+        "exportCsv": "Ошибка экспорта CSV",
+        "importCsv": "Ошибка импорта CSV",
+        "exportDb": "Ошибка экспорта резервной копии базы данных",
+        "importDb": "Ошибка импорта резервной копии базы данных",
+        "cancelThumbRender": "Ошибка отмены создания миниатюр"
+      },
+      "summary": {
+        "folderAdded": "Папка добавлена в список сканирования: {{path}}",
+        "folderSelectionCancelled": "Выбор папки отменен.",
+        "removedRoot": "Корневой путь удален. Ресурсы: {{assets}}, миниатюры: {{thumbnails}}",
+        "doneIndexed": "Готово. Проиндексировано: {{indexed}}, удалено: {{removed}}, неудачно: {{failed}}",
+        "doneIndexedPartial": "Частичное сканирование. Проиндексировано: {{indexed}}, удалено: {{removed}}, предупреждений: {{failed}}. Очистка неполных папок пропущена, существующие записи сохранены.",
+        "allThumbnailsLabel": "Все миниатюры",
+        "failedRetryLabel": "Повтор неудавшихся миниатюр",
+        "stopRequested": "Запрошена остановка. Завершение задач создания миниатюр в процессе...",
+        "noThumbRenderRunning": "Массовое создание миниатюр не выполняется.",
+        "libraryCleared": "Библиотека очищена. Ресурсы: {{assets}}, корни: {{roots}}, миниатюры: {{thumbnails}}",
+        "duplicateScanComplete": "Поиск дубликатов завершен. Группы: {{groups}}, ресурсы: {{assets}}",
+        "noDuplicateChanges": "Нет ожидающих изменений дубликатов для применения",
+        "duplicateApplyCancelled": "Применение изменений дубликатов отменено.",
+        "duplicateApplied": "Применено изменений: {{count}}. Оставшиеся группы: {{groups}}",
+        "csvExportCancelled": "Экспорт CSV отменен.",
+        "csvExporting": "Экспорт CSV тегов...",
+        "csvExported": "CSV экспортирован. Строк: {{rows}}",
+        "csvImportCancelled": "Импорт CSV отменен.",
+        "csvImporting": "Импорт CSV тегов...",
+        "csvImported": "CSV импортирован. Прочитано строк: {{rowsRead}}, применено: {{rowsApplied}}, совпало ресурсов: {{assetsMatched}}, обновлено ресурсов: {{assetsUpdated}}",
+        "dbExportCancelled": "Экспорт резервной копии базы данных отменен.",
+        "dbExporting": "Экспорт базы данных и миниатюр...",
+        "dbExported": "Архив резервной копии базы данных экспортирован. Файлы: {{files}}, миниатюры: {{thumbnails}}",
+        "dbImportCancelled": "Импорт резервной копии базы данных отменен.",
+        "dbImporting": "Импорт базы данных и миниатюр...",
+        "dbImported": "Архив резервной копии базы данных импортирован. Файлы: {{files}}, миниатюры: {{thumbnails}}",
+        "folderAddedWithSkipped": "????? ????????? ? ?????? ????????????: {{path}}. ????????? ??? ????????????: {{skipped}}.",
+        "foldersAdded": "? ?????? ???????????? ????????? ?????: {{count}}.",
+        "foldersAddedWithSkipped": "? ?????? ???????????? ????????? ?????: {{count}}. ????????? ??? ????????????: {{skipped}}.",
+        "noNewFoldersAdded": "????? ????? ? ?????? ???????????? ?? ?????????.",
+        "noNewFoldersAddedWithSkipped": "????? ????? ? ?????? ???????????? ?? ?????????. ??? ??????????: {{skipped}}."
+      },
+      "dialogs": {
+        "selectMediaFolder": "Выберите папку с медиа",
+        "exportTagsCsv": "Экспортировать CSV тегов",
+        "importTagsCsv": "Импортировать CSV тегов",
+        "exportDbArchive": "Экспортировать архив резервной копии БД",
+        "selectDbArchive": "Выберите архив резервной копии БД",
+        "confirmDuplicateChanges": "Применить {{count}} изменений в очереди?\n\nЭто навсегда удалит {{deleteCount}} файлов с диска.",
+        "confirmDbImportOverwrite": "Импорт базы данных из архива перезапишет текущую базу данных и миниатюры. Продолжить?"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "Имя файла не может быть пустым",
+    "fileNameInvalid": "Недопустимое имя файла",
+    "fileNameInvalidCharacters": "Имя файла содержит недопустимые символы",
+    "duplicatePayloadInvalid": "Недопустимые данные изменений дубликатов",
+    "unknownAssetInChanges": "Неизвестный ресурс в изменениях в очереди: {{assetId}}",
+    "duplicateGroupStillUnresolved": "Группа \"{{fileName}}\": изменения в очереди по-прежнему оставляют дублирующиеся имена файлов. Переименуйте или удалите больше элементов в этом блоке."
+  }
+}

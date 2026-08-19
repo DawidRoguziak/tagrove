@@ -1,0 +1,16 @@
+{
+  "productName": "Image Viewer 3000 Dev",
+  "identifier": "com.example.mediatagger.dev",
+  "app": {
+    "windows": [
+      {
+        "title": "Image Viewer 3000 Dev",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 720,
+        "resizable": true
+      }
+    ]
+  }
+}

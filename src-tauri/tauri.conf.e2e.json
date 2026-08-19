@@ -1,0 +1,19 @@
+{
+  "productName": "Image Viewer 3000 E2E",
+  "identifier": "com.example.mediatagger.e2e",
+  "build": {
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Image Viewer 3000 E2E",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1000,
+        "minHeight": 720,
+        "resizable": true
+      }
+    ]
+  }
+}

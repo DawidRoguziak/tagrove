@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "Wstecz",
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "remove": "Usun",
+    "apply": "Zastosuj",
+    "loading": "Ladowanie...",
+    "yes": "TAK",
+    "no": "Nie"
+  },
+  "topBar": {
+    "openSettings": "Otworz ustawienia"
+  },
+  "tagList": {
+    "open": "Otworz liste tagow",
+    "modalTitle": "Lista tagow",
+    "closeModal": "Zamknij liste tagow",
+    "filterLabel": "Filtruj tagi",
+    "filterPlaceholder": "Wpisz, aby filtrowac tagi",
+    "listLabel": "Wyniki listy tagow",
+    "selectionSummary": "Dodane: {{included}} | Wykluczone: {{excluded}}",
+    "loading": "Ladowanie tagow...",
+    "loadingMore": "Ladowanie kolejnych tagow...",
+    "empty": "Brak dostepnych tagow.",
+    "noMatches": "Brak tagow pasujacych do filtra.",
+    "applying": "Zatwierdzanie...",
+    "tagButtonAria": "{{tag}}, stan: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "nieaktywny",
+      "included": "dodany",
+      "excluded": "wykluczony"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "Rozmiar kafelkow",
+    "enableSelectionMode": "Wlacz tryb zaznaczania",
+    "disableSelectionMode": "Wylacz tryb zaznaczania",
+    "loadMore": "Wczytaj wiecej"
+  },
+  "search": {
+    "placeholder": "Tagi: kot wakacje -pies | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "Podpowiedzi tagow",
+    "mediaKind": "Typ mediow",
+    "mediaKinds": {
+      "all": "Wszystkie",
+      "image": "Obrazy",
+      "gif": "Gif",
+      "video": "Wideo"
+    },
+    "clearFilters": "Wyczysc wszystkie filtry",
+    "clear": "Wyczysc",
+    "favoritesOnly": {
+      "enable": "Pokaz tylko ulubione",
+      "disable": "Wylacz tylko ulubione",
+      "enabled": "Tylko ulubione wlaczone",
+      "label": "Tylko ulubione"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatagi musza byc uzyte samodzielnie, bez innych tagow.",
+      "groupNameMissingValue": "gN wymaga nazwy grupy po dwukropku.",
+      "hasNoTagsInvalidCount": "tags akceptuje tylko nieujemna liczbe calkowita."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "Brak podlaczonych folderow",
+    "noFoldersDescription": "Dodaj pierwszy folder, aby przegladac i tagowac media.",
+    "addFirstFolder": "Dodaj pierwszy folder",
+    "noResultsTitle": "Brak wynikow",
+    "noResultsDescription": "Sprobuj zmienic filtry albo uruchom skan ponownie.",
+    "videoChip": "Wideo",
+    "gifChip": "GIF",
+    "groupedChip": "Czesc grupy mediow",
+    "generatingThumbnails": "Generowanie miniaturek dla {{count}} elementow w kolejce.",
+    "noMoreItems": "Brak kolejnych elementow"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "Zaznaczono: {{count}}",
+      "addTag": "Dodaj tag",
+      "addGroup": "Dodaj grupe",
+      "ariaLabel": "Akcje zbiorcze",
+      "heading": "Akcje zbiorcze",
+      "groupHeading": "Grupa mediów",
+      "groupDescription": "Ustaw jedną grupę dla zaznaczenia albo usuń przypisanie do grupy.",
+      "groupConflictTitle": "Wiele przypisań do grup",
+      "groupConflictDescription": "Zaznaczone elementy należą do różnych grup albo część nie ma grupy. Wpisz klucz, aby je zastąpić, lub pozostaw puste pole, aby usunąć wszystkie przypisania.",
+      "saveFailedTitle": "Nie udało się zapisać zmian",
+      "groupSaveFailed": "Zmiana grupy nie została zapisana. Wprowadzona wartość pozostała w polu.",
+      "removeGroup": "Usuń z grupy",
+      "removeGroups": "Usuń z grup",
+      "orderHeading": "Kolejność w grupie",
+      "orderDescription": "Przeciągnij elementy za uchwyty, aby ustawić kolejność.",
+      "dragHandleAria": "Przeciągnij element {{position}}, aby zmienić kolejność",
+      "tagsHeading": "Tagi",
+      "tagsMultipleDescription": "Nowe tagi są dodawane do wszystkich zaznaczonych elementów. Istniejące tagi pozostają bez zmian.",
+      "tagsSingleDescription": "Dodawaj tagi lub usuwaj aktualne tagi zaznaczonego elementu.",
+      "loadingTags": "Wczytywanie tagów...",
+      "selectItemsPrompt": "Zaznacz co najmniej jeden element",
+      "noBulkTagsAdded": "Nie dodano tagów dla tego zaznaczenia",
+      "tagSaveFailed": "Zmiana tagów nie została zapisana. Spróbuj ponownie.",
+      "tagLoadFailedTitle": "Nie udało się wczytać tagów",
+      "tagLoadFailed": "Nie udało się wczytać pełnej listy tagów. Edycja pozostaje wyłączona.",
+      "retryTagDetails": "Ponów wczytywanie tagów"
+    },
+    "tagModal": {
+      "ariaLabel": "Hurtowe dodawanie tagow",
+      "heading": "Hurtowe dodawanie tagow",
+      "description": "Zastosuj tagi do {{count}} zaznaczonych elementow.",
+      "noTagsQueued": "Brak tagow w kolejce",
+      "addTag": "Dodaj tag",
+      "tagInputPlaceholder": "Wpisz, aby dodac tag",
+      "suggestions": "Podpowiedzi tagow hurtowych",
+      "removeTagAria": "Usun tag {{tag}}",
+      "applyInProgress": "Zastosowywanie..."
+    },
+    "groupModal": {
+      "ariaLabel": "Hurtowe dodawanie grupy mediow",
+      "heading": "Hurtowe dodawanie grupy mediow",
+      "description": "Ustaw jedna grupe dla {{count}} elementow i zmien kolejnosc przeciagnieciem.",
+      "groupKeyPlaceholder": "Klucz grupy (uuid lub wlasny)",
+      "groupKeyAria": "Klucz grupy mediow",
+      "generateGroupAria": "Wygeneruj klucz grupy mediow",
+      "generateUuid": "Generuj UUID",
+      "overwriteWarningTitle": "Ta akcja nadpisze istniejace wartosci grupy.",
+      "overwriteWarningDescription": "Co najmniej jeden zaznaczony element ma juz klucz/kolejnosc grupy. Zastosowanie podmieni te dane dla wszystkich zaznaczonych elementow.",
+      "applyGroup": "Zastosuj grupe",
+      "applyInProgress": "Zastosowywanie..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "Dodaj do ulubionych",
+      "remove": "Usun z ulubionych",
+      "on": "Ulubione: wlaczone",
+      "off": "Ulubione: wylaczone"
+    },
+    "resetZoom": "Resetuj zoom",
+    "reset": "Reset",
+    "toggleFullscreen": "Przelacz pelny ekran",
+    "fullscreen": "Pelny ekran (F)",
+    "exitFullscreen": "Wyjdz z pelnego ekranu (F)",
+    "deleteMedia": "Usun medium",
+    "closePreview": "Zamknij podglad",
+    "showTagging": "Pokaz tagowanie",
+    "tags": "Tagi",
+    "taggingHeading": "Tagowanie",
+    "noTags": "Brak tagow",
+    "addTag": "Dodaj tag",
+    "tagInputPlaceholder": "Wpisz, aby dodac tag",
+    "taggingSuggestions": "Podpowiedzi tagowania",
+    "mediaGroup": "Grupa mediow",
+    "removeTagAria": "Usun tag {{tag}}",
+    "showInfo": "Pokaz informacje",
+    "info": "Info",
+    "infoHeading": "Informacje",
+    "type": "Typ",
+    "size": "Rozmiar",
+    "dimensions": "Wymiary",
+    "duration": "Czas",
+    "path": "Sciezka",
+    "mediaGroupKeyPlaceholder": "Klucz grupy (uuid lub wlasny)",
+    "mediaGroupKeyAria": "Klucz grupy mediow",
+    "generateGroupAria": "Wygeneruj klucz grupy mediow",
+    "mediaGroupOrderPlaceholder": "Kolejnosc",
+    "mediaGroupOrderAria": "Kolejnosc grupy mediow",
+    "copyMediaGroup": {
+      "title": "Kopiuj nazwe grupy",
+      "copied": "Nazwa grupy skopiowana",
+      "unavailable": "Brak nazwy grupy do skopiowania"
+    },
+    "deleteConfirm": {
+      "heading": "Czy na pewno chcesz usunac to medium?",
+      "description": "Ta operacja usuwa wpis z bazy, miniaturke i oryginalny plik z dysku.",
+      "confirmWord": "Tak",
+      "typeYesLabel": "Wpisz \"{{value}}\"",
+      "typeYesPlaceholder": "Wpisz \"{{value}}\"",
+      "confirm": "Potwierdz"
+    },
+    "tagSaving": "Zapisywanie tagów...",
+    "retryTagSave": "Ponów",
+    "tagDetailsLoading": "Wczytywanie pełnej listy tagów...",
+    "tagDetailsLoadFailedTitle": "Nie udało się wczytać tagów",
+    "tagDetailsLoadFailed": "Nie udało się wczytać pełnej listy tagów. Edycja pozostaje wyłączona.",
+    "retryTagDetails": "Ponów wczytywanie tagów"
+  },
+  "settings": {
+    "page": {
+      "heading": "Ustawienia",
+      "description": "Zarządzaj wyglądem, źródłami biblioteki i danymi aplikacji."
+    },
+    "appearance": {
+      "heading": "Wyglad",
+      "description": "Wybierz motyw i jezyk aplikacji.",
+      "theme": {
+        "label": "Motyw",
+        "ariaLabel": "Wybierz motyw",
+        "light": "Jasny",
+        "dark": "Ciemny"
+      },
+      "language": {
+        "label": "Jezyk",
+        "ariaLabel": "Wybierz jezyk",
+        "en": "Angielski",
+        "pl": "Polski",
+        "fr": "Francuski",
+        "de": "Niemiecki",
+        "it": "Wloski",
+        "es": "Hiszpanski",
+        "ru": "Rosyjski",
+        "zh": "Chinski (uproszczony)",
+        "ja": "Japonski",
+        "ko": "Koreanski"
+      }
+    },
+    "scan": {
+      "heading": "Ustawienia skanowania",
+      "description": "Wybierz folder, dodaj go do listy skanowania i uruchom reczny ponowny skan.",
+      "chooseFolder": "Wybierz folder",
+      "attachedPaths": "Podlaczone sciezki skanowania",
+      "noPaths": "Brak sciezek skanowania",
+      "rescan": "Skanuj ponownie",
+      "remove": "Usun",
+      "rescanAll": "Skanuj wszystko ponownie",
+      "renderAllThumbnails": "Renderuj miniaturki dla wszystkich zindeksowanych zasobow",
+      "retryFailedThumbnails": "Ponow tylko nieudane miniaturki",
+      "stopThumbnailRender": "Zatrzymaj renderowanie miniaturek"
+    },
+    "importExport": {
+      "heading": "Import / Export",
+      "exportCsv": "Eksportuj tagi CSV",
+      "importCsv": "Importuj tagi CSV",
+      "exportDbBundle": "Eksportuj DB + miniaturki",
+      "importDbBundle": "Importuj DB + miniaturki",
+      "hint": "Import CSV laczy tagi i flage ulubionych oraz stosuje klucz/kolejnosc grupy mediow po nazwie pliku. Import bazy podmienia obecna baze i miniaturki."
+    },
+    "danger": {
+      "heading": "Strefa ryzyka",
+      "clearLibrary": "Usun wszystkie miniaturki, zindeksowane zasoby i sciezki skanowania",
+      "hint": "Operacje usuwania dotycza tylko bazy/cache aplikacji. Oryginalne zdjecia i filmy nigdy nie sa modyfikowane ani usuwane."
+    },
+    "duplicates": {
+      "heading": "Menedzer duplikatow",
+      "description": "Znajdz zasoby o tej samej nazwie pliku i rozwiaz kazdy duplikat przez zmiane nazwy albo usuniecie.",
+      "start": "Start",
+      "lastResult": "Ostatni wynik: {{groups}} grup / {{assets}} zasobow",
+      "resolverHeading": "Rozwiazywanie duplikatow",
+      "resolverSummary": "Znalezione grupy: {{groups}}, duplikaty zasobow: {{assets}}",
+      "saveAll": "Zapisz wszystko",
+      "discardChanges": "Odrzuc zmiany",
+      "queueHint": "Dodaj zmiany do kolejki, potem kliknij Zapisz wszystko.",
+      "queuedReady": "Zmiany w kolejce: {{count}}. Gotowe do zastosowania.",
+      "noGroups": "Nie znaleziono grup duplikatow.",
+      "readyBadge": "Gotowe",
+      "resolve": "Rozwiaz",
+      "pendingRename": "Oczekuje: zmiana nazwy na {{name}}",
+      "pendingDelete": "Oczekuje: usuniecie pliku",
+      "pendingNone": "Oczekuje: brak",
+      "renamePlaceholder": "nowa-nazwa-pliku.jpg",
+      "generateUuid": "Generuj UUID",
+      "queueRename": "Dodaj zmiane nazwy",
+      "queueDelete": "Dodaj usuniecie",
+      "unmarkDelete": "Cofnij usuniecie",
+      "clearAction": "Wyczysc akcje"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "Usunac wszystkie dane biblioteki?",
+        "description": "To usuwa miniaturki, zindeksowane zasoby i podlaczone sciezki skanowania z bazy/cache aplikacji. Oryginalne pliki nie sa usuwane."
+      },
+      "removeScanRoot": {
+        "heading": "Usunac sciezke skanowania?",
+        "description": "To usuwa sciezke z listy skanowania i kasuje powiazane rekordy indeksu z bazy aplikacji. Oryginalne pliki na dysku nie sa usuwane."
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "Gotowe do skanowania",
+        "importExport": "Gotowe do importu/eksportu",
+        "danger": "Brak uruchomionej operacji destrukcyjnej",
+        "duplicates": "Gotowe do skanowania duplikatow"
+      }
+    },
+    "progress": {
+      "counting": "Zliczanie plikow {{processed}}/{{total}}",
+      "scanning": "Skanowanie {{processed}}/{{total}}",
+      "cleanup": "Czyszczenie {{processed}}/{{total}}",
+      "scanEmpty": "Brak skonfigurowanych folderow skanowania",
+      "scanSkip": "Pomijanie nieprawidlowego folderu",
+      "thumbsStart": "Rozpoczeto render miniaturek",
+      "thumbs": "Renderowanie miniaturek {{processed}}/{{total}}",
+      "thumbsDone": "Render miniaturek zakonczony",
+      "thumbsFailedStart": "Rozpoczeto ponawianie nieudanych miniaturek",
+      "thumbsFailed": "Ponawianie nieudanych miniaturek {{processed}}/{{total}}",
+      "thumbsFailedDone": "Ponawianie nieudanych miniaturek zakonczone",
+      "libraryClear": "Czyszczenie biblioteki {{processed}}/{{total}}",
+      "libraryClearDone": "Czyszczenie biblioteki zakonczone",
+      "duplicatesScan": "Skanowanie duplikatow {{processed}}/{{total}}",
+      "duplicatesScanDone": "Skanowanie duplikatow zakonczone",
+      "thumbnailSummary": {
+        "ready": "Gotowe: {{count}}",
+        "failed": "bledy: {{count}}",
+        "skippedFailed": "pominiete bledne: {{count}}",
+        "cancelledAt": "Anulowano przy {{processed}}/{{total}}.",
+        "processed": "Przetworzono: {{processed}}/{{total}}."
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "Oczekiwanie na wybor folderu...",
+        "removeFolder": "Usuwanie folderu z listy skanowania: {{path}}",
+        "rescanAll": "Ponowne skanowanie wszystkich folderow...",
+        "rescanFolder": "Ponowne skanowanie folderu: {{path}}",
+        "renderAllThumbs": "Renderowanie miniaturek dla wszystkich zindeksowanych zasobow...",
+        "retryFailedThumbs": "Ponawianie nieudanych miniaturek...",
+        "clearLibrary": "Czyszczenie danych biblioteki...",
+        "findDuplicates": "Wyszukiwanie duplikatow nazw plikow...",
+        "applyDuplicateChanges": "Zastosowywanie zmian duplikatow...",
+        "prepareCsvExport": "Przygotowanie eksportu CSV...",
+        "prepareCsvImport": "Przygotowanie importu CSV...",
+        "prepareDbExport": "Przygotowanie eksportu kopii bazy...",
+        "prepareDbImport": "Przygotowanie importu kopii bazy..."
+      },
+      "errorPrefix": {
+        "addFolder": "Blad dodawania folderu",
+        "removeFolder": "Blad usuwania folderu",
+        "rescan": "Blad ponownego skanu",
+        "rescanFolder": "Blad ponownego skanu folderu",
+        "renderThumbs": "Blad renderowania miniaturek",
+        "retryThumbs": "Blad ponawiania nieudanych miniaturek",
+        "clearLibrary": "Blad czyszczenia biblioteki",
+        "duplicateScan": "Blad skanowania duplikatow",
+        "saveDuplicateChanges": "Blad zapisu zmian duplikatow",
+        "exportCsv": "Blad eksportu CSV",
+        "importCsv": "Blad importu CSV",
+        "exportDb": "Blad eksportu kopii bazy",
+        "importDb": "Blad importu kopii bazy",
+        "cancelThumbRender": "Blad zatrzymania renderowania miniaturek"
+      },
+      "summary": {
+        "folderAdded": "Folder dodany do listy skanowania: {{path}}",
+        "folderAddedWithSkipped": "Folder dodany do listy skanowania: {{path}}. Pominieto juz podlaczone: {{skipped}}.",
+        "foldersAdded": "Dodano {{count}} foldery do listy skanowania.",
+        "foldersAddedWithSkipped": "Dodano {{count}} foldery do listy skanowania. Pominieto juz podlaczone: {{skipped}}.",
+        "noNewFoldersAdded": "Nie dodano nowych folderow do listy skanowania.",
+        "noNewFoldersAddedWithSkipped": "Nie dodano nowych folderow do listy skanowania. Juz podlaczone: {{skipped}}.",
+        "folderSelectionCancelled": "Anulowano wybor folderu.",
+        "removedRoot": "Usunieto sciezke. Zasoby: {{assets}}, miniaturki: {{thumbnails}}",
+        "doneIndexed": "Gotowe. Zindeksowano: {{indexed}}, usunieto: {{removed}}, bledy: {{failed}}",
+        "doneIndexedPartial": "Skan czesciowy. Zindeksowano: {{indexed}}, usunieto: {{removed}}, ostrzezenia: {{failed}}. Pominieto czyszczenie niekompletnych folderow i zachowano istniejace rekordy.",
+        "allThumbnailsLabel": "Wszystkie miniaturki",
+        "failedRetryLabel": "Ponowienie nieudanych miniaturek",
+        "stopRequested": "Wyslano prosbe o zatrzymanie. Konczenie trwajacych zadan...",
+        "noThumbRenderRunning": "Nie trwa hurtowe renderowanie miniaturek.",
+        "libraryCleared": "Biblioteka wyczyszczona. Zasoby: {{assets}}, sciezki: {{roots}}, miniaturki: {{thumbnails}}",
+        "duplicateScanComplete": "Skan duplikatow zakonczony. Grupy: {{groups}}, zasoby: {{assets}}",
+        "noDuplicateChanges": "Brak oczekujacych zmian duplikatow do zastosowania",
+        "duplicateApplyCancelled": "Anulowano zastosowanie zmian duplikatow.",
+        "duplicateApplied": "Zastosowano {{count}} zmian. Pozostale grupy: {{groups}}",
+        "csvExportCancelled": "Anulowano eksport CSV.",
+        "csvExporting": "Eksportowanie tagow CSV...",
+        "csvExported": "CSV wyeksportowano. Wiersze: {{rows}}",
+        "csvImportCancelled": "Anulowano import CSV.",
+        "csvImporting": "Importowanie tagow CSV...",
+        "csvImported": "CSV zaimportowano. Wiersze odczytane: {{rowsRead}}, zastosowane: {{rowsApplied}}, dopasowane zasoby: {{assetsMatched}}, zaktualizowane zasoby: {{assetsUpdated}}",
+        "dbExportCancelled": "Anulowano eksport kopii bazy.",
+        "dbExporting": "Eksportowanie bazy i miniaturek...",
+        "dbExported": "Archiwum kopii bazy wyeksportowano. Pliki: {{files}}, miniaturki: {{thumbnails}}",
+        "dbImportCancelled": "Anulowano import kopii bazy.",
+        "dbImporting": "Importowanie bazy i miniaturek...",
+        "dbImported": "Archiwum kopii bazy zaimportowano. Pliki: {{files}}, miniaturki: {{thumbnails}}"
+      },
+      "dialogs": {
+        "selectMediaFolder": "Wybierz folder mediow",
+        "exportTagsCsv": "Eksportuj tagi CSV",
+        "importTagsCsv": "Importuj tagi CSV",
+        "exportDbArchive": "Eksportuj archiwum kopii bazy",
+        "selectDbArchive": "Wybierz archiwum kopii bazy",
+        "confirmDuplicateChanges": "Zastosowac {{count}} zmian z kolejki?\n\nTo trwale usunie {{deleteCount}} plikow z dysku.",
+        "confirmDbImportOverwrite": "Import bazy z archiwum nadpisze obecna baze i miniaturki. Kontynuowac?"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "Nazwa pliku nie moze byc pusta",
+    "fileNameInvalid": "Nazwa pliku jest nieprawidlowa",
+    "fileNameInvalidCharacters": "Nazwa pliku zawiera niedozwolone znaki",
+    "duplicatePayloadInvalid": "Nieprawidlowy zestaw zmian duplikatow",
+    "unknownAssetInChanges": "Nieznany zasob w zmianach kolejki: {{assetId}}",
+    "duplicateGroupStillUnresolved": "Grupa \"{{fileName}}\": zmiany w kolejce nadal zostawiaja duplikaty nazw. Zmien nazwy lub usun wiecej elementow w tym bloku."
+  }
+}

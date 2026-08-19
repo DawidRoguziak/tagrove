@@ -1,0 +1,37 @@
+[package]
+name = "media_tagger"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "media_tagger"
+path = "src/main.rs"
+test = false
+bench = false
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+anyhow = "1.0"
+csv = "1.3"
+fs2 = "0.4"
+image = { version = "0.25", default-features = true, features = ["jpeg", "png", "gif", "webp"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tauri = { version = "2.11.5", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.7.1"
+walkdir = "2.5"
+zip = "2.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+tempfile = "3.13"

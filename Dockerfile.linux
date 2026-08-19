@@ -1,0 +1,86 @@
+# syntax=docker/dockerfile:1.7
+
+FROM --platform=linux/amd64 archlinux:base-devel AS dependencies
+
+RUN pacman -Syu --noconfirm \
+    && pacman -S --needed --noconfirm \
+      bun \
+      curl \
+      ffmpeg \
+      file \
+      fuse2 \
+      nodejs-lts-jod \
+      openssl \
+      patchelf \
+      rustup \
+      dbus \
+      xorg-server-xvfb \
+      webkit2gtk-4.1 \
+      wget \
+    && pacman -Scc --noconfirm
+
+RUN rustup default stable \
+    && cargo install tauri-driver --locked \
+    && rustc -vV \
+    && cargo --version \
+    && bun --version \
+    && node --version \
+    && pkg-config --modversion webkit2gtk-4.1 \
+    && ffmpeg -version | head -n 1
+
+# Arch's current gdk-pixbuf2 exposes this legacy path through pkg-config but
+# does not create it. linuxdeploy-plugin-gtk still expects it to exist.
+RUN gdk_pixbuf_binarydir="$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0)" \
+    && install -d "$gdk_pixbuf_binarydir/loaders"
+
+# linuxdeploy's bundled strip does not understand Arch's modern RELR sections.
+ENV APPIMAGE_EXTRACT_AND_RUN=1 \
+    NO_STRIP=1
+WORKDIR /workspace
+
+COPY package.json bun.lock bunfig.toml ./
+RUN bun install --frozen-lockfile
+
+COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
+RUN cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+
+COPY . .
+
+FROM dependencies AS test
+RUN bun run build && bun run test && bun run test:backend
+
+FROM test AS e2e
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=en
+RUN pacman -S --needed --noconfirm webkitgtk-6.0 && pacman -Scc --noconfirm
+RUN dbus-run-session -- xvfb-run --auto-servernum bun run test:e2e:tauri
+
+FROM e2e AS release
+RUN bun run tauri:build:linux
+
+FROM release AS appimage-smoke
+RUN appimage="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)" \
+    && test -n "$appimage" \
+    && timeout 15s dbus-run-session -- xvfb-run --auto-servernum "$appimage" --appimage-extract-and-run >/tmp/appimage-smoke.log 2>&1; \
+    status=$?; test "$status" -eq 0 -o "$status" -eq 124
+
+FROM scratch AS staged-artifacts
+
+COPY --from=appimage-smoke /workspace/src-tauri/target/release/media_tagger /out/media_tagger
+COPY --from=appimage-smoke /workspace/src-tauri/target/release/bundle/appimage/*.AppImage /out/
+
+FROM appimage-smoke AS manifest
+RUN set -e; { \
+      printf 'platform=linux/amd64\n'; \
+      uname -a; \
+      rustc -vV; \
+      cargo --version; \
+      bun --version; \
+      node --version; \
+      cargo install --list; \
+      ffmpeg -version | head -n 1; \
+      pacman -Q; \
+    } > /workspace/build-manifest.txt
+
+FROM scratch AS artifacts
+COPY --from=staged-artifacts /out /out
+COPY --from=manifest /workspace/build-manifest.txt /out/build-manifest.txt

@@ -1,0 +1,396 @@
+{
+  "common": {
+    "back": "戻る",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "remove": "削除",
+    "apply": "適用",
+    "loading": "読み込み中...",
+    "yes": "はい",
+    "no": "いいえ"
+  },
+  "topBar": {
+    "openSettings": "設定を開く"
+  },
+  "tagList": {
+    "open": "タグ一覧を開く",
+    "modalTitle": "タグ一覧",
+    "closeModal": "タグ一覧を閉じる",
+    "filterLabel": "Filter tags",
+    "filterPlaceholder": "Type to filter tags",
+    "listLabel": "Tag list results",
+    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
+    "loading": "Loading tags...",
+    "loadingMore": "Loading more tags...",
+    "empty": "No tags available.",
+    "noMatches": "No tags match this filter.",
+    "applying": "Applying...",
+    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "tagButtonTitle": "{{tag}} ({{state}})",
+    "states": {
+      "inactive": "inactive",
+      "included": "included",
+      "excluded": "excluded"
+    }
+  },
+  "controls": {
+    "bulkActions": "Bulk actions",
+    "enableBulkActions": "Enable bulk actions",
+    "disableBulkActions": "Disable bulk actions",
+    "tileSize": "タイルサイズ",
+    "enableSelectionMode": "選択モードを有効化",
+    "disableSelectionMode": "選択モードを無効化",
+    "loadMore": "さらに読み込む"
+  },
+  "search": {
+    "placeholder": "タグ: cat vacation -dog | tags | tags:3 | gN:Trip 2026",
+    "tagSuggestions": "タグ候補",
+    "mediaKind": "メディア種別",
+    "mediaKinds": {
+      "all": "すべて",
+      "image": "画像",
+      "gif": "GIF",
+      "video": "動画"
+    },
+    "clearFilters": "検索フィルターをすべてクリア",
+    "clear": "クリア",
+    "favoritesOnly": {
+      "enable": "お気に入りのみ表示",
+      "disable": "お気に入りのみを無効化",
+      "enabled": "お気に入りのみが有効です",
+      "label": "お気に入りのみ"
+    },
+    "errors": {
+      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
+      "groupNameMissingValue": "gN requires a group value after the colon.",
+      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+    }
+  },
+  "gallery": {
+    "noFoldersTitle": "フォルダーが接続されていません",
+    "noFoldersDescription": "最初のフォルダーを追加して、メディアの閲覧とタグ付けを開始しましょう。",
+    "addFirstFolder": "最初のフォルダーを追加",
+    "noResultsTitle": "結果がありません",
+    "noResultsDescription": "フィルターを変更するか、再スキャンしてより多くのファイルをインデックスしてください。",
+    "videoChip": "動画",
+    "gifChip": "GIF",
+    "groupedChip": "メディアグループの一部",
+    "generatingThumbnails": "{{count}} 件のキュー項目のサムネイルを生成中です。",
+    "noMoreItems": "これ以上読み込む項目はありません"
+  },
+  "bulk": {
+    "panel": {
+      "selectedItems": "選択中: {{count}}",
+      "addTag": "タグを追加",
+      "addGroup": "グループを追加",
+      "ariaLabel": "一括操作",
+      "heading": "一括操作",
+      "groupHeading": "メディアグループ",
+      "groupDescription": "選択項目に同じグループを設定するか、グループ割り当てを解除します。",
+      "groupConflictTitle": "複数のグループ割り当て",
+      "groupConflictDescription": "選択項目が異なるグループに属しているか、グループありとなしが混在しています。置き換えるキーを入力するか、空欄のまま全割り当てを解除します。",
+      "saveFailedTitle": "変更を保存できませんでした",
+      "groupSaveFailed": "グループの変更は保存されませんでした。入力内容は保持されています。",
+      "removeGroup": "グループから外す",
+      "removeGroups": "グループから外す",
+      "orderHeading": "グループ内の順序",
+      "orderDescription": "項目のハンドルをドラッグして順序を設定します。",
+      "dragHandleAria": "項目 {{position}} をドラッグして並べ替え",
+      "tagsHeading": "タグ",
+      "tagsMultipleDescription": "新しいタグを選択したすべての項目に追加します。既存のタグは保持されます。",
+      "tagsSingleDescription": "選択項目のタグを追加または削除します。",
+      "loadingTags": "タグを読み込んでいます...",
+      "selectItemsPrompt": "1つ以上の項目を選択してください",
+      "noBulkTagsAdded": "この選択ではタグが追加されていません",
+      "tagSaveFailed": "タグの変更は保存されませんでした。再試行してください。",
+      "tagLoadFailedTitle": "タグを読み込めませんでした",
+      "tagLoadFailed": "完全なタグ一覧を読み込めませんでした。編集は無効のままです。",
+      "retryTagDetails": "タグの読み込みを再試行"
+    },
+    "tagModal": {
+      "ariaLabel": "一括タグ追加",
+      "heading": "一括タグ追加",
+      "description": "選択した {{count}} 件の項目にタグを適用します。",
+      "noTagsQueued": "キューにタグがありません",
+      "addTag": "タグを追加",
+      "tagInputPlaceholder": "入力してタグを追加",
+      "suggestions": "一括タグ付けの候補",
+      "removeTagAria": "タグ {{tag}} を削除",
+      "applyInProgress": "適用中..."
+    },
+    "groupModal": {
+      "ariaLabel": "一括メディアグループ追加",
+      "heading": "一括メディアグループ追加",
+      "description": "選択した {{count}} 件の項目に 1 つのグループを設定し、ドラッグ＆ドロップで並び替えます。",
+      "groupKeyPlaceholder": "グループキー（uuid または任意）",
+      "groupKeyAria": "メディアグループキー",
+      "generateGroupAria": "メディアグループキーを生成",
+      "generateUuid": "UUID を生成",
+      "overwriteWarningTitle": "この操作は既存のグループ値を上書きします。",
+      "overwriteWarningDescription": "選択した項目の少なくとも 1 件に既にメディアグループキー/順序が設定されています。適用すると、選択したすべての項目がこのグループと新しい順序に置き換えられます。",
+      "applyGroup": "グループを適用",
+      "applyInProgress": "適用中..."
+    }
+  },
+  "lightbox": {
+    "favorite": {
+      "add": "お気に入りに追加",
+      "remove": "お気に入りから削除",
+      "on": "お気に入り: オン",
+      "off": "お気に入り: オフ"
+    },
+    "resetZoom": "ズームをリセット",
+    "reset": "リセット",
+    "toggleFullscreen": "全画面表示を切り替え",
+    "fullscreen": "全画面表示 (F)",
+    "exitFullscreen": "全画面表示を終了 (F)",
+    "deleteMedia": "メディアを削除",
+    "closePreview": "プレビューを閉じる",
+    "showTagging": "タグ付けを表示",
+    "tags": "タグ",
+    "taggingHeading": "タグ付け",
+    "noTags": "タグなし",
+    "addTag": "タグを追加",
+    "tagInputPlaceholder": "入力してタグを追加",
+    "taggingSuggestions": "タグ付け候補",
+    "mediaGroup": "メディアグループ",
+    "removeTagAria": "タグ {{tag}} を削除",
+    "showInfo": "情報を表示",
+    "info": "情報",
+    "infoHeading": "情報",
+    "type": "種類",
+    "size": "サイズ",
+    "dimensions": "寸法",
+    "duration": "長さ",
+    "path": "パス",
+    "mediaGroupKeyPlaceholder": "グループキー（uuid または任意）",
+    "mediaGroupKeyAria": "メディアグループキー",
+    "generateGroupAria": "メディアグループキーを生成",
+    "mediaGroupOrderPlaceholder": "順序",
+    "mediaGroupOrderAria": "メディアグループの順序",
+    "copyMediaGroup": {
+      "title": "?????????",
+      "copied": "?????????????",
+      "unavailable": "?????????????????"
+    },
+    "deleteConfirm": {
+      "heading": "このメディアを削除してもよろしいですか？",
+      "description": "この操作により、データベースのエントリ、サムネイル、そしてディスク上の元ファイルが削除されます。",
+      "confirmWord": "はい",
+      "typeYesLabel": "\"{{value}}\" と入力してください",
+      "typeYesPlaceholder": "\"{{value}}\" と入力してください",
+      "confirm": "確定"
+    },
+    "tagSaving": "タグを保存中...",
+    "retryTagSave": "再試行",
+    "tagDetailsLoading": "完全なタグ一覧を読み込んでいます...",
+    "tagDetailsLoadFailedTitle": "タグを読み込めませんでした",
+    "tagDetailsLoadFailed": "完全なタグ一覧を読み込めませんでした。編集は無効のままです。",
+    "retryTagDetails": "タグの読み込みを再試行"
+  },
+  "settings": {
+    "page": {
+      "heading": "設定",
+      "description": "外観、ライブラリの保存場所、アプリデータを管理します。"
+    },
+    "appearance": {
+      "heading": "外観",
+      "description": "アプリのテーマと言語を選択します。",
+      "theme": {
+        "label": "テーマ",
+        "ariaLabel": "テーマを選択",
+        "light": "ライト",
+        "dark": "ダーク"
+      },
+      "language": {
+        "label": "言語",
+        "ariaLabel": "言語を選択",
+        "en": "英語",
+        "pl": "ポーランド語",
+        "fr": "フランス語",
+        "de": "ドイツ語",
+        "it": "イタリア語",
+        "es": "スペイン語",
+        "ru": "ロシア語",
+        "zh": "中国語（簡体字）",
+        "ja": "日本語",
+        "ko": "韓国語"
+      }
+    },
+    "scan": {
+      "heading": "スキャン設定",
+      "description": "フォルダーを選んでスキャンリストに追加し、その後すべてのフォルダーを手動で再スキャンします。",
+      "chooseFolder": "フォルダーを選択",
+      "attachedPaths": "接続されたスキャンパス",
+      "noPaths": "スキャンパスがありません",
+      "rescan": "再スキャン",
+      "remove": "削除",
+      "rescanAll": "すべて再スキャン",
+      "renderAllThumbnails": "インデックス済みアセットのサムネイルをすべて生成",
+      "retryFailedThumbnails": "失敗したサムネイルのみ再試行",
+      "stopThumbnailRender": "サムネイル生成を停止"
+    },
+    "importExport": {
+      "heading": "インポート / エクスポート",
+      "exportCsv": "タグCSVをエクスポート",
+      "importCsv": "タグCSVをインポート",
+      "exportDbBundle": "DB + サムネイルをエクスポート",
+      "importDbBundle": "DB + サムネイルをインポート",
+      "hint": "CSVインポートはタグとお気に入りフラグをマージし、ファイル名の一致によりメディアグループキー/順序を適用します。データベースインポートは現在のデータベースとサムネイルを置き換えます。"
+    },
+    "danger": {
+      "heading": "危険ゾーン",
+      "clearLibrary": "すべてのサムネイル、インデックス済みアセット、スキャンパスを削除",
+      "hint": "削除操作はアプリのデータベース/キャッシュにのみ影響します。元の写真や動画は編集も削除もされません。"
+    },
+    "duplicates": {
+      "heading": "重複マネージャー",
+      "description": "同じファイル名のアセットを見つけ、各重複をリネームまたは削除で解決します。",
+      "start": "開始",
+      "lastResult": "前回の結果: {{groups}} グループ / {{assets}} アセット",
+      "resolverHeading": "重複解決",
+      "resolverSummary": "見つかったグループ: {{groups}}、重複アセット: {{assets}}",
+      "saveAll": "すべて保存",
+      "discardChanges": "変更を破棄",
+      "queueHint": "変更をブロックごとにキューに入れ、最後に「すべて保存」をクリックしてください。",
+      "queuedReady": "キュー済み変更: {{count}}。適用の準備ができました。",
+      "noGroups": "重複グループは見つかりませんでした。",
+      "readyBadge": "準備完了",
+      "resolve": "解決",
+      "pendingRename": "保留中: {{name}} にリネーム",
+      "pendingDelete": "保留中: ファイルを削除",
+      "pendingNone": "保留中: なし",
+      "renamePlaceholder": "new-file-name.jpg",
+      "generateUuid": "UUID を生成",
+      "queueRename": "リネームをキュー",
+      "queueDelete": "削除をキュー",
+      "unmarkDelete": "削除マークを解除",
+      "clearAction": "操作をクリア"
+    },
+    "dialogs": {
+      "clearLibrary": {
+        "heading": "ライブラリデータをすべて削除しますか？",
+        "description": "これはサムネイル、インデックス済みアセット、接続されたスキャンパスをアプリのデータベース/キャッシュから削除します。元ファイルは削除されません。"
+      },
+      "removeScanRoot": {
+        "heading": "スキャンパスを削除しますか？",
+        "description": "この操作はパスをスキャンリストから削除し、関連するインデックス記録をアプリのデータベースから削除します。元ファイルはディスク上から削除されません。"
+      }
+    },
+    "status": {
+      "ready": {
+        "scan": "スキャンの準備完了",
+        "importExport": "インポート/エクスポートの準備完了",
+        "danger": "破壊的な操作は実行中ではありません",
+        "duplicates": "重複スキャンの準備完了"
+      }
+    },
+    "progress": {
+      "counting": "ファイルをカウント中 {{processed}}/{{total}}",
+      "scanning": "スキャン中 {{processed}}/{{total}}",
+      "cleanup": "クリーンアップ中 {{processed}}/{{total}}",
+      "scanEmpty": "スキャンフォルダーが設定されていません",
+      "scanSkip": "無効なフォルダーをスキップ",
+      "thumbsStart": "サムネイル生成を開始しました",
+      "thumbs": "サムネイル生成中 {{processed}}/{{total}}",
+      "thumbsDone": "サムネイル生成が完了しました",
+      "thumbsFailedStart": "失敗したサムネイルの再試行を開始しました",
+      "thumbsFailed": "失敗したサムネイルを再試行中 {{processed}}/{{total}}",
+      "thumbsFailedDone": "失敗したサムネイルの再試行が完了しました",
+      "libraryClear": "ライブラリを削除中 {{processed}}/{{total}}",
+      "libraryClearDone": "ライブラリ削除が完了しました",
+      "duplicatesScan": "重複をスキャン中 {{processed}}/{{total}}",
+      "duplicatesScanDone": "重複スキャンが完了しました",
+      "thumbnailSummary": {
+        "ready": "準備完了: {{count}}",
+        "failed": "失敗: {{count}}",
+        "skippedFailed": "失敗をスキップ: {{count}}",
+        "cancelledAt": "{{processed}}/{{total}} でキャンセルしました。",
+        "processed": "処理済み: {{processed}}/{{total}}。"
+      }
+    },
+    "actions": {
+      "pending": {
+        "waitFolderSelection": "フォルダー選択を待機中...",
+        "removeFolder": "スキャンリストからフォルダーを削除中: {{path}}",
+        "rescanAll": "すべてのフォルダーを再スキャン中...",
+        "rescanFolder": "フォルダーを再スキャン中: {{path}}",
+        "renderAllThumbs": "インデックス済みアセットのサムネイルをすべて生成中...",
+        "retryFailedThumbs": "失敗したサムネイルを再試行中...",
+        "clearLibrary": "ライブラリデータを削除中...",
+        "findDuplicates": "重複ファイル名を検索中...",
+        "applyDuplicateChanges": "重複の変更を適用中...",
+        "prepareCsvExport": "CSVエクスポートを準備中...",
+        "prepareCsvImport": "CSVインポートを準備中...",
+        "prepareDbExport": "データベースバックアップのエクスポートを準備中...",
+        "prepareDbImport": "データベースバックアップのインポートを準備中..."
+      },
+      "errorPrefix": {
+        "addFolder": "フォルダー追加エラー",
+        "removeFolder": "フォルダー削除エラー",
+        "rescan": "再スキャンエラー",
+        "rescanFolder": "フォルダー再スキャンエラー",
+        "renderThumbs": "サムネイル生成エラー",
+        "retryThumbs": "失敗サムネイル再試行エラー",
+        "clearLibrary": "ライブラリ削除エラー",
+        "duplicateScan": "重複スキャンエラー",
+        "saveDuplicateChanges": "重複変更の保存エラー",
+        "exportCsv": "CSVエクスポートエラー",
+        "importCsv": "CSVインポートエラー",
+        "exportDb": "データベースバックアップのエクスポートエラー",
+        "importDb": "データベースバックアップのインポートエラー",
+        "cancelThumbRender": "サムネイル生成キャンセルエラー"
+      },
+      "summary": {
+        "folderAdded": "フォルダーをスキャンリストに追加しました: {{path}}",
+        "folderSelectionCancelled": "フォルダー選択をキャンセルしました。",
+        "removedRoot": "ルートを削除しました。アセット: {{assets}}、サムネイル: {{thumbnails}}",
+        "doneIndexed": "完了。インデックス: {{indexed}}、削除: {{removed}}、失敗: {{failed}}",
+        "doneIndexedPartial": "部分スキャン。インデックス: {{indexed}}、削除: {{removed}}、警告: {{failed}}。不完全なフォルダーのクリーンアップをスキップし、既存のレコードを保持しました。",
+        "allThumbnailsLabel": "すべてのサムネイル",
+        "failedRetryLabel": "失敗サムネイルの再試行",
+        "stopRequested": "停止が要求されました。進行中のサムネイルタスクを完了しています...",
+        "noThumbRenderRunning": "サムネイルの一括生成は実行されていません。",
+        "libraryCleared": "ライブラリを削除しました。アセット: {{assets}}、ルート: {{roots}}、サムネイル: {{thumbnails}}",
+        "duplicateScanComplete": "重複スキャン完了。グループ: {{groups}}、アセット: {{assets}}",
+        "noDuplicateChanges": "適用待ちの重複変更はありません",
+        "duplicateApplyCancelled": "重複変更の適用をキャンセルしました。",
+        "duplicateApplied": "{{count}} 件の変更を適用しました。残りのグループ: {{groups}}",
+        "csvExportCancelled": "CSVエクスポートをキャンセルしました。",
+        "csvExporting": "タグCSVをエクスポート中...",
+        "csvExported": "CSVをエクスポートしました。行数: {{rows}}",
+        "csvImportCancelled": "CSVインポートをキャンセルしました。",
+        "csvImporting": "タグCSVをインポート中...",
+        "csvImported": "CSVをインポートしました。読み込み行数: {{rowsRead}}、適用: {{rowsApplied}}、一致アセット: {{assetsMatched}}、更新アセット: {{assetsUpdated}}",
+        "dbExportCancelled": "データベースバックアップのエクスポートをキャンセルしました。",
+        "dbExporting": "データベースとサムネイルをエクスポート中...",
+        "dbExported": "データベースバックアップのアーカイブをエクスポートしました。ファイル: {{files}}、サムネイル: {{thumbnails}}",
+        "dbImportCancelled": "データベースバックアップのインポートをキャンセルしました。",
+        "dbImporting": "データベースとサムネイルをインポート中...",
+        "dbImported": "データベースバックアップのアーカイブをインポートしました。ファイル: {{files}}、サムネイル: {{thumbnails}}",
+        "folderAddedWithSkipped": "????????????????????: {{path}}???????????: {{skipped}}?",
+        "foldersAdded": "{{count}} ???????????????????????",
+        "foldersAddedWithSkipped": "{{count}} ?????????????????????????????????: {{skipped}}?",
+        "noNewFoldersAdded": "????????????????????????????",
+        "noNewFoldersAddedWithSkipped": "??????????????????????????????????: {{skipped}}?"
+      },
+      "dialogs": {
+        "selectMediaFolder": "メディアフォルダーを選択",
+        "exportTagsCsv": "タグCSVをエクスポート",
+        "importTagsCsv": "タグCSVをインポート",
+        "exportDbArchive": "DBバックアップアーカイブをエクスポート",
+        "selectDbArchive": "DBバックアップアーカイブを選択",
+        "confirmDuplicateChanges": "キューにある {{count}} 件の変更を適用しますか？\n\nこれにより、{{deleteCount}} 個のファイルがディスクから完全に削除されます。",
+        "confirmDbImportOverwrite": "アーカイブからのデータベースインポートは、現在のデータベースとサムネイルを上書きします。続行しますか？"
+      }
+    }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "ファイル名を空にできません",
+    "fileNameInvalid": "ファイル名が無効です",
+    "fileNameInvalidCharacters": "ファイル名に無効な文字が含まれています",
+    "duplicatePayloadInvalid": "重複変更ペイロードが無効です",
+    "unknownAssetInChanges": "キュー済み変更に不明なアセットがあります: {{assetId}}",
+    "duplicateGroupStillUnresolved": "グループ \"{{fileName}}\": キュー済み変更を適用しても重複ファイル名が残ります。このブロックでさらにリネームまたは削除してください。"
+  }
+}

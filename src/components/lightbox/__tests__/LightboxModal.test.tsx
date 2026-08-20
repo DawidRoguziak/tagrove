@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../types";
@@ -78,6 +78,85 @@ describe("LightboxModal", () => {
 
     const video = container.querySelector("video");
     expect(video).toHaveAttribute("loop");
+  });
+
+  it("shows a video error and resets it when the selected source changes", () => {
+    const { container, rerender } = render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    const video = container.querySelector("video");
+    expect(video).not.toBeNull();
+    fireEvent.error(video!);
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not play video");
+
+    rerender(
+      <LightboxModal
+        selected={{ ...selectedVideoAsset, path: "C:/media/2.mp4" }}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
+    expect(container.querySelector("video")).not.toBeNull();
+  });
+
+  it("shows a GIF error and resets it after navigation", () => {
+    const gifAsset: Asset = {
+      ...selectedAsset,
+      path: "C:/media/animation.gif",
+      kind: "gif"
+    };
+    const { rerender } = render(
+      <LightboxModal
+        selected={gifAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    fireEvent.error(screen.getByAltText(gifAsset.path));
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not display image or GIF");
+
+    rerender(
+      <LightboxModal
+        selected={{ ...selectedAsset, id: 2, path: "C:/media/2.jpg" }}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
+    expect(screen.getByAltText("C:/media/2.jpg")).toHaveAttribute("src", "media://C:/media/2.jpg");
   });
 
   it("does not navigate with arrows while editing tags", async () => {

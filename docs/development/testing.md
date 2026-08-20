@@ -79,7 +79,7 @@ Cargo may execute independent tests concurrently. Never use a shared fixed datab
 
 ### Docker-first Linux E2E
 
-`./scripts/build-linux-docker.sh` is the release gate and requires only Docker on the host. The image installs `tauri-driver`, WebKitWebDriver, Xvfb and D-Bus, forces the English `C.UTF-8` locale, runs the desktop suite, and smoke-launches the finished AppImage. Windows developers can still run `bun run test:e2e:tauri` with matching EdgeDriver.
+`./scripts/build-linux-docker.sh` is the release gate and requires Docker plus the Bash/GNU tools used by the wrapper on the host. The image installs `tauri-driver`, WebKitWebDriver, Xvfb, D-Bus, and the declared GStreamer runtime plugins, sets `C.UTF-8`, runs the desktop suite, and builds the native executable. Windows developers can still run `bun run test:e2e:tauri` with matching EdgeDriver.
 
 ### Windows prerequisites
 
@@ -92,7 +92,8 @@ Cargo may execute independent tests concurrently. Never use a shared fixed datab
 
 3. Install `msedgedriver.exe` whose version matches the installed Microsoft Edge version. Put it on `PATH`, put it at the repository root as `msedgedriver.exe`, or set `MSEDGEDRIVER_PATH` to its full path. Running `msedgedriver-tool` from the repository root can download a local driver.
 4. If `tauri-driver` is not at the default `%USERPROFILE%\.cargo\bin\tauri-driver.exe`, set `TAURI_DRIVER_PATH` to its full path.
-5. Ensure TCP port `127.0.0.1:4444` is free.
+5. Put ffmpeg on `PATH` or set `FFMPEG_PATH` to its full executable path so the mixed-media workflow can generate its temporary GIF and MP4 fixtures.
+6. Ensure TCP port `127.0.0.1:4444` is free.
 
 The harness selects `media_tagger.exe` and EdgeDriver on Windows, or `media_tagger` and WebKitWebDriver on Linux.
 
@@ -117,7 +118,7 @@ The exact E2E identity is:
 | Tauri identifier | `com.example.mediatagger.e2e` |
 | Product/window title | `Image Viewer 3000 E2E` |
 | Cargo target directory | `src-tauri/target-e2e` |
-| Executable | `src-tauri/target-e2e/debug/media_tagger.exe` |
+| Executable | `src-tauri/target-e2e/debug/media_tagger.exe` on Windows; `src-tauri/target-e2e/debug/media_tagger` on Linux |
 | Build kind | Debug, unbundled (`--debug --no-bundle`) |
 | WebDriver endpoint | `127.0.0.1:4444` |
 | Production identifier kept separate | `com.example.mediatagger` |
@@ -143,7 +144,7 @@ Only then does it recursively remove the E2E directory with retries. An `EPERM` 
 
 ### Fixtures, selectors, and destructive workflows
 
-`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, copies valid PNG icons into them, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only the recorded temporary roots and artifacts.
+`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, copies valid PNG icons or generates a small GIF and MP4 with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only the recorded temporary roots and artifacts. Windows verifies MP4 decoding and playback; Linux verifies the controlled media-error fallback because WebKitGTK/GStreamer cannot currently consume Tauri's `asset://` video source.
 
 The workflow suite deliberately tests library clear, scan-root removal, backup restore, and permanent media deletion. Keep every deletable media fixture under a newly created temp root. Never change a destructive spec to index a personal directory, the repository root, or production app data. Do not weaken the identifier, target-directory, app-data-path, or live-title guards to make a failing run proceed.
 
@@ -161,7 +162,7 @@ The desktop harness does not force English. A fresh app chooses a stored languag
 | Public backend workflow spanning database modules | `backend_integration` or the Rust-only `backend_e2e` binary | Desktop E2E if the JavaScript command boundary or UI is part of the contract |
 | Tauri command name/payload, serialization, event/channel, startup, profile, or app-data behavior | Rust test plus frontend API test | Desktop E2E to prove the real bridge and bootstrap |
 | Destructive UI confirmation, filesystem mutation, import/export/restore, or critical user journey | Lower-layer tests for edge cases | Isolated desktop E2E for the representative happy path and safety guard |
-| Packaging, installer, bundled resources, or ffmpeg sidecar layout | Build and lower-layer tests | Manual packaged Windows smoke test; the unbundled desktop suite is insufficient |
+| Packaging, installer, bundled resources, or ffmpeg sidecar layout | Build and lower-layer tests | Manual packaged Windows smoke test or native Arch/CachyOS release smoke test; the unbundled desktop suite is insufficient |
 
 ## Guarantees and limitations
 
@@ -177,10 +178,11 @@ Current limitations:
 - jsdom and mocked Tauri calls do not prove IPC serialization or native runtime behavior.
 - `backend_e2e.rs` does not test the desktop, command serialization, the native CSV dialog/parser path, or profile isolation.
 - The desktop suite is an unbundled debug build and does not verify MSI/NSIS installation, production resource lookup, code signing, or packaged sidecars.
-- Desktop setup is effectively Windows/Edge-only, and Edge/driver compatibility is external to the repository.
+- Desktop E2E is supported in the Linux container with WebKitWebDriver and on a separately configured Windows host with EdgeDriver; native host Linux setup outside Docker is not documented.
 - Desktop selectors assume English, but the harness does not currently set the application language deterministically.
 - An `EPERM` during E2E app-data deletion leaves stale isolated data and does not fail fast.
 - The standalone `tauri:build:e2e` script can embed stale `dist/`; only the full desktop test command builds the frontend first.
+- Linux WebKitGTK cannot currently play local video through Tauri's `asset://` protocol because GStreamer does not handle that custom URI; the Linux desktop suite verifies the error fallback rather than playback.
 - Backend fixtures cover many filesystem semantics but do not constitute exhaustive testing on every supported filesystem or operating system.
 
 ## Troubleshooting

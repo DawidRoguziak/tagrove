@@ -47,6 +47,8 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `VideoToolStatus` / same | `ffmpeg_available`, `ffprobe_available` |
 | `ScanProgress` / `ScanProgress` | `phase`, `processed`, `total`, `message` |
 
+`AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. This lets the lightbox use a valid immediate media source while details continue loading.
+
 `kind` is typed as `MediaKind` (`image | gif | video`) in TypeScript, while the serialized Rust model stores it as an unrestricted `String`; correctness currently comes from indexing/database invariants rather than serde validation on output.
 
 ### Asset queries and reads

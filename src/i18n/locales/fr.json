@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Tapez \"{{value}}\"",
       "confirm": "Confirmer"
     },
+    "mediaError": {
+      "video": "Impossible de lire la vidéo",
+      "image": "Impossible d’afficher l’image ou le GIF"
+    },
     "tagSaving": "Enregistrement des tags...",
     "retryTagSave": "Réessayer",
     "tagDetailsLoading": "Chargement de la liste complète des tags...",

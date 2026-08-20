@@ -18,7 +18,7 @@
     "test:e2e:tauri": "wdio run ./e2e/wdio.conf.js",
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.dev.json",
     "tauri:build:release": "tauri build",
-    "tauri:build:linux": "tauri build --bundles appimage",
+    "tauri:build:linux": "tauri build --no-bundle",
     "tauri:build:e2e": "node ./e2e/build-e2e.js",
     "build:linux:docker": "bash ./scripts/build-linux-docker.sh",
     "preview": "vite preview",

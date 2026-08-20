@@ -4,6 +4,8 @@ import type {
   PointerEventHandler,
   ReactEventHandler
 } from "react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { MediaPlayerInstance } from "@vidstack/react";
 import { toMediaSrc } from "../../api";
 import type { Asset } from "../../types";
@@ -44,6 +46,10 @@ export function LightboxMediaStage({
   onImagePointerMove,
   onImagePointerEnd
 }: LightboxMediaStageProps) {
+  const { t } = useTranslation();
+  const [failedMediaKey, setFailedMediaKey] = useState<string | null>(null);
+  const mediaKey = `${selected.id}\u0000${selected.kind}\u0000${selected.path}`;
+  const mediaFailed = failedMediaKey === mediaKey;
   const mediaStyle =
     mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
       ? {
@@ -59,7 +65,19 @@ export function LightboxMediaStage({
         mediaViewportRef.current = node;
       }}
     >
-      {selected.kind === "video" ? (
+      {mediaFailed ? (
+        <div className="flex h-full w-full items-center justify-center p-6">
+          <div
+            role="alert"
+            data-testid="lightbox-media-error"
+            className="rounded-[var(--radius-control)] border border-error/52 bg-error/14 px-5 py-4 text-center text-sm font-semibold text-base-content"
+          >
+            {selected.kind === "video"
+              ? t("lightbox.mediaError.video")
+              : t("lightbox.mediaError.image")}
+          </div>
+        </div>
+      ) : selected.kind === "video" ? (
         <div className="flex h-full w-full items-center justify-center overflow-hidden">
           <LightboxVideoPlayer
             style={isFullscreen ? undefined : mediaStyle}
@@ -75,6 +93,7 @@ export function LightboxMediaStage({
             playerRef={lightboxVideoPlayerRef}
             onLoadedMetadata={onVideoLoadedMetadata}
             onFullscreenChange={onVideoFullscreenChange}
+            onError={() => setFailedMediaKey(mediaKey)}
           />
         </div>
       ) : (
@@ -89,6 +108,7 @@ export function LightboxMediaStage({
           onLostPointerCapture={onImagePointerEnd}
         >
           <img
+            data-testid="lightbox-image"
             ref={(node) => {
               lightboxImageRef.current = node;
             }}
@@ -99,6 +119,7 @@ export function LightboxMediaStage({
               isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
             }`}
             onLoad={onImageLoad}
+            onError={() => setFailedMediaKey(mediaKey)}
             onClick={onImageClick}
             draggable={false}
           />

@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "\"{{value}}\" と入力してください",
       "confirm": "確定"
     },
+    "mediaError": {
+      "video": "動画を再生できませんでした",
+      "image": "画像または GIF を表示できませんでした"
+    },
     "tagSaving": "タグを保存中...",
     "retryTagSave": "再試行",
     "tagDetailsLoading": "完全なタグ一覧を読み込んでいます...",

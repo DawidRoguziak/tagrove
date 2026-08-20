@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Escribe \"{{value}}\"",
       "confirm": "Confirmar"
     },
+    "mediaError": {
+      "video": "No se pudo reproducir el video",
+      "image": "No se pudo mostrar la imagen o el GIF"
+    },
     "tagSaving": "Guardando etiquetas...",
     "retryTagSave": "Reintentar",
     "tagDetailsLoading": "Cargando la lista completa de etiquetas...",

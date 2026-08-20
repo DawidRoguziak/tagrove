@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Wpisz \"{{value}}\"",
       "confirm": "Potwierdz"
     },
+    "mediaError": {
+      "video": "Nie można odtworzyć video",
+      "image": "Nie można wyświetlić obrazu lub GIF-a"
+    },
     "tagSaving": "Zapisywanie tagów...",
     "retryTagSave": "Ponów",
     "tagDetailsLoading": "Wczytywanie pełnej listy tagów...",

@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Type \"{{value}}\"",
       "confirm": "Confirm"
     },
+    "mediaError": {
+      "video": "Could not play video",
+      "image": "Could not display image or GIF"
+    },
     "tagSaving": "Saving tags...",
     "retryTagSave": "Retry",
     "tagDetailsLoading": "Loading complete tag list...",

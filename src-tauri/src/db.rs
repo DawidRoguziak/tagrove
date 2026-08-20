@@ -2056,7 +2056,7 @@ pub fn list_asset_summaries_by_ids(
     for chunk in asset_ids.chunks(500) {
         let placeholders = vec!["?"; chunk.len()].join(",");
         let sql = format!(
-            "SELECT id, file_name, CASE WHEN kind = 'gif' THEN path ELSE NULL END, kind,
+            "SELECT id, file_name, CASE WHEN kind IN ('gif', 'video') THEN path ELSE NULL END, kind,
                     modified_at, width, height, duration_ms, thumb_path,
                     is_favorite, media_group_key, media_group_order
              FROM assets WHERE id IN ({placeholders})"
@@ -2137,7 +2137,8 @@ mod tests {
         grouped_bucket_stats_sql, init_schema, list_assets, list_assets_for_csv_export,
         list_assets_for_thumbnail_render, list_assets_with_meta,
         list_duplicate_assets_by_file_name_key, list_duplicate_file_name_counts,
-        list_failed_assets_for_thumbnail_render, list_failed_thumbnail_asset_ids,
+        list_asset_summaries_by_ids, list_failed_assets_for_thumbnail_render,
+        list_failed_thumbnail_asset_ids,
         list_ordered_asset_ids_with_meta, list_tags_page, merge_asset_tags_bulk,
         merge_asset_tags_bulk_with_revision, record_thumbnail_failure, rename_asset_file_by_id,
         root_descendant_like_pattern,
@@ -2168,6 +2169,23 @@ mod tests {
             },
         )
         .expect("upsert asset");
+    }
+
+    #[test]
+    fn summary_preview_paths_include_video_and_gif_sources_only() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+
+        insert_asset(&conn, "/media/still.jpg", "image", 30);
+        insert_asset(&conn, "/media/clip.mp4", "video", 20);
+        insert_asset(&conn, "/media/animation.gif", "gif", 10);
+
+        let summaries = list_asset_summaries_by_ids(&conn, &[2, 3, 1]).expect("summaries");
+
+        assert_eq!(summaries.iter().map(|item| item.id).collect::<Vec<_>>(), vec![2, 3, 1]);
+        assert_eq!(summaries[0].preview_path.as_deref(), Some("/media/clip.mp4"));
+        assert_eq!(summaries[1].preview_path.as_deref(), Some("/media/animation.gif"));
+        assert_eq!(summaries[2].preview_path, None);
     }
 
     #[test]

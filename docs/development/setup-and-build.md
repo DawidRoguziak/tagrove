@@ -4,9 +4,9 @@ This page describes the setup and build behavior implemented by the current repo
 
 ## Prerequisites
 
-The packaged application supports Windows x86-64 and Arch/CachyOS x86-64. Platform-specific Tauri configs select MSI/NSIS with locally supplied Windows media-tool sidecars on Windows and AppImage without sidecars on Linux. The Docker workflow forces `linux/amd64` and runs Linux desktop E2E with WebKitWebDriver.
+The packaged application supports Windows x86-64 and Arch/CachyOS x86-64. Platform-specific Tauri configs select MSI/NSIS with locally supplied Windows media-tool sidecars on Windows and an unbundled native executable on Linux. The Docker workflow forces `linux/amd64` and runs Linux desktop E2E with WebKitWebDriver.
 
-The supported Linux release workflow requires only a working Docker daemon on the host. `Dockerfile.linux` installs the Arch build dependencies, Bun, Node.js, Rust/Cargo, WebKitGTK, and packaging tools inside the image. It runs the frontend and backend tests before producing artifacts, so those tools do not need to be installed on the host.
+The supported Linux release workflow requires a working Docker daemon plus Bash and the standard GNU utilities used by `scripts/build-linux-docker.sh` on the host. `Dockerfile.linux` installs the Arch build dependencies, Bun, Node.js, Rust/Cargo, WebKitGTK, and media runtime packages inside the image. It runs the frontend and backend tests before producing artifacts, so those language toolchains do not need to be installed on the host.
 
 The repository-level runtime requirements are:
 
@@ -16,7 +16,7 @@ The repository-level runtime requirements are:
 | Node.js | `>=20.19 <21 || >=22.12` | Declared in `package.json`. Node is used directly by the frontend test command and `e2e/build-e2e.js`, so Bun alone does not replace it. |
 | Rust and Cargo | No minimum or channel pinned | `src-tauri/Cargo.toml` uses Rust edition 2021, but it has no `rust-version`, and the repository has no `rust-toolchain` file. Local Windows builds use a current stable MSVC toolchain. The Linux container installs the current stable `x86_64-unknown-linux-gnu` toolchain through Arch's `rustup` package. |
 
-The repository does not include ffmpeg/ffprobe sidecars. A complete Windows package requires Windows x86-64 copies to be supplied manually under the target-specific filenames documented below. Linux builds intentionally use system `ffmpeg` and `ffprobe` at runtime; run `sudo pacman -S ffmpeg` on the machine that runs the AppImage. Building on rolling Arch targets current Arch/CachyOS systems and does not guarantee compatibility with older distributions or older glibc ABIs.
+The repository does not include ffmpeg/ffprobe sidecars. A complete Windows package requires Windows x86-64 copies to be supplied manually under the target-specific filenames documented below. Linux builds intentionally use the host media and WebKit stack. Install the runtime dependencies with `sudo pacman -S --needed webkit2gtk-4.1 ffmpeg gst-plugins-base-libs gst-plugins-good gst-plugins-bad gst-libav`. `gst-plugins-ugly` is not required by the tested formats and is intentionally omitted. Building on rolling Arch targets current Arch/CachyOS systems and does not guarantee compatibility with older distributions or older glibc ABIs.
 
 ### Containerized Arch Linux release
 
@@ -26,7 +26,7 @@ Run the build directly so the host does not need Bun or Node.js:
 ./scripts/build-linux-docker.sh
 ```
 
-The script builds the `artifacts` stage after frontend build, Vitest, all Rust tests, Linux desktop E2E, release packaging, and an AppImage smoke launch. It copies only `/out/.` into a temporary host directory, validates exactly one x86-64 ELF binary and one executable AppImage, verifies generated checksums, and only then atomically replaces `artifacts/linux/`. The output also contains `SHA256SUMS` and `build-manifest.txt` with toolchain and package versions.
+The script builds the `artifacts` stage after frontend build, Vitest, all Rust tests, Linux desktop E2E, and the native release build. It copies only `/out/.` into a temporary host directory, validates exactly one x86-64 ELF binary and its manifest, rejects missing shared libraries reported by `ldd`, verifies generated checksums, and only then replaces `artifacts/linux/`. The output contains `media_tagger`, `SHA256SUMS`, and `build-manifest.txt` with toolchain and package versions.
 
 If Bun is already available on the host, `bun run build:linux:docker` is an equivalent convenience command. Both forms use the ordinary `docker build`/`docker create`/`docker cp` interface and do not require Buildx.
 
@@ -62,8 +62,8 @@ The following are all current non-test scripts in `package.json`:
 | `bun run build` | Runs `tsc` first and, only if type checking succeeds, runs `vite build`. Vite writes the production frontend to the default root `dist/` directory. |
 | `bun run preview` | Serves an existing Vite production build for browser inspection. It does not build first and does not launch Tauri. |
 | `bun run tauri:dev` | Runs `tauri dev --config src-tauri/tauri.conf.dev.json`. This is the canonical desktop development command and selects the isolated development identifier and title. Tauri starts `bun run dev` through `beforeDevCommand`. |
-| `bun run tauri:build:release` | Runs `tauri build`. Tauri automatically merges the host platform config, producing MSI/NSIS on Windows or AppImage on Linux. |
-| `bun run tauri:build:linux` | Creates the native Linux release binary and AppImage. This is the inner container command; use `./scripts/build-linux-docker.sh` from the host. |
+| `bun run tauri:build:release` | Runs `tauri build`. Tauri automatically merges the host platform config, producing MSI/NSIS on Windows or only the native executable on Linux. |
+| `bun run tauri:build:linux` | Creates the unbundled native Linux release executable. This is the inner container command; use `./scripts/build-linux-docker.sh` from the host. |
 | `bun run tauri:build:e2e` | Runs `node ./e2e/build-e2e.js`, validates the E2E identifier/title/target, and creates an unbundled debug executable in `src-tauri/target-e2e/debug/`. It does not build the frontend itself. |
 | `bun run build:linux:docker` | Convenience wrapper for `scripts/build-linux-docker.sh`; requires Bun on the host, unlike invoking the shell script directly. |
 | `bun run tauri` | Exposes the local Tauri CLI directly for explicit subcommands. It does not select the safe development overlay on its own. |
@@ -103,7 +103,7 @@ The TypeScript pass is not exposed as a separate package script. Vite developmen
 
 | Profile | Command/configuration | Title | Identifier | Output and data boundary |
 | --- | --- | --- | --- | --- |
-| Release | `bun run tauri:build:release`; base plus host platform config | `Image Viewer 3000` | `com.example.mediatagger` | Normal `src-tauri/target` output and production app data. Tauri bundles MSI/NSIS on Windows or AppImage on Linux. The Docker workflow exports Linux results to `artifacts/linux/`. |
+| Release | `bun run tauri:build:release`; base plus host platform config | `Image Viewer 3000` | `com.example.mediatagger` | Normal `src-tauri/target` output and production app data. Tauri bundles MSI/NSIS on Windows; Linux produces a native executable. The Docker workflow exports the Linux executable to `artifacts/linux/`. |
 | Development | `bun run tauri:dev`; dev overlay merged over the base | `Image Viewer 3000 Dev` | `com.example.mediatagger.dev` | Debug build and a separate identifier-specific app-data directory. |
 | Desktop E2E | `bun run tauri:build:e2e`; E2E overlay merged over the base | `Image Viewer 3000 E2E` | `com.example.mediatagger.e2e` | Unbundled debug executable named `media_tagger.exe` on Windows or `media_tagger` on Linux and a separate E2E app-data directory. |
 
@@ -122,7 +122,7 @@ The standalone E2E build is intentionally narrower than the full desktop E2E tes
 | `vite.config.ts` | React/Tailwind integration and the fixed, strict development port. Vite defaults own `dist/` and the preview port because they are not overridden. |
 | `src-tauri/tauri.conf.json` | Shared product metadata, frontend hooks/locations, release window/security settings, and icons. |
 | `src-tauri/tauri.windows.conf.json` | Windows WebView2 arguments, MSI/NSIS targets, and ffmpeg/ffprobe sidecars. |
-| `src-tauri/tauri.linux.conf.json` | Linux AppImage target; Linux intentionally declares no media-tool sidecars. |
+| `src-tauri/tauri.linux.conf.json` | Disables bundling on Linux; Linux intentionally declares no media-tool sidecars. |
 | `src-tauri/tauri.conf.dev.json` | Development identifier, product name, window title, and development window overlay. |
 | `src-tauri/tauri.conf.e2e.json` | E2E identifier/title and suppression of Tauri's automatic frontend build. |
 | `src-tauri/capabilities/default.json` | Permissions granted to the `main` window. |
@@ -137,7 +137,7 @@ The Windows platform bundle declares `binaries/ffmpeg` and `binaries/ffprobe` as
 - `src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe`
 - `src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe`
 
-When both files are present, release MSI/NSIS packages include both tools. A fresh checkout does not contain them and cannot build a complete Windows package until they are supplied. Linux AppImage builds do not include them: they rely on system `ffmpeg` and `ffprobe` from `PATH`. Development and unbundled builds may resolve tools from Tauri resource/binary locations or adjacent resource directories. Missing tools do not block application startup, but video duration probing and thumbnail generation can fail or degrade.
+When both files are present, release MSI/NSIS packages include both tools. A fresh checkout does not contain them and cannot build a complete Windows package until they are supplied. Linux release builds do not include them: they rely on system `ffmpeg` and `ffprobe` from `PATH`. Development and unbundled builds may resolve tools from Tauri resource/binary locations or adjacent resource directories. Missing tools do not block application startup, but video duration probing and thumbnail generation can fail or degrade.
 
 The configuration does not record the upstream ffmpeg/ffprobe version, checksum, or acquisition/update procedure. Record and verify provenance outside the repository when supplying them. Update ffmpeg and ffprobe together, preserve the exact target-triple filenames expected by Tauri, and smoke-test an installed package rather than relying only on a PATH fallback.
 
@@ -189,7 +189,7 @@ Current build guarantees:
 - a debug application refuses to start with the production identifier;
 - the frontend production build must pass the configured TypeScript checks before Vite bundles it;
 - release builds invoke the frontend build and merge the appropriate Windows or Linux bundle configuration;
-- the Docker Linux workflow installs its toolchain in the image, runs frontend/backend tests, and exports only the release binary and AppImage;
+- the Docker Linux workflow installs its toolchain and declared runtime media stack in the image, runs frontend/backend/desktop tests, and exports the native release binary, manifest, and checksums;
 - the E2E builder asserts its identifier, title, isolated target directory, and resulting executable; and
 - committed Bun and Cargo lockfiles capture exact dependency resolutions.
 
@@ -215,7 +215,7 @@ For a clean local desktop development setup:
 4. Run `bun run build` once to validate TypeScript and produce `dist/`.
 5. Run `bun run tauri:dev` for normal desktop development.
 
-Before distributing a release:
+Before distributing a Windows release:
 
 1. Inspect intended changes to both manifests and lockfiles.
 2. Confirm both target-suffixed media sidecars exist.
@@ -227,9 +227,9 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 1. Confirm `docker version` can reach the daemon as the current user.
 2. Run `./scripts/build-linux-docker.sh`.
-3. Confirm `artifacts/linux/` contains `media_tagger` and an `.AppImage` file.
-4. Run the AppImage on the target Arch/CachyOS system; if FUSE is unavailable, use `--appimage-extract-and-run`.
-5. Smoke-test image display, video probing, and video thumbnail generation with `/usr/bin/ffmpeg` and `/usr/bin/ffprobe` available.
+3. Confirm `artifacts/linux/` contains `media_tagger`, `build-manifest.txt`, and `SHA256SUMS`, then run `(cd artifacts/linux && sha256sum --check SHA256SUMS)`.
+4. Install the declared runtime packages on the target Arch/CachyOS system and run `artifacts/linux/media_tagger`.
+5. Smoke-test image and GIF display plus video playback with image and audio, probing, and thumbnail generation.
 
 ## Troubleshooting
 
@@ -241,12 +241,10 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **`tauri:build:e2e` has missing or stale UI assets.** Run `bun run build` first. The E2E overlay deliberately disables `beforeBuildCommand`; only the full desktop E2E test orchestration builds the frontend automatically.
 
-**Video probing or thumbnails fail while images still work.** Confirm the target-suffixed ffmpeg and ffprobe files exist for packaged builds. For local diagnosis, also check whether the resolved resource location or `PATH` supplies both tools. Application startup succeeding does not prove that video tools were found.
+**Video probing or thumbnails fail while images still work.** Confirm the target-suffixed ffmpeg and ffprobe files exist for Windows packages. On Linux, confirm `ffmpeg` and `ffprobe` are on `PATH`. Application startup succeeding does not prove that video tools were found.
+
+**Linux video does not play or emits GStreamer pipeline errors.** Install `webkit2gtk-4.1`, `ffmpeg`, `gst-plugins-base-libs`, `gst-plugins-good`, `gst-plugins-bad`, and `gst-libav`, then verify `ldd artifacts/linux/media_tagger` has no `not found` entries. Local video can still fall back to an error even with those packages because WebKitGTK/GStreamer cannot currently consume Tauri's `asset://` video source (upstream Tauri issue `#3725`). The supported Linux artifact is the native executable, not an AppImage; installing host plugins does not repair the custom-protocol limitation.
 
 **The Docker command cannot connect to `/var/run/docker.sock`.** Confirm the current login session has access to the Docker daemon. The build script deliberately does not elevate through `sudo`.
-
-**The AppImage does not mount because FUSE is unavailable.** Run it with `--appimage-extract-and-run`. The build container also sets `APPIMAGE_EXTRACT_AND_RUN=1` so Tauri's AppImage packaging tools do not require a mounted FUSE device inside Docker.
-
-**AppImage packaging fails on an Arch update with an unsupported `.relr.dyn` section or a missing gdk-pixbuf loader directory.** Keep the compatibility setup in `Dockerfile.linux`: `NO_STRIP=1` avoids linuxdeploy's older bundled `strip`, while the directory derived from gdk-pixbuf's `pkg-config` metadata satisfies the GTK deployment plugin. The final Rust binary is still optimized by Cargo; this setting only disables linuxdeploy's additional stripping pass.
 
 **A dependency resolves differently on another machine.** Confirm both machines use the committed `bun.lock` and `src-tauri/Cargo.lock`, use frozen/locked install modes, and compare Bun/Rust versions. The repository does not pin those toolchains, so lockfiles cannot eliminate all tool-version differences.

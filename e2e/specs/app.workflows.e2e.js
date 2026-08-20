@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const iconsRoot = path.resolve(__dirname, "..", "..", "src-tauri", "icons");
+const execFileAsync = promisify(execFile);
 
 const tempMediaRoots = [];
 const tempArtifacts = [];
@@ -168,6 +171,57 @@ async function seedLibraryWithTempRoot(prefix, fileCount) {
   await invokeTauriCommand("rescan_all_roots");
   await browser.refresh();
   return root;
+}
+
+async function seedLibraryWithPlayableMedia(prefix) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), `media-tagger-e2e-${prefix}-`));
+  tempMediaRoots.push(root);
+  const gifPath = path.join(root, `${prefix}.gif`);
+  const videoPath = path.join(root, `${prefix}.mp4`);
+  const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
+
+  await execFileAsync(ffmpeg, [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc=size=96x64:rate=8",
+    "-t",
+    "1",
+    "-y",
+    gifPath
+  ]);
+  await execFileAsync(ffmpeg, [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc2=size=160x90:rate=24",
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=440:sample_rate=48000",
+    "-t",
+    "3",
+    "-c:v",
+    "mpeg4",
+    "-q:v",
+    "5",
+    "-c:a",
+    "aac",
+    "-shortest",
+    "-y",
+    videoPath
+  ]);
+
+  await invokeTauriCommand("add_scan_root", { path: root });
+  await invokeTauriCommand("rescan_all_roots");
+  await browser.refresh();
+  return { gifPath, videoPath };
 }
 
 describe("MediaTagger desktop workflows", () => {
@@ -529,6 +583,79 @@ describe("MediaTagger desktop workflows", () => {
         timeoutMsg: "Expected one asset removed after delete confirmation"
       }
     );
+  });
+
+  it("loads generated GIF and MP4 sources in the lightbox", async () => {
+    await resetLibraryState();
+    const { gifPath, videoPath } = await seedLibraryWithPlayableMedia("playback");
+    const assetsPage = await listAssetsForAssertions();
+    const gifAsset = assetsPage.items.find((asset) => asset.path === gifPath);
+    const videoAsset = assetsPage.items.find((asset) => asset.path === videoPath);
+    if (!gifAsset || !videoAsset) {
+      throw new Error("Expected generated GIF and MP4 assets after scan");
+    }
+
+    const query = await invokeTauriCommand("start_asset_query", {
+      tagsAnd: [],
+      tagsNot: [],
+      kind: null,
+      favoritesOnly: false,
+      metaFilter: null,
+      generation: 1,
+      pageSize: 20
+    });
+    const gifSummary = query.items.find((asset) => asset.id === gifAsset.id);
+    const videoSummary = query.items.find((asset) => asset.id === videoAsset.id);
+    if (gifSummary?.preview_path !== gifPath || videoSummary?.preview_path !== videoPath) {
+      throw new Error("Expected GIF and video summaries to contain full preview paths");
+    }
+
+    await ensureGalleryView();
+    const gifTile = await $(`button[data-asset-id="${gifAsset.id}"]`);
+    await gifTile.waitForDisplayed({ timeout: 15000 });
+    await gifTile.click();
+
+    const lightboxImage = await $('[data-testid="lightbox-image"]');
+    await lightboxImage.waitForDisplayed({ timeout: 10000 });
+    await browser.waitUntil(async () => Number(await lightboxImage.getProperty("naturalWidth")) > 0, {
+      timeout: 10000,
+      timeoutMsg: "Expected generated GIF to decode in the lightbox"
+    });
+    if (await $('[data-testid="lightbox-media-error"]').isExisting()) {
+      throw new Error("Generated GIF displayed the media error fallback");
+    }
+
+    const closePreviewButton = await $('button[aria-label="Close preview"]');
+    await closePreviewButton.click();
+    await closePreviewButton.waitForDisplayed({ timeout: 10000, reverse: true });
+
+    const videoTile = await $(`button[data-asset-id="${videoAsset.id}"]`);
+    await videoTile.waitForDisplayed({ timeout: 15000 });
+    await videoTile.click();
+
+    if (process.platform === "linux") {
+      const mediaError = await $('[data-testid="lightbox-media-error"]');
+      await mediaError.waitForDisplayed({ timeout: 10000 });
+      return;
+    }
+
+    const video = await $("[data-lightbox-video-player] video");
+    await video.waitForDisplayed({ timeout: 10000 });
+    await browser.waitUntil(async () => Number(await video.getProperty("readyState")) >= 2, {
+      timeout: 15000,
+      timeoutMsg: "Expected generated MP4 to reach playable readyState"
+    });
+    const initialTime = Number(await video.getProperty("currentTime"));
+    await browser.waitUntil(
+      async () => Number(await video.getProperty("currentTime")) > initialTime + 0.2,
+      {
+        timeout: 10000,
+        timeoutMsg: "Expected generated MP4 playback to advance"
+      }
+    );
+    if (await $('[data-testid="lightbox-media-error"]').isExisting()) {
+      throw new Error("Generated MP4 displayed the media error fallback");
+    }
   });
 
   it("roundtrips tags through CSV export/import commands", async () => {

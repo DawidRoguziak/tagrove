@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Digita \"{{value}}\"",
       "confirm": "Conferma"
     },
+    "mediaError": {
+      "video": "Impossibile riprodurre il video",
+      "image": "Impossibile visualizzare l’immagine o la GIF"
+    },
     "tagSaving": "Salvataggio tag...",
     "retryTagSave": "Riprova",
     "tagDetailsLoading": "Caricamento dell’elenco completo dei tag...",

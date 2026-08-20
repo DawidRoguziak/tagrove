@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Введите \"{{value}}\"",
       "confirm": "Подтвердить"
     },
+    "mediaError": {
+      "video": "Не удалось воспроизвести видео",
+      "image": "Не удалось отобразить изображение или GIF"
+    },
     "tagSaving": "Сохранение тегов...",
     "retryTagSave": "Повторить",
     "tagDetailsLoading": "Загрузка полного списка тегов...",

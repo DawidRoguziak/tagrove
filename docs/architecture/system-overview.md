@@ -147,7 +147,7 @@ Current configuration is permissive and should be treated as current state, not 
 - The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `['**']`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. This is needed by the current direct-media display path but is much broader than the library roots and thumbnail directory.
 - `app.security.csp` is `null`, so the configuration does not install a Content Security Policy.
 - The Windows release window passes WebView2 arguments that disable Microsoft OOUI/PDF UI and SmartScreen protection and relax autoplay. The dev overlay repeats those arguments; the E2E window configuration does not.
-- Platform configs bundle MSI/NSIS with both media tools on Windows and AppImage without media-tool sidecars on Linux. macOS and ARM targets are not configured.
+- Platform configs bundle MSI/NSIS with both media tools on Windows and disable bundling for the native Linux executable, which uses host media tools and GStreamer plugins. macOS and ARM targets are not configured.
 
 Security-sensitive changes should review capabilities, CSP, asset scope, dialog permissions, WebView arguments, and the direct `convertFileSrc` flow together. See [setup and build](../development/setup-and-build.md) for build prerequisites and commands.
 

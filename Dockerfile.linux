@@ -8,15 +8,16 @@ RUN pacman -Syu --noconfirm \
       curl \
       ffmpeg \
       file \
-      fuse2 \
+      gst-libav \
+      gst-plugins-bad \
+      gst-plugins-base-libs \
+      gst-plugins-good \
       nodejs-lts-jod \
       openssl \
-      patchelf \
       rustup \
       dbus \
       xorg-server-xvfb \
       webkit2gtk-4.1 \
-      wget \
     && pacman -Scc --noconfirm
 
 RUN rustup default stable \
@@ -28,14 +29,6 @@ RUN rustup default stable \
     && pkg-config --modversion webkit2gtk-4.1 \
     && ffmpeg -version | head -n 1
 
-# Arch's current gdk-pixbuf2 exposes this legacy path through pkg-config but
-# does not create it. linuxdeploy-plugin-gtk still expects it to exist.
-RUN gdk_pixbuf_binarydir="$(pkg-config --variable=gdk_pixbuf_binarydir gdk-pixbuf-2.0)" \
-    && install -d "$gdk_pixbuf_binarydir/loaders"
-
-# linuxdeploy's bundled strip does not understand Arch's modern RELR sections.
-ENV APPIMAGE_EXTRACT_AND_RUN=1 \
-    NO_STRIP=1
 WORKDIR /workspace
 
 COPY package.json bun.lock bunfig.toml ./
@@ -55,20 +48,15 @@ RUN pacman -S --needed --noconfirm webkitgtk-6.0 && pacman -Scc --noconfirm
 RUN dbus-run-session -- xvfb-run --auto-servernum bun run test:e2e:tauri
 
 FROM e2e AS release
-RUN bun run tauri:build:linux
-
-FROM release AS appimage-smoke
-RUN appimage="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)" \
-    && test -n "$appimage" \
-    && timeout 15s dbus-run-session -- xvfb-run --auto-servernum "$appimage" --appimage-extract-and-run >/tmp/appimage-smoke.log 2>&1; \
-    status=$?; test "$status" -eq 0 -o "$status" -eq 124
+RUN bun run tauri:build:linux \
+    && ldd src-tauri/target/release/media_tagger > /tmp/media-tagger-ldd.txt \
+    && ! grep -q 'not found' /tmp/media-tagger-ldd.txt
 
 FROM scratch AS staged-artifacts
 
-COPY --from=appimage-smoke /workspace/src-tauri/target/release/media_tagger /out/media_tagger
-COPY --from=appimage-smoke /workspace/src-tauri/target/release/bundle/appimage/*.AppImage /out/
+COPY --from=release /workspace/src-tauri/target/release/media_tagger /out/media_tagger
 
-FROM appimage-smoke AS manifest
+FROM release AS manifest
 RUN set -e; { \
       printf 'platform=linux/amd64\n'; \
       uname -a; \
@@ -78,6 +66,8 @@ RUN set -e; { \
       node --version; \
       cargo install --list; \
       ffmpeg -version | head -n 1; \
+      printf '\nshared-library dependencies:\n'; \
+      cat /tmp/media-tagger-ldd.txt; \
       pacman -Q; \
     } > /workspace/build-manifest.txt
 

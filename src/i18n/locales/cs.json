@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Napište \"{{value}}\"",
       "confirm": "Potvrdit"
     },
+    "mediaError": {
+      "video": "Video nelze přehrát",
+      "image": "Obrázek nebo GIF nelze zobrazit"
+    },
     "tagSaving": "Ukládání tagů...",
     "retryTagSave": "Zkusit znovu",
     "tagDetailsLoading": "Načítání úplného seznamu tagů...",

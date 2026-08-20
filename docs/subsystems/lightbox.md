@@ -26,7 +26,7 @@ The modal shell contains an absolute toolbar and a full-size media stage. The de
 
 ## Summary-to-details selection lifecycle
 
-The query cache stores `AssetSummary` values converted to the frontend `Asset` shape. Until details arrive, `path` is `preview_path` or `file_name`, `size_bytes` is `0`, and `tags` is empty; kind, dimensions, duration, favorite state, media group, and thumbnail fields come from the summary. This provisional object is intentionally usable by the modal for media display, but its empty `tags` array is never authoritative. While the complete tag base is unknown the tag input and chip removal are disabled. A null or rejected `getAssetDetails` result shows a dedicated loading error and Retry action; successful Retry, or a canonical mutation published by bulk, unlocks editing.
+The query cache stores `AssetSummary` values converted to the frontend `Asset` shape. Until details arrive, `path` is `preview_path` or `file_name`, `size_bytes` is `0`, and `tags` is empty; GIF and video summaries include a full preview path while ordinary images do not. Kind, dimensions, duration, favorite state, media group, and thumbnail fields come from the summary. This provisional object is intentionally usable by the modal for media display, but its empty `tags` array is never authoritative. While the complete tag base is unknown the tag input and chip removal are disabled. A null or rejected `getAssetDetails` result shows a dedicated loading error and Retry action; successful Retry, or a canonical mutation published by bulk, unlocks editing.
 
 Every `selectAsset` call, including close, increments `selectionRequestRef`. A detail response may replace `selected` only when its captured request ID still equals the current request ID. Consequently, a slow response for A cannot replace B or reopen a closed lightbox. The request is not cancelled at the transport layer.
 
@@ -84,7 +84,7 @@ All source paths pass through `toMediaSrc`.
 - `video` uses Vidstack `MediaPlayer`, `MediaProvider`, and `DefaultVideoLayout`. The source change remounts the player. It starts automatically, unmuted at volume 1, loops, plays inline, and preloads metadata. `onCanPlay` retries `play()` if autoplay left it paused. Picture-in-picture, Cast, audio gain, and the chapter title slot are disabled or removed.
 - Video metadata supplies intrinsic dimensions when the provider is a video provider. Before that, the selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`.
 
-The stage has no explicit media error UI. Original media is independent of thumbnail generation and thumbnail cache state.
+Image/GIF load failures and Vidstack video errors replace the failed media with a localized alert. The failure is scoped to asset ID, kind, and source path, so navigation or a corrected detail path immediately retries rendering. Original media is independent of thumbnail generation and thumbnail cache state.
 
 ## Image fit, zoom, and pan
 

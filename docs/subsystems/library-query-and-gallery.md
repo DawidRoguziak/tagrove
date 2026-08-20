@@ -66,11 +66,11 @@ Only one request per page offset is started at a time. A ref-backed in-flight co
 
 ### Summary rows and the details boundary
 
-Sessions materialize `AssetSummary`, not full `Asset` rows. A summary contains display and ordering metadata, thumbnail state, and media-group fields, but not the full source path, byte size, or tags. SQLite puts the source path in `preview_path` only for GIF summaries so a permitted GIF can animate without a separate detail read.
+Sessions materialize `AssetSummary`, not full `Asset` rows. A summary contains display and ordering metadata, thumbnail state, and media-group fields, but not byte size or tags. SQLite puts the source path in `preview_path` for GIF and video summaries so either media type can start from a valid source before the separate detail read. Ordinary image summaries keep it null.
 
 For compatibility with gallery and mutation code, `summaryToAsset` creates an intentionally incomplete `Asset`:
 
-- `path` is `preview_path` for a GIF and otherwise the file name;
+- `path` is `preview_path` for a GIF or video and otherwise the file name;
 - `size_bytes` is `0`; and
 - `tags` is `[]`.
 

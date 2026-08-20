@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "输入 \"{{value}}\"",
       "confirm": "确认"
     },
+    "mediaError": {
+      "video": "无法播放视频",
+      "image": "无法显示图像或 GIF"
+    },
     "tagSaving": "正在保存标签...",
     "retryTagSave": "重试",
     "tagDetailsLoading": "正在加载完整标签列表...",

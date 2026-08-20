@@ -35,6 +35,7 @@ interface LightboxVideoPlayerProps {
   playerRef: MutableRefObject<MediaPlayerInstance | null>;
   onLoadedMetadata: (dimensions: { width: number; height: number }) => void;
   onFullscreenChange: (fullscreen: boolean) => void;
+  onError: () => void;
 }
 
 export function LightboxVideoPlayer({
@@ -44,7 +45,8 @@ export function LightboxVideoPlayer({
   style,
   playerRef,
   onLoadedMetadata,
-  onFullscreenChange
+  onFullscreenChange,
+  onError
 }: LightboxVideoPlayerProps) {
   return (
     <div className="max-h-full max-w-full" style={style}>
@@ -87,13 +89,15 @@ export function LightboxVideoPlayer({
           });
         }}
         onFullscreenChange={onFullscreenChange}
+        onError={onError}
       >
         <MediaProvider
           mediaProps={{
             loop: true,
             muted: false,
             volume: 1,
-            disablePictureInPicture: true
+            disablePictureInPicture: true,
+            onError
           } as MediaHTMLAttributes<HTMLMediaElement>}
         />
         <DefaultVideoLayout

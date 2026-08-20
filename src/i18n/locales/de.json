@@ -181,6 +181,10 @@
       "typeYesPlaceholder": "Geben Sie \"{{value}}\" ein",
       "confirm": "Bestätigen"
     },
+    "mediaError": {
+      "video": "Video konnte nicht wiedergegeben werden",
+      "image": "Bild oder GIF konnte nicht angezeigt werden"
+    },
     "tagSaving": "Tags werden gespeichert...",
     "retryTagSave": "Erneut versuchen",
     "tagDetailsLoading": "Vollständige Tag-Liste wird geladen...",

@@ -134,6 +134,33 @@ describe("useLibraryBrowser", () => {
     expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the full preview path for a provisional video asset", async () => {
+    const video: Asset = {
+      ...createAsset(7),
+      path: "C:/library/clip.mp4",
+      kind: "video",
+      duration_ms: 10_000
+    };
+    apiMocks.startAssetQuery.mockResolvedValueOnce(ready([video], 1));
+
+    const { result } = renderHook(() =>
+      useLibraryBrowser({
+        pageSize: 10,
+        filterInclude: [],
+        filterExclude: [],
+        appliedMediaKind: "all",
+        appliedFavoritesOnly: false
+      })
+    );
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.assets[0].path).toBe("C:/library/clip.mp4");
+    expect(result.current.assets[0].path).not.toBe("clip.mp4");
+  });
+
   it("forwards meta filters to asset loading", async () => {
     apiMocks.startAssetQuery.mockResolvedValueOnce(ready([createAsset(3)], 1));
 

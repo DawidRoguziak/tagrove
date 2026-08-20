@@ -93,11 +93,11 @@ These are runtime behaviors, not a guarantee that every translation file is comp
 
 ## Current limitations and parity gaps
 
-As of the current repository state, English has 314 leaf keys. A read-only comparison found:
+As of the current repository state, English has 316 leaf keys. A read-only comparison found:
 
-- `fr.json` has 231 leaves: 83 canonical keys are missing and there are no extra keys. The missing keys are all four `settings.status.ready` leaves; 15 direct `settings.progress` leaves; all five `settings.progress.thumbnailSummary` leaves; 13 `settings.actions.pending` leaves; 14 `settings.actions.errorPrefix` leaves; 25 `settings.actions.summary` leaves; and seven `settings.actions.dialogs` leaves.
-- `cs.json` has 235 leaves: 85 canonical keys are missing and six extra keys are misplaced. Its missing settings groups are the same as French except that its four `settings.status.ready` leaves are present. In addition, the six canonical `validation.*` leaves are missing because they currently exist under `settings.validation.*`: `fileNameCannotBeEmpty`, `fileNameInvalid`, `fileNameInvalidCharacters`, `duplicatePayloadInvalid`, `unknownAssetInChanges`, and `duplicateGroupStillUnresolved`.
-- For keys shared with English, French and Czech currently have no placeholder mismatches. The other eight non-English resources (`pl`, `de`, `it`, `es`, `ru`, `zh`, `ja`, and `ko`) match all 314 English leaf paths and placeholder multisets.
+- `fr.json` has 233 leaves: 83 canonical keys are missing and there are no extra keys. The missing keys are all four `settings.status.ready` leaves; 15 direct `settings.progress` leaves; all five `settings.progress.thumbnailSummary` leaves; 13 `settings.actions.pending` leaves; 14 `settings.actions.errorPrefix` leaves; 25 `settings.actions.summary` leaves; and seven `settings.actions.dialogs` leaves.
+- `cs.json` has 237 leaves: 85 canonical keys are missing and six extra keys are misplaced. Its missing settings groups are the same as French except that its four `settings.status.ready` leaves are present. In addition, the six canonical `validation.*` leaves are missing because they currently exist under `settings.validation.*`: `fileNameCannotBeEmpty`, `fileNameInvalid`, `fileNameInvalidCharacters`, `duplicatePayloadInvalid`, `unknownAssetInChanges`, and `duplicateGroupStillUnresolved`.
+- For keys shared with English, French and Czech currently have no placeholder mismatches. The other eight non-English resources (`pl`, `de`, `it`, `es`, `ru`, `zh`, `ja`, and `ko`) match all 316 English leaf paths and placeholder multisets.
 
 The French and Czech missing keys render through English fallback. This is a graceful runtime result, but it is not translation parity.
 

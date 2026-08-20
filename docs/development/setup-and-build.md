@@ -243,7 +243,7 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **Video probing or thumbnails fail while images still work.** Confirm the target-suffixed ffmpeg and ffprobe files exist for Windows packages. On Linux, confirm `ffmpeg` and `ffprobe` are on `PATH`. Application startup succeeding does not prove that video tools were found.
 
-**Linux video does not play or emits GStreamer pipeline errors.** Install `webkit2gtk-4.1`, `ffmpeg`, `gst-plugins-base-libs`, `gst-plugins-good`, `gst-plugins-bad`, and `gst-libav`, then verify `ldd artifacts/linux/media_tagger` has no `not found` entries. Local video can still fall back to an error even with those packages because WebKitGTK/GStreamer cannot currently consume Tauri's `asset://` video source (upstream Tauri issue `#3725`). The supported Linux artifact is the native executable, not an AppImage; installing host plugins does not repair the custom-protocol limitation.
+**Linux video does not play or emits GStreamer pipeline errors.** Install `webkit2gtk-4.1`, `ffmpeg`, `gst-plugins-base-libs`, `gst-plugins-good`, `gst-plugins-bad`, and `gst-libav`, then verify `ldd artifacts/linux/media_tagger` has no `not found` entries. Playback uses a loopback HTTP stream rather than Tauri's custom asset protocol, so remaining failures should be diagnosed from the logged native `MediaError` category and the installed GStreamer codec support. The supported Linux artifact is the native executable, not an AppImage.
 
 **The Docker command cannot connect to `/var/run/docker.sock`.** Confirm the current login session has access to the Docker daemon. The build script deliberately does not elevate through `sudo`.
 

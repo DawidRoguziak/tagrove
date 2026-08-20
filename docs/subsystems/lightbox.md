@@ -78,13 +78,13 @@ Delete opens a nested modal, closes both popovers, clears its text each time it 
 
 ## Media presentation
 
-All source paths pass through `toMediaSrc`.
+Image and GIF source paths pass through `toMediaSrc`.
 
 - `image` and `gif` use the same non-draggable `<img>` stage. GIF animation is browser-native, and both kinds receive the image fit, zoom, and pan behavior.
-- `video` uses Vidstack `MediaPlayer`, `MediaProvider`, and `DefaultVideoLayout`. The source change remounts the player. It starts automatically, unmuted at volume 1, loops, plays inline, and preloads metadata. `onCanPlay` retries `play()` if autoplay left it paused. Picture-in-picture, Cast, audio gain, and the chapter title slot are disabled or removed.
+- `video` requests `get_video_stream_url` by asset ID and passes the returned tokenized loopback HTTP URL directly to Vidstack `MediaPlayer`, `MediaProvider`, and `DefaultVideoLayout`. The backend revalidates the SQLite row and streams GET/HEAD byte ranges, so large files and seeking do not pass through IPC or a frontend Blob. Source changes remount the player. It starts automatically, unmuted at volume 1, loops, plays inline, and preloads metadata. `onCanPlay` retries `play()` if autoplay left it paused. Picture-in-picture, Cast, audio gain, and the chapter title slot are disabled or removed.
 - Video metadata supplies intrinsic dimensions when the provider is a video provider. Before that, the selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`.
 
-Image/GIF load failures and Vidstack video errors replace the failed media with a localized alert. The failure is scoped to asset ID, kind, and source path, so navigation or a corrected detail path immediately retries rendering. Original media is independent of thumbnail generation and thumbnail cache state.
+Image/GIF load failures, stream-URL IPC failures, and Vidstack video errors replace the failed media with a localized alert. Video URL requests use a generation guard, so navigation clears the old source and late success or failure cannot affect the new selection. Native `MediaError` code, category, and message are logged for transport, decode/codec, unsupported-source, and aborted failures. The visible failure is scoped to asset ID, kind, and source path, so navigation or a corrected detail path immediately retries rendering. Original media is independent of thumbnail generation and thumbnail cache state.
 
 ## Image fit, zoom, and pan
 

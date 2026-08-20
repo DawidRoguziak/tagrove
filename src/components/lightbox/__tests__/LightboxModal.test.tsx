@@ -1,10 +1,15 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
 
+const apiMocks = vi.hoisted(() => ({
+  getVideoStreamUrl: vi.fn()
+}));
+
 vi.mock("../../../api", () => ({
+  getVideoStreamUrl: apiMocks.getVideoStreamUrl,
   toMediaSrc: (path: string) => `media://${path}`
 }));
 
@@ -32,8 +37,14 @@ const selectedVideoAsset: Asset = {
 };
 
 describe("LightboxModal", () => {
+  beforeEach(() => {
+    apiMocks.getVideoStreamUrl.mockReset();
+    apiMocks.getVideoStreamUrl.mockImplementation(async (assetId: number) => `http://video/${assetId}.mp4`);
+  });
+
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   it("handles left and right arrow navigation", async () => {
@@ -61,7 +72,7 @@ describe("LightboxModal", () => {
     expect(onNavigatePrevious).toHaveBeenCalledTimes(1);
   });
 
-  it("loops video playback in lightbox", () => {
+  it("loops video playback in lightbox", async () => {
     const { container } = render(
       <LightboxModal
         selected={selectedVideoAsset}
@@ -76,11 +87,34 @@ describe("LightboxModal", () => {
       />
     );
 
-    const video = container.querySelector("video");
-    expect(video).toHaveAttribute("loop");
+    await waitFor(() => expect(apiMocks.getVideoStreamUrl).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
+    expect(container.querySelector("video")).toHaveAttribute("loop");
   });
 
-  it("shows a video error and resets it when the selected source changes", () => {
+  it("shows a video error when stream URL resolution fails", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    apiMocks.getVideoStreamUrl.mockRejectedValueOnce(new Error("stream unavailable"));
+
+    render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not play video");
+    consoleError.mockRestore();
+  });
+
+  it("shows a video error and resets it when the selected source changes", async () => {
     const { container, rerender } = render(
       <LightboxModal
         selected={selectedVideoAsset}
@@ -95,6 +129,7 @@ describe("LightboxModal", () => {
       />
     );
 
+    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
     const video = container.querySelector("video");
     expect(video).not.toBeNull();
     fireEvent.error(video!);
@@ -115,7 +150,7 @@ describe("LightboxModal", () => {
     );
 
     expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
-    expect(container.querySelector("video")).not.toBeNull();
+    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
   });
 
   it("shows a GIF error and resets it after navigation", () => {

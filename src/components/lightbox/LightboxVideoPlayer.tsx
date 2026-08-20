@@ -38,6 +38,38 @@ interface LightboxVideoPlayerProps {
   onError: () => void;
 }
 
+interface PlayerErrorDetail {
+  code?: number;
+  message?: string;
+  mediaError?: MediaError | null;
+}
+
+function playerErrorDetail(event: unknown): PlayerErrorDetail {
+  if (!event || typeof event !== "object") {
+    return {};
+  }
+  const value = event as Record<string, unknown>;
+  const detail = value.detail;
+  return detail && typeof detail === "object"
+    ? (detail as PlayerErrorDetail)
+    : (value as PlayerErrorDetail);
+}
+
+function describeMediaError(error: MediaError | null, detail: PlayerErrorDetail) {
+  const code = error?.code ?? detail.code ?? 0;
+  const category =
+    code === 2
+      ? "transport"
+      : code === 3
+        ? "decode-or-codec"
+        : code === 4
+          ? "unsupported-source-or-codec"
+          : code === 1
+            ? "aborted"
+            : "unknown";
+  return { code, category, message: error?.message ?? detail.message ?? "" };
+}
+
 export function LightboxVideoPlayer({
   src,
   title,
@@ -48,6 +80,19 @@ export function LightboxVideoPlayer({
   onFullscreenChange,
   onError
 }: LightboxVideoPlayerProps) {
+  const reportError = (event: unknown) => {
+    const detail = playerErrorDetail(event);
+    const provider = playerRef.current?.provider;
+    const mediaError = detail.mediaError ?? (isVideoProvider(provider) ? provider.video.error : null);
+    console.error("[lightbox] Video playback failed", {
+      ...describeMediaError(mediaError, detail),
+      src,
+      path: title,
+      event
+    });
+    onError();
+  };
+
   return (
     <div className="max-h-full max-w-full" style={style}>
       <MediaPlayer
@@ -89,7 +134,7 @@ export function LightboxVideoPlayer({
           });
         }}
         onFullscreenChange={onFullscreenChange}
-        onError={onError}
+        onError={reportError}
       >
         <MediaProvider
           mediaProps={{

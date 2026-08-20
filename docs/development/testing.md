@@ -144,7 +144,7 @@ Only then does it recursively remove the E2E directory with retries. An `EPERM` 
 
 ### Fixtures, selectors, and destructive workflows
 
-`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, copies valid PNG icons or generates a small GIF and MP4 with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only the recorded temporary roots and artifacts. Windows verifies MP4 decoding and playback; Linux verifies the controlled media-error fallback because WebKitGTK/GStreamer cannot currently consume Tauri's `asset://` video source.
+`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, copies valid PNG icons or generates a small GIF and MP4 with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only the recorded temporary roots and artifacts. Both Windows and Linux require MP4 decode readiness, advancing playback, and no media-error fallback through the loopback video stream.
 
 The workflow suite deliberately tests library clear, scan-root removal, backup restore, and permanent media deletion. Keep every deletable media fixture under a newly created temp root. Never change a destructive spec to index a personal directory, the repository root, or production app data. Do not weaken the identifier, target-directory, app-data-path, or live-title guards to make a failing run proceed.
 
@@ -182,7 +182,7 @@ Current limitations:
 - Desktop selectors assume English, but the harness does not currently set the application language deterministically.
 - An `EPERM` during E2E app-data deletion leaves stale isolated data and does not fail fast.
 - The standalone `tauri:build:e2e` script can embed stale `dist/`; only the full desktop test command builds the frontend first.
-- Linux WebKitGTK cannot currently play local video through Tauri's `asset://` protocol because GStreamer does not handle that custom URI; the Linux desktop suite verifies the error fallback rather than playback.
+- Video playback uses the tokenized loopback HTTP stream on both Windows and Linux; the desktop suite requires the same decode and playback behavior on both platforms.
 - Backend fixtures cover many filesystem semantics but do not constitute exhaustive testing on every supported filesystem or operating system.
 
 ## Troubleshooting

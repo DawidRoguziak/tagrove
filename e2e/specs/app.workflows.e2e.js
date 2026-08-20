@@ -633,12 +633,6 @@ describe("MediaTagger desktop workflows", () => {
     await videoTile.waitForDisplayed({ timeout: 15000 });
     await videoTile.click();
 
-    if (process.platform === "linux") {
-      const mediaError = await $('[data-testid="lightbox-media-error"]');
-      await mediaError.waitForDisplayed({ timeout: 10000 });
-      return;
-    }
-
     const video = await $("[data-lightbox-video-player] video");
     await video.waitForDisplayed({ timeout: 10000 });
     await browser.waitUntil(async () => Number(await video.getProperty("readyState")) >= 2, {

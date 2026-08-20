@@ -10,6 +10,7 @@ import type { MediaPlayerInstance } from "@vidstack/react";
 import { toMediaSrc } from "../../api";
 import type { Asset } from "../../types";
 import { LightboxVideoPlayer } from "./LightboxVideoPlayer";
+import { useLightboxVideoSource } from "./hooks/useLightboxVideoSource";
 
 interface LightboxMediaStageProps {
   selected: Asset;
@@ -49,7 +50,12 @@ export function LightboxMediaStage({
   const { t } = useTranslation();
   const [failedMediaKey, setFailedMediaKey] = useState<string | null>(null);
   const mediaKey = `${selected.id}\u0000${selected.kind}\u0000${selected.path}`;
-  const mediaFailed = failedMediaKey === mediaKey;
+  const videoSource = useLightboxVideoSource(
+    selected.id,
+    selected.path,
+    selected.kind === "video"
+  );
+  const mediaFailed = failedMediaKey === mediaKey || videoSource.failed;
   const mediaStyle =
     mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
       ? {
@@ -77,11 +83,11 @@ export function LightboxMediaStage({
               : t("lightbox.mediaError.image")}
           </div>
         </div>
-      ) : selected.kind === "video" ? (
+      ) : selected.kind === "video" && videoSource.src ? (
         <div className="flex h-full w-full items-center justify-center overflow-hidden">
           <LightboxVideoPlayer
             style={isFullscreen ? undefined : mediaStyle}
-            src={toMediaSrc(selected.path)}
+            src={videoSource.src}
             title={selected.path}
             aspectRatio={
               mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
@@ -96,7 +102,7 @@ export function LightboxMediaStage({
             onError={() => setFailedMediaKey(mediaKey)}
           />
         </div>
-      ) : (
+      ) : selected.kind !== "video" ? (
         <div
           className={`flex h-full w-full touch-none items-center justify-center overflow-hidden ${
             isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""
@@ -124,7 +130,7 @@ export function LightboxMediaStage({
             draggable={false}
           />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

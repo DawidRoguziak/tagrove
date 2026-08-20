@@ -63,6 +63,10 @@ export async function getAssetDetails(assetId: number): Promise<AssetDetails | n
   return await invoke<AssetDetails | null>("get_asset_details", { assetId });
 }
 
+export async function getVideoStreamUrl(assetId: number): Promise<string> {
+  return await invoke<string>("get_video_stream_url", { assetId });
+}
+
 export async function scanFolder(path: string): Promise<ScanSummary> {
   return await invoke<ScanSummary>("scan_folder", { path });
 }

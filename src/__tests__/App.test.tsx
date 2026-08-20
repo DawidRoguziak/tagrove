@@ -65,6 +65,7 @@ const apiMocks = vi.hoisted(() => {
     startAssetQuery: vi.fn(),
     getAssetQueryPage: vi.fn(),
     getAssetDetails: vi.fn(),
+    getVideoStreamUrl: vi.fn(async (assetId: number) => `http://video/${assetId}.mp4`),
     ensureThumbnailsStream: vi.fn(),
     listAssets: vi.fn(),
     listScanRoots: vi.fn(),

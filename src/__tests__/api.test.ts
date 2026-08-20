@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listAssets, mergeAssetTagsBulk, setAssetTags, toMediaSrc } from "../api";
+import { getVideoStreamUrl, listAssets, mergeAssetTagsBulk, setAssetTags, toMediaSrc } from "../api";
 
 const coreMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -69,5 +69,14 @@ describe("api contract", () => {
 
     expect(coreMocks.convertFileSrc).toHaveBeenCalledWith("C:/library/cats/photo.jpg");
     expect(result).toBe("tauri://C:/library/cats/photo.jpg");
+  });
+
+  it("requests a private stream URL by asset id without converting it", async () => {
+    const url = "http://127.0.0.1:43210/token/video/7.mp4";
+    coreMocks.invoke.mockResolvedValueOnce(url);
+
+    await expect(getVideoStreamUrl(7)).resolves.toBe(url);
+    expect(coreMocks.invoke).toHaveBeenCalledWith("get_video_stream_url", { assetId: 7 });
+    expect(coreMocks.convertFileSrc).not.toHaveBeenCalled();
   });
 });

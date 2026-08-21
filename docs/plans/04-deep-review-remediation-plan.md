@@ -1,5 +1,7 @@
 # Plan napraw po dogłębnym review projektu
 
+> Dokument historyczny. Nadrzędny plan dalszych napraw integralności i aktualny rejestr postępu znajdują się w [`docs/integration_fix_plans/README.md`](../integration_fix_plans/README.md).
+
 ## Cel dokumentu
 
 Ten dokument jest żywym planem przekazywanym między kolejnymi sesjami. Każda sesja powinna realizować jeden etap, a następnie zaktualizować ten sam plik tak, aby następna sesja znała rzeczywisty stan kodu, podjęte decyzje, odchylenia od planu i pozostałe ryzyka.

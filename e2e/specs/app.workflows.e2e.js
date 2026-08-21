@@ -177,7 +177,10 @@ async function seedLibraryWithPlayableMedia(prefix) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `media-tagger-e2e-${prefix}-`));
   tempMediaRoots.push(root);
   const gifPath = path.join(root, `${prefix}.gif`);
-  const videoPath = path.join(root, `${prefix}.mp4`);
+  const videoPaths = [
+    path.join(root, `${prefix}-1.mp4`),
+    path.join(root, `${prefix}-2.mp4`)
+  ];
   const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
 
   await execFileAsync(ffmpeg, [
@@ -193,35 +196,37 @@ async function seedLibraryWithPlayableMedia(prefix) {
     "-y",
     gifPath
   ]);
-  await execFileAsync(ffmpeg, [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    "testsrc2=size=160x90:rate=24",
-    "-f",
-    "lavfi",
-    "-i",
-    "sine=frequency=440:sample_rate=48000",
-    "-t",
-    "3",
-    "-c:v",
-    "mpeg4",
-    "-q:v",
-    "5",
-    "-c:a",
-    "aac",
-    "-shortest",
-    "-y",
-    videoPath
-  ]);
+  for (const [index, videoPath] of videoPaths.entries()) {
+    await execFileAsync(ffmpeg, [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=size=160x90:rate=24",
+      "-f",
+      "lavfi",
+      "-i",
+      `sine=frequency=${440 + index * 220}:sample_rate=48000`,
+      "-t",
+      "8",
+      "-c:v",
+      "mpeg4",
+      "-q:v",
+      "5",
+      "-c:a",
+      "aac",
+      "-shortest",
+      "-y",
+      videoPath
+    ]);
+  }
 
   await invokeTauriCommand("add_scan_root", { path: root });
   await invokeTauriCommand("rescan_all_roots");
   await browser.refresh();
-  return { gifPath, videoPath };
+  return { gifPath, videoPaths };
 }
 
 describe("MediaTagger desktop workflows", () => {
@@ -585,14 +590,16 @@ describe("MediaTagger desktop workflows", () => {
     );
   });
 
-  it("loads generated GIF and MP4 sources in the lightbox", async () => {
+  it("loads generated GIF and continuously switches and loops longer MP4 sources", async () => {
     await resetLibraryState();
-    const { gifPath, videoPath } = await seedLibraryWithPlayableMedia("playback");
+    const { gifPath, videoPaths } = await seedLibraryWithPlayableMedia("playback");
     const assetsPage = await listAssetsForAssertions();
     const gifAsset = assetsPage.items.find((asset) => asset.path === gifPath);
-    const videoAsset = assetsPage.items.find((asset) => asset.path === videoPath);
-    if (!gifAsset || !videoAsset) {
-      throw new Error("Expected generated GIF and MP4 assets after scan");
+    const videoAssets = videoPaths.map((videoPath) =>
+      assetsPage.items.find((asset) => asset.path === videoPath)
+    );
+    if (!gifAsset || videoAssets.some((asset) => !asset)) {
+      throw new Error("Expected generated GIF and two MP4 assets after scan");
     }
 
     const query = await invokeTauriCommand("start_asset_query", {
@@ -605,9 +612,14 @@ describe("MediaTagger desktop workflows", () => {
       pageSize: 20
     });
     const gifSummary = query.items.find((asset) => asset.id === gifAsset.id);
-    const videoSummary = query.items.find((asset) => asset.id === videoAsset.id);
-    if (gifSummary?.preview_path !== gifPath || videoSummary?.preview_path !== videoPath) {
-      throw new Error("Expected GIF and video summaries to contain full preview paths");
+    const videoSummaries = videoAssets.map((videoAsset) =>
+      query.items.find((asset) => asset.id === videoAsset.id)
+    );
+    if (
+      gifSummary?.preview_path !== gifPath ||
+      videoSummaries.some((summary, index) => summary?.preview_path !== videoPaths[index])
+    ) {
+      throw new Error("Expected GIF and both video summaries to contain full preview paths");
     }
 
     await ensureGalleryView();
@@ -629,9 +641,60 @@ describe("MediaTagger desktop workflows", () => {
     await closePreviewButton.click();
     await closePreviewButton.waitForDisplayed({ timeout: 10000, reverse: true });
 
-    const videoTile = await $(`button[data-asset-id="${videoAsset.id}"]`);
-    await videoTile.waitForDisplayed({ timeout: 15000 });
-    await videoTile.click();
+    const mediaKindSelect = await $(".filter-kind-select");
+    await mediaKindSelect.selectByAttribute("value", "video");
+    await waitForTileAtIndex(1);
+    const videoQuery = await invokeTauriCommand("start_asset_query", {
+      tagsAnd: [],
+      tagsNot: [],
+      kind: "video",
+      favoritesOnly: false,
+      metaFilter: null,
+      generation: 2,
+      pageSize: 20
+    });
+    if (!Array.isArray(videoQuery.items) || videoQuery.items.length !== 2) {
+      throw new Error("Expected exactly two generated videos in the filtered query");
+    }
+    const [firstVideo, secondVideo] = videoQuery.items;
+    const firstVideoTile = await $(`button[data-asset-id="${firstVideo.id}"]`);
+    await firstVideoTile.waitForDisplayed({ timeout: 15000 });
+    await firstVideoTile.click();
+
+    const player = await $("[data-lightbox-video-player]");
+    await player.waitForDisplayed({ timeout: 10000 });
+    await browser.waitUntil(async () => (await player.getAttribute("aria-label")) === firstVideo.preview_path, {
+      timeout: 10000,
+      timeoutMsg: "Expected the first generated MP4 in the lightbox"
+    });
+    await browser.execute(() => {
+      for (const key of ["ArrowRight", "ArrowLeft", "ArrowRight"]) {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      }
+    });
+    await browser.waitUntil(
+      async () => {
+        const currentPlayer = await $("[data-lightbox-video-player]");
+        return (await currentPlayer.getAttribute("aria-label")) === secondVideo.preview_path;
+      },
+      {
+        timeout: 10000,
+        timeoutMsg: "Expected rapid navigation to settle on the latest video target"
+      }
+    );
+    await browser.execute(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    });
+    await browser.waitUntil(
+      async () => {
+        const currentPlayer = await $("[data-lightbox-video-player]");
+        return (await currentPlayer.getAttribute("aria-label")) === firstVideo.preview_path;
+      },
+      {
+        timeout: 10000,
+        timeoutMsg: "Expected navigation back to the first generated video"
+      }
+    );
 
     const video = await $("[data-lightbox-video-player] video");
     await video.waitForDisplayed({ timeout: 10000 });
@@ -645,6 +708,65 @@ describe("MediaTagger desktop workflows", () => {
       {
         timeout: 10000,
         timeoutMsg: "Expected generated MP4 playback to advance"
+      }
+    );
+    const loopResult = await browser.executeAsync((element, done) => {
+      let previousTime = element.currentTime;
+      let sawNearEnd = false;
+      const finish = (result) => {
+        clearTimeout(timeout);
+        clearInterval(interval);
+        element.removeEventListener("error", onError);
+        done(result);
+      };
+      const checkTime = () => {
+        const currentTime = element.currentTime;
+        if (currentTime >= element.duration - 1.2) sawNearEnd = true;
+        if (sawNearEnd && previousTime > currentTime + 2 && currentTime < 1.5 && !element.paused) {
+          finish({ looped: true, error: false });
+          return;
+        }
+        previousTime = currentTime;
+      };
+      const onError = () => finish({ looped: false, error: true });
+      const timeout = setTimeout(() => finish({
+        looped: false,
+        error: false,
+        currentTime: element.currentTime,
+        duration: element.duration,
+        paused: element.paused,
+        readyState: element.readyState,
+        networkState: element.networkState,
+        buffered: Array.from({ length: element.buffered.length }, (_, index) => [
+          element.buffered.start(index),
+          element.buffered.end(index)
+        ]),
+        sawNearEnd
+      }), 15000);
+      const interval = setInterval(checkTime, 50);
+      element.addEventListener("error", onError, { once: true });
+      Promise.resolve(element.play()).catch(() => {});
+    }, video);
+    if (!loopResult?.looped || loopResult.error) {
+      throw new Error(`Expected generated MP4 to reach the end and loop: ${JSON.stringify(loopResult)}`);
+    }
+    const loopedTime = Number(await video.getProperty("currentTime"));
+    await browser.waitUntil(
+      async () => Number(await video.getProperty("currentTime")) > loopedTime + 0.3,
+      {
+        timeout: 10000,
+        timeoutMsg: "Expected playback to continue after looping"
+      }
+    );
+    const settledPlayer = await $("[data-lightbox-video-player]");
+    await browser.waitUntil(
+      async () =>
+        !(await settledPlayer.getAttribute("data-waiting")) &&
+        !(await settledPlayer.getAttribute("data-buffering")) &&
+        (await settledPlayer.getAttribute("aria-busy")) !== "true",
+      {
+        timeout: 10000,
+        timeoutMsg: "Expected no persistent waiting state after continuous playback"
       }
     );
     if (await $('[data-testid="lightbox-media-error"]').isExisting()) {

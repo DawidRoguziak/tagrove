@@ -59,10 +59,10 @@ A merge replaces or adds the page, upserts its assets, moves that page offset to
 Global-index access goes through these methods:
 
 - `getAssetAt(index)` computes the aligned page offset, finds the ID at the local page position, and returns the cached asset or `undefined` for a hole.
-- `getAssetAtAsync(index)` returns a cached asset or loads the aligned page, then returns that local position. Page-load failures reject; an unavailable or in-flight page can resolve as `undefined`.
+- `getAssetAtAsync(index)` returns a cached asset or loads the aligned page, then returns that local position. Concurrent lookups for the same missing page await the same in-flight Promise and receive the same page result. Page-load failures reject; an unavailable position can resolve as `undefined`.
 - `getAssetIndex(assetId)` scans cached page ID arrays and returns the snapshot index only if that asset's page is loaded; otherwise it returns `null`.
 
-Only one request per page offset is started at a time. A ref-backed in-flight counter keeps `loading` true until all tracked query/page requests finish. A page response is discarded when its captured local generation is obsolete. The active session ID is captured before the request; no page is requested without a session or outside the current `total`. The frontend trusts a backend `ready` page's returned session and revision rather than comparing them again, because the backend page command is keyed by the supplied session ID.
+Only one request per page offset is started at a time. A ref-backed Promise map deduplicates callers, while a separate in-flight counter keeps `loading` true until all tracked query/page requests finish. Refresh clears the Promise map; an older request's `finally` removes its entry only if that exact Promise is still registered, so it cannot erase a newer-generation request for the same offset. A page response is discarded when its captured local generation is obsolete. The active session ID is captured before the request; no page is requested without a session or outside the current `total`. The frontend trusts a backend `ready` page's returned session and revision rather than comparing them again, because the backend page command is keyed by the supplied session ID.
 
 ### Summary rows and the details boundary
 
@@ -144,7 +144,7 @@ An invoke or database error rejects the corresponding promise. `refresh` always 
 
 - `src-tauri/src/db.rs` tests cover filter composition, grouped ordering, summary-supporting data invariants, and related mutations.
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
-- `src/hooks/__tests__/useLibraryBrowser.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, virtual-range thumbnail IDs, and clear-library reset.
+- `src/hooks/__tests__/useLibraryBrowser.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, shared in-flight indexed page lookup, virtual-range thumbnail IDs, and clear-library reset.
 - `src/components/gallery/__tests__/GalleryGrid.test.tsx` covers virtual-range reporting, reach-end triggering, thumbnail status/spinners, selection interactions, and the 10-GIF animation threshold.
 - `src/hooks/__tests__/useSelectionState.test.ts` and the lightbox service tests cover selection/editor synchronization, local mutation patches, conditional favorite refresh, and delete refresh. Detail loading, its request guard, adjacent prefetch, and detail-cache invalidation are not directly covered.
 - `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.

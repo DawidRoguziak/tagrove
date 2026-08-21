@@ -1,40 +1,70 @@
 use std::{
-    fs::File,
-    io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write},
-    net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
+    convert::Infallible,
+    io,
+    net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener},
     path::{Path, PathBuf},
-    sync::{
-        mpsc::{self, Receiver, Sender, TryRecvError, TrySendError},
-        Arc, Mutex,
-    },
+    pin::Pin,
+    sync::{mpsc, Arc},
+    task::{Context as TaskContext, Poll},
     thread::{self, JoinHandle},
     time::Duration,
 };
 
 use anyhow::Context;
+use bytes::Bytes;
+use futures_util::TryStreamExt;
+use http_body_util::{combinators::UnsyncBoxBody, BodyExt, Empty, StreamBody};
+use hyper::{
+    body::{Frame, Incoming},
+    header::{
+        HeaderName, HeaderValue, ACCEPT_RANGES, ALLOW, CACHE_CONTROL, CONTENT_LENGTH,
+        CONTENT_RANGE, CONTENT_TYPE, RANGE,
+    },
+    server::conn::http1,
+    service::service_fn,
+    Method, Request, Response, StatusCode,
+};
+use hyper_util::rt::TokioIo;
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::{Connection, OpenFlags};
+use tokio::{
+    fs::File,
+    io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWrite, ReadBuf, SeekFrom},
+    net::{TcpListener, TcpStream},
+    runtime::Builder as RuntimeBuilder,
+    sync::{oneshot, Mutex, Semaphore},
+    task::JoinSet,
+    time::{sleep, timeout, Sleep},
+};
+use tokio_util::io::ReaderStream;
 
 use crate::db;
 
-const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024;
 const MAX_HEADER_BYTES: usize = 32 * 1024;
-const MAX_HEADER_COUNT: usize = 100;
 const COPY_BUFFER_BYTES: usize = 64 * 1024;
-const REQUEST_WORKERS: usize = 4;
-const REQUEST_QUEUE_CAPACITY: usize = 16;
+const MAX_ACTIVE_CONNECTIONS: usize = 32;
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const WRITE_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_CONSECUTIVE_ACCEPT_ERRORS: u32 = 8;
+const INITIAL_ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(25);
+const MAX_ACCEPT_RETRY_DELAY: Duration = Duration::from_secs(1);
+const X_CONTENT_TYPE_OPTIONS: HeaderName = HeaderName::from_static("x-content-type-options");
+
+type ResponseBody = UnsyncBoxBody<Bytes, io::Error>;
 
 pub struct MediaServerState {
     base_url: String,
     token: String,
     db_path: PathBuf,
-    shutdown_tx: Option<Sender<()>>,
+    shutdown_tx: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<()>>,
+    failure: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl MediaServerState {
     pub fn start(db_path: PathBuf) -> anyhow::Result<Self> {
-        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        let listener = StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
             .context("cannot bind video media server")?;
         listener
             .set_nonblocking(true)
@@ -43,8 +73,10 @@ impl MediaServerState {
         let token = process_token()?;
         let server_token = token.clone();
         let server_db_path = db_path.clone();
-        let (shutdown_tx, shutdown_rx) = mpsc::channel();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let failure = Arc::new(std::sync::Mutex::new(None));
+        let server_failure = Arc::clone(&failure);
         let thread = thread::Builder::new()
             .name("video-media-server".to_string())
             .spawn(move || {
@@ -54,6 +86,7 @@ impl MediaServerState {
                     server_token,
                     shutdown_rx,
                     ready_tx,
+                    server_failure,
                 )
             })
             .context("cannot start video media server")?;
@@ -75,10 +108,19 @@ impl MediaServerState {
             db_path,
             shutdown_tx: Some(shutdown_tx),
             thread: Some(thread),
+            failure,
         })
     }
 
     pub fn video_url(&self, asset_id: i64) -> anyhow::Result<String> {
+        if let Some(error) = self
+            .failure
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .as_ref()
+        {
+            anyhow::bail!("video media server is unavailable: {error}");
+        }
         resolve_video_path(&self.db_path, asset_id)?;
         Ok(format!(
             "{}/{}/video/{asset_id}.mp4",
@@ -113,183 +155,303 @@ fn process_token() -> anyhow::Result<String> {
 }
 
 fn run_server(
-    listener: TcpListener,
+    listener: StdTcpListener,
     db_path: PathBuf,
     token: String,
-    shutdown_rx: Receiver<()>,
+    shutdown_rx: oneshot::Receiver<()>,
     ready_tx: mpsc::SyncSender<std::result::Result<(), String>>,
+    failure: Arc<std::sync::Mutex<Option<String>>>,
 ) {
-    let (request_tx, request_rx) = mpsc::sync_channel(REQUEST_QUEUE_CAPACITY);
-    let request_rx = Arc::new(Mutex::new(request_rx));
-    let mut workers = Vec::with_capacity(REQUEST_WORKERS);
-    for index in 0..REQUEST_WORKERS {
-        let request_rx = Arc::clone(&request_rx);
-        let db_path = db_path.clone();
-        let token = token.clone();
-        match thread::Builder::new()
-            .name(format!("video-media-request-{index}"))
-            .spawn(move || loop {
-                let stream = {
-                    let receiver = request_rx.lock().unwrap_or_else(|error| error.into_inner());
-                    receiver.recv()
-                };
-                let Ok(stream) = stream else {
-                    break;
-                };
-                let _ = handle_connection(stream, &db_path, &token);
-            }) {
-            Ok(worker) => workers.push(worker),
+    let runtime = match RuntimeBuilder::new_multi_thread()
+        .enable_all()
+        .thread_name("video-media-io")
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let _ = ready_tx.send(Err(format!("cannot start video media runtime: {error}")));
+            return;
+        }
+    };
+
+    runtime.block_on(async move {
+        let listener = match TcpListener::from_std(listener) {
+            Ok(listener) => listener,
             Err(error) => {
                 let _ = ready_tx.send(Err(format!(
-                    "cannot start video media request worker: {error}"
+                    "cannot configure video media listener: {error}"
                 )));
-                drop(request_tx);
-                for worker in workers {
-                    let _ = worker.join();
-                }
                 return;
             }
-        }
-    }
-    let _ = ready_tx.send(Ok(()));
+        };
+        let db_path = Arc::new(db_path);
+        let token: Arc<str> = Arc::from(token);
+        let connection_slots = Arc::new(Semaphore::new(MAX_ACTIVE_CONNECTIONS));
+        let mut connections = JoinSet::new();
+        let mut consecutive_accept_errors = 0_u32;
+        let mut accept_retry_delay = INITIAL_ACCEPT_RETRY_DELAY;
+        let _ = ready_tx.send(Ok(()));
+        let mut shutdown_rx = shutdown_rx;
 
-    loop {
-        match shutdown_rx.try_recv() {
-            Ok(()) | Err(TryRecvError::Disconnected) => break,
-            Err(TryRecvError::Empty) => {}
+        loop {
+            let accepted = tokio::select! {
+                _ = &mut shutdown_rx => break,
+                completed = connections.join_next(), if !connections.is_empty() => {
+                    let _ = completed;
+                    continue;
+                }
+                accepted = listener.accept() => accepted,
+            };
+            let (stream, _) = match accepted {
+                Ok(accepted) => {
+                    consecutive_accept_errors = 0;
+                    accept_retry_delay = INITIAL_ACCEPT_RETRY_DELAY;
+                    accepted
+                }
+                Err(error) => {
+                    consecutive_accept_errors += 1;
+                    if consecutive_accept_errors >= MAX_CONSECUTIVE_ACCEPT_ERRORS {
+                        *failure
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(format!(
+                            "listener failed after {consecutive_accept_errors} attempts: {error}"
+                        ));
+                        break;
+                    }
+                    tokio::select! {
+                        _ = &mut shutdown_rx => break,
+                        _ = sleep(accept_retry_delay) => {}
+                    }
+                    accept_retry_delay = (accept_retry_delay * 2).min(MAX_ACCEPT_RETRY_DELAY);
+                    continue;
+                }
+            };
+            let Ok(connection_slot) = Arc::clone(&connection_slots).try_acquire_owned() else {
+                continue;
+            };
+            let db_path = Arc::clone(&db_path);
+            let token = Arc::clone(&token);
+            connections.spawn(async move {
+                let _connection_slot = connection_slot;
+                serve_connection(stream, db_path, token).await;
+            });
         }
 
-        match listener.accept() {
-            Ok((stream, _)) => match request_tx.try_send(stream) {
-                Ok(()) | Err(TrySendError::Full(_)) => {}
-                Err(TrySendError::Disconnected(_)) => break,
-            },
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(20));
-            }
-            Err(_) => break,
-        }
-    }
-
-    drop(request_tx);
-    drop(workers);
+        connections.abort_all();
+        while connections.join_next().await.is_some() {}
+    });
 }
 
-fn handle_connection(mut stream: TcpStream, db_path: &Path, token: &str) -> io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(30)))?;
+async fn serve_connection(stream: TcpStream, db_path: Arc<PathBuf>, token: Arc<str>) {
+    let (request_started_tx, request_started_rx) = oneshot::channel();
+    let request_started_tx = Arc::new(Mutex::new(Some(request_started_tx)));
+    let service = service_fn(move |request| {
+        let db_path = Arc::clone(&db_path);
+        let token = Arc::clone(&token);
+        let request_started_tx = Arc::clone(&request_started_tx);
+        async move {
+            if let Some(sender) = request_started_tx.lock().await.take() {
+                let _ = sender.send(());
+            }
+            match timeout(REQUEST_TIMEOUT, handle_request(request, db_path, token)).await {
+                Ok(response) => response,
+                Err(_) => Ok(empty_response(StatusCode::GATEWAY_TIMEOUT)),
+            }
+        }
+    });
+    let io = TokioIo::new(WriteTimeoutIo::new(stream, WRITE_IDLE_TIMEOUT));
+    let connection = http1::Builder::new()
+        .keep_alive(false)
+        .max_buf_size(MAX_HEADER_BYTES)
+        .serve_connection(io, service);
+    tokio::pin!(connection);
 
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut request_line = String::new();
-    if read_limited_line(&mut reader, &mut request_line)? == 0
-        || request_line.len() > MAX_REQUEST_LINE_BYTES
-    {
-        return write_empty_response(&mut stream, 400, "Bad Request", &[]);
+    tokio::select! {
+        _ = sleep(HEADER_READ_TIMEOUT) => {}
+        _ = request_started_rx => {
+            let _ = connection.await;
+        }
+        _ = &mut connection => {}
+    }
+}
+
+struct WriteTimeoutIo {
+    inner: TcpStream,
+    timeout: Duration,
+    deadline: Option<Pin<Box<Sleep>>>,
+}
+
+impl WriteTimeoutIo {
+    fn new(inner: TcpStream, timeout: Duration) -> Self {
+        Self {
+            inner,
+            timeout,
+            deadline: None,
+        }
     }
 
-    let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap_or_default();
-    let target = parts.next().unwrap_or_default();
-    let version = parts.next().unwrap_or_default();
-    if parts.next().is_some() || !version.starts_with("HTTP/1.") {
-        return write_empty_response(&mut stream, 400, "Bad Request", &[]);
+    fn poll_deadline(&mut self, cx: &mut TaskContext<'_>) -> Poll<io::Result<usize>> {
+        let timeout = self.timeout;
+        let deadline = self
+            .deadline
+            .get_or_insert_with(|| Box::pin(sleep(timeout)));
+        match deadline.as_mut().poll(cx) {
+            Poll::Ready(()) => {
+                self.deadline = None;
+                Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "video media response write timed out",
+                )))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncRead for WriteTimeoutIo {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buffer)
+    }
+}
+
+impl AsyncWrite for WriteTimeoutIo {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buffer: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        match Pin::new(&mut self.inner).poll_write(cx, buffer) {
+            Poll::Ready(result) => {
+                self.deadline = None;
+                Poll::Ready(result)
+            }
+            Poll::Pending => self.poll_deadline(cx),
+        }
     }
 
-    if method != "GET" && method != "HEAD" {
-        return write_empty_response(
-            &mut stream,
-            405,
-            "Method Not Allowed",
-            &[("Allow", "GET, HEAD")],
-        );
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+    ) -> Poll<io::Result<()>> {
+        match Pin::new(&mut self.inner).poll_flush(cx) {
+            Poll::Ready(result) => {
+                self.deadline = None;
+                Poll::Ready(result)
+            }
+            Poll::Pending => match self.poll_deadline(cx) {
+                Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+                Poll::Ready(Ok(_)) | Poll::Pending => Poll::Pending,
+            },
+        }
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+async fn handle_request(
+    request: Request<Incoming>,
+    db_path: Arc<PathBuf>,
+    token: Arc<str>,
+) -> std::result::Result<Response<ResponseBody>, Infallible> {
+    let method = request.method().clone();
+    if method != Method::GET && method != Method::HEAD {
+        let mut response = empty_response(StatusCode::METHOD_NOT_ALLOWED);
+        response
+            .headers_mut()
+            .insert(ALLOW, HeaderValue::from_static("GET, HEAD"));
+        return Ok(response);
     }
 
     let route_prefix = format!("/{token}/video/");
-    let Some(asset_id) = target
+    let Some(asset_id) = request
+        .uri()
+        .path()
         .strip_prefix(&route_prefix)
         .and_then(|value| value.strip_suffix(".mp4"))
         .and_then(|id| id.parse::<i64>().ok())
         .filter(|id| *id > 0)
     else {
-        return write_empty_response(&mut stream, 404, "Not Found", &[]);
+        return Ok(empty_response(StatusCode::NOT_FOUND));
     };
 
-    let mut range_header = None;
-    let mut header_bytes = 0;
-    for header_index in 0..=MAX_HEADER_COUNT {
-        if header_index == MAX_HEADER_COUNT {
-            return write_empty_response(&mut stream, 431, "Request Header Fields Too Large", &[]);
-        }
-        let mut line = String::new();
-        if read_limited_line(&mut reader, &mut line)? == 0 || line.len() > MAX_REQUEST_LINE_BYTES {
-            return write_empty_response(&mut stream, 400, "Bad Request", &[]);
-        }
-        header_bytes += line.len();
-        if header_bytes > MAX_HEADER_BYTES {
-            return write_empty_response(&mut stream, 431, "Request Header Fields Too Large", &[]);
-        }
-        if line == "\r\n" || line == "\n" {
-            break;
-        }
-        if let Some((name, value)) = line.split_once(':') {
-            if name.trim().eq_ignore_ascii_case("range") {
-                range_header = Some(value.trim().to_string());
-            }
-        }
-    }
-
-    let path = match resolve_video_path(db_path, asset_id) {
-        Ok(path) => path,
-        Err(_) => return write_empty_response(&mut stream, 404, "Not Found", &[]),
-    };
-    let mut file = match File::open(&path) {
+    let range_header = request.headers().get(RANGE).cloned();
+    let path =
+        match tokio::task::spawn_blocking(move || resolve_video_path(&db_path, asset_id)).await {
+            Ok(Ok(path)) => path,
+            _ => return Ok(empty_response(StatusCode::NOT_FOUND)),
+        };
+    let mut file = match File::open(&path).await {
         Ok(file) => file,
-        Err(_) => return write_empty_response(&mut stream, 404, "Not Found", &[]),
+        Err(_) => return Ok(empty_response(StatusCode::NOT_FOUND)),
     };
-    let length = match file.metadata() {
+    let length = match file.metadata().await {
         Ok(metadata) if metadata.is_file() => metadata.len(),
-        _ => return write_empty_response(&mut stream, 404, "Not Found", &[]),
+        _ => return Ok(empty_response(StatusCode::NOT_FOUND)),
     };
-    let byte_range = match (method, range_header.as_deref()) {
-        ("GET", Some(value)) => match parse_range(value, length) {
+    let byte_range = match (method == Method::GET, range_header.as_ref()) {
+        (true, Some(value)) => match value
+            .to_str()
+            .map_err(|_| ())
+            .and_then(|value| parse_range(value, length))
+        {
             Ok(range) => Some(range),
             Err(()) => {
-                return write_empty_response(
-                    &mut stream,
-                    416,
-                    "Range Not Satisfiable",
-                    &[("Content-Range", &format!("bytes */{length}"))],
-                )
+                let mut response = empty_response(StatusCode::RANGE_NOT_SATISFIABLE);
+                response.headers_mut().insert(
+                    CONTENT_RANGE,
+                    HeaderValue::from_str(&format!("bytes */{length}"))
+                        .expect("valid content range"),
+                );
+                return Ok(response);
             }
         },
         _ => None,
     };
-    let (start, end, status, reason) = byte_range
-        .map(|(start, end)| (start, end, 206, "Partial Content"))
-        .unwrap_or((0, length.saturating_sub(1), 200, "OK"));
+    let (start, end, status) = byte_range
+        .map(|(start, end)| (start, end, StatusCode::PARTIAL_CONTENT))
+        .unwrap_or((0, length.saturating_sub(1), StatusCode::OK));
     let response_length = if length == 0 { 0 } else { end - start + 1 };
     let content_type = video_content_type(&path);
 
-    write!(
-        stream,
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {response_length}\r\nAccept-Ranges: bytes\r\nCache-Control: private, no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n"
-    )?;
+    let body = if method == Method::GET && response_length > 0 {
+        if file.seek(SeekFrom::Start(start)).await.is_err() {
+            return Ok(empty_response(StatusCode::NOT_FOUND));
+        }
+        StreamBody::new(
+            ReaderStream::with_capacity(file.take(response_length), COPY_BUFFER_BYTES)
+                .map_ok(Frame::data),
+        )
+        .boxed_unsync()
+    } else {
+        empty_body()
+    };
+    let mut response = Response::new(body);
+    *response.status_mut() = status;
+    let headers = response.headers_mut();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+    headers.insert(
+        CONTENT_LENGTH,
+        HeaderValue::from_str(&response_length.to_string()).expect("valid content length"),
+    );
+    headers.insert(ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    insert_safety_headers(headers);
     if byte_range.is_some() {
-        write!(stream, "Content-Range: bytes {start}-{end}/{length}\r\n")?;
+        headers.insert(
+            CONTENT_RANGE,
+            HeaderValue::from_str(&format!("bytes {start}-{end}/{length}"))
+                .expect("valid content range"),
+        );
     }
-    write!(stream, "\r\n")?;
-
-    if method == "GET" && response_length > 0 {
-        file.seek(SeekFrom::Start(start))?;
-        copy_exact(&mut file, &mut stream, response_length)?;
-    }
-    Ok(())
-}
-
-fn read_limited_line(reader: &mut BufReader<TcpStream>, line: &mut String) -> io::Result<usize> {
-    reader
-        .take((MAX_REQUEST_LINE_BYTES + 1) as u64)
-        .read_line(line)
+    Ok(response)
 }
 
 fn resolve_video_path(db_path: &Path, asset_id: i64) -> anyhow::Result<PathBuf> {
@@ -341,21 +503,13 @@ fn parse_range(value: &str, length: u64) -> std::result::Result<(u64, u64), ()> 
     Ok((start, end))
 }
 
-fn copy_exact(file: &mut File, stream: &mut TcpStream, mut remaining: u64) -> io::Result<()> {
-    let mut buffer = vec![0_u8; COPY_BUFFER_BYTES];
-    while remaining > 0 {
-        let count = file.read(&mut buffer[..remaining.min(COPY_BUFFER_BYTES as u64) as usize])?;
-        if count == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "video file changed while streaming"));
-        }
-        stream.write_all(&buffer[..count])?;
-        remaining -= count as u64;
-    }
-    Ok(())
-}
-
 fn video_content_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|extension| extension.to_str()).map(str::to_ascii_lowercase).as_deref() {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
         Some("mp4") | Some("m4v") => "video/mp4",
         Some("webm") => "video/webm",
         Some("mov") => "video/quicktime",
@@ -365,25 +519,34 @@ fn video_content_type(path: &Path) -> &'static str {
     }
 }
 
-fn write_empty_response(
-    stream: &mut TcpStream,
-    status: u16,
-    reason: &str,
-    headers: &[(&str, &str)],
-) -> io::Result<()> {
-    write!(stream, "HTTP/1.1 {status} {reason}\r\n")?;
-    for (name, value) in headers {
-        write!(stream, "{name}: {value}\r\n")?;
-    }
-    write!(
-        stream,
-        "Content-Length: 0\r\nCache-Control: private, no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n"
-    )
+fn empty_body() -> ResponseBody {
+    Empty::<Bytes>::new()
+        .map_err(|error| match error {})
+        .boxed_unsync()
+}
+
+fn empty_response(status: StatusCode) -> Response<ResponseBody> {
+    let mut response = Response::new(empty_body());
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert(CONTENT_LENGTH, HeaderValue::from_static("0"));
+    insert_safety_headers(response.headers_mut());
+    response
+}
+
+fn insert_safety_headers(headers: &mut hyper::HeaderMap) {
+    headers.insert(CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+    headers.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpStream,
+    };
     use tempfile::tempdir;
 
     fn request(url: &str, method: &str, range: Option<&str>) -> Vec<u8> {
@@ -422,7 +585,14 @@ mod tests {
 
     #[test]
     fn rejects_invalid_and_unsatisfiable_ranges() {
-        for value in ["items=0-1", "bytes=", "bytes=5-2", "bytes=10-", "bytes=-0", "bytes=0-1,3-4"] {
+        for value in [
+            "items=0-1",
+            "bytes=",
+            "bytes=5-2",
+            "bytes=10-",
+            "bytes=-0",
+            "bytes=0-1,3-4",
+        ] {
             assert_eq!(parse_range(value, 10), Err(()), "{value}");
         }
         assert_eq!(parse_range("bytes=0-", 0), Err(()));
@@ -493,23 +663,24 @@ mod tests {
 
         let response = request(&url, "GET", None);
         let (headers, body) = response_parts(&response);
+        let normalized_headers = headers.to_ascii_lowercase();
         assert!(headers.starts_with("HTTP/1.1 200 OK"));
-        assert!(headers.contains("Content-Type: video/mp4"));
-        assert!(headers.contains("Content-Length: 10"));
-        assert!(headers.contains("Accept-Ranges: bytes"));
-        assert!(headers.contains("Cache-Control: private, no-store"));
+        assert!(normalized_headers.contains("content-type: video/mp4"));
+        assert!(normalized_headers.contains("content-length: 10"));
+        assert!(normalized_headers.contains("accept-ranges: bytes"));
+        assert!(normalized_headers.contains("cache-control: private, no-store"));
         assert_eq!(body, b"abcdefghij");
 
         let response = request(&url, "HEAD", None);
         let (headers, body) = response_parts(&response);
         assert!(headers.starts_with("HTTP/1.1 200 OK"));
-        assert!(headers.contains("Content-Length: 10"));
+        assert!(headers.to_ascii_lowercase().contains("content-length: 10"));
         assert!(body.is_empty());
 
         let response = request(&url, "HEAD", Some("bytes=2-5"));
         let (headers, body) = response_parts(&response);
         assert!(headers.starts_with("HTTP/1.1 200 OK"));
-        assert!(!headers.contains("Content-Range"));
+        assert!(!headers.to_ascii_lowercase().contains("content-range"));
         assert!(body.is_empty());
 
         for (range, expected_range, expected_body) in [
@@ -521,7 +692,9 @@ mod tests {
             let response = request(&url, "GET", Some(range));
             let (headers, body) = response_parts(&response);
             assert!(headers.starts_with("HTTP/1.1 206 Partial Content"));
-            assert!(headers.contains(format!("Content-Range: {expected_range}").as_str()));
+            assert!(headers
+                .to_ascii_lowercase()
+                .contains(format!("content-range: {expected_range}").as_str()));
             assert_eq!(body, expected_body);
         }
 
@@ -529,15 +702,60 @@ mod tests {
             let response = request(&url, "GET", Some(range));
             let (headers, body) = response_parts(&response);
             assert!(headers.starts_with("HTTP/1.1 416 Range Not Satisfiable"));
-            assert!(headers.contains("Content-Range: bytes */10"));
+            assert!(headers
+                .to_ascii_lowercase()
+                .contains("content-range: bytes */10"));
             assert!(body.is_empty());
         }
 
-        for rejected_url in [url.replace("/video/1", "/video/2"), url.replace("/video/1", "/video/99")] {
+        for rejected_url in [
+            url.replace("/video/1", "/video/2"),
+            url.replace("/video/1", "/video/99"),
+        ] {
             let response = request(&rejected_url, "GET", None);
             let (headers, body) = response_parts(&response);
             assert!(headers.starts_with("HTTP/1.1 404 Not Found"));
             assert!(body.is_empty());
         }
+    }
+
+    #[test]
+    fn serves_new_ranges_while_long_responses_are_backpressured() {
+        let temp = tempdir().expect("temp dir");
+        let db_path = temp.path().join("media.db");
+        let video_path = temp.path().join("long.mp4");
+        let file = std::fs::File::create(&video_path).expect("video fixture");
+        file.set_len(32 * 1024 * 1024)
+            .expect("sparse video fixture");
+        let conn = db::open_connection(&db_path).expect("database");
+        db::init_schema(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO assets (id, path, file_name, kind, size_bytes, modified_at) VALUES (1, ?1, 'long.mp4', 'video', ?2, 1)",
+            rusqlite::params![video_path.to_string_lossy().to_string(), 32_i64 * 1024 * 1024],
+        )
+        .expect("video row");
+        drop(conn);
+        let server = MediaServerState::start(db_path).expect("media server");
+        let url = server.video_url(1).expect("video URL");
+        let without_scheme = url.strip_prefix("http://").expect("http URL");
+        let (authority, path) = without_scheme.split_once('/').expect("URL path");
+
+        let mut slow_clients = Vec::new();
+        for _ in 0..24 {
+            let mut stream = TcpStream::connect(authority).expect("connect slow client");
+            write!(
+                stream,
+                "GET /{path} HTTP/1.1\r\nHost: {authority}\r\nRange: bytes=0-33554431\r\n\r\n"
+            )
+            .expect("slow range request");
+            slow_clients.push(stream);
+        }
+        thread::sleep(Duration::from_millis(200));
+
+        let response = request(&url, "GET", Some("bytes=33554431-33554431"));
+        let (headers, body) = response_parts(&response);
+        assert!(headers.starts_with("HTTP/1.1 206 Partial Content"));
+        assert_eq!(body, &[0]);
+        drop(slow_clients);
     }
 }

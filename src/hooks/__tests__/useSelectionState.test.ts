@@ -475,6 +475,74 @@ describe("useSelectionState", () => {
     expect(result.current.assetTagState.get(25)).toBeNull();
   });
 
+  it("accumulates rapid Right presses and only commits the latest response", async () => {
+    const assets = [createAsset({ id: 1 }), createAsset({ id: 2 }), createAsset({ id: 3 })];
+    const secondAsset = deferred<Asset | undefined>();
+    const thirdAsset = deferred<Asset | undefined>();
+    const getAssetAtAsync = vi.fn((index: number) => {
+      if (index === 1) return secondAsset.promise;
+      if (index === 2) return thirdAsset.promise;
+      return Promise.resolve(assets[index]);
+    });
+    const { result } = renderHook(() => useSelectionState({
+      assets,
+      setAssets,
+      appliedFavoritesOnly: false,
+      refresh,
+      refreshKnownTags,
+      assetCount: assets.length,
+      getAssetAtAsync
+    }));
+    act(() => result.current.setSelected(assets[0]));
+
+    act(() => {
+      result.current.handleSelectNext();
+      result.current.handleSelectNext();
+    });
+    expect(getAssetAtAsync).toHaveBeenNthCalledWith(1, 1);
+    expect(getAssetAtAsync).toHaveBeenNthCalledWith(2, 2);
+
+    act(() => thirdAsset.resolve(assets[2]));
+    await waitFor(() => expect(result.current.selected?.id).toBe(3));
+    act(() => secondAsset.resolve(assets[1]));
+    await act(async () => { await secondAsset.promise; });
+    expect(result.current.selected?.id).toBe(3);
+  });
+
+  it("lets rapid Right then Left return to the original target despite reverse responses", async () => {
+    const assets = [createAsset({ id: 1 }), createAsset({ id: 2 }), createAsset({ id: 3 })];
+    const originalAsset = deferred<Asset | undefined>();
+    const secondAsset = deferred<Asset | undefined>();
+    const getAssetAtAsync = vi.fn((index: number) => {
+      if (index === 0) return originalAsset.promise;
+      if (index === 1) return secondAsset.promise;
+      return Promise.resolve(assets[index]);
+    });
+    const { result } = renderHook(() => useSelectionState({
+      assets,
+      setAssets,
+      appliedFavoritesOnly: false,
+      refresh,
+      refreshKnownTags,
+      assetCount: assets.length,
+      getAssetAtAsync
+    }));
+    act(() => result.current.setSelected(assets[0]));
+
+    act(() => {
+      result.current.handleSelectNext();
+      result.current.handleSelectPrevious();
+    });
+    expect(getAssetAtAsync).toHaveBeenNthCalledWith(1, 1);
+    expect(getAssetAtAsync).toHaveBeenNthCalledWith(2, 0);
+
+    act(() => secondAsset.resolve(assets[1]));
+    await act(async () => { await secondAsset.promise; });
+    expect(result.current.selected?.id).toBe(1);
+    act(() => originalAsset.resolve(assets[0]));
+    await waitFor(() => expect(result.current.selected?.id).toBe(1));
+  });
+
   it("delegates save, favorite, group and delete actions with current selection context", async () => {
     const first = createAsset({ id: 1, tags: ["one"] });
     const second = createAsset({ id: 2, tags: ["two"] });

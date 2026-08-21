@@ -4,7 +4,7 @@ import type {
   PointerEventHandler,
   ReactEventHandler
 } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MediaPlayerInstance } from "@vidstack/react";
 import { toMediaSrc } from "../../api";
@@ -48,14 +48,27 @@ export function LightboxMediaStage({
   onImagePointerEnd
 }: LightboxMediaStageProps) {
   const { t } = useTranslation();
-  const [failedMediaKey, setFailedMediaKey] = useState<string | null>(null);
   const mediaKey = `${selected.id}\u0000${selected.kind}\u0000${selected.path}`;
+  const activationRef = useRef({ mediaKey, generation: 0 });
+  if (activationRef.current.mediaKey !== mediaKey) {
+    activationRef.current = {
+      mediaKey,
+      generation: activationRef.current.generation + 1
+    };
+  }
+  const activationGeneration = activationRef.current.generation;
+  const [failedActivation, setFailedActivation] = useState<number | null>(null);
+  const reportMediaFailure = () => {
+    if (activationRef.current.generation === activationGeneration) {
+      setFailedActivation(activationGeneration);
+    }
+  };
   const videoSource = useLightboxVideoSource(
     selected.id,
     selected.path,
     selected.kind === "video"
   );
-  const mediaFailed = failedMediaKey === mediaKey || videoSource.failed;
+  const mediaFailed = failedActivation === activationGeneration || videoSource.failed;
   const mediaStyle =
     mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
       ? {
@@ -99,7 +112,7 @@ export function LightboxMediaStage({
             playerRef={lightboxVideoPlayerRef}
             onLoadedMetadata={onVideoLoadedMetadata}
             onFullscreenChange={onVideoFullscreenChange}
-            onError={() => setFailedMediaKey(mediaKey)}
+            onError={reportMediaFailure}
           />
         </div>
       ) : selected.kind !== "video" ? (
@@ -125,7 +138,7 @@ export function LightboxMediaStage({
               isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
             }`}
             onLoad={onImageLoad}
-            onError={() => setFailedMediaKey(mediaKey)}
+            onError={reportMediaFailure}
             onClick={onImageClick}
             draggable={false}
           />

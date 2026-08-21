@@ -235,6 +235,40 @@ describe("useLibraryBrowser", () => {
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
   });
 
+  it("shares an in-flight page result between concurrent indexed lookups", async () => {
+    const nextPage = deferred<ReturnType<typeof ready>>();
+    apiMocks.startAssetQuery.mockResolvedValueOnce(ready([createAsset(1), createAsset(2)], 4));
+    apiMocks.getAssetQueryPage.mockReturnValueOnce(nextPage.promise);
+
+    const { result } = renderHook(() =>
+      useLibraryBrowser({
+        pageSize: 2,
+        filterInclude: [],
+        filterExclude: [],
+        appliedMediaKind: "all",
+        appliedFavoritesOnly: false
+      })
+    );
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    let firstLookup!: Promise<Asset | undefined>;
+    let secondLookup!: Promise<Asset | undefined>;
+    act(() => {
+      firstLookup = result.current.getAssetAtAsync(2);
+      secondLookup = result.current.getAssetAtAsync(2);
+    });
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
+
+    nextPage.resolve(ready([createAsset(3), createAsset(4)], 4, 2));
+    let resolved!: Array<Asset | undefined>;
+    await act(async () => {
+      resolved = await Promise.all([firstLookup, secondLookup]);
+    });
+    expect(resolved.map((asset) => asset?.id)).toEqual([3, 3]);
+  });
+
   it("queues visible ids from clamped virtual range", async () => {
     apiMocks.startAssetQuery.mockResolvedValueOnce(
       ready([createAsset(11), createAsset(12), createAsset(13)], 3)

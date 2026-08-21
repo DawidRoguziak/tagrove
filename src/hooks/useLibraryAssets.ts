@@ -81,7 +81,7 @@ export function useLibraryAssets({
   const [loading, setLoading] = useState(false);
   const sessionIdRef = useRef<number | null>(null);
   const generationRef = useRef(0);
-  const inFlightOffsetsRef = useRef<Set<number>>(new Set());
+  const inFlightPagesRef = useRef<Map<number, Promise<Asset[] | undefined>>>(new Map());
   const inFlightCountRef = useRef(0);
 
   const beginLoading = useCallback(() => {
@@ -131,7 +131,7 @@ export function useLibraryAssets({
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     sessionIdRef.current = null;
-    inFlightOffsetsRef.current.clear();
+    inFlightPagesRef.current.clear();
     resetThumbnailQueue();
     beginLoading();
     const perfMark = `asset-query-${generation}`;
@@ -180,24 +180,31 @@ export function useLibraryAssets({
           .map((assetId) => cache.assetsById.get(assetId))
           .filter((asset): asset is Asset => Boolean(asset));
       }
-      if (inFlightOffsetsRef.current.has(pageOffset)) return undefined;
+      const inFlight = inFlightPagesRef.current.get(pageOffset);
+      if (inFlight) return inFlight;
 
       const generation = generationRef.current;
-      inFlightOffsetsRef.current.add(pageOffset);
-      beginLoading();
-      try {
-        const result = await getAssetQueryPage(sessionId, pageOffset, pageSize);
-        if (generation !== generationRef.current) return;
-        if (result.status === "stale") {
-          await refresh();
-          return undefined;
+      let request!: Promise<Asset[] | undefined>;
+      request = (async () => {
+        beginLoading();
+        try {
+          const result = await getAssetQueryPage(sessionId, pageOffset, pageSize);
+          if (generation !== generationRef.current) return undefined;
+          if (result.status === "stale") {
+            await refresh();
+            return undefined;
+          }
+          mergePage(result.offset, result.items, false);
+          return result.items.map(summaryToAsset);
+        } finally {
+          if (inFlightPagesRef.current.get(pageOffset) === request) {
+            inFlightPagesRef.current.delete(pageOffset);
+          }
+          endLoading();
         }
-        mergePage(result.offset, result.items, false);
-        return result.items.map(summaryToAsset);
-      } finally {
-        inFlightOffsetsRef.current.delete(pageOffset);
-        endLoading();
-      }
+      })();
+      inFlightPagesRef.current.set(pageOffset, request);
+      return request;
     }, [beginLoading, cache.pages, endLoading, mergePage, pageSize, refresh, total]
   );
 

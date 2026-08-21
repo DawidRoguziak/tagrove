@@ -68,7 +68,9 @@ export function useSelectionState({
   const selectedRef = useRef<Asset | null>(null);
   selectedRef.current = selected;
   const selectionRequestRef = useRef(0);
+  const navigationRequestRef = useRef(0);
   const selectedIndexRef = useRef<number | null>(null);
+  const navigationTargetIndexRef = useRef<number | null>(null);
   const detailsCacheRef = useRef<Map<number, Asset>>(new Map());
   const tagMutationsRef = useRef<Map<number, TagMutationState>>(new Map());
   const observedTagEpochRef = useRef(assetTagState.epoch);
@@ -86,7 +88,9 @@ export function useSelectionState({
     observedTagEpochRef.current = assetTagState.epoch;
     skipAssetSyncForEpochRef.current = assetTagState.epoch;
     selectionRequestRef.current += 1;
+    navigationRequestRef.current += 1;
     selectedIndexRef.current = null;
+    navigationTargetIndexRef.current = null;
     detailsCacheRef.current.clear();
     tagMutationsRef.current.clear();
     setSelectedState(null);
@@ -326,13 +330,18 @@ export function useSelectionState({
   }, [assetCount, assetTagState, getAssetAtAsync]);
 
   const selectAsset = useCallback((asset: Asset | null, knownIndex?: number) => {
+    navigationRequestRef.current += 1;
     const requestId = selectionRequestRef.current + 1;
     selectionRequestRef.current = requestId;
     if (!asset) {
+      selectedIndexRef.current = null;
+      navigationTargetIndexRef.current = null;
       setSelectedState(null);
       return;
     }
-    selectedIndexRef.current = knownIndex ?? getAssetIndex(asset.id);
+    const selectedIndex = knownIndex ?? getAssetIndex(asset.id);
+    selectedIndexRef.current = selectedIndex;
+    navigationTargetIndexRef.current = selectedIndex;
 
     let authoritative = assetTagState.get(asset.id);
     // Non-empty tag arrays can only come from a full detail object; gallery summaries always use [].
@@ -399,23 +408,25 @@ export function useSelectionState({
     selectAsset(current, selectedIndexRef.current ?? undefined);
   }, [assetTagState, selectAsset]);
 
-  const handleSelectPrevious = useCallback(() => {
-    const currentIndex = selectedIndexRef.current;
+  const navigateBy = useCallback((step: -1 | 1) => {
+    const currentIndex = navigationTargetIndexRef.current ?? selectedIndexRef.current;
     if (currentIndex === null || assetCount === 0) return;
-    const targetIndex = (currentIndex - 1 + assetCount) % assetCount;
+    const targetIndex = (currentIndex + step + assetCount) % assetCount;
+    navigationTargetIndexRef.current = targetIndex;
+    const requestId = navigationRequestRef.current + 1;
+    navigationRequestRef.current = requestId;
     void getAssetAtAsync(targetIndex).then((asset) => {
-      if (asset) selectAsset(asset, targetIndex);
-    });
+      if (navigationRequestRef.current === requestId && asset) selectAsset(asset, targetIndex);
+    }).catch(() => {});
   }, [assetCount, getAssetAtAsync, selectAsset]);
 
+  const handleSelectPrevious = useCallback(() => {
+    navigateBy(-1);
+  }, [navigateBy]);
+
   const handleSelectNext = useCallback(() => {
-    const currentIndex = selectedIndexRef.current;
-    if (currentIndex === null || assetCount === 0) return;
-    const targetIndex = (currentIndex + 1) % assetCount;
-    void getAssetAtAsync(targetIndex).then((asset) => {
-      if (asset) selectAsset(asset, targetIndex);
-    });
-  }, [assetCount, getAssetAtAsync, selectAsset]);
+    navigateBy(1);
+  }, [navigateBy]);
 
   const deleteSelectedAsset = useCallback(async () => {
     const deletionIdentity = selected ? assetTagState.captureGeneration(selected.id) : null;
@@ -428,6 +439,9 @@ export function useSelectionState({
       onDeleted: (assetId) => {
         if (!deletionIdentity || !assetTagState.remove(assetId, deletionIdentity)) return false;
         selectionRequestRef.current += 1;
+        navigationRequestRef.current += 1;
+        selectedIndexRef.current = null;
+        navigationTargetIndexRef.current = null;
         setSelectedState((current) => current?.id === assetId ? null : current);
         detailsCacheRef.current.delete(assetId);
         tagMutationsRef.current.delete(assetId);

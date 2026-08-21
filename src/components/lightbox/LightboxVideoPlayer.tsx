@@ -84,8 +84,12 @@ export function LightboxVideoPlayer({
     const detail = playerErrorDetail(event);
     const provider = playerRef.current?.provider;
     const mediaError = detail.mediaError ?? (isVideoProvider(provider) ? provider.video.error : null);
+    const description = describeMediaError(mediaError, detail);
+    if (description.code === 1) {
+      return;
+    }
     console.error("[lightbox] Video playback failed", {
-      ...describeMediaError(mediaError, detail),
+      ...description,
       src,
       path: title,
       event
@@ -134,7 +138,6 @@ export function LightboxVideoPlayer({
           });
         }}
         onFullscreenChange={onFullscreenChange}
-        onError={reportError}
       >
         <MediaProvider
           mediaProps={{
@@ -142,7 +145,7 @@ export function LightboxVideoPlayer({
             muted: false,
             volume: 1,
             disablePictureInPicture: true,
-            onError
+            onError: reportError
           } as MediaHTMLAttributes<HTMLMediaElement>}
         />
         <DefaultVideoLayout

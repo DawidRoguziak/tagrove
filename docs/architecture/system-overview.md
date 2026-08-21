@@ -45,7 +45,7 @@ Concrete examples:
 - A scan invokes `scan_folder` or `rescan_all_roots`, takes the scan lock, walks supported files, fingerprints them, extracts metadata (including video duration through ffprobe/ffmpeg), commits batched SQLite updates, and removes stale database rows. Scanning reads source media; it does not copy it into app data.
 - Visible gallery items are queued by asset ID. `ensure_thumbnails` takes a shared thumbnail lock and submits deduplicated high-priority jobs to the process-wide scheduler. Images are decoded in Rust; video frames use ffmpeg. Successful paths and failures are persisted in SQLite, and the generated files live under the profile's `thumbs/` directory.
 - Delete, rename, root removal, library clear, and bundle restore cross both SQLite and the filesystem. These operations take both workflow locks, always in the order described below.
-- Image, GIF, and thumbnail paths returned to React are normalized from Windows backslashes before `convertFileSrc` maps them to Tauri's asset protocol. Video playback uses a tokenized `127.0.0.1` URL resolved by asset ID; the dedicated backend server streams the file with GET, HEAD, and byte-range support without carrying bytes through IPC.
+- Image, GIF, and thumbnail paths returned to React are normalized from Windows backslashes before `convertFileSrc` maps them to Tauri's asset protocol. Video playback uses a tokenized `127.0.0.1` URL resolved by asset ID; the dedicated Hyper/Tokio server streams the file with asynchronous, backpressure-aware GET, HEAD, and byte-range responses without carrying bytes through IPC. It accepts at most 32 active connections, closes clients that do not finish headers within five seconds, bounds request preparation to ten seconds and stalled writes to 30 seconds, and disables HTTP keep-alive.
 
 ## Executable bootstrap and runtime lifecycle
 
@@ -72,7 +72,7 @@ Startup failure in any setup step prevents the windowed application from enterin
 | `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
 | `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
-| `services/*` | Asset-query sessions, SQLite connection pooling for those queries, loopback video streaming, scan orchestration, thumbnail scheduling/workflows, backup/restore, and progress emission. |
+| `services/*` | Asset-query sessions, SQLite connection pooling for those queries, asynchronous loopback video streaming, scan orchestration, thumbnail scheduling/workflows, backup/restore, and progress emission. |
 | `db.rs` | Schema initialization and SQLite queries/transactions. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
 | `indexer.rs` | Supported-file discovery, fingerprints, and media metadata extraction. |
 | `thumbs.rs` | Image/video thumbnail creation and video duration probing. |
@@ -90,7 +90,7 @@ Startup failure in any setup step prevents the windowed application from enterin
 - the shared `ThumbnailScheduler`; and
 - atomics that enforce one bulk-thumbnail render and carry its cancellation request.
 
-The `InstanceLock` and `MediaServerState` are separately managed by Tauri so their lock/listener lifetimes match the application. The query manager and its connection-pool registry are process-wide `OnceLock` singletons rather than `AppState` fields.
+The `InstanceLock` and `MediaServerState` are separately managed by Tauri so their lock/listener lifetimes match the application. Dropping `MediaServerState` signals shutdown, aborts active connection tasks, drains their `JoinSet`, and joins the dedicated server thread. Transient listener errors use bounded exponential backoff; eight consecutive failures stop the listener and make later video-URL requests report that the server is unavailable. The query manager and its connection-pool registry are process-wide `OnceLock` singletons rather than `AppState` fields.
 
 ## Profiles, identifiers, and data isolation
 

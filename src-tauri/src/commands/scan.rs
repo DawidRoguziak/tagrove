@@ -67,7 +67,8 @@ pub fn remove_scan_root(path: String, state: State<AppState>) -> Result<RemoveRo
 
         let (removed_assets, thumbs) = db::remove_scan_root_and_orphan_assets(&conn, &normalized)?;
         db::bump_library_revision(&conn)?;
-        let removed_thumbnails = thumb_service::delete_thumbnail_files(thumbs);
+        let removed_thumbnails =
+            thumb_service::delete_thumbnail_files_in_root(&state.thumbs_dir, thumbs);
 
         Ok(RemoveRootSummary {
             removed_assets,

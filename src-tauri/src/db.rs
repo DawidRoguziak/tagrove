@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path, thread, time::Duration};
 
 use anyhow::Context;
-use rusqlite::{params, Connection, ErrorCode, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 
 use crate::models::{
     Asset, AssetDetails, AssetPage, AssetSummary, AssetTagResult, DuplicateAsset, DuplicateGroup,
@@ -20,6 +20,22 @@ pub struct CsvAssetRow {
 pub struct AssetPathRow {
     pub id: i64,
     pub path: String,
+}
+
+pub const APPLICATION_ID: i64 = 0x4d54_4147;
+pub const SCHEMA_VERSION: i64 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupSchemaCompatibility {
+    Current,
+    Legacy,
+}
+
+#[derive(Debug, Clone)]
+pub struct BackupAssetPath {
+    pub id: i64,
+    pub path: String,
+    pub thumb_path: Option<String>,
 }
 
 pub struct DuplicateFileNameCount {
@@ -102,6 +118,17 @@ pub fn open_connection(db_path: &Path) -> anyhow::Result<Connection> {
     Ok(conn)
 }
 
+pub fn open_connection_read_only(db_path: &Path) -> anyhow::Result<Connection> {
+    let conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .with_context(|| format!("cannot open sqlite db read-only at {}", db_path.display()))?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    Ok(conn)
+}
+
 #[derive(Debug, Clone)]
 pub struct ExistingAssetFingerprint {
     pub id: i64,
@@ -112,6 +139,16 @@ pub struct ExistingAssetFingerprint {
 }
 
 pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
+    let application_id = conn.query_row("PRAGMA application_id", [], |row| row.get::<_, i64>(0))?;
+    let schema_version = conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))?;
+    anyhow::ensure!(
+        application_id == 0 || application_id == APPLICATION_ID,
+        "database belongs to another application"
+    );
+    anyhow::ensure!(
+        schema_version <= SCHEMA_VERSION,
+        "database schema version {schema_version} is newer than supported version {SCHEMA_VERSION}"
+    );
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS assets (
@@ -264,8 +301,508 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         )?;
     }
     optimize(conn)?;
+    conn.pragma_update(None, "application_id", APPLICATION_ID)?;
+    conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
 
     Ok(())
+}
+
+pub fn validate_backup_database(
+    conn: &Connection,
+    allow_legacy: bool,
+) -> anyhow::Result<BackupSchemaCompatibility> {
+    let integrity = conn.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))?;
+    anyhow::ensure!(
+        integrity.eq_ignore_ascii_case("ok"),
+        "SQLite integrity check failed: {integrity}"
+    );
+
+    let foreign_key_violation = conn
+        .prepare("PRAGMA foreign_key_check")?
+        .query_row([], |_| Ok(()))
+        .optional()?;
+    anyhow::ensure!(
+        foreign_key_violation.is_none(),
+        "SQLite foreign key check failed"
+    );
+
+    let application_id = conn.query_row("PRAGMA application_id", [], |row| row.get::<_, i64>(0))?;
+    let schema_version = conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))?;
+    let compatibility = if application_id == APPLICATION_ID {
+        anyhow::ensure!(
+            schema_version <= SCHEMA_VERSION,
+            "database schema version {schema_version} is newer than supported version {SCHEMA_VERSION}"
+        );
+        anyhow::ensure!(
+            schema_version == SCHEMA_VERSION,
+            "unsupported MediaTagger schema version {schema_version}"
+        );
+        BackupSchemaCompatibility::Current
+    } else if application_id == 0 && schema_version == 0 && allow_legacy {
+        BackupSchemaCompatibility::Legacy
+    } else if application_id == 0 {
+        anyhow::bail!("database has no MediaTagger application identity");
+    } else {
+        anyhow::bail!("database belongs to another application");
+    };
+
+    validate_backup_schema(conn, compatibility)?;
+    validate_backup_data(conn, compatibility)?;
+    Ok(compatibility)
+}
+
+fn validate_backup_schema(
+    conn: &Connection,
+    compatibility: BackupSchemaCompatibility,
+) -> anyhow::Result<()> {
+    let required_tables = [
+        ("assets", &["id", "path", "kind", "size_bytes", "modified_at", "thumb_path"][..]),
+        ("tags", &["id", "name"][..]),
+        ("asset_tags", &["asset_id", "tag_id"][..]),
+        ("scan_roots", &["path"][..]),
+        (
+            "thumbnail_failures",
+            &["asset_id", "failure_count", "last_failed_at", "asset_modified_at"][..],
+        ),
+        ("library_metadata", &["key", "value"][..]),
+    ];
+    for (table, columns) in required_tables {
+        validate_table_columns(conn, table, columns)?;
+    }
+    validate_backup_constraints(conn, compatibility)?;
+
+    if compatibility == BackupSchemaCompatibility::Current {
+        validate_table_columns(
+            conn,
+            "assets",
+            &[
+                "file_name",
+                "width",
+                "height",
+                "duration_ms",
+                "is_favorite",
+                "media_group_key",
+                "media_group_order",
+                "fingerprint_mtime_ns",
+                "tag_count",
+                "file_name_key",
+                "media_group_key_normalized",
+                "indexed_at",
+                "record_version",
+            ],
+        )?;
+        validate_table_columns(
+            conn,
+            "asset_scan_roots",
+            &["asset_id", "root_path", "last_seen_generation"],
+        )?;
+        validate_table_columns(
+            conn,
+            "pending_file_operations",
+            &[
+                "operation_id",
+                "asset_id",
+                "action",
+                "original_path",
+                "staging_path",
+                "final_path",
+                "committed",
+                "created_at",
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_backup_constraints(
+    conn: &Connection,
+    compatibility: BackupSchemaCompatibility,
+) -> anyhow::Result<()> {
+    for (table, column, not_null, primary_key_position) in [
+        ("assets", "id", false, 1),
+        ("assets", "path", true, 0),
+        ("assets", "kind", true, 0),
+        ("assets", "size_bytes", true, 0),
+        ("assets", "modified_at", true, 0),
+        ("tags", "id", false, 1),
+        ("tags", "name", true, 0),
+        ("asset_tags", "asset_id", true, 1),
+        ("asset_tags", "tag_id", true, 2),
+        ("scan_roots", "path", false, 1),
+        ("thumbnail_failures", "asset_id", false, 1),
+        ("library_metadata", "key", false, 1),
+        ("library_metadata", "value", true, 0),
+    ] {
+        validate_column_constraints(conn, table, column, not_null, primary_key_position)?;
+    }
+    for (table, columns) in [
+        ("assets", &["path"][..]),
+        ("tags", &["name"][..]),
+        ("asset_tags", &["asset_id", "tag_id"][..]),
+    ] {
+        anyhow::ensure!(
+            has_unique_index(conn, table, columns)?,
+            "backup table {table} is missing a required unique key"
+        );
+    }
+    for (table, from, target, to) in [
+        ("asset_tags", "asset_id", "assets", "id"),
+        ("asset_tags", "tag_id", "tags", "id"),
+    ] {
+        anyhow::ensure!(
+            has_cascade_foreign_key(conn, table, from, target, to)?,
+            "backup table {table} is missing a required cascading foreign key"
+        );
+    }
+    if compatibility == BackupSchemaCompatibility::Current {
+        for (table, column, not_null, primary_key_position) in [
+            ("assets", "file_name", true, 0),
+            ("assets", "is_favorite", true, 0),
+            ("assets", "fingerprint_mtime_ns", true, 0),
+            ("assets", "tag_count", true, 0),
+            ("assets", "file_name_key", true, 0),
+            ("assets", "indexed_at", true, 0),
+            ("assets", "record_version", true, 0),
+            ("asset_scan_roots", "asset_id", true, 1),
+            ("asset_scan_roots", "root_path", true, 2),
+            ("asset_scan_roots", "last_seen_generation", true, 0),
+            ("pending_file_operations", "operation_id", true, 1),
+            ("pending_file_operations", "asset_id", true, 2),
+            ("pending_file_operations", "action", true, 0),
+            ("pending_file_operations", "original_path", true, 0),
+            ("pending_file_operations", "staging_path", true, 0),
+            ("pending_file_operations", "committed", true, 0),
+            ("pending_file_operations", "created_at", true, 0),
+        ] {
+            validate_column_constraints(conn, table, column, not_null, primary_key_position)?;
+        }
+        anyhow::ensure!(
+            has_unique_index(conn, "asset_scan_roots", &["asset_id", "root_path"])?,
+            "backup table asset_scan_roots is missing its primary key"
+        );
+        anyhow::ensure!(
+            has_unique_index(conn, "pending_file_operations", &["operation_id", "asset_id"])?,
+            "backup table pending_file_operations is missing its primary key"
+        );
+        for (from, target, to) in [
+            ("asset_id", "assets", "id"),
+            ("root_path", "scan_roots", "path"),
+        ] {
+            anyhow::ensure!(
+                has_cascade_foreign_key(conn, "asset_scan_roots", from, target, to)?,
+                "backup table asset_scan_roots is missing a required cascading foreign key"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_column_constraints(
+    conn: &Connection,
+    table: &str,
+    expected_column: &str,
+    expected_not_null: bool,
+    expected_primary_key_position: i64,
+) -> anyhow::Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(1)?,
+            row.get::<_, bool>(3)?,
+            row.get::<_, i64>(5)?,
+        ))
+    })?;
+    for row in rows {
+        let (column, not_null, primary_key_position) = row?;
+        if column.eq_ignore_ascii_case(expected_column) {
+            anyhow::ensure!(
+                not_null == expected_not_null
+                    && primary_key_position == expected_primary_key_position,
+                "backup column {table}.{expected_column} has incompatible constraints"
+            );
+            return Ok(());
+        }
+    }
+    anyhow::bail!("backup table {table} is missing required column {expected_column}")
+}
+
+fn has_unique_index(conn: &Connection, table: &str, expected: &[&str]) -> anyhow::Result<bool> {
+    let mut index_stmt = conn.prepare(&format!("PRAGMA index_list({table})"))?;
+    let index_rows = index_stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(1)?,
+            row.get::<_, bool>(2)?,
+            row.get::<_, bool>(4)?,
+        ))
+    })?;
+    for index_row in index_rows {
+        let (index_name, unique, partial) = index_row?;
+        if !unique || partial {
+            continue;
+        }
+        let escaped_name = index_name.replace('"', "\"\"");
+        let mut columns_stmt = conn.prepare(&format!("PRAGMA index_info(\"{escaped_name}\")"))?;
+        let column_rows = columns_stmt.query_map([], |row| row.get::<_, String>(2))?;
+        let columns = column_rows.collect::<Result<Vec<_>, _>>()?;
+        if columns
+            .iter()
+            .map(String::as_str)
+            .eq(expected.iter().copied())
+        {
+            if table == "tags" && expected.len() == 1 && expected[0] == "name" {
+                let mut xinfo_stmt = conn.prepare(&format!(
+                    "PRAGMA index_xinfo(\"{escaped_name}\")"
+                ))?;
+                let xinfo_rows = xinfo_stmt.query_map([], |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, bool>(5)?,
+                    ))
+                })?;
+                let mut has_nocase_name = false;
+                for xinfo_row in xinfo_rows {
+                    let (column, collation, key) = xinfo_row?;
+                    if key
+                        && column.as_deref() == Some("name")
+                        && collation.eq_ignore_ascii_case("NOCASE")
+                    {
+                        has_nocase_name = true;
+                    }
+                }
+                if !has_nocase_name {
+                    continue;
+                }
+            }
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn has_cascade_foreign_key(
+    conn: &Connection,
+    table: &str,
+    expected_from: &str,
+    expected_table: &str,
+    expected_to: &str,
+) -> anyhow::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA foreign_key_list({table})"))?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(6)?,
+        ))
+    })?;
+    let mut foreign_keys = HashMap::<i64, Vec<(i64, String, String, String, String)>>::new();
+    for row in rows {
+        let (id, sequence, target_table, from, to, on_delete) = row?;
+        foreign_keys
+            .entry(id)
+            .or_default()
+            .push((sequence, target_table, from, to, on_delete));
+    }
+    for parts in foreign_keys.values() {
+        if parts.len() == 1
+            && parts[0].0 == 0
+            && parts[0].2.eq_ignore_ascii_case(expected_from)
+            && parts[0].1.eq_ignore_ascii_case(expected_table)
+            && parts[0].3.eq_ignore_ascii_case(expected_to)
+            && parts[0].4.eq_ignore_ascii_case("CASCADE")
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn validate_table_columns(conn: &Connection, table: &str, required: &[&str]) -> anyhow::Result<()> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(1)?.to_lowercase(),
+            row.get::<_, String>(2)?.to_uppercase(),
+        ))
+    })?;
+    let mut columns = HashMap::new();
+    for row in rows {
+        let (name, declared_type) = row?;
+        columns.insert(name, declared_type);
+    }
+    anyhow::ensure!(
+        !columns.is_empty(),
+        "backup database is missing required table {table}"
+    );
+    for column in required {
+        let declared_type = columns
+            .get(&column.to_lowercase())
+            .with_context(|| format!("backup table {table} is missing required column {column}"))?;
+        let expected_type = match *column {
+            "path" | "kind" | "thumb_path" | "name" | "key" | "file_name"
+            | "media_group_key" | "file_name_key" | "media_group_key_normalized"
+            | "root_path" | "operation_id" | "action" | "original_path" | "staging_path"
+            | "final_path" => "TEXT",
+            "media_group_order" => "REAL",
+            _ => "INTEGER",
+        };
+        anyhow::ensure!(
+            declared_type == expected_type,
+            "backup column {table}.{column} has incompatible declared type {declared_type}"
+        );
+    }
+    Ok(())
+}
+
+fn validate_backup_data(
+    conn: &Connection,
+    compatibility: BackupSchemaCompatibility,
+) -> anyhow::Result<()> {
+    let invalid_assets = conn.query_row(
+        "SELECT COUNT(*) FROM assets
+         WHERE typeof(id) <> 'integer' OR typeof(path) <> 'text' OR trim(path) = ''
+            OR typeof(kind) <> 'text' OR kind NOT IN ('image', 'gif', 'video')
+            OR typeof(size_bytes) <> 'integer' OR size_bytes < 0
+            OR typeof(modified_at) <> 'integer'
+            OR (thumb_path IS NOT NULL AND typeof(thumb_path) <> 'text')",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    anyhow::ensure!(invalid_assets == 0, "backup contains invalid asset values");
+
+    for (table, predicate) in [
+        (
+            "tags",
+            "typeof(id) <> 'integer' OR typeof(name) <> 'text' OR trim(name) = ''",
+        ),
+        (
+            "asset_tags",
+            "typeof(asset_id) <> 'integer' OR typeof(tag_id) <> 'integer'",
+        ),
+        (
+            "scan_roots",
+            "typeof(path) <> 'text' OR trim(path) = ''",
+        ),
+        (
+            "library_metadata",
+            "typeof(key) <> 'text' OR typeof(value) <> 'integer'",
+        ),
+        (
+            "thumbnail_failures",
+            "typeof(asset_id) <> 'integer' OR typeof(failure_count) <> 'integer' OR failure_count < 1
+             OR (last_error IS NOT NULL AND typeof(last_error) <> 'text')
+             OR typeof(last_failed_at) <> 'integer' OR typeof(asset_modified_at) <> 'integer'",
+        ),
+    ] {
+        let sql = format!("SELECT COUNT(*) FROM {table} WHERE {predicate}");
+        let invalid = conn.query_row(&sql, [], |row| row.get::<_, i64>(0))?;
+        anyhow::ensure!(invalid == 0, "backup table {table} contains invalid values");
+    }
+
+    let metadata_rows = conn.query_row(
+        "SELECT COUNT(*) FROM library_metadata
+         WHERE (key = 'revision' AND value >= 1)
+            OR (key = 'performance_schema_version' AND value BETWEEN 0 AND 2)",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    anyhow::ensure!(
+        metadata_rows == 2,
+        "backup has incompatible MediaTagger metadata"
+    );
+
+    if compatibility == BackupSchemaCompatibility::Current {
+        let invalid_current_assets = conn.query_row(
+            "SELECT COUNT(*) FROM assets
+             WHERE typeof(file_name) <> 'text' OR trim(file_name) = ''
+                OR typeof(is_favorite) <> 'integer' OR is_favorite NOT IN (0, 1)
+                OR typeof(fingerprint_mtime_ns) <> 'integer'
+                OR typeof(tag_count) <> 'integer' OR tag_count < 0
+                OR typeof(file_name_key) <> 'text'
+                OR typeof(indexed_at) <> 'integer'
+                OR typeof(record_version) <> 'integer' OR record_version < 1
+                OR (width IS NOT NULL AND typeof(width) <> 'integer')
+                OR (height IS NOT NULL AND typeof(height) <> 'integer')
+                OR (duration_ms IS NOT NULL AND typeof(duration_ms) <> 'integer')
+                OR (media_group_key IS NOT NULL AND typeof(media_group_key) <> 'text')
+                OR (media_group_key_normalized IS NOT NULL AND typeof(media_group_key_normalized) <> 'text')
+                OR (media_group_order IS NOT NULL AND typeof(media_group_order) NOT IN ('integer', 'real'))",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        anyhow::ensure!(
+            invalid_current_assets == 0,
+            "backup contains invalid current-schema asset values"
+        );
+        let invalid_derived_assets = conn.query_row(
+            "SELECT COUNT(*) FROM assets
+             WHERE file_name_key <> lower(file_name)
+                OR tag_count <> (SELECT COUNT(*) FROM asset_tags WHERE asset_id = assets.id)
+                OR COALESCE(media_group_key_normalized, '') <>
+                   CASE WHEN media_group_key IS NULL OR trim(media_group_key) = ''
+                        THEN '' ELSE lower(trim(media_group_key)) END",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        anyhow::ensure!(
+            invalid_derived_assets == 0,
+            "backup contains inconsistent derived asset values"
+        );
+        for (table, predicate) in [
+            (
+                "asset_scan_roots",
+                "typeof(asset_id) <> 'integer' OR typeof(root_path) <> 'text'
+                 OR typeof(last_seen_generation) <> 'integer'",
+            ),
+        ] {
+            let sql = format!("SELECT COUNT(*) FROM {table} WHERE {predicate}");
+            let invalid = conn.query_row(&sql, [], |row| row.get::<_, i64>(0))?;
+            anyhow::ensure!(invalid == 0, "backup table {table} contains invalid values");
+        }
+    }
+    ensure_no_pending_file_operations(conn)?;
+    Ok(())
+}
+
+pub fn ensure_no_pending_file_operations(conn: &Connection) -> anyhow::Result<()> {
+    let has_pending_table = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'pending_file_operations')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if has_pending_table {
+        let pending = conn.query_row(
+            "SELECT COUNT(*) FROM pending_file_operations",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        anyhow::ensure!(pending == 0, "database contains pending local file operations");
+    }
+    Ok(())
+}
+
+pub fn list_backup_asset_paths(conn: &Connection) -> anyhow::Result<Vec<BackupAssetPath>> {
+    let mut stmt = conn.prepare("SELECT id, path, thumb_path FROM assets ORDER BY id")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(BackupAssetPath {
+            id: row.get(0)?,
+            path: row.get(1)?,
+            thumb_path: row.get(2)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+pub fn list_backup_asset_root_mappings(conn: &Connection) -> anyhow::Result<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT asset_id, root_path FROM asset_scan_roots ORDER BY asset_id, root_path",
+    )?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
 fn backfill_asset_scan_roots(conn: &Connection) -> anyhow::Result<()> {

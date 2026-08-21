@@ -134,8 +134,8 @@ The legacy `thumbnail-ready` application event carries one `ThumbnailBatchItem` 
 | `exportTagsCsv` / `export_tags_csv` | `path: string` | `CsvExportSummary` | Trims and rejects an empty target, creates parent directories, and writes `file_name,tags,favorite,media_group_key,media_group_order`. |
 | `importTagsCsv` / `import_tags_csv` | `path: string` | `CsvImportSummary` | Requires an existing file, matches assets case-insensitively by file name, merges normalized tags, optionally updates favorite/group columns, and bumps the revision if any asset changed. Missing standard headers fall back to columns 0/1 for file name/tags; invalid optional values are ignored. |
 | `exportDbBundle` / `export_db_bundle` | `path: string` | `DbBundleExportSummary` | Trims and rejects an empty target and creates a ZIP containing `media.db`, present WAL/SHM files, and thumbnail files. |
-| `inspectDbBundle` / `inspect_db_bundle` | `path: string` | `DbBundleInspection` | Read-only inspection of a versioned manifest or legacy staged database; reports roots requiring Windows-to-Linux mapping. |
-| `importDbBundle` / `import_db_bundle` | `path: string`, `rootMappings: { sourceRoot, targetRoot }[]` | `DbBundleImportSummary` | Validates and rewrites a staged database before replacement. Linux rejects Windows roots without complete mappings and detects mapped path collisions. |
+| `inspectDbBundle` / `inspect_db_bundle` | `path: string` | `DbBundleInspection` | Validates archive limits, manifest compatibility, SQLite integrity/schema, and manifest/database roots without writing the candidate database; reports roots requiring Windows-to-Linux mapping. |
+| `importDbBundle` / `import_db_bundle` | `path: string`, `rootMappings: { sourceRoot, targetRoot }[]` | `DbBundleImportSummary` | Repeats full archive/database validation, migrates only accepted legacy staging, and validates/rewrites every media and thumbnail path before replacement. Linux rejects Windows roots without complete mappings and detects mapped path collisions. |
 | `clearLibraryData` / `clear_library_data` | none | `ClearLibrarySummary` | Removes assets and roots, bumps the revision, best-effort deletes thumbnail files, and emits library-clear progress. |
 
 These operations' locking, transaction, archive, rollback, and filesystem guarantees are documented in [data safety and portability](../subsystems/data-safety-and-portability.md).
@@ -205,7 +205,7 @@ Consumers must filter by phase because the event name is shared and broadcasts a
 | Bulk asset IDs | Tag/group mutation APIs drop non-positive and duplicate IDs. Streamed thumbnails do the same and cap visible/prefetch groups at 64 each. |
 | Media group | Blank key becomes `null`; non-finite order becomes `null`. |
 | Root path | Trim, use Windows separators, remove non-drive trailing separators; add/scan requires an existing directory. |
-| CSV/bundle paths | Trim; exports reject empty paths and create parents; imports require an existing file. Bundle import also rejects unsafe ZIP paths and requires `media.db`. |
+| CSV/bundle paths | Trim; exports reject empty paths and create parents; imports require an existing file. Bundle inspection/import reject unsafe or duplicate recognized ZIP paths, symbolic-link entries, resource-limit violations, missing `media.db`, incompatible manifests/databases, and unsafe persisted media/thumbnail paths. |
 | Rename | File name only; rejects blank/dot names, separators, control/listed Windows-invalid characters, trailing dot/space, reserved device names, same path, and occupied filesystem or indexed destinations. |
 | Theme | Exactly `light` or `dark`. |
 

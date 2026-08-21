@@ -268,8 +268,13 @@ pub fn clear_library_data(
             "Clearing thumbnails and indexed library data".to_string(),
         );
 
-        let removed_thumbnails =
-            thumb_service::delete_thumbnail_files_with_progress(&app, thumbs, total, "library-clear");
+        let removed_thumbnails = thumb_service::delete_thumbnail_files_with_progress(
+            &app,
+            &state.thumbs_dir,
+            thumbs,
+            total,
+            "library-clear",
+        );
 
         let _ = emit_progress(
             &app,

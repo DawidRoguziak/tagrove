@@ -716,26 +716,33 @@ pub fn clear_all_thumbnails<R: tauri::Runtime>(
         total,
         "Removing all thumbnails".to_string(),
     );
-    let removed = delete_thumbnail_files_with_progress(app, thumbs, total, "thumbs-clear");
+    let removed = delete_thumbnail_files_with_progress(
+        app,
+        &state.thumbs_dir,
+        thumbs,
+        total,
+        "thumbs-clear",
+    );
     Ok(removed)
 }
 
-pub fn delete_thumbnail_files(paths: Vec<String>) -> usize {
+pub fn delete_thumbnail_files_in_root(thumbs_root: &Path, paths: Vec<String>) -> usize {
     paths
         .into_iter()
-        .filter(|path| fs::remove_file(path).is_ok())
+        .filter(|path| remove_thumbnail_file(thumbs_root, Path::new(path)))
         .count()
 }
 
 pub fn delete_thumbnail_files_with_progress(
     app: &tauri::AppHandle<impl tauri::Runtime>,
+    thumbs_root: &Path,
     paths: Vec<String>,
     total: usize,
     phase: &str,
 ) -> usize {
     let mut removed = 0usize;
     for (idx, path) in paths.into_iter().enumerate() {
-        if fs::remove_file(path).is_ok() {
+        if remove_thumbnail_file(thumbs_root, Path::new(&path)) {
             removed += 1;
         }
         let processed = idx + 1;
@@ -750,6 +757,37 @@ pub fn delete_thumbnail_files_with_progress(
         }
     }
     removed
+}
+
+fn remove_thumbnail_file(thumbs_root: &Path, candidate: &Path) -> bool {
+    let Ok(canonical_root) = thumbs_root.canonicalize() else {
+        return false;
+    };
+    let Ok(metadata) = fs::symlink_metadata(candidate) else {
+        return false;
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return false;
+    }
+    let Ok(canonical_candidate) = candidate.canonicalize() else {
+        return false;
+    };
+    if !canonical_candidate.starts_with(&canonical_root) {
+        return false;
+    }
+    fs::remove_file(canonical_candidate).is_ok()
+}
+
+#[cfg(test)]
+fn delete_thumbnail_files(paths: Vec<String>) -> usize {
+    let Some(root) = paths
+        .first()
+        .and_then(|path| Path::new(path).parent())
+        .map(Path::to_path_buf)
+    else {
+        return 0;
+    };
+    delete_thumbnail_files_in_root(&root, paths)
 }
 
 impl BulkRenderMode {

@@ -33,7 +33,11 @@ struct PreparedMutation {
     rollback_path: Option<PathBuf>,
 }
 
-pub fn delete_asset(conn: &rusqlite::Connection, asset_id: i64) -> anyhow::Result<DeleteAssetSummary> {
+pub fn delete_asset(
+    conn: &rusqlite::Connection,
+    thumbs_root: &Path,
+    asset_id: i64,
+) -> anyhow::Result<DeleteAssetSummary> {
     let asset = db::get_file_mutation_asset(conn, asset_id)?
         .ok_or_else(|| anyhow::anyhow!("Asset with id {asset_id} not found"))?;
     let input = DuplicateResolutionBatchInput {
@@ -44,7 +48,7 @@ pub fn delete_asset(conn: &rusqlite::Connection, asset_id: i64) -> anyhow::Resul
             expected_record_version: asset.record_version,
         }],
     };
-    let summary = apply_file_mutation_batch(conn, input, false)?;
+    let summary = apply_file_mutation_batch(conn, thumbs_root, input, false)?;
     let result = summary.results.into_iter().next().context("delete returned no item result")?;
     match summary.status {
         DuplicateResolutionBatchStatus::Committed | DuplicateResolutionBatchStatus::RecoveryRequired => {
@@ -73,6 +77,7 @@ pub fn delete_asset(conn: &rusqlite::Connection, asset_id: i64) -> anyhow::Resul
 
 pub fn rename_asset(
     conn: &rusqlite::Connection,
+    thumbs_root: &Path,
     asset_id: i64,
     new_file_name: String,
 ) -> anyhow::Result<RenameAssetSummary> {
@@ -88,7 +93,7 @@ pub fn rename_asset(
             new_file_name,
         }],
     };
-    let summary = apply_file_mutation_batch(conn, input, false)?;
+    let summary = apply_file_mutation_batch(conn, thumbs_root, input, false)?;
     let result = summary.results.into_iter().next().context("rename returned no item result")?;
     let status = match result.status {
         DuplicateResolutionItemStatus::Renamed => RenameAssetStatus::Renamed,
@@ -116,13 +121,15 @@ pub fn rename_asset(
 
 pub fn apply_duplicate_resolution_batch(
     conn: &rusqlite::Connection,
+    thumbs_root: &Path,
     input: DuplicateResolutionBatchInput,
 ) -> anyhow::Result<crate::models::DuplicateResolutionBatchSummary> {
-    apply_file_mutation_batch(conn, input, true)
+    apply_file_mutation_batch(conn, thumbs_root, input, true)
 }
 
 fn apply_file_mutation_batch(
     conn: &rusqlite::Connection,
+    thumbs_root: &Path,
     input: DuplicateResolutionBatchInput,
     enforce_duplicate_resolution: bool,
 ) -> anyhow::Result<crate::models::DuplicateResolutionBatchSummary> {
@@ -200,7 +207,8 @@ fn apply_file_mutation_batch(
     };
 
     let thumbnail_paths = prepared.iter().filter_map(|item| item.asset.thumb_path.clone()).collect();
-    let removed_thumbnails = thumb_service::delete_thumbnail_files(thumbnail_paths);
+    let removed_thumbnails =
+        thumb_service::delete_thumbnail_files_in_root(thumbs_root, thumbnail_paths);
     let mut recovery_required = false;
     let mut results = Vec::with_capacity(prepared.len());
     for item in prepared {

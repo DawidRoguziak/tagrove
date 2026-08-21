@@ -5,8 +5,8 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 ## Stan planu
 
 - Ostatnia aktualizacja: 2026-08-21
-- Aktualny etap: 01 ukończony
-- Następny krok: w nowej sesji rozpocząć wyłącznie Etap 02 od ponownego odczytu jego planu i aktualnego kodu importu backupu
+- Aktualny etap: 02 ukończony
+- Następny krok: w nowej sesji rozpocząć wyłącznie Etap 03 od ponownego odczytu jego planu i aktualnego kodu backupu/restore
 - Otwarte blokery: brak zgody na tworzenie, aktualizowanie i uruchamianie testów oraz buildów
 - Ukończony wcześniej fundament: bezpieczny częściowy skan i blokada pojedynczej instancji profilu
 
@@ -14,7 +14,7 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 | --- | --- | --- | --- | --- |
 | 00 | [Stan roboczy](00-current-worktree-reconciliation.md) | Uporządkowanie bieżących zmian i zabezpieczenie asynchronicznego media servera | Wysoki | Ukończony |
 | 01 | [Usuwanie i duplikaty](01-safe-deletion-and-duplicates.md) | Bezpieczne usuwanie plików i atomowe rozwiązywanie duplikatów | Krytyczny | Ukończony |
-| 02 | [Walidacja importu backupu](02-backup-import-validation.md) | Ograniczenie zaufania do ZIP, SQLite i importowanych ścieżek | Krytyczny | Oczekuje |
+| 02 | [Walidacja importu backupu](02-backup-import-validation.md) | Ograniczenie zaufania do ZIP, SQLite i importowanych ścieżek | Krytyczny | Ukończony |
 | 03 | [Spójny backup i restore](03-consistent-backup-and-restore.md) | Snapshot SQLite, maintenance lock i odzyskiwalna podmiana danych | Krytyczny | Oczekuje |
 | 04 | [Zapytania i invalidation](04-query-sessions-and-invalidation.md) | Generacje zapytań, revision, membership i kolejność galerii | Wysoki | Oczekuje |
 | 05 | [Selekcja i cache](05-selection-cache-and-details.md) | Globalne indeksy, summary/details, cache epoch i Shift-zaznaczenie | Wysoki | Oczekuje |

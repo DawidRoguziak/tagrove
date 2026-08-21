@@ -6,7 +6,7 @@ This page is the canonical description of MediaTagger's current SQLite schema an
 
 ### Database location and connection policy
 
-The application stores `media.db` directly in the effective Tauri profile's app-data directory. Development, E2E, and release identifiers therefore use separate databases. Startup acquires that profile's `instance.lock` before opening the database, creates the app-data and thumbnail directories, calls `open_connection`, and runs `init_schema`. The path is retained in `AppState`; commands normally open their own connection to it.
+The application stores `media.db` directly in the effective Tauri profile's app-data directory. Development, E2E, and release identifiers therefore use separate databases. Startup acquires that profile's `instance.lock` before opening the database, creates the app-data and thumbnail directories, calls `open_connection`, and runs `init_schema`. Initialization rejects a nonzero foreign `application_id` and a future `user_version`; after success it records MediaTagger's `application_id` (`0x4d544147`) and schema version (`1`). The path is retained in `AppState`; commands normally open their own connection to it.
 
 Every connection created through `db::open_connection` applies:
 
@@ -20,7 +20,7 @@ Every connection created through `db::open_connection` applies:
 | `mmap_size` | `268435456` bytes (256 MiB requested). |
 | Busy timeout | Five seconds. A lock still held after that becomes an operation error. |
 
-`init_schema` finishes with `PRAGMA optimize`; a non-empty scan also runs it after its revision bump. Bundle export includes the main database and any WAL/SHM sidecars that exist. Bundle restore checkpoints the staged database and the current database with `wal_checkpoint(TRUNCATE)` before replacement. The portability and filesystem guarantees of those operations are covered by [data safety and portability](data-safety-and-portability.md).
+`init_schema` finishes with `PRAGMA optimize`; a non-empty scan also runs it after its revision bump. Bundle export includes the main database and any WAL/SHM sidecars that exist. Bundle inspection and restore first open the extracted database read-only and validate its integrity, foreign keys, application/schema identity, required structure, and stored value types. Only an accepted legacy database may then be opened writable and migrated in staging. Restore checkpoints the staged database and the current database with `wal_checkpoint(TRUNCATE)` before replacement. The portability and filesystem guarantees of those operations are covered by [data safety and portability](data-safety-and-portability.md).
 
 Gallery query sessions use the process-wide pool in `services/db_pool.rs`. A registry maps an exact `PathBuf` to a pool with at most four connections. Checkout reuses an idle connection, opens a configured connection while below the cap, or waits on a condition variable until one is returned. Dropping `PooledConnection` returns it to the pool. Pool invalidation removes the path from the registry and is used during bundle restore. Other commands and services do not use this pool; they call `open_connection` directly.
 
@@ -55,7 +55,7 @@ The remaining tables are:
 | `scan_roots` | `path TEXT PRIMARY KEY`. It contains only the normalized root string; no creation timestamp is stored. |
 | `asset_scan_roots` | Composite primary key `(asset_id, root_path)` plus required `last_seen_generation`. Both foreign keys cascade, so deletion of either the asset or root removes the mapping. One asset can remain owned by another overlapping root. |
 | `thumbnail_failures` | One row per `asset_id`, with required `failure_count`, optional `last_error`, required `last_failed_at`, and required `asset_modified_at`. It deliberately has no declared foreign key; database helpers remove orphaned and source-version-stale rows. |
-| `library_metadata` | Integer values keyed by text. Current reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `2`). It has no foreign-key relationships. |
+| `library_metadata` | Integer values keyed by text. Current reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `2`). It has no foreign-key relationships. SQLite `application_id` and `user_version` separately identify the application and complete schema generation; neither replaces these runtime/backfill rows. |
 | `pending_file_operations` | Durable source-file recovery journal keyed by `(operation_id, asset_id)`, storing action, original/staging/final paths, and a `committed` flag set in the same transaction as asset mutation/revision. It deliberately survives asset deletion and is reconciled at startup. |
 
 Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_roots`. Deleting a `scan_roots` row automatically removes its root mappings. Tags are not deleted by cascade when their final asset mapping disappears; asset/tag mutation and asset-removal helpers explicitly call orphan-tag cleanup. Thumbnail failures likewise require explicit cleanup because they are not foreign-keyed.
@@ -82,16 +82,16 @@ In addition to primary-key and unique indexes created by SQLite, initialization 
 
 ### In-place initialization, migrations, and backfills
 
-There is no separate migration runner and `PRAGMA user_version` is not used. `init_schema` is idempotent in-place initialization:
+There is no separate migration runner. `init_schema` is idempotent in-place initialization and uses `PRAGMA application_id`/`user_version` as a compatibility gate, not as a step-by-step migration ledger:
 
 1. It creates all current tables, base indexes, and the two metadata rows when absent.
 2. It inspects `PRAGMA table_info(assets)` and independently adds legacy-missing `is_favorite`, `media_group_key`, `media_group_order`, `file_name`, `fingerprint_mtime_ns`, `tag_count`, `file_name_key`, `media_group_key_normalized`, and `record_version` columns. The legacy `file_name` alteration adds nullable `TEXT`, then a transaction fills null or blank values with the basename extracted from either `\` or `/` paths.
 3. When `performance_schema_version < 1`, it backfills blank `file_name_key` values with `lower(file_name)`, fills normalized group keys with `lower(trim(media_group_key))` for nonblank groups, recomputes every `tag_count` from `asset_tags`, and then records version `1`.
 4. It creates the query-performance indexes.
 5. When the version read at the beginning is below `2`, it backfills `asset_scan_roots` for every stored root. Matching is the exact root path or a Windows-style `root\%` prefix, and inserted mappings use generation `0`; it then records version `2`.
-6. It runs `PRAGMA optimize`.
+6. It runs `PRAGMA optimize` and records the current application ID and schema version.
 
-`performance_schema_version` gates these derived-data and mapping backfills only. It is not a complete historical schema version: presence checks, `CREATE ... IF NOT EXISTS`, and index creation handle structural compatibility independently.
+`performance_schema_version` gates these derived-data and mapping backfills only. It is not a complete historical schema version: presence checks, `CREATE ... IF NOT EXISTS`, and index creation handle structural compatibility independently. Bundle validation permits markerless legacy databases only when the known core tables, columns, declared types, metadata rows, integrity, foreign keys, and stored value types are valid; future or foreign markers are rejected before migration.
 
 ### Derived-field invariants
 

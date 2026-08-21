@@ -88,17 +88,21 @@ See [search, tags, and media groups](search-tags-and-media-groups.md) for tag no
 
 ## Database bundle format
 
-The bundle is a deflated ZIP with a versioned manifest but no media payload. Legacy archives without a manifest remain accepted because they are migration inputs. Recognized entries are:
+The bundle is a deflated ZIP with no media payload. Current exports use format version `2`; their manifest identifies `io.github.mediatagger.bundle`, records database schema version `1`, source platform, exact scan roots, and the source thumbnail directory. Import requires those identity fields for every version-2 manifest and rejects future versions, foreign application IDs, unsupported schema versions, and manifest roots that differ from the staged database. Recognized entries are:
 
 ```text
 media.db                  required
 media.db-wal              optional
 media.db-shm              optional
-manifest.json             present in new exports
+manifest.json             required by format version 2
 thumbs/<relative path>    zero or more files, recursively copied
 ```
 
-Export copies `media.db` first, then existing WAL and SHM sidecars, then regular files found below the thumbnail directory. `copied_files` counts the database plus included sidecars; `copied_thumbnails` counts thumbnail files. Source media is never included.
+Export first rejects a database with pending local file operations, then writes the manifest and copies `media.db`, existing WAL and SHM sidecars, and regular files found below the thumbnail directory. `copied_files` counts the database plus included sidecars; `copied_thumbnails` counts thumbnail files. Source media is never included.
+
+Compatibility is deliberately limited. Format version `1` manifests from earlier MediaTagger exports and archives without a manifest are legacy inputs only. They are accepted only when the database has either current MediaTagger SQLite markers or zero application/schema markers plus the known legacy core tables, columns, declared types, metadata rows, valid stored scalar types, valid integrity/foreign keys, and no pending local file operations. Legacy input gets migrated only inside staging. A manifestless archive does not gain format-v2 guarantees and future/foreign nonzero SQLite markers are never treated as legacy.
+
+Both inspection and import scan the entire ZIP directory before extraction. The compressed archive is limited to 8 GiB, entry count to 250,000, each expanded entry to 8 GiB, total expanded data to 32 GiB, and per-entry compression ratio to 1000:1; the manifest is limited to 1 MiB. Unsafe paths and ZIP symbolic links are rejected. Duplicate normalized, case-folded destinations are rejected for `manifest.json`, the database and sidecars, and every thumbnail path. Actual extracted byte counts must match ZIP metadata.
 
 Bundle export holds the scan mutex and exclusive thumbnail lock, preventing the application's locked scan, destructive asset, bundle, and thumbnail command families from overlapping. It does not stop ordinary tag/favorite/group mutations, CSV operations, asset queries, direct SQLite users, or already outstanding connections merely by taking those locks. It also does not checkpoint SQLite or use SQLite's online-backup API before copying the main file and sidecars sequentially. Therefore the archive contents are not guaranteed to be one atomic database snapshot if the database changes during export. A failed export can leave a partial or truncated destination ZIP.
 
@@ -106,31 +110,32 @@ Bundle export holds the scan mutex and exclusive thumbnail lock, preventing the 
 
 Import also holds the scan mutex followed by the exclusive thumbnail lock. Within that boundary it performs the following current sequence:
 
-1. Require an existing regular source file and open it as ZIP. Scan entries until an exact sanitized `media.db` entry is found; reject the archive if none exists.
+1. Require an existing regular source file within the compressed-size limit, open it as ZIP, and preflight every entry for path safety, type, resource limits, duplicate recognized destinations, manifest compatibility, and an exact sanitized `media.db`.
 2. Resolve the app-data parent and use fixed staging paths `restore-staging/media.db` and `restore-staging/thumbs`. Delete a pre-existing `restore-staging` tree, then create the thumbnail staging directory.
-3. Extract recognized files. Backslashes are normalized to slashes; absolute paths, parent components, rooted paths, and platform prefixes are rejected. Safe unrecognized entries are ignored. Parent directories are created as needed.
-4. Open the staged database with the normal WAL connection settings, run `init_schema`, and execute `PRAGMA wal_checkpoint(TRUNCATE)`. This applies current in-place schema initialization/backfills and folds a usable staged WAL into the main database.
-5. Define recovery paths beside the live data: `media.db.restore-previous` and `thumbs.restore-previous`. Remove any older file/directory already at those paths.
-6. Invalidate the registered query pool for the live DB path and clear the process-wide asset-query manager. Open the current database, checkpoint it with `wal_checkpoint(TRUNCATE)`, then best-effort remove its WAL and SHM paths.
-7. Rename the current DB, if present, to `media.db.restore-previous`, then rename the current thumbnail directory, if present, to `thumbs.restore-previous`.
-8. Install by renaming the staged DB to the live DB path and staged thumbnails to the live thumbnail path. If either install rename fails, remove any partially installed live targets and attempt to rename both previous targets back; rollback errors are ignored, and the original install error is returned.
-9. On successful install, immediately best-effort delete both previous targets and the remaining staging tree. Open the installed DB, run `init_schema` again, bump its library revision, and invalidate the query pool again.
-10. Return `restored_files` for extracted DB/main-sidecar entries and `restored_thumbnails` for extracted thumbnail entries. The same-shell frontend invalidates identity-bound state before releasing its tag-mutation barrier, then reloads roots and refreshes assets and known tags. It performs the invalidation and best-effort refresh on rejection too because a late error may follow live swap activity.
+3. Extract only validated database/sidecar and thumbnail entries with bounded readers. Backslashes are normalized to slashes; absolute paths, parent components, rooted paths, platform prefixes, symbolic links, and size mismatches are rejected. Safe unrecognized entries are ignored.
+4. Require a complete SQLite header, valid page size, and page-aligned nontrivial main file. Open the candidate read-only, run `PRAGMA integrity_check` and `foreign_key_check`, classify its application/schema identity, validate required tables/columns/declared types and stored scalar types, reject a nonempty `pending_file_operations`, and compare manifest roots to database roots. Only after success, open staging writable, migrate an accepted legacy schema, checkpoint it, and assign current SQLite identity markers.
+5. Validate every scan root and asset path as absolute and free of parent traversal. Every asset must remain within a declared root; mappings must cover every root exactly once, target existing absolute directories, avoid duplicate canonical targets and resulting asset collisions, and existing files must not escape through symlinks. Resolve every non-null thumbnail reference to an extracted staging file and rewrite it below the live thumbnail directory; unresolved legacy references become null. Clear imported thumbnail failures, then repeat current-schema integrity, FK, structure, data, and pending-journal validation read-only.
+6. Define recovery paths beside the live data: `media.db.restore-previous` and `thumbs.restore-previous`. Remove any older file/directory already at those paths.
+7. Invalidate the registered query pool for the live DB path and clear the process-wide asset-query manager. Open the current database, checkpoint it with `wal_checkpoint(TRUNCATE)`, then best-effort remove its WAL and SHM paths.
+8. Rename the current DB, if present, to `media.db.restore-previous`, then rename the current thumbnail directory, if present, to `thumbs.restore-previous`.
+9. Install by renaming the staged DB to the live DB path and staged thumbnails to the live thumbnail path. If either install rename fails, remove any partially installed live targets and attempt to rename both previous targets back; rollback errors are ignored, and the original install error is returned.
+10. On successful install, immediately best-effort delete both previous targets and the remaining staging tree. Open the installed DB, run `init_schema` again, bump its library revision, and invalidate the query pool again.
+11. Return `restored_files` for extracted DB/main-sidecar entries and `restored_thumbnails` for extracted thumbnail entries. The same-shell frontend invalidates identity-bound state before releasing its tag-mutation barrier, then reloads roots and refreshes assets and known tags. It performs the invalidation and best-effort refresh on rejection too because a late error may follow live swap activity.
 
-Opening and initializing the staged database is the current validation gate. Import does not run `PRAGMA integrity_check` or `foreign_key_check`, authenticate the archive, require an application/version manifest, enforce entry count or uncompressed-size limits, reject duplicate recognized paths, or verify thumbnail contents. Running `init_schema` can mutate an old staged schema; it is not read-only validation. An exact `media.db` entry is required, but WAL, SHM, and thumbnails are optional.
+The validation gate is complete before query-pool invalidation, current-database checkpointing, or any move of active database/thumbnail paths. Validation authenticates format/application/schema identity, not the archive author or cryptographic integrity; bundles are not signed or encrypted. WAL, SHM, and thumbnails remain optional, but included sidecars must form a database SQLite can open and validate read-only.
 
 ### Restore rollback and recovery limits
 
 The swap is staged, but it is not an atomic, fully recoverable transaction:
 
-- Failure while reading, sanitizing, extracting, initializing, or checkpointing staging occurs before the live swap. The live DB/thumb directories remain in place, but partial `restore-staging` data may remain until the next import removes it.
+- Failure while reading, preflighting, extracting, validating, migrating, rewriting, or checkpointing staging occurs before the live swap. The live DB/thumb directories remain in place, and import attempts to remove partial staging before returning the validation error.
 - Deleting older `*.restore-previous` targets discards any recovery copy left by an earlier attempt.
 - Moving the current DB and current thumbnails aside is outside the guarded install closure. If moving the DB succeeds and moving the thumbnail directory fails, the function returns without automatically restoring the DB from `media.db.restore-previous`.
 - Install failure triggers only best-effort rollback. Individual cleanup or rename-back failures are ignored, so callers must inspect all live, previous, and staging paths before retrying.
 - After both staged targets install, the previous copies are deleted before the final open, second `init_schema`, and revision bump. Failure in those final steps returns an error without an old copy to restore automatically.
 - Pool invalidation removes the registry entry but does not forcibly close a checked-out pooled connection. The locks also do not stop ordinary direct DB commands or query reads. An in-flight caller can retain a connection to the replaced file. Query sessions are explicitly cleared. The frontend tag-mutation barrier coordinates tag writes started through the same mounted shell, but there is no process-wide database maintenance barrier.
 
-Before a Windows backup is installed on Linux, `inspect_db_bundle` reports every source root and the UI requires an existing absolute target directory for each one. Import rewrites `assets.path`, `scan_roots`, `asset_scan_roots`, derived filename fields, and unambiguous legacy thumbnail references in staging. It preserves asset IDs and relationship tables, rejects target path collisions, clears stale thumbnail failures, and nulls thumbnail paths that cannot be matched uniquely. Source media is never copied, so missing mapped files remain indexed until a later scan reconciles them.
+Before a Windows backup is installed on Linux, `inspect_db_bundle` reports every source root and the UI requires an existing absolute target directory for each one. Import validates all source roots and asset membership even when no mapping is requested. A mapped import requires exactly one existing absolute target for every source root and rewrites `assets.path`, `scan_roots`, `asset_scan_roots`, and derived filename fields in staging. Format-v2 thumbnail references are matched by their exact source-relative path; legacy references use only a unique basename. Every accepted reference is rewritten below live thumbs, while missing or ambiguous references become null. Asset IDs and relationship tables are preserved, target and canonical-root collisions are rejected, and stale thumbnail failures are cleared. Source media is never copied, so missing mapped files remain indexed until a later scan reconciles them.
 
 If restore returns an error after swap activity, stop mutating the library and preserve copies of the app-data directory before trying again. Inspect `media.db`, `media.db.restore-previous`, `restore-staging/media.db`, `thumbs`, `thumbs.restore-previous`, and `restore-staging/thumbs`; keep matching DB sidecars with their database until SQLite has safely opened/checkpointed it. Prefer selecting a verified backup over manually combining generations. Restart the application after manual recovery so stale direct/pooled connections and frontend caches are gone.
 
@@ -144,8 +149,9 @@ Current guarantees are deliberately modest:
 - rename cannot move to another directory, overwrite a target, or use a portable-invalid Windows basename;
 - duplicate apply validates all entries before mutation, takes one combined lock, and commits one DB/revision transaction;
 - destructive asset/root/bundle commands and clear-thumbnail work use the backend scan/thumb locks described above;
-- ZIP entry sanitization blocks direct absolute-path and `..` traversal extraction;
-- import stages and initializes the candidate database before intentionally replacing live paths;
+- ZIP preflight bounds resource use, rejects unsafe/symlink/duplicate recognized entries, and verifies extracted byte counts;
+- import validates SQLite identity, structure, integrity, foreign keys, scalar data, roots, assets, thumbnails, and an empty local-operation journal before intentionally replacing live paths;
+- thumbnail cleanup canonicalizes stored paths and only removes regular files below the configured thumbnail directory;
 - successful query-visible mutations normally bump the library revision, and successful restore also clears query sessions and invalidates the pool.
 
 Known limits that must remain visible in changes and user messaging:
@@ -154,7 +160,7 @@ Known limits that must remain visible in changes and user messaging:
 - Thumbnail best-effort deletion still suppresses individual cache-file errors. Source deletion distinguishes missing input, pre-commit I/O rejection with preserved metadata, and post-commit cleanup with a recovery path.
 - Remove-root and clear-library database work differ: root/orphan cleanup is transactional, clear-library contains multiple autocommit statements, and safe asset/batch mutation has its dedicated transaction.
 - The fixed restore staging/previous names are not generation-retained backups. Successful restore deletes the previous generation, and a new attempt removes leftovers.
-- Archive export has no atomic SQLite snapshot guarantee; archive import has no integrity/authenticity/resource-limit checks and only attempted rollback.
+- Archive export has no atomic SQLite snapshot guarantee. Import validates integrity and format/application/schema identity and bounds resource use, but bundles remain unsigned/unencrypted and replacement still has only attempted rollback.
 - Duplicate and CSV identity is case-insensitive basename, not content identity. Duplicate apply does not support source-target rename cycles; users must choose independent final names.
 - CSV cannot faithfully encode tags containing its tag delimiters and cannot remove tags.
 - Source and thumbnail paths make bundles environment-dependent. The bundle is a profile-state backup, not a self-contained media archive.

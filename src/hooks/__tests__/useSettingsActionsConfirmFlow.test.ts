@@ -6,6 +6,7 @@ import { useSettingsActions } from "../useSettingsActions";
 const apiMocks = vi.hoisted(() => {
   return {
     addScanRoot: vi.fn(),
+    applyDuplicateResolutionBatch: vi.fn(),
     cancelRenderAllThumbnails: vi.fn(),
     clearLibraryData: vi.fn(),
     deleteAsset: vi.fn(),
@@ -66,7 +67,30 @@ describe("useSettingsActions confirmation flows", () => {
     apiMocks.findDuplicateAssets.mockResolvedValue({
       groups: [],
       duplicate_groups: 0,
-      duplicate_assets: 0
+      duplicate_assets: 0,
+      revision: 2
+    });
+    apiMocks.applyDuplicateResolutionBatch.mockReset();
+    apiMocks.applyDuplicateResolutionBatch.mockResolvedValue({
+      status: "committed",
+      revision: 2,
+      results: [
+        {
+          asset_id: 1,
+          status: "renamed",
+          old_path: "C:/media/a.jpg",
+          new_path: "C:/media/renamed.jpg",
+          recovery_path: null
+        },
+        {
+          asset_id: 2,
+          status: "deleted",
+          old_path: "C:/media/b.jpg",
+          new_path: null,
+          recovery_path: null
+        }
+      ],
+      removed_thumbnails: 0
     });
     apiMocks.renameAssetFile.mockReset();
     apiMocks.renameAssetFile.mockResolvedValue({
@@ -133,9 +157,30 @@ describe("useSettingsActions confirmation flows", () => {
 
   it("waits for confirmation before applying mixed duplicate changes", async () => {
     apiMocks.findDuplicateAssets.mockResolvedValueOnce({
-      groups: [],
-      duplicate_groups: 0,
-      duplicate_assets: 0
+      groups: [
+        {
+          file_name: "same.jpg",
+          assets: [
+            {
+              id: 1,
+              path: "C:/media/a.jpg",
+              record_version: 3,
+              size_bytes: 10,
+              fingerprint_mtime_ns: 100
+            },
+            {
+              id: 2,
+              path: "C:/media/b.jpg",
+              record_version: 4,
+              size_bytes: 20,
+              fingerprint_mtime_ns: 200
+            }
+          ]
+        }
+      ],
+      duplicate_groups: 1,
+      duplicate_assets: 2,
+      revision: 7
     });
 
     const { result } = renderHook(() =>
@@ -147,6 +192,10 @@ describe("useSettingsActions confirmation flows", () => {
         onLibraryCleared
       })
     );
+
+    await act(async () => {
+      await result.current.handleStartDuplicateScan();
+    });
 
     await act(async () => {
       await result.current.handleSaveDuplicateChanges([
@@ -169,8 +218,21 @@ describe("useSettingsActions confirmation flows", () => {
       await result.current.confirmPendingDuplicateDeleteConfirm();
     });
 
-    expect(apiMocks.renameAssetFile).toHaveBeenCalledWith(1, "renamed.jpg");
-    expect(apiMocks.deleteAsset).toHaveBeenCalledWith(2);
+    expect(apiMocks.applyDuplicateResolutionBatch).toHaveBeenCalledWith(7, [
+      {
+        type: "rename",
+        assetId: 1,
+        expectedPath: "C:/media/a.jpg",
+        expectedRecordVersion: 3,
+        newFileName: "renamed.jpg"
+      },
+      {
+        type: "delete",
+        assetId: 2,
+        expectedPath: "C:/media/b.jpg",
+        expectedRecordVersion: 4
+      }
+    ]);
     expect(refreshLibrary).toHaveBeenCalled();
     expect(result.current.pendingDuplicateDeleteConfirm).toBeNull();
     expect(result.current.duplicateOperationState.message).toBe("Applied 2 changes. Remaining groups: 0");

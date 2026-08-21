@@ -350,7 +350,11 @@ pub fn list_tags(
 pub fn delete_asset(asset_id: i64, state: State<AppState>) -> Result<DeleteAssetSummary, String> {
     with_scan_and_thumb_lock(&state, || {
         let conn = db::open_connection(&state.db_path)?;
-        asset_mutation_service::delete_asset(&conn, &state.thumbs_dir, asset_id)
+        Ok(asset_mutation_service::delete_asset(
+            &conn,
+            &state.thumbs_dir,
+            asset_id,
+        )?)
     })
     .map_err(|e| e.to_string())
 }
@@ -407,7 +411,12 @@ pub fn rename_asset_file(
 ) -> Result<RenameAssetSummary, String> {
     with_scan_and_thumb_lock(&state, || {
         let conn = db::open_connection(&state.db_path)?;
-        asset_mutation_service::rename_asset(&conn, &state.thumbs_dir, asset_id, new_file_name)
+        Ok(asset_mutation_service::rename_asset(
+            &conn,
+            &state.thumbs_dir,
+            asset_id,
+            new_file_name,
+        )?)
     })
     .map_err(|e| e.to_string())
 }
@@ -419,7 +428,11 @@ pub fn apply_duplicate_resolution_batch(
 ) -> Result<DuplicateResolutionBatchSummary, String> {
     with_scan_and_thumb_lock(&state, || {
         let conn = db::open_connection(&state.db_path)?;
-        asset_mutation_service::apply_duplicate_resolution_batch(&conn, &state.thumbs_dir, input)
+        Ok(asset_mutation_service::apply_duplicate_resolution_batch(
+            &conn,
+            &state.thumbs_dir,
+            input,
+        )?)
     })
     .map_err(|e| e.to_string())
 }

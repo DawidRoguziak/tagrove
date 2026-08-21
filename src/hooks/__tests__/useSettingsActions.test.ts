@@ -16,6 +16,7 @@ function deferred<T>() {
 const apiMocks = vi.hoisted(() => {
   return {
     addScanRoot: vi.fn(),
+    applyDuplicateResolutionBatch: vi.fn(),
     cancelRenderAllThumbnails: vi.fn(),
     clearLibraryData: vi.fn(),
     deleteAsset: vi.fn(),
@@ -115,7 +116,14 @@ describe("useSettingsActions", () => {
     apiMocks.findDuplicateAssets.mockResolvedValue({
       groups: [],
       duplicate_groups: 0,
-      duplicate_assets: 0
+      duplicate_assets: 0,
+      revision: 1
+    });
+    apiMocks.applyDuplicateResolutionBatch.mockResolvedValue({
+      status: "committed",
+      revision: 2,
+      results: [],
+      removed_thumbnails: 0
     });
     apiMocks.renameAssetFile.mockResolvedValue({
       asset_id: 1,
@@ -404,13 +412,26 @@ describe("useSettingsActions", () => {
         {
           file_name: "same.jpg",
           assets: [
-            { id: 1, path: "C:/media/a/same.jpg" },
-            { id: 2, path: "C:/media/b/same.jpg" }
+            {
+              id: 1,
+              path: "C:/media/a/same.jpg",
+              record_version: 1,
+              size_bytes: 10,
+              fingerprint_mtime_ns: 100
+            },
+            {
+              id: 2,
+              path: "C:/media/b/same.jpg",
+              record_version: 1,
+              size_bytes: 10,
+              fingerprint_mtime_ns: 200
+            }
           ]
         }
       ],
       duplicate_groups: 1,
-      duplicate_assets: 2
+      duplicate_assets: 2,
+      revision: 1
     });
 
     const { result } = renderHook(() =>

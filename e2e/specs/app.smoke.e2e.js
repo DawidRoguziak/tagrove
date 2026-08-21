@@ -183,6 +183,24 @@ describe("MediaTagger desktop smoke", () => {
       timeout: 10000,
       timeoutMsg: "bulk tag input did not clear after automatic save"
     });
+    await browser.waitUntil(
+      async () => {
+        const page = await invokeTauriCommand("list_assets", {
+          offset: 0,
+          limit: 2,
+          tagsAnd: [uniqueTag],
+          tagsNot: [],
+          kind: null,
+          favoritesOnly: false,
+          metaFilter: null
+        });
+        return page?.total === 2;
+      },
+      {
+        timeout: 15000,
+        timeoutMsg: "bulk tag write did not reach the backend"
+      }
+    );
 
     const searchInput = await $(".filter-input");
     await searchInput.waitForDisplayed({ timeout: 10000 });

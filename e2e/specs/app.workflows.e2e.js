@@ -849,7 +849,7 @@ describe("MediaTagger desktop workflows", () => {
     }
 
     const inspection = await invokeTauriCommand("inspect_db_bundle", { path: bundlePath });
-    if (inspection?.format_version !== 1 || inspection?.requires_mapping !== false) {
+    if (inspection?.format_version !== 2 || inspection?.requires_mapping !== false) {
       throw new Error("Expected a versioned same-platform DB bundle inspection");
     }
     const importSummary = await invokeTauriCommand("import_db_bundle", {

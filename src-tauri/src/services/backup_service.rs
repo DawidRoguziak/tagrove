@@ -1294,20 +1294,18 @@ mod tests {
     }
 
     #[test]
-    fn export_db_bundle_includes_database_sidecars_and_thumbnails() {
+    fn export_db_bundle_uses_standalone_snapshot_and_includes_thumbnails() {
         let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("media.db");
-        let thumbs_dir = tmp.path().join("thumbs");
+        let profile_dir = tmp.path().join("profile");
+        let db_path = profile_dir.join("media.db");
+        let thumbs_dir = profile_dir.join("thumbs");
         fs::create_dir_all(&thumbs_dir).expect("create thumbs dir");
 
         let conn = db::open_connection(&db_path).expect("open db");
         db::init_schema(&conn).expect("init schema");
-        drop(conn);
-
-        let wal_path = PathBuf::from(format!("{}-wal", db_path.to_string_lossy()));
-        let shm_path = PathBuf::from(format!("{}-shm", db_path.to_string_lossy()));
-        fs::write(&wal_path, b"wal").expect("write wal");
-        fs::write(&shm_path, b"shm").expect("write shm");
+        conn.pragma_update(None, "wal_autocheckpoint", 0)
+            .expect("disable auto checkpoint");
+        db::add_scan_root(&conn, "/library").expect("write WAL content");
 
         let nested_thumb_dir = thumbs_dir.join("nested");
         fs::create_dir_all(&nested_thumb_dir).expect("create nested thumbs");
@@ -1321,7 +1319,7 @@ mod tests {
         let summary = export_db_bundle(archive_path.to_string_lossy().to_string(), &state_ref)
             .expect("export bundle");
 
-        assert_eq!(summary.copied_files, 3);
+        assert_eq!(summary.copied_files, 1);
         assert_eq!(summary.copied_thumbnails, 1);
 
         let file = fs::File::open(&archive_path).expect("open archive");
@@ -1338,16 +1336,17 @@ mod tests {
         names.sort();
 
         assert!(names.iter().any(|name| name == "media.db"));
-        assert!(names.iter().any(|name| name == "media.db-wal"));
-        assert!(names.iter().any(|name| name == "media.db-shm"));
+        assert!(!names.iter().any(|name| name == "media.db-wal"));
+        assert!(!names.iter().any(|name| name == "media.db-shm"));
         assert!(names.iter().any(|name| name == "thumbs/nested/thumb.jpg"));
     }
 
     #[test]
     fn import_db_bundle_rejects_archive_without_media_db() {
         let tmp = tempdir().expect("tempdir");
-        let db_path = tmp.path().join("media.db");
-        let thumbs_dir = tmp.path().join("thumbs");
+        let profile_dir = tmp.path().join("profile");
+        let db_path = profile_dir.join("media.db");
+        let thumbs_dir = profile_dir.join("thumbs");
         fs::create_dir_all(&thumbs_dir).expect("create thumbs dir");
 
         let conn = db::open_connection(&db_path).expect("open db");
@@ -1383,15 +1382,26 @@ mod tests {
     fn import_db_bundle_restores_database_and_thumbnails() {
         let tmp = tempdir().expect("tempdir");
         let source_db_path = tmp.path().join("source.db");
+        let source_root = tmp.path().join("restored-root");
+        fs::create_dir_all(&source_root).expect("create restored root");
         let source_thumb_bytes = b"thumb-bytes";
 
         {
             let conn = db::open_connection(&source_db_path).expect("open source db");
             db::init_schema(&conn).expect("init source schema");
-            db::add_scan_root(&conn, "/restored-root").expect("add restored root");
-            let asset_path = tmp.path().join("asset.jpg");
+            db::add_scan_root(&conn, &source_root.to_string_lossy()).expect("add restored root");
+            let asset_path = source_root.join("asset.jpg");
             fs::write(&asset_path, b"asset").expect("write source asset");
-            db::upsert_asset(&conn, &new_asset(&asset_path, 10)).expect("upsert source asset");
+            db::upsert_scanned_asset(
+                &conn,
+                &new_asset(&asset_path, 10),
+                10,
+                &source_root.to_string_lossy(),
+                1,
+            )
+            .expect("upsert source asset");
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .expect("checkpoint source");
         }
 
         let archive_path = tmp.path().join("restore.zip");
@@ -1413,8 +1423,9 @@ mod tests {
             zip.finish().expect("finish archive");
         }
 
-        let target_db_path = tmp.path().join("target.db");
-        let target_thumbs_dir = tmp.path().join("target-thumbs");
+        let profile_dir = tmp.path().join("profile");
+        let target_db_path = profile_dir.join("media.db");
+        let target_thumbs_dir = profile_dir.join("thumbs");
         fs::create_dir_all(&target_thumbs_dir).expect("create target thumbs dir");
         let conn = db::open_connection(&target_db_path).expect("open target db");
         db::init_schema(&conn).expect("init target schema");
@@ -1437,7 +1448,7 @@ mod tests {
 
         let conn = db::open_connection(&target_db_path).expect("open restored db");
         let roots = db::list_scan_roots(&conn).expect("list restored roots");
-        assert_eq!(roots, vec!["/restored-root".to_string()]);
+        assert_eq!(roots, vec![source_root.to_string_lossy().to_string()]);
         let page = db::list_assets(&conn, 0, 50, &[], &[], None, false).expect("list assets");
         assert_eq!(page.total, 1);
     }
@@ -1462,7 +1473,8 @@ mod tests {
                 duration_ms: None,
                 thumb_path: Some(r"C:\old-profile\thumbs\legacy.jpg".to_string()),
             };
-            db::upsert_asset(&conn, &asset).expect("insert asset");
+            db::upsert_scanned_asset(&conn, &asset, 12, source_root, 1)
+                .expect("insert asset");
             db::set_asset_tags(&conn, 1, &["travel".to_string()]).expect("set tags");
             db::set_asset_favorite(&conn, 1, true).expect("set favorite");
             db::set_asset_media_group(&conn, 1, Some("album"), Some(2.0))
@@ -1488,8 +1500,9 @@ mod tests {
         let target_root = tmp.path().join("linux-media");
         fs::create_dir_all(target_root.join("album")).expect("create mapped root");
         fs::write(target_root.join("album/photo.jpg"), b"media").expect("write mapped media");
-        let target_db = tmp.path().join("target.db");
-        let target_thumbs = tmp.path().join("target-thumbs");
+        let profile_dir = tmp.path().join("profile");
+        let target_db = profile_dir.join("media.db");
+        let target_thumbs = profile_dir.join("thumbs");
         fs::create_dir_all(&target_thumbs).expect("create target thumbs");
         let conn = db::open_connection(&target_db).expect("open target");
         db::init_schema(&conn).expect("init target");

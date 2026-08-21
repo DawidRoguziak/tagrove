@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::Ordering,
         mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},

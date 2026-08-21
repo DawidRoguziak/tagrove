@@ -88,6 +88,10 @@ export function useDuplicateSettingsActions({
         async () => {
           const assetsById = new Map(groups.flatMap((group) => group.assets).map((asset) => [asset.id, asset]));
           const batchChanges: DuplicateResolutionBatchChange[] = changes.map((change) => {
+            const newFileName = change.type === "rename" ? change.nextFileName.trim() : null;
+            if (change.type === "rename" && !newFileName) {
+              throw new Error(t("validation.fileNameCannotBeEmpty"));
+            }
             const asset = assetsById.get(change.assetId);
             if (!asset) throw new Error(t("validation.unknownAssetInChanges", { assetId: change.assetId }));
             const common = {
@@ -96,9 +100,7 @@ export function useDuplicateSettingsActions({
               expectedRecordVersion: asset.record_version
             };
             if (change.type === "rename") {
-              const newFileName = change.nextFileName.trim();
-              if (!newFileName) throw new Error(t("validation.fileNameCannotBeEmpty"));
-              return { type: "rename", ...common, newFileName };
+              return { type: "rename", ...common, newFileName: newFileName! };
             }
             return { type: "delete", ...common };
           });

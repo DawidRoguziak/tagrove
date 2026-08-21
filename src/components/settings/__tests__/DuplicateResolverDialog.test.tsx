@@ -10,8 +10,20 @@ function makeGroups(): DuplicateGroup[] {
     {
       file_name: "same.jpg",
       assets: [
-        { id: 1, path: "C:/media/a/same.jpg" },
-        { id: 2, path: "C:/media/b/same.jpg" }
+        {
+          id: 1,
+          path: "C:/media/a/same.jpg",
+          record_version: 1,
+          size_bytes: 10,
+          fingerprint_mtime_ns: 100
+        },
+        {
+          id: 2,
+          path: "C:/media/b/same.jpg",
+          record_version: 1,
+          size_bytes: 20,
+          fingerprint_mtime_ns: 200
+        }
       ]
     }
   ];

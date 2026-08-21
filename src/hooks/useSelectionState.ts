@@ -12,6 +12,7 @@ import type {
 import type { Asset } from "../types";
 import { getAssetDetails } from "../api";
 import { normalizeTags } from "../utils/media";
+import { useTranslation } from "react-i18next";
 
 interface UseSelectionStateArgs {
   assets: Asset[];
@@ -62,6 +63,7 @@ export function useSelectionState({
     return index >= 0 ? index : null;
   }
 }: UseSelectionStateArgs) {
+  const { t } = useTranslation();
   const localAssetTagState = useAssetTagState();
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
   const [selected, setSelectedState] = useState<Asset | null>(null);
@@ -436,6 +438,17 @@ export function useSelectionState({
       setSelected: setSelectedState,
       refresh,
       refreshKnownTags,
+      onResult: (summary) => {
+        if (summary.source_status === "missing") {
+          window.alert(t("lightbox.deleteConfirm.sourceMissing"));
+        } else if (summary.source_status === "cleanup_pending") {
+          window.alert(
+            t("lightbox.deleteConfirm.cleanupPending", {
+              path: summary.recovery_path ?? ""
+            })
+          );
+        }
+      },
       onDeleted: (assetId) => {
         if (!deletionIdentity || !assetTagState.remove(assetId, deletionIdentity)) return false;
         selectionRequestRef.current += 1;
@@ -448,7 +461,7 @@ export function useSelectionState({
         return true;
       }
     });
-  }, [assetTagState, refresh, refreshKnownTags, selected, setAssets]);
+  }, [assetTagState, refresh, refreshKnownTags, selected, setAssets, t]);
 
   return useMemo(() => ({
     selected,

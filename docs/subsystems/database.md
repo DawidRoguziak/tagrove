@@ -44,6 +44,7 @@ Gallery query sessions use the process-wide pool in `services/db_pool.rs`. A reg
 | `file_name_key` | Required lowercase filename lookup key, default `''`. |
 | `media_group_key_normalized` | Optional lowercase, trimmed group lookup key. |
 | `indexed_at` | Required Unix timestamp, defaulting to `unixepoch()`; refreshed by asset upsert. |
+| `record_version` | Required monotonic file-record version, default `1`; increments when scan upsert changes source fingerprint fields and when an application rename changes path identity. Duplicate mutation inputs use it with the expected path as a compare-and-swap guard. |
 
 The remaining tables are:
 
@@ -55,6 +56,7 @@ The remaining tables are:
 | `asset_scan_roots` | Composite primary key `(asset_id, root_path)` plus required `last_seen_generation`. Both foreign keys cascade, so deletion of either the asset or root removes the mapping. One asset can remain owned by another overlapping root. |
 | `thumbnail_failures` | One row per `asset_id`, with required `failure_count`, optional `last_error`, required `last_failed_at`, and required `asset_modified_at`. It deliberately has no declared foreign key; database helpers remove orphaned and source-version-stale rows. |
 | `library_metadata` | Integer values keyed by text. Current reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `2`). It has no foreign-key relationships. |
+| `pending_file_operations` | Durable source-file recovery journal keyed by `(operation_id, asset_id)`, storing action, original/staging/final paths, and a `committed` flag set in the same transaction as asset mutation/revision. It deliberately survives asset deletion and is reconciled at startup. |
 
 Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_roots`. Deleting a `scan_roots` row automatically removes its root mappings. Tags are not deleted by cascade when their final asset mapping disappears; asset/tag mutation and asset-removal helpers explicitly call orphan-tag cleanup. Thumbnail failures likewise require explicit cleanup because they are not foreign-keyed.
 
@@ -83,7 +85,7 @@ In addition to primary-key and unique indexes created by SQLite, initialization 
 There is no separate migration runner and `PRAGMA user_version` is not used. `init_schema` is idempotent in-place initialization:
 
 1. It creates all current tables, base indexes, and the two metadata rows when absent.
-2. It inspects `PRAGMA table_info(assets)` and independently adds legacy-missing `is_favorite`, `media_group_key`, `media_group_order`, `file_name`, `fingerprint_mtime_ns`, `tag_count`, `file_name_key`, and `media_group_key_normalized` columns. The legacy `file_name` alteration adds nullable `TEXT`, then a transaction fills null or blank values with the basename extracted from either `\` or `/` paths.
+2. It inspects `PRAGMA table_info(assets)` and independently adds legacy-missing `is_favorite`, `media_group_key`, `media_group_order`, `file_name`, `fingerprint_mtime_ns`, `tag_count`, `file_name_key`, `media_group_key_normalized`, and `record_version` columns. The legacy `file_name` alteration adds nullable `TEXT`, then a transaction fills null or blank values with the basename extracted from either `\` or `/` paths.
 3. When `performance_schema_version < 1`, it backfills blank `file_name_key` values with `lower(file_name)`, fills normalized group keys with `lower(trim(media_group_key))` for nonblank groups, recomputes every `tag_count` from `asset_tags`, and then records version `1`.
 4. It creates the query-performance indexes.
 5. When the version read at the beginning is below `2`, it backfills `asset_scan_roots` for every stored root. Matching is the exact root path or a Windows-style `root\%` prefix, and inserted mappings use generation `0`; it then records version `2`.
@@ -145,8 +147,9 @@ The following mutation families bump the revision:
 | Set one favorite | Always after the update, including a no-op or missing ID. |
 | Set one media group | Always after the update, including a no-op or missing ID. |
 | Bulk media-group set | Only when at least one existing row changed. |
-| Delete one asset | After a found asset is deleted from SQLite and before filesystem cleanup. |
-| Rename one asset | After the filesystem rename and database update. |
+| Delete one asset | In the same transaction as the CAS deletion and orphan cleanup, after an existing source has moved to staging or absence has been confirmed. |
+| Rename one asset | In the same transaction as the CAS path/version update, after staged filesystem installation. |
+| Resolve duplicate batch | Exactly once in the transaction containing every CAS rename/delete and cleanup. A pre-commit rollback does not bump. |
 | Remove a scan root | Always after root/orphan removal. |
 | Non-empty scan/rescan | Once after all processed roots, including a scan that found no row changes; an empty root list returns without a bump. |
 | CSV import | Once when at least one matched asset changed. |
@@ -157,7 +160,7 @@ Thumbnail-path and thumbnail-failure writes, adding a scan root without scanning
 
 ### Transaction boundaries
 
-The following multi-statement database operations use a SQLite transaction: legacy filename backfill; rename's database path/filename/thumbnail-failure update; bulk group updates; tag replacement; bulk tag merge; scan-root removal plus orphan pruning; batches of scan-root touches; completed-generation pruning; scan write batches of up to 512 assets; and batch thumbnail-path updates.
+The following multi-statement database operations use a SQLite transaction: legacy filename backfill; staged single/batch file mutation with one revision bump; legacy low-level rename; bulk group updates; tag replacement; bulk tag merge; scan-root removal plus orphan pruning; batches of scan-root touches; completed-generation pruning; scan write batches of up to 512 assets; and batch thumbnail-path updates. Batch renames first move DB paths to operation-private temporary identities so SQLite uniqueness does not make ordered rename cycles implicit; filesystem source-target cycles are rejected before mutation to keep rollback deterministic.
 
 Single SQL statements are atomic individually. Tag replacement and bulk tag merge include their conditional revision bump in the same IMMEDIATE transaction and retry the complete transaction on retryable busy/locked failures. Several other workflows intentionally consist of multiple transactions or autocommit statements, with revision bumps after their mutation helpers. Filesystem deletion, rename, thumbnail cleanup, bundle movement, and CSV parsing are outside SQLite transactions.
 
@@ -172,8 +175,8 @@ Single SQL statements are atomic individually. Tag replacement and bulk tag merg
 - Query start does not wrap its revision read, ordered-ID query, and first-page summary materialization in one read transaction, nor does it re-check the revision before returning `ready`. A concurrent mutation can therefore produce a mixed initial response; a subsequent page notices the changed revision and becomes `stale` if the mutation's bump succeeds.
 - Except for tag replacement and bulk tag merge, mutation and revision increment are generally not in the same transaction. A successful non-tag mutation followed by a failed bump can leave old sessions appearing current. Scan writes commit in batches and bump only at the end, so an interrupted scan can leave partial safe writes without an epoch change.
 - CSV import is not one transaction: each tag replacement commits independently, favorite/group writes autocommit, and the revision bump happens after the whole file. A later parse or database error can leave earlier rows applied without a bump.
-- `clear_library_data` performs its asset, failure, tag, and root deletes as separate autocommit statements. Delete-by-prefix and single-asset delete also combine explicit cleanup statements without a transaction. A mid-operation error can therefore leave partial database cleanup.
-- Database transactions cannot make cross-filesystem workflows atomic. Delete commits database removal before best-effort source/thumbnail deletion. Rename moves the source first and attempts filesystem rollback if its database update fails, but thumbnail deletion and the later revision bump are separate. Bundle restore uses staging and rollback attempts, not a filesystem transaction.
+- `clear_library_data` performs its asset, failure, tag, and root deletes as separate autocommit statements. Delete-by-prefix also combines explicit cleanup statements without a transaction. Safe single-asset and duplicate-batch file mutations use their dedicated transaction instead.
+- Database transactions cannot make filesystem workflows atomic. Safe file mutations stage on each source filesystem and use a durable journal plus rollback/recovery outcomes; final staged-delete and thumbnail cleanup remain post-commit work. Bundle restore separately uses its own staging and rollback attempts.
 - The query pool waits indefinitely once all four connections are checked out; the five-second SQLite busy timeout applies to database locking, not pool checkout. Pool invalidation removes the registry entry but does not forcibly close connections already checked out from the old pool.
 - `services/db_pool.rs` and `services/asset_query_service.rs` currently have no focused unit-test modules. Session reuse, TTL/LRU eviction, supersession, revision-stale behavior, pool blocking, and restore-time checked-out connection behavior are not directly locked down by Rust tests.
 

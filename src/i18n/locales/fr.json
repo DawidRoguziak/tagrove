@@ -179,7 +179,10 @@
       "confirmWord": "Oui",
       "typeYesLabel": "Tapez \"{{value}}\"",
       "typeYesPlaceholder": "Tapez \"{{value}}\"",
-      "confirm": "Confirmer"
+      "confirm": "Confirmer",
+      "sourceMissing": "Le fichier source était déjà absent. Son entrée obsolète a été supprimée de la bibliothèque.",
+      "cleanupPending": "L’entrée a été supprimée, mais le nettoyage final a échoué. Fichier de récupération : {{path}}",
+      "failedMetadataPreserved": "Impossible de supprimer le fichier. Ses métadonnées ont été conservées. {{error}}"
     },
     "mediaError": {
       "video": "Impossible de lire la vidéo",
@@ -283,6 +286,8 @@
     },
     "actions": {
       "summary": {
+        "duplicateRolledBack": "Le lot de doublons a échoué et toutes les modifications de fichiers ont été annulées. Les métadonnées sont inchangées.",
+        "duplicateRecoveryRequired": "Le lot n’a pas pu être entièrement récupéré. {{count}} élément(s) ont un chemin de récupération ; relancez l’analyse avant de réessayer.",
         "folderAddedWithSkipped": "Dossier ajoute a la liste d analyse : {{path}}. Existants ignores : {{skipped}}.",
         "foldersAdded": "{{count}} dossiers ajoutes a la liste d analyse.",
         "foldersAddedWithSkipped": "{{count}} dossiers ajoutes a la liste d analyse. Existants ignores : {{skipped}}.",

@@ -20,9 +20,9 @@ use tauri::Manager;
 use app::{instance_lock::InstanceLock, state::AppState};
 use commands::{
     assets::{
-        delete_asset, find_duplicate_assets, get_asset_details, get_asset_query_page,
-        get_video_stream_url, list_assets, list_tags, merge_asset_tags_bulk, rename_asset_file,
-        set_asset_favorite,
+        apply_duplicate_resolution_batch, delete_asset, find_duplicate_assets, get_asset_details,
+        get_asset_query_page, get_video_stream_url, list_assets, list_tags, merge_asset_tags_bulk,
+        rename_asset_file, set_asset_favorite,
         set_asset_media_group, set_asset_tags, set_assets_media_group_bulk, start_asset_query,
     },
     import_export::{
@@ -37,7 +37,9 @@ use commands::{
     },
     window::sync_window_theme,
 };
-use services::{media_server::MediaServerState, thumb_scheduler::ThumbnailScheduler};
+use services::{
+    asset_mutation_service, media_server::MediaServerState, thumb_scheduler::ThumbnailScheduler,
+};
 
 #[cfg(debug_assertions)]
 const PRODUCTION_APP_IDENTIFIER: &str = "com.example.mediatagger";
@@ -68,6 +70,7 @@ pub fn run() {
             let db_path = app_data_dir.join("media.db");
             let conn = db::open_connection(&db_path)?;
             db::init_schema(&conn)?;
+            asset_mutation_service::recover_pending_file_operations(&conn)?;
             let media_server = MediaServerState::start(db_path.clone())?;
             app.manage(media_server);
 
@@ -120,6 +123,7 @@ pub fn run() {
             delete_asset,
             find_duplicate_assets,
             rename_asset_file,
+            apply_duplicate_resolution_batch,
             list_tags,
             export_tags_csv,
             import_tags_csv,

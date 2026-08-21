@@ -179,7 +179,10 @@
       "confirmWord": "Yes",
       "typeYesLabel": "Type \"{{value}}\"",
       "typeYesPlaceholder": "Type \"{{value}}\"",
-      "confirm": "Confirm"
+      "confirm": "Confirm",
+      "sourceMissing": "The source file was already missing. Its stale library entry was removed.",
+      "cleanupPending": "The library entry was removed, but final file cleanup failed. Recovery file: {{path}}",
+      "failedMetadataPreserved": "The file could not be deleted. Its library metadata was preserved. {{error}}"
     },
     "mediaError": {
       "video": "Could not play video",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "Cancel thumbnail render error"
       },
       "summary": {
+        "duplicateRolledBack": "The duplicate batch failed and all file changes were rolled back. No library metadata was changed.",
+        "duplicateRecoveryRequired": "The batch could not be fully recovered. {{count}} item(s) have a reported recovery path; rescan before retrying.",
         "folderAdded": "Folder added to scan list: {{path}}",
         "folderAddedWithSkipped": "Folder added to scan list: {{path}}. Skipped existing: {{skipped}}.",
         "foldersAdded": "{{count}} folders added to scan list.",

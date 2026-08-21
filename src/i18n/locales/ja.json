@@ -179,7 +179,10 @@
       "confirmWord": "はい",
       "typeYesLabel": "\"{{value}}\" と入力してください",
       "typeYesPlaceholder": "\"{{value}}\" と入力してください",
-      "confirm": "確定"
+      "confirm": "確定",
+      "sourceMissing": "元ファイルは既に存在しません。古いライブラリエントリを削除しました。",
+      "cleanupPending": "ライブラリエントリは削除されましたが、最終クリーンアップに失敗しました。復旧ファイル: {{path}}",
+      "failedMetadataPreserved": "ファイルを削除できませんでした。ライブラリのメタデータは保持されています。{{error}}"
     },
     "mediaError": {
       "video": "動画を再生できませんでした",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "サムネイル生成キャンセルエラー"
       },
       "summary": {
+        "duplicateRolledBack": "重複項目の一括処理に失敗し、すべてのファイル変更をロールバックしました。メタデータは変更されていません。",
+        "duplicateRecoveryRequired": "一括処理を完全には復旧できませんでした。{{count}} 件に復旧パスがあります。再試行前に再スキャンしてください。",
         "folderAdded": "フォルダーをスキャンリストに追加しました: {{path}}",
         "folderSelectionCancelled": "フォルダー選択をキャンセルしました。",
         "removedRoot": "ルートを削除しました。アセット: {{assets}}、サムネイル: {{thumbnails}}",

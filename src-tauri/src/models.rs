@@ -113,13 +113,26 @@ pub struct RemoveRootSummary {
 pub struct DeleteAssetSummary {
     pub removed_assets: usize,
     pub removed_thumbnails: usize,
-    pub removed_media_file: bool,
+    pub source_status: DeleteSourceStatus,
+    pub revision: i64,
+    pub recovery_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeleteSourceStatus {
+    Deleted,
+    Missing,
+    CleanupPending,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DuplicateAsset {
     pub id: i64,
     pub path: String,
+    pub record_version: i64,
+    pub size_bytes: i64,
+    pub fingerprint_mtime_ns: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,6 +146,7 @@ pub struct DuplicateScanSummary {
     pub groups: Vec<DuplicateGroup>,
     pub duplicate_groups: usize,
     pub duplicate_assets: usize,
+    pub revision: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -140,6 +154,75 @@ pub struct RenameAssetSummary {
     pub asset_id: i64,
     pub old_path: String,
     pub new_path: String,
+    pub removed_thumbnails: usize,
+    pub revision: i64,
+    pub status: RenameAssetStatus,
+    pub recovery_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenameAssetStatus {
+    Renamed,
+    CleanupPending,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum DuplicateResolutionChangeInput {
+    Rename {
+        asset_id: i64,
+        expected_path: String,
+        expected_record_version: i64,
+        new_file_name: String,
+    },
+    Delete {
+        asset_id: i64,
+        expected_path: String,
+        expected_record_version: i64,
+    },
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateResolutionBatchInput {
+    pub scan_revision: i64,
+    pub changes: Vec<DuplicateResolutionChangeInput>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DuplicateResolutionBatchStatus {
+    Committed,
+    RolledBack,
+    RecoveryRequired,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DuplicateResolutionItemStatus {
+    Renamed,
+    Deleted,
+    SourceMissing,
+    RolledBack,
+    RollbackFailed,
+    CleanupPending,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DuplicateResolutionItemResult {
+    pub asset_id: i64,
+    pub status: DuplicateResolutionItemStatus,
+    pub old_path: String,
+    pub new_path: Option<String>,
+    pub recovery_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DuplicateResolutionBatchSummary {
+    pub status: DuplicateResolutionBatchStatus,
+    pub revision: i64,
+    pub results: Vec<DuplicateResolutionItemResult>,
     pub removed_thumbnails: usize,
 }
 

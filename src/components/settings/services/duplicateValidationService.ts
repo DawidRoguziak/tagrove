@@ -3,7 +3,8 @@ import type { DuplicateGroup } from "../../../types";
 import type { DuplicateResolutionChange } from "../types";
 import i18n from "../../../i18n";
 
-const INVALID_FILE_NAME_CHARACTERS = /[\\/:*?"<>|]/;
+const INVALID_FILE_NAME_CHARACTERS = /[\u0000-\u001f\\/:*?"<>|]/;
+const WINDOWS_RESERVED_FILE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 const VALIDATION_FILE_NAME_EMPTY = "validation.fileNameCannotBeEmpty";
 const VALIDATION_FILE_NAME_INVALID = "validation.fileNameInvalid";
@@ -15,7 +16,14 @@ const duplicateFileNameSchema = z
   .trim()
   .min(1, VALIDATION_FILE_NAME_EMPTY)
   .refine((value) => value !== "." && value !== "..", VALIDATION_FILE_NAME_INVALID)
-  .refine((value) => !INVALID_FILE_NAME_CHARACTERS.test(value), VALIDATION_FILE_NAME_INVALID_CHARACTERS);
+  .refine(
+    (value) =>
+      !INVALID_FILE_NAME_CHARACTERS.test(value) &&
+      !value.endsWith(".") &&
+      !value.endsWith(" ") &&
+      !WINDOWS_RESERVED_FILE_NAME.test(value),
+    VALIDATION_FILE_NAME_INVALID_CHARACTERS
+  );
 
 const duplicateResolutionChangeSchema = z.discriminatedUnion("type", [
   z.object({

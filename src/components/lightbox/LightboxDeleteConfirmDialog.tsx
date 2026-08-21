@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { UiButton } from "../UI/UiButton";
 import { browserAssistDisabledProps } from "../UI/inputBehavior";
 import { useTranslation } from "react-i18next";
+import { UiAlert } from "../UI/UiAlert";
 
 interface LightboxDeleteConfirmDialogProps {
   open: boolean;
   isSubmitting: boolean;
+  errorMessage?: string | null;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -13,6 +15,7 @@ interface LightboxDeleteConfirmDialogProps {
 export function LightboxDeleteConfirmDialog({
   open,
   isSubmitting,
+  errorMessage,
   onClose,
   onConfirm
 }: LightboxDeleteConfirmDialogProps) {
@@ -61,6 +64,11 @@ export function LightboxDeleteConfirmDialog({
         <p className="m-0 text-[13px] leading-[1.4] text-base-content/65">
           {t("lightbox.deleteConfirm.description")}
         </p>
+        {errorMessage ? (
+          <UiAlert tone="error">
+            {t("lightbox.deleteConfirm.failedMetadataPreserved", { error: errorMessage })}
+          </UiAlert>
+        ) : null}
 
         <div className="grid gap-1">
           <label className="text-xs text-base-content/65" htmlFor="lightbox-delete-confirm-input">

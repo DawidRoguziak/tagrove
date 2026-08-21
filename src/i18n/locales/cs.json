@@ -179,7 +179,10 @@
       "confirmWord": "Ano",
       "typeYesLabel": "Napište \"{{value}}\"",
       "typeYesPlaceholder": "Napište \"{{value}}\"",
-      "confirm": "Potvrdit"
+      "confirm": "Potvrdit",
+      "sourceMissing": "Zdrojový soubor již chyběl. Jeho zastaralý záznam byl z knihovny odstraněn.",
+      "cleanupPending": "Záznam byl odstraněn, ale závěrečný úklid selhal. Soubor pro obnovu: {{path}}",
+      "failedMetadataPreserved": "Soubor nelze smazat. Jeho metadata v knihovně byla zachována. {{error}}"
     },
     "mediaError": {
       "video": "Video nelze přehrát",
@@ -299,6 +302,8 @@
     },
     "actions": {
       "summary": {
+        "duplicateRolledBack": "Dávka duplicit selhala a všechny změny souborů byly vráceny zpět. Metadata se nezměnila.",
+        "duplicateRecoveryRequired": "Dávku se nepodařilo plně obnovit. {{count}} položek má cestu pro obnovu; před opakováním spusťte nový sken.",
         "folderAddedWithSkipped": "Slozka pridana do seznamu skenovani: {{path}}. Preskoceno jiz pripojenych: {{skipped}}.",
         "foldersAdded": "Do seznamu skenovani bylo pridano {{count}} slozek.",
         "foldersAddedWithSkipped": "Do seznamu skenovani bylo pridano {{count}} slozek. Preskoceno jiz pripojenych: {{skipped}}.",

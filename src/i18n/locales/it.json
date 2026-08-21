@@ -179,7 +179,10 @@
       "confirmWord": "Sì",
       "typeYesLabel": "Digita \"{{value}}\"",
       "typeYesPlaceholder": "Digita \"{{value}}\"",
-      "confirm": "Conferma"
+      "confirm": "Conferma",
+      "sourceMissing": "Il file sorgente era già assente. La voce obsoleta è stata rimossa dalla libreria.",
+      "cleanupPending": "La voce è stata rimossa, ma la pulizia finale è fallita. File di recupero: {{path}}",
+      "failedMetadataPreserved": "Impossibile eliminare il file. I metadati della libreria sono stati conservati. {{error}}"
     },
     "mediaError": {
       "video": "Impossibile riprodurre il video",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "Errore annullamento generazione miniature"
       },
       "summary": {
+        "duplicateRolledBack": "Il batch dei duplicati non è riuscito e tutte le modifiche ai file sono state annullate. I metadati non sono cambiati.",
+        "duplicateRecoveryRequired": "Il batch non è stato recuperato completamente. {{count}} elementi hanno un percorso di recupero; ripetere la scansione prima di riprovare.",
         "folderAdded": "Cartella aggiunta alla lista di scansione: {{path}}",
         "folderSelectionCancelled": "Selezione cartella annullata.",
         "removedRoot": "Radice rimossa. Risorse: {{assets}}, miniature: {{thumbnails}}",

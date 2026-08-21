@@ -179,7 +179,10 @@
       "confirmWord": "예",
       "typeYesLabel": "\"{{value}}\"를 입력하세요",
       "typeYesPlaceholder": "\"{{value}}\"를 입력하세요",
-      "confirm": "확인"
+      "confirm": "확인",
+      "sourceMissing": "원본 파일이 이미 없습니다. 오래된 라이브러리 항목을 제거했습니다.",
+      "cleanupPending": "라이브러리 항목은 제거했지만 최종 파일 정리에 실패했습니다. 복구 파일: {{path}}",
+      "failedMetadataPreserved": "파일을 삭제할 수 없습니다. 라이브러리 메타데이터는 보존되었습니다. {{error}}"
     },
     "mediaError": {
       "video": "동영상을 재생할 수 없습니다",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "썸네일 렌더링 취소 오류"
       },
       "summary": {
+        "duplicateRolledBack": "중복 항목 일괄 처리가 실패하여 모든 파일 변경을 롤백했습니다. 메타데이터는 변경되지 않았습니다.",
+        "duplicateRecoveryRequired": "일괄 처리를 완전히 복구하지 못했습니다. {{count}}개 항목에 복구 경로가 있습니다. 다시 시도하기 전에 재검색하세요.",
         "folderAdded": "스캔 목록에 폴더가 추가됨: {{path}}",
         "folderSelectionCancelled": "폴더 선택이 취소되었습니다.",
         "removedRoot": "루트 제거됨. 자산: {{assets}}, 썸네일: {{thumbnails}}",

@@ -25,6 +25,7 @@ export function useLightboxModalHandlers({
   const [infoPanelOpen, setInfoPanelOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedId === null) {
@@ -35,6 +36,7 @@ export function useLightboxModalHandlers({
     setInfoPanelOpen(false);
     setDeleteConfirmOpen(false);
     setDeleteSubmitting(false);
+    setDeleteError(null);
   }, [selectedId]);
 
   const handleEnterFullscreen = useCallback(() => {
@@ -66,9 +68,12 @@ export function useLightboxModalHandlers({
     }
 
     setDeleteSubmitting(true);
+    setDeleteError(null);
     try {
       await onDeleteMedia();
       setDeleteConfirmOpen(false);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : String(error));
     } finally {
       setDeleteSubmitting(false);
     }
@@ -108,6 +113,7 @@ export function useLightboxModalHandlers({
 
   const handleOpenDeleteConfirm = useCallback(() => {
     setDeleteConfirmOpen(true);
+    setDeleteError(null);
     setTagsPanelOpen(false);
     setInfoPanelOpen(false);
   }, []);
@@ -133,6 +139,7 @@ export function useLightboxModalHandlers({
     infoPanelOpen,
     deleteConfirmOpen,
     deleteSubmitting,
+    deleteError,
     handleEnterFullscreen,
     handleApplyMediaGroup,
     handleShellPointerDownCapture,

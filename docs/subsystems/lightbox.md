@@ -58,13 +58,13 @@ All lightbox mutations are backend-first: the action awaits its API command befo
 | Add/remove tags | `set_asset_tags` | Replace tags on the cached asset, details cache, and still-matching selection | Start best-effort `refreshKnownTags()` |
 | Toggle favorite | `set_asset_favorite` | Replace `is_favorite` in both places | Refresh the query only when removing a favorite while the applied favorites-only filter is active |
 | Apply media group | `set_asset_media_group` | Replace group key and order in both places | No query or tag refresh |
-| Delete | `delete_asset` | Remove the ID from loaded pages and close the matching selection | Await known-tag refresh, then full query refresh |
+| Delete | `delete_asset` | Remove the ID from loaded pages and close the matching selection after a committed structured result | Start best-effort known-tag and query refreshes; refresh failure does not relabel the committed delete |
 
 Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `useSelectionState` is the only owner of save serialization/coalescing; `useLightboxTagging` only manages input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and starting the best-effort known-tag refresh. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. Opening the tag panel focuses its input on the next animation frame, and a successful add clears and refocuses it.
 
 Media-group apply trims the key and converts an empty key to null. Empty order becomes null; any finite JavaScript number, including a decimal, is accepted; non-finite or unparseable input does nothing. The generate button uses `crypto.randomUUID()` when available, with a timestamp/random fallback. Applying does not mutate the editor controls directly; the selected-object update rehydrates them.
 
-The Rust mutation commands normalize again and bump the library revision. Delete runs under the scan/thumbnail lock, removes the database asset and bumps the revision first, then best-effort removes the original file and its thumbnail files. The frontend currently ignores `DeleteAssetSummary`, so a successful command closes the lightbox even when `removed_media_file` is false.
+Delete runs under the scan/thumbnail lock. An existing source is journaled and staged before one database/revision transaction; a missing source explicitly removes stale metadata. The frontend inspects `DeleteAssetSummary`: missing source and post-commit cleanup staging are announced separately, while a pre-commit filesystem rejection remains in the confirmation dialog and states that metadata was preserved.
 
 ## Toolbar, popovers, clipboard, and confirmation
 
@@ -74,7 +74,7 @@ Tag and info popovers are mutually exclusive. Toggling one closes the other. A s
 
 Group copy is enabled only when the trimmed editor key is non-empty and `navigator.clipboard.writeText` exists. Success swaps the copy icon to a confirmed state for 1,600 ms. Selection changes, key edits, failures, and unmount clear confirmation or its timer.
 
-Delete opens a nested modal, closes both popovers, clears its text each time it closes, and focuses the confirmation input on the next animation frame. Confirm is enabled only when trimmed input equals the localized confirmation word, case-insensitively. Submission is guarded against duplicates; close/cancel and both buttons are blocked while it is pending. The confirmation backdrop stops propagation before closing itself, and its inner surface stops propagation without closing. A successful delete closes the selection through the action; the confirmation hook also closes its own overlay when the promise resolves.
+Delete opens a nested modal, closes both popovers, clears its text each time it closes, and focuses the confirmation input on the next animation frame. Confirm is enabled only when trimmed input equals the localized confirmation word, case-insensitively. Submission is guarded against duplicates; close/cancel and both buttons are blocked while it is pending. The confirmation backdrop stops propagation before closing itself, and its inner surface stops propagation without closing. A committed delete closes the selection; missing/cleanup outcomes are announced first. A rejected pre-commit delete keeps the confirmation open with an alert, and post-commit refresh failures are only best-effort follow-up failures.
 
 ## Media presentation
 
@@ -157,7 +157,7 @@ The delete overlay stops propagation at both its backdrop and surface, so closin
 - Tag replacements are serialized per asset, coalesce rapid drafts, and expose saving/failure/Retry state. Favorite and media-group writes still have no submitting state or mutation request guard, so rapid writes for those fields may resolve out of order.
 - The double-click and legacy mouse-down handlers are returned by `useLightboxImageControls` and unit-tested directly, but `LightboxMediaStage` currently wires neither one. Rendered images therefore single-click through 1.25x steps; the pixel-perfect double-click toggle is not reachable from the modal.
 - The lightbox shell itself has no dialog role, focus trap, or focus restoration. `Escape` is checked before form-control suppression, so pressing it in the nested delete input closes the entire lightbox when not fullscreen rather than only dismissing the confirmation.
-- The frontend treats a successful delete command as complete without inspecting whether physical media-file removal succeeded. Database removal can therefore succeed while the original file remains.
+- Final staged-delete cleanup can fail after DB commit; the UI reports the recovery path and the durable journal retries cleanup at startup.
 - Fullscreen, clipboard, autoplay, and details failures are intentionally silent.
 
 ## Change checklist

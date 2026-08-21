@@ -1,10 +1,4 @@
-use std::{
-    collections::HashSet,
-    fs,
-    path::{Path, PathBuf},
-};
-
-use anyhow::Context;
+use std::collections::HashSet;
 
 use serde::Deserialize;
 use tauri::{Manager, State};
@@ -14,12 +8,13 @@ use crate::{
     db::{self, list_assets_with_meta as db_list_assets_with_meta, AssetMetaFilter},
     models::{
         AssetDetails, AssetPage, AssetQueryPageResult, BulkMediaGroupSummary, BulkTagMergeSummary,
-        DeleteAssetSummary, DuplicateScanSummary, RenameAssetSummary, SetAssetTagsSummary,
-        StartAssetQueryResult, TagListPage,
+        DeleteAssetSummary, DuplicateResolutionBatchInput, DuplicateResolutionBatchSummary,
+        DuplicateScanSummary, RenameAssetSummary, SetAssetTagsSummary, StartAssetQueryResult,
+        TagListPage,
     },
     services::{
-        asset_query_service, db_pool, media_server::MediaServerState, progress::emit_progress,
-        thumb_service,
+        asset_mutation_service, asset_query_service, db_pool, media_server::MediaServerState,
+        progress::emit_progress,
     },
     utils::tags::normalize_tags,
 };
@@ -355,27 +350,7 @@ pub fn list_tags(
 pub fn delete_asset(asset_id: i64, state: State<AppState>) -> Result<DeleteAssetSummary, String> {
     with_scan_and_thumb_lock(&state, || {
         let conn = db::open_connection(&state.db_path)?;
-        let Some((asset_path, thumb_path)) = db::delete_asset_by_id_with_thumb(&conn, asset_id)?
-        else {
-            return Err(format!("Asset with id {asset_id} not found").into());
-        };
-        db::bump_library_revision(&conn)?;
-
-        let media_path = PathBuf::from(&asset_path);
-        let removed_media_file = if media_path.exists() {
-            fs::remove_file(&media_path).is_ok()
-        } else {
-            false
-        };
-
-        let removed_thumbnails =
-            thumb_service::delete_thumbnail_files(thumb_path.into_iter().collect());
-
-        Ok(DeleteAssetSummary {
-            removed_assets: 1,
-            removed_thumbnails,
-            removed_media_file,
-        })
+        asset_mutation_service::delete_asset(&conn, asset_id)
     })
     .map_err(|e| e.to_string())
 }
@@ -387,6 +362,7 @@ pub async fn find_duplicate_assets(app: tauri::AppHandle) -> Result<DuplicateSca
         (|| {
             let conn = db::open_connection(&state.db_path)?;
             let groups = db::list_duplicate_groups(&conn)?;
+            let revision = db::current_library_revision(&conn)?;
             let total = groups.len();
 
             let _ = emit_progress(
@@ -414,6 +390,7 @@ pub async fn find_duplicate_assets(app: tauri::AppHandle) -> Result<DuplicateSca
                 groups,
                 duplicate_groups,
                 duplicate_assets,
+                revision,
             })
         })()
         .map_err(|e: crate::error::AppError| e.to_string())
@@ -429,94 +406,26 @@ pub fn rename_asset_file(
     state: State<AppState>,
 ) -> Result<RenameAssetSummary, String> {
     with_scan_and_thumb_lock(&state, || {
-        let normalized_file_name = normalize_new_file_name(&new_file_name)?;
         let conn = db::open_connection(&state.db_path)?;
+        asset_mutation_service::rename_asset(&conn, asset_id, new_file_name)
+    })
+    .map_err(|e| e.to_string())
+}
 
-        let Some((old_path, _old_thumb_path)) =
-            db::get_asset_path_and_thumb_by_id(&conn, asset_id)?
-        else {
-            return Err(format!("Asset with id {asset_id} not found").into());
-        };
-
-        let old_path_buf = PathBuf::from(&old_path);
-        let parent = old_path_buf
-            .parent()
-            .ok_or_else(|| "Cannot resolve parent directory for asset".to_string())?;
-        let new_path_buf = parent.join(&normalized_file_name);
-        let new_path = new_path_buf.to_string_lossy().to_string();
-
-        if old_path.eq_ignore_ascii_case(&new_path) {
-            return Err("New file name is the same as current one".into());
-        }
-
-        if new_path_buf.exists() {
-            return Err("Target file already exists".into());
-        }
-
-        fs::rename(&old_path_buf, &new_path_buf).with_context(|| {
-            format!(
-                "cannot rename media file from '{}' to '{}'",
-                old_path_buf.display(),
-                new_path_buf.display()
-            )
-        })?;
-
-        let update_result =
-            db::rename_asset_file_by_id(&conn, asset_id, &new_path, &normalized_file_name);
-
-        let removed_thumbnails = match update_result {
-            Ok(Some((_previous_path, thumb_path))) => {
-                thumb_service::delete_thumbnail_files(thumb_path.into_iter().collect())
-            }
-            Ok(None) => {
-                let _ = fs::rename(&new_path_buf, &old_path_buf);
-                return Err(format!("Asset with id {asset_id} not found").into());
-            }
-            Err(error) => {
-                let _ = fs::rename(&new_path_buf, &old_path_buf);
-                return Err(error.into());
-            }
-        };
-        db::bump_library_revision(&conn)?;
-
-        Ok(RenameAssetSummary {
-            asset_id,
-            old_path,
-            new_path,
-            removed_thumbnails,
-        })
+#[tauri::command]
+pub fn apply_duplicate_resolution_batch(
+    input: DuplicateResolutionBatchInput,
+    state: State<AppState>,
+) -> Result<DuplicateResolutionBatchSummary, String> {
+    with_scan_and_thumb_lock(&state, || {
+        let conn = db::open_connection(&state.db_path)?;
+        asset_mutation_service::apply_duplicate_resolution_batch(&conn, input)
     })
     .map_err(|e| e.to_string())
 }
 
 fn normalize_new_file_name(raw: &str) -> Result<String, crate::error::AppError> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err("File name cannot be empty".into());
-    }
-    if trimmed == "." || trimmed == ".." {
-        return Err("File name is invalid".into());
-    }
-    if trimmed.contains('/') || trimmed.contains('\\') {
-        return Err("File name cannot contain directory separators".into());
-    }
-    if trimmed.contains(':')
-        || trimmed.contains('*')
-        || trimmed.contains('?')
-        || trimmed.contains('"')
-    {
-        return Err("File name contains invalid characters".into());
-    }
-    if trimmed.contains('<') || trimmed.contains('>') || trimmed.contains('|') {
-        return Err("File name contains invalid characters".into());
-    }
-
-    let path = Path::new(trimmed);
-    let Some(file_name) = path.file_name() else {
-        return Err("File name is invalid".into());
-    };
-
-    Ok(file_name.to_string_lossy().to_string())
+    asset_mutation_service::validate_file_name(raw).map_err(Into::into)
 }
 
 #[cfg(test)]

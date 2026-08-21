@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { deleteAsset, findDuplicateAssets, renameAssetFile } from "../../../api";
-import type { DuplicateGroup } from "../../../types";
+import { applyDuplicateResolutionBatch, findDuplicateAssets } from "../../../api";
+import type { DuplicateGroup, DuplicateResolutionBatchChange } from "../../../types";
 import { isDuplicateScanProgressPhase } from "../services/progressService";
 import type {
   DuplicatesSettingsController,
@@ -22,12 +22,15 @@ function applyDuplicateScanResult(
   summary: {
     groups: DuplicateGroup[];
     duplicate_assets: number;
+    revision: number;
   },
   setGroups: (groups: DuplicateGroup[]) => void,
-  setAssetCount: (count: number) => void
+  setAssetCount: (count: number) => void,
+  setRevision: (revision: number) => void
 ) {
   setGroups(summary.groups);
   setAssetCount(summary.duplicate_assets);
+  setRevision(summary.revision);
 }
 
 export function useDuplicateSettingsActions({
@@ -43,6 +46,7 @@ export function useDuplicateSettingsActions({
     useState<PendingDuplicateDeleteConfirm | null>(null);
   const [groups, setGroups] = useState<DuplicateGroup[]>([]);
   const [assetCount, setAssetCount] = useState(0);
+  const [scanRevision, setScanRevision] = useState(0);
 
   const onRescan = useCallback(async () => {
     await runner.runExclusiveOperation(
@@ -55,7 +59,7 @@ export function useDuplicateSettingsActions({
       },
       async () => {
         const summary = await findDuplicateAssets();
-        applyDuplicateScanResult(summary, setGroups, setAssetCount);
+        applyDuplicateScanResult(summary, setGroups, setAssetCount, setScanRevision);
         runner.setSectionMessage(
           "duplicates",
           t("settings.actions.summary.duplicateScanComplete", {
@@ -82,33 +86,62 @@ export function useDuplicateSettingsActions({
           setGlobalLoading: false
         },
         async () => {
-          for (const change of changes) {
+          const assetsById = new Map(groups.flatMap((group) => group.assets).map((asset) => [asset.id, asset]));
+          const batchChanges: DuplicateResolutionBatchChange[] = changes.map((change) => {
+            const asset = assetsById.get(change.assetId);
+            if (!asset) throw new Error(t("validation.unknownAssetInChanges", { assetId: change.assetId }));
+            const common = {
+              assetId: asset.id,
+              expectedPath: asset.path,
+              expectedRecordVersion: asset.record_version
+            };
             if (change.type === "rename") {
-              const trimmedName = change.nextFileName.trim();
-              if (!trimmedName) {
-                throw new Error(t("validation.fileNameCannotBeEmpty"));
-              }
-              await renameAssetFile(change.assetId, trimmedName);
-              continue;
+              const newFileName = change.nextFileName.trim();
+              if (!newFileName) throw new Error(t("validation.fileNameCannotBeEmpty"));
+              return { type: "rename", ...common, newFileName };
             }
-
-            await deleteAsset(change.assetId);
+            return { type: "delete", ...common };
+          });
+          const result = await applyDuplicateResolutionBatch(scanRevision, batchChanges);
+          await refreshLibrary().catch(() => undefined);
+          const duplicateSummary = await findDuplicateAssets().catch(() => null);
+          if (duplicateSummary) {
+            applyDuplicateScanResult(duplicateSummary, setGroups, setAssetCount, setScanRevision);
           }
-
-          await refreshLibrary();
-          const duplicateSummary = await findDuplicateAssets();
-          applyDuplicateScanResult(duplicateSummary, setGroups, setAssetCount);
+          if (result.status === "rolled_back") {
+            runner.setSectionMessage("duplicates", t("settings.actions.summary.duplicateRolledBack"));
+            return;
+          }
+          if (result.status === "recovery_required") {
+            const recoveryItems = result.results.filter((item) => item.recovery_path);
+            const details = recoveryItems
+              .map((item) => `#${item.asset_id}: ${item.recovery_path}`)
+              .join("; ");
+            runner.setSectionMessage(
+              "duplicates",
+              `${t("settings.actions.summary.duplicateRecoveryRequired", {
+                count: recoveryItems.length
+              })} ${details}`.trim()
+            );
+            return;
+          }
+          const missingSources = result.results.filter(
+            (item) => item.status === "source_missing"
+          ).length;
+          const appliedMessage = t("settings.actions.summary.duplicateApplied", {
+            count: changes.length,
+            groups: duplicateSummary?.duplicate_groups ?? groups.length
+          });
           runner.setSectionMessage(
             "duplicates",
-            t("settings.actions.summary.duplicateApplied", {
-              count: changes.length,
-              groups: duplicateSummary.duplicate_groups
-            })
+            missingSources > 0
+              ? `${appliedMessage} ${t("lightbox.deleteConfirm.sourceMissing")} (${missingSources})`
+              : appliedMessage
           );
         }
       );
     },
-    [refreshLibrary, runner, t]
+    [groups, refreshLibrary, runner, scanRevision, t]
   );
 
   const onSaveAll = useCallback(

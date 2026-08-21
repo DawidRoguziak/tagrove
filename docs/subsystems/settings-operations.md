@@ -22,7 +22,7 @@ The panel also mounts the remove-root, clear-library, duplicate resolver, duplic
 | --- | --- |
 | `useScanSettingsActions` | Scan-root list, thumbnail bulk/cancel flags, remove-root candidate, and scan/thumbnail actions. |
 | `useImportExportSettingsActions` | File-dialog orchestration and the pending database-bundle source awaiting overwrite confirmation. |
-| `useDuplicateSettingsActions` | Resolver visibility, pending delete confirmation, duplicate groups/count, scan, and sequential rename/delete application. |
+| `useDuplicateSettingsActions` | Resolver visibility, pending delete confirmation, duplicate snapshot/revision, and one backend batch application. |
 | `useDangerZoneSettingsActions` | Clear-library confirmation and action. |
 
 Duplicate thumbnails reuse the library browser's thumbnail map, rendering-ID map, and queue callback. Cross-feature refresh/reset callbacks also come from `useLibraryBrowser` and `useLibraryLifecycle`; settings code does not maintain a second asset cache.
@@ -123,9 +123,9 @@ The resolver virtualizes duplicate groups and queues thumbnails only for asset I
 
 Generate UUID changes only the input draft and preserves the current extension; Queue rename trims and stages the draft. Editing an already staged rename updates its staged value. Queue delete replaces any staged rename; Unmark delete or Clear action removes the staged action.
 
-Save all is enabled only when the runner is unlocked, at least one change is staged, and validation succeeds. Validation requires positive known asset IDs; rename targets must be non-empty after trimming, cannot be `.` or `..`, and cannot contain `\\ / : * ? " < > |`. Final names are compared case-insensitively within each touched duplicate group after staged deletions/renames. Every touched group must have unique remaining names; untouched groups do not prevent saving, so a user may resolve a subset of groups.
+Save all is enabled only when the runner is unlocked, at least one change is staged, and validation succeeds. Validation requires positive known asset IDs and portable Windows file names, including control, trailing dot/space, and device-name restrictions. The backend repeats and extends validation across expected paths/versions, indexed and filesystem targets, and newly introduced duplicate names before mutation.
 
-A pure-rename batch runs immediately. If any delete is present, all staged changes—renames and deletes—are captured in `pendingDuplicateDeleteConfirm` and no mutation runs until the second confirmation. That confirmation is rendered after the resolver and overlays it; Cancel leaves the resolver and its local staged edits in place, clears only the pending confirmation, and reports cancellation. Confirm clears the pending confirmation before the operation lock is acquired, then applies the captured changes in array order. Each rename/delete API call is awaited before the next. On full success, the library is refreshed, duplicates are scanned again, groups/count are replaced, and the completion summary is shown.
+A pure-rename batch runs immediately. If any delete is present, all staged changes—renames and deletes—are captured in `pendingDuplicateDeleteConfirm` and no mutation runs until the second confirmation. Confirm sends one `apply_duplicate_resolution_batch` request containing the scan revision and each expected path/version. The frontend refreshes and rescans for every structured result, then distinguishes committed success (including missing sources), full rollback, and recovery required; recovery feedback retains affected asset IDs and paths.
 
 The controller performs a defensive empty-name check during rename execution, but the complete group/asset validation lives in the resolver UI service. API callers and future alternate views must not assume `onSaveAll` repeats every UI validation.
 
@@ -156,7 +156,7 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Import confirmed database bundle | Reset thumbnail queue and replace `thumbs` with `{}`; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
 | Clear library | Reset thumbnail queue; replace `thumbs` with `{}`, assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
 | Find/rescan duplicates | Replace duplicate groups and count; publish scan summary. No library/root refresh or thumbnail reset, although visible duplicate IDs may be queued for previews. |
-| Apply duplicate changes | After every sequential change succeeds, refresh assets/query pages and known tags; scan duplicates; replace groups/count; publish apply summary. No root refresh or explicit thumbnail reset. |
+| Apply duplicate changes | After the backend batch returns, refresh assets/query pages and known tags; scan duplicates; replace groups/count/revision; publish committed, rolled-back, or recovery-required summary. No root refresh or explicit thumbnail reset. |
 
 Native picker cancellation, confirmation cancellation, an empty duplicate change list, and a rejected/no-op thumbnail stop request perform no refresh or lifecycle reset. On failure, the runner does not perform compensating refreshes beyond work already completed inside the action before the error. Confirmed database restore and clear-library are deliberate exceptions: either command may reject after changing live state, so their identity-bound frontend caches are invalidated inside the tag-mutation barrier and their root/library refreshes are attempted best-effort before the original error is shown. Other follow-ups remain sequential: if a refresh itself fails, later follow-ups and the intended success summary do not run.
 
@@ -179,8 +179,8 @@ Known limitations:
 - A second runner call made while locked returns silently; it does not queue work or publish a message.
 - The progress listener has no operation identifier beyond phase filtering. Correct attribution depends on exclusivity plus disjoint phase families.
 - The runner unregisters its listener when the action settles, but it has no separate unmount abort/stale-result guard if the entire shell is destroyed mid-operation.
-- Duplicate changes are sequential rather than a frontend transaction. If a later rename/delete fails, earlier calls may already have succeeded, and the success refresh/rescan is skipped; the staged UI remains available for a retry but may be stale relative to disk/database state.
-- Full duplicate validation is enforced by the resolver before enabling Save all, not repeated by the controller action boundary.
+- Duplicate rename targets cannot be another source in the same batch, so swaps/cycles require independent temporary names in separate rescanned batches.
+- The DB transaction does not make post-commit staged-delete or thumbnail cleanup transactional; those cases are surfaced as recovery-required results.
 - Root addition is sequential. A failure after one addition can leave earlier roots added while preventing the final root-list refresh.
 - Local lifecycle resets intentionally differ by operation; notably root removal does not clear the thumbnail path map, and duplicate mutations do not explicitly reset it.
 - Nested modal Escape/focus behavior is not coordinated, as described above.

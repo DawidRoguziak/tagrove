@@ -179,7 +179,10 @@
       "confirmWord": "Tak",
       "typeYesLabel": "Wpisz \"{{value}}\"",
       "typeYesPlaceholder": "Wpisz \"{{value}}\"",
-      "confirm": "Potwierdz"
+      "confirm": "Potwierdz",
+      "sourceMissing": "Pliku zrodlowego juz nie bylo. Usunieto jego nieaktualny wpis z biblioteki.",
+      "cleanupPending": "Wpis biblioteki usunieto, ale koncowe czyszczenie pliku nie powiodlo sie. Plik odzyskiwania: {{path}}",
+      "failedMetadataPreserved": "Nie mozna usunac pliku. Jego metadane w bibliotece zostaly zachowane. {{error}}"
     },
     "mediaError": {
       "video": "Nie można odtworzyć video",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "Blad zatrzymania renderowania miniaturek"
       },
       "summary": {
+        "duplicateRolledBack": "Batch duplikatow nie powiodl sie i wszystkie zmiany plikow zostaly wycofane. Metadane biblioteki nie zostaly zmienione.",
+        "duplicateRecoveryRequired": "Nie udalo sie w pelni odzyskac batcha. Pozycje ze sciezka odzyskiwania: {{count}}. Przeskanuj ponownie przed kolejna proba.",
         "folderAdded": "Folder dodany do listy skanowania: {{path}}",
         "folderAddedWithSkipped": "Folder dodany do listy skanowania: {{path}}. Pominieto juz podlaczone: {{skipped}}.",
         "foldersAdded": "Dodano {{count}} foldery do listy skanowania.",

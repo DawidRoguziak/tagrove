@@ -32,9 +32,10 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `AssetQueryPageResult` / `AssetQueryPageResult` | `ready` has the same fields as query-start `ready`; `stale` has only `status` |
 | `ScanSummary` / `ScanSummary` | `completion: "complete" \| "partial"`, `indexed`, `removed`, `failed` |
 | `RemoveRootSummary` / `RemoveRootSummary` | `removed_assets`, `removed_thumbnails` |
-| `DeleteAssetSummary` / `DeleteAssetSummary` | `removed_assets`, `removed_thumbnails`, `removed_media_file` |
-| `DuplicateAsset`, `DuplicateGroup`, `DuplicateScanSummary` / same | Asset: `id`, `path`; group: `file_name`, `assets`; summary: `groups`, `duplicate_groups`, `duplicate_assets` |
-| `RenameAssetSummary` / `RenameAssetSummary` | `asset_id`, `old_path`, `new_path`, `removed_thumbnails` |
+| `DeleteAssetSummary` / `DeleteAssetSummary` | `removed_assets`, `removed_thumbnails`, `source_status: "deleted" \| "missing" \| "cleanup_pending"`, `revision`, `recovery_path?` |
+| `DuplicateAsset`, `DuplicateGroup`, `DuplicateScanSummary` / same | Asset: `id`, `path`, `record_version`, `size_bytes`, `fingerprint_mtime_ns`; group: `file_name`, `assets`; summary: `groups`, `duplicate_groups`, `duplicate_assets`, `revision` |
+| `RenameAssetSummary` / `RenameAssetSummary` | `asset_id`, `old_path`, `new_path`, `removed_thumbnails`, `revision`, `status: "renamed" \| "cleanup_pending"`, `recovery_path?` |
+| `DuplicateResolutionBatchSummary` / same | `status: "committed" \| "rolled_back" \| "recovery_required"`, `revision`, `results`, `removed_thumbnails`; each result has `asset_id`, item `status`, `old_path`, `new_path?`, and `recovery_path?` |
 | `SetAssetTagsSummary` / `SetAssetTagsSummary` | `asset_id`, `changed`, `tags`, `revision` |
 | `BulkTagMergeSummary` / `BulkTagMergeSummary` | `processed_assets`, `updated_assets`, `processed_asset_ids`, `updated_asset_ids`, `results`, `revision` |
 | `BulkMediaGroupSummary` / `BulkMediaGroupSummary` | `processed_assets`, `updated_assets`, `media_group_key?` |
@@ -80,9 +81,10 @@ For both session and legacy queries, tags are trimmed, lowercased, de-duplicated
 | `setAssetFavorite` / `set_asset_favorite` | `assetId`, `isFavorite: boolean` | `void` | Sets the favorite flag and bumps the library revision. |
 | `setAssetMediaGroup` / `set_asset_media_group` | `assetId`, `mediaGroupKey: string \| null`, `mediaGroupOrder: number \| null` | `void` | Trims the key and maps blank to `null`; non-finite order is discarded as `null`; bumps the revision. |
 | `setAssetsMediaGroupBulk` / `set_assets_media_group_bulk` | `updates: { assetId, mediaGroupOrder }[]`, `mediaGroupKey: string \| null` | `BulkMediaGroupSummary` | Drops non-positive/duplicate IDs, trims blank key to `null`, maps non-finite orders to `null`, and bumps the revision only when rows changed. The returned key is the normalized value. |
-| `deleteAsset` / `delete_asset` | `assetId` | `DeleteAssetSummary` | Rejects an unknown ID, deletes the database row, bumps the revision, then best-effort deletes source media and its thumbnail. Boolean/count fields report filesystem results. |
+| `deleteAsset` / `delete_asset` | `assetId` | `DeleteAssetSummary` | Rejects an unknown ID. An existing source is moved to same-directory staging before one DB/revision transaction; a DB failure restores it. A missing source commits stale metadata removal with `source_status: "missing"`; failed final staged cleanup returns `cleanup_pending` and a recovery path. |
 | `findDuplicateAssets` / `find_duplicate_assets` | none | `DuplicateScanSummary` | Groups database assets by duplicate file name and emits duplicate-scan progress. It does not hash file contents. |
-| `renameAssetFile` / `rename_asset_file` | `assetId`, `newFileName` | `RenameAssetSummary` | Accepts a file name only, not a path. Trims it; rejects empty, `.`/`..`, path separators, `: * ? " < > \|`, same-path names, existing targets, and unknown assets. It renames the source, updates the database, removes old thumbnails, bumps the revision, and attempts filesystem rollback if the database update fails. |
+| `renameAssetFile` / `rename_asset_file` | `assetId`, `newFileName` | `RenameAssetSummary` | Uses the same staged service as the batch. Portable validation also rejects control characters, trailing dot/space, and reserved Windows device names. Target installation is atomic no-clobber on supported Linux/Windows targets; DB mutation and revision are one transaction. |
+| `applyDuplicateResolutionBatch` / `apply_duplicate_resolution_batch` | `input: { scanRevision, changes }`; each tagged change includes `assetId`, `expectedPath`, `expectedRecordVersion`, and rename also has `newFileName` | `DuplicateResolutionBatchSummary` | Validates the complete snapshot, IDs, versions, names, filesystem and DB collisions, and touched duplicate groups before mutation. Runs once under combined locks, stages all sources, commits one DB transaction/revision, and returns per-item commit, rollback, or recovery state. Rename targets that are another batch source are rejected. |
 
 The single-item favorite and group setters do not validate that an ID affected a row before resolving. Single tag replacement rejects a missing ID; bulk tag merge skips missing IDs and reports processed IDs. See [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md) and [lightbox](../subsystems/lightbox.md) for the user workflows built on these calls.
 
@@ -204,7 +206,7 @@ Consumers must filter by phase because the event name is shared and broadcasts a
 | Media group | Blank key becomes `null`; non-finite order becomes `null`. |
 | Root path | Trim, use Windows separators, remove non-drive trailing separators; add/scan requires an existing directory. |
 | CSV/bundle paths | Trim; exports reject empty paths and create parents; imports require an existing file. Bundle import also rejects unsafe ZIP paths and requires `media.db`. |
-| Rename | File name only; rejects blank/dot names, separators, listed Windows-invalid characters, same path, and an existing destination. |
+| Rename | File name only; rejects blank/dot names, separators, control/listed Windows-invalid characters, trailing dot/space, reserved device names, same path, and occupied filesystem or indexed destinations. |
 | Theme | Exactly `light` or `dark`. |
 
 Deserialization itself rejects missing required arguments, wrong JSON types, invalid tagged-union shapes, negative values sent to unsigned Rust parameters, and non-representable numbers before command logic runs. Frontend TypeScript types help normal callers but are not runtime validation for arbitrary IPC callers.

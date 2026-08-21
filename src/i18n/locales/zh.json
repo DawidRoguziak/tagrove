@@ -179,7 +179,10 @@
       "confirmWord": "是",
       "typeYesLabel": "输入 \"{{value}}\"",
       "typeYesPlaceholder": "输入 \"{{value}}\"",
-      "confirm": "确认"
+      "confirm": "确认",
+      "sourceMissing": "源文件已不存在。已从媒体库中移除过期记录。",
+      "cleanupPending": "媒体库记录已移除，但最终文件清理失败。恢复文件：{{path}}",
+      "failedMetadataPreserved": "无法删除文件，其媒体库元数据已保留。{{error}}"
     },
     "mediaError": {
       "video": "无法播放视频",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "取消缩略图生成错误"
       },
       "summary": {
+        "duplicateRolledBack": "重复项批处理失败，所有文件更改均已回滚。媒体库元数据未更改。",
+        "duplicateRecoveryRequired": "批处理无法完全恢复。{{count}} 个项目包含恢复路径；重试前请重新扫描。",
         "folderAdded": "文件夹已添加到扫描列表：{{path}}",
         "folderSelectionCancelled": "文件夹选择已取消。",
         "removedRoot": "已移除根目录。资源：{{assets}}，缩略图：{{thumbnails}}",

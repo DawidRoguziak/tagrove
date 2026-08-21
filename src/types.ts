@@ -95,12 +95,17 @@ export interface RemoveRootSummary {
 export interface DeleteAssetSummary {
   removed_assets: number;
   removed_thumbnails: number;
-  removed_media_file: boolean;
+  source_status: "deleted" | "missing" | "cleanup_pending";
+  revision: number;
+  recovery_path: string | null;
 }
 
 export interface DuplicateAsset {
   id: number;
   path: string;
+  record_version: number;
+  size_bytes: number;
+  fingerprint_mtime_ns: number;
 }
 
 export interface DuplicateGroup {
@@ -112,12 +117,46 @@ export interface DuplicateScanSummary {
   groups: DuplicateGroup[];
   duplicate_groups: number;
   duplicate_assets: number;
+  revision: number;
 }
 
 export interface RenameAssetSummary {
   asset_id: number;
   old_path: string;
   new_path: string;
+  removed_thumbnails: number;
+  revision: number;
+  status: "renamed" | "cleanup_pending";
+  recovery_path: string | null;
+}
+
+export type DuplicateResolutionBatchChange =
+  | {
+      type: "rename";
+      assetId: number;
+      expectedPath: string;
+      expectedRecordVersion: number;
+      newFileName: string;
+    }
+  | {
+      type: "delete";
+      assetId: number;
+      expectedPath: string;
+      expectedRecordVersion: number;
+    };
+
+export interface DuplicateResolutionItemResult {
+  asset_id: number;
+  status: "renamed" | "deleted" | "source_missing" | "rolled_back" | "rollback_failed" | "cleanup_pending";
+  old_path: string;
+  new_path: string | null;
+  recovery_path: string | null;
+}
+
+export interface DuplicateResolutionBatchSummary {
+  status: "committed" | "rolled_back" | "recovery_required";
+  revision: number;
+  results: DuplicateResolutionItemResult[];
   removed_thumbnails: number;
 }
 

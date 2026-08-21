@@ -13,6 +13,8 @@ import type {
   DbBundleImportSummary,
   DbBundleInspection,
   DbRootMapping,
+  DuplicateResolutionBatchChange,
+  DuplicateResolutionBatchSummary,
   DuplicateScanSummary,
   RenameAssetSummary,
   RemoveRootSummary,
@@ -205,6 +207,15 @@ export async function deleteAsset(assetId: number): Promise<DeleteAssetSummary> 
 
 export async function findDuplicateAssets(): Promise<DuplicateScanSummary> {
   return await invoke<DuplicateScanSummary>("find_duplicate_assets");
+}
+
+export async function applyDuplicateResolutionBatch(
+  scanRevision: number,
+  changes: DuplicateResolutionBatchChange[]
+): Promise<DuplicateResolutionBatchSummary> {
+  return await invoke<DuplicateResolutionBatchSummary>("apply_duplicate_resolution_batch", {
+    input: { scanRevision, changes }
+  });
 }
 
 export async function renameAssetFile(assetId: number, newFileName: string): Promise<RenameAssetSummary> {

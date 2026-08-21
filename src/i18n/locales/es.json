@@ -179,7 +179,10 @@
       "confirmWord": "Sí",
       "typeYesLabel": "Escribe \"{{value}}\"",
       "typeYesPlaceholder": "Escribe \"{{value}}\"",
-      "confirm": "Confirmar"
+      "confirm": "Confirmar",
+      "sourceMissing": "El archivo de origen ya no existía. Se eliminó su entrada obsoleta de la biblioteca.",
+      "cleanupPending": "Se eliminó la entrada, pero falló la limpieza final. Archivo de recuperación: {{path}}",
+      "failedMetadataPreserved": "No se pudo eliminar el archivo. Se conservaron sus metadatos. {{error}}"
     },
     "mediaError": {
       "video": "No se pudo reproducir el video",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "Error al cancelar la generación de miniaturas"
       },
       "summary": {
+        "duplicateRolledBack": "El lote de duplicados falló y todos los cambios de archivos se revirtieron. Los metadatos no cambiaron.",
+        "duplicateRecoveryRequired": "El lote no se pudo recuperar por completo. {{count}} elemento(s) tienen una ruta de recuperación; vuelva a analizar antes de reintentar.",
         "folderAdded": "Carpeta añadida a la lista de escaneo: {{path}}",
         "folderSelectionCancelled": "Selección de carpeta cancelada.",
         "removedRoot": "Raíz eliminada. Recursos: {{assets}}, miniaturas: {{thumbnails}}",

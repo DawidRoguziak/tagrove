@@ -55,7 +55,7 @@ Concrete examples:
 2. during `setup`, refuses a debug build whose effective identifier is the production identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. creates `thumbs/`, opens `media.db`, and initializes or migrates its schema;
+5. creates `thumbs/`, opens `media.db`, initializes or migrates its schema, and reconciles pending source-file operations before serving media;
 6. starts the loopback video server, resolves ffmpeg, creates the thumbnail scheduler, and manages `AppState` plus the separate media-server state;
 7. registers every frontend-callable command; and
 8. runs the generated Tauri context until the application exits.
@@ -72,7 +72,7 @@ Startup failure in any setup step prevents the windowed application from enterin
 | `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
 | `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
-| `services/*` | Asset-query sessions, SQLite connection pooling for those queries, asynchronous loopback video streaming, scan orchestration, thumbnail scheduling/workflows, backup/restore, and progress emission. |
+| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, asynchronous loopback video streaming, scan orchestration, thumbnail workflows, backup/restore, and progress emission. |
 | `db.rs` | Schema initialization and SQLite queries/transactions. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
 | `indexer.rs` | Supported-file discovery, fingerprints, and media metadata extraction. |
 | `thumbs.rs` | Image/video thumbnail creation and video duration probing. |

@@ -33,6 +33,40 @@ pub struct DuplicateAssetRow {
     pub path: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct FileMutationAsset {
+    pub id: i64,
+    pub path: String,
+    pub thumb_path: Option<String>,
+    pub record_version: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingFileOperation {
+    pub operation_id: String,
+    pub asset_id: i64,
+    pub action: String,
+    pub original_path: String,
+    pub staging_path: String,
+    pub final_path: Option<String>,
+    pub committed: bool,
+}
+
+pub enum DbFileMutation<'a> {
+    Rename {
+        asset_id: i64,
+        expected_path: &'a str,
+        expected_record_version: i64,
+        new_path: &'a str,
+        new_file_name: &'a str,
+    },
+    Delete {
+        asset_id: i64,
+        expected_path: &'a str,
+        expected_record_version: i64,
+    },
+}
+
 fn root_descendant_like_pattern(root: &str) -> String {
     let separator = if root.contains('\\') {
         '\\'
@@ -98,7 +132,8 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
           tag_count INTEGER NOT NULL DEFAULT 0,
           file_name_key TEXT NOT NULL DEFAULT '',
           media_group_key_normalized TEXT,
-          indexed_at INTEGER NOT NULL DEFAULT (unixepoch())
+          indexed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          record_version INTEGER NOT NULL DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS tags (
@@ -129,6 +164,18 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         CREATE TABLE IF NOT EXISTS library_metadata (
           key TEXT PRIMARY KEY,
           value INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pending_file_operations (
+          operation_id TEXT NOT NULL,
+          asset_id INTEGER NOT NULL,
+          action TEXT NOT NULL,
+          original_path TEXT NOT NULL,
+          staging_path TEXT NOT NULL,
+          final_path TEXT,
+          committed INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          PRIMARY KEY(operation_id, asset_id)
         );
 
         INSERT INTO library_metadata(key, value)
@@ -239,6 +286,7 @@ fn ensure_performance_columns(conn: &Connection) -> anyhow::Result<()> {
         ("tag_count", "INTEGER NOT NULL DEFAULT 0"),
         ("file_name_key", "TEXT NOT NULL DEFAULT ''"),
         ("media_group_key_normalized", "TEXT"),
+        ("record_version", "INTEGER NOT NULL DEFAULT 1"),
     ] {
         let exists = {
             let mut stmt = conn.prepare("PRAGMA table_info(assets)")?;
@@ -388,6 +436,12 @@ pub fn upsert_asset(conn: &Connection, asset: &NewAsset) -> anyhow::Result<()> {
             WHEN assets.modified_at = excluded.modified_at THEN assets.thumb_path
             ELSE excluded.thumb_path
           END,
+          record_version=CASE WHEN
+            assets.kind IS NOT excluded.kind OR
+            assets.size_bytes IS NOT excluded.size_bytes OR
+            assets.modified_at IS NOT excluded.modified_at OR
+            assets.fingerprint_mtime_ns IS NOT excluded.fingerprint_mtime_ns
+          THEN assets.record_version + 1 ELSE assets.record_version END,
           fingerprint_mtime_ns=excluded.fingerprint_mtime_ns,
           indexed_at=unixepoch();
         ",
@@ -641,6 +695,170 @@ pub fn get_asset_path_and_thumb_by_id(
     .map_err(Into::into)
 }
 
+pub fn get_file_mutation_asset(
+    conn: &Connection,
+    asset_id: i64,
+) -> anyhow::Result<Option<FileMutationAsset>> {
+    conn.query_row(
+        "SELECT id, path, thumb_path, record_version FROM assets WHERE id = ?1",
+        params![asset_id],
+        |row| {
+            Ok(FileMutationAsset {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                thumb_path: row.get(2)?,
+                record_version: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+pub fn apply_file_mutations(
+    conn: &Connection,
+    operation_id: &str,
+    mutations: &[DbFileMutation<'_>],
+) -> anyhow::Result<i64> {
+    let tx = conn.unchecked_transaction()?;
+    let mut pending_renames = Vec::new();
+    for mutation in mutations {
+        let affected = match mutation {
+            DbFileMutation::Rename {
+                asset_id,
+                expected_path,
+                expected_record_version,
+                new_path,
+                new_file_name,
+            } => {
+                let temporary_path = format!("mediatagger-pending://{operation_id}/{asset_id}");
+                let occupied = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM assets WHERE path = ?1)",
+                    params![temporary_path],
+                    |row| row.get::<_, bool>(0),
+                )?;
+                if occupied {
+                    anyhow::bail!("internal rename path collision for asset {asset_id}");
+                }
+                let affected = tx.execute(
+                    "UPDATE assets SET path = ?1
+                     WHERE id = ?2 AND path = ?3 AND record_version = ?4",
+                    params![temporary_path, asset_id, expected_path, expected_record_version],
+                )?;
+                if affected == 1 {
+                    tx.execute(
+                        "DELETE FROM thumbnail_failures WHERE asset_id = ?1",
+                        params![asset_id],
+                    )?;
+                    pending_renames.push((
+                        *asset_id,
+                        temporary_path,
+                        *new_path,
+                        *new_file_name,
+                    ));
+                }
+                affected
+            }
+            DbFileMutation::Delete {
+                asset_id,
+                expected_path,
+                expected_record_version,
+            } => {
+                tx.execute(
+                    "DELETE FROM thumbnail_failures WHERE asset_id = ?1",
+                    params![asset_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM assets WHERE id = ?1 AND path = ?2 AND record_version = ?3",
+                    params![asset_id, expected_path, expected_record_version],
+                )?
+            }
+        };
+        if affected != 1 {
+            anyhow::bail!("asset {} changed since the operation was prepared", match mutation {
+                DbFileMutation::Rename { asset_id, .. } | DbFileMutation::Delete { asset_id, .. } => asset_id,
+            });
+        }
+    }
+    for (asset_id, temporary_path, new_path, new_file_name) in pending_renames {
+        let affected = tx.execute(
+            "UPDATE assets SET path = ?1, file_name = ?2, file_name_key = lower(?2),
+               thumb_path = NULL, record_version = record_version + 1
+             WHERE id = ?3 AND path = ?4",
+            params![new_path, new_file_name, asset_id, temporary_path],
+        )?;
+        if affected != 1 {
+            anyhow::bail!("asset {asset_id} changed while finalizing its database rename");
+        }
+    }
+    cleanup_orphan_tags(&tx)?;
+    let revision = bump_library_revision_in_tx(&tx)?;
+    tx.execute(
+        "UPDATE pending_file_operations SET committed = 1 WHERE operation_id = ?1",
+        params![operation_id],
+    )?;
+    tx.commit()?;
+    Ok(revision)
+}
+
+pub fn insert_pending_file_operations(
+    conn: &Connection,
+    operations: &[PendingFileOperation],
+) -> anyhow::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    for operation in operations {
+        tx.execute(
+            "INSERT INTO pending_file_operations(
+               operation_id, asset_id, action, original_path, staging_path, final_path, committed
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                operation.operation_id,
+                operation.asset_id,
+                operation.action,
+                operation.original_path,
+                operation.staging_path,
+                operation.final_path,
+                operation.committed,
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn remove_pending_file_operation(
+    conn: &Connection,
+    operation_id: &str,
+    asset_id: i64,
+) -> anyhow::Result<()> {
+    conn.execute(
+        "DELETE FROM pending_file_operations WHERE operation_id = ?1 AND asset_id = ?2",
+        params![operation_id, asset_id],
+    )?;
+    Ok(())
+}
+
+pub fn list_pending_file_operations(
+    conn: &Connection,
+) -> anyhow::Result<Vec<PendingFileOperation>> {
+    let mut statement = conn.prepare(
+        "SELECT operation_id, asset_id, action, original_path, staging_path, final_path, committed
+         FROM pending_file_operations ORDER BY created_at, operation_id, asset_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(PendingFileOperation {
+            operation_id: row.get(0)?,
+            asset_id: row.get(1)?,
+            action: row.get(2)?,
+            original_path: row.get(3)?,
+            staging_path: row.get(4)?,
+            final_path: row.get(5)?,
+            committed: row.get(6)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 pub fn list_duplicate_file_name_counts(
     conn: &Connection,
 ) -> anyhow::Result<Vec<DuplicateFileNameCount>> {
@@ -721,7 +939,7 @@ pub fn rename_asset_file_by_id(
     let tx = conn.unchecked_transaction()?;
     tx.execute(
         "UPDATE assets SET path = ?1, file_name = ?2, file_name_key = lower(?2),
-          thumb_path = NULL WHERE id = ?3",
+          thumb_path = NULL, record_version = record_version + 1 WHERE id = ?3",
         params![new_path, new_file_name, asset_id],
     )?;
     tx.execute(
@@ -1388,7 +1606,8 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
           GROUP BY file_name_key
           HAVING COUNT(*) > 1
         )
-        SELECT d.file_name_key, d.file_name_display, a.id, a.path
+        SELECT d.file_name_key, d.file_name_display, a.id, a.path,
+               a.record_version, a.size_bytes, a.fingerprint_mtime_ns
         FROM duplicate_names d
         JOIN assets a ON a.file_name_key = d.file_name_key
         ORDER BY d.asset_count DESC, d.file_name_key ASC, a.modified_at DESC, a.id DESC
@@ -1400,11 +1619,14 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
             row.get::<_, String>(1)?,
             row.get::<_, i64>(2)?,
             row.get::<_, String>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
         ))
     })?;
     let mut current_key = String::new();
     for row in rows {
-        let (key, display, id, path) = row?;
+        let (key, display, id, path, record_version, size_bytes, fingerprint_mtime_ns) = row?;
         if current_key != key {
             current_key = key;
             groups.push(DuplicateGroup {
@@ -1413,7 +1635,13 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
             });
         }
         if let Some(group) = groups.last_mut() {
-            group.assets.push(DuplicateAsset { id, path });
+            group.assets.push(DuplicateAsset {
+                id,
+                path,
+                record_version,
+                size_bytes,
+                fingerprint_mtime_ns,
+            });
         }
     }
     Ok(groups)

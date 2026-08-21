@@ -191,6 +191,7 @@ export function LightboxModal({
       <LightboxDeleteConfirmDialog
         open={handlers.deleteConfirmOpen}
         isSubmitting={handlers.deleteSubmitting}
+        errorMessage={handlers.deleteError}
         onClose={handlers.handleCloseDeleteConfirm}
         onConfirm={handlers.handleConfirmDeleteMedia}
       />

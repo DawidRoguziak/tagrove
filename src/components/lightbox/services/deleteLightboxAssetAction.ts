@@ -1,5 +1,5 @@
 import { deleteAsset } from "../../../api";
-import type { Asset } from "../../../types";
+import type { Asset, DeleteAssetSummary } from "../../../types";
 
 type SetAssets = (updater: (previous: Asset[]) => Asset[]) => void;
 type SetSelected = (updater: (previous: Asset | null) => Asset | null) => void;
@@ -11,6 +11,7 @@ interface DeleteLightboxAssetActionArgs {
   refresh: () => Promise<void>;
   refreshKnownTags: () => Promise<string[]>;
   onDeleted?: (assetId: number) => boolean | void;
+  onResult?: (summary: DeleteAssetSummary) => void;
 }
 
 export async function deleteLightboxAssetAction({
@@ -19,17 +20,19 @@ export async function deleteLightboxAssetAction({
   setSelected,
   refresh,
   refreshKnownTags,
-  onDeleted
+  onDeleted,
+  onResult
 }: DeleteLightboxAssetActionArgs) {
   if (!selected) {
     return;
   }
 
-  await deleteAsset(selected.id);
+  const summary = await deleteAsset(selected.id);
+  onResult?.(summary);
   const accepted = onDeleted?.(selected.id);
   if (accepted === false) return;
   setAssets((previous) => previous.filter((asset) => asset.id !== selected.id));
   setSelected((previous) => (previous?.id === selected.id ? null : previous));
-  await refreshKnownTags();
-  await refresh();
+  await Promise.allSettled([refreshKnownTags(), refresh()]);
+  return summary;
 }

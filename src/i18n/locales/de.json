@@ -179,7 +179,10 @@
       "confirmWord": "Ja",
       "typeYesLabel": "Geben Sie \"{{value}}\" ein",
       "typeYesPlaceholder": "Geben Sie \"{{value}}\" ein",
-      "confirm": "Bestätigen"
+      "confirm": "Bestätigen",
+      "sourceMissing": "Die Quelldatei fehlte bereits. Der veraltete Bibliothekseintrag wurde entfernt.",
+      "cleanupPending": "Der Bibliothekseintrag wurde entfernt, aber die Dateibereinigung ist fehlgeschlagen. Wiederherstellungsdatei: {{path}}",
+      "failedMetadataPreserved": "Die Datei konnte nicht gelöscht werden. Ihre Bibliotheksmetadaten wurden beibehalten. {{error}}"
     },
     "mediaError": {
       "video": "Video konnte nicht wiedergegeben werden",
@@ -346,6 +349,8 @@
         "cancelThumbRender": "Fehler beim Abbrechen der Vorschaubild-Erstellung"
       },
       "summary": {
+        "duplicateRolledBack": "Der Duplikatstapel ist fehlgeschlagen; alle Dateiänderungen wurden zurückgesetzt. Die Metadaten blieben unverändert.",
+        "duplicateRecoveryRequired": "Der Stapel konnte nicht vollständig wiederhergestellt werden. {{count}} Element(e) haben einen Wiederherstellungspfad. Vor erneutem Versuch neu suchen.",
         "folderAdded": "Ordner zur Scanliste hinzugefügt: {{path}}",
         "folderSelectionCancelled": "Ordnerauswahl abgebrochen.",
         "removedRoot": "Root entfernt. Assets: {{assets}}, Vorschaubilder: {{thumbnails}}",

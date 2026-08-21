@@ -1,4 +1,11 @@
-use std::{collections::HashMap, path::Path, thread, time::Duration};
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+    path::Path,
+    sync::{Condvar, Mutex, OnceLock},
+    thread,
+    time::Duration,
+};
 
 use anyhow::Context;
 use rusqlite::{params, Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
@@ -105,7 +112,143 @@ pub enum AssetMetaFilter {
     GroupName { group_name: String },
 }
 
-pub fn open_connection(db_path: &Path) -> anyhow::Result<Connection> {
+#[derive(Default)]
+struct MaintenanceState {
+    active_connections: usize,
+    maintenance_active: bool,
+}
+
+struct MaintenanceGate {
+    state: Mutex<MaintenanceState>,
+    changed: Condvar,
+}
+
+impl MaintenanceGate {
+    fn global() -> &'static Self {
+        static GATE: OnceLock<MaintenanceGate> = OnceLock::new();
+        GATE.get_or_init(|| MaintenanceGate {
+            state: Mutex::new(MaintenanceState::default()),
+            changed: Condvar::new(),
+        })
+    }
+}
+
+struct ConnectionLease;
+
+impl ConnectionLease {
+    fn acquire() -> anyhow::Result<Self> {
+        let gate = MaintenanceGate::global();
+        let mut state = gate
+            .state
+            .lock()
+            .map_err(|error| anyhow::anyhow!("database maintenance lock error: {error}"))?;
+        while state.maintenance_active {
+            state = gate
+                .changed
+                .wait(state)
+                .map_err(|error| anyhow::anyhow!("database maintenance wait error: {error}"))?;
+        }
+        state.active_connections += 1;
+        Ok(Self)
+    }
+}
+
+impl Drop for ConnectionLease {
+    fn drop(&mut self) {
+        let gate = MaintenanceGate::global();
+        if let Ok(mut state) = gate.state.lock() {
+            state.active_connections = state.active_connections.saturating_sub(1);
+            gate.changed.notify_all();
+        }
+    }
+}
+
+pub struct ManagedConnection {
+    connection: Connection,
+    _lease: ConnectionLease,
+}
+
+impl Deref for ManagedConnection {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.connection
+    }
+}
+
+impl DerefMut for ManagedConnection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.connection
+    }
+}
+
+pub struct ManagedConnectionGuard {
+    _lease: ConnectionLease,
+}
+
+pub struct DatabaseMaintenanceGuard {
+    _private: (),
+}
+
+impl DatabaseMaintenanceGuard {
+    pub fn wait_for_connections(&self) -> anyhow::Result<()> {
+        let gate = MaintenanceGate::global();
+        let mut state = gate
+            .state
+            .lock()
+            .map_err(|error| anyhow::anyhow!("database maintenance lock error: {error}"))?;
+        while state.active_connections != 0 {
+            state = gate
+                .changed
+                .wait(state)
+                .map_err(|error| anyhow::anyhow!("database maintenance wait error: {error}"))?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for DatabaseMaintenanceGuard {
+    fn drop(&mut self) {
+        let gate = MaintenanceGate::global();
+        if let Ok(mut state) = gate.state.lock() {
+            state.maintenance_active = false;
+            gate.changed.notify_all();
+        }
+    }
+}
+
+pub fn database_access_guard() -> anyhow::Result<ManagedConnectionGuard> {
+    Ok(ManagedConnectionGuard {
+        _lease: ConnectionLease::acquire()?,
+    })
+}
+
+pub fn begin_database_maintenance() -> anyhow::Result<DatabaseMaintenanceGuard> {
+    let gate = MaintenanceGate::global();
+    let mut state = gate
+        .state
+        .lock()
+        .map_err(|error| anyhow::anyhow!("database maintenance lock error: {error}"))?;
+    while state.maintenance_active {
+        state = gate
+            .changed
+            .wait(state)
+            .map_err(|error| anyhow::anyhow!("database maintenance wait error: {error}"))?;
+    }
+    state.maintenance_active = true;
+    Ok(DatabaseMaintenanceGuard { _private: () })
+}
+
+pub fn open_connection(db_path: &Path) -> anyhow::Result<ManagedConnection> {
+    let lease = ConnectionLease::acquire()?;
+    let connection = open_connection_untracked(db_path)?;
+    Ok(ManagedConnection {
+        connection,
+        _lease: lease,
+    })
+}
+
+pub(crate) fn open_connection_untracked(db_path: &Path) -> anyhow::Result<Connection> {
     let conn = Connection::open(db_path)
         .with_context(|| format!("cannot open sqlite db at {}", db_path.display()))?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -118,7 +261,16 @@ pub fn open_connection(db_path: &Path) -> anyhow::Result<Connection> {
     Ok(conn)
 }
 
-pub fn open_connection_read_only(db_path: &Path) -> anyhow::Result<Connection> {
+pub fn open_connection_read_only(db_path: &Path) -> anyhow::Result<ManagedConnection> {
+    let lease = ConnectionLease::acquire()?;
+    let connection = open_connection_read_only_untracked(db_path)?;
+    Ok(ManagedConnection {
+        connection,
+        _lease: lease,
+    })
+}
+
+pub(crate) fn open_connection_read_only_untracked(db_path: &Path) -> anyhow::Result<Connection> {
     let conn = Connection::open_with_flags(
         db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,

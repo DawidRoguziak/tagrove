@@ -1,8 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::Read,
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
+    time::Duration,
 };
 
 use tauri::State;
@@ -50,20 +51,24 @@ struct ValidatedArchive {
     manifest: Option<BundleManifest>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RestorePhase {
+    Swapping,
+    Committed,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct RestoreJournal {
+    phase: RestorePhase,
+    previous_db_existed: bool,
+    previous_thumbs_existed: bool,
+}
+
 pub fn export_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbBundleExportSummary> {
-    let target_file = PathBuf::from(path.trim());
-    if target_file.as_os_str().is_empty() {
-        return Err("DB export archive path is empty".into());
-    }
-
-    if let Some(parent) = target_file.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)?;
-        }
-    }
-
-    let conn = db::open_connection(&state.db_path)?;
+    let conn = db::open_connection_untracked(&state.db_path)?;
     db::ensure_no_pending_file_operations(&conn)?;
+    let target_file = validate_export_target(path.trim(), state, &conn)?;
     let manifest = BundleManifest {
         format_version: BUNDLE_FORMAT_VERSION,
         application_id: Some(BUNDLE_APPLICATION_ID.to_string()),
@@ -72,55 +77,131 @@ pub fn export_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbBu
         roots: db::list_scan_roots(&conn)?,
         source_thumbs_dir: state.thumbs_dir.to_string_lossy().to_string(),
     };
-    let file = fs::File::create(&target_file)?;
-    let mut zip = zip::ZipWriter::new(file);
-    zip.start_file(
-        "manifest.json",
-        zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .unix_permissions(0o644),
-    )?;
-    serde_json::to_writer(&mut zip, &manifest).map_err(|error| error.to_string())?;
-    add_file_to_zip(&mut zip, &state.db_path, "media.db")?;
-    let mut copied_files = 1usize;
+    let app_data_dir = state
+        .db_path
+        .parent()
+        .ok_or("Cannot resolve app data directory")?;
+    let token = format!("{}-{}", std::process::id(), rand::random::<u64>());
+    let snapshot_path = app_data_dir.join(format!("backup-snapshot-{token}.db"));
+    let target_name = target_file
+        .file_name()
+        .ok_or("DB export archive path has no file name")?
+        .to_string_lossy();
+    let temporary_target = target_file
+        .parent()
+        .ok_or("DB export archive path has no parent")?
+        .join(format!(".{target_name}.{token}.tmp"));
 
-    let wal_path = sqlite_sidecar_path(&state.db_path, "-wal");
-    if wal_path.exists() {
-        add_file_to_zip(&mut zip, &wal_path, "media.db-wal")?;
-        copied_files += 1;
-    }
+    let export_result = (|| -> AppResult<DbBundleExportSummary> {
+        create_database_snapshot(&conn, &snapshot_path)?;
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_target)?;
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file(
+            "manifest.json",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .unix_permissions(0o644),
+        )?;
+        serde_json::to_writer(&mut zip, &manifest).map_err(|error| error.to_string())?;
+        add_file_to_zip(&mut zip, &snapshot_path, "media.db")?;
 
-    let shm_path = sqlite_sidecar_path(&state.db_path, "-shm");
-    if shm_path.exists() {
-        add_file_to_zip(&mut zip, &shm_path, "media.db-shm")?;
-        copied_files += 1;
-    }
+        let mut copied_thumbnails = 0usize;
+        if state.thumbs_dir.exists() {
+            for entry in walkdir::WalkDir::new(&state.thumbs_dir) {
+                let entry = entry.map_err(|e| e.to_string())?;
+                if !entry.file_type().is_file() {
+                    continue;
+                }
 
-    let mut copied_thumbnails = 0usize;
-    if state.thumbs_dir.exists() {
-        for entry in walkdir::WalkDir::new(&state.thumbs_dir) {
-            let entry = entry.map_err(|e| e.to_string())?;
-            if !entry.file_type().is_file() {
-                continue;
+                let source_path = entry.path();
+                if source_path == target_file || source_path == temporary_target {
+                    continue;
+                }
+                let relative = source_path
+                    .strip_prefix(&state.thumbs_dir)
+                    .map_err(|e| e.to_string())?;
+                let relative_name = relative.to_string_lossy().replace('\\', "/");
+                add_file_to_zip(&mut zip, source_path, &format!("thumbs/{relative_name}"))?;
+                copied_thumbnails += 1;
             }
+        }
 
-            let source_path = entry.path();
-            let relative = source_path
-                .strip_prefix(&state.thumbs_dir)
-                .map_err(|e| e.to_string())?;
-            let relative_name = relative.to_string_lossy().replace('\\', "/");
-            let zip_name = format!("thumbs/{relative_name}");
-            add_file_to_zip(&mut zip, source_path, &zip_name)?;
-            copied_thumbnails += 1;
+        let archive = zip.finish()?;
+        archive.sync_all()?;
+        publish_archive(&temporary_target, &target_file)?;
+        sync_parent_directory(&target_file)?;
+        Ok(DbBundleExportSummary {
+            copied_files: 1,
+            copied_thumbnails,
+        })
+    })();
+
+    let _ = fs::remove_file(&snapshot_path);
+    if export_result.is_err() {
+        let _ = fs::remove_file(&temporary_target);
+    }
+    export_result
+}
+
+fn validate_export_target(
+    raw_path: &str,
+    state: &State<AppState>,
+    conn: &rusqlite::Connection,
+) -> AppResult<PathBuf> {
+    let requested = PathBuf::from(raw_path);
+    if requested.as_os_str().is_empty() {
+        return Err("DB export archive path is empty".into());
+    }
+    let parent = requested
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)?;
+    let parent = parent.canonicalize()?;
+    let file_name = requested
+        .file_name()
+        .ok_or("DB export archive path has no file name")?;
+    let target = parent.join(file_name);
+    let app_data = state
+        .db_path
+        .parent()
+        .ok_or("Cannot resolve app data directory")?
+        .canonicalize()?;
+    if target.starts_with(&app_data) {
+        return Err("DB export archive cannot be stored inside the active profile".into());
+    }
+
+    for root in db::list_scan_roots(conn)? {
+        if let Ok(root) = Path::new(&root).canonicalize() {
+            if target.starts_with(root) {
+                return Err(
+                    "DB export archive cannot be stored inside an indexed source root".into(),
+                );
+            }
         }
     }
+    for asset in db::list_backup_asset_paths(conn)? {
+        if let Ok(source) = Path::new(&asset.path).canonicalize() {
+            if target == source {
+                return Err("DB export archive cannot overwrite an indexed source file".into());
+            }
+        }
+    }
+    Ok(target)
+}
 
-    zip.finish()?;
-
-    Ok(DbBundleExportSummary {
-        copied_files,
-        copied_thumbnails,
-    })
+fn create_database_snapshot(source: &rusqlite::Connection, target: &Path) -> AppResult<()> {
+    let mut destination = rusqlite::Connection::open(target)?;
+    let backup = rusqlite::backup::Backup::new(source, &mut destination)?;
+    backup.run_to_completion(256, Duration::from_millis(10), None)?;
+    drop(backup);
+    destination.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+    drop(destination);
+    fs::File::open(target)?.sync_all()?;
+    Ok(())
 }
 
 pub fn inspect_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbBundleInspection> {
@@ -183,6 +264,20 @@ pub fn import_db_bundle(
         .db_path
         .parent()
         .ok_or_else(|| "Cannot resolve app data directory".to_string())?;
+    let previous_db = app_data_dir.join("media.db.restore-previous");
+    let previous_thumbs = app_data_dir.join("thumbs.restore-previous");
+    if previous_db.exists()
+        || previous_thumbs.exists()
+        || restore_journal_path(app_data_dir).exists()
+    {
+        return Err(
+            "Restore recovery artifacts already exist; restart MediaTagger to recover them before importing again"
+                .into(),
+        );
+    }
+    if source_file.canonicalize()?.starts_with(app_data_dir.canonicalize()?) {
+        return Err("DB import archive cannot be stored inside the active profile".into());
+    }
     let staging_root = app_data_dir.join("restore-staging");
     let staging_db = staging_root.join("media.db");
     let staging_thumbs = staging_root.join("thumbs");
@@ -203,14 +298,14 @@ pub fn import_db_bundle(
             manifest.format_version == 1
         });
         {
-            let conn = db::open_connection_read_only(&staging_db)?;
+            let conn = db::open_connection_read_only_untracked(&staging_db)?;
             db::validate_backup_database(&conn, allow_legacy)?;
             if let Some(manifest) = &validated.manifest {
                 validate_manifest_roots(manifest, &db::list_scan_roots(&conn)?)?;
             }
         }
         {
-            let conn = db::open_connection(&staging_db)?;
+            let conn = db::open_connection_untracked(&staging_db)?;
             db::init_schema(&conn)?;
             conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         }
@@ -222,7 +317,12 @@ pub fn import_db_bundle(
             validated.manifest.as_ref(),
         )?;
         {
-            let conn = db::open_connection_read_only(&staging_db)?;
+            let conn = db::open_connection_untracked(&staging_db)?;
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        }
+        remove_database_sidecars(&staging_db)?;
+        {
+            let conn = db::open_connection_read_only_untracked(&staging_db)?;
             db::validate_backup_database(&conn, false)?;
         }
         Ok((restored_files, restored_thumbnails))
@@ -235,59 +335,174 @@ pub fn import_db_bundle(
         }
     };
 
-    let previous_db = app_data_dir.join("media.db.restore-previous");
-    let previous_thumbs = app_data_dir.join("thumbs.restore-previous");
-    let _ = fs::remove_file(&previous_db);
-    if previous_thumbs.exists() {
-        fs::remove_dir_all(&previous_thumbs)?;
-    }
-    let current_wal = sqlite_sidecar_path(&state.db_path, "-wal");
-    let current_shm = sqlite_sidecar_path(&state.db_path, "-shm");
-    db_pool::invalidate(&state.db_path);
-    asset_query_service::manager().clear();
+    let previous_db_existed = state.db_path.exists();
+    let previous_thumbs_existed = state.thumbs_dir.exists();
     if state.db_path.exists() {
-        let current = db::open_connection(&state.db_path)?;
+        let current = db::open_connection_untracked(&state.db_path)?;
         current.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
     }
-    let _ = fs::remove_file(&current_wal);
-    let _ = fs::remove_file(&current_shm);
+    remove_database_sidecars(&state.db_path)?;
 
-    if state.db_path.exists() {
-        fs::rename(&state.db_path, &previous_db)?;
-    }
-    if state.thumbs_dir.exists() {
-        fs::rename(&state.thumbs_dir, &previous_thumbs)?;
-    }
+    let mut journal = RestoreJournal {
+        phase: RestorePhase::Swapping,
+        previous_db_existed,
+        previous_thumbs_existed,
+    };
+    write_restore_journal(app_data_dir, &journal)?;
 
     let install_result = (|| -> AppResult<()> {
-        fs::rename(&staging_db, &state.db_path)?;
-        fs::rename(&staging_thumbs, &state.thumbs_dir)?;
+        if previous_db_existed {
+            rename_durable(&state.db_path, &previous_db)?;
+            sync_parent_directory(&state.db_path)?;
+        }
+        if previous_thumbs_existed {
+            rename_durable(&state.thumbs_dir, &previous_thumbs)?;
+            sync_parent_directory(&state.thumbs_dir)?;
+        }
+        rename_durable(&staging_db, &state.db_path)?;
+        sync_parent_directory(&state.db_path)?;
+        rename_durable(&staging_thumbs, &state.thumbs_dir)?;
+        sync_parent_directory(&state.thumbs_dir)?;
+
+        let conn = db::open_connection_untracked(&state.db_path)?;
+        db::init_schema(&conn)?;
+        db::validate_backup_database(&conn, false)?;
+        db::bump_library_revision(&conn)?;
+        let _ = db::current_library_revision(&conn)?;
+        let _ = db::list_scan_roots(&conn)?;
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        drop(conn);
+        remove_database_sidecars(&state.db_path)?;
+
+        journal.phase = RestorePhase::Committed;
+        write_restore_journal(app_data_dir, &journal)?;
         Ok(())
     })();
     if let Err(error) = install_result {
-        let _ = fs::remove_file(&state.db_path);
-        let _ = fs::remove_dir_all(&state.thumbs_dir);
-        if previous_db.exists() {
-            let _ = fs::rename(&previous_db, &state.db_path);
-        }
-        if previous_thumbs.exists() {
-            let _ = fs::rename(&previous_thumbs, &state.thumbs_dir);
-        }
-        return Err(error);
+        return match recover_interrupted_restore(app_data_dir) {
+            Ok(()) => Err(error),
+            Err(recovery_error) => Err(format!(
+                "Restore failed: {error}. Automatic rollback also failed: {recovery_error}"
+            )
+            .into()),
+        };
     }
 
-    let _ = fs::remove_file(previous_db);
-    let _ = fs::remove_dir_all(previous_thumbs);
-    let _ = fs::remove_dir_all(staging_root);
-    let conn = db::open_connection(&state.db_path)?;
-    db::init_schema(&conn)?;
-    db::bump_library_revision(&conn)?;
+    recover_interrupted_restore(app_data_dir)?;
     db_pool::invalidate(&state.db_path);
+    asset_query_service::manager().clear();
 
     Ok(DbBundleImportSummary {
         restored_files,
         restored_thumbnails,
     })
+}
+
+pub fn recover_interrupted_restore(app_data_dir: &Path) -> AppResult<()> {
+    let journal_path = restore_journal_path(app_data_dir);
+    if !journal_path.exists() {
+        return Ok(());
+    }
+    let journal: RestoreJournal = serde_json::from_reader(fs::File::open(&journal_path)?)
+        .map_err(|error| format!("Cannot read restore recovery journal: {error}"))?;
+    let live_db = app_data_dir.join("media.db");
+    let live_thumbs = app_data_dir.join("thumbs");
+    let previous_db = app_data_dir.join("media.db.restore-previous");
+    let previous_thumbs = app_data_dir.join("thumbs.restore-previous");
+    let staging_root = app_data_dir.join("restore-staging");
+
+    match journal.phase {
+        RestorePhase::Swapping => {
+            remove_database_sidecars(&live_db)?;
+            restore_previous_component(
+                &live_db,
+                &previous_db,
+                journal.previous_db_existed,
+                false,
+            )?;
+            restore_previous_component(
+                &live_thumbs,
+                &previous_thumbs,
+                journal.previous_thumbs_existed,
+                true,
+            )?;
+        }
+        RestorePhase::Committed => {
+            if !live_db.is_file() || !live_thumbs.is_dir() {
+                return Err(
+                    "Committed restore journal points to an incomplete live generation".into(),
+                );
+            }
+            remove_path_if_exists(&previous_db, false)?;
+            remove_path_if_exists(&previous_thumbs, true)?;
+        }
+    }
+
+    remove_path_if_exists(&staging_root, true)?;
+    fs::remove_file(&journal_path)?;
+    sync_parent_directory(&journal_path)?;
+    Ok(())
+}
+
+fn restore_previous_component(
+    live: &Path,
+    previous: &Path,
+    previously_existed: bool,
+    directory: bool,
+) -> AppResult<()> {
+    if previously_existed {
+        if previous.exists() {
+            remove_path_if_exists(live, directory)?;
+            rename_durable(previous, live)?;
+            sync_parent_directory(live)?;
+        } else if !live.exists() {
+            return Err(format!(
+                "Restore recovery cannot find either live or previous path '{}'",
+                live.display()
+            )
+            .into());
+        }
+    } else {
+        remove_path_if_exists(live, directory)?;
+    }
+    Ok(())
+}
+
+fn remove_path_if_exists(path: &Path, directory: bool) -> AppResult<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if directory {
+        fs::remove_dir_all(path)?;
+    } else {
+        fs::remove_file(path)?;
+    }
+    sync_parent_directory(path)?;
+    Ok(())
+}
+
+fn restore_journal_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("restore-journal.json")
+}
+
+fn write_restore_journal(app_data_dir: &Path, journal: &RestoreJournal) -> AppResult<()> {
+    let journal_path = restore_journal_path(app_data_dir);
+    let temporary = app_data_dir.join(format!(
+        ".restore-journal-{}-{}.tmp",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)?;
+    serde_json::to_writer(&mut file, journal).map_err(|error| error.to_string())?;
+    file.flush()?;
+    file.sync_all()?;
+    drop(file);
+    publish_archive(&temporary, &journal_path)?;
+    sync_parent_directory(&journal_path)?;
+    Ok(())
 }
 
 fn validate_bundle_source(path: &str) -> AppResult<PathBuf> {
@@ -331,7 +546,7 @@ fn rewrite_staged_paths(
     root_mappings: &[DbRootMapping],
     manifest: Option<&BundleManifest>,
 ) -> AppResult<()> {
-    let conn = db::open_connection(staging_db)?;
+    let conn = db::open_connection_untracked(staging_db)?;
     let roots = db::list_scan_roots(&conn)?;
     for root in &roots {
         validate_stored_path(root)?;
@@ -873,6 +1088,95 @@ fn validate_sqlite_header(path: &Path) -> AppResult<()> {
 
 fn sqlite_sidecar_path(base_db_path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(format!("{}{}", base_db_path.to_string_lossy(), suffix))
+}
+
+fn remove_database_sidecars(db_path: &Path) -> AppResult<()> {
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = sqlite_sidecar_path(db_path, suffix);
+        if sidecar.exists() {
+            fs::remove_file(&sidecar)?;
+        }
+    }
+    sync_parent_directory(db_path)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn publish_archive(source: &Path, target: &Path) -> AppResult<()> {
+    fs::rename(source, target)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn publish_archive(source: &Path, target: &Path) -> AppResult<()> {
+    move_file_windows(source, target, true)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn publish_archive(source: &Path, target: &Path) -> AppResult<()> {
+    if target.exists() {
+        return Err("Atomic archive replacement is unsupported on this platform".into());
+    }
+    fs::rename(source, target)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn rename_durable(source: &Path, target: &Path) -> AppResult<()> {
+    fs::rename(source, target)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn rename_durable(source: &Path, target: &Path) -> AppResult<()> {
+    move_file_windows(source, target, false)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn rename_durable(source: &Path, target: &Path) -> AppResult<()> {
+    fs::rename(source, target)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn move_file_windows(source: &Path, target: &Path, replace: bool) -> AppResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        core::PCWSTR,
+        Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        },
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let flags = if replace {
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+    } else {
+        MOVEFILE_WRITE_THROUGH
+    };
+    unsafe { MoveFileExW(PCWSTR(source.as_ptr()), PCWSTR(target.as_ptr()), flags) }
+        .map_err(|error| error.to_string().into())
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(path: &Path) -> AppResult<()> {
+    let parent = path.parent().ok_or("Path has no parent directory")?;
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &Path) -> AppResult<()> {
+    Ok(())
 }
 
 fn add_file_to_zip(

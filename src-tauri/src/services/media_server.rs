@@ -26,7 +26,6 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use rand::{rngs::OsRng, RngCore};
-use rusqlite::{Connection, OpenFlags};
 use tokio::{
     fs::File,
     io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWrite, ReadBuf, SeekFrom},
@@ -455,11 +454,7 @@ async fn handle_request(
 }
 
 fn resolve_video_path(db_path: &Path, asset_id: i64) -> anyhow::Result<PathBuf> {
-    let conn = Connection::open_with_flags(
-        db_path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )?;
-    conn.busy_timeout(Duration::from_secs(5))?;
+    let conn = db::open_connection_read_only(db_path)?;
     let asset = db::get_asset_for_thumbnail(&conn, asset_id)?
         .with_context(|| format!("asset {asset_id} not found"))?;
     if asset.kind != "video" {

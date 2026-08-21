@@ -64,6 +64,8 @@ pub fn run() {
             let instance_lock = InstanceLock::acquire(&app_data_dir)?;
             app.manage(instance_lock);
 
+            services::backup_service::recover_interrupted_restore(&app_data_dir)?;
+
             let thumbs_dir = app_data_dir.join("thumbs");
             fs::create_dir_all(&thumbs_dir)?;
 

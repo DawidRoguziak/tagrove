@@ -102,7 +102,7 @@ The database revision is the authoritative invalidation epoch. Scans and query-v
 | --- | --- |
 | Applied filters change | The controller effect calls asset `refresh`; resubmitting identical applied filters calls it directly. A ready first page replaces the old cache. |
 | Scan/rescan, scan-root removal, CSV import, duplicate rename/delete | The settings workflow calls `refreshLibrary`, which refreshes assets and known tags together. Root removal first resets the thumbnail queue. |
-| Database restore | The backend clears the process-wide query manager and invalidates the database pool. The frontend resets the thumbnail queue and thumbnail map, refreshes roots, then refreshes assets and known tags. |
+| Database restore | The backend closes the maintenance gate, clears the process-wide query manager, drains/invalidates the old database pool, and clears again after successful installation. The frontend invalidates tag/details identity state inside its mutation barrier, resets the thumbnail queue and map, refreshes roots, then refreshes assets and known tags. |
 | Clear library | After backend success, the frontend immediately resets the thumbnail queue, thumbnails, cached assets, total, offset, and known tags. It does not need to query the now-empty library. |
 | Lightbox delete | Removes the loaded object and selection locally, refreshes known tags, then starts a fresh asset query. |
 | Favorite toggle | Patches loaded state. Removing an item while favorites-only is applied also refreshes; other favorite changes do not. |

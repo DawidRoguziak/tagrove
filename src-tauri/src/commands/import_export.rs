@@ -6,7 +6,10 @@ use std::{
 use tauri::State;
 
 use crate::{
-    app::{locks::with_scan_and_thumb_lock, state::AppState},
+    app::{
+        locks::{with_database_maintenance, with_scan_and_thumb_lock},
+        state::AppState,
+    },
     db,
     models::{
         ClearLibrarySummary, CsvExportSummary, CsvImportSummary, DbBundleExportSummary,
@@ -300,7 +303,7 @@ pub fn export_db_bundle(
     path: String,
     state: State<AppState>,
 ) -> Result<DbBundleExportSummary, String> {
-    with_scan_and_thumb_lock(&state, || backup_service::export_db_bundle(path, &state))
+    with_database_maintenance(&state, || backup_service::export_db_bundle(path, &state))
         .map_err(|e| e.to_string())
 }
 
@@ -310,7 +313,7 @@ pub fn import_db_bundle(
     root_mappings: Vec<DbRootMapping>,
     state: State<AppState>,
 ) -> Result<DbBundleImportSummary, String> {
-    with_scan_and_thumb_lock(&state, || {
+    with_database_maintenance(&state, || {
         backup_service::import_db_bundle(path, root_mappings, &state)
     })
         .map_err(|e| e.to_string())

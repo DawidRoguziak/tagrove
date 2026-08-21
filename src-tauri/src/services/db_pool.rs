@@ -12,8 +12,9 @@ use crate::{db, error::AppResult};
 const MAX_CONNECTIONS: usize = 4;
 
 struct PoolState {
-    idle: Vec<Connection>,
+    idle: Vec<db::ManagedConnection>,
     total: usize,
+    invalidated: bool,
 }
 
 struct DbPool {
@@ -24,7 +25,7 @@ struct DbPool {
 
 pub struct PooledConnection {
     pool: Arc<DbPool>,
-    connection: Option<Connection>,
+    connection: Option<db::ManagedConnection>,
 }
 
 impl Deref for PooledConnection {
@@ -41,8 +42,12 @@ impl Drop for PooledConnection {
             return;
         };
         if let Ok(mut state) = self.pool.state.lock() {
-            state.idle.push(connection);
-            self.pool.available.notify_one();
+            if state.invalidated {
+                state.total = state.total.saturating_sub(1);
+            } else {
+                state.idle.push(connection);
+            }
+            self.pool.available.notify_all();
         }
     }
 }
@@ -54,6 +59,9 @@ pub fn connection(path: &Path) -> AppResult<PooledConnection> {
             .state
             .lock()
             .map_err(|error| format!("database pool lock error: {error}"))?;
+        if state.invalidated {
+            return Err("database pool was invalidated for maintenance".into());
+        }
         if let Some(connection) = state.idle.pop() {
             drop(state);
             return Ok(PooledConnection {
@@ -66,6 +74,18 @@ pub fn connection(path: &Path) -> AppResult<PooledConnection> {
             drop(state);
             match db::open_connection(&pool.path) {
                 Ok(connection) => {
+                    let mut state = pool
+                        .state
+                        .lock()
+                        .map_err(|error| format!("database pool lock error: {error}"))?;
+                    if state.invalidated {
+                        state.total = state.total.saturating_sub(1);
+                        pool.available.notify_all();
+                        drop(state);
+                        drop(connection);
+                        return Err("database pool was invalidated for maintenance".into());
+                    }
+                    drop(state);
                     return Ok(PooledConnection {
                         pool: Arc::clone(&pool),
                         connection: Some(connection),
@@ -91,7 +111,15 @@ pub fn connection(path: &Path) -> AppResult<PooledConnection> {
 pub fn invalidate(path: &Path) {
     if let Some(registry) = REGISTRY.get() {
         if let Ok(mut registry) = registry.lock() {
-            registry.remove(path);
+            if let Some(pool) = registry.remove(path) {
+                if let Ok(mut state) = pool.state.lock() {
+                    state.invalidated = true;
+                    let idle_count = state.idle.len();
+                    state.total = state.total.saturating_sub(idle_count);
+                    state.idle.clear();
+                    pool.available.notify_all();
+                }
+            }
         }
     }
 }
@@ -109,6 +137,7 @@ fn pool_for(path: &Path) -> AppResult<Arc<DbPool>> {
                 state: Mutex::new(PoolState {
                     idle: Vec::new(),
                     total: 0,
+                    invalidated: false,
                 }),
                 available: Condvar::new(),
             })

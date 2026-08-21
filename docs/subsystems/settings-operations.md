@@ -174,7 +174,7 @@ Current guarantees:
 
 Known limitations:
 
-- The exclusive runner is not a backend safety boundary and does not coordinate another window, direct IPC caller, or a second frontend instance.
+- The exclusive runner is not generally a backend safety boundary and does not coordinate another window, direct IPC caller, or a second frontend instance. Bundle export/restore independently use the backend's process-wide database maintenance gate.
 - The runner does not expose cancellation for scans, imports, clear-library, duplicate scans, or duplicate application. Only bulk thumbnail rendering has a stop request.
 - A second runner call made while locked returns silently; it does not queue work or publish a message.
 - The progress listener has no operation identifier beyond phase filtering. Correct attribution depends on exclusivity plus disjoint phase families.

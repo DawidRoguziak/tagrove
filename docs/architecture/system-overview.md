@@ -55,7 +55,7 @@ Concrete examples:
 2. during `setup`, refuses a debug build whose effective identifier is the production identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. creates `thumbs/`, opens `media.db`, initializes or migrates its schema, and reconciles pending source-file operations before serving media;
+5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema and reconciles pending source-file operations before serving media;
 6. starts the loopback video server, resolves ffmpeg, creates the thumbnail scheduler, and manages `AppState` plus the separate media-server state;
 7. registers every frontend-callable command; and
 8. runs the generated Tauri context until the application exits.
@@ -90,7 +90,7 @@ Startup failure in any setup step prevents the windowed application from enterin
 - the shared `ThumbnailScheduler`; and
 - atomics that enforce one bulk-thumbnail render and carry its cancellation request.
 
-The `InstanceLock` and `MediaServerState` are separately managed by Tauri so their lock/listener lifetimes match the application. Dropping `MediaServerState` signals shutdown, aborts active connection tasks, drains their `JoinSet`, and joins the dedicated server thread. Transient listener errors use bounded exponential backoff; eight consecutive failures stop the listener and make later video-URL requests report that the server is unavailable. The query manager and its connection-pool registry are process-wide `OnceLock` singletons rather than `AppState` fields.
+The `InstanceLock` and `MediaServerState` are separately managed by Tauri so their lock/listener lifetimes match the application. Dropping `MediaServerState` signals shutdown, aborts active connection tasks, drains their `JoinSet`, and joins the dedicated server thread. Transient listener errors use bounded exponential backoff; eight consecutive failures stop the listener and make later video-URL requests report that the server is unavailable. The query manager, its connection-pool registry, and the database maintenance gate are process-wide `OnceLock` singletons rather than `AppState` fields. Every application-created live-database connection owns a maintenance lease for its full lifetime.
 
 ## Profiles, identifiers, and data isolation
 
@@ -112,17 +112,21 @@ This guarantee is per identifier/profile, not machine-wide. The lock file itself
 
 ## In-process locking policy
 
-The profile lock sits outside the runtime lock hierarchy. Inside one process, command-level workflow locks have the following matrix:
+The profile lock sits outside the runtime lock hierarchy. Inside one process, the maintenance gate is the outermost lock. Ordinary database connections and workflow helpers take a shared lease; bundle export/restore close the gate, invalidate and drain the query pool, then acquire lower locks in the fixed order `maintenance`, `scan_lock`, exclusive `thumb_lock`.
+
+Command-level workflow locks have the following matrix:
 
 | Lock | Operations | What it excludes |
 | --- | --- | --- |
+| Database maintenance gate | Every SQLite connection; exclusive ownership for DB bundle export/restore | Exclusive ownership blocks new SQLite users and waits for all direct and pooled connections to close. |
 | `scan_lock: Mutex<()>` | `scan_folder`, `rescan_all_roots` | Another scan and every combined destructive operation. |
 | Shared `thumb_lock` read guard | Render all/failed thumbnails, cancel bulk render, ensure one/page/streamed thumbnails | A destructive thumbnail write guard; multiple thumbnail readers may coexist. The bulk-render atomic separately rejects a second bulk render. |
 | Exclusive `thumb_lock` write guard | `clear_all_thumbnails` | All thumbnail render/ensure readers and combined destructive operations. |
-| `scan_lock` then exclusive `thumb_lock` | Remove scan root, delete or rename an asset file, clear library data, export a DB bundle, import a DB bundle | Scans, thumbnail work, and every other combined operation. |
+| `scan_lock` then exclusive `thumb_lock` | Remove scan root, delete or rename an asset file, clear library data | Scans, thumbnail work, and every other combined operation. |
+| Maintenance gate, then `scan_lock`, then exclusive `thumb_lock` | Export a DB bundle, import a DB bundle | All SQLite users, scans, thumbnail work, and every other combined operation. |
 | No workflow lock | Queries/details/tag and favorite/group writes, duplicate lookup, CSV import/export, scan-root list/add, and window-theme sync | Only SQLite/filesystem primitives and any operation-local synchronization apply. |
 
-Whenever both locks are needed, `with_scan_and_thumb_lock` acquires `scan_lock` first and the thumbnail write lock second. Preserve this order; acquiring them separately or in reverse can deadlock. `ThumbnailScheduler`, the query cache, and the query connection pool have their own internal synchronization and are not substitutes for these workflow locks.
+Whenever both ordinary workflow locks are needed, `with_scan_and_thumb_lock` acquires a database lease, `scan_lock`, and then the thumbnail write lock. Maintenance uses `with_database_maintenance`, which closes the database gate and drains connections before taking `scan_lock` and the thumbnail write lock. Preserve these orders; acquiring lower locks before entering maintenance can deadlock. `ThumbnailScheduler`, the query cache, and the query connection pool have their own internal synchronization and are not substitutes for these workflow locks.
 
 The React settings runner also suppresses concurrent settings operations in one mounted frontend, but that is a user-interface convenience, not a backend safety boundary. Direct IPC callers can still invoke commands concurrently.
 
@@ -177,7 +181,7 @@ Known limitations include:
 
 - CSP is disabled, the asset scope is global, and release/dev disable WebView2 SmartScreen protection.
 - The profile lock has no direct automated test, and bootstrap/profile guards and ffmpeg search precedence are not directly unit-tested.
-- Workflow locking is selective. Tag/favorite/group writes, CSV import, adding roots, and reads may overlap a scan; correctness then depends on SQLite transactions, WAL, the busy timeout, revision bumps, and operation-specific code rather than the workflow locks.
+- Workflow locking remains selective outside database maintenance. Tag/favorite/group writes, CSV import, adding roots, and reads may overlap a scan, but they cannot overlap bundle snapshot/replacement because every live connection participates in the maintenance gate.
 - `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
 - Several command handlers contain filesystem/DB orchestration instead of being strictly thin adapters.
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.

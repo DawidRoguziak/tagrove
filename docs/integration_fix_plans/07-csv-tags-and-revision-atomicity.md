@@ -3,7 +3,7 @@
 ## Metryka
 
 - Priorytet: wysoki
-- Status: Oczekuje
+- Status: Ukończony
 - Zależności: Etapy 03 i 04
 - Następny etap: 08
 
@@ -28,18 +28,18 @@ Zachować celową identyfikację CSV po basename, ale wyeliminować częściowe 
 
 ## Zadania
 
-- [ ] Wymagać jednoznacznych, niezdublowanych nagłówków formatu CSV.
-- [ ] Sparsować i zwalidować cały dokument przed pierwszą mutacją.
-- [ ] Zachować basename-only i jawnie pokazać fan-out w podsumowaniu.
-- [ ] Wykonać tagi, favorite i group w jednej transakcji all-or-nothing.
-- [ ] Bumpować revision w tej samej transakcji.
-- [ ] Przenieść workflow importu z komendy do serwisu.
-- [ ] Ustalić jeden invariant tagu; domyślnie odrzucać whitespace i delimitery, chyba że zatwierdzony zostanie format escaping/quoting.
-- [ ] Egzekwować invariant na granicy backendu niezależnie od klienta.
-- [ ] Współdzielić reguły walidacji z UI, bulk, search i CSV.
-- [ ] Ujednolicić case folding używane przez import i klucze w bazie.
-- [ ] Usunąć legacy `split_whitespace` albo uniemożliwić zapis wartości, których nie potrafi odczytać.
-- [ ] Zabezpieczyć eksport CSV przed nadpisaniem aktywnych danych i publikować go atomowo.
+- [x] Wymagać jednoznacznych, niezdublowanych nagłówków formatu CSV.
+- [x] Sparsować i zwalidować cały dokument przed pierwszą mutacją.
+- [x] Zachować basename-only i jawnie pokazać fan-out w podsumowaniu.
+- [x] Wykonać tagi, favorite i group w jednej transakcji all-or-nothing.
+- [x] Bumpować revision w tej samej transakcji.
+- [x] Przenieść workflow importu z komendy do serwisu.
+- [x] Ustalić jeden invariant tagu; domyślnie odrzucać whitespace i delimitery, chyba że zatwierdzony zostanie format escaping/quoting.
+- [x] Egzekwować invariant na granicy backendu niezależnie od klienta.
+- [x] Współdzielić reguły walidacji z UI, bulk, search i CSV.
+- [x] Ujednolicić case folding używane przez import i klucze w bazie.
+- [x] Usunąć legacy `split_whitespace` albo uniemożliwić zapis wartości, których nie potrafi odczytać.
+- [x] Zabezpieczyć eksport CSV przed nadpisaniem aktywnych danych i publikować go atomowo.
 
 ## Kryteria odbioru
 
@@ -57,4 +57,14 @@ Zachować celową identyfikację CSV po basename, ale wyeliminować częściowe 
 
 ## Dziennik
 
-- Brak wpisów.
+### 2026-08-22 - sesja implementacyjna
+
+- Status po sesji: Ukończony
+- Zmienione pliki: serwis CSV, adaptery IPC, warstwa bazy, walidacja tagów, kontrolery mutacji frontendu, locale, testy i dokumentacja podsystemów.
+- Wdrożone zachowanie: import najpierw parsuje i waliduje cały dokument, a następnie zapisuje tagi, favorite, group i revision w jednej transakcji. Eksport publikuje plik atomowo przez sibling temp. Basename fan-out pozostaje zachowany i używa klucza Unicode lowercase.
+- Decyzje i odchylenia: wymagane jest dokładnie jedno wystąpienie każdego z pięciu nagłówków formatu. Tag po trim i Unicode lowercase nie może zawierać whitespace, przecinka, średnika ani znaków kontrolnych.
+- Migracje i kompatybilność: `performance_schema_version` podniesiono do 3. Migracja przebudowuje `file_name_key` i rozdziela legacy tagi zawierające delimitery.
+- Utworzone lub zmienione testy: dodano przypadki nagłówków, późnego błędnego wiersza, Unicode fan-out, rollbacku po błędzie DB, ochrony istniejącego eksportu, opcjonalnych scalarów, invariantów tagów, migracji legacy znaków kontrolnych i walidacji kanonicznych tagów backupu.
+- Uruchomione sprawdzenia: pełne `test:all`; 60 plików i 336 testów frontendu, 126 testów Rust oraz backendowe testy integracyjne przeszły; build zakończył się powodzeniem; desktop E2E zakończyło 13 scenariuszy w 2 plikach z exit code 0.
+- Niewykonane sprawdzenia i ryzyka: brak limitu rozmiaru importowanego CSV oraz fault injection dla błędu synchronizacji katalogu po publikacji eksportu. `cargo fmt --check` z lokalnym Rust 1.98 raportuje różnice formatowania w nietkniętych plikach, dlatego nie zastosowano globalnego formatowania.
+- Następny dokładny krok: rozpocząć Etap 08 od przeglądu błędów, modali i dostępności.

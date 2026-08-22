@@ -16,7 +16,7 @@ use crate::{
         asset_mutation_service, asset_query_service, db_pool, media_server::MediaServerState,
         progress::emit_progress,
     },
-    utils::tags::normalize_tags,
+    utils::tags::normalize_and_validate_tags,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -129,8 +129,8 @@ fn normalize_query_filters(
         None => None,
     };
     Ok(asset_query_service::AssetQueryFilters {
-        tags_and: normalize_tags(tags_and),
-        tags_not: normalize_tags(tags_not),
+        tags_and: normalize_and_validate_tags(tags_and).map_err(|error| error.to_string())?,
+        tags_not: normalize_and_validate_tags(tags_not).map_err(|error| error.to_string())?,
         kind: normalized_kind,
         favorites_only,
         meta_filter: normalized_meta_filter,
@@ -150,8 +150,8 @@ pub fn list_assets(
 ) -> Result<AssetPage, String> {
     (|| {
         let conn = db::open_connection(&state.db_path)?;
-        let normalized_tags = normalize_tags(tags_and);
-        let normalized_tags_not = normalize_tags(tags_not);
+        let normalized_tags = normalize_and_validate_tags(tags_and)?;
+        let normalized_tags_not = normalize_and_validate_tags(tags_not)?;
         let normalized_kind = kind.and_then(|value| {
             let lowered = value.trim().to_lowercase();
             match lowered.as_str() {
@@ -201,6 +201,7 @@ pub fn set_asset_tags(
 ) -> Result<SetAssetTagsSummary, String> {
     (|| {
         let mut conn = db::open_connection(&state.db_path)?;
+        let tags = normalize_and_validate_tags(tags)?;
         db::set_asset_tags_with_revision(&mut conn, asset_id, &tags).map_err(Into::into)
     })()
     .map_err(|e: crate::error::AppError| e.to_string())
@@ -220,7 +221,7 @@ pub fn merge_asset_tags_bulk(
             .filter(|asset_id| *asset_id > 0)
             .filter(|asset_id| seen.insert(*asset_id))
             .collect::<Vec<_>>();
-        let normalized_tags = normalize_tags(tags);
+        let normalized_tags = normalize_and_validate_tags(tags)?;
 
         let (results, revision) = db::merge_asset_tags_bulk_with_revision(
             &mut conn,

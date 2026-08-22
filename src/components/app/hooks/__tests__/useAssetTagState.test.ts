@@ -133,11 +133,11 @@ describe("useAssetTagState", () => {
 
     expect(result.current.publishDetails(9, ["old identity"], oldRead)).toBe(false);
     act(() => {
-      expect(result.current.publishDetails(9, ["new identity"], newRead)).toBe(true);
+      expect(result.current.publishDetails(9, ["new-identity"], newRead)).toBe(true);
     });
-    expect(result.current.get(9)?.tags).toEqual(["new identity"]);
+    expect(result.current.get(9)?.tags).toEqual(["new-identity"]);
     expect(result.current.remove(9, oldRead)).toBe(false);
-    expect(result.current.get(9)?.tags).toEqual(["new identity"]);
+    expect(result.current.get(9)?.tags).toEqual(["new-identity"]);
   });
 
   it("keeps a deletion tombstone that rejects pending details", () => {

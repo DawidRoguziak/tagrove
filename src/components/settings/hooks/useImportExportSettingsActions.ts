@@ -107,8 +107,8 @@ export function useImportExportSettingsActions({
             importFailed = true;
             importError = error;
           } finally {
-            // CSV import commits row/asset changes incrementally. Keep maintenance ownership
-            // through invalidation even when the command rejects after partial commits.
+            // Keep maintenance ownership through invalidation on both commit and rollback.
+            // An IPC failure is not a commit signal even though the DB transaction is atomic.
             onTagCacheInvalidated();
           }
         });

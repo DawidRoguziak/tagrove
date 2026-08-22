@@ -18,7 +18,7 @@ import {
   bulkTagMutationRequiresRefresh
 } from "../services/libraryInvalidationService";
 import { useAssetTagState } from "./useAssetTagState";
-import type { AssetTagStateController } from "./useAssetTagState";
+import type { AssetTagMutationToken, AssetTagStateController } from "./useAssetTagState";
 
 interface CachedDetail {
   details: AssetDetails;
@@ -352,6 +352,16 @@ export function useBulkSelectionController({
         normalizedDraft &&
         normalizedGroupIdentity(singleAsset.media_group_key) === normalizedDraft.toLowerCase()
     );
+    const mutationTokens: AssetTagMutationToken[] = [];
+    for (const assetId of capturedOrderedIds) {
+      const token = assetTagState.beginMutation(assetId);
+      if (!token) {
+        for (const acquired of mutationTokens) assetTagState.settleMutation(acquired);
+        setGroupFailed(true);
+        return;
+      }
+      mutationTokens.push(token);
+    }
 
     groupOperationRef.current = true;
     setGroupApplying(true);
@@ -395,10 +405,11 @@ export function useBulkSelectionController({
     } catch {
       if (selectionKeyRef.current === capturedSelectionKey) setGroupFailed(true);
     } finally {
+      for (const token of mutationTokens) assetTagState.settleMutation(token);
       groupOperationRef.current = false;
       setGroupApplying(false);
     }
-  }, [groupKeyDraft, orderedAssetIds, refresh, selectedAssets, selectionKey, setAssets]);
+  }, [assetTagState, groupKeyDraft, orderedAssetIds, refresh, selectedAssets, selectionKey, setAssets]);
 
   const onAddTag = useCallback(
     async (rawTag: string): Promise<boolean> => {

@@ -394,21 +394,35 @@ export function useSelectionState({
   }, [assetTagState, assets, selected?.id]);
 
   const toggleSelectedFavorite = useCallback(async () => {
-    await toggleLightboxFavoriteAction({
-      selected,
-      appliedFavoritesOnly,
-      setAssets,
-      setSelected: setSelectedState,
-      refresh
-    });
-  }, [appliedFavoritesOnly, refresh, selected, setAssets]);
+    if (!selected) return;
+    const mutationToken = assetTagState.beginMutation(selected.id);
+    if (!mutationToken) return;
+    try {
+      await toggleLightboxFavoriteAction({
+        selected,
+        appliedFavoritesOnly,
+        setAssets,
+        setSelected: setSelectedState,
+        refresh
+      });
+    } finally {
+      assetTagState.settleMutation(mutationToken);
+    }
+  }, [appliedFavoritesOnly, assetTagState, refresh, selected, setAssets]);
 
   const saveMediaGroup = useCallback(async (next: { key: string | null; order: number | null }) => {
-    await saveLightboxMediaGroupAction({ selected, setAssets, setSelected: setSelectedState }, next);
-    // Media-group changes always affect grouping/ordering, so start a new
-    // session instead of relying on the local patch.
-    void refresh().catch(() => {});
-  }, [refresh, selected, setAssets]);
+    if (!selected) return;
+    const mutationToken = assetTagState.beginMutation(selected.id);
+    if (!mutationToken) return;
+    try {
+      await saveLightboxMediaGroupAction({ selected, setAssets, setSelected: setSelectedState }, next);
+      // Media-group changes always affect grouping/ordering, so start a new
+      // session instead of relying on the local patch.
+      void refresh().catch(() => {});
+    } finally {
+      assetTagState.settleMutation(mutationToken);
+    }
+  }, [assetTagState, refresh, selected, setAssets]);
 
   const prefetchAdjacentDetails = useCallback((index: number) => {
     if (assetCount <= 1) return;

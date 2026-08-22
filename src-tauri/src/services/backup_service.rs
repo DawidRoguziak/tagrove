@@ -16,6 +16,7 @@ use crate::{
         DbBundleExportSummary, DbBundleImportSummary, DbBundleInspection, DbRootMapping,
     },
     services::{asset_query_service, db_pool},
+    utils::text::canonical_key,
 };
 
 const BUNDLE_APPLICATION_ID: &str = "io.github.mediatagger.bundle";
@@ -668,8 +669,8 @@ fn rewrite_staged_paths(
     }
     for (id, path, file_name, thumb_path) in rewritten {
         tx.execute(
-            "UPDATE assets SET path=?1, file_name=?2, file_name_key=lower(?2), thumb_path=?3 WHERE id=?4",
-            rusqlite::params![path, file_name, thumb_path, id],
+            "UPDATE assets SET path=?1, file_name=?2, file_name_key=?3, thumb_path=?4 WHERE id=?5",
+            rusqlite::params![path, file_name, canonical_key(&file_name), thumb_path, id],
         )?;
     }
     if !mappings.is_empty() {

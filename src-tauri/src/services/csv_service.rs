@@ -1,0 +1,412 @@
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+};
+
+use anyhow::Context;
+
+use crate::{
+    db::{self, CsvImportRecord},
+    error::AppResult,
+    models::{CsvExportSummary, CsvImportSummary},
+    utils::{
+        tags::{normalize_and_validate_tags, parse_csv_tags},
+        text::canonical_key,
+    },
+};
+
+const CSV_HEADERS: [&str; 5] = [
+    "file_name",
+    "tags",
+    "favorite",
+    "media_group_key",
+    "media_group_order",
+];
+
+pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary> {
+    let conn = db::open_connection(db_path)?;
+    let target = validate_export_target(path, db_path, &conn)?;
+    let target_name = target
+        .file_name()
+        .ok_or("CSV export path has no file name")?
+        .to_string_lossy();
+    let temporary = target
+        .parent()
+        .ok_or("CSV export path has no parent")?
+        .join(format!(
+            ".{target_name}.{}-{}.tmp",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+
+    let result = (|| -> AppResult<CsvExportSummary> {
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        let mut writer = csv::WriterBuilder::new().has_headers(true).from_writer(file);
+        writer.write_record(CSV_HEADERS)?;
+        let mut rows = 0usize;
+        db::for_each_asset_for_csv_export(&conn, |row| {
+            let tags = normalize_and_validate_tags(row.tags)?;
+            let file_name = Path::new(&row.path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_default();
+            writer.write_record([
+                file_name,
+                tags.join(" "),
+                if row.is_favorite { "1" } else { "0" }.to_string(),
+                row.media_group_key.unwrap_or_default(),
+                row.media_group_order.map(|value| value.to_string()).unwrap_or_default(),
+            ])?;
+            rows += 1;
+            Ok(())
+        })?;
+        writer.flush()?;
+        let file = writer
+            .into_inner()
+            .map_err(|error| error.into_error())?;
+        file.sync_all()?;
+        publish_file(&temporary, &target)?;
+        sync_parent_directory(&target)?;
+        Ok(CsvExportSummary { rows })
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+pub fn import_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvImportSummary> {
+    let source = PathBuf::from(path.trim());
+    if !source.is_file() {
+        return Err("CSV import path does not exist or is not a file".into());
+    }
+    let file = fs::File::open(source)?;
+    let records = parse_csv_document(file)?;
+    let mut conn = db::open_connection(db_path)?;
+    db::import_csv_records(&mut conn, &records).map_err(Into::into)
+}
+
+fn parse_csv_document(reader: impl Read) -> AppResult<Vec<CsvImportRecord>> {
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(reader);
+    let headers = reader.headers()?.clone();
+    let mut indices = [None; CSV_HEADERS.len()];
+    for (index, raw_header) in headers.iter().enumerate() {
+        let header = raw_header.trim();
+        if let Some(position) = CSV_HEADERS
+            .iter()
+            .position(|expected| header.eq_ignore_ascii_case(expected))
+        {
+            if indices[position].replace(index).is_some() {
+                return Err(format!("CSV header '{}' is duplicated", CSV_HEADERS[position]).into());
+            }
+        }
+    }
+    for (position, header) in CSV_HEADERS.iter().enumerate() {
+        if indices[position].is_none() {
+            return Err(format!("CSV is missing required header '{header}'").into());
+        }
+    }
+    let indices = indices.map(Option::unwrap);
+
+    let mut parsed = Vec::new();
+    for (row_index, record) in reader.records().enumerate() {
+        let record = record.with_context(|| format!("Invalid CSV record at row {}", row_index + 2))?;
+        let value = |header_index: usize| record.get(indices[header_index]).unwrap_or("").trim();
+        let favorite = parse_favorite(value(2), row_index + 2)?;
+        let media_group_order = parse_group_order(value(4), row_index + 2)?;
+        let media_group_key = value(3);
+        parsed.push(CsvImportRecord {
+            file_name_key: canonical_key(value(0)),
+            tags: normalize_and_validate_tags(parse_csv_tags(value(1)))?,
+            favorite,
+            media_group_key: Some(if media_group_key.is_empty() {
+                None
+            } else {
+                Some(media_group_key.to_string())
+            }),
+            media_group_order: Some(media_group_order),
+        });
+    }
+    Ok(parsed)
+}
+
+fn parse_favorite(raw: &str, row: usize) -> AppResult<Option<bool>> {
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    match canonical_key(raw).as_str() {
+        "1" | "true" | "yes" | "y" | "on" => Ok(Some(true)),
+        "0" | "false" | "no" | "n" | "off" => Ok(Some(false)),
+        _ => Err(format!("Invalid favorite value at CSV row {row}").into()),
+    }
+}
+
+fn parse_group_order(raw: &str, row: usize) -> AppResult<Option<f64>> {
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    let value = raw
+        .parse::<f64>()
+        .with_context(|| format!("Invalid media_group_order at CSV row {row}"))?;
+    if !value.is_finite() {
+        return Err(format!("Invalid media_group_order at CSV row {row}").into());
+    }
+    Ok(Some(value))
+}
+
+fn validate_export_target(
+    raw_path: &str,
+    db_path: &Path,
+    conn: &rusqlite::Connection,
+) -> AppResult<PathBuf> {
+    let requested = PathBuf::from(raw_path.trim());
+    if requested.as_os_str().is_empty() {
+        return Err("CSV export path is empty".into());
+    }
+    let parent = requested
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)?;
+    let target = parent.canonicalize()?.join(
+        requested
+            .file_name()
+            .ok_or("CSV export path has no file name")?,
+    );
+    let profile = db_path
+        .parent()
+        .ok_or("Cannot resolve app data directory")?
+        .canonicalize()?;
+    if target.starts_with(profile) {
+        return Err("CSV export cannot be stored inside the active profile".into());
+    }
+    for root in db::list_scan_roots(conn)? {
+        if let Ok(root) = Path::new(&root).canonicalize() {
+            if target.starts_with(root) {
+                return Err("CSV export cannot be stored inside an indexed source root".into());
+            }
+        }
+    }
+    for asset in db::list_asset_paths(conn)? {
+        if let Ok(source) = Path::new(&asset.path).canonicalize() {
+            if target == source {
+                return Err("CSV export cannot overwrite an indexed source file".into());
+            }
+        }
+    }
+    Ok(target)
+}
+
+#[cfg(unix)]
+fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
+    fs::rename(source, target)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::{
+        core::PCWSTR,
+        Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        },
+    };
+    let source = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+    let target = target.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(|error| error.to_string().into())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
+    if target.exists() {
+        return Err("Atomic CSV replacement is unsupported on this platform".into());
+    }
+    fs::rename(source, target)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(path: &Path) -> AppResult<()> {
+    fs::File::open(path.parent().ok_or("CSV export path has no parent")?)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &Path) -> AppResult<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, io::Cursor};
+
+    use tempfile::tempdir;
+
+    use super::{export_tags_csv, parse_csv_document};
+    use crate::{
+        db::{self, CsvImportRecord},
+        models::NewAsset,
+        utils::text::canonical_key,
+    };
+
+    const HEADERS: &str =
+        "file_name,tags,favorite,media_group_key,media_group_order\n";
+
+    fn asset(path: &str) -> NewAsset {
+        NewAsset {
+            path: path.to_string(),
+            kind: "image".to_string(),
+            size_bytes: 1,
+            modified_at: 1,
+            width: None,
+            height: None,
+            duration_ms: None,
+            thumb_path: None,
+        }
+    }
+
+    #[test]
+    fn parser_requires_each_known_header_exactly_once_and_allows_reordering() {
+        let missing = parse_csv_document(Cursor::new("file_name,tags\na.jpg,cat\n"));
+        assert!(missing.unwrap_err().to_string().contains("favorite"));
+
+        let duplicate = parse_csv_document(Cursor::new(
+            "file_name,tags,favorite,FAVORITE,media_group_key,media_group_order\na.jpg,cat,1,0,,\n",
+        ));
+        assert!(duplicate.unwrap_err().to_string().contains("duplicated"));
+
+        let reordered = parse_csv_document(Cursor::new(
+            "tags,media_group_order,file_name,media_group_key,favorite\ncat,2,A.JPG,trip,yes\n",
+        ))
+        .unwrap();
+        assert_eq!(reordered.len(), 1);
+        assert_eq!(reordered[0].file_name_key, "a.jpg");
+        assert_eq!(reordered[0].tags, vec!["cat"]);
+        assert_eq!(reordered[0].favorite, Some(true));
+        assert_eq!(reordered[0].media_group_key, Some(Some("trip".to_string())));
+        assert_eq!(reordered[0].media_group_order, Some(Some(2.0)));
+    }
+
+    #[test]
+    fn parser_rejects_a_malformed_late_row_before_any_database_work() {
+        let csv = format!(
+            "{HEADERS}a.jpg,cat,1,trip,1\nb.jpg,\"unterminated,0,,\n"
+        );
+        assert!(parse_csv_document(Cursor::new(csv)).is_err());
+    }
+
+    #[test]
+    fn import_fans_out_by_unicode_canonical_basename_and_bumps_once() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &asset("/one/ŻÓŁW.JPG")).unwrap();
+        db::upsert_asset(&conn, &asset("/two/żółw.jpg")).unwrap();
+        let baseline = db::current_library_revision(&conn).unwrap();
+        let records = parse_csv_document(Cursor::new(format!(
+            "{HEADERS}ŻÓŁW.JPG,animal,1,trip,2\n"
+        )))
+        .unwrap();
+
+        let summary = db::import_csv_records(&mut conn, &records).unwrap();
+
+        assert_eq!(summary.rows_applied, 1);
+        assert_eq!(summary.assets_matched, 2);
+        assert_eq!(summary.assets_updated, 2);
+        assert_eq!(db::current_library_revision(&conn).unwrap(), baseline + 1);
+        assert_eq!(db::list_asset_tags(&conn, 1).unwrap(), vec!["animal"]);
+        assert_eq!(db::list_asset_tags(&conn, 2).unwrap(), vec!["animal"]);
+    }
+
+    #[test]
+    fn database_failure_rolls_back_all_metadata_and_revision() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &asset("/one/a.jpg")).unwrap();
+        db::upsert_asset(&conn, &asset("/two/b.jpg")).unwrap();
+        let baseline = db::current_library_revision(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER fail_second_import
+             BEFORE UPDATE OF tag_count ON assets
+             WHEN OLD.id = 2
+             BEGIN SELECT RAISE(ABORT, 'injected import failure'); END;",
+        )
+        .unwrap();
+        let records = [
+            CsvImportRecord {
+                file_name_key: canonical_key("a.jpg"),
+                tags: vec!["first".to_string()],
+                favorite: Some(true),
+                media_group_key: Some(Some("trip".to_string())),
+                media_group_order: Some(Some(1.0)),
+            },
+            CsvImportRecord {
+                file_name_key: canonical_key("b.jpg"),
+                tags: vec!["second".to_string()],
+                favorite: Some(true),
+                media_group_key: Some(Some("trip".to_string())),
+                media_group_order: Some(Some(2.0)),
+            },
+        ];
+
+        assert!(db::import_csv_records(&mut conn, &records).is_err());
+        assert_eq!(db::current_library_revision(&conn).unwrap(), baseline);
+        assert!(db::list_asset_tags(&conn, 1).unwrap().is_empty());
+        assert!(db::list_asset_tags(&conn, 2).unwrap().is_empty());
+        assert!(!db::get_asset_favorite(&conn, 1).unwrap());
+        assert_eq!(db::get_asset_media_group(&conn, 1).unwrap(), (None, None));
+    }
+
+    #[test]
+    fn failed_export_preserves_an_existing_target() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("profile");
+        let exports = root.path().join("exports");
+        fs::create_dir_all(&profile).unwrap();
+        fs::create_dir_all(&exports).unwrap();
+        let db_path = profile.join("media.db");
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &asset("/source/a.jpg")).unwrap();
+        conn.execute("INSERT INTO tags(name) VALUES ('new york')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO asset_tags(asset_id, tag_id) VALUES (1, 1)",
+            [],
+        )
+        .unwrap();
+        let target = exports.join("tags.csv");
+        fs::write(&target, "keep me").unwrap();
+
+        assert!(export_tags_csv(target.to_str().unwrap(), &db_path).is_err());
+        assert_eq!(fs::read_to_string(target).unwrap(), "keep me");
+        let temporary_count = fs::read_dir(exports)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(temporary_count, 0);
+    }
+
+    #[test]
+    fn parser_rejects_invalid_optional_scalars() {
+        for row in ["a.jpg,cat,maybe,,", "a.jpg,cat,1,,NaN"] {
+            let csv = format!("{HEADERS}{row}\n");
+            assert!(parse_csv_document(Cursor::new(csv)).is_err());
+        }
+    }
+}

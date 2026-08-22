@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { normalizeTags } from "../../utils/media";
+import { isValidTag, normalizeTags } from "../../utils/media";
 
 interface UseLightboxTaggingOptions {
   selectedId: number | null;
@@ -53,7 +53,7 @@ export function useLightboxTagging({
   const addTag = useCallback((rawValue: string) => {
     if (tagEditingDisabled) return;
     const nextTag = rawValue.trim().toLowerCase();
-    if (!nextTag || selectedTagSet.has(nextTag)) return;
+    if (!isValidTag(nextTag) || selectedTagSet.has(nextTag)) return;
     applyTags([...selectedTags, nextTag]);
     setTagDraft("");
     requestAnimationFrame(() => tagInputRef.current?.focus());

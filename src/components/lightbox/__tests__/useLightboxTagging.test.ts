@@ -28,10 +28,25 @@ describe("useLightboxTagging", () => {
       onSaveTags
     })));
 
-    act(() => result.current.addTag(" New York "));
+    act(() => result.current.addTag(" ŻÓŁW "));
 
-    expect(onTagEditorChange).toHaveBeenCalledWith(["cat", "new york"]);
-    expect(onSaveTags).toHaveBeenCalledWith(["cat", "new york"]);
+    expect(onTagEditorChange).toHaveBeenCalledWith(["cat", "żółw"]);
+    expect(onSaveTags).toHaveBeenCalledWith(["cat", "żółw"]);
+  });
+
+  it("rejects tags that cannot round-trip through CSV and search", () => {
+    const onTagEditorChange = vi.fn();
+    const onSaveTags = vi.fn();
+    const { result } = renderHook(() => useLightboxTagging(options({
+      onTagEditorChange,
+      onSaveTags
+    })));
+
+    act(() => result.current.addTag("New York"));
+    act(() => result.current.addTag("cat,dog"));
+
+    expect(onTagEditorChange).not.toHaveBeenCalled();
+    expect(onSaveTags).not.toHaveBeenCalled();
   });
 
   it("delegates removal and retry without coordinating persistence locally", () => {

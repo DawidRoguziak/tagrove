@@ -14,7 +14,10 @@ use crate::models::{
     Asset, AssetDetails, AssetPage, AssetSummary, AssetTagResult, DuplicateAsset, DuplicateGroup,
     NewAsset, SetAssetTagsSummary, TagListPage, ThumbnailAsset,
 };
-use crate::utils::tags::{merge_tags, normalize_tags};
+use crate::utils::{
+    tags::{merge_tags, normalize_and_validate_tags, normalize_tags, parse_legacy_tags},
+    text::canonical_key,
+};
 
 pub struct CsvAssetRow {
     pub path: String,
@@ -27,6 +30,15 @@ pub struct CsvAssetRow {
 pub struct AssetPathRow {
     pub id: i64,
     pub path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CsvImportRecord {
+    pub file_name_key: String,
+    pub tags: Vec<String>,
+    pub favorite: Option<bool>,
+    pub media_group_key: Option<Option<String>>,
+    pub media_group_order: Option<Option<f64>>,
 }
 
 pub const APPLICATION_ID: i64 = 0x4d54_4147;
@@ -452,6 +464,9 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
             [],
         )?;
     }
+    if performance_schema_version < 3 {
+        migrate_canonical_keys_and_tags(conn)?;
+    }
     optimize(conn)?;
     conn.pragma_update(None, "application_id", APPLICATION_ID)?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -858,7 +873,7 @@ fn validate_backup_data(
     let metadata_rows = conn.query_row(
         "SELECT COUNT(*) FROM library_metadata
          WHERE (key = 'revision' AND value >= 1)
-            OR (key = 'performance_schema_version' AND value BETWEEN 0 AND 2)",
+             OR (key = 'performance_schema_version' AND value BETWEEN 0 AND 3)",
         [],
         |row| row.get::<_, i64>(0),
     )?;
@@ -890,11 +905,15 @@ fn validate_backup_data(
             invalid_current_assets == 0,
             "backup contains invalid current-schema asset values"
         );
+        let performance_schema_version = conn.query_row(
+            "SELECT value FROM library_metadata WHERE key = 'performance_schema_version'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
         let invalid_derived_assets = conn.query_row(
             "SELECT COUNT(*) FROM assets
-             WHERE file_name_key <> lower(file_name)
-                OR tag_count <> (SELECT COUNT(*) FROM asset_tags WHERE asset_id = assets.id)
-                OR COALESCE(media_group_key_normalized, '') <>
+              WHERE tag_count <> (SELECT COUNT(*) FROM asset_tags WHERE asset_id = assets.id)
+                 OR COALESCE(media_group_key_normalized, '') <>
                    CASE WHEN media_group_key IS NULL OR trim(media_group_key) = ''
                         THEN '' ELSE lower(trim(media_group_key)) END",
             [],
@@ -904,6 +923,39 @@ fn validate_backup_data(
             invalid_derived_assets == 0,
             "backup contains inconsistent derived asset values"
         );
+        if performance_schema_version >= 3 {
+            let mut stmt = conn.prepare("SELECT file_name, file_name_key FROM assets")?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (file_name, file_name_key) = row?;
+                anyhow::ensure!(
+                    file_name_key == canonical_key(&file_name),
+                    "backup contains inconsistent filename keys"
+                );
+            }
+            let mut stmt = conn.prepare("SELECT name FROM tags")?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            for row in rows {
+                let name = row?;
+                let normalized = normalize_and_validate_tags(vec![name.clone()])?;
+                anyhow::ensure!(
+                    normalized.len() == 1 && normalized[0] == name,
+                    "backup contains noncanonical tag names"
+                );
+            }
+        } else {
+            let invalid_filename_keys = conn.query_row(
+                "SELECT COUNT(*) FROM assets WHERE file_name_key <> lower(file_name)",
+                [],
+                |row| row.get::<_, i64>(0),
+            )?;
+            anyhow::ensure!(
+                invalid_filename_keys == 0,
+                "backup contains inconsistent filename keys"
+            );
+        }
         for (table, predicate) in [
             (
                 "asset_scan_roots",
@@ -1106,12 +1158,73 @@ fn extract_file_name(path: &str) -> String {
         .to_string()
 }
 
+fn migrate_canonical_keys_and_tags(conn: &Connection) -> anyhow::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    let mut changed = false;
+    let filename_updates = {
+        let mut stmt = tx.prepare("SELECT id, file_name, file_name_key FROM assets")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (asset_id, file_name, existing_key) in filename_updates {
+        let key = canonical_key(&file_name);
+        if key == existing_key {
+            continue;
+        }
+        tx.execute(
+            "UPDATE assets SET file_name_key = ?1 WHERE id = ?2",
+            params![key, asset_id],
+        )?;
+        changed = true;
+    }
+
+    let asset_tags = {
+        let mut stmt = tx.prepare("SELECT id FROM assets ORDER BY id")?;
+        let asset_ids = stmt
+            .query_map([], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+        let mut values = Vec::with_capacity(asset_ids.len());
+        for asset_id in asset_ids {
+            let legacy_tags = list_asset_tags(&tx, asset_id)?;
+            let normalized = normalize_tags(
+                legacy_tags
+                    .iter()
+                    .flat_map(|tag| parse_legacy_tags(tag))
+                    .collect(),
+            );
+            values.push((asset_id, normalized));
+        }
+        values
+    };
+    for (asset_id, tags) in asset_tags {
+        changed |= set_asset_tags_in_tx(&tx, asset_id, &tags)?.0;
+    }
+    cleanup_orphan_tags(&tx)?;
+    if changed {
+        bump_library_revision_in_tx(&tx)?;
+    }
+    tx.execute(
+        "UPDATE library_metadata SET value = 3 WHERE key = 'performance_schema_version'",
+        [],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn upsert_asset(conn: &Connection, asset: &NewAsset) -> anyhow::Result<()> {
     let file_name = extract_file_name(&asset.path);
+    let file_name_key = canonical_key(&file_name);
     conn.execute(
         "
         INSERT INTO assets(path, file_name, file_name_key, kind, size_bytes, modified_at, width, height, duration_ms, thumb_path, fingerprint_mtime_ns, indexed_at)
-        VALUES (?1, ?2, lower(?2), ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, unixepoch())
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, unixepoch())
         ON CONFLICT(path) DO UPDATE SET
           file_name=excluded.file_name,
           file_name_key=excluded.file_name_key,
@@ -1137,6 +1250,7 @@ pub fn upsert_asset(conn: &Connection, asset: &NewAsset) -> anyhow::Result<()> {
         params![
             asset.path,
             file_name,
+            file_name_key,
             asset.kind,
             asset.size_bytes,
             asset.modified_at,
@@ -1478,10 +1592,16 @@ pub fn apply_file_mutations(
     }
     for (asset_id, temporary_path, new_path, new_file_name) in pending_renames {
         let affected = tx.execute(
-            "UPDATE assets SET path = ?1, file_name = ?2, file_name_key = lower(?2),
+            "UPDATE assets SET path = ?1, file_name = ?2, file_name_key = ?3,
                thumb_path = NULL, record_version = record_version + 1
-             WHERE id = ?3 AND path = ?4",
-            params![new_path, new_file_name, asset_id, temporary_path],
+             WHERE id = ?4 AND path = ?5",
+            params![
+                new_path,
+                new_file_name,
+                canonical_key(new_file_name),
+                asset_id,
+                temporary_path
+            ],
         )?;
         if affected != 1 {
             anyhow::bail!("asset {asset_id} changed while finalizing its database rename");
@@ -1562,12 +1682,12 @@ pub fn list_duplicate_file_name_counts(
     let mut stmt = conn.prepare(
         "
         SELECT
-          lower(file_name) AS file_name_key,
+          file_name_key,
           MIN(file_name) AS file_name_display,
           COUNT(*) AS asset_count
         FROM assets
         WHERE trim(file_name) <> ''
-        GROUP BY lower(file_name)
+        GROUP BY file_name_key
         HAVING COUNT(*) > 1
         ORDER BY asset_count DESC, file_name_key ASC
         ",
@@ -1596,7 +1716,7 @@ pub fn list_duplicate_assets_by_file_name_key(
         "
         SELECT id, path
         FROM assets
-        WHERE lower(file_name) = ?1
+        WHERE file_name_key = ?1
         ORDER BY modified_at DESC, id DESC
         ",
     )?;
@@ -1634,9 +1754,9 @@ pub fn rename_asset_file_by_id(
 
     let tx = conn.unchecked_transaction()?;
     tx.execute(
-        "UPDATE assets SET path = ?1, file_name = ?2, file_name_key = lower(?2),
-          thumb_path = NULL, record_version = record_version + 1 WHERE id = ?3",
-        params![new_path, new_file_name, asset_id],
+        "UPDATE assets SET path = ?1, file_name = ?2, file_name_key = ?3,
+          thumb_path = NULL, record_version = record_version + 1 WHERE id = ?4",
+        params![new_path, new_file_name, canonical_key(new_file_name), asset_id],
     )?;
     tx.execute(
         "DELETE FROM thumbnail_failures WHERE asset_id = ?1",
@@ -1837,7 +1957,7 @@ pub fn list_assets_with_meta(
             a.media_group_key,
             a.media_group_order,
             COALESCE((
-              SELECT GROUP_CONCAT(t2.name, ' ')
+              SELECT GROUP_CONCAT(t2.name, char(31))
               FROM tags t2
               JOIN asset_tags at2 ON at2.tag_id = t2.id
               WHERE at2.asset_id = a.id
@@ -1926,7 +2046,8 @@ pub fn list_assets_with_meta(
 fn parse_asset_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Asset> {
     let tags_joined: String = row.get(12)?;
     let tags = tags_joined
-        .split_whitespace()
+        .split('\u{1f}')
+        .filter(|tag| !tag.is_empty())
         .map(str::to_string)
         .collect::<Vec<_>>();
 
@@ -2187,7 +2308,7 @@ pub(crate) fn set_asset_tags_in_tx(
     asset_id: i64,
     tags: &[String],
 ) -> anyhow::Result<(bool, Vec<String>)> {
-    let normalized = normalize_tags(tags.to_vec());
+    let normalized = normalize_and_validate_tags(tags.to_vec())?;
     let existing = list_asset_tags_in_tx(tx, asset_id)?
         .ok_or_else(|| anyhow::anyhow!("Asset {asset_id} not found"))?;
     let canonicalized = canonicalize_tag_rows_in_tx(tx, asset_id)?;
@@ -2270,7 +2391,7 @@ fn is_retryable_sqlite_error(error: &anyhow::Error) -> bool {
     })
 }
 
-fn retry_immediate_transaction<T>(
+pub(crate) fn retry_immediate_transaction<T>(
     conn: &mut Connection,
     mut operation: impl FnMut(&rusqlite::Transaction<'_>) -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
@@ -2291,6 +2412,89 @@ fn retry_immediate_transaction<T>(
         }
     }
     unreachable!()
+}
+
+pub fn import_csv_records(
+    conn: &mut Connection,
+    records: &[CsvImportRecord],
+) -> anyhow::Result<crate::models::CsvImportSummary> {
+    retry_immediate_transaction(conn, |tx| {
+        let mut rows_applied = 0usize;
+        let mut assets_matched = 0usize;
+        let mut assets_updated = 0usize;
+        let mut find_assets_stmt =
+            tx.prepare("SELECT id FROM assets WHERE file_name_key = ?1 ORDER BY id ASC")?;
+
+        for record in records {
+            if record.file_name_key.is_empty()
+                || (record.tags.is_empty()
+                    && record.favorite.is_none()
+                    && record.media_group_key.is_none()
+                    && record.media_group_order.is_none())
+            {
+                continue;
+            }
+            let asset_ids = find_assets_stmt
+                .query_map(params![record.file_name_key], |row| row.get::<_, i64>(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            if asset_ids.is_empty() {
+                continue;
+            }
+
+            rows_applied += 1;
+            for asset_id in asset_ids {
+                assets_matched += 1;
+                let existing = list_asset_tags(tx, asset_id)?;
+                let merged = merge_tags(&existing, &record.tags);
+                let normalized_existing = normalize_and_validate_tags(existing)?;
+                let mut changed = false;
+
+                if merged != normalized_existing {
+                    set_asset_tags_in_tx(tx, asset_id, &merged)?;
+                    changed = true;
+                }
+                if let Some(next_favorite) = record.favorite {
+                    let current_favorite = get_asset_favorite(tx, asset_id)?;
+                    if current_favorite != next_favorite {
+                        set_asset_favorite(tx, asset_id, next_favorite)?;
+                        changed = true;
+                    }
+                }
+                if record.media_group_key.is_some() || record.media_group_order.is_some() {
+                    let (current_group_key, current_group_order) =
+                        get_asset_media_group(tx, asset_id)?;
+                    let next_group_key = record
+                        .media_group_key
+                        .clone()
+                        .unwrap_or(current_group_key.clone());
+                    let next_group_order = record.media_group_order.unwrap_or(current_group_order);
+                    if current_group_key != next_group_key || current_group_order != next_group_order
+                    {
+                        set_asset_media_group(
+                            tx,
+                            asset_id,
+                            next_group_key.as_deref(),
+                            next_group_order,
+                        )?;
+                        changed = true;
+                    }
+                }
+                assets_updated += usize::from(changed);
+            }
+        }
+
+        drop(find_assets_stmt);
+        cleanup_orphan_tags(tx)?;
+        if assets_updated > 0 {
+            bump_library_revision_in_tx(tx)?;
+        }
+        Ok(crate::models::CsvImportSummary {
+            rows_read: records.len(),
+            rows_applied,
+            assets_matched,
+            assets_updated,
+        })
+    })
 }
 
 pub fn remove_scan_root_and_orphan_assets(
@@ -2533,7 +2737,7 @@ pub fn set_asset_tags_with_revision(
     asset_id: i64,
     tags: &[String],
 ) -> anyhow::Result<SetAssetTagsSummary> {
-    let normalized = normalize_tags(tags.to_vec());
+    let normalized = normalize_and_validate_tags(tags.to_vec())?;
     retry_immediate_transaction(conn, |tx| {
         let (changed, canonical_tags) = set_asset_tags_in_tx(tx, asset_id, &normalized)?;
         cleanup_orphan_tags(tx)?;
@@ -2560,7 +2764,7 @@ pub fn merge_asset_tags_bulk(
     asset_ids: &[i64],
     incoming_tags: &[String],
 ) -> anyhow::Result<(usize, usize)> {
-    let normalized_incoming = normalize_tags(incoming_tags.to_vec());
+    let normalized_incoming = normalize_and_validate_tags(incoming_tags.to_vec())?;
     if asset_ids.is_empty() || normalized_incoming.is_empty() {
         return Ok((0, 0));
     }
@@ -2586,7 +2790,7 @@ pub fn merge_asset_tags_bulk_with_revision(
     asset_ids: &[i64],
     incoming_tags: &[String],
 ) -> anyhow::Result<(Vec<AssetTagResult>, i64)> {
-    let normalized_incoming = normalize_tags(incoming_tags.to_vec());
+    let normalized_incoming = normalize_and_validate_tags(incoming_tags.to_vec())?;
     if asset_ids.is_empty() || normalized_incoming.is_empty() {
         return Ok((Vec::new(), current_library_revision(conn)?));
     }
@@ -2687,7 +2891,7 @@ pub fn for_each_asset_for_csv_export(
           a.media_group_key,
           a.media_group_order,
           COALESCE((
-            SELECT GROUP_CONCAT(t.name, ' ')
+            SELECT GROUP_CONCAT(t.name, char(31))
             FROM tags t
             JOIN asset_tags at ON at.tag_id = t.id
             WHERE at.asset_id = a.id
@@ -2700,7 +2904,8 @@ pub fn for_each_asset_for_csv_export(
     let rows = stmt.query_map([], |row| {
         let tags_joined: String = row.get(4)?;
         let tags = tags_joined
-            .split_whitespace()
+            .split('\u{1f}')
+            .filter(|tag| !tag.is_empty())
             .map(str::to_string)
             .collect::<Vec<_>>();
 
@@ -3225,7 +3430,7 @@ mod tests {
         set_asset_media_group_with_revision,
         try_list_ordered_asset_ids_with_meta, update_asset_thumbnail_path_if_version_matches,
         update_asset_thumbnail_paths_batch_versioned, upsert_asset, upsert_scanned_asset,
-        ThumbnailCasOutcome, AssetMetaFilter,
+        validate_backup_database, AssetMetaFilter, ThumbnailCasOutcome,
     };
 
     #[test]
@@ -3721,6 +3926,54 @@ mod tests {
     }
 
     #[test]
+    fn version_three_migration_splits_legacy_control_character_tags() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_asset(&conn, "C:\\media\\a.jpg", "image", 1);
+        conn.execute("INSERT INTO tags(name) VALUES (?1)", params!["cat\0dog\u{7}bird"])
+            .expect("legacy tag");
+        conn.execute(
+            "INSERT INTO asset_tags(asset_id, tag_id) SELECT 1, id FROM tags",
+            [],
+        )
+        .expect("legacy mapping");
+        conn.execute("UPDATE assets SET tag_count = 1 WHERE id = 1", [])
+            .expect("legacy count");
+        conn.execute(
+            "UPDATE library_metadata SET value = 2 WHERE key = 'performance_schema_version'",
+            [],
+        )
+        .expect("legacy performance version");
+
+        init_schema(&conn).expect("migrate schema");
+
+        assert_eq!(
+            super::list_asset_tags(&conn, 1).expect("migrated tags"),
+            vec!["bird".to_string(), "cat".to_string(), "dog".to_string()]
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT value FROM library_metadata WHERE key = 'performance_schema_version'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .expect("performance version"),
+            3
+        );
+    }
+
+    #[test]
+    fn backup_validation_rejects_noncanonical_unicode_tag_names() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        conn.execute("INSERT INTO tags(name) VALUES ('ŻÓŁW')", [])
+            .expect("noncanonical tag");
+
+        let error = validate_backup_database(&conn, false).expect_err("invalid backup tag");
+        assert!(error.to_string().contains("noncanonical tag names"));
+    }
+
+    #[test]
     fn upsert_preserves_existing_thumbnail_when_file_timestamp_is_unchanged() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
@@ -3790,7 +4043,7 @@ mod tests {
                 " Cat ".to_string(),
                 "cat".to_string(),
                 "".to_string(),
-                "new york".to_string(),
+                "travel".to_string(),
             ],
         )
         .expect("normalized tags");
@@ -3808,6 +4061,7 @@ mod tests {
             .unwrap();
         assert_eq!(count, 2);
         assert_eq!(mapping_count, 2);
+        assert!(set_asset_tags(&conn, 1, &["new york".to_string()]).is_err());
         assert!(set_asset_tags(&conn, 999, &[]).is_err());
         assert!(set_asset_tags(&conn, 999, &["cat".to_string()]).is_err());
     }

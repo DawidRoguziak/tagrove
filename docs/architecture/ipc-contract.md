@@ -131,8 +131,8 @@ The legacy `thumbnail-ready` application event carries one `ThumbnailBatchItem` 
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `exportTagsCsv` / `export_tags_csv` | `path: string` | `CsvExportSummary` | Trims and rejects an empty target, creates parent directories, and writes `file_name,tags,favorite,media_group_key,media_group_order`. |
-| `importTagsCsv` / `import_tags_csv` | `path: string` | `CsvImportSummary` | Requires an existing file, matches assets case-insensitively by file name, merges normalized tags, optionally updates favorite/group columns, and bumps the revision if any asset changed. Missing standard headers fall back to columns 0/1 for file name/tags; invalid optional values are ignored. |
+| `exportTagsCsv` / `export_tags_csv` | `path: string` | `CsvExportSummary` | Trims and rejects an empty or protected target, creates parent directories, and atomically publishes `file_name,tags,favorite,media_group_key,media_group_order` through a synced sibling temporary file. |
+| `importTagsCsv` / `import_tags_csv` | `path: string` | `CsvImportSummary` | Requires an existing file and exactly one of each standard header. It parses and validates the whole document, matches assets by the shared Unicode-lowercase basename key, merges normalized tags, updates favorite/group fields, and conditionally bumps revision in the same all-or-nothing transaction. |
 | `exportDbBundle` / `export_db_bundle` | `path: string` | `DbBundleExportSummary` | Trims and rejects an empty or colliding target, creates a ZIP from one SQLite Backup API snapshot plus thumbnail files, syncs a unique temporary archive, and atomically publishes it. Current exports contain no WAL/SHM entry. |
 | `inspectDbBundle` / `inspect_db_bundle` | `path: string` | `DbBundleInspection` | Validates archive limits, manifest compatibility, SQLite integrity/schema, and manifest/database roots without writing the candidate database; reports roots requiring Windows-to-Linux mapping. |
 | `importDbBundle` / `import_db_bundle` | `path: string`, `rootMappings: { sourceRoot, targetRoot }[]` | `DbBundleImportSummary` | Repeats full archive/database validation, migrates only accepted legacy staging, validates/rewrites every media and thumbnail path, then performs a maintenance-gated journaled replacement. Linux rejects Windows roots without complete mappings and detects mapped path collisions. |
@@ -199,13 +199,13 @@ Consumers must filter by phase because the event name is shared and broadcasts a
 | Session page size/limit | Clamp to 1–256; first-page wrapper default is 128. |
 | Legacy asset page | Offset at least 0; limit 1–500. |
 | Tag page | Offset at least 0; limit 1–200; query trimmed and case-insensitive. |
-| Query/tag arrays | Trim, lowercase, remove empty strings, de-duplicate preserving first occurrence. |
+| Query/tag arrays | Trim, Unicode-lowercase, remove empty strings, de-duplicate preserving first occurrence, and reject whitespace, comma, semicolon, or control characters inside a tag. |
 | Query media kind | Trim/lowercase; unsupported values become no filter. |
 | Meta-filter | Reject negative `tagCount` and blank `groupName`; require the tagged camelCase shape. |
 | Bulk asset IDs | Tag/group mutation APIs drop non-positive and duplicate IDs. Streamed thumbnails do the same and cap visible/prefetch groups at 64 each. |
 | Media group | Blank key becomes `null`; non-finite order becomes `null`. |
 | Root path | Trim, use Windows separators, remove non-drive trailing separators; add/scan requires an existing directory. |
-| CSV/bundle paths | Trim; exports reject empty paths and create parents; imports require an existing file. Bundle inspection/import reject unsafe or duplicate recognized ZIP paths, symbolic-link entries, resource-limit violations, missing `media.db`, incompatible manifests/databases, and unsafe persisted media/thumbnail paths. |
+| CSV/bundle paths | Trim; exports reject empty paths and create parents. CSV export also rejects the active profile, indexed roots, and indexed source files. Imports require an existing file. Bundle inspection/import reject unsafe or duplicate recognized ZIP paths, symbolic-link entries, resource-limit violations, missing `media.db`, incompatible manifests/databases, and unsafe persisted media/thumbnail paths. |
 | Rename | File name only; rejects blank/dot names, separators, control/listed Windows-invalid characters, trailing dot/space, reserved device names, same path, and occupied filesystem or indexed destinations. |
 | Theme | Exactly `light` or `dark`. |
 

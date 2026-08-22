@@ -62,6 +62,7 @@
     },
     "errors": {
       "metaTagRequiresSolo": "Metatagi musza byc uzyte samodzielnie, bez innych tagow.",
+      "tagInvalidCharacters": "Tagi nie moga zawierac bialych znakow, przecinkow, srednikow ani znakow sterujacych.",
       "groupNameMissingValue": "gN wymaga nazwy grupy po dwukropku.",
       "hasNoTagsInvalidCount": "tags akceptuje tylko nieujemna liczbe calkowita."
     }
@@ -377,7 +378,7 @@
         "csvExported": "CSV wyeksportowano. Wiersze: {{rows}}",
         "csvImportCancelled": "Anulowano import CSV.",
         "csvImporting": "Importowanie tagow CSV...",
-        "csvImported": "CSV zaimportowano. Wiersze odczytane: {{rowsRead}}, zastosowane: {{rowsApplied}}, dopasowane zasoby: {{assetsMatched}}, zaktualizowane zasoby: {{assetsUpdated}}",
+        "csvImported": "CSV zaimportowano. Wiersze odczytane: {{rowsRead}}, zastosowane: {{rowsApplied}}, zasoby dopasowane po nazwie pliku: {{assetsMatched}}, zaktualizowane zasoby: {{assetsUpdated}}. Jeden wiersz moze pasowac do plikow o tej samej nazwie w wielu folderach.",
         "dbExportCancelled": "Anulowano eksport kopii bazy.",
         "dbExporting": "Eksportowanie bazy i miniaturek...",
         "dbExported": "Archiwum kopii bazy wyeksportowano. Pliki: {{files}}, miniaturki: {{thumbnails}}",

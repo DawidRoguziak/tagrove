@@ -11,6 +11,7 @@ import {
 describe("media utils", () => {
   it("normalizes tags to lowercase and deduplicates", () => {
     expect(normalizeTags(" Cat  DOG cat  ")).toEqual(["cat", "dog"]);
+    expect(normalizeTags(["cat", "new york", "dog;bird"])).toEqual(["cat"]);
   });
 
   it("parses include and exclude filter tags", () => {
@@ -18,6 +19,7 @@ describe("media utils", () => {
       include: ["cat", "car"],
       exclude: ["dog", "bird"]
     });
+    expect(parseFilterTags("-")).toEqual({ include: ["-"], exclude: [] });
   });
 
   it("parses tags metatags as exact tag counts", () => {
@@ -63,6 +65,7 @@ describe("media utils", () => {
     expect(parseSearchFilter("gN:").validationError).toBe("groupNameMissingValue");
     expect(parseSearchFilter("cat tags").validationError).toBe("metaTagRequiresSolo");
     expect(parseSearchFilter("dog gN:trip-2026").validationError).toBe("metaTagRequiresSolo");
+    expect(parseSearchFilter("cat,dog").validationError).toBe("tagInvalidCharacters");
   });
 
   it("maps only available thumbnail paths", () => {

@@ -1,6 +1,9 @@
 
+import { isValidTag } from "../../../../utils/media";
+
 export function normalizeBulkTag(rawTag: string): string {
-  return rawTag.trim().toLowerCase();
+  const normalized = rawTag.trim().toLowerCase();
+  return isValidTag(normalized) ? normalized : "";
 }
 
 export function normalizeBulkTagList(tags: string[]): string[] {

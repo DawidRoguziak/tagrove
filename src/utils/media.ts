@@ -8,7 +8,8 @@ export interface ParsedFilterTags {
 export type SearchFilterValidationError =
   | "metaTagRequiresSolo"
   | "hasNoTagsInvalidCount"
-  | "groupNameMissingValue";
+  | "groupNameMissingValue"
+  | "tagInvalidCharacters";
 
 export interface ParsedSearchFilter {
   mode: "tags" | "meta";
@@ -68,9 +69,13 @@ export function normalizeTags(input: string | string[]): string[] {
     new Set(
       values
         .map((item) => item.trim().toLowerCase())
-        .filter(Boolean)
+        .filter(isValidTag)
     )
   );
+}
+
+export function isValidTag(tag: string): boolean {
+  return Boolean(tag) && !/[,;\s\p{Cc}]/u.test(tag);
 }
 
 export function parseSearchFilter(input: string): ParsedSearchFilter {
@@ -140,6 +145,10 @@ export function parseSearchFilter(input: string): ParsedSearchFilter {
       },
       validationError: null
     };
+  }
+
+  if (tokens.some((token) => !isValidTag(token.startsWith("-") && token.length > 1 ? token.slice(1) : token))) {
+    return createValidationError("tagInvalidCharacters");
   }
 
   const parsedTags = parseStandardFilterTokens(tokens);

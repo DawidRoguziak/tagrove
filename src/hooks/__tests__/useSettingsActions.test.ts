@@ -628,7 +628,7 @@ describe("useSettingsActions", () => {
     expect(onTagCacheInvalidated).toHaveBeenCalledTimes(1);
     expect(refreshLibrary).toHaveBeenCalled();
     expect(result.current.importExportOperationState.message).toBe(
-      "CSV imported. Rows read: 12, applied: 8, assets matched: 6, assets updated: 4"
+      "CSV imported. Rows read: 12, applied: 8, assets matched by file name: 6, assets updated: 4. One row can match files with the same name in multiple folders."
     );
   });
 

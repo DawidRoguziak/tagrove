@@ -182,7 +182,7 @@ fn merge_asset_tags_bulk_updates_multiple_assets_atomically() {
 fn set_assets_media_group_bulk_overwrites_existing_values() {
     let tmp = tempdir().expect("tempdir");
     let db_path = tmp.path().join("media.db");
-    let conn = db::open_connection(&db_path).expect("open db");
+    let mut conn = db::open_connection(&db_path).expect("open db");
     db::init_schema(&conn).expect("init schema");
 
     let root = tmp.path().join("library");
@@ -197,7 +197,7 @@ fn set_assets_media_group_bulk_overwrites_existing_values() {
     db::set_asset_media_group(&conn, 1, Some("legacy"), Some(50.0)).expect("seed first");
 
     let (processed, updated) = db::set_assets_media_group_bulk(
-        &conn,
+        &mut conn,
         &[(2, Some(1.0)), (1, Some(2.0))],
         Some("trip-2026"),
     )

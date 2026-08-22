@@ -24,7 +24,7 @@ fn asset(path: &Path, modified_at: i64) -> NewAsset {
 fn backend_end_to_end_csv_merge_and_library_clear_workflow() {
     let tmp = tempdir().expect("tempdir");
     let db_path = tmp.path().join("media.db");
-    let conn = db::open_connection(&db_path).expect("open db");
+    let mut conn = db::open_connection(&db_path).expect("open db");
     db::init_schema(&conn).expect("init schema");
 
     let root = tmp.path().join("library");
@@ -100,7 +100,7 @@ fn backend_end_to_end_csv_merge_and_library_clear_workflow() {
     assert!(all_tags.items.iter().any(|tag| tag == "travel"));
 
     let (processed_groups, updated_groups) = db::set_assets_media_group_bulk(
-        &conn,
+        &mut conn,
         &[(2, Some(1.0)), (1, Some(2.0))],
         Some("trip-2026"),
     )

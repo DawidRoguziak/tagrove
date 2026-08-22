@@ -57,6 +57,9 @@ interface GalleryGridProps {
   selectionModeEnabled?: boolean;
   selectedAssetIds?: Set<number>;
   onBulkSelectionInteraction?: (interaction: BulkSelectionInteraction) => void;
+  loadError?: string | null;
+  onLoadRetry?: () => void;
+  pageFailureEpoch?: number;
 }
 
 export const GalleryGrid = memo(function GalleryGrid({
@@ -81,7 +84,10 @@ export const GalleryGrid = memo(function GalleryGrid({
   onAddFirstFolder,
   selectionModeEnabled = false,
   selectedAssetIds = EMPTY_SELECTED_IDS,
-  onBulkSelectionInteraction
+  onBulkSelectionInteraction,
+  loadError = null,
+  onLoadRetry,
+  pageFailureEpoch = 0
 }: GalleryGridProps) {
   const resolvedAssetCount = assetCount ?? assets.length;
   const resolvedGetAssetAt = getAssetAt ?? ((index: number) => assets[index]);
@@ -109,7 +115,8 @@ export const GalleryGrid = memo(function GalleryGrid({
     galleryRef,
     scrollContainerRef,
     onReachEnd,
-    onVirtualRangeChange
+    onVirtualRangeChange,
+    rangeResetKey: pageFailureEpoch
   });
   const virtualEntries = virtualGrid.virtualItems.map((item) => ({
     asset: resolvedGetAssetAt(item.index),
@@ -161,6 +168,20 @@ export const GalleryGrid = memo(function GalleryGrid({
       onWheel={handlers.handleGalleryWheel}
       data-testid="gallery-grid"
     >
+      {loadError ? (
+        <div
+          role="alert"
+          data-testid="gallery-load-error"
+          className="mb-3 flex items-center justify-between gap-3 rounded-[var(--radius-surface)] border border-error/40 bg-error/10 px-4 py-2 text-sm"
+        >
+          <span>{t("gallery.loadError")}</span>
+          {onLoadRetry ? (
+            <button type="button" className="btn btn-xs btn-outline" onClick={onLoadRetry}>
+              {t("gallery.retry")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {!resolvedAssetCount ? (
         <GalleryEmptyState
           hasScanRoots={hasScanRoots}

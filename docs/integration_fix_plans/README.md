@@ -4,10 +4,10 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 
 ## Stan planu
 
-- Ostatnia aktualizacja: 2026-08-21
-- Aktualny etap: 03 ukończony
-- Następny krok: w nowej sesji rozpocząć wyłącznie Etap 04 od ponownego odczytu jego planu i aktualnego kodu sesji zapytań/invalidation
-- Otwarte blokery: brak zgody na tworzenie, aktualizowanie i uruchamianie testów oraz buildów
+- Ostatnia aktualizacja: 2026-08-22
+- Aktualny etap: 04 ukończony
+- Następny krok: w nowej sesji rozpocząć wyłącznie Etap 05 od ponownego odczytu jego planu i aktualnego kodu selekcji/cache/details
+- Otwarte blokery: brak
 - Ukończony wcześniej fundament: bezpieczny częściowy skan i blokada pojedynczej instancji profilu
 
 | Etap | Dokument | Zakres | Priorytet | Status |
@@ -16,7 +16,7 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 | 01 | [Usuwanie i duplikaty](01-safe-deletion-and-duplicates.md) | Bezpieczne usuwanie plików i atomowe rozwiązywanie duplikatów | Krytyczny | Ukończony |
 | 02 | [Walidacja importu backupu](02-backup-import-validation.md) | Ograniczenie zaufania do ZIP, SQLite i importowanych ścieżek | Krytyczny | Ukończony |
 | 03 | [Spójny backup i restore](03-consistent-backup-and-restore.md) | Snapshot SQLite, maintenance lock i odzyskiwalna podmiana danych | Krytyczny | Ukończony |
-| 04 | [Zapytania i invalidation](04-query-sessions-and-invalidation.md) | Generacje zapytań, revision, membership i kolejność galerii | Wysoki | Oczekuje |
+| 04 | [Zapytania i invalidation](04-query-sessions-and-invalidation.md) | Generacje zapytań, revision, membership i kolejność galerii | Wysoki | Ukończony |
 | 05 | [Selekcja i cache](05-selection-cache-and-details.md) | Globalne indeksy, summary/details, cache epoch i Shift-zaznaczenie | Wysoki | Oczekuje |
 | 06 | [Miniatury i praca w tle](06-thumbnails-and-background-workers.md) | Wersjonowanie miniaturek, scheduler, timeouty i awarie workerów | Wysoki | Oczekuje |
 | 07 | [CSV, tagi i revision](07-csv-tags-and-revision-atomicity.md) | Atomowy import CSV i jeden invariant tagów | Wysoki | Oczekuje |

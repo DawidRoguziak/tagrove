@@ -17,7 +17,7 @@ pub struct Asset {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AssetSummary {
     pub id: i64,
     pub file_name: String,
@@ -42,7 +42,7 @@ pub struct AssetDetails {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum StartAssetQueryResult {
     Ready {
@@ -55,7 +55,7 @@ pub enum StartAssetQueryResult {
     Superseded,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum AssetQueryPageResult {
     Ready {

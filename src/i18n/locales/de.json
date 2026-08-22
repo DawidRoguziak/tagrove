@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "Teil einer Mediengruppe",
     "generatingThumbnails": "Erstelle Vorschaubilder für {{count}} Elemente in der Warteschlange.",
-    "noMoreItems": "Keine weiteren Elemente zum Laden"
+    "noMoreItems": "Keine weiteren Elemente zum Laden",
+    "loadError": "Laden der Bibliothek ist fehlgeschlagen.",
+    "retry": "Wiederholen"
   },
   "bulk": {
     "panel": {

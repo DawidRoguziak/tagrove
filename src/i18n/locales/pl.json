@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "Czesc grupy mediow",
     "generatingThumbnails": "Generowanie miniaturek dla {{count}} elementow w kolejce.",
-    "noMoreItems": "Brak kolejnych elementow"
+    "noMoreItems": "Brak kolejnych elementow",
+    "loadError": "Nie udało się wczytać biblioteki.",
+    "retry": "Ponów"
   },
   "bulk": {
     "panel": {

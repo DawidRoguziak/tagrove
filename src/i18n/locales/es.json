@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "Parte de un grupo multimedia",
     "generatingThumbnails": "Generando miniaturas para {{count}} elementos en cola.",
-    "noMoreItems": "No hay más elementos para cargar"
+    "noMoreItems": "No hay más elementos para cargar",
+    "loadError": "No se pudo cargar la biblioteca.",
+    "retry": "Reintentar"
   },
   "bulk": {
     "panel": {

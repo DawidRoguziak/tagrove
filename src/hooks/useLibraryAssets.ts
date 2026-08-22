@@ -33,6 +33,9 @@ interface UseLibraryAssetsResult {
   setOffset: Dispatch<SetStateAction<number>>;
   loading: boolean;
   setLoading: Dispatch<SetStateAction<boolean>>;
+  loadError: string | null;
+  retryLoad: () => Promise<void>;
+  pageFailureEpoch: number;
   refresh: () => Promise<void>;
   handleReachEnd: () => void;
   ensureRange: (startIndex: number, endIndex: number) => void;
@@ -79,6 +82,8 @@ export function useLibraryAssets({
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pageFailureEpoch, setPageFailureEpoch] = useState(0);
   const sessionIdRef = useRef<number | null>(null);
   const generationRef = useRef(0);
   const inFlightPagesRef = useRef<Map<number, Promise<Asset[] | undefined>>>(new Map());
@@ -150,7 +155,14 @@ export function useLibraryAssets({
       sessionIdRef.current = result.session_id;
       setTotal(result.total);
       setOffset(result.items.length);
+      setLoadError(null);
       mergePage(0, result.items, true);
+    } catch (error) {
+      if (generation === generationRef.current) {
+        setLoadError(error instanceof Error ? error.message : String(error));
+        setPageFailureEpoch((epoch) => epoch + 1);
+      }
+      throw error instanceof Error ? error : new Error(String(error));
     } finally {
       if (import.meta.env.VITE_MEDIATAGGER_PERF === "1") {
         performance.mark(`${perfMark}-end`);
@@ -170,6 +182,11 @@ export function useLibraryAssets({
     pageSize,
     resetThumbnailQueue
   ]);
+
+  const retryLoad = useCallback(async () => {
+    setLoadError(null);
+    await refresh();
+  }, [refresh]);
 
   const loadPage = useCallback(
     async (pageOffset: number) => {
@@ -194,8 +211,17 @@ export function useLibraryAssets({
             await refresh();
             return undefined;
           }
+          setLoadError(null);
           mergePage(result.offset, result.items, false);
           return result.items.map(summaryToAsset);
+        } catch (error) {
+          // The failed page stays a retryable hole; the range dedup marker is
+          // released through pageFailureEpoch so the virtual range re-requests.
+          if (generation === generationRef.current) {
+            setLoadError(error instanceof Error ? error.message : String(error));
+          }
+          setPageFailureEpoch((epoch) => epoch + 1);
+          throw error instanceof Error ? error : new Error(String(error));
         } finally {
           if (inFlightPagesRef.current.get(pageOffset) === request) {
             inFlightPagesRef.current.delete(pageOffset);
@@ -296,6 +322,9 @@ export function useLibraryAssets({
     setOffset,
     loading,
     setLoading,
+    loadError,
+    retryLoad,
+    pageFailureEpoch,
     refresh,
     handleReachEnd,
     ensureRange,

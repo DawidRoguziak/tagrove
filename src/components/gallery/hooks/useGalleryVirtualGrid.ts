@@ -16,6 +16,7 @@ interface UseGalleryVirtualGridOptions {
   scrollContainerRef?: RefObject<HTMLElement | null>;
   onReachEnd: () => void;
   onVirtualRangeChange?: (startIndex: number, endIndex: number) => void;
+  rangeResetKey?: number;
 }
 
 export function useGalleryVirtualGrid({
@@ -27,7 +28,8 @@ export function useGalleryVirtualGrid({
   galleryRef,
   scrollContainerRef,
   onReachEnd,
-  onVirtualRangeChange
+  onVirtualRangeChange,
+  rangeResetKey = 0
 }: UseGalleryVirtualGridOptions) {
   const [galleryWidth, setGalleryWidth] = useState(0);
   const [galleryHeight, setGalleryHeight] = useState(0);
@@ -101,9 +103,11 @@ export function useGalleryVirtualGrid({
     };
   }, [getAssetAt, tilePixelSize, virtualItems, viewportBottom, viewportTop]);
 
+  // The dedup marker must not treat a range as permanently handled while any
+  // intersecting page request failed; rangeResetKey re-opens it for retries.
   useEffect(() => {
     lastPrefetchRangeRef.current = null;
-  }, [assetCount, getAssetAt]);
+  }, [assetCount, getAssetAt, rangeResetKey]);
 
   useEffect(() => {
     if (!onVirtualRangeChange || !virtualItems.length) {

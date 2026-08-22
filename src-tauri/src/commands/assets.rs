@@ -47,9 +47,12 @@ pub async fn start_asset_query(
 ) -> Result<StartAssetQueryResult, String> {
     let db_path = state.db_path.clone();
     let filters = normalize_query_filters(tags_and, tags_not, kind, favorites_only, meta_filter)?;
-    let _ = generation;
+    // Register arrival order before scheduling blocking work so a slower
+    // scheduler cannot invert supersession between two requests.
+    let request_id = asset_query_service::manager().begin_request(generation);
     tauri::async_runtime::spawn_blocking(move || {
-        asset_query_service::manager().start(&db_path, filters, page_size)
+        asset_query_service::manager()
+            .start(&db_path, filters, page_size, request_id, generation)
     })
     .await
     .map_err(|e| format!("asset query worker failed: {e}"))?
@@ -253,9 +256,8 @@ pub fn set_asset_favorite(
     state: State<AppState>,
 ) -> Result<(), String> {
     (|| {
-        let conn = db::open_connection(&state.db_path)?;
-        db::set_asset_favorite(&conn, asset_id, is_favorite)?;
-        db::bump_library_revision(&conn)?;
+        let mut conn = db::open_connection(&state.db_path)?;
+        db::set_asset_favorite_with_revision(&mut conn, asset_id, is_favorite)?;
         Ok(())
     })()
     .map_err(|e: crate::error::AppError| e.to_string())
@@ -269,15 +271,19 @@ pub fn set_asset_media_group(
     state: State<AppState>,
 ) -> Result<(), String> {
     (|| {
-        let conn = db::open_connection(&state.db_path)?;
+        let mut conn = db::open_connection(&state.db_path)?;
         let normalized_key = media_group_key
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
         let normalized_order = media_group_order.filter(|value| value.is_finite());
-        db::set_asset_media_group(&conn, asset_id, normalized_key.as_deref(), normalized_order)?;
-        db::bump_library_revision(&conn)?;
+        db::set_asset_media_group_with_revision(
+            &mut conn,
+            asset_id,
+            normalized_key.as_deref(),
+            normalized_order,
+        )?;
         Ok(())
     })()
     .map_err(|e: crate::error::AppError| e.to_string())
@@ -297,7 +303,7 @@ pub fn set_assets_media_group_bulk(
     state: State<AppState>,
 ) -> Result<BulkMediaGroupSummary, String> {
     (|| {
-        let conn = db::open_connection(&state.db_path)?;
+        let mut conn = db::open_connection(&state.db_path)?;
         let normalized_key = media_group_key
             .as_deref()
             .map(str::trim)
@@ -318,10 +324,7 @@ pub fn set_assets_media_group_bulk(
             .collect::<Vec<_>>();
 
         let (processed_assets, updated_assets) =
-            db::set_assets_media_group_bulk(&conn, &normalized_updates, normalized_key.as_deref())?;
-        if updated_assets > 0 {
-            db::bump_library_revision(&conn)?;
-        }
+            db::set_assets_media_group_bulk(&mut conn, &normalized_updates, normalized_key.as_deref())?;
 
         Ok(BulkMediaGroupSummary {
             processed_assets,

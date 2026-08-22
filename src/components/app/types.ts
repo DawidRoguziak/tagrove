@@ -65,6 +65,9 @@ export interface AppGalleryMediaController {
   onSelect: (asset: Asset) => void;
   hasScanRoots: boolean;
   onAddFirstFolder: () => void;
+  loadError: string | null;
+  onLoadRetry: () => void;
+  pageFailureEpoch: number;
 }
 
 export interface BulkSelectionController {

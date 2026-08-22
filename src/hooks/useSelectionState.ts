@@ -4,6 +4,10 @@ import { deleteLightboxAssetAction } from "../components/lightbox/services/delet
 import { saveLightboxMediaGroupAction } from "../components/lightbox/services/saveLightboxMediaGroupAction";
 import { saveLightboxTagsAction } from "../components/lightbox/services/saveLightboxTagsAction";
 import { toggleLightboxFavoriteAction } from "../components/lightbox/services/toggleLightboxFavoriteAction";
+import {
+  collectChangedTags,
+  tagMutationTouchesFilters
+} from "../components/app/services/libraryInvalidationService";
 import { useAssetTagState } from "../components/app/hooks/useAssetTagState";
 import type {
   AssetTagMutationToken,
@@ -24,6 +28,7 @@ interface UseSelectionStateArgs {
   assetCount?: number;
   getAssetAtAsync?: (index: number) => Promise<Asset | undefined>;
   getAssetIndex?: (assetId: number) => number | null;
+  appliedFilterTags?: string[];
 }
 
 interface TagMutationState {
@@ -61,7 +66,8 @@ export function useSelectionState({
   getAssetIndex = (assetId) => {
     const index = assets.findIndex((asset) => asset.id === assetId);
     return index >= 0 ? index : null;
-  }
+  },
+  appliedFilterTags = []
 }: UseSelectionStateArgs) {
   const { t } = useTranslation();
   const localAssetTagState = useAssetTagState();
@@ -120,6 +126,7 @@ export function useSelectionState({
     if (!authoritative) return;
 
     const requestedTags = mutation.desired;
+    const confirmedTags = [...mutation.confirmed];
     const mutationToken = assetTagState.beginMutation(assetId);
     if (!mutationToken) {
       mutation.token = null;
@@ -164,6 +171,16 @@ export function useSelectionState({
         current.confirmed = result?.tags ?? requestedTags;
         current.failed = false;
         if (current.desired && sameTags(current.desired, requestedTags)) current.desired = null;
+        // A tag change that can flip the active include/exclude filter
+        // membership must restart the query session, not just patch the cache.
+        if (
+          tagMutationTouchesFilters(
+            collectChangedTags(confirmedTags, result?.tags ?? requestedTags),
+            appliedFilterTags
+          )
+        ) {
+          void refresh().catch(() => {});
+        }
       })
       .catch(() => {
         assetTagState.settleMutation(mutationToken);
@@ -180,7 +197,7 @@ export function useSelectionState({
         syncVisibleTagMutationState(assetId);
         if (!current.failed && current.desired) drainTagMutation(assetId);
       });
-  }, [assetTagState, assets, refreshKnownTags, setAssets, syncVisibleTagMutationState]);
+  }, [appliedFilterTags, assetTagState, assets, refresh, refreshKnownTags, setAssets, syncVisibleTagMutationState]);
 
   const saveTags = useCallback((nextTags?: string[]) => {
     const assetId = selectedRef.current?.id;
@@ -311,7 +328,10 @@ export function useSelectionState({
 
   const saveMediaGroup = useCallback(async (next: { key: string | null; order: number | null }) => {
     await saveLightboxMediaGroupAction({ selected, setAssets, setSelected: setSelectedState }, next);
-  }, [selected, setAssets]);
+    // Media-group changes always affect grouping/ordering, so start a new
+    // session instead of relying on the local patch.
+    void refresh().catch(() => {});
+  }, [refresh, selected, setAssets]);
 
   const prefetchAdjacentDetails = useCallback((index: number) => {
     if (assetCount <= 1) return;

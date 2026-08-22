@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "Parte di un gruppo multimediale",
     "generatingThumbnails": "Generazione miniature per {{count}} elementi in coda.",
-    "noMoreItems": "Nessun altro elemento da caricare"
+    "noMoreItems": "Nessun altro elemento da caricare",
+    "loadError": "Caricamento della libreria non riuscito.",
+    "retry": "Riprova"
   },
   "bulk": {
     "panel": {

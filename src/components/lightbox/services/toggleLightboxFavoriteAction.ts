@@ -3,6 +3,7 @@ import {
   updateAssetFavorite,
   updateSelectedFavoriteIfMatchingAsset
 } from "../../app/services/assetMutationService";
+import { favoriteMutationRequiresRefresh } from "../../app/services/libraryInvalidationService";
 import type { Asset } from "../../../types";
 
 type SetAssets = (updater: (previous: Asset[]) => Asset[]) => void;
@@ -34,7 +35,7 @@ export async function toggleLightboxFavoriteAction({
   setAssets((previous) => updateAssetFavorite(previous, assetId, nextFavorite));
   setSelected((previous) => updateSelectedFavoriteIfMatchingAsset(previous, assetId, nextFavorite));
 
-  if (appliedFavoritesOnly && !nextFavorite) {
+  if (favoriteMutationRequiresRefresh(appliedFavoritesOnly, nextFavorite)) {
     await refresh();
   }
 }

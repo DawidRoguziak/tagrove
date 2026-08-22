@@ -136,7 +136,7 @@ This keeps the members returned by a query adjacent and positions the whole grou
 
 `library_metadata.revision` starts at `1` and is incremented with one SQL update. It is the invalidation epoch for process-wide asset-query sessions, not a database migration version.
 
-A query start reads the current revision from a pooled connection. Its cache key includes the revision and normalized filters. A ready session holds the full ordered asset-ID vector plus that revision; the first page and later pages materialize current summaries for slices of those IDs. The cache retains at most four sessions, uses least-recently-used promotion, and expires a session after five minutes without access. A later page returns `stale` and removes the session when its stored revision differs from the database; missing, expired, or evicted sessions are also `stale`. Bundle restore additionally clears the query manager and invalidates its connection pool before replacement.
+A query start is registered process-wide in arrival order before any blocking work is scheduled; the registration token plus the client generation decide supersession. It then reads the current revision inside one deferred read transaction that also builds the ordered ID list and materializes the first page, so revision, snapshot IDs, and first-page summaries share a single SQLite snapshot. The expensive ordered-ID build checks a cooperative cancellation flag periodically and returns `None` when the request has been superseded mid-build. The cache key includes the revision and normalized filters. A ready session holds the full ordered asset-ID vector plus that revision; later pages read their summaries inside an equivalent read snapshot after re-checking the session revision. The cache retains at most four sessions, uses least-recently-used promotion, and expires a session after five minutes without access. A later page returns `stale` and removes the session when its stored revision differs from the database; missing, expired, or evicted sessions are also `stale`. Bundle restore additionally clears the query manager and invalidates its connection pool before replacement.
 
 The following mutation families bump the revision:
 
@@ -144,15 +144,15 @@ The following mutation families bump the revision:
 | --- | --- |
 | Replace one asset's tags | In the same transaction when canonical tags changed or persisted tag invariants were repaired; missing IDs reject. A fully canonical no-op does not bump. |
 | Bulk tag merge | In the same transaction, only when at least one existing asset changed; missing IDs are skipped and reported through canonical results. |
-| Set one favorite | Always after the update, including a no-op or missing ID. |
-| Set one media group | Always after the update, including a no-op or missing ID. |
-| Bulk media-group set | Only when at least one existing row changed. |
+| Set one favorite | In the same IMMEDIATE transaction as the update, including a no-op or missing ID. |
+| Set one media group | In the same IMMEDIATE transaction as the update, including a no-op or missing ID. |
+| Bulk media-group set | Only when at least one existing row changed, inside the same transaction as the updates. |
 | Delete one asset | In the same transaction as the CAS deletion and orphan cleanup, after an existing source has moved to staging or absence has been confirmed. |
 | Rename one asset | In the same transaction as the CAS path/version update, after staged filesystem installation. |
 | Resolve duplicate batch | Exactly once in the transaction containing every CAS rename/delete and cleanup. A pre-commit rollback does not bump. |
-| Remove a scan root | Always after root/orphan removal. |
-| Non-empty scan/rescan | Once after all processed roots, including a scan that found no row changes; an empty root list returns without a bump. |
-| CSV import | Once when at least one matched asset changed. |
+| Remove a scan root | In the same transaction as root/orphan removal, only when orphaned assets were removed. |
+| Non-empty scan/rescan | Once per committed indexing batch (inside the batch transaction) and once more after all processed roots; an empty root list returns without a bump. |
+| CSV import | Once for the whole file, inside the single transaction that applies every row; the bump commits atomically with the applied rows. |
 | Clear library | Always after the database deletion sequence. |
 | Bundle restore | After installing and initializing the restored database; cached query state is also explicitly cleared. |
 
@@ -162,7 +162,7 @@ Thumbnail-path and thumbnail-failure writes, adding a scan root without scanning
 
 The following multi-statement database operations use a SQLite transaction: legacy filename backfill; staged single/batch file mutation with one revision bump; legacy low-level rename; bulk group updates; tag replacement; bulk tag merge; scan-root removal plus orphan pruning; batches of scan-root touches; completed-generation pruning; scan write batches of up to 512 assets; and batch thumbnail-path updates. Batch renames first move DB paths to operation-private temporary identities so SQLite uniqueness does not make ordered rename cycles implicit; filesystem source-target cycles are rejected before mutation to keep rollback deterministic.
 
-Single SQL statements are atomic individually. Tag replacement and bulk tag merge include their conditional revision bump in the same IMMEDIATE transaction and retry the complete transaction on retryable busy/locked failures. Several other workflows intentionally consist of multiple transactions or autocommit statements, with revision bumps after their mutation helpers. Filesystem deletion, rename, thumbnail cleanup, bundle movement, and CSV parsing are outside SQLite transactions.
+Single SQL statements are atomic individually. Tag replacement, bulk tag merge, single favorite/group setters, bulk media-group updates, and CSV import apply their conditional revision bump in the same transaction as the mutation (IMMEDIATE with bounded busy retry where writers contend). Scan indexing bumps inside each batch transaction so an interrupted scan still invalidates sessions for everything it committed. Filesystem deletion, rename, thumbnail cleanup, bundle movement, and CSV parsing are outside SQLite transactions.
 
 ## Known limitations
 
@@ -172,13 +172,10 @@ Single SQL statements are atomic individually. Tag replacement and bulk tag merg
 - `thumbnail_failures.asset_id` has no foreign key. Most deletion paths clean failures explicitly and read paths purge stale rows, but referential integrity is eventual and helper-dependent.
 - Media-group ordering buckets use the case-preserving raw `media_group_key`, while group filtering uses the normalized key. Consequently, differently cased stored keys can match one group filter but form separate ordering buckets.
 - A session snapshots IDs and order, not complete asset rows. If query-visible code changes a row without a successful revision bump, later pages can materialize changed summaries against the old ID order. Favorite and media-group single-item setters deliberately bump for no-ops and missing IDs, causing harmless extra invalidation; tag replacement is no-op-aware and rejects missing IDs.
-- Query start does not wrap its revision read, ordered-ID query, and first-page summary materialization in one read transaction, nor does it re-check the revision before returning `ready`. A concurrent mutation can therefore produce a mixed initial response; a subsequent page notices the changed revision and becomes `stale` if the mutation's bump succeeds.
-- Except for tag replacement and bulk tag merge, mutation and revision increment are generally not in the same transaction. A successful non-tag mutation followed by a failed bump can leave old sessions appearing current. Scan writes commit in batches and bump only at the end, so an interrupted scan can leave partial safe writes without an epoch change.
-- CSV import is not one transaction: each tag replacement commits independently, favorite/group writes autocommit, and the revision bump happens after the whole file. A later parse or database error can leave earlier rows applied without a bump.
+- The query-start snapshot covers revision, ordered IDs, and the first page, but the read transaction is deferred: a write that commits between registration and the first read can still be included, which is safe. A mutation committing after the snapshot becomes visible only through the later `stale` page transition.
 - `clear_library_data` performs its asset, failure, tag, and root deletes as separate autocommit statements. Delete-by-prefix also combines explicit cleanup statements without a transaction. Safe single-asset and duplicate-batch file mutations use their dedicated transaction instead.
 - Database transactions cannot make filesystem workflows atomic. Safe file mutations stage on each source filesystem and use a durable journal plus rollback/recovery outcomes; final staged-delete and thumbnail cleanup remain post-commit work. Bundle restore separately uses its own staging and rollback attempts.
-- The query pool waits indefinitely once all four connections are checked out; the five-second SQLite busy timeout applies to database locking, not pool checkout. Maintenance invalidation wakes old-pool waiters and waits for checked-out connections to return, so a stalled database caller can correspondingly stall maintenance without a timeout.
-- `services/db_pool.rs` and `services/asset_query_service.rs` currently have no focused unit-test modules. Session reuse, TTL/LRU eviction, supersession, revision-stale behavior, pool blocking, and maintenance-time draining/invalidation are not directly locked down by Rust tests.
+- The query pool bounds checkout at five seconds per acquisition attempt and reports a busy failure when exhausted; a caller that repeatedly retries can still wait indefinitely in aggregate. Maintenance invalidation wakes old-pool waiters and waits for checked-out connections to return, so a stalled database caller can correspondingly stall maintenance without a timeout.
 
 ## Safe schema-change checklist
 
@@ -201,4 +198,4 @@ Single SQL statements are atomic individually. Tag replacement and bulk tag merg
 - `src-tauri/tests/backend_e2e.rs` covers the database-level CSV merge/group/library-clear workflow across multiple helpers.
 - Command/service tests in `commands/scan.rs`, `services/scan_service.rs`, `commands/import_export.rs`, and `services/backup_service.rs` cover root persistence/removal, safe scan cleanup, CSV scalar parsing, bundle sidecar inclusion, restore validation, and restored database/thumbnail contents.
 
-These tests validate many data primitives, but they do not substitute for the missing migration matrix, deliberate rollback/fault-injection tests, or focused connection-pool/query-session tests listed under Known limitations.
+These tests validate many data primitives, but they do not substitute for the missing migration matrix or deliberate rollback/fault-injection tests listed under Known limitations. `services/asset_query_service.rs` now has a focused unit-test module covering equal-key session reuse, registration-order and generation supersession, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot start results; `db.rs` covers cooperative ID-build cancellation plus favorite/group/bulk-group same-transaction revision bumps. The connection pool's busy timeout itself is not yet directly unit-tested.

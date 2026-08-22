@@ -110,6 +110,9 @@ pub fn import_tags_csv(path: String, state: State<AppState>) -> Result<CsvImport
         }
 
         let conn = db::open_connection(&state.db_path)?;
+        // All applied rows plus the revision bump share one transaction so a
+        // committed mutation can never lose its invalidation bump.
+        let tx = conn.unchecked_transaction()?;
         let mut reader = csv::ReaderBuilder::new()
             .trim(csv::Trim::All)
             .from_path(&source_path)?;
@@ -137,7 +140,7 @@ pub fn import_tags_csv(path: String, state: State<AppState>) -> Result<CsvImport
         let mut rows_applied = 0usize;
         let mut assets_matched = 0usize;
         let mut assets_updated = 0usize;
-        let mut find_assets_stmt = conn.prepare(
+        let mut find_assets_stmt = tx.prepare(
             "SELECT id FROM assets WHERE file_name_key = ?1 ORDER BY id ASC",
         )?;
 
@@ -190,27 +193,27 @@ pub fn import_tags_csv(path: String, state: State<AppState>) -> Result<CsvImport
             rows_applied += 1;
             for asset_id in &asset_ids {
                 assets_matched += 1;
-                let existing = db::list_asset_tags(&conn, *asset_id)?;
+                let existing = db::list_asset_tags(&tx, *asset_id)?;
                 let merged = merge_tags(&existing, &imported_tags);
                 let normalized_existing = normalize_tags(existing);
                 let mut changed = false;
 
                 if merged != normalized_existing {
-                    db::set_asset_tags(&conn, *asset_id, &merged)?;
+                    db::set_asset_tags_in_tx(&tx, *asset_id, &merged)?;
                     changed = true;
                 }
 
                 if let Some(next_favorite) = imported_favorite {
-                    let current_favorite = db::get_asset_favorite(&conn, *asset_id)?;
+                    let current_favorite = db::get_asset_favorite(&tx, *asset_id)?;
                     if current_favorite != next_favorite {
-                        db::set_asset_favorite(&conn, *asset_id, next_favorite)?;
+                        db::set_asset_favorite(&tx, *asset_id, next_favorite)?;
                         changed = true;
                     }
                 }
 
                 if imported_media_group_key.is_some() || imported_media_group_order.is_some() {
                     let (current_group_key, current_group_order) =
-                        db::get_asset_media_group(&conn, *asset_id)?;
+                        db::get_asset_media_group(&tx, *asset_id)?;
                     let next_group_key = imported_media_group_key
                         .clone()
                         .unwrap_or(current_group_key.clone());
@@ -221,7 +224,7 @@ pub fn import_tags_csv(path: String, state: State<AppState>) -> Result<CsvImport
                         || current_group_order != next_group_order
                     {
                         db::set_asset_media_group(
-                            &conn,
+                            &tx,
                             *asset_id,
                             next_group_key.as_deref(),
                             next_group_order,
@@ -238,9 +241,11 @@ pub fn import_tags_csv(path: String, state: State<AppState>) -> Result<CsvImport
 
         drop(find_assets_stmt);
 
+        db::cleanup_orphan_tags(&tx)?;
         if assets_updated > 0 {
-            db::bump_library_revision(&conn)?;
+            db::bump_library_revision_in_tx(&tx)?;
         }
+        tx.commit()?;
 
         Ok(CsvImportSummary {
             rows_read,

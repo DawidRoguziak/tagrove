@@ -19,11 +19,11 @@ Production uses a page size of 128. `useLibraryAssets.refresh`:
 5. accepts only a `ready` response for the still-current local generation; and
 6. replaces the frontend page cache with the returned page at offset zero.
 
-The frontend generation is a late-response guard only. Rust accepts the `generation` field for compatibility but does not use it. Command normalization trims, lowercases, removes empty tags, and de-duplicates them; supported kinds are `image`, `gif`, and `video`, while an unsupported kind becomes no kind filter. A negative exact tag-count or a blank group-name meta-filter rejects the command. Full filter semantics are documented with the SQL model in [database](database.md) and the input grammar in [search, tags, and media groups](search-tags-and-media-groups.md).
+The frontend generation is a late-response guard, and the backend now honors it: `start_asset_query` registers the request (monotonic token plus client generation) before scheduling blocking work and returns `superseded` for any request that is no longer process-wide latest. Command normalization trims, lowercases, removes empty tags, and de-duplicates them; supported kinds are `image`, `gif`, and `video`, while an unsupported kind becomes no kind filter. A negative exact tag-count or a blank group-name meta-filter rejects the command. Full filter semantics are documented with the SQL model in [database](database.md) and the input grammar in [search, tags, and media groups](search-tags-and-media-groups.md).
 
 ### Backend session and page contract
 
-`AssetQueryManager` reads the current library revision and forms a cache key from that revision plus all normalized filters. On a cache miss it asks SQLite for the complete ordered list of matching asset IDs. That frozen ID vector, rather than full rows, is the session snapshot. The ordering keeps matching media-group members adjacent, orders group buckets by their newest matching member, and then applies group order, modification time, and ID tie-breakers.
+`AssetQueryManager` registers each start in arrival order before blocking work is scheduled; the registration token plus the client generation define the process-wide latest request. It reads the current library revision, builds the ordered ID list, and materializes the first page inside one deferred read transaction, so a ready response reflects a single SQLite snapshot. On a cache miss it asks SQLite for the complete ordered list of matching asset IDs, checking a cooperative cancellation flag periodically so a superseded request aborts mid-build instead of finishing wasted work. That frozen ID vector, rather than full rows, is the session snapshot. The ordering keeps matching media-group members adjacent, orders group buckets by their newest matching member, and then applies group order, modification time, and ID tie-breakers.
 
 The process-wide cache has these bounds:
 
@@ -37,7 +37,7 @@ The three successful protocol states are:
 | State | Command | Meaning and frontend response |
 | --- | --- | --- |
 | `ready` | start or page | Includes `session_id`, `revision`, global `total`, effective `offset`, and ordered `AssetSummary[]`. The frontend stores the session on start and merges a page only while its local generation is current. |
-| `superseded` | start only | A cache-miss ID build finished after another process-wide start became latest. It is not an IPC error. The frontend ignores it and retains the previous cache; it does not automatically retry. Cache hits return `ready` without this post-build supersession check. |
+| `superseded` | start only | The request's registration token or client generation is no longer process-wide latest. It is not an IPC error, and the check runs before the cheap cache-hit path too, so an obsolete request never receives `ready`. The frontend ignores it and retains the previous cache; it does not automatically retry. |
 | `stale` | page only | The session is absent, expired, evicted, or has a revision different from the database. Revision mismatch also removes it. The frontend starts a new query. |
 
 The initial page size and later page limit are clamped by Rust to 1–256. Page offsets use unsigned transport values; an offset past the snapshot end is clamped to `total`. Summary lookup runs in chunks of 500 IDs and reconstructs the snapshot order after SQLite returns rows. The registered legacy `list_assets` command is not the production gallery path; it returns full `Asset` rows, clamps its limit to 1–500, and does not provide a stable session.
@@ -106,26 +106,26 @@ The database revision is the authoritative invalidation epoch. Scans and query-v
 | Clear library | After backend success, the frontend immediately resets the thumbnail queue, thumbnails, cached assets, total, offset, and known tags. It does not need to query the now-empty library. |
 | Lightbox delete | Removes the loaded object and selection locally, refreshes known tags, then starts a fresh asset query. |
 | Favorite toggle | Patches loaded state. Removing an item while favorites-only is applied also refreshes; other favorite changes do not. |
-| Single/bulk tag or media-group edit | Patches loaded objects locally. Tag operations also refresh known tags, but these operations do not immediately restart the asset query. A later uncached page observes the bumped revision as `stale` and refreshes. |
+| Single/bulk tag edit | Patches loaded objects locally. Tag operations also refresh known tags. When the changed tags intersect an applied include/exclude filter, the query restarts immediately so membership is re-evaluated. Otherwise a later uncached page observes the bumped revision as `stale` and refreshes. |
+| Single/bulk media-group edit | Patches loaded objects locally and then always restarts the asset query, because group changes alter ordering and adjacency of the active view. |
 | Thumbnail generation or cleanup | Updates thumbnail state without changing query membership/order and does not bump the library revision. The thumbnail store is authoritative for production tiles. |
 
 Starting a refresh resets the active thumbnail queue but keeps the old asset cache and `total` visible until a current `ready` first page replaces them. Old start and page responses cannot merge after the local generation changes.
 
 ### Error behavior
 
-An invoke or database error rejects the corresponding promise. `refresh` always balances its internal loading counter but does not clear the old cache, set an error object, or retry. Calls made by settings workflows are surfaced by their operation runner. Calls launched with `void` from virtual range loading have no gallery-local error UI. A `superseded` start and `stale` page are normal result variants rather than errors; only `stale` causes an automatic refresh. Detail failures are deliberately swallowed so the selected summary remains viewable.
+An invoke or database error rejects the corresponding promise and records a gallery-level error state. `useLibraryAssets` exposes `loadError`, `retryLoad`, and `pageFailureEpoch`: a failed start sets `loadError`, keeps the previous cache visible, and `retryLoad` clears the error and starts a fresh query; a failed page load also sets `loadError`, leaves the failed offset as a retryable hole, and bumps `pageFailureEpoch` so the virtual range dedup marker re-opens and the range callback re-requests the missing page. The gallery grid renders an alert banner with a retry button while `loadError` is set. A `superseded` start and `stale` page are normal result variants rather than errors; only `stale` causes an automatic refresh. Detail failures are deliberately swallowed so the selected summary remains viewable. Calls made by settings workflows continue to surface through their operation runner.
 
 ## Known limitations
 
-- A session snapshots IDs and order, not rows. Query start does not hold one read transaction across revision read, ID selection, and first-page materialization, and it does not re-check revision before returning. A concurrent mutation can therefore produce a mixed initial page; later page access becomes stale after a successful revision bump.
 - Backend supersession, TTL, and the four-session LRU are process-wide. Another window or independent caller can supersede an uncached start or evict this window's session.
 - The frontend cache's LRU list is updated only when a page merges, not when it is read. `assets` and bulk-selection operations cover loaded pages only, and `getAssetIndex` cannot locate an unloaded asset.
-- Tag and media-group edits can change filter membership, group adjacency, or global order, but their current lightbox and bulk actions only patch loaded objects. Until a refresh or stale page is encountered, the visible order and membership can disagree with the database snapshot. A media-group patch also does not rebuild cached page ID arrays.
 - The detail cache in `useSelectionState` has no revision or lifecycle invalidation. Reselecting an asset after a mutation or database restore can reuse old path, size, tags, or other detail fields. The selection synchronization effect deliberately preserves the current full path and size and can preserve current tags when refreshed summaries carry the expected empty placeholder list.
-- Refresh does not cancel backend work or immediately clear the old gallery. A `superseded` result is not retried, and an error leaves the previous results visible without a gallery-specific error message.
+- Refresh does not cancel in-flight backend page work; the generation guard only discards late responses after they finish. A `superseded` result is not retried automatically.
+- Tag-edit invalidation compares changed tags against applied include/exclude filters only. A tag change that alters group adjacency without touching tag filters relies on media-group/delete-style restarts elsewhere; favorite toggles under non-favorites views still patch locally.
 - The empty state depends only on `assetCount`, so it can appear during the initial load while `total` is still zero. Conversely, an in-progress refresh keeps the old nonempty grid visible. The footer does not expose asset-page loading and normally shows the end state whenever thumbnail generation is idle.
 - Sparse slots change React keys from `pending-{index}` to the asset ID when loaded, which remounts that tile. Group backplates are presentation-only fragments for loaded entries in one row; they do not visually span row boundaries or holes.
-- `asset_query_service.rs` has no focused Rust unit-test module. The frontend has no focused `useLibraryAssets` suite for stale recovery, superseded starts, generation races, exact 12-page eviction, sparse lookup, or page-load errors. Existing browser tests cover only a subset of these behaviors.
+- The connection pool bounds each acquisition at five seconds but aggregate retry loops can still wait longer; the pool's busy path has no focused unit test yet.
 
 ## Safe change checklist
 
@@ -142,7 +142,9 @@ An invoke or database error rejects the corresponding promise. `refresh` always 
 
 ### Relevant existing tests
 
-- `src-tauri/src/db.rs` tests cover filter composition, grouped ordering, summary-supporting data invariants, and related mutations.
+- `src-tauri/src/db.rs` tests cover filter composition, grouped ordering, summary-supporting data invariants, cooperative ID-build cancellation, and related mutations including same-transaction revision bumps.
+- `src-tauri/src/services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, registration-order and generation supersession, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot starts.
+- `src/hooks/__tests__/useLibraryAssets.test.tsx` covers first-page replacement, superseded-start retention, start/page failure error state with retry recovery, stale-triggered restarts, page-failure epoch signaling, and late-generation response rejection.
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
 - `src/hooks/__tests__/useLibraryBrowser.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, shared in-flight indexed page lookup, virtual-range thumbnail IDs, and clear-library reset.
 - `src/components/gallery/__tests__/GalleryGrid.test.tsx` covers virtual-range reporting, reach-end triggering, thumbnail status/spinners, selection interactions, and the 10-GIF animation threshold.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   DEFAULT_TILE_SIZE,
   TILE_SIZE_MAX,
@@ -69,6 +69,14 @@ export function useAppShellController() {
     onQueueDuplicateThumbnailsByIds: library.queueThumbnailsByIds
   });
 
+  const appliedFilterTags = useMemo(
+    () => [
+      ...searchFilters.appliedParsedFilter.include,
+      ...searchFilters.appliedParsedFilter.exclude
+    ],
+    [searchFilters.appliedParsedFilter.include, searchFilters.appliedParsedFilter.exclude]
+  );
+
   const selection = useSelectionState({
     assets: library.assets,
     setAssets: library.setAssets,
@@ -78,7 +86,8 @@ export function useAppShellController() {
     assetTagState,
     assetCount: library.assetCount,
     getAssetAtAsync: library.getAssetAtAsync,
-    getAssetIndex: library.getAssetIndex
+    getAssetIndex: library.getAssetIndex,
+    appliedFilterTags
   });
 
   const bulkSelection = useBulkSelectionController({
@@ -89,7 +98,8 @@ export function useAppShellController() {
     setAssets: library.setAssets,
     refresh: library.refresh,
     refreshKnownTags: library.refreshKnownTags,
-    assetTagState
+    assetTagState,
+    appliedFilterTags
   });
 
   const onSearchSubmit = useCallback(() => {
@@ -230,7 +240,12 @@ export function useAppShellController() {
         onTileSizeChange,
         onSelect: selection.setSelected,
         hasScanRoots: settingsActions.scan.scanRoots.length > 0,
-        onAddFirstFolder
+        onAddFirstFolder,
+        loadError: library.loadError,
+        onLoadRetry: () => {
+          void library.retryLoad().catch(() => {});
+        },
+        pageFailureEpoch: library.pageFailureEpoch
       },
       bulkSelection,
       onOpenSettingsView

@@ -58,7 +58,7 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, builds or reuses a revision-bound ID session, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The `generation` compatibility field is accepted but ignored by Rust. |
+| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, registers the request in arrival order before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The frontend `generation` participates in supersession together with the backend registration token. |
 | `getAssetQueryPage` / `get_asset_query_page` | `sessionId: number`, `offset: number`, `limit: number` (default 128) | `AssetQueryPageResult` (`ready` or `stale`) | Returns summaries from the frozen session order. Limit is clamped to 1–256 and offset past the end is clamped to the total. |
 | `getAssetDetails` / `get_asset_details` | `assetId: number` | `AssetDetails \| null` | Returns the full path, size, and tags in addition to summary fields; unknown IDs return `null`. |
 | `getVideoStreamUrl` / `get_video_stream_url` | `assetId: number` | `string` | Validates that the ID identifies an existing video file and returns a process-private loopback HTTP URL. The endpoint resolves the path from SQLite again and never accepts a frontend-supplied filesystem path. |
@@ -161,13 +161,13 @@ A successful `start_asset_query` returns:
 }
 ```
 
-Sessions hold an ordered asset-ID snapshot for one normalized filter key and library revision. The process-wide cache keeps at most four sessions, evicts least-recently-used entries, and expires entries after five minutes without access. An equal filter/revision key may reuse an existing session.
+Sessions hold an ordered asset-ID snapshot for one normalized filter key and library revision. The command registers the request (monotonic token plus client generation) before scheduling blocking work, so scheduler reordering cannot let an older request supersede a newer one. Revision read, ordered-ID build, and the first page share one deferred SQLite read transaction, and the ID build aborts cooperatively when the request is superseded mid-build. The process-wide cache keeps at most four sessions, evicts least-recently-used entries, and expires entries after five minutes without access. An equal filter/revision key may reuse an existing session.
 
-- `superseded` is a successful start result, not an invoke error. A non-cached query returns it if another start request became the process-wide latest request before its ID-list build completed. The supplied frontend `generation` does not participate in this decision. `useLibraryAssets` also compares its local generation and ignores an obsolete response.
+- `superseded` is a successful start result, not an invoke error. A request whose registration token or client generation is no longer process-wide latest returns it — including on the cheap cache-hit path — so an obsolete request never observes a `ready` result. `useLibraryAssets` also compares its local generation and ignores an obsolete response.
 - `stale` is a successful page result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older library revision. A revision mismatch also removes that session. `useLibraryAssets` responds by starting a fresh query.
-- `ready` pages preserve the session order and report the effective (possibly end-clamped) offset. Query-visible mutations and scans bump the library revision, so later pages from older sessions become stale.
+- `ready` pages preserve the session order and report the effective (possibly end-clamped) offset. Query-visible mutations and scans bump the library revision in their mutation transaction, so later pages from older sessions become stale.
 
-Because supersession and the cache are process-wide, requests from another window or independent caller can supersede or evict this window's work.
+Because supersession and the cache are process-wide, requests from another window or independent caller can supersede or evict this window's work. Pooled database connections are acquired with a five-second bounded wait; exhaustion rejects the command with a text `database pool is busy` failure instead of blocking forever.
 
 ### Broadcast progress
 
@@ -214,7 +214,7 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 ## Known limitations
 
 - Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check. `ScanSummary.completion` is looser in TypeScript than the current Rust response.
-- `generation` on `start_asset_query` and `requestId` on `ensure_thumbnails` are ignored compatibility fields. Query supersession is process-global, while thumbnail staleness is handled only by frontend generation checks.
+- `requestId` on `ensure_thumbnails` remains an ignored compatibility field; query supersession now uses both the backend registration token and the frontend `generation`, but it is still process-global, so another window or independent caller can supersede this window's request.
 - `list_assets`, `ensure_asset_thumbnail`, and `ensure_page_thumbnails` remain registered alongside their primary session/channel replacements. The legacy thumbnail broadcast has no correlation identifier.
 - IPC errors are text only. Consumers cannot reliably distinguish validation, not-found, busy, filesystem, database, worker, or platform failures except by message text.
 - Numeric Rust IDs/counters are exposed as JavaScript `number` without an explicit safe-integer guard.
@@ -246,6 +246,6 @@ When changing IPC:
 - `src/hooks/__tests__/useThumbnailQueue.test.ts` exercises streamed ready/failed handling, batching, and ignoring messages after the frontend generation changes.
 - `src/components/settings/services/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings hook tests cover subscription lifetimes and command workflows.
 - Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, and `import_export.rs` cover filename/root/CSV validation and cancellation behavior.
-- Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, and `backup_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive safety, query primitives, clamps, and persistence semantics. The query-session manager itself currently has no focused unit-test module.
+- Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, and `asset_query_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive safety, query primitives, clamps, session reuse/supersession/stale-eviction semantics, and persistence behavior.
 - `src-tauri/tests/backend_integration.rs` and `backend_e2e.rs` cover file-backed cross-layer mutation/import workflows but do not exercise JavaScript serialization.
 - `e2e/specs/*.e2e.js` exercises the registered commands through a real desktop WebView and is the strongest existing check for Rust/TypeScript integration.

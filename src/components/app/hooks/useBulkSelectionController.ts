@@ -14,6 +14,9 @@ import {
   normalizeBulkTag
 } from "../../bulk/tagging/services/bulkTagMergeService";
 import type { BulkSelectionInteraction } from "../../gallery/GalleryGrid";
+import {
+  bulkTagMutationRequiresRefresh
+} from "../services/libraryInvalidationService";
 import { updateAssetTags } from "../services/assetMutationService";
 import { useAssetTagState } from "./useAssetTagState";
 import type { AssetTagStateController } from "./useAssetTagState";
@@ -27,6 +30,7 @@ interface UseBulkSelectionControllerOptions {
   refresh: () => Promise<void>;
   refreshKnownTags: () => Promise<string[]>;
   assetTagState?: AssetTagStateController;
+  appliedFilterTags?: string[];
 }
 
 function normalizedGroupIdentity(value: string | null): string | null {
@@ -42,7 +46,8 @@ export function useBulkSelectionController({
   setAssets,
   refresh,
   refreshKnownTags,
-  assetTagState: sharedAssetTagState
+  assetTagState: sharedAssetTagState,
+  appliedFilterTags = []
 }: UseBulkSelectionControllerOptions) {
   const localAssetTagState = useAssetTagState();
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
@@ -324,13 +329,16 @@ export function useBulkSelectionController({
         setGroupKeyDraft(normalizedDraft);
         setHasConflictingGroups(false);
       }
+      // Group changes alter ordering/adjacency of the active view, so restart
+      // the query session instead of trusting the local patch alone.
+      void refresh().catch(() => {});
     } catch {
       if (selectionKeyRef.current === capturedSelectionKey) setGroupFailed(true);
     } finally {
       groupOperationRef.current = false;
       setGroupApplying(false);
     }
-  }, [groupKeyDraft, orderedAssetIds, selectedAssets, selectionKey, setAssets]);
+  }, [groupKeyDraft, orderedAssetIds, refresh, selectedAssets, selectionKey, setAssets]);
 
   const onAddTag = useCallback(
     async (rawTag: string): Promise<boolean> => {
@@ -372,6 +380,9 @@ export function useBulkSelectionController({
           if (cached) detailsCacheRef.current.set(assetId, { ...cached, tags: result.tags });
           if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
           void refreshKnownTags().catch(() => []);
+          if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilterTags)) {
+            void refresh().catch(() => {});
+          }
           return true;
         } catch {
           assetTagState.settleMutation(mutationToken);
@@ -428,6 +439,9 @@ export function useBulkSelectionController({
           setAppliedBulkTags((previous) => mergeTagLists(previous, [tag]));
         }
         if (result.processed_assets !== assetIds.length) void refresh().catch(() => {});
+        else if (bulkTagMutationRequiresRefresh(result.updated_assets, appliedFilterTags)) {
+          void refresh().catch(() => {});
+        }
         return true;
       } catch {
         for (const token of mutationTokens.values()) assetTagState.settleMutation(token);
@@ -440,7 +454,7 @@ export function useBulkSelectionController({
         }
       }
     },
-    [assetTagState, refresh, refreshKnownTags, selectedAssets, selectionKey, setAssets]
+    [appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectedAssets, selectionKey, setAssets]
   );
 
   const onRemoveTag = useCallback(

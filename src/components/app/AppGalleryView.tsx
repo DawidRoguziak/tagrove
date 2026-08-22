@@ -71,6 +71,9 @@ export function AppGalleryView({
           selectionModeEnabled={bulkSelection.selectionModeEnabled}
           selectedAssetIds={bulkSelection.selectedAssetIds}
           onBulkSelectionInteraction={bulkSelection.onBulkSelectionInteraction}
+          loadError={media.loadError}
+          onLoadRetry={media.onLoadRetry}
+          pageFailureEpoch={media.pageFailureEpoch}
         />
 
         {bulkSelection.selectionModeEnabled ? (

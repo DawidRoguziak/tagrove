@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "Součást skupiny médií",
     "generatingThumbnails": "Generování náhledů pro {{count}} položek ve frontě.",
-    "noMoreItems": "Žádné další položky k načtení"
+    "noMoreItems": "Žádné další položky k načtení",
+    "loadError": "Načtení knihovny se nezdařilo.",
+    "retry": "Znovu"
   },
   "bulk": {
     "panel": {

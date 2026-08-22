@@ -3,6 +3,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
     sync::{Arc, Condvar, Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 
 use rusqlite::Connection;
@@ -10,6 +11,9 @@ use rusqlite::Connection;
 use crate::{db, error::AppResult};
 
 const MAX_CONNECTIONS: usize = 4;
+/// Upper bound for waiting on a pooled connection so callers get a
+/// reportable busy failure instead of blocking forever.
+const POOL_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct PoolState {
     idle: Vec<db::ManagedConnection>,
@@ -54,11 +58,12 @@ impl Drop for PooledConnection {
 
 pub fn connection(path: &Path) -> AppResult<PooledConnection> {
     let pool = pool_for(path)?;
+    let deadline = Instant::now() + POOL_ACQUIRE_TIMEOUT;
+    let mut state = pool
+        .state
+        .lock()
+        .map_err(|error| format!("database pool lock error: {error}"))?;
     loop {
-        let mut state = pool
-            .state
-            .lock()
-            .map_err(|error| format!("database pool lock error: {error}"))?;
         if state.invalidated {
             return Err("database pool was invalidated for maintenance".into());
         }
@@ -72,7 +77,7 @@ pub fn connection(path: &Path) -> AppResult<PooledConnection> {
         if state.total < MAX_CONNECTIONS {
             state.total += 1;
             drop(state);
-            match db::open_connection(&pool.path) {
+            return match db::open_connection(&pool.path) {
                 Ok(connection) => {
                     let mut state = pool
                         .state
@@ -83,28 +88,42 @@ pub fn connection(path: &Path) -> AppResult<PooledConnection> {
                         pool.available.notify_all();
                         drop(state);
                         drop(connection);
-                        return Err("database pool was invalidated for maintenance".into());
+                        Err("database pool was invalidated for maintenance".into())
+                    } else {
+                        drop(state);
+                        Ok(PooledConnection {
+                            pool: Arc::clone(&pool),
+                            connection: Some(connection),
+                        })
                     }
-                    drop(state);
-                    return Ok(PooledConnection {
-                        pool: Arc::clone(&pool),
-                        connection: Some(connection),
-                    })
                 }
                 Err(error) => {
                     if let Ok(mut state) = pool.state.lock() {
                         state.total = state.total.saturating_sub(1);
                         pool.available.notify_one();
                     }
-                    return Err(error.into());
+                    Err(error.into())
                 }
-            }
+            };
         }
-        let guard = pool
+        let Some(timeout) = deadline.checked_duration_since(Instant::now()) else {
+            return Err(
+                "database pool is busy: timed out waiting for a free connection".to_string().into(),
+            );
+        };
+        let (guard, wait_result) = pool
             .available
-            .wait(state)
+            .wait_timeout(state, timeout)
             .map_err(|error| format!("database pool wait error: {error}"))?;
-        drop(guard);
+        state = guard;
+        if wait_result.timed_out() && deadline <= Instant::now() {
+            if state.invalidated {
+                return Err("database pool was invalidated for maintenance".into());
+            }
+            return Err(
+                "database pool is busy: timed out waiting for a free connection".to_string().into(),
+            );
+        }
     }
 }
 

@@ -65,8 +65,9 @@ pub fn remove_scan_root(path: String, state: State<AppState>) -> Result<RemoveRo
         let normalized = normalize_root_path(&path);
         let conn = db::open_connection(&state.db_path)?;
 
+        // The revision bump is committed atomically with the removal inside
+        // remove_scan_root_and_orphan_assets.
         let (removed_assets, thumbs) = db::remove_scan_root_and_orphan_assets(&conn, &normalized)?;
-        db::bump_library_revision(&conn)?;
         let removed_thumbnails =
             thumb_service::delete_thumbnail_files_in_root(&state.thumbs_dir, thumbs);
 

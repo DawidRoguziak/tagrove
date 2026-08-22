@@ -1674,7 +1674,7 @@ pub fn clear_library_data(conn: &Connection) -> anyhow::Result<(usize, usize, Ve
     Ok((removed_assets, removed_roots, thumbs))
 }
 
-fn cleanup_orphan_tags(conn: &Connection) -> anyhow::Result<()> {
+pub(crate) fn cleanup_orphan_tags(conn: &Connection) -> anyhow::Result<()> {
     conn.execute(
         "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM asset_tags)",
         [],
@@ -1952,6 +1952,20 @@ pub fn set_asset_favorite(
     Ok(())
 }
 
+pub fn set_asset_favorite_with_revision(
+    conn: &mut Connection,
+    asset_id: i64,
+    is_favorite: bool,
+) -> anyhow::Result<i64> {
+    retry_immediate_transaction(conn, |tx| {
+        tx.execute(
+            "UPDATE assets SET is_favorite = ?1 WHERE id = ?2",
+            params![if is_favorite { 1 } else { 0 }, asset_id],
+        )?;
+        bump_library_revision_in_tx(tx)
+    })
+}
+
 pub fn set_asset_media_group(
     conn: &Connection,
     asset_id: i64,
@@ -1970,8 +1984,28 @@ pub fn set_asset_media_group(
     Ok(())
 }
 
+pub fn set_asset_media_group_with_revision(
+    conn: &mut Connection,
+    asset_id: i64,
+    media_group_key: Option<&str>,
+    media_group_order: Option<f64>,
+) -> anyhow::Result<i64> {
+    retry_immediate_transaction(conn, |tx| {
+        tx.execute(
+            "UPDATE assets SET media_group_key = ?1, media_group_order = ?2,
+              media_group_key_normalized = CASE
+                WHEN ?1 IS NULL OR trim(?1) = '' THEN NULL
+                ELSE lower(trim(?1))
+              END
+             WHERE id = ?3",
+            params![media_group_key, media_group_order, asset_id],
+        )?;
+        bump_library_revision_in_tx(tx)
+    })
+}
+
 pub fn set_assets_media_group_bulk(
-    conn: &Connection,
+    conn: &mut Connection,
     updates: &[(i64, Option<f64>)],
     media_group_key: Option<&str>,
 ) -> anyhow::Result<(usize, usize)> {
@@ -1979,49 +2013,52 @@ pub fn set_assets_media_group_bulk(
         return Ok((0, 0));
     }
 
-    let tx = conn.unchecked_transaction()?;
-    let mut processed_assets = 0usize;
-    let mut updated_assets = 0usize;
+    retry_immediate_transaction(conn, |tx| {
+        let mut processed_assets = 0usize;
+        let mut updated_assets = 0usize;
 
-    let mut get_current_stmt =
-        tx.prepare("SELECT media_group_key, media_group_order FROM assets WHERE id = ?1")?;
-    let mut update_stmt = tx.prepare(
-        "UPDATE assets SET media_group_key = ?1, media_group_order = ?2,
-           media_group_key_normalized = CASE
-             WHEN ?1 IS NULL OR trim(?1) = '' THEN NULL
-             ELSE lower(trim(?1))
-           END
-         WHERE id = ?3",
-    )?;
+        let mut get_current_stmt =
+            tx.prepare("SELECT media_group_key, media_group_order FROM assets WHERE id = ?1")?;
+        let mut update_stmt = tx.prepare(
+            "UPDATE assets SET media_group_key = ?1, media_group_order = ?2,
+               media_group_key_normalized = CASE
+                 WHEN ?1 IS NULL OR trim(?1) = '' THEN NULL
+                 ELSE lower(trim(?1))
+               END
+             WHERE id = ?3",
+        )?;
 
-    for (asset_id, media_group_order) in updates {
-        let current = get_current_stmt
-            .query_row(params![asset_id], |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, Option<f64>>(1)?,
-                ))
-            })
-            .optional()?;
+        for (asset_id, media_group_order) in updates {
+            let current = get_current_stmt
+                .query_row(params![asset_id], |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<f64>>(1)?,
+                    ))
+                })
+                .optional()?;
 
-        let Some((current_key, current_order)) = current else {
-            continue;
-        };
+            let Some((current_key, current_order)) = current else {
+                continue;
+            };
 
-        processed_assets += 1;
-        if current_key.as_deref() == media_group_key && current_order == *media_group_order {
-            continue;
+            processed_assets += 1;
+            if current_key.as_deref() == media_group_key && current_order == *media_group_order {
+                continue;
+            }
+
+            update_stmt.execute(params![media_group_key, media_group_order, asset_id])?;
+            updated_assets += 1;
         }
 
-        update_stmt.execute(params![media_group_key, media_group_order, asset_id])?;
-        updated_assets += 1;
-    }
+        drop(update_stmt);
+        drop(get_current_stmt);
 
-    drop(update_stmt);
-    drop(get_current_stmt);
-
-    tx.commit()?;
-    Ok((processed_assets, updated_assets))
+        if updated_assets > 0 {
+            bump_library_revision_in_tx(tx)?;
+        }
+        Ok((processed_assets, updated_assets))
+    })
 }
 
 fn list_asset_tags_in_tx(
@@ -2138,7 +2175,7 @@ fn canonicalize_tag_rows_in_tx(
     Ok(changed)
 }
 
-fn set_asset_tags_in_tx(
+pub(crate) fn set_asset_tags_in_tx(
     tx: &rusqlite::Transaction<'_>,
     asset_id: i64,
     tags: &[String],
@@ -2200,7 +2237,7 @@ fn set_asset_tags_in_tx(
     Ok((true, canonical))
 }
 
-fn bump_library_revision_in_tx(tx: &rusqlite::Transaction<'_>) -> anyhow::Result<i64> {
+pub(crate) fn bump_library_revision_in_tx(tx: &rusqlite::Transaction<'_>) -> anyhow::Result<i64> {
     tx.execute(
         "UPDATE library_metadata SET value = value + 1 WHERE key = 'revision'",
         [],
@@ -2280,6 +2317,9 @@ pub fn remove_scan_root_and_orphan_assets(
         [],
     )?;
     cleanup_orphan_tags(&tx)?;
+    if removed > 0 {
+        bump_library_revision_in_tx(&tx)?;
+    }
     tx.commit()?;
     Ok((removed, thumbs))
 }
@@ -2853,6 +2893,32 @@ pub fn list_ordered_asset_ids_with_meta(
     favorites_only: bool,
     meta_filter: Option<&AssetMetaFilter>,
 ) -> anyhow::Result<Vec<i64>> {
+    Ok(
+        try_list_ordered_asset_ids_with_meta(
+            conn,
+            tags_and,
+            tags_not,
+            kind,
+            favorites_only,
+            meta_filter,
+            || false,
+        )?
+        .unwrap_or_default(),
+    )
+}
+
+/// Builds the ordered matching-ID list, cooperatively aborting through
+/// `cancel_check` (checked periodically while streaming rows). `Ok(None)`
+/// means the build was cancelled; the partial list is discarded.
+pub fn try_list_ordered_asset_ids_with_meta(
+    conn: &Connection,
+    tags_and: &[String],
+    tags_not: &[String],
+    kind: Option<&str>,
+    favorites_only: bool,
+    meta_filter: Option<&AssetMetaFilter>,
+    cancel_check: impl Fn() -> bool,
+) -> anyhow::Result<Option<Vec<i64>>> {
     use rusqlite::types::Value;
 
     let mut where_clauses = Vec::<String>::new();
@@ -2955,10 +3021,14 @@ pub fn list_ordered_asset_ids_with_meta(
     let mut ids = Vec::new();
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(values.iter()), |row| row.get(0))?;
-    for row in rows {
+    const CANCEL_CHECK_INTERVAL: usize = 256;
+    for (index, row) in rows.enumerate() {
+        if index % CANCEL_CHECK_INTERVAL == 0 && cancel_check() {
+            return Ok(None);
+        }
         ids.push(row?);
     }
-    Ok(ids)
+    Ok(Some(ids))
 }
 
 pub fn list_asset_summaries_by_ids(
@@ -3060,7 +3130,9 @@ mod tests {
         merge_asset_tags_bulk_with_revision, record_thumbnail_failure, rename_asset_file_by_id,
         root_descendant_like_pattern,
         set_asset_favorite, set_asset_media_group, set_asset_tags, set_asset_tags_with_revision,
-        set_assets_media_group_bulk, upsert_asset, AssetMetaFilter,
+        set_assets_media_group_bulk, set_asset_favorite_with_revision,
+        set_asset_media_group_with_revision, try_list_ordered_asset_ids_with_meta,
+        upsert_asset, AssetMetaFilter,
     };
 
     #[test]
@@ -3903,7 +3975,7 @@ mod tests {
 
     #[test]
     fn set_assets_media_group_bulk_updates_multiple_assets_in_order() {
-        let conn = Connection::open_in_memory().expect("db");
+        let mut conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
         insert_asset(&conn, "C:\\media\\a.jpg", "image", 3);
@@ -3912,7 +3984,7 @@ mod tests {
         set_asset_media_group(&conn, 1, Some("legacy"), Some(7.0)).expect("seed group");
 
         let (processed, updated) = set_assets_media_group_bulk(
-            &conn,
+            &mut conn,
             &[(2, Some(1.0)), (1, Some(2.0)), (999, Some(3.0))],
             Some("trip-2026"),
         )
@@ -3948,7 +4020,7 @@ mod tests {
 
     #[test]
     fn set_assets_media_group_bulk_clears_keys_and_orders() {
-        let conn = Connection::open_in_memory().expect("db");
+        let mut conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
         insert_asset(&conn, "C:\\media\\a.jpg", "image", 2);
@@ -3957,7 +4029,7 @@ mod tests {
         set_asset_media_group(&conn, 2, Some("legacy-b"), Some(7.0)).expect("seed second group");
 
         let (processed, updated) =
-            set_assets_media_group_bulk(&conn, &[(1, None), (2, None)], None)
+            set_assets_media_group_bulk(&mut conn, &[(1, None), (2, None)], None)
                 .expect("clear bulk groups");
 
         assert_eq!(processed, 2);
@@ -4157,5 +4229,90 @@ mod tests {
             })
             .expect("file name");
         assert_eq!(file_name, "renamed.jpg");
+    }
+
+    #[test]
+    fn try_list_ordered_asset_ids_supports_cooperative_cancellation() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("init schema");
+        insert_asset(&conn, "C:\\media\\a.jpg", "image", 30);
+        insert_asset(&conn, "C:\\media\\b.jpg", "image", 20);
+        insert_asset(&conn, "C:\\media\\c.jpg", "image", 10);
+
+        let cancelled = try_list_ordered_asset_ids_with_meta(
+            &conn,
+            &[],
+            &[],
+            None,
+            false,
+            None,
+            || true,
+        )
+        .expect("cancelled build");
+        assert_eq!(cancelled, None);
+
+        let completed = try_list_ordered_asset_ids_with_meta(
+            &conn,
+            &[],
+            &[],
+            None,
+            false,
+            None,
+            || false,
+        )
+        .expect("completed build");
+        assert_eq!(completed.as_deref(), Some(&[1_i64, 2_i64, 3_i64][..]));
+    }
+
+    #[test]
+    fn favorite_and_group_mutations_bump_revision_in_the_same_transaction() {
+        let mut conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("init schema");
+        insert_asset(&conn, "C:\\media\\a.jpg", "image", 10);
+
+        let baseline = current_library_revision(&conn).expect("baseline revision");
+
+        set_asset_favorite_with_revision(&mut conn, 1, true).expect("favorite");
+        let after_favorite = current_library_revision(&conn).expect("revision after favorite");
+        assert_eq!(after_favorite, baseline + 1);
+        assert_eq!(
+            list_assets_with_meta(&conn, 0, 50, &[], &[], None, true, None)
+                .expect("favorites page")
+                .total,
+            1
+        );
+
+        set_asset_media_group_with_revision(&mut conn, 1, Some("trip"), Some(1.0))
+            .expect("group");
+        let after_group = current_library_revision(&conn).expect("revision after group");
+        assert_eq!(after_group, baseline + 2);
+    }
+
+    #[test]
+    fn bulk_media_group_bumps_revision_only_when_rows_change_in_one_transaction() {
+        let mut conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("init schema");
+        insert_asset(&conn, "C:\\media\\a.jpg", "image", 10);
+        insert_asset(&conn, "C:\\media\\b.jpg", "image", 9);
+
+        let baseline = current_library_revision(&conn).expect("baseline revision");
+
+        let (processed, updated) =
+            set_assets_media_group_bulk(&mut conn, &[(999, Some(1.0))], Some("trip"))
+                .expect("bulk with only missing ids");
+        assert_eq!((processed, updated), (0, 0));
+        assert_eq!(
+            current_library_revision(&conn).expect("noop revision"),
+            baseline
+        );
+
+        let (processed, updated) =
+            set_assets_media_group_bulk(&mut conn, &[(1, Some(1.0)), (2, Some(2.0))], Some("trip"))
+                .expect("bulk change");
+        assert_eq!((processed, updated), (2, 2));
+        assert_eq!(
+            current_library_revision(&conn).expect("bumped revision"),
+            baseline + 1
+        );
     }
 }

@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "属于媒体分组的一部分",
     "generatingThumbnails": "正在为 {{count}} 个排队项目生成缩略图。",
-    "noMoreItems": "没有更多项目可加载"
+    "noMoreItems": "没有更多项目可加载",
+    "loadError": "加载媒体库失败。",
+    "retry": "重试"
   },
   "bulk": {
     "panel": {

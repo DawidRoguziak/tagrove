@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "メディアグループの一部",
     "generatingThumbnails": "{{count}} 件のキュー項目のサムネイルを生成中です。",
-    "noMoreItems": "これ以上読み込む項目はありません"
+    "noMoreItems": "これ以上読み込む項目はありません",
+    "loadError": "ライブラリの読み込みに失敗しました。",
+    "retry": "再試行"
   },
   "bulk": {
     "panel": {

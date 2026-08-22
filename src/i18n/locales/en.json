@@ -76,7 +76,9 @@
     "gifChip": "GIF",
     "groupedChip": "Part of a media group",
     "generatingThumbnails": "Generating thumbnails for {{count}} queued items.",
-    "noMoreItems": "No more items to load"
+    "noMoreItems": "No more items to load",
+    "loadError": "Loading the library failed.",
+    "retry": "Retry"
   },
   "bulk": {
     "panel": {

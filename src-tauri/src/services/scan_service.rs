@@ -362,6 +362,9 @@ fn flush_scan_batch(
             generation,
         )?;
     }
+    // Every committed indexing batch invalidates query sessions immediately so
+    // a crash can never leave indexed rows without a revision bump.
+    db::bump_library_revision_in_tx(&tx)?;
     tx.commit()?;
     let written = pending.len();
     pending.clear();

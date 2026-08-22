@@ -12,9 +12,7 @@ use crate::{
     app::state::AppState,
     db,
     error::AppResult,
-    models::{
-        DbBundleExportSummary, DbBundleImportSummary, DbBundleInspection, DbRootMapping,
-    },
+    models::{DbBundleExportSummary, DbBundleImportSummary, DbBundleInspection, DbRootMapping},
     services::{asset_query_service, db_pool},
     utils::text::canonical_key,
 };
@@ -214,26 +212,34 @@ pub fn inspect_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbB
         .db_path
         .parent()
         .ok_or("Cannot resolve app data directory")?
-        .join(format!("restore-inspect-{}-{}", std::process::id(), rand::random::<u64>()));
+        .join(format!(
+            "restore-inspect-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
     let _ = fs::remove_dir_all(&inspect_root);
     fs::create_dir_all(&inspect_root)?;
     let inspect_db = inspect_root.join("media.db");
     let result = (|| -> AppResult<DbBundleInspection> {
         extract_database_entries(&mut archive, &validated.entries, &inspect_db)?;
         validate_sqlite_header(&inspect_db)?;
-        let allow_legacy = validated.manifest.as_ref().map_or(true, |manifest| {
-            manifest.format_version == 1
-        });
+        let allow_legacy = validated
+            .manifest
+            .as_ref()
+            .is_none_or(|manifest| manifest.format_version == 1);
         let conn = db::open_connection_read_only(&inspect_db)?;
         db::validate_backup_database(&conn, allow_legacy)?;
         let roots = db::list_scan_roots(&conn)?;
         if let Some(manifest) = &validated.manifest {
             validate_manifest_roots(manifest, &roots)?;
         }
-        let requires_mapping = cfg!(not(windows))
-            && roots.iter().any(|root| is_windows_absolute(root));
+        let requires_mapping =
+            cfg!(not(windows)) && roots.iter().any(|root| is_windows_absolute(root));
         Ok(DbBundleInspection {
-            format_version: validated.manifest.as_ref().map(|manifest| manifest.format_version),
+            format_version: validated
+                .manifest
+                .as_ref()
+                .map(|manifest| manifest.format_version),
             source_platform: validated
                 .manifest
                 .as_ref()
@@ -276,7 +282,10 @@ pub fn import_db_bundle(
                 .into(),
         );
     }
-    if source_file.canonicalize()?.starts_with(app_data_dir.canonicalize()?) {
+    if source_file
+        .canonicalize()?
+        .starts_with(app_data_dir.canonicalize()?)
+    {
         return Err("DB import archive cannot be stored inside the active profile".into());
     }
     let staging_root = app_data_dir.join("restore-staging");
@@ -295,9 +304,10 @@ pub fn import_db_bundle(
             &staging_thumbs,
         )?;
         validate_sqlite_header(&staging_db)?;
-        let allow_legacy = validated.manifest.as_ref().map_or(true, |manifest| {
-            manifest.format_version == 1
-        });
+        let allow_legacy = validated
+            .manifest
+            .as_ref()
+            .is_none_or(|manifest| manifest.format_version == 1);
         {
             let conn = db::open_connection_read_only_untracked(&staging_db)?;
             db::validate_backup_database(&conn, allow_legacy)?;
@@ -415,12 +425,7 @@ pub fn recover_interrupted_restore(app_data_dir: &Path) -> AppResult<()> {
     match journal.phase {
         RestorePhase::Swapping => {
             remove_database_sidecars(&live_db)?;
-            restore_previous_component(
-                &live_db,
-                &previous_db,
-                journal.previous_db_existed,
-                false,
-            )?;
+            restore_previous_component(&live_db, &previous_db, journal.previous_db_existed, false)?;
             restore_previous_component(
                 &live_thumbs,
                 &previous_thumbs,
@@ -519,7 +524,10 @@ fn validate_bundle_source(path: &str) -> AppResult<PathBuf> {
 
 fn is_windows_absolute(path: &str) -> bool {
     let bytes = path.as_bytes();
-    (bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && matches!(bytes[2], b'\\' | b'/'))
+    (bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/'))
         || path.starts_with("\\\\")
 }
 
@@ -530,11 +538,14 @@ fn mapped_path(path: &str, mappings: &[DbRootMapping]) -> Option<String> {
         }
         let source = mapping.source_root.trim_end_matches(['\\', '/']);
         let suffix = path.get(source.len()..)?;
-        if path[..source.len()].eq_ignore_ascii_case(source)
-            && suffix.starts_with(['\\', '/'])
-        {
+        if path[..source.len()].eq_ignore_ascii_case(source) && suffix.starts_with(['\\', '/']) {
             let suffix = suffix.trim_start_matches(['\\', '/']).replace('\\', "/");
-            return Some(Path::new(&mapping.target_root).join(suffix).to_string_lossy().to_string());
+            return Some(
+                Path::new(&mapping.target_root)
+                    .join(suffix)
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
         None
     })
@@ -568,9 +579,15 @@ fn rewrite_staged_paths(
         for entry in walkdir::WalkDir::new(staging_thumbs) {
             let entry = entry.map_err(|error| error.to_string())?;
             if entry.file_type().is_file() {
-                let relative = entry.path().strip_prefix(staging_thumbs).map_err(|error| error.to_string())?;
+                let relative = entry
+                    .path()
+                    .strip_prefix(staging_thumbs)
+                    .map_err(|error| error.to_string())?;
                 let key = normalized_relative_path(relative)?;
-                if thumb_candidates.insert(key, entry.path().to_path_buf()).is_some() {
+                if thumb_candidates
+                    .insert(key, entry.path().to_path_buf())
+                    .is_some()
+                {
                     return Err("Backup contains duplicate thumbnail destinations".into());
                 }
                 if let Some(name) = entry.file_name().to_str() {
@@ -591,11 +608,9 @@ fn rewrite_staged_paths(
             .iter()
             .filter(|root| {
                 path_is_within_root(&asset.path, root)
-                    && asset_root_mappings
-                        .iter()
-                        .any(|(asset_id, mapped_root)| {
-                            *asset_id == asset.id && mapped_root == *root
-                        })
+                    && asset_root_mappings.iter().any(|(asset_id, mapped_root)| {
+                        *asset_id == asset.id && mapped_root == *root
+                    })
             })
             .max_by_key(|root| root.len())
             .ok_or_else(|| {
@@ -710,7 +725,11 @@ fn validate_root_mappings(roots: &[String], mappings: &[DbRootMapping]) -> AppRe
     for mapping in mappings {
         let source_key = mapping.source_root.to_lowercase();
         if !known_roots.contains(&source_key) || !sources.insert(source_key) {
-            return Err(format!("Invalid or duplicate source root mapping: {}", mapping.source_root).into());
+            return Err(format!(
+                "Invalid or duplicate source root mapping: {}",
+                mapping.source_root
+            )
+            .into());
         }
         let target = Path::new(&mapping.target_root);
         if !target.is_absolute() || !target.is_dir() {
@@ -787,10 +806,10 @@ fn validate_existing_path_within_root(path: &str, root: &str) -> AppResult<()> {
                     format!("Media path contains an unresolved symbolic link: {path}")
                 })?;
                 if !resolved.starts_with(&canonical_root) {
-                    return Err(
-                        format!("Media path escapes its scan root through a symlink: {path}")
-                            .into(),
-                    );
+                    return Err(format!(
+                        "Media path escapes its scan root through a symlink: {path}"
+                    )
+                    .into());
                 }
             }
             Ok(_) => {}
@@ -831,7 +850,8 @@ fn stored_relative_path(path: &str, root: &str) -> Option<String> {
         if lower_path == lower_root {
             ""
         } else {
-            path.get(root.len()..).filter(|_| lower_path.starts_with(&lower_root))?
+            path.get(root.len()..)
+                .filter(|_| lower_path.starts_with(&lower_root))?
         }
     } else {
         path.strip_prefix(root)?
@@ -897,28 +917,37 @@ fn validate_archive(archive: &mut zip::ZipArchive<fs::File>) -> AppResult<Valida
             return Err("Backup archive exceeds the expanded size limit".into());
         }
         let compressed = entry.compressed_size();
-        if size > 0
-            && (compressed == 0
-                || size > compressed.saturating_mul(MAX_COMPRESSION_RATIO))
+        if size > 0 && (compressed == 0 || size > compressed.saturating_mul(MAX_COMPRESSION_RATIO))
         {
-            return Err(format!("Backup entry exceeds the compression ratio limit: {}", entry.name()).into());
+            return Err(format!(
+                "Backup entry exceeds the compression ratio limit: {}",
+                entry.name()
+            )
+            .into());
         }
         if entry.is_dir() {
             continue;
         }
-        if entry.unix_mode().is_some_and(|mode| mode & 0o170000 == 0o120000) {
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
             return Err("Backup archive contains a symbolic-link entry".into());
         }
 
         let normalized = safe_path.to_string_lossy().replace('\\', "/");
-        let recognized = matches!(normalized.as_str(), "manifest.json" | "media.db" | "media.db-wal" | "media.db-shm")
-            || normalized.starts_with("thumbs/");
+        let recognized = matches!(
+            normalized.as_str(),
+            "manifest.json" | "media.db" | "media.db-wal" | "media.db-shm"
+        ) || normalized.starts_with("thumbs/");
         if !recognized {
             continue;
         }
         let destination_key = normalized.to_lowercase();
         if !destinations.insert(destination_key) {
-            return Err(format!("Backup archive contains a duplicate destination: {normalized}").into());
+            return Err(
+                format!("Backup archive contains a duplicate destination: {normalized}").into(),
+            );
         }
         if normalized == "manifest.json" {
             if size > MAX_MANIFEST_BYTES {
@@ -945,7 +974,10 @@ fn validate_archive(archive: &mut zip::ZipArchive<fs::File>) -> AppResult<Valida
         }
     }
 
-    if !entries.iter().any(|entry| entry.path == Path::new("media.db")) {
+    if !entries
+        .iter()
+        .any(|entry| entry.path == Path::new("media.db"))
+    {
         return Err("Backup archive does not contain media.db".into());
     }
     Ok(ValidatedArchive { entries, manifest })
@@ -971,7 +1003,10 @@ fn validate_manifest(manifest: &BundleManifest) -> AppResult<()> {
         }
         version => return Err(format!("Unsupported backup format version {version}").into()),
     }
-    if !matches!(manifest.source_platform.as_str(), "windows" | "linux" | "macos") {
+    if !matches!(
+        manifest.source_platform.as_str(),
+        "windows" | "linux" | "macos"
+    ) {
         return Err("Backup manifest has an unsupported source platform".into());
     }
     let unique_roots = manifest.roots.iter().collect::<HashSet<_>>();
@@ -1368,8 +1403,12 @@ mod tests {
 
         let state = create_test_state(&db_path, &thumbs_dir);
         let state_ref = as_state(&state);
-        let error = import_db_bundle(archive_path.to_string_lossy().to_string(), Vec::new(), &state_ref)
-            .expect_err("must fail without media.db");
+        let error = import_db_bundle(
+            archive_path.to_string_lossy().to_string(),
+            Vec::new(),
+            &state_ref,
+        )
+        .expect_err("must fail without media.db");
 
         assert!(
             error.to_string().contains("does not contain media.db"),
@@ -1437,8 +1476,12 @@ mod tests {
 
         let state = create_test_state(&target_db_path, &target_thumbs_dir);
         let state_ref = as_state(&state);
-        let summary = import_db_bundle(archive_path.to_string_lossy().to_string(), Vec::new(), &state_ref)
-            .expect("import bundle");
+        let summary = import_db_bundle(
+            archive_path.to_string_lossy().to_string(),
+            Vec::new(),
+            &state_ref,
+        )
+        .expect("import bundle");
 
         assert_eq!(summary.restored_files, 1);
         assert_eq!(summary.restored_thumbnails, 1);
@@ -1483,8 +1526,7 @@ mod tests {
                 .expect("insert asset");
             db::set_asset_tags(&conn, 1, &["travel".to_string()]).expect("set tags");
             db::set_asset_favorite(&conn, 1, true).expect("set favorite");
-            db::set_asset_media_group(&conn, 1, Some("album"), Some(2.0))
-                .expect("set group");
+            db::set_asset_media_group(&conn, 1, Some("album"), Some(2.0)).expect("set group");
             conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
                 .expect("checkpoint source");
         }
@@ -1497,8 +1539,11 @@ mod tests {
                 .expect("start db");
             zip.write_all(&fs::read(&source_db).expect("read source db"))
                 .expect("write db");
-            zip.start_file("thumbs/legacy.jpg", zip::write::SimpleFileOptions::default())
-                .expect("start thumb");
+            zip.start_file(
+                "thumbs/legacy.jpg",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .expect("start thumb");
             zip.write_all(b"legacy-thumbnail").expect("write thumb");
             zip.finish().expect("finish archive");
         }
@@ -1531,17 +1576,26 @@ mod tests {
         assert_eq!(page.total, 1);
         let asset = &page.items[0];
         assert_eq!(asset.id, 1);
-        assert_eq!(asset.path, target_root.join("album/photo.jpg").to_string_lossy());
+        assert_eq!(
+            asset.path,
+            target_root.join("album/photo.jpg").to_string_lossy()
+        );
         assert_eq!(asset.tags, vec!["travel".to_string()]);
         assert!(asset.is_favorite);
         assert_eq!(asset.media_group_key.as_deref(), Some("album"));
         assert_eq!(asset.media_group_order, Some(2.0));
-        let expected_thumb = target_thumbs.join("legacy.jpg").to_string_lossy().to_string();
+        let expected_thumb = target_thumbs
+            .join("legacy.jpg")
+            .to_string_lossy()
+            .to_string();
         assert_eq!(asset.thumb_path.as_deref(), Some(expected_thumb.as_str()));
         assert_eq!(
             db::list_scan_roots(&conn).expect("roots"),
             vec![target_root.to_string_lossy().to_string()]
         );
-        assert_eq!(fs::read(target_thumbs.join("legacy.jpg")).expect("restored thumb"), b"legacy-thumbnail");
+        assert_eq!(
+            fs::read(target_thumbs.join("legacy.jpg")).expect("restored thumb"),
+            b"legacy-thumbnail"
+        );
     }
 }

@@ -117,7 +117,8 @@ impl AssetQueryManager {
             filters.favorites_only,
             filters.meta_filter.as_ref(),
             cancel_check,
-        )? else {
+        )?
+        else {
             perf_log("asset-query-cancelled", started, 0);
             return Ok(StartAssetQueryResult::Superseded);
         };
@@ -187,7 +188,10 @@ impl AssetQueryManager {
     fn cached_session(&self, key: &str) -> Option<QuerySession> {
         let mut cache = self.cache.lock().ok()?;
         prune(&mut cache);
-        let index = cache.sessions.iter().position(|session| session.key == key)?;
+        let index = cache
+            .sessions
+            .iter()
+            .position(|session| session.key == key)?;
         let mut session = cache.sessions.remove(index)?;
         session.last_accessed = Instant::now();
         cache.sessions.push_front(session.clone());
@@ -207,7 +211,9 @@ impl AssetQueryManager {
     fn insert_session(&self, session: QuerySession) {
         if let Ok(mut cache) = self.cache.lock() {
             prune(&mut cache);
-            cache.sessions.retain(|existing| existing.key != session.key);
+            cache
+                .sessions
+                .retain(|existing| existing.key != session.key);
             cache.sessions.push_front(session);
             cache.sessions.truncate(MAX_SESSIONS);
         }
@@ -290,8 +296,7 @@ mod tests {
                 duration_ms: None,
                 thumb_path: None,
             };
-            db::upsert_scanned_asset(&conn, &asset, 1, "/library", 1)
-                .expect("insert asset");
+            db::upsert_scanned_asset(&conn, &asset, 1, "/library", 1).expect("insert asset");
         }
         drop(conn);
         TestDb { _dir: dir, path }
@@ -381,7 +386,9 @@ mod tests {
         let request = manager.begin_request(1);
         let ready = start(&manager, &target.path, &filters(&[]), request, 1);
         let StartAssetQueryResult::Ready {
-            session_id, revision, ..
+            session_id,
+            revision,
+            ..
         } = ready
         else {
             panic!("expected ready result");
@@ -397,10 +404,14 @@ mod tests {
         assert!(bumped > revision);
         drop(conn);
 
-        let stale = manager.page(&target.path, session_id, 0, 10).expect("stale page");
+        let stale = manager
+            .page(&target.path, session_id, 0, 10)
+            .expect("stale page");
         assert_eq!(stale, AssetQueryPageResult::Stale);
 
-        let again = manager.page(&target.path, session_id, 0, 10).expect("again");
+        let again = manager
+            .page(&target.path, session_id, 0, 10)
+            .expect("again");
         assert_eq!(again, AssetQueryPageResult::Stale);
     }
 
@@ -412,7 +423,13 @@ mod tests {
         for index in 0..5 {
             let key_filters = filters(&[&format!("tag-{index}")]);
             let request = manager.begin_request(index as u64 + 1);
-            let ready = start(&manager, &target.path, &key_filters, request, index as u64 + 1);
+            let ready = start(
+                &manager,
+                &target.path,
+                &key_filters,
+                request,
+                index as u64 + 1,
+            );
             let StartAssetQueryResult::Ready { session_id, .. } = ready else {
                 panic!("expected ready result for key {index}");
             };
@@ -422,7 +439,12 @@ mod tests {
         }
 
         let evicted = manager
-            .page(&target.path, first_session_id.expect("first session"), 0, 10)
+            .page(
+                &target.path,
+                first_session_id.expect("first session"),
+                0,
+                10,
+            )
             .expect("evicted page");
         assert_eq!(evicted, AssetQueryPageResult::Stale);
     }
@@ -445,7 +467,9 @@ mod tests {
             }
         }
 
-        let expired = manager.page(&target.path, session_id, 0, 10).expect("expired page");
+        let expired = manager
+            .page(&target.path, session_id, 0, 10)
+            .expect("expired page");
         assert_eq!(expired, AssetQueryPageResult::Stale);
     }
 
@@ -461,7 +485,9 @@ mod tests {
 
         manager.clear();
 
-        let stale = manager.page(&target.path, session_id, 0, 10).expect("cleared page");
+        let stale = manager
+            .page(&target.path, session_id, 0, 10)
+            .expect("cleared page");
         assert_eq!(stale, AssetQueryPageResult::Stale);
 
         // A request registered before clear() is superseded by it...
@@ -500,7 +526,9 @@ mod tests {
         assert_eq!(offset, 0);
         assert_eq!(items.len(), 3);
         assert_eq!(
-            manager.page(&target.path, session_id, 3, 10).expect("end clamp"),
+            manager
+                .page(&target.path, session_id, 3, 10)
+                .expect("end clamp"),
             AssetQueryPageResult::Ready {
                 session_id,
                 revision,

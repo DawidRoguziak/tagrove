@@ -1,6 +1,5 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import type { AppLanguage } from "../components/app/types";
 import cs from "./locales/cs.json";
 import de from "./locales/de.json";
 import en from "./locales/en.json";
@@ -12,7 +11,7 @@ import ko from "./locales/ko.json";
 import pl from "./locales/pl.json";
 import ru from "./locales/ru.json";
 import zh from "./locales/zh.json";
-import { APP_LANGUAGES } from "./languages";
+import { APP_LANGUAGES, type AppLanguage } from "./languages";
 
 export const LANGUAGE_STORAGE_KEY = "media-tagger.language";
 
@@ -58,7 +57,7 @@ const resources = {
   ja: { translation: ja },
   ko: { translation: ko },
   cs: { translation: cs }
-};
+} satisfies Record<AppLanguage, { translation: typeof en }>;
 
 void i18n.use(initReactI18next).init({
   resources,

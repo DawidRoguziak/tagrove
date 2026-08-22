@@ -22,8 +22,7 @@ The application supports these 11 languages, in the order shown in the settings 
 
 There is deliberately more than one source that must stay synchronized:
 
-- `AppLanguage` in `src/components/app/types.ts` is the compile-time union used by application and settings props.
-- `APP_LANGUAGES` in `src/i18n/languages.ts` is the ordered runtime allowlist. It controls selector order and language normalization.
+- `APP_LANGUAGES` in `src/i18n/languages.ts` is the ordered runtime allowlist. It controls selector order and language normalization. `AppLanguage` is derived from this tuple and re-exported by `src/components/app/types.ts` for application and settings props.
 - `APP_LANGUAGE_NATIVE_LABELS` in the same file is the source for labels displayed by `AppearanceSection`. The `settings.appearance.language.*` entries found in some locale JSON files are not used by that selector and must not be treated as its registry.
 - Imports and the `resources` object in `src/i18n/index.ts` register the translation tree that i18next can load for each code.
 - `src/i18n/locales/<code>.json` supplies the actual resource. `en.json` defines the canonical keys, value shapes, and interpolation placeholders.
@@ -73,8 +72,8 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 
 ### Add a language
 
-1. Add its code to the `AppLanguage` union in `src/components/app/types.ts`.
-2. Add the code at the intended selector position in `APP_LANGUAGES` and add its native-language label to `APP_LANGUAGE_NATIVE_LABELS` in `src/i18n/languages.ts`.
+1. Add the code at the intended selector position in `APP_LANGUAGES`; the `AppLanguage` type is derived from this tuple.
+2. Add its native-language label to `APP_LANGUAGE_NATIVE_LABELS` in `src/i18n/languages.ts`.
 3. Create `src/i18n/locales/<code>.json` by copying the complete English tree, then translate every leaf while preserving placeholders and types.
 4. Import the JSON and add `{ translation: <import> }` under the same code in the `resources` object in `src/i18n/index.ts`.
 5. Choose and test `lightbox.deleteConfirm.confirmWord`, `typeYesLabel`, and `typeYesPlaceholder` explicitly.
@@ -89,73 +88,41 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 - All 11 locale JSON files are imported into the current runtime resource object.
 - The language selector uses stable native labels rather than labels that change with the current UI language.
 
-These are runtime behaviors, not a guarantee that every translation file is complete. Key and placeholder parity is a repository invariant that currently depends on review and validation.
+The offline locale gate checks the corresponding repository invariants. It reads the language tuple without evaluating TypeScript and requires exactly one JSON resource per `AppLanguage`.
 
-## Current limitations and parity gaps
+## Automated locale contract
 
-As of the current repository state, English has 316 leaf keys. A read-only comparison found:
+English currently has 336 leaf keys. `bun run locale:check` treats `en.json` as canonical and fails when any locale has:
 
-- `fr.json` has 233 leaves: 83 canonical keys are missing and there are no extra keys. The missing keys are all four `settings.status.ready` leaves; 15 direct `settings.progress` leaves; all five `settings.progress.thumbnailSummary` leaves; 13 `settings.actions.pending` leaves; 14 `settings.actions.errorPrefix` leaves; 25 `settings.actions.summary` leaves; and seven `settings.actions.dialogs` leaves.
-- `cs.json` has 237 leaves: 85 canonical keys are missing and six extra keys are misplaced. Its missing settings groups are the same as French except that its four `settings.status.ready` leaves are present. In addition, the six canonical `validation.*` leaves are missing because they currently exist under `settings.validation.*`: `fileNameCannotBeEmpty`, `fileNameInvalid`, `fileNameInvalidCharacters`, `duplicatePayloadInvalid`, `unknownAssetInChanges`, and `duplicateGroupStillUnresolved`.
-- For keys shared with English, French and Czech currently have no placeholder mismatches. The other eight non-English resources (`pl`, `de`, `it`, `es`, `ru`, `zh`, `ja`, and `ko`) match all 316 English leaf paths and placeholder multisets.
+- a missing, extra, or relocated leaf path;
+- a different primitive value type; or
+- a different multiset of complete i18next placeholder tokens.
 
-The French and Czech missing keys render through English fallback. This is a graceful runtime result, but it is not translation parity.
+The gate also rejects missing or unexpected locale JSON files, duplicate language codes, and a language list that does not start with English. It is read-only and needs no network access. `scripts/locale-tools.test.mjs` covers these failure modes and the generator's preservation policy.
 
-There are no dedicated automated tests for initial language resolution, prefix normalization, local-storage persistence, document `lang`, or whole-resource key/placeholder parity. `src/test/setup.ts` imports the real i18n module and requests English for tests. The existing `AppearanceSection` test checks the English selector and callbacks for Polish and Czech; the lightbox confirmation tests exercise the English `Yes` flow.
+Runtime tests for initial language resolution and persistence remain separate from resource parity. `src/test/setup.ts` imports the real i18n module and requests English for tests. The existing `AppearanceSection` test checks selector callbacks, and the lightbox confirmation tests exercise the English `Yes` flow.
 
-## Locale generator: behavior and limitations
+## Locale generator
 
-`scripts/generate-locales.mjs` is a bulk overwrite tool, not a validation or incremental-update tool. Its intended behavior is to:
+`bun run locale:generate` reads `en.json` directly and processes every non-English `AppLanguage`, including Polish and Czech. It never parses or executes `src/i18n/index.ts`. By default it translates only canonical leaves that are absent from a locale and preserves every existing value. A complete locale therefore causes no network calls and no file write.
 
-- read the English and Polish trees from the `resources` declaration in `src/i18n/index.ts`;
-- rewrite `en.json` and `pl.json` from those trees;
-- collect unique English leaf strings, translate each unique string once, and recursively rebuild the same tree for French, German, Italian, Spanish, Russian, Simplified Chinese, Japanese, and Korean;
-- protect placeholders matching `{{ <word-or-dot> }}` and newlines with temporary sentinel strings during translation;
-- call the unofficial, unauthenticated `https://translate.googleapis.com/translate_a/single` endpoint with `client=gtx` and source language `en`, using network access, an in-memory cache, a 40 ms delay after successes, and up to five attempts with increasing delays;
-- overwrite each target JSON file wholesale, then force a language-specific `lightbox.deleteConfirm.confirmWord`.
+Pass `--overwrite` only for an intentional full machine-translation draft:
 
-Do not run the generator in its current state:
+```powershell
+bun run locale:generate -- --overwrite
+```
 
-- Its parser searches for a `resources` object ending in `} as const;`, but the current `src/i18n/index.ts` object ends in `};`. It therefore fails before translation with “Cannot find resources object boundaries”.
-- Even if that boundary search were changed alone, the current object contains imported identifiers such as `en` and `pl`. The generator evaluates the object literal with `Function(...)`, where those imports are not defined, so the current imported-JSON structure remains incompatible.
-- Czech is absent from `TARGET_LANGUAGES`, so it would not be generated even after the parser was repaired. Polish is only rewritten from the extracted tree, not translated.
-- The generator hard-codes unaccented `Si` for Italian and Spanish, while the checked-in resources currently use `Sì` and `Sí`. A successful run would overwrite those reviewed confirmation words.
-- It overwrites reviewed translations, has no on-disk translation cache, depends on an unofficial endpoint and response shape, and performs no post-generation key, placeholder, fluency, accessibility, or destructive-action validation. Sentinel strings could also be changed by the translation service; restoration only replaces exact sentinels.
+Both modes preserve the reviewed destructive confirmation words, including `Sì` and `Sí`, and run the offline locale contract after generation. Missing strings still use the unofficial Google Translate endpoint with retries and an in-memory cache. Network output is only a draft. Review wording, accessibility labels, interpolation, layout, and destructive prompts before committing it.
 
-Use manual edits and review for current localization work. Repairing or replacing the generator should be a separate change with explicit review of its network and overwrite behavior.
+The generator protects placeholders and newlines with sentinel values. The post-generation contract detects a changed or missing token, but it cannot judge translation quality. Do not use `--overwrite` as a routine update command.
 
 ## Safe validation
 
 ### Read-only parity check
 
-The following command reads JSON files only. It compares leaf paths and placeholder multisets against English and exits nonzero when it finds a mismatch. The known French and Czech gaps above mean it currently reports failures.
-
 ```powershell
-node -e '
-const fs = require("node:fs");
-const dir = "src/i18n/locales";
-const load = (code) => JSON.parse(fs.readFileSync(`${dir}/${code}.json`, "utf8"));
-const flatten = (value, path = "", out = new Map()) => {
-  if (Array.isArray(value)) value.forEach((item, index) => flatten(item, `${path}[${index}]`, out));
-  else if (value && typeof value === "object") {
-    for (const [key, item] of Object.entries(value)) flatten(item, path ? `${path}.${key}` : key, out);
-  } else out.set(path, value);
-  return out;
-};
-const tokens = (value) => typeof value === "string"
-  ? [...value.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((match) => match[1]).sort()
-  : [];
-const english = flatten(load("en"));
-for (const code of ["pl", "fr", "de", "it", "es", "ru", "zh", "ja", "ko", "cs"]) {
-  const locale = flatten(load(code));
-  const missing = [...english.keys()].filter((key) => !locale.has(key));
-  const extra = [...locale.keys()].filter((key) => !english.has(key));
-  const placeholders = [...english.keys()].filter((key) => locale.has(key)
-    && JSON.stringify(tokens(english.get(key))) !== JSON.stringify(tokens(locale.get(key))));
-  console.log(code, { missing, extra, placeholders });
-  if (missing.length || extra.length || placeholders.length) process.exitCode = 1;
-}
-'
+bun run locale:check
+bun run test:locale-tools
 ```
 
 Run the relevant existing tests and TypeScript/Vite build after localization changes:

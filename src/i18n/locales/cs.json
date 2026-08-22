@@ -2,6 +2,7 @@
   "common": {
     "back": "Zpět",
     "cancel": "Zrušit",
+    "confirm": "Potvrdit",
     "close": "Zavřít",
     "remove": "Odstranit",
     "apply": "Použít",
@@ -303,25 +304,114 @@
         "duplicates": "Připraveno ke skenování duplicit"
       }
     },
-    "validation": {
-      "fileNameCannotBeEmpty": "Název souboru nemůže být prázdný",
-      "fileNameInvalid": "Název souboru je neplatný",
-      "fileNameInvalidCharacters": "Název souboru obsahuje neplatné znaky",
-      "duplicatePayloadInvalid": "Neplatný payload změn duplicit",
-      "unknownAssetInChanges": "Neznámé médium ve změnách: {{assetId}}",
-      "duplicateGroupStillUnresolved": "Skupina \"{{fileName}}\": změny stále zanechávají duplicitní názvy souborů. Přejmenujte nebo smažte další položky v tomto bloku."
+    "progress": {
+      "counting": "Počítání souborů {{processed}}/{{total}}",
+      "scanning": "Skenování {{processed}}/{{total}}",
+      "cleanup": "Čištění {{processed}}/{{total}}",
+      "scanEmpty": "Nejsou nakonfigurovány žádné složky ke skenování",
+      "scanSkip": "Přeskakuji neplatnou složku",
+      "thumbsStart": "Generování náhledů bylo zahájeno",
+      "thumbs": "Generování náhledů {{processed}}/{{total}}",
+      "thumbsDone": "Generování náhledů bylo dokončeno",
+      "thumbsFailedStart": "Opakování neúspěšných náhledů bylo zahájeno",
+      "thumbsFailed": "Opakování neúspěšných náhledů {{processed}}/{{total}}",
+      "thumbsFailedDone": "Opakování neúspěšných náhledů bylo dokončeno",
+      "libraryClear": "Mazání knihovny {{processed}}/{{total}}",
+      "libraryClearDone": "Mazání knihovny bylo dokončeno",
+      "duplicatesScan": "Hledání duplicit {{processed}}/{{total}}",
+      "duplicatesScanDone": "Hledání duplicit bylo dokončeno",
+      "thumbnailSummary": {
+        "ready": "Připraveno: {{count}}",
+        "failed": "neúspěšné: {{count}}",
+        "skippedFailed": "přeskočené neúspěšné: {{count}}",
+        "cancelledAt": "Zrušeno při {{processed}}/{{total}}.",
+        "processed": "Zpracováno: {{processed}}/{{total}}."
+      }
     },
     "actions": {
+      "pending": {
+        "waitFolderSelection": "Čeká se na výběr složky...",
+        "removeFolder": "Odebírání složky ze seznamu skenování: {{path}}",
+        "rescanAll": "Opakované skenování všech složek...",
+        "rescanFolder": "Opakované skenování složky: {{path}}",
+        "renderAllThumbs": "Generování náhledů pro všechna indexovaná média...",
+        "retryFailedThumbs": "Opakování neúspěšných náhledů...",
+        "clearLibrary": "Mazání dat knihovny...",
+        "findDuplicates": "Hledání duplicitních názvů souborů...",
+        "applyDuplicateChanges": "Použití změn duplicit...",
+        "prepareCsvExport": "Příprava exportu CSV...",
+        "prepareCsvImport": "Příprava importu CSV...",
+        "prepareDbExport": "Příprava exportu zálohy databáze...",
+        "prepareDbImport": "Příprava importu zálohy databáze..."
+      },
+      "errorPrefix": {
+        "addFolder": "Chyba při přidávání složky",
+        "removeFolder": "Chyba při odebírání složky",
+        "rescan": "Chyba při opakovaném skenování",
+        "rescanFolder": "Chyba při skenování složky",
+        "renderThumbs": "Chyba při generování náhledů",
+        "retryThumbs": "Chyba při opakování náhledů",
+        "clearLibrary": "Chyba při mazání knihovny",
+        "duplicateScan": "Chyba při hledání duplicit",
+        "saveDuplicateChanges": "Chyba při ukládání změn duplicit",
+        "exportCsv": "Chyba exportu CSV",
+        "importCsv": "Chyba importu CSV",
+        "exportDb": "Chyba exportu zálohy databáze",
+        "importDb": "Chyba importu zálohy databáze",
+        "cancelThumbRender": "Chyba při rušení generování náhledů"
+      },
       "summary": {
         "duplicateRolledBack": "Dávka duplicit selhala a všechny změny souborů byly vráceny zpět. Metadata se nezměnila.",
         "duplicateRecoveryRequired": "Dávku se nepodařilo plně obnovit. {{count}} položek má cestu pro obnovu; před opakováním spusťte nový sken.",
-        "folderAddedWithSkipped": "Slozka pridana do seznamu skenovani: {{path}}. Preskoceno jiz pripojenych: {{skipped}}.",
-        "foldersAdded": "Do seznamu skenovani bylo pridano {{count}} slozek.",
-        "foldersAddedWithSkipped": "Do seznamu skenovani bylo pridano {{count}} slozek. Preskoceno jiz pripojenych: {{skipped}}.",
-        "noNewFoldersAdded": "Do seznamu skenovani nebyly pridany zadne nove slozky.",
-        "noNewFoldersAddedWithSkipped": "Do seznamu skenovani nebyly pridany zadne nove slozky. Jiz pripojeno: {{skipped}}.",
-        "doneIndexedPartial": "Částečné skenování. Indexováno: {{indexed}}, odstraněno: {{removed}}, upozornění: {{failed}}. Čištění neúplných složek bylo přeskočeno a existující záznamy byly zachovány."
+        "folderAdded": "Složka přidána do seznamu skenování: {{path}}",
+        "folderAddedWithSkipped": "Složka přidána do seznamu skenování: {{path}}. Přeskočeno existujících: {{skipped}}.",
+        "foldersAdded": "Do seznamu skenování bylo přidáno {{count}} složek.",
+        "foldersAddedWithSkipped": "Do seznamu skenování bylo přidáno {{count}} složek. Přeskočeno existujících: {{skipped}}.",
+        "noNewFoldersAdded": "Do seznamu skenování nebyly přidány žádné nové složky.",
+        "noNewFoldersAddedWithSkipped": "Do seznamu skenování nebyly přidány žádné nové složky. Již připojeno: {{skipped}}.",
+        "folderSelectionCancelled": "Výběr složky byl zrušen.",
+        "removedRoot": "Kořenová složka odebrána. Média: {{assets}}, náhledy: {{thumbnails}}",
+        "doneIndexed": "Dokončeno. Indexováno: {{indexed}}, odstraněno: {{removed}}, neúspěšné: {{failed}}",
+        "doneIndexedPartial": "Částečné skenování. Indexováno: {{indexed}}, odstraněno: {{removed}}, upozornění: {{failed}}. Čištění neúplných složek bylo přeskočeno a existující záznamy byly zachovány.",
+        "allThumbnailsLabel": "Všechny náhledy",
+        "failedRetryLabel": "Opakování neúspěšných náhledů",
+        "stopRequested": "Požadováno zastavení. Dokončují se probíhající úlohy náhledů...",
+        "noThumbRenderRunning": "Není spuštěno hromadné generování náhledů.",
+        "libraryCleared": "Knihovna vymazána. Média: {{assets}}, kořeny: {{roots}}, náhledy: {{thumbnails}}",
+        "duplicateScanComplete": "Hledání duplicit dokončeno. Skupiny: {{groups}}, média: {{assets}}",
+        "noDuplicateChanges": "Žádné čekající změny duplicit",
+        "duplicateApplyCancelled": "Použití změn duplicit bylo zrušeno.",
+        "duplicateApplied": "Použito {{count}} změn. Zbývající skupiny: {{groups}}",
+        "csvExportCancelled": "Export CSV byl zrušen.",
+        "csvExporting": "Export tagů do CSV...",
+        "csvExported": "CSV exportováno. Řádky: {{rows}}",
+        "csvImportCancelled": "Import CSV byl zrušen.",
+        "csvImporting": "Import tagů z CSV...",
+        "csvImported": "CSV importováno. Načtené řádky: {{rowsRead}}, použité: {{rowsApplied}}, média odpovídající názvu souboru: {{assetsMatched}}, aktualizovaná média: {{assetsUpdated}}. Jeden řádek může odpovídat souborům se stejným názvem ve více složkách.",
+        "dbExportCancelled": "Export zálohy databáze byl zrušen.",
+        "dbExporting": "Export databáze a náhledů...",
+        "dbExported": "Archiv zálohy databáze exportován. Soubory: {{files}}, náhledy: {{thumbnails}}",
+        "dbImportCancelled": "Import zálohy databáze byl zrušen.",
+        "dbImporting": "Import databáze a náhledů...",
+        "dbImported": "Archiv zálohy databáze importován. Soubory: {{files}}, náhledy: {{thumbnails}}"
+      },
+      "dialogs": {
+        "selectMediaFolder": "Vybrat složku médií",
+        "exportTagsCsv": "Exportovat tagy do CSV",
+        "importTagsCsv": "Importovat tagy z CSV",
+        "exportDbArchive": "Exportovat archiv zálohy databáze",
+        "selectDbArchive": "Vybrat archiv zálohy databáze",
+        "confirmDuplicateChanges": "Použít {{count}} čekajících změn?\n\nTím bude trvale smazáno {{deleteCount}} souborů z disku.",
+        "confirmDbImportOverwrite": "Import databáze z archivu přepíše aktuální databázi a náhledy. Pokračovat?"
       }
     }
+  },
+  "validation": {
+    "fileNameCannotBeEmpty": "Název souboru nemůže být prázdný",
+    "fileNameInvalid": "Název souboru je neplatný",
+    "fileNameInvalidCharacters": "Název souboru obsahuje neplatné znaky",
+    "duplicatePayloadInvalid": "Neplatný payload změn duplicit",
+    "unknownAssetInChanges": "Neznámé médium ve změnách: {{assetId}}",
+    "duplicateGroupStillUnresolved": "Skupina \"{{fileName}}\": změny stále zanechávají duplicitní názvy souborů. Přejmenujte nebo smažte další položky v tomto bloku."
   }
 }

@@ -12,11 +12,15 @@ The repository-level runtime requirements are:
 
 | Tool | Declared requirement | Notes |
 | --- | --- | --- |
-| Bun | Required, no version declared | Bun installs the JavaScript dependencies and is the package-script entry point. There is no `packageManager` field or Bun version file. |
-| Node.js | `>=20.19 <21 || >=22.12` | Declared in `package.json`. Node is used directly by the frontend test command and `e2e/build-e2e.js`, so Bun alone does not replace it. |
-| Rust and Cargo | No minimum or channel pinned | `src-tauri/Cargo.toml` uses Rust edition 2021, but it has no `rust-version`, and the repository has no `rust-toolchain` file. Local Windows builds use a current stable MSVC toolchain. The Linux container installs the current stable `x86_64-unknown-linux-gnu` toolchain through Arch's `rustup` package. |
+| Bun | `1.4.0` | Pinned by `packageManager` in `package.json`, CI, and the Linux image. Bun installs dependencies and runs package scripts. |
+| Node.js | `22.22.0` | Pinned by `.nvmrc`, CI, and the Linux image. The broader `engines` range is a compatibility declaration, not the release/CI version. |
+| Rust and Cargo | `1.98.0` | Pinned with Clippy and rustfmt in `rust-toolchain.toml`, used by CI and the Linux image, and recorded as the minimum in `Cargo.toml`. |
 
-The repository does not include ffmpeg/ffprobe sidecars. A complete Windows package requires Windows x86-64 copies to be supplied manually under the target-specific filenames documented below. Linux builds intentionally use the host media and WebKit stack. Install the runtime dependencies with `sudo pacman -S --needed webkit2gtk-4.1 ffmpeg gst-plugins-base-libs gst-plugins-good gst-plugins-bad gst-libav`. `gst-plugins-ugly` is not required by the tested formats and is intentionally omitted. Building on rolling Arch targets current Arch/CachyOS systems and does not guarantee compatibility with older distributions or older glibc ABIs.
+The repository does not include ffmpeg/ffprobe sidecar executables. A complete Windows package requires the pinned Windows x86-64 files described in `src-tauri/binaries/README.md`; their expected hashes are tracked in `src-tauri/binaries/SHA256SUMS`. Linux builds intentionally use the host media and WebKit stack. Install the runtime dependencies with `sudo pacman -S --needed webkit2gtk-4.1 ffmpeg gst-plugins-base-libs gst-plugins-good gst-plugins-bad gst-libav`. `gst-plugins-ugly` is not required by the tested formats and is intentionally omitted. Building on rolling Arch targets current Arch/CachyOS systems and does not guarantee compatibility with older distributions or older glibc ABIs.
+
+### Toolchain update policy
+
+CI and release builds use the exact versions above. Update Node, Bun, and Rust in one reviewed dependency change: change `.nvmrc`, `package.json`, `rust-toolchain.toml`, `Cargo.toml`, `Dockerfile.linux`, and `.github/workflows/quality.yml` as applicable; regenerate lockfiles only when resolution changes; then run frozen Bun installation, all quality gates, `test:all`, and the Linux release build. Security fixes may trigger an immediate update. Otherwise review toolchains at least quarterly. The Arch base image and system packages remain rolling, so the build manifest records their resolved versions for each Linux artifact.
 
 ### Containerized Arch Linux release
 
@@ -59,7 +63,13 @@ The following are all current non-test scripts in `package.json`:
 | Command | What it does |
 | --- | --- |
 | `bun run dev` | Starts only the Vite development server. It does not compile or launch the Rust/Tauri application. |
-| `bun run build` | Runs `tsc` first and, only if type checking succeeds, runs `vite build`. Vite writes the production frontend to the default root `dist/` directory. |
+| `bun run build` | Runs the standalone TypeScript project build, including Vite and Vitest configuration, then runs `vite build`. |
+| `bun run typecheck` | Runs no-emit TypeScript checks for application code plus `vite.config.ts` and `vitest.config.ts`. |
+| `bun run lint` | Runs the repository Biome lint rules over TypeScript, JavaScript, and locale tooling. |
+| `bun run format:check` | Checks deterministic formatting for JavaScript configuration and quality/locale scripts. |
+| `bun run locale:check` | Validates every `AppLanguage` resource against `en.json`, including paths, types, and placeholders, without network access. |
+| `bun run rust:fmt` / `rust:clippy` / `rust:check` | Runs locked Rust formatting, lint, or compile gates. Clippy treats warnings as errors. |
+| `bun run quality` | Runs locale validation/tests, TypeScript, Biome, Rust formatting, and locked Clippy checks. |
 | `bun run preview` | Serves an existing Vite production build for browser inspection. It does not build first and does not launch Tauri. |
 | `bun run tauri:dev` | Runs `tauri dev --config src-tauri/tauri.conf.dev.json`. This is the canonical desktop development command and selects the isolated development identifier and title. Tauri starts `bun run dev` through `beforeDevCommand`. |
 | `bun run tauri:build:release` | Runs `tauri build`. Tauri automatically merges the host platform config, producing MSI/NSIS on Windows or only the native executable on Linux. |
@@ -68,7 +78,7 @@ The following are all current non-test scripts in `package.json`:
 | `bun run build:linux:docker` | Convenience wrapper for `scripts/build-linux-docker.sh`; requires Bun on the host, unlike invoking the shell script directly. |
 | `bun run tauri` | Exposes the local Tauri CLI directly for explicit subcommands. It does not select the safe development overlay on its own. |
 
-There are deliberately no `lint`, `format`, `typecheck`, or `coverage` package scripts at present. `bun run build` is the available frontend type-check gate. Coverage tools may be present transitively or usable through a test runner, but no repository script defines a coverage contract. Do not document or rely on guessed commands as project guarantees.
+The repository does not define a coverage threshold. Coverage output is diagnostic, not a merge contract.
 
 ## Development modes
 
@@ -92,14 +102,16 @@ Do not use an unqualified debug Tauri launch with the base configuration. In deb
 
 ## Frontend build contract
 
-`bun run build` is exactly `tsc && vite build`:
+`bun run build` runs `bun run typecheck && vite build`:
 
-1. `tsc` reads `tsconfig.json`, type-checks `src/`, and emits no JavaScript. The configuration is strict and also rejects unused locals, unused parameters, and switch fallthrough. It targets ES2020, uses bundler-style module resolution, and references `tsconfig.node.json` for Vite configuration ownership.
+1. Two no-emit `tsc` passes read `tsconfig.json` and `tsconfig.node.json`. They type-check `src/`, `vite.config.ts`, and `vitest.config.ts`. The application configuration is strict and rejects unused locals, unused parameters, and switch fallthrough.
 2. `vite build` bundles the frontend into `dist/`, Vite's default output directory. The base Tauri configuration points `frontendDist` at `../dist` relative to `src-tauri/`.
 
-The TypeScript pass is not exposed as a separate package script. Vite development transpiles modules but is not a substitute for the `tsc` step in the production build.
+`bun run typecheck` exposes the TypeScript pass separately. Vite development transpiles modules but is not a substitute for this gate.
 
 ## Desktop builds and profiles
+
+The user-facing product name is `Image Viewer 3000`. `MediaTagger` remains the internal project/crate identity, and the existing `com.example.mediatagger` identifiers remain unchanged because they own app-data locations. Correcting display text must never be treated as an identifier migration.
 
 | Profile | Command/configuration | Title | Identifier | Output and data boundary |
 | --- | --- | --- | --- | --- |
@@ -118,7 +130,10 @@ The standalone E2E build is intentionally narrower than the full desktop E2E tes
 | `package.json` | Node compatibility, JavaScript dependency ranges, and command entry points. |
 | `bunfig.toml` / `bun.lock` | Bun install policy and exact resolved JavaScript dependency graph. |
 | `tsconfig.json` | Frontend language target, strictness, module resolution, included source, and no-emit type checking. |
-| `tsconfig.node.json` | TypeScript project settings for `vite.config.ts`. |
+| `tsconfig.node.json` | TypeScript project settings for `vite.config.ts` and `vitest.config.ts`. |
+| `.nvmrc` / `package.json` / `rust-toolchain.toml` | Exact CI/release Node, Bun, and Rust versions plus the Node compatibility range. |
+| `biome.json` | JavaScript/TypeScript lint rules and formatting policy for configuration and quality scripts. |
+| `.github/workflows/quality.yml` | Frozen frontend/configuration checks and locked Rust checks under non-production profiles. |
 | `vite.config.ts` | React/Tailwind integration and the fixed, strict development port. Vite defaults own `dist/` and the preview port because they are not overridden. |
 | `src-tauri/tauri.conf.json` | Shared product metadata, frontend hooks/locations, release window/security settings, and icons. |
 | `src-tauri/tauri.windows.conf.json` | Windows WebView2 arguments, MSI/NSIS targets, and ffmpeg/ffprobe sidecars. |
@@ -139,7 +154,7 @@ The Windows platform bundle declares `binaries/ffmpeg` and `binaries/ffprobe` as
 
 When both files are present, release MSI/NSIS packages include both tools. A fresh checkout does not contain them and cannot build a complete Windows package until they are supplied. Linux release builds do not include them: they rely on system `ffmpeg` and `ffprobe` from `PATH`. Development and unbundled builds may resolve tools from Tauri resource/binary locations or adjacent resource directories. Missing tools do not block application startup, but video duration probing and thumbnail generation can fail or degrade.
 
-The configuration does not record the upstream ffmpeg/ffprobe version, checksum, or acquisition/update procedure. Record and verify provenance outside the repository when supplying them. Update ffmpeg and ffprobe together, preserve the exact target-triple filenames expected by Tauri, and smoke-test an installed package rather than relying only on a PATH fallback.
+`src-tauri/binaries/README.md` pins the Gyan.dev FFmpeg `8.0.1-full_build` archive, origin, license, extraction names, update procedure, and version check. `src-tauri/binaries/SHA256SUMS` records the expected SHA-256 hashes for both extracted executables. Update the pair and both metadata files together, preserve the exact target-triple filenames, and smoke-test an installed package rather than relying only on a `PATH` fallback.
 
 ## Performance diagnostics
 
@@ -179,7 +194,7 @@ Keep dependency families aligned rather than updating one manifest in isolation:
 - Tailwind CSS and `@tailwindcss/vite` should be updated together; verify the DaisyUI integration after either changes.
 - A changed Rust target or packaging platform requires an explicit media-tool policy and corresponding bundle verification. Windows uses matching sidecars; Linux uses the system tools.
 
-Run `bun install` for intentional JavaScript updates and an appropriate Cargo update for intentional Rust updates, then inspect `bun.lock` and `src-tauri/Cargo.lock`. Because most manifest entries are semver ranges and Bun/Rust themselves are unpinned, a clean install is reproducible only to the extent provided by the committed lockfiles and compatible tool behavior. Neither lockfile pins system prerequisites such as WebView2, the Windows SDK, Microsoft build tools, NSIS/MSI tooling, or the Rust/Bun executable versions.
+Run `bun install` for intentional JavaScript updates and an appropriate Cargo update for intentional Rust updates, then inspect `bun.lock` and `src-tauri/Cargo.lock`. Most manifest entries are semver ranges, so frozen/locked resolution and the pinned toolchains are both required. Neither lockfile pins system prerequisites such as WebView2, the Windows SDK, Microsoft build tools, NSIS/MSI tooling, or rolling Linux system packages.
 
 ## Guarantees and limitations
 
@@ -196,14 +211,14 @@ Current build guarantees:
 Current limitations:
 
 - only Windows and Linux x86-64 packaging are configured; macOS and ARM are not;
-- the rolling `archlinux:base-devel` image and stable Rust channel are not digest/version pinned, so a later clean container build can use newer system or compiler packages;
-- Bun, Rust, Cargo, Windows build tools, WebView2, and the media-tool versions are not pinned for local Windows development;
+- the rolling `archlinux:base-devel` image and system packages are not digest/version pinned, so a later clean container build can use newer native dependencies;
+- Windows build tools and WebView2 are external prerequisites and are not pinned by the repository;
 - compatible-range manifests mean lockfiles must be preserved for repeatable resolution;
 - the debug guard rejects only the production identifier and cannot certify arbitrary custom overlays;
 - a standalone E2E build can package stale or missing frontend assets because its automatic frontend build is disabled;
 - Vite-only development cannot validate native IPC, dialogs, asset-protocol loading, app-data paths, or packaged resource layout;
 - unbundled E2E builds do not prove installed MSI/NSIS resource layout or sidecar launch; and
-- there are no first-class lint, formatting, standalone type-check, or coverage scripts.
+- there is no numeric coverage threshold or installed Windows package smoke test in CI.
 
 ## Build checklist
 
@@ -247,4 +262,4 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **The Docker command cannot connect to `/var/run/docker.sock`.** Confirm the current login session has access to the Docker daemon. The build script deliberately does not elevate through `sudo`.
 
-**A dependency resolves differently on another machine.** Confirm both machines use the committed `bun.lock` and `src-tauri/Cargo.lock`, use frozen/locked install modes, and compare Bun/Rust versions. The repository does not pin those toolchains, so lockfiles cannot eliminate all tool-version differences.
+**A dependency resolves differently on another machine.** Confirm both machines use the committed `bun.lock` and `src-tauri/Cargo.lock`, use frozen/locked install modes, and match `.nvmrc`, `packageManager`, and `rust-toolchain.toml`. Compare external system package versions when the pinned language toolchains match.

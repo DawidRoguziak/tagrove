@@ -144,4 +144,24 @@ describe("SettingsPanel", () => {
     expect(onConfirmRemoveRoot).toHaveBeenCalledTimes(1);
     expect(onCancelRemoveRootConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it("renders the canonical confirmation label in destructive dialogs", () => {
+    renderPanel({
+      pendingDuplicateDeleteConfirm: {
+        changes: [{ assetId: 1, type: "delete" }],
+        deleteCount: 1
+      }
+    });
+
+    let dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Confirm" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+
+    cleanup();
+    renderPanel({ pendingImportDbSourcePath: "C:/backup.zip" });
+
+    dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Confirm" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+  });
 });

@@ -3,23 +3,11 @@ import type { AssetSummary } from "../../types";
 import type { SearchFilterValidationError } from "../../utils/media";
 import type { BulkSelectionInteraction } from "../gallery/GalleryGrid";
 import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+export type { AppLanguage } from "../../i18n/languages";
 
 export type SearchMediaKind = "all" | "image" | "gif" | "video";
 
 export type AppTheme = "light" | "dark";
-
-export type AppLanguage =
-  | "en"
-  | "pl"
-  | "fr"
-  | "de"
-  | "it"
-  | "es"
-  | "ru"
-  | "zh"
-  | "ja"
-  | "ko"
-  | "cs";
 
 export interface SearchFilters {
   filterInput: string;

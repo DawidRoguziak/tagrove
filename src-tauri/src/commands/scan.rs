@@ -11,10 +11,7 @@ use crate::{
 };
 
 #[tauri::command]
-pub async fn scan_folder(
-    path: String,
-    app: tauri::AppHandle,
-) -> Result<ScanSummary, String> {
+pub async fn scan_folder(path: String, app: tauri::AppHandle) -> Result<ScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         with_scan_lock(&state, || {

@@ -20,7 +20,10 @@ use crate::{
 };
 
 enum PreparedAction {
-    Rename { new_file_name: String, new_path: String },
+    Rename {
+        new_file_name: String,
+        new_path: String,
+    },
     Delete,
 }
 
@@ -49,9 +52,14 @@ pub fn delete_asset(
         }],
     };
     let summary = apply_file_mutation_batch(conn, thumbs_root, input, false)?;
-    let result = summary.results.into_iter().next().context("delete returned no item result")?;
+    let result = summary
+        .results
+        .into_iter()
+        .next()
+        .context("delete returned no item result")?;
     match summary.status {
-        DuplicateResolutionBatchStatus::Committed | DuplicateResolutionBatchStatus::RecoveryRequired => {
+        DuplicateResolutionBatchStatus::Committed
+        | DuplicateResolutionBatchStatus::RecoveryRequired => {
             let source_status = match result.status {
                 DuplicateResolutionItemStatus::Deleted => DeleteSourceStatus::Deleted,
                 DuplicateResolutionItemStatus::SourceMissing => DeleteSourceStatus::Missing,
@@ -94,18 +102,26 @@ pub fn rename_asset(
         }],
     };
     let summary = apply_file_mutation_batch(conn, thumbs_root, input, false)?;
-    let result = summary.results.into_iter().next().context("rename returned no item result")?;
+    let result = summary
+        .results
+        .into_iter()
+        .next()
+        .context("rename returned no item result")?;
     let status = match result.status {
         DuplicateResolutionItemStatus::Renamed => RenameAssetStatus::Renamed,
         DuplicateResolutionItemStatus::CleanupPending
-            if matches!(summary.status, DuplicateResolutionBatchStatus::RecoveryRequired) => {
-                RenameAssetStatus::CleanupPending
-            }
+            if matches!(
+                summary.status,
+                DuplicateResolutionBatchStatus::RecoveryRequired
+            ) =>
+        {
+            RenameAssetStatus::CleanupPending
+        }
         _ => {
-        anyhow::bail!(
-            "rename did not commit; recovery path: {}",
-            result.recovery_path.as_deref().unwrap_or("none")
-        );
+            anyhow::bail!(
+                "rename did not commit; recovery path: {}",
+                result.recovery_path.as_deref().unwrap_or("none")
+            );
         }
     };
     Ok(RenameAssetSummary {
@@ -143,38 +159,62 @@ fn apply_file_mutation_batch(
     let journal = prepared
         .iter()
         .filter_map(|item| {
-            item.staging_path.as_ref().map(|staging_path| PendingFileOperation {
-                operation_id: operation_id.clone(),
-                asset_id: item.asset.id,
-                action: match &item.action { PreparedAction::Rename { .. } => "rename", PreparedAction::Delete => "delete" }.to_string(),
-                original_path: item.asset.path.clone(),
-                staging_path: staging_path.to_string_lossy().into_owned(),
-                final_path: match &item.action {
-                    PreparedAction::Rename { new_path, .. } => Some(new_path.clone()),
-                    PreparedAction::Delete => None,
-                },
-                committed: false,
-            })
+            item.staging_path
+                .as_ref()
+                .map(|staging_path| PendingFileOperation {
+                    operation_id: operation_id.clone(),
+                    asset_id: item.asset.id,
+                    action: match &item.action {
+                        PreparedAction::Rename { .. } => "rename",
+                        PreparedAction::Delete => "delete",
+                    }
+                    .to_string(),
+                    original_path: item.asset.path.clone(),
+                    staging_path: staging_path.to_string_lossy().into_owned(),
+                    final_path: match &item.action {
+                        PreparedAction::Rename { new_path, .. } => Some(new_path.clone()),
+                        PreparedAction::Delete => None,
+                    },
+                    committed: false,
+                })
         })
         .collect::<Vec<_>>();
     db::insert_pending_file_operations(conn, &journal)?;
 
     for index in 0..prepared.len() {
-        let Some(staging_path) = prepared[index].staging_path.as_ref() else { continue };
-        if let Err(error) = rename_no_replace(Path::new(&prepared[index].asset.path), staging_path) {
+        let Some(staging_path) = prepared[index].staging_path.as_ref() else {
+            continue;
+        };
+        if let Err(error) = rename_no_replace(Path::new(&prepared[index].asset.path), staging_path)
+        {
             let mut rollback_failures = rollback_files(&mut prepared);
             clear_restored_journal(conn, &operation_id, &mut prepared, &mut rollback_failures);
-            return rollback_summary(conn, prepared, rollback_failures, format!("cannot stage source: {error}"));
+            return rollback_summary(
+                conn,
+                prepared,
+                rollback_failures,
+                format!("cannot stage source: {error}"),
+            );
         }
     }
 
     for index in 0..prepared.len() {
-        let PreparedAction::Rename { new_path, .. } = &prepared[index].action else { continue };
-        let staging_path = prepared[index].staging_path.as_ref().context("rename has no staging path")?;
+        let PreparedAction::Rename { new_path, .. } = &prepared[index].action else {
+            continue;
+        };
+        let staging_path = prepared[index]
+            .staging_path
+            .as_ref()
+            .context("rename has no staging path")?;
         if let Err(error) = rename_no_replace(staging_path, Path::new(new_path)) {
             let mut rollback_failures = rollback_files(&mut prepared);
             clear_restored_journal(conn, &operation_id, &mut prepared, &mut rollback_failures);
-            return rollback_summary(conn, prepared, rollback_failures, format!("cannot install rename target: {error}"));
+            return rollback_summary(
+                conn,
+                prepared,
+                rollback_failures,
+                format!("cannot install rename target: {error}"),
+            );
         }
         prepared[index].finalized = true;
     }
@@ -182,7 +222,10 @@ fn apply_file_mutation_batch(
     let db_mutations = prepared
         .iter()
         .map(|item| match &item.action {
-            PreparedAction::Rename { new_file_name, new_path } => DbFileMutation::Rename {
+            PreparedAction::Rename {
+                new_file_name,
+                new_path,
+            } => DbFileMutation::Rename {
                 asset_id: item.asset.id,
                 expected_path: &item.asset.path,
                 expected_record_version: item.asset.record_version,
@@ -202,11 +245,19 @@ fn apply_file_mutation_batch(
         Err(error) => {
             let mut rollback_failures = rollback_files(&mut prepared);
             clear_restored_journal(conn, &operation_id, &mut prepared, &mut rollback_failures);
-            return rollback_summary(conn, prepared, rollback_failures, format!("database commit failed: {error}"));
+            return rollback_summary(
+                conn,
+                prepared,
+                rollback_failures,
+                format!("database commit failed: {error}"),
+            );
         }
     };
 
-    let thumbnail_paths = prepared.iter().filter_map(|item| item.asset.thumb_path.clone()).collect();
+    let thumbnail_paths = prepared
+        .iter()
+        .filter_map(|item| item.asset.thumb_path.clone())
+        .collect();
     let removed_thumbnails =
         thumb_service::delete_thumbnail_files_in_root(thumbs_root, thumbnail_paths);
     let mut recovery_required = false;
@@ -222,17 +273,25 @@ fn apply_file_mutation_batch(
                     (DuplicateResolutionItemStatus::Renamed, None)
                 } else {
                     recovery_required = true;
-                    (DuplicateResolutionItemStatus::CleanupPending, new_path.clone())
+                    (
+                        DuplicateResolutionItemStatus::CleanupPending,
+                        new_path.clone(),
+                    )
                 }
             }
             PreparedAction::Delete if item.source_missing => {
                 (DuplicateResolutionItemStatus::SourceMissing, None)
             }
             PreparedAction::Delete => {
-                let staging_path = item.staging_path.as_ref().context("delete has no staging path")?;
+                let staging_path = item
+                    .staging_path
+                    .as_ref()
+                    .context("delete has no staging path")?;
                 match fs::remove_file(staging_path) {
                     Ok(()) => {
-                        if db::remove_pending_file_operation(conn, &operation_id, item.asset.id).is_ok() {
+                        if db::remove_pending_file_operation(conn, &operation_id, item.asset.id)
+                            .is_ok()
+                        {
                             (DuplicateResolutionItemStatus::Deleted, None)
                         } else {
                             recovery_required = true;
@@ -243,7 +302,9 @@ fn apply_file_mutation_batch(
                         }
                     }
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        if db::remove_pending_file_operation(conn, &operation_id, item.asset.id).is_ok() {
+                        if db::remove_pending_file_operation(conn, &operation_id, item.asset.id)
+                            .is_ok()
+                        {
                             (DuplicateResolutionItemStatus::Deleted, None)
                         } else {
                             recovery_required = true;
@@ -300,10 +361,16 @@ fn validate_and_prepare(
     let mut ids = HashSet::new();
     let mut prepared = Vec::with_capacity(input.changes.len());
     let mut target_paths = HashSet::new();
-    let source_paths = input.changes.iter().map(|change| match change {
-        DuplicateResolutionChangeInput::Rename { expected_path, .. }
-        | DuplicateResolutionChangeInput::Delete { expected_path, .. } => expected_path.to_lowercase(),
-    }).collect::<HashSet<_>>();
+    let source_paths = input
+        .changes
+        .iter()
+        .map(|change| match change {
+            DuplicateResolutionChangeInput::Rename { expected_path, .. }
+            | DuplicateResolutionChangeInput::Delete { expected_path, .. } => {
+                expected_path.to_lowercase()
+            }
+        })
+        .collect::<HashSet<_>>();
     let changed_ids = input
         .changes
         .iter()
@@ -316,10 +383,17 @@ fn validate_and_prepare(
 
     for change in &input.changes {
         let (asset_id, expected_path, expected_record_version) = match change {
-            DuplicateResolutionChangeInput::Rename { asset_id, expected_path, expected_record_version, .. }
-            | DuplicateResolutionChangeInput::Delete { asset_id, expected_path, expected_record_version } => {
-                (*asset_id, expected_path, *expected_record_version)
+            DuplicateResolutionChangeInput::Rename {
+                asset_id,
+                expected_path,
+                expected_record_version,
+                ..
             }
+            | DuplicateResolutionChangeInput::Delete {
+                asset_id,
+                expected_path,
+                expected_record_version,
+            } => (*asset_id, expected_path, *expected_record_version),
         };
         if asset_id <= 0 || !ids.insert(asset_id) {
             anyhow::bail!("duplicate resolution contains an invalid or repeated asset id");
@@ -334,14 +408,21 @@ fn validate_and_prepare(
             Ok(metadata) if metadata.file_type().is_file() => false,
             Ok(_) => anyhow::bail!("asset {asset_id} source is not a regular file"),
             Err(error) if error.kind() == io::ErrorKind::NotFound => true,
-            Err(error) => return Err(error).with_context(|| format!("cannot inspect source '{}'", asset.path)),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot inspect source '{}'", asset.path))
+            }
         };
         let action = match change {
             DuplicateResolutionChangeInput::Delete { .. } => PreparedAction::Delete,
             DuplicateResolutionChangeInput::Rename { new_file_name, .. } => {
-                if source_state { anyhow::bail!("cannot rename missing source for asset {asset_id}"); }
+                if source_state {
+                    anyhow::bail!("cannot rename missing source for asset {asset_id}");
+                }
                 let normalized = validate_file_name(new_file_name)?;
-                let parent = Path::new(&asset.path).parent().context("cannot resolve source parent")?;
+                let parent = Path::new(&asset.path)
+                    .parent()
+                    .context("cannot resolve source parent")?;
                 let new_path = parent.join(&normalized).to_string_lossy().into_owned();
                 if asset.path.eq_ignore_ascii_case(&new_path) {
                     anyhow::bail!("new file name is the same as current one");
@@ -361,12 +442,22 @@ fn validate_and_prepare(
                 match fs::symlink_metadata(&new_path) {
                     Ok(_) => anyhow::bail!("target file already exists: {new_path}"),
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(error).with_context(|| format!("cannot inspect target '{new_path}'")),
+                    Err(error) => {
+                        return Err(error)
+                            .with_context(|| format!("cannot inspect target '{new_path}'"))
+                    }
                 }
-                PreparedAction::Rename { new_file_name: normalized, new_path }
+                PreparedAction::Rename {
+                    new_file_name: normalized,
+                    new_path,
+                }
             }
         };
-        let staging_path = if source_state { None } else { Some(unique_staging_path(Path::new(&asset.path))) };
+        let staging_path = if source_state {
+            None
+        } else {
+            Some(unique_staging_path(Path::new(&asset.path)))
+        };
         prepared.push(PreparedMutation {
             asset,
             action,
@@ -386,22 +477,45 @@ fn validate_final_duplicate_names(
     input: &DuplicateResolutionBatchInput,
     enforce_duplicate_resolution: bool,
 ) -> anyhow::Result<()> {
-    let changes = input.changes.iter().map(|change| match change {
-        DuplicateResolutionChangeInput::Rename { asset_id, new_file_name, .. } => (*asset_id, Some(new_file_name.trim().to_lowercase())),
-        DuplicateResolutionChangeInput::Delete { asset_id, .. } => (*asset_id, None),
-    }).collect::<HashMap<_, _>>();
-    let renamed_keys = changes.values().filter_map(Clone::clone).collect::<HashSet<_>>();
+    let changes = input
+        .changes
+        .iter()
+        .map(|change| match change {
+            DuplicateResolutionChangeInput::Rename {
+                asset_id,
+                new_file_name,
+                ..
+            } => (*asset_id, Some(new_file_name.trim().to_lowercase())),
+            DuplicateResolutionChangeInput::Delete { asset_id, .. } => (*asset_id, None),
+        })
+        .collect::<HashMap<_, _>>();
+    let renamed_keys = changes
+        .values()
+        .filter_map(Clone::clone)
+        .collect::<HashSet<_>>();
     if enforce_duplicate_resolution {
         for group in db::list_duplicate_groups(conn)? {
-            if !group.assets.iter().any(|asset| changes.contains_key(&asset.id)) { continue; }
+            if !group
+                .assets
+                .iter()
+                .any(|asset| changes.contains_key(&asset.id))
+            {
+                continue;
+            }
             let mut names = HashSet::new();
             for asset in group.assets {
                 let name = match changes.get(&asset.id) {
                     Some(None) => continue,
                     Some(Some(name)) => name.clone(),
-                    None => Path::new(&asset.path).file_name().and_then(OsStr::to_str).unwrap_or("").to_lowercase(),
+                    None => Path::new(&asset.path)
+                        .file_name()
+                        .and_then(OsStr::to_str)
+                        .unwrap_or("")
+                        .to_lowercase(),
                 };
-                if !names.insert(name) { anyhow::bail!("duplicate group remains unresolved after the batch"); }
+                if !names.insert(name) {
+                    anyhow::bail!("duplicate group remains unresolved after the batch");
+                }
             }
         }
     }
@@ -429,7 +543,9 @@ fn validate_final_duplicate_names(
 fn rollback_files(prepared: &mut [PreparedMutation]) -> HashSet<i64> {
     let mut failures = HashSet::new();
     for item in prepared.iter_mut().rev() {
-        let Some(staging_path) = item.staging_path.as_ref() else { continue };
+        let Some(staging_path) = item.staging_path.as_ref() else {
+            continue;
+        };
         let current = match &item.action {
             PreparedAction::Rename { new_path, .. } if item.finalized => Path::new(new_path),
             _ => staging_path,
@@ -465,7 +581,11 @@ fn rollback_summary(
     _reason: String,
 ) -> anyhow::Result<crate::models::DuplicateResolutionBatchSummary> {
     Ok(crate::models::DuplicateResolutionBatchSummary {
-        status: if rollback_failures.is_empty() { DuplicateResolutionBatchStatus::RolledBack } else { DuplicateResolutionBatchStatus::RecoveryRequired },
+        status: if rollback_failures.is_empty() {
+            DuplicateResolutionBatchStatus::RolledBack
+        } else {
+            DuplicateResolutionBatchStatus::RecoveryRequired
+        },
         revision: db::current_library_revision(conn)?,
         results: prepared
             .into_iter()
@@ -512,7 +632,9 @@ fn clear_restored_journal(
             .is_ok_and(|metadata| metadata.file_type().is_file());
         let staging_absent = match item.staging_path.as_ref() {
             None => true,
-            Some(path) => matches!(fs::symlink_metadata(path), Err(ref error) if error.kind() == io::ErrorKind::NotFound),
+            Some(path) => {
+                matches!(fs::symlink_metadata(path), Err(ref error) if error.kind() == io::ErrorKind::NotFound)
+            }
         };
         let final_absent = match &item.action {
             PreparedAction::Rename { new_path, .. } => {
@@ -520,7 +642,9 @@ fn clear_restored_journal(
             }
             PreparedAction::Delete => true,
         };
-        if !original_restored || !staging_absent || !final_absent
+        if !original_restored
+            || !staging_absent
+            || !final_absent
             || db::remove_pending_file_operation(conn, operation_id, item.asset.id).is_err()
         {
             failures.insert(item.asset.id);
@@ -557,7 +681,9 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
                         operation.operation_id
                     );
                 }
-                rename_no_replace(current, original).with_context(|| format!("cannot restore pending source '{}'", original.display()))?;
+                rename_no_replace(current, original).with_context(|| {
+                    format!("cannot restore pending source '{}'", original.display())
+                })?;
             }
         }
 
@@ -570,17 +696,23 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
                 matches!(fs::symlink_metadata(staging), Err(ref error) if error.kind() == io::ErrorKind::NotFound)
             }
         } else {
-            let original_ok = fs::symlink_metadata(original)
-                .is_ok_and(|metadata| metadata.file_type().is_file());
+            let original_ok =
+                fs::symlink_metadata(original).is_ok_and(|metadata| metadata.file_type().is_file());
             let staging_absent = matches!(fs::symlink_metadata(staging), Err(ref error) if error.kind() == io::ErrorKind::NotFound);
             let final_absent = match final_path {
                 None => true,
-                Some(path) => matches!(fs::symlink_metadata(path), Err(ref error) if error.kind() == io::ErrorKind::NotFound),
+                Some(path) => {
+                    matches!(fs::symlink_metadata(path), Err(ref error) if error.kind() == io::ErrorKind::NotFound)
+                }
             };
             original_ok && staging_absent && final_absent
         };
         if !reconciled {
-            anyhow::bail!("pending file operation {} for asset {} requires manual recovery", operation.operation_id, operation.asset_id);
+            anyhow::bail!(
+                "pending file operation {} for asset {} requires manual recovery",
+                operation.operation_id,
+                operation.asset_id
+            );
         }
         db::remove_pending_file_operation(conn, &operation.operation_id, operation.asset_id)?;
     }
@@ -589,44 +721,106 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
 
 pub fn validate_file_name(raw: &str) -> anyhow::Result<String> {
     let value = raw.trim();
-    if value.is_empty() { anyhow::bail!("File name cannot be empty"); }
-    if value == "." || value == ".." { anyhow::bail!("File name is invalid"); }
-    if value.contains(['/', '\\']) { anyhow::bail!("File name cannot contain directory separators"); }
+    if value.is_empty() {
+        anyhow::bail!("File name cannot be empty");
+    }
+    if value == "." || value == ".." {
+        anyhow::bail!("File name is invalid");
+    }
+    if value.contains(['/', '\\']) {
+        anyhow::bail!("File name cannot contain directory separators");
+    }
     if value.ends_with(['.', ' '])
-        || value.chars().any(|character| character <= '\u{1f}' || ":*?\"<>|".contains(character))
-    { anyhow::bail!("File name contains invalid characters"); }
-    let stem = value.split('.').next().unwrap_or(value).trim_end_matches(['.', ' ']).to_ascii_uppercase();
+        || value
+            .chars()
+            .any(|character| character <= '\u{1f}' || ":*?\"<>|".contains(character))
+    {
+        anyhow::bail!("File name contains invalid characters");
+    }
+    let stem = value
+        .split('.')
+        .next()
+        .unwrap_or(value)
+        .trim_end_matches(['.', ' '])
+        .to_ascii_uppercase();
     if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit() && stem.as_bytes()[3] != b'0')
-    { anyhow::bail!("file name is reserved on Windows"); }
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit()
+            && stem.as_bytes()[3] != b'0')
+    {
+        anyhow::bail!("file name is reserved on Windows");
+    }
     Ok(value.to_string())
 }
 
 fn unique_staging_path(source: &Path) -> PathBuf {
-    let token: String = rand::thread_rng().sample_iter(&Alphanumeric).take(24).map(char::from).collect();
-    source.parent().unwrap_or_else(|| Path::new(".")).join(format!(".mediatagger-{token}.pending"))
+    let token: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(24)
+        .map(char::from)
+        .collect();
+    source
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(format!(".mediatagger-{token}.pending"))
 }
 
 #[cfg(target_os = "linux")]
 fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
-    use std::os::unix::ffi::OsStrExt;
     use std::ffi::CString;
-    let source = CString::new(source.as_os_str().as_bytes()).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "source path contains NUL"))?;
-    let target = CString::new(target.as_os_str().as_bytes()).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "target path contains NUL"))?;
-    let result = unsafe { libc::renameat2(libc::AT_FDCWD, source.as_ptr(), libc::AT_FDCWD, target.as_ptr(), libc::RENAME_NOREPLACE) };
-    if result == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+    use std::os::unix::ffi::OsStrExt;
+    let source = CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "source path contains NUL"))?;
+    let target = CString::new(target.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "target path contains NUL"))?;
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            target.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 #[cfg(windows)]
 fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
-    use windows::{core::PCWSTR, Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS}};
-    let source = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-    let target = target.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-    unsafe { MoveFileExW(PCWSTR(source.as_ptr()), PCWSTR(target.as_ptr()), MOVE_FILE_FLAGS(0)) }.map_err(|error| io::Error::new(io::ErrorKind::Other, error))
+    use windows::{
+        core::PCWSTR,
+        Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS},
+    };
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(source.as_ptr()),
+            PCWSTR(target.as_ptr()),
+            MOVE_FILE_FLAGS(0),
+        )
+    }
+    .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
 fn rename_no_replace(_source: &Path, _target: &Path) -> io::Result<()> {
-    Err(io::Error::new(io::ErrorKind::Unsupported, "atomic no-clobber rename is unsupported on this platform"))
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "atomic no-clobber rename is unsupported on this platform",
+    ))
 }

@@ -1,5 +1,5 @@
-pub mod asset_query_service;
 pub mod asset_mutation_service;
+pub mod asset_query_service;
 pub mod backup_service;
 pub mod csv_service;
 pub mod db_pool;

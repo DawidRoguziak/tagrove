@@ -16,6 +16,7 @@ impl InstanceLock {
     pub fn acquire(app_data_dir: &Path) -> anyhow::Result<Self> {
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(app_data_dir.join(INSTANCE_LOCK_FILE_NAME))
@@ -24,9 +25,7 @@ impl InstanceLock {
         match file.try_lock_exclusive() {
             Ok(()) => Ok(Self { file }),
             Err(error) if error.kind() == fs2::lock_contended_error().kind() => {
-                anyhow::bail!(
-                    "another MediaTagger instance is already using this data profile"
-                )
+                anyhow::bail!("another MediaTagger instance is already using this data profile")
             }
             Err(error) => Err(error).context("cannot lock the data profile"),
         }

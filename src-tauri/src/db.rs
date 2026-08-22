@@ -523,13 +523,28 @@ fn validate_backup_schema(
     compatibility: BackupSchemaCompatibility,
 ) -> anyhow::Result<()> {
     let required_tables = [
-        ("assets", &["id", "path", "kind", "size_bytes", "modified_at", "thumb_path"][..]),
+        (
+            "assets",
+            &[
+                "id",
+                "path",
+                "kind",
+                "size_bytes",
+                "modified_at",
+                "thumb_path",
+            ][..],
+        ),
         ("tags", &["id", "name"][..]),
         ("asset_tags", &["asset_id", "tag_id"][..]),
         ("scan_roots", &["path"][..]),
         (
             "thumbnail_failures",
-            &["asset_id", "failure_count", "last_failed_at", "asset_modified_at"][..],
+            &[
+                "asset_id",
+                "failure_count",
+                "last_failed_at",
+                "asset_modified_at",
+            ][..],
         ),
         ("library_metadata", &["key", "value"][..]),
     ];
@@ -648,7 +663,11 @@ fn validate_backup_constraints(
             "backup table asset_scan_roots is missing its primary key"
         );
         anyhow::ensure!(
-            has_unique_index(conn, "pending_file_operations", &["operation_id", "asset_id"])?,
+            has_unique_index(
+                conn,
+                "pending_file_operations",
+                &["operation_id", "asset_id"]
+            )?,
             "backup table pending_file_operations is missing its primary key"
         );
         for (from, target, to) in [
@@ -717,9 +736,8 @@ fn has_unique_index(conn: &Connection, table: &str, expected: &[&str]) -> anyhow
             .eq(expected.iter().copied())
         {
             if table == "tags" && expected.len() == 1 && expected[0] == "name" {
-                let mut xinfo_stmt = conn.prepare(&format!(
-                    "PRAGMA index_xinfo(\"{escaped_name}\")"
-                ))?;
+                let mut xinfo_stmt =
+                    conn.prepare(&format!("PRAGMA index_xinfo(\"{escaped_name}\")"))?;
                 let xinfo_rows = xinfo_stmt.query_map([], |row| {
                     Ok((
                         row.get::<_, Option<String>>(2)?,
@@ -810,9 +828,20 @@ fn validate_table_columns(conn: &Connection, table: &str, required: &[&str]) -> 
             .get(&column.to_lowercase())
             .with_context(|| format!("backup table {table} is missing required column {column}"))?;
         let expected_type = match *column {
-            "path" | "kind" | "thumb_path" | "name" | "key" | "file_name"
-            | "media_group_key" | "file_name_key" | "media_group_key_normalized"
-            | "root_path" | "operation_id" | "action" | "original_path" | "staging_path"
+            "path"
+            | "kind"
+            | "thumb_path"
+            | "name"
+            | "key"
+            | "file_name"
+            | "media_group_key"
+            | "file_name_key"
+            | "media_group_key_normalized"
+            | "root_path"
+            | "operation_id"
+            | "action"
+            | "original_path"
+            | "staging_path"
             | "final_path" => "TEXT",
             "media_group_order" => "REAL",
             _ => "INTEGER",
@@ -956,17 +985,14 @@ fn validate_backup_data(
                 "backup contains inconsistent filename keys"
             );
         }
-        for (table, predicate) in [
-            (
-                "asset_scan_roots",
-                "typeof(asset_id) <> 'integer' OR typeof(root_path) <> 'text'
+        let (table, predicate) = (
+            "asset_scan_roots",
+            "typeof(asset_id) <> 'integer' OR typeof(root_path) <> 'text'
                  OR typeof(last_seen_generation) <> 'integer'",
-            ),
-        ] {
-            let sql = format!("SELECT COUNT(*) FROM {table} WHERE {predicate}");
-            let invalid = conn.query_row(&sql, [], |row| row.get::<_, i64>(0))?;
-            anyhow::ensure!(invalid == 0, "backup table {table} contains invalid values");
-        }
+        );
+        let sql = format!("SELECT COUNT(*) FROM {table} WHERE {predicate}");
+        let invalid = conn.query_row(&sql, [], |row| row.get::<_, i64>(0))?;
+        anyhow::ensure!(invalid == 0, "backup table {table} contains invalid values");
     }
     ensure_no_pending_file_operations(conn)?;
     Ok(())
@@ -979,12 +1005,14 @@ pub fn ensure_no_pending_file_operations(conn: &Connection) -> anyhow::Result<()
         |row| row.get::<_, bool>(0),
     )?;
     if has_pending_table {
-        let pending = conn.query_row(
-            "SELECT COUNT(*) FROM pending_file_operations",
-            [],
-            |row| row.get::<_, i64>(0),
-        )?;
-        anyhow::ensure!(pending == 0, "database contains pending local file operations");
+        let pending =
+            conn.query_row("SELECT COUNT(*) FROM pending_file_operations", [], |row| {
+                row.get::<_, i64>(0)
+            })?;
+        anyhow::ensure!(
+            pending == 0,
+            "database contains pending local file operations"
+        );
     }
     Ok(())
 }
@@ -1002,9 +1030,8 @@ pub fn list_backup_asset_paths(conn: &Connection) -> anyhow::Result<Vec<BackupAs
 }
 
 pub fn list_backup_asset_root_mappings(conn: &Connection) -> anyhow::Result<Vec<(i64, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT asset_id, root_path FROM asset_scan_roots ORDER BY asset_id, root_path",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT asset_id, root_path FROM asset_scan_roots ORDER BY asset_id, root_path")?;
     let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
@@ -1553,19 +1580,19 @@ pub fn apply_file_mutations(
                 let affected = tx.execute(
                     "UPDATE assets SET path = ?1
                      WHERE id = ?2 AND path = ?3 AND record_version = ?4",
-                    params![temporary_path, asset_id, expected_path, expected_record_version],
+                    params![
+                        temporary_path,
+                        asset_id,
+                        expected_path,
+                        expected_record_version
+                    ],
                 )?;
                 if affected == 1 {
                     tx.execute(
                         "DELETE FROM thumbnail_failures WHERE asset_id = ?1",
                         params![asset_id],
                     )?;
-                    pending_renames.push((
-                        *asset_id,
-                        temporary_path,
-                        *new_path,
-                        *new_file_name,
-                    ));
+                    pending_renames.push((*asset_id, temporary_path, *new_path, *new_file_name));
                 }
                 affected
             }
@@ -1585,9 +1612,13 @@ pub fn apply_file_mutations(
             }
         };
         if affected != 1 {
-            anyhow::bail!("asset {} changed since the operation was prepared", match mutation {
-                DbFileMutation::Rename { asset_id, .. } | DbFileMutation::Delete { asset_id, .. } => asset_id,
-            });
+            anyhow::bail!(
+                "asset {} changed since the operation was prepared",
+                match mutation {
+                    DbFileMutation::Rename { asset_id, .. }
+                    | DbFileMutation::Delete { asset_id, .. } => asset_id,
+                }
+            );
         }
     }
     for (asset_id, temporary_path, new_path, new_file_name) in pending_renames {
@@ -1756,7 +1787,12 @@ pub fn rename_asset_file_by_id(
     tx.execute(
         "UPDATE assets SET path = ?1, file_name = ?2, file_name_key = ?3,
           thumb_path = NULL, record_version = record_version + 1 WHERE id = ?4",
-        params![new_path, new_file_name, canonical_key(new_file_name), asset_id],
+        params![
+            new_path,
+            new_file_name,
+            canonical_key(new_file_name),
+            asset_id
+        ],
     )?;
     tx.execute(
         "DELETE FROM thumbnail_failures WHERE asset_id = ?1",
@@ -1831,6 +1867,7 @@ pub fn list_assets(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn list_assets_with_meta(
     conn: &Connection,
     offset: i64,
@@ -2468,7 +2505,8 @@ pub fn import_csv_records(
                         .clone()
                         .unwrap_or(current_group_key.clone());
                     let next_group_order = record.media_group_order.unwrap_or(current_group_order);
-                    if current_group_key != next_group_key || current_group_order != next_group_order
+                    if current_group_key != next_group_key
+                        || current_group_order != next_group_order
                     {
                         set_asset_media_group(
                             tx,
@@ -3189,18 +3227,16 @@ pub fn list_ordered_asset_ids_with_meta(
     favorites_only: bool,
     meta_filter: Option<&AssetMetaFilter>,
 ) -> anyhow::Result<Vec<i64>> {
-    Ok(
-        try_list_ordered_asset_ids_with_meta(
-            conn,
-            tags_and,
-            tags_not,
-            kind,
-            favorites_only,
-            meta_filter,
-            || false,
-        )?
-        .unwrap_or_default(),
-    )
+    Ok(try_list_ordered_asset_ids_with_meta(
+        conn,
+        tags_and,
+        tags_not,
+        kind,
+        favorites_only,
+        meta_filter,
+        || false,
+    )?
+    .unwrap_or_default())
 }
 
 /// Builds the ordered matching-ID list, cooperatively aborting through
@@ -3417,17 +3453,16 @@ mod tests {
     use super::{
         add_scan_root, clear_thumbnail_failure, current_library_revision,
         delete_asset_by_id_with_thumb, delete_assets_by_prefix_with_thumbs, get_asset_media_group,
-        get_asset_path_and_thumb_by_id, grouped_bucket_stats_sql, init_schema, list_assets,
-        list_assets_for_csv_export, list_assets_for_thumbnail_render, list_assets_with_meta,
+        get_asset_path_and_thumb_by_id, grouped_bucket_stats_sql, init_schema,
+        list_asset_summaries_by_ids, list_assets, list_assets_for_csv_export,
+        list_assets_for_thumbnail_render, list_assets_with_meta,
         list_duplicate_assets_by_file_name_key, list_duplicate_file_name_counts,
-        list_asset_summaries_by_ids, list_failed_assets_for_thumbnail_render,
-        list_failed_thumbnail_asset_ids,
+        list_failed_assets_for_thumbnail_render, list_failed_thumbnail_asset_ids,
         list_ordered_asset_ids_with_meta, list_tags_page, merge_asset_tags_bulk,
         merge_asset_tags_bulk_with_revision, record_thumbnail_failure, rename_asset_file_by_id,
-        root_descendant_like_pattern,
-        set_asset_favorite, set_asset_media_group, set_asset_tags, set_asset_tags_with_revision,
-        set_assets_media_group_bulk, set_asset_favorite_with_revision,
-        set_asset_media_group_with_revision,
+        root_descendant_like_pattern, set_asset_favorite, set_asset_favorite_with_revision,
+        set_asset_media_group, set_asset_media_group_with_revision, set_asset_tags,
+        set_asset_tags_with_revision, set_assets_media_group_bulk,
         try_list_ordered_asset_ids_with_meta, update_asset_thumbnail_path_if_version_matches,
         update_asset_thumbnail_paths_batch_versioned, upsert_asset, upsert_scanned_asset,
         validate_backup_database, AssetMetaFilter, ThumbnailCasOutcome,
@@ -3438,7 +3473,10 @@ mod tests {
         assert_eq!(root_descendant_like_pattern("C:\\media\\"), "C:\\media\\%");
         assert_eq!(root_descendant_like_pattern("/srv/media/"), "/srv/media/%");
         assert_eq!(root_descendant_like_pattern("/"), "/%");
-        assert_eq!(root_descendant_like_pattern("/srv/100%_media"), "/srv/100^%^_media/%");
+        assert_eq!(
+            root_descendant_like_pattern("/srv/100%_media"),
+            "/srv/100^%^_media/%"
+        );
     }
 
     fn insert_asset(conn: &Connection, path: &str, kind: &str, modified_at: i64) {
@@ -3469,9 +3507,18 @@ mod tests {
 
         let summaries = list_asset_summaries_by_ids(&conn, &[2, 3, 1]).expect("summaries");
 
-        assert_eq!(summaries.iter().map(|item| item.id).collect::<Vec<_>>(), vec![2, 3, 1]);
-        assert_eq!(summaries[0].preview_path.as_deref(), Some("/media/clip.mp4"));
-        assert_eq!(summaries[1].preview_path.as_deref(), Some("/media/animation.gif"));
+        assert_eq!(
+            summaries.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![2, 3, 1]
+        );
+        assert_eq!(
+            summaries[0].preview_path.as_deref(),
+            Some("/media/clip.mp4")
+        );
+        assert_eq!(
+            summaries[1].preview_path.as_deref(),
+            Some("/media/animation.gif")
+        );
         assert_eq!(summaries[2].preview_path, None);
     }
 
@@ -3930,8 +3977,11 @@ mod tests {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
         insert_asset(&conn, "C:\\media\\a.jpg", "image", 1);
-        conn.execute("INSERT INTO tags(name) VALUES (?1)", params!["cat\0dog\u{7}bird"])
-            .expect("legacy tag");
+        conn.execute(
+            "INSERT INTO tags(name) VALUES (?1)",
+            params!["cat\0dog\u{7}bird"],
+        )
+        .expect("legacy tag");
         conn.execute(
             "INSERT INTO asset_tags(asset_id, tag_id) SELECT 1, id FROM tags",
             [],
@@ -4565,11 +4615,9 @@ mod tests {
         assert_eq!(outcome, ThumbnailCasOutcome::VersionMismatch);
 
         let stored: Option<String> = conn
-            .query_row(
-                "SELECT thumb_path FROM assets WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT thumb_path FROM assets WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .expect("read thumb path");
         assert_eq!(
             stored, None,
@@ -4615,11 +4663,9 @@ mod tests {
         insert_scanned_asset(&conn, "C:\\media\\a.jpg", 30, 7, 7_500_000_000, None);
 
         let stored: Option<String> = conn
-            .query_row(
-                "SELECT thumb_path FROM assets WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT thumb_path FROM assets WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .expect("read thumb path");
         assert_eq!(
             stored, None,
@@ -4726,28 +4772,14 @@ mod tests {
         insert_asset(&conn, "C:\\media\\b.jpg", "image", 20);
         insert_asset(&conn, "C:\\media\\c.jpg", "image", 10);
 
-        let cancelled = try_list_ordered_asset_ids_with_meta(
-            &conn,
-            &[],
-            &[],
-            None,
-            false,
-            None,
-            || true,
-        )
-        .expect("cancelled build");
+        let cancelled =
+            try_list_ordered_asset_ids_with_meta(&conn, &[], &[], None, false, None, || true)
+                .expect("cancelled build");
         assert_eq!(cancelled, None);
 
-        let completed = try_list_ordered_asset_ids_with_meta(
-            &conn,
-            &[],
-            &[],
-            None,
-            false,
-            None,
-            || false,
-        )
-        .expect("completed build");
+        let completed =
+            try_list_ordered_asset_ids_with_meta(&conn, &[], &[], None, false, None, || false)
+                .expect("completed build");
         assert_eq!(completed.as_deref(), Some(&[1_i64, 2_i64, 3_i64][..]));
     }
 
@@ -4769,8 +4801,7 @@ mod tests {
             1
         );
 
-        set_asset_media_group_with_revision(&mut conn, 1, Some("trip"), Some(1.0))
-            .expect("group");
+        set_asset_media_group_with_revision(&mut conn, 1, Some("trip"), Some(1.0)).expect("group");
         let after_group = current_library_revision(&conn).expect("revision after group");
         assert_eq!(after_group, baseline + 2);
     }

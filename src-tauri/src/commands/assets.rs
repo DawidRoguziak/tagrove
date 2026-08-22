@@ -35,6 +35,7 @@ pub enum AssetMetaFilterInput {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn start_asset_query(
     tags_and: Vec<String>,
     tags_not: Vec<String>,
@@ -51,8 +52,7 @@ pub async fn start_asset_query(
     // scheduler cannot invert supersession between two requests.
     let request_id = asset_query_service::manager().begin_request(generation);
     tauri::async_runtime::spawn_blocking(move || {
-        asset_query_service::manager()
-            .start(&db_path, filters, page_size, request_id, generation)
+        asset_query_service::manager().start(&db_path, filters, page_size, request_id, generation)
     })
     .await
     .map_err(|e| format!("asset query worker failed: {e}"))?
@@ -98,7 +98,9 @@ pub fn get_video_stream_url(
     if asset_id <= 0 {
         return Err("Asset id must be positive".to_string());
     }
-    media_server.video_url(asset_id).map_err(|error| error.to_string())
+    media_server
+        .video_url(asset_id)
+        .map_err(|error| error.to_string())
 }
 
 fn normalize_query_filters(
@@ -138,6 +140,7 @@ fn normalize_query_filters(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn list_assets(
     offset: i64,
     limit: i64,
@@ -324,8 +327,11 @@ pub fn set_assets_media_group_bulk(
             })
             .collect::<Vec<_>>();
 
-        let (processed_assets, updated_assets) =
-            db::set_assets_media_group_bulk(&mut conn, &normalized_updates, normalized_key.as_deref())?;
+        let (processed_assets, updated_assets) = db::set_assets_media_group_bulk(
+            &mut conn,
+            &normalized_updates,
+            normalized_key.as_deref(),
+        )?;
 
         Ok(BulkMediaGroupSummary {
             processed_assets,
@@ -441,6 +447,7 @@ pub fn apply_duplicate_resolution_batch(
     .map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 fn normalize_new_file_name(raw: &str) -> Result<String, crate::error::AppError> {
     asset_mutation_service::validate_file_name(raw).map_err(Into::into)
 }

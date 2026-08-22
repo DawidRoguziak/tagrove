@@ -2,9 +2,11 @@
 
 FROM --platform=linux/amd64 archlinux:base-devel AS dependencies
 
+ARG BUN_VERSION=1.4.0
+ARG NODE_VERSION=22.22.0
+
 RUN pacman -Syu --noconfirm \
     && pacman -S --needed --noconfirm \
-      bun \
       curl \
       ffmpeg \
       file \
@@ -12,15 +14,31 @@ RUN pacman -Syu --noconfirm \
       gst-plugins-bad \
       gst-plugins-base-libs \
       gst-plugins-good \
-      nodejs-lts-jod \
       openssl \
       rustup \
+      unzip \
+      xz \
       dbus \
       xorg-server-xvfb \
       webkit2gtk-4.1 \
     && pacman -Scc --noconfirm
 
-RUN rustup default stable \
+RUN mkdir -p /tmp/node-install /tmp/bun-install \
+    && cd /tmp/node-install \
+    && curl --fail --silent --show-error --remote-name "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    && curl --fail --silent --show-error --remote-name "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+    && grep " node-v${NODE_VERSION}-linux-x64.tar.xz$" SHASUMS256.txt | sha256sum --check --strict \
+    && tar -xJf "node-v${NODE_VERSION}-linux-x64.tar.xz" --directory /usr/local --strip-components=1 \
+    && cd /tmp/bun-install \
+    && curl --fail --silent --show-error --location --remote-name "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" \
+    && curl --fail --silent --show-error --location --remote-name "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/SHASUMS256.txt" \
+    && grep " bun-linux-x64.zip$" SHASUMS256.txt | sha256sum --check --strict \
+    && unzip -q bun-linux-x64.zip \
+    && install -m 0755 bun-linux-x64/bun /usr/local/bin/bun \
+    && rm -rf /tmp/node-install /tmp/bun-install
+
+RUN rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt \
+    && rustup default 1.98.0 \
     && cargo install tauri-driver --locked \
     && rustc -vV \
     && cargo --version \

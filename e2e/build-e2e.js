@@ -41,7 +41,7 @@ export function buildE2eApp() {
 
   const result = spawnSync(
     "tauri",
-    ["build", "--debug", "--no-bundle", "--config", "src-tauri/tauri.conf.e2e.json"],
+    ["build", "--debug", "--no-bundle", "--config", "src-tauri/tauri.conf.e2e.json", "--", "--locked"],
     {
       cwd: projectRoot,
       stdio: "inherit",

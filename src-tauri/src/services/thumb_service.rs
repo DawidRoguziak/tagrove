@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::Ordering,
-        mpsc::{self, Receiver, RecvTimeoutError, TryRecvError},
+        mpsc::{self, Receiver, RecvTimeoutError},
     },
     time::{Duration, Instant},
 };
@@ -437,18 +437,13 @@ fn drain_ready_render_results(
     failed: &mut usize,
     updates: &mut Vec<(i64, Option<String>, crate::thumbs::SourceVersion)>,
 ) {
-    loop {
-        match completion_receiver.try_recv() {
-            Ok(result) => {
-                let Some(task) = pending.remove(&result.asset_id) else {
-                    continue;
-                };
-                process_bulk_result(
-                    conn, app, mode, total, processed, generated, failed, updates, task, result,
-                );
-            }
-            Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
-        }
+    while let Ok(result) = completion_receiver.try_recv() {
+        let Some(task) = pending.remove(&result.asset_id) else {
+            continue;
+        };
+        process_bulk_result(
+            conn, app, mode, total, processed, generated, failed, updates, task, result,
+        );
     }
 }
 
@@ -862,7 +857,7 @@ fn emit_render_progress(
     processed: usize,
     total: usize,
 ) {
-    if processed % 25 == 0 || processed == total {
+    if processed.is_multiple_of(25) || processed == total {
         let _ = emit_progress(
             app,
             phase,
@@ -874,10 +869,10 @@ fn emit_render_progress(
 }
 
 fn emit_page_progress(app: &tauri::AppHandle<impl tauri::Runtime>, processed: usize, total: usize) {
-    if processed < total && processed % 16 != 0 {
+    if processed < total && !processed.is_multiple_of(16) {
         return;
     }
-    if processed % 25 == 0 || processed == total {
+    if processed.is_multiple_of(25) || processed == total {
         let _ = emit_progress(
             app,
             "thumbs-page",
@@ -930,7 +925,7 @@ pub fn delete_thumbnail_files_with_progress(
             removed += 1;
         }
         let processed = idx + 1;
-        if processed % 25 == 0 || processed == total {
+        if processed.is_multiple_of(25) || processed == total {
             let _ = emit_progress(
                 app,
                 phase,

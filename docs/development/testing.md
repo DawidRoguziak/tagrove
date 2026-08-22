@@ -21,11 +21,13 @@ Run commands from the repository root.
 | --- | --- |
 | `bun run test` | Runs Vitest once through Node with an 8192 MiB old-space limit. Vitest discovers the frontend `*.test.ts` and `*.test.tsx` files. |
 | `bun run test:watch` | Starts Vitest in watch mode. |
-| `bun run test:backend` | Runs `cargo test --manifest-path src-tauri/Cargo.toml`; this includes Rust library unit tests and both integration test binaries in `src-tauri/tests/`. The application binary itself has `test = false`. |
-| `bun run test:backend:integration` | Runs only the `backend_integration` Rust integration-test binary. |
-| `bun run test:backend:e2e` | Runs only the Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
+| `bun run test:backend` | Runs locked Cargo tests, including Rust library unit tests and both integration test binaries in `src-tauri/tests/`. The application binary itself has `test = false`. |
+| `bun run test:backend:integration` | Runs only the locked `backend_integration` Rust integration-test binary. |
+| `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
-| `bun run test:all` | Sequentially runs frontend Vitest, the complete Rust test suite, and desktop E2E. It stops at the first failed layer. |
+| `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
+| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, and locked Clippy with warnings denied. |
+| `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, and desktop E2E. It stops at the first failed layer. |
 
 `bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It deliberately does not run `bun run build`, so its Tauri overlay disables `beforeBuildCommand` and it consumes the `dist/` already on disk.
 
@@ -38,7 +40,13 @@ cargo test --manifest-path src-tauri/Cargo.toml module_or_test_name
 cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration test_name
 ```
 
-There is currently no package script for coverage.
+There is no numeric coverage threshold. CI runs the complete frontend and backend suites, but coverage output is not a merge gate.
+
+## Continuous integration
+
+`.github/workflows/quality.yml` runs on pull requests and pushes to `main`. The frontend job uses Node `22.22.0`, Bun `1.4.0`, and `bun install --frozen-lockfile`; it validates locales, generator tests, TypeScript application/configuration projects, Biome, Vitest, and the production frontend build. The Rust job uses `rust-toolchain.toml`, `cargo fetch --locked`, rustfmt, locked Clippy with warnings denied, and locked Cargo tests.
+
+CI does not launch an unqualified Tauri development or release profile and does not touch production app data. Real desktop E2E remains in the isolated `.e2e` profile and in the Linux Docker release gate because hosted runners need a WebDriver/display stack. Installed Windows sidecars still require the manual package smoke test below.
 
 ## Frontend tests and Vitest
 

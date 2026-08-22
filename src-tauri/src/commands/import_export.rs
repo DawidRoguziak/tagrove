@@ -87,7 +87,7 @@ pub fn import_db_bundle(
     with_database_maintenance(&state, || {
         backup_service::import_db_bundle(path, root_mappings, &state)
     })
-        .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]

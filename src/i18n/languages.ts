@@ -1,6 +1,4 @@
-import type { AppLanguage } from "../components/app/types";
-
-export const APP_LANGUAGES: readonly AppLanguage[] = [
+export const APP_LANGUAGES = [
   "en",
   "pl",
   "fr",
@@ -12,7 +10,9 @@ export const APP_LANGUAGES: readonly AppLanguage[] = [
   "ja",
   "ko",
   "cs"
-];
+] as const;
+
+export type AppLanguage = (typeof APP_LANGUAGES)[number];
 
 export const APP_LANGUAGE_NATIVE_LABELS: Record<AppLanguage, string> = {
   en: "English",

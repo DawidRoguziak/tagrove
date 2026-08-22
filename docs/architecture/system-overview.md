@@ -157,13 +157,9 @@ Security-sensitive changes should review capabilities, CSP, asset scope, dialog 
 
 ## Naming state
 
-The project identity is not yet consistent:
+The user-facing product name is **Image Viewer 3000**, with `Dev` and `E2E` suffixes for isolated profiles. Repository guidance, the npm package (`media-tagger`), Rust crate/binary (`media_tagger`), identifiers, E2E suite labels, performance variables, and lock-contention text retain the internal **MediaTagger** name. `index.html` uses the same product name as Tauri.
 
-- Repository guidance, the npm package (`media-tagger`), Rust crate/binary (`media_tagger`), identifiers, E2E suite labels, performance variables, and lock-contention text use **MediaTagger**.
-- Tauri product names, window titles, and icon filenames use **Image Viewer 3000** (with `Dev`/`E2E` suffixes where applicable).
-- `index.html` currently contains the additional typo **Image Viewr 3000**. Tauri window titles override what users normally see in desktop runs, but the HTML title remains visible in browser/Vite contexts and is still part of the source.
-
-Treat renaming as a migration, not a cosmetic search-and-replace. Changing the Tauri identifier changes the app-data directory and can make an existing library appear empty unless data is migrated. Renaming the Rust binary also affects the E2E executable path; product names affect package/window expectations.
+This split is deliberate. Changing the Tauri identifier changes the app-data directory and can make an existing library appear empty unless data is migrated. Renaming the Rust binary also affects the E2E executable path. A future internal rename is a migration, not a cosmetic search-and-replace.
 
 ## Current guarantees and known limitations
 

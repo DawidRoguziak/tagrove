@@ -108,7 +108,9 @@ pub fn connection(path: &Path) -> AppResult<PooledConnection> {
         }
         let Some(timeout) = deadline.checked_duration_since(Instant::now()) else {
             return Err(
-                "database pool is busy: timed out waiting for a free connection".to_string().into(),
+                "database pool is busy: timed out waiting for a free connection"
+                    .to_string()
+                    .into(),
             );
         };
         let (guard, wait_result) = pool
@@ -121,7 +123,9 @@ pub fn connection(path: &Path) -> AppResult<PooledConnection> {
                 return Err("database pool was invalidated for maintenance".into());
             }
             return Err(
-                "database pool is busy: timed out waiting for a free connection".to_string().into(),
+                "database pool is busy: timed out waiting for a free connection"
+                    .to_string()
+                    .into(),
             );
         }
     }

@@ -34,16 +34,15 @@ pub fn sort_scan_roots_by_created_desc(roots: Vec<String>) -> Vec<String> {
         })
         .collect::<Vec<_>>();
 
-    roots_with_created_at.sort_by(|(left_path, left_created), (right_path, right_created)| {
-        match (left_created, right_created) {
-            (Some(left), Some(right)) => right
-                .cmp(left)
-                .then_with(|| left_path.cmp(right_path)),
+    roots_with_created_at.sort_by(
+        |(left_path, left_created), (right_path, right_created)| match (left_created, right_created)
+        {
+            (Some(left), Some(right)) => right.cmp(left).then_with(|| left_path.cmp(right_path)),
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
             (None, None) => left_path.cmp(right_path),
-        }
-    });
+        },
+    );
 
     roots_with_created_at
         .into_iter()
@@ -79,17 +78,20 @@ pub fn scan_roots<R: tauri::Runtime>(
         if !is_valid_scan_root(&root) {
             failed += 1;
             completion = ScanCompletion::Partial;
-            let _ = emit_progress(app, "scan-skip", root_idx + 1, roots.len(), format!("Skipping invalid folder: {root_str}"));
+            let _ = emit_progress(
+                app,
+                "scan-skip",
+                root_idx + 1,
+                roots.len(),
+                format!("Skipping invalid folder: {root_str}"),
+            );
             continue;
         }
 
         let generation = scan_generation().saturating_add(root_idx as i64);
         let scan_worker_count = resolve_scan_worker_count(usize::MAX);
-        let (task_sender, task_receiver) = mpsc::sync_channel::<(
-            PathBuf,
-            String,
-            indexer::FileFingerprint,
-        )>(SCAN_QUEUE_CAPACITY);
+        let (task_sender, task_receiver) =
+            mpsc::sync_channel::<(PathBuf, String, indexer::FileFingerprint)>(SCAN_QUEUE_CAPACITY);
         let (result_sender, result_receiver) = mpsc::channel::<indexer::IndexResult>();
         let shared_task_receiver = Arc::new(Mutex::new(task_receiver));
         let mut worker_handles = Vec::with_capacity(scan_worker_count);
@@ -133,20 +135,25 @@ pub fn scan_roots<R: tauri::Runtime>(
         let mut changed_indexed = 0usize;
         let mut changed_failed = 0usize;
         let mut pending_writes = Vec::with_capacity(SCAN_DB_BATCH_SIZE);
-        let mut discovery_batch = Vec::<(PathBuf, String, indexer::FileFingerprint)>::with_capacity(SCAN_DB_BATCH_SIZE);
+        let mut discovery_batch =
+            Vec::<(PathBuf, String, indexer::FileFingerprint)>::with_capacity(SCAN_DB_BATCH_SIZE);
         let discovery = indexer::visit_supported_files(&root, |path, kind| {
             discovered_count += 1;
             let fingerprint = match indexer::read_file_fingerprint(&path) {
                 Ok(value) => value,
                 Err(_) => {
                     discovery_failures += 1;
-                    if discovered_count % 100 == 0 {
+                    if discovered_count.is_multiple_of(100) {
                         let _ = emit_progress(
                             app,
                             "counting",
                             discovered_count,
                             discovered_count,
-                            format!("[{}/{}] Discovered {discovered_count} files", root_idx + 1, roots.len()),
+                            format!(
+                                "[{}/{}] Discovered {discovered_count} files",
+                                root_idx + 1,
+                                roots.len()
+                            ),
                         );
                     }
                     return Ok(());
@@ -175,13 +182,17 @@ pub fn scan_roots<R: tauri::Runtime>(
                     generation,
                 )?;
             }
-            if discovered_count % 100 == 0 {
+            if discovered_count.is_multiple_of(100) {
                 let _ = emit_progress(
                     app,
                     "counting",
                     discovered_count,
                     discovered_count,
-                    format!("[{}/{}] Discovered {discovered_count} files", root_idx + 1, roots.len()),
+                    format!(
+                        "[{}/{}] Discovered {discovered_count} files",
+                        root_idx + 1,
+                        roots.len()
+                    ),
                 );
             }
             Ok(())
@@ -229,13 +240,17 @@ pub fn scan_roots<R: tauri::Runtime>(
                 generation,
             )?;
             let processed = unchanged_count + completed_changed;
-            if processed % 100 == 0 || completed_changed == queued {
+            if processed.is_multiple_of(100) || completed_changed == queued {
                 let _ = emit_progress(
                     app,
                     "scanning",
                     processed,
                     total,
-                    format!("[{}/{}] Scanning {processed}/{total}", root_idx + 1, roots.len()),
+                    format!(
+                        "[{}/{}] Scanning {processed}/{total}",
+                        root_idx + 1,
+                        roots.len()
+                    ),
                 );
             }
         }
@@ -244,7 +259,9 @@ pub fn scan_roots<R: tauri::Runtime>(
         failed += discovery.traversal_errors + discovery_failures + changed_failed;
 
         for handle in worker_handles {
-            handle.join().map_err(|_| "scan worker panicked".to_string())?;
+            handle
+                .join()
+                .map_err(|_| "scan worker panicked".to_string())?;
         }
 
         let root_scan_complete =
@@ -258,12 +275,15 @@ pub fn scan_roots<R: tauri::Runtime>(
                 "cleanup",
                 total,
                 total,
-                format!("[{}/{}] Cleanup finished, removed {removed_for_root} stale entries", root_idx + 1, roots.len()),
+                format!(
+                    "[{}/{}] Cleanup finished, removed {removed_for_root} stale entries",
+                    root_idx + 1,
+                    roots.len()
+                ),
             );
         } else {
             completion = ScanCompletion::Partial;
-            let warning_count =
-                discovery.traversal_errors + discovery_failures + changed_failed;
+            let warning_count = discovery.traversal_errors + discovery_failures + changed_failed;
             let _ = emit_progress(
                 app,
                 "cleanup",
@@ -281,7 +301,10 @@ pub fn scan_roots<R: tauri::Runtime>(
     db::bump_library_revision(&conn)?;
     db::optimize(&conn)?;
     if std::env::var_os("MEDIATAGGER_PERF").is_some() {
-        eprintln!("[perf] name=scan elapsed_ms={} indexed={indexed} removed={removed} failed={failed}", started.elapsed().as_millis());
+        eprintln!(
+            "[perf] name=scan elapsed_ms={} indexed={indexed} removed={removed} failed={failed}",
+            started.elapsed().as_millis()
+        );
     }
     Ok(ScanSummary {
         completion,
@@ -299,6 +322,7 @@ fn scan_generation() -> i64 {
         .min(i64::MAX as u128) as i64
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dispatch_discovery_batch(
     conn: &rusqlite::Connection,
     batch: &mut Vec<(PathBuf, String, indexer::FileFingerprint)>,
@@ -371,6 +395,7 @@ fn flush_scan_batch(
     Ok(written)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn drain_ready_scan_results(
     conn: &rusqlite::Connection,
     receiver: &mpsc::Receiver<indexer::IndexResult>,
@@ -389,6 +414,7 @@ fn drain_ready_scan_results(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn accept_scan_result(
     conn: &rusqlite::Connection,
     result: indexer::IndexResult,

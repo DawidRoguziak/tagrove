@@ -117,11 +117,9 @@ export function useTagListData({
         total: Math.max(previousPage.total, fallbackPage.total)
       }));
     } finally {
-      if (requestIdRef.current !== currentRequestId) {
-        return;
+      if (requestIdRef.current === currentRequestId) {
+        setLoadingMore(false);
       }
-
-      setLoadingMore(false);
     }
   }, [fallbackKnownTags, loading, loadingMore, open, page.items.length, page.total, pageSize, query]);
 

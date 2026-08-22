@@ -45,7 +45,9 @@ pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary
             .write(true)
             .create_new(true)
             .open(&temporary)?;
-        let mut writer = csv::WriterBuilder::new().has_headers(true).from_writer(file);
+        let mut writer = csv::WriterBuilder::new()
+            .has_headers(true)
+            .from_writer(file);
         writer.write_record(CSV_HEADERS)?;
         let mut rows = 0usize;
         db::for_each_asset_for_csv_export(&conn, |row| {
@@ -59,15 +61,15 @@ pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary
                 tags.join(" "),
                 if row.is_favorite { "1" } else { "0" }.to_string(),
                 row.media_group_key.unwrap_or_default(),
-                row.media_group_order.map(|value| value.to_string()).unwrap_or_default(),
+                row.media_group_order
+                    .map(|value| value.to_string())
+                    .unwrap_or_default(),
             ])?;
             rows += 1;
             Ok(())
         })?;
         writer.flush()?;
-        let file = writer
-            .into_inner()
-            .map_err(|error| error.into_error())?;
+        let file = writer.into_inner().map_err(|error| error.into_error())?;
         file.sync_all()?;
         publish_file(&temporary, &target)?;
         sync_parent_directory(&target)?;
@@ -117,7 +119,8 @@ fn parse_csv_document(reader: impl Read) -> AppResult<Vec<CsvImportRecord>> {
 
     let mut parsed = Vec::new();
     for (row_index, record) in reader.records().enumerate() {
-        let record = record.with_context(|| format!("Invalid CSV record at row {}", row_index + 2))?;
+        let record =
+            record.with_context(|| format!("Invalid CSV record at row {}", row_index + 2))?;
         let value = |header_index: usize| record.get(indices[header_index]).unwrap_or("").trim();
         let favorite = parse_favorite(value(2), row_index + 2)?;
         let media_group_order = parse_group_order(value(4), row_index + 2)?;
@@ -219,8 +222,16 @@ fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
             MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
         },
     };
-    let source = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-    let target = target.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let target = target
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
     unsafe {
         MoveFileExW(
             PCWSTR(source.as_ptr()),
@@ -264,8 +275,7 @@ mod tests {
         utils::text::canonical_key,
     };
 
-    const HEADERS: &str =
-        "file_name,tags,favorite,media_group_key,media_group_order\n";
+    const HEADERS: &str = "file_name,tags,favorite,media_group_key,media_group_order\n";
 
     fn asset(path: &str) -> NewAsset {
         NewAsset {
@@ -304,9 +314,7 @@ mod tests {
 
     #[test]
     fn parser_rejects_a_malformed_late_row_before_any_database_work() {
-        let csv = format!(
-            "{HEADERS}a.jpg,cat,1,trip,1\nb.jpg,\"unterminated,0,,\n"
-        );
+        let csv = format!("{HEADERS}a.jpg,cat,1,trip,1\nb.jpg,\"unterminated,0,,\n");
         assert!(parse_csv_document(Cursor::new(csv)).is_err());
     }
 
@@ -317,10 +325,9 @@ mod tests {
         db::upsert_asset(&conn, &asset("/one/ŻÓŁW.JPG")).unwrap();
         db::upsert_asset(&conn, &asset("/two/żółw.jpg")).unwrap();
         let baseline = db::current_library_revision(&conn).unwrap();
-        let records = parse_csv_document(Cursor::new(format!(
-            "{HEADERS}ŻÓŁW.JPG,animal,1,trip,2\n"
-        )))
-        .unwrap();
+        let records =
+            parse_csv_document(Cursor::new(format!("{HEADERS}ŻÓŁW.JPG,animal,1,trip,2\n")))
+                .unwrap();
 
         let summary = db::import_csv_records(&mut conn, &records).unwrap();
 
@@ -384,11 +391,8 @@ mod tests {
         db::upsert_asset(&conn, &asset("/source/a.jpg")).unwrap();
         conn.execute("INSERT INTO tags(name) VALUES ('new york')", [])
             .unwrap();
-        conn.execute(
-            "INSERT INTO asset_tags(asset_id, tag_id) VALUES (1, 1)",
-            [],
-        )
-        .unwrap();
+        conn.execute("INSERT INTO asset_tags(asset_id, tag_id) VALUES (1, 1)", [])
+            .unwrap();
         let target = exports.join("tags.csv");
         fs::write(&target, "keep me").unwrap();
 

@@ -156,6 +156,32 @@ describe("LightboxModal", () => {
     await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
   });
 
+  it("ignores an aborted native video error", async () => {
+    render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    const video = document.querySelector("video")!;
+    Object.defineProperty(video, "error", {
+      configurable: true,
+      value: { code: 1, message: "The operation was aborted" }
+    });
+    fireEvent.error(video);
+
+    expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
+  });
+
   it("shows a GIF error and resets it after navigation", () => {
     const gifAsset: SelectedAsset = {
   ...selectedAsset,

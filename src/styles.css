@@ -1,5 +1,4 @@
-@import "@vidstack/react/player/styles/default/theme.css";
-@import "@vidstack/react/player/styles/default/layouts/video.css";
+@import "@videojs/react/video/minimal-skin.css";
 @import "tailwindcss";
 
 @plugin "daisyui" {
@@ -202,24 +201,28 @@ a:focus-visible {
 }
 
 .lightbox-video-player {
-  --video-bg: oklch(var(--b3));
-  --video-brand: oklch(var(--p));
-  --video-border: 1px solid oklch(var(--bc) / 0.2);
-  --video-border-radius: 14px;
-  --video-focus-ring-color: oklch(var(--p));
-  --video-font-family: inherit;
+  --media-accent-color: oklch(var(--p));
+  --media-border-radius: 14px;
+  --media-scale-unit: 16px;
+  border: 1px solid oklch(var(--bc) / 0.2);
+  background: oklch(var(--b3));
   max-height: 100%;
   max-width: 100%;
   box-shadow: var(--shadow-surface);
 }
 
-.lightbox-video-player[data-fullscreen] {
-  --video-border: 0;
-  --video-border-radius: 0;
+.lightbox-video-player:fullscreen {
+  --media-border-radius: 0;
+  border: 0;
   height: 100%;
   max-height: none;
   max-width: none;
   width: 100%;
+}
+
+.lightbox-video-player .media-button--cast,
+.lightbox-video-player .media-button--pip {
+  display: none;
 }
 
 button,
@@ -238,18 +241,6 @@ select {
   padding: 10px 12px;
   box-shadow: var(--field-shadow);
   transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
-}
-
-.lightbox-video-player .lightbox-video-controls-spacer {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.lightbox-video-player .vds-video-layout[data-lg] .vds-volume-slider {
-  margin-left: var(--video-volume-gap, 10px);
-  max-width: var(--video-volume-slider-max-width, 72px);
-  opacity: 1;
-  visibility: visible;
 }
 
 input:not([type="range"])::placeholder {

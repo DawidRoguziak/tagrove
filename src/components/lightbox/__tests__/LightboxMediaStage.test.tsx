@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { MediaPlayerInstance } from "@vidstack/react";
 import type { MutableRefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxMediaStage } from "../LightboxMediaStage";
+import type { LightboxVideoPlayerHandle } from "../LightboxVideoPlayer";
 
 const apiMocks = vi.hoisted(() => ({
   getVideoStreamUrl: vi.fn()
@@ -50,7 +50,7 @@ function stageProps(selected: SelectedAsset) {
     selected,
     mediaViewportRef: { current: null } as MutableRefObject<HTMLDivElement | null>,
     lightboxImageRef: { current: null } as MutableRefObject<HTMLImageElement | null>,
-    lightboxVideoPlayerRef: { current: null } as MutableRefObject<MediaPlayerInstance | null>,
+    lightboxVideoPlayerRef: { current: null } as MutableRefObject<LightboxVideoPlayerHandle | null>,
     isZoomed: false,
     mediaDisplaySize: { width: 160, height: 90 },
     isDragging: false,

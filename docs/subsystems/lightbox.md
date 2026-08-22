@@ -82,10 +82,10 @@ Delete opens a nested modal, closes both popovers, clears its text each time it 
 Image and GIF source paths pass through `toMediaSrc`.
 
 - `image` and `gif` use the same non-draggable `<img>` stage. GIF animation is browser-native, and both kinds receive the image fit, zoom, and pan behavior.
-- `video` requests `get_video_stream_url` by asset ID and passes the returned tokenized loopback HTTP URL directly to Vidstack `MediaPlayer`, `MediaProvider`, and `DefaultVideoLayout`. The backend revalidates the SQLite row and uses Hyper/Tokio to stream asynchronous, backpressure-aware GET/HEAD byte ranges, so concurrent large files and seeking do not occupy a fixed response-worker queue and bytes do not pass through IPC or a frontend Blob. The server admits at most 32 connections, disables keep-alive, times out incomplete headers, request preparation, and stalled writes, retries transient listener failures with backoff, and aborts active connection tasks on shutdown. Source changes remount the player. It starts automatically, unmuted at volume 1, loops, plays inline, and preloads metadata. `onCanPlay` retries `play()` if autoplay left it paused. Picture-in-picture, Cast, audio gain, and the chapter title slot are disabled or removed.
-- Video metadata supplies intrinsic dimensions when the provider is a video provider. Before that, the selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`.
+- `video` requests `get_video_stream_url` by asset ID and passes the returned tokenized loopback HTTP URL to the native `<video>` rendered by Video.js 10 `VideoPlayer`, `MinimalVideoSkin`, and `Video`. The backend revalidates the SQLite row and uses Hyper/Tokio to stream asynchronous, backpressure-aware GET/HEAD byte ranges, so concurrent large files and seeking do not occupy a fixed response-worker queue and bytes do not pass through IPC or a frontend Blob. The server admits at most 32 connections, disables keep-alive, times out incomplete headers, request preparation, and stalled writes, retries transient listener failures with backoff, and aborts active connection tasks on shutdown. Source changes remount the complete player. It starts automatically, unmuted at volume 1, loops, plays inline, and preloads metadata. `onCanPlay` retries `play()` if autoplay left it paused. Picture-in-picture is disabled on the native element, and the PiP and Cast controls are hidden.
+- Native video metadata supplies intrinsic dimensions directly from `HTMLVideoElement.videoWidth` and `videoHeight`. Before that, the selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`. `I18nProvider` follows the active i18next language and loads the matching Video.js locale.
 
-Image/GIF load failures, stream-URL IPC failures, and Vidstack video errors replace the failed media with a localized alert. Every asset ID/kind/path activation receives a new generation, so A→B→A retries A and a late callback from the first A activation cannot fail the new one. Video URL requests have their own generation guard, so navigation clears the old source and late URL success or failure cannot affect the new selection. Native provider `onError` is the single playback-error path; transport, decode/codec, and unsupported-source failures log the `MediaError` code, category, and message, while expected aborted errors during source replacement are ignored. Original media is independent of thumbnail generation and thumbnail cache state.
+Image/GIF load failures, stream-URL IPC failures, and native video errors replace the failed media with a localized alert. Every asset ID/kind/path activation receives a new generation, so A→B→A retries A and a late callback from the first A activation cannot fail the new one. Video URL requests have their own generation guard, so navigation clears the old source and late URL success or failure cannot affect the new selection. Native `<video onError>` is the single playback-error path; transport, decode/codec, and unsupported-source failures log the `MediaError` code, category, and message, while code 1 aborted errors during source replacement are ignored. Original media is independent of thumbnail generation and thumbnail cache state.
 
 ## Image fit, zoom, and pan
 
@@ -112,7 +112,7 @@ Transform writes are coalesced to one `requestAnimationFrame`: callers update re
 
 For images and GIFs, fullscreen targets the lightbox shell. If another element is fullscreen, it is exited first. `fullscreenchange` derives `isFullscreen` from whether that exact shell is the fullscreen element; fullscreen CSS removes the shell's bounds, radius, border, and shadow. Toolbar and `F` can toggle it.
 
-For video, fullscreen delegates to the Vidstack player. The custom toolbar fullscreen button is hidden, but `F` still toggles the player when the event is outside the player subtree and Vidstack's own controls remain available. Player fullscreen events update lightbox state. Entering either fullscreen mode closes popovers. Fullscreen API failures are intentionally swallowed.
+For video, fullscreen delegates through the local `LightboxVideoPlayerHandle`, which exposes only `toggleFullscreen()`. An internal adapter uses Video.js `usePlayer()` to invoke fullscreen and publish fullscreen state changes to the lightbox. The custom toolbar fullscreen button is hidden, but `F` still toggles the player when the event is outside the player subtree and the skin's own controls remain available. Entering either fullscreen mode closes popovers. Fullscreen API failures are intentionally swallowed.
 
 The window-level shortcuts while an asset is selected are:
 
@@ -146,7 +146,7 @@ The delete overlay stops propagation at both its backdrop and surface, so closin
 - Mutation responses update selection only when its ID still matches the mutated asset.
 - Editor state follows selected details/cache state rather than maintaining a second saved model.
 - Popover, clipboard timeout, drag listener, resize observer, fullscreen listener, keyboard listener, and animation-frame cleanup are scoped to their owning hook/component.
-- Input editing and Vidstack controls do not accidentally trigger navigation or image shortcuts.
+- Input editing and Video.js controls do not accidentally trigger navigation or image shortcuts.
 - Delete requires explicit localized text confirmation and prevents duplicate submission.
 - Escape closes only the nested delete confirmation while that dialog is open.
 
@@ -171,7 +171,7 @@ When changing lightbox behavior:
 3. Preserve backend-first mutation ordering and ID-check selected updates; add a pending/error policy when introducing a control that can race.
 4. Use global indices and `getAssetAtAsync` for navigation; cover first/last wrap and unloaded page boundaries.
 5. Reset selection-scoped transient state when selected ID changes and clean up timers, observers, listeners, pointer capture, and queued animation frames.
-6. Keep form controls and Vidstack targets isolated from global shortcuts, and define how nested overlays consume backdrop clicks and `Escape`.
+6. Keep form controls and Video.js targets isolated from global shortcuts, and define how nested overlays consume backdrop clicks and `Escape`.
 7. For transform changes, test fit scale, min/max clamp, anchor preservation, pan bounds, resize re-clamping, drag fallback, and RAF coalescing.
 8. Verify image, GIF, and video separately, including metadata fallback and both fullscreen implementations.
 9. If details-cache behavior changes, add an invalidation contract for mutations, refresh/import/clear, deletion, query generation, and ID reuse.

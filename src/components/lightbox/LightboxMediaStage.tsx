@@ -6,10 +6,12 @@ import type {
 } from "react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { MediaPlayerInstance } from "@vidstack/react";
 import { toMediaSrc } from "../../api";
 import type { SelectedAsset } from "../../types";
-import { LightboxVideoPlayer } from "./LightboxVideoPlayer";
+import {
+  LightboxVideoPlayer,
+  type LightboxVideoPlayerHandle
+} from "./LightboxVideoPlayer";
 import { useLightboxVideoSource } from "./hooks/useLightboxVideoSource";
 import { UiButton } from "../UI/UiButton";
 
@@ -20,7 +22,7 @@ interface LightboxMediaStageProps {
   onRetryDetails?: () => void;
   mediaViewportRef: MutableRefObject<HTMLDivElement | null>;
   lightboxImageRef: MutableRefObject<HTMLImageElement | null>;
-  lightboxVideoPlayerRef: MutableRefObject<MediaPlayerInstance | null>;
+  lightboxVideoPlayerRef: MutableRefObject<LightboxVideoPlayerHandle | null>;
   isZoomed: boolean;
   mediaDisplaySize: { width: number; height: number };
   isDragging: boolean;

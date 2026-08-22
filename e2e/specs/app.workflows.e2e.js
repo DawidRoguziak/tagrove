@@ -758,15 +758,22 @@ describe("MediaTagger desktop workflows", () => {
         timeoutMsg: "Expected playback to continue after looping"
       }
     );
-    const settledPlayer = await $("[data-lightbox-video-player]");
+    let settledTime = Number(await video.getProperty("currentTime"));
     await browser.waitUntil(
-      async () =>
-        !(await settledPlayer.getAttribute("data-waiting")) &&
-        !(await settledPlayer.getAttribute("data-buffering")) &&
-        (await settledPlayer.getAttribute("aria-busy")) !== "true",
+      async () => {
+        const currentTime = Number(await video.getProperty("currentTime"));
+        const progressing = currentTime > settledTime;
+        settledTime = currentTime;
+        return (
+          Number(await video.getProperty("readyState")) >= 2 &&
+          !(await video.getProperty("paused")) &&
+          progressing &&
+          !(await $('[data-testid="lightbox-media-error"]').isExisting())
+        );
+      },
       {
         timeout: 10000,
-        timeoutMsg: "Expected no persistent waiting state after continuous playback"
+        timeoutMsg: "Expected ready, advancing playback without a media error"
       }
     );
     if (await $('[data-testid="lightbox-media-error"]').isExisting()) {

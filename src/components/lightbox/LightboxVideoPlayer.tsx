@@ -1,30 +1,11 @@
-import {
-  MediaPlayer,
-  MediaProvider,
-  isVideoProvider,
-  type MediaPlayerInstance
-} from "@vidstack/react";
-import {
-  DefaultVideoLayout,
-  defaultLayoutIcons
-} from "@vidstack/react/player/layouts/default";
-import type { CSSProperties, MediaHTMLAttributes, MutableRefObject } from "react";
+import { I18nProvider } from "@videojs/react/i18n";
+import { MinimalVideoSkin, Video, VideoPlayer, usePlayer } from "@videojs/react/video";
+import type { CSSProperties, MutableRefObject, SyntheticEvent } from "react";
+import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
-const videoControlsSpacer = (
-  <span className="lightbox-video-controls-spacer" aria-hidden="true" />
-);
-
-if (typeof window.matchMedia !== "function") {
-  window.matchMedia = (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    dispatchEvent: () => false
-  });
+export interface LightboxVideoPlayerHandle {
+  toggleFullscreen: () => Promise<void>;
 }
 
 interface LightboxVideoPlayerProps {
@@ -32,31 +13,14 @@ interface LightboxVideoPlayerProps {
   title: string;
   aspectRatio: string;
   style?: CSSProperties;
-  playerRef: MutableRefObject<MediaPlayerInstance | null>;
+  playerRef: MutableRefObject<LightboxVideoPlayerHandle | null>;
   onLoadedMetadata: (dimensions: { width: number; height: number }) => void;
   onFullscreenChange: (fullscreen: boolean) => void;
   onError: () => void;
 }
 
-interface PlayerErrorDetail {
-  code?: number;
-  message?: string;
-  mediaError?: MediaError | null;
-}
-
-function playerErrorDetail(event: unknown): PlayerErrorDetail {
-  if (!event || typeof event !== "object") {
-    return {};
-  }
-  const value = event as Record<string, unknown>;
-  const detail = value.detail;
-  return detail && typeof detail === "object"
-    ? (detail as PlayerErrorDetail)
-    : (value as PlayerErrorDetail);
-}
-
-function describeMediaError(error: MediaError | null, detail: PlayerErrorDetail) {
-  const code = error?.code ?? detail.code ?? 0;
+function describeMediaError(error: MediaError | null) {
+  const code = error?.code ?? 0;
   const category =
     code === 2
       ? "transport"
@@ -67,7 +31,40 @@ function describeMediaError(error: MediaError | null, detail: PlayerErrorDetail)
           : code === 1
             ? "aborted"
             : "unknown";
-  return { code, category, message: error?.message ?? detail.message ?? "" };
+  return { code, category, message: error?.message ?? "" };
+}
+
+function LightboxVideoPlayerAdapter({
+  playerRef,
+  onFullscreenChange
+}: Pick<LightboxVideoPlayerProps, "playerRef" | "onFullscreenChange">) {
+  const player = usePlayer();
+  const fullscreen = usePlayer(
+    (state) =>
+      typeof state === "object" &&
+      state !== null &&
+      "fullscreen" in state &&
+      state.fullscreen === true
+  );
+
+  useEffect(() => {
+    const handle: LightboxVideoPlayerHandle = {
+      toggleFullscreen: () => player.toggleFullscreen()
+    };
+    playerRef.current = handle;
+
+    return () => {
+      if (playerRef.current === handle) {
+        playerRef.current = null;
+      }
+    };
+  }, [player, playerRef]);
+
+  useEffect(() => {
+    onFullscreenChange(fullscreen);
+  }, [fullscreen, onFullscreenChange]);
+
+  return null;
 }
 
 export function LightboxVideoPlayer({
@@ -80,11 +77,11 @@ export function LightboxVideoPlayer({
   onFullscreenChange,
   onError
 }: LightboxVideoPlayerProps) {
-  const reportError = (event: unknown) => {
-    const detail = playerErrorDetail(event);
-    const provider = playerRef.current?.provider;
-    const mediaError = detail.mediaError ?? (isVideoProvider(provider) ? provider.video.error : null);
-    const description = describeMediaError(mediaError, detail);
+  const { i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language;
+
+  const reportError = (event: SyntheticEvent<HTMLVideoElement>) => {
+    const description = describeMediaError(event.currentTarget.error);
     if (description.code === 1) {
       return;
     }
@@ -99,65 +96,54 @@ export function LightboxVideoPlayer({
 
   return (
     <div className="max-h-full max-w-full" style={style}>
-      <MediaPlayer
-        key={src}
-        ref={(node) => {
-          playerRef.current = node;
-        }}
-        className="lightbox-video-player h-full w-full"
-        data-lightbox-video-player
-        src={src}
-        title=""
-        ariaLabel={title}
-        aspectRatio={aspectRatio}
-        autoPlay
-        muted={false}
-        volume={1}
-        loop
-        playsInline
-        preload="metadata"
-        onCanPlay={() => {
-          const player = playerRef.current;
-          if (!player || !player.state.paused) {
-            return;
-          }
+      <VideoPlayer key={src}>
+        <I18nProvider locale={locale}>
+          <MinimalVideoSkin
+            className="lightbox-video-player h-full w-full"
+            data-lightbox-video-player
+            aria-label={title}
+            style={{ aspectRatio }}
+          >
+            <Video
+              ref={(video) => {
+                if (video) {
+                  video.muted = false;
+                  video.volume = 1;
+                }
+              }}
+              src={src}
+              autoPlay
+              muted={false}
+              loop
+              playsInline
+              preload="metadata"
+              disablePictureInPicture
+              onCanPlay={(event) => {
+                const video = event.currentTarget;
+                if (!video.paused) {
+                  return;
+                }
 
-          player.muted = false;
-          player.volume = 1;
-          void player.play().catch(() => {});
-        }}
-        onLoadedMetadata={() => {
-          const provider = playerRef.current?.provider;
-          if (!isVideoProvider(provider)) {
-            return;
-          }
-
-          onLoadedMetadata({
-            width: provider.video.videoWidth,
-            height: provider.video.videoHeight
-          });
-        }}
-        onFullscreenChange={onFullscreenChange}
-      >
-        <MediaProvider
-          mediaProps={{
-            loop: true,
-            muted: false,
-            volume: 1,
-            disablePictureInPicture: true,
-            onError: reportError
-          } as MediaHTMLAttributes<HTMLMediaElement>}
-        />
-        <DefaultVideoLayout
-          icons={defaultLayoutIcons}
-          noAudioGain
-          slots={{
-            chapterTitle: videoControlsSpacer,
-            googleCastButton: null,
-            pipButton: null
-          }}
-        />
-      </MediaPlayer>
+                video.muted = false;
+                video.volume = 1;
+                void video.play().catch(() => {});
+              }}
+              onLoadedMetadata={(event) => {
+                const video = event.currentTarget;
+                onLoadedMetadata({
+                  width: video.videoWidth,
+                  height: video.videoHeight
+                });
+              }}
+              onError={reportError}
+            />
+            <LightboxVideoPlayerAdapter
+              playerRef={playerRef}
+              onFullscreenChange={onFullscreenChange}
+            />
+          </MinimalVideoSkin>
+        </I18nProvider>
+      </VideoPlayer>
     </div>
   );
 }

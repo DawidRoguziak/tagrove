@@ -4,8 +4,8 @@ import type {
   PointerEvent as ReactPointerEvent,
   SyntheticEvent
 } from "react";
-import type { MediaPlayerInstance } from "@vidstack/react";
 import type { SelectedAsset } from "../../types";
+import type { LightboxVideoPlayerHandle } from "./LightboxVideoPlayer";
 import { useLightboxKeyboardShortcuts } from "./hooks/useLightboxKeyboardShortcuts";
 import { useLightboxViewportSize } from "./hooks/useLightboxViewportSize";
 import {
@@ -76,7 +76,7 @@ export function useLightboxImageControls({
   const lightboxShellRef = useRef<HTMLDivElement | null>(null);
   const mediaViewportRef = useRef<HTMLDivElement | null>(null);
   const lightboxImageRef = useRef<HTMLImageElement | null>(null);
-  const lightboxVideoPlayerRef = useRef<MediaPlayerInstance | null>(null);
+  const lightboxVideoPlayerRef = useRef<LightboxVideoPlayerHandle | null>(null);
   const zoomFactorRef = useRef(MIN_ZOOM_FACTOR);
   const panRef = useRef({ x: 0, y: 0 });
   const renderFrameRef = useRef<number | null>(null);
@@ -197,11 +197,7 @@ export function useLightboxImageControls({
         const player = lightboxVideoPlayerRef.current;
         if (!player) return;
 
-        if (player.state.fullscreen) {
-          await player.exitFullscreen();
-        } else {
-          await player.enterFullscreen();
-        }
+        await player.toggleFullscreen();
         return;
       }
 

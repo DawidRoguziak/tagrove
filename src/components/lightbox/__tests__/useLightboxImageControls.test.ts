@@ -159,6 +159,26 @@ describe("useLightboxImageControls", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("delegates video fullscreen through the local player handle", async () => {
+    const toggleFullscreen = vi.fn(async () => {});
+    const { result } = renderHook(() =>
+      useLightboxImageControls({
+        selected: createAsset("video"),
+        onClose: vi.fn(),
+        onNavigatePrevious: vi.fn(),
+        onNavigateNext: vi.fn(),
+        onEnterFullscreen: vi.fn()
+      })
+    );
+    result.current.lightboxVideoPlayerRef.current = { toggleFullscreen };
+
+    await act(async () => {
+      await result.current.toggleFullscreen();
+    });
+
+    expect(toggleFullscreen).toHaveBeenCalledTimes(1);
+  });
+
   it("zooms with wheel and blocks backdrop close during suppression window", async () => {
     const onClose = vi.fn();
 

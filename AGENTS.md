@@ -13,7 +13,7 @@ MediaTagger is a desktop application for efficiently browsing and tagging very l
 - Tailwind CSS 4 and DaisyUI 5
 - SQLite through `rusqlite`
 - Bun package manager and runtime
-- Key libraries: TanStack Virtual, Vidstack, Fuse.js, i18next, and Zod
+- Key libraries: TanStack Virtual, Video.js 10, Fuse.js, i18next, and Zod
 
 ## Documentation
 

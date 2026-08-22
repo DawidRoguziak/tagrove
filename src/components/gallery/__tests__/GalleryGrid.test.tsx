@@ -157,6 +157,31 @@ describe("GalleryGrid", () => {
     expect(gifBadge).not.toHaveClass("left-2");
   });
 
+  it("shows a query error and delegates Retry", () => {
+    const onLoadRetry = vi.fn();
+    const { getByRole, getByTestId } = render(
+      <GalleryGrid
+        assets={[]}
+        selectedId={null}
+        thumbs={{}}
+        tileSize={180}
+        hasMore={false}
+        isLoading={false}
+        isGeneratingThumbnails={false}
+        pendingThumbnailCount={0}
+        renderingThumbnailIds={{}}
+        onReachEnd={() => {}}
+        onSelect={() => {}}
+        loadError="offline"
+        onLoadRetry={onLoadRetry}
+      />
+    );
+
+    expect(getByTestId("gallery-load-error")).toHaveTextContent("Loading the library failed.");
+    fireEvent.click(getByRole("button", { name: "Retry" }));
+    expect(onLoadRetry).toHaveBeenCalledTimes(1);
+  });
+
   it("eagerly loads mounted virtualized thumbnails", () => {
     virtualItems = [{ key: 0, index: 0, start: 0 }];
 

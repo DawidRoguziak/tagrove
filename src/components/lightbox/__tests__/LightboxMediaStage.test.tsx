@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { MediaPlayerInstance } from "@vidstack/react";
 import type { MutableRefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,5 +107,25 @@ describe("LightboxMediaStage", () => {
     expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
     act(() => currentFirstError());
     expect(screen.getByTestId("lightbox-media-error")).toBeInTheDocument();
+  });
+
+  it("offers Retry when primary asset details fail", () => {
+    const onRetryDetails = vi.fn();
+    const selected = {
+      ...createVideo(3),
+      kind: "image" as const,
+      file_name: "3.jpg",
+      path: null
+    };
+    render(
+      <LightboxMediaStage
+        {...stageProps(selected)}
+        detailsFailed
+        onRetryDetails={onRetryDetails}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading details" }));
+    expect(onRetryDetails).toHaveBeenCalledTimes(1);
   });
 });

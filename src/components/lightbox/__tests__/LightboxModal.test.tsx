@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
+import { UiLayerProvider } from "../../UI/UiLayerProvider";
 
 const apiMocks = vi.hoisted(() => ({
   getVideoStreamUrl: vi.fn()
@@ -75,7 +76,7 @@ describe("LightboxModal", () => {
   });
 
   it("loops video playback in lightbox", async () => {
-    const { container } = render(
+    render(
       <LightboxModal
         selected={selectedVideoAsset}
         tagEditor={[]}
@@ -90,8 +91,8 @@ describe("LightboxModal", () => {
     );
 
     await waitFor(() => expect(apiMocks.getVideoStreamUrl).toHaveBeenCalledWith(1));
-    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
-    expect(container.querySelector("video")).toHaveAttribute("loop");
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    expect(document.querySelector("video")).toHaveAttribute("loop");
   });
 
   it("shows a video error when stream URL resolution fails", async () => {
@@ -117,7 +118,7 @@ describe("LightboxModal", () => {
   });
 
   it("shows a video error and resets it when the selected source changes", async () => {
-    const { container, rerender } = render(
+    const { rerender } = render(
       <LightboxModal
         selected={selectedVideoAsset}
         tagEditor={[]}
@@ -131,8 +132,8 @@ describe("LightboxModal", () => {
       />
     );
 
-    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
-    const video = container.querySelector("video");
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
+    const video = document.querySelector("video");
     expect(video).not.toBeNull();
     fireEvent.error(video!);
     expect(screen.getByRole("alert")).toHaveTextContent("Could not play video");
@@ -152,7 +153,7 @@ describe("LightboxModal", () => {
     );
 
     expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
-    await waitFor(() => expect(container.querySelector("video")).not.toBeNull());
+    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
   });
 
   it("shows a GIF error and resets it after navigation", () => {
@@ -465,6 +466,38 @@ describe("LightboxModal", () => {
     expect(onToggleFavorite).toHaveBeenCalledTimes(1);
   });
 
+  it("shows favorite and media-group save failures with retry guidance", async () => {
+    const onToggleFavorite = vi.fn().mockRejectedValue(new Error("favorite failed"));
+    const onSaveMediaGroup = vi.fn().mockRejectedValue(new Error("group failed"));
+
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        mediaGroupKeyEditor="group-a"
+        onSaveMediaGroup={onSaveMediaGroup}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={onToggleFavorite}
+        onClose={() => {}}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Add to favorites" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The favorite change was not saved. Use the favorite button to retry."
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText(
+      "The media group change was not saved. Your values remain available; choose Apply to retry."
+    )).toBeInTheDocument();
+  });
+
   it("closes popovers when clicking outside their container", async () => {
     render(
       <LightboxModal
@@ -483,9 +516,13 @@ describe("LightboxModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     const taggingPanel = screen.getByRole("heading", { name: "Tagging" }).closest("aside");
     expect(taggingPanel?.className).toContain("pointer-events-auto");
+    expect(taggingPanel).not.toHaveAttribute("inert");
+    expect(taggingPanel).toHaveAttribute("aria-hidden", "false");
 
     await userEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
     expect(taggingPanel?.className).toContain("pointer-events-none");
+    expect(taggingPanel).toHaveAttribute("inert");
+    expect(taggingPanel).toHaveAttribute("aria-hidden", "true");
 
     await userEvent.click(screen.getByRole("button", { name: "Show info" }));
     const infoPanel = screen.getByRole("heading", { name: "Information" }).closest("aside");
@@ -529,6 +566,7 @@ describe("LightboxModal", () => {
         onSaveTags={() => {}}
         onRetryTags={onRetryTags}
         tagDetailsFailed
+        assetDetailsFailed
         onRetryTagDetails={onRetryTagDetails}
         knownTags={[]}
         onNavigatePrevious={() => {}}
@@ -540,7 +578,8 @@ describe("LightboxModal", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     expect(screen.getByText("The complete tag list could not be loaded. Editing remains disabled.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Retry loading tags" }));
+    expect(screen.getByText("The media details could not be loaded.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Retry loading details" }));
     expect(onRetryTagDetails).toHaveBeenCalledTimes(1);
     expect(onRetryTags).not.toHaveBeenCalled();
   });
@@ -573,5 +612,33 @@ describe("LightboxModal", () => {
 
     await userEvent.click(confirmButton);
     expect(onDeleteMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes only the nested confirmation on Escape and restores delete focus", async () => {
+    const onClose = vi.fn();
+    render(
+      <UiLayerProvider>
+        <LightboxModal
+          selected={selectedAsset}
+          tagEditor={[]}
+          onTagEditorChange={() => {}}
+          onSaveTags={() => {}}
+          knownTags={[]}
+          onNavigatePrevious={() => {}}
+          onNavigateNext={() => {}}
+          onToggleFavorite={() => {}}
+          onClose={onClose}
+        />
+      </UiLayerProvider>
+    );
+
+    const deleteButton = screen.getByRole("button", { name: "Delete media" });
+    await userEvent.click(deleteButton);
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
+    await waitFor(() => expect(deleteButton).toHaveFocus());
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

@@ -32,12 +32,19 @@ describe("SearchTagator", () => {
   it("shows suggestions and applies selected suggestion with keyboard", async () => {
     render(<ControlledSearchTagator knownTags={["cat", "car", "dog"]} initialValue="ca" />);
 
-    const input = screen.getByRole("textbox", { name: "Search tags" }) as HTMLInputElement;
+    const input = screen.getByRole("combobox", { name: "Search tags" }) as HTMLInputElement;
     await userEvent.click(input);
 
     await waitFor(() => {
       expect(screen.getByRole("listbox", { name: "Tag suggestions" })).toBeInTheDocument();
     });
+    const listbox = screen.getByRole("listbox", { name: "Tag suggestions" });
+    const options = within(listbox).getAllByRole("option");
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).toHaveAttribute("aria-controls", listbox.id);
+    expect(input).toHaveAttribute("aria-activedescendant", options[0].id);
+    expect(options[0]).toHaveAttribute("tabindex", "-1");
+    expect(input).toHaveFocus();
 
     await userEvent.keyboard("{ArrowDown}{Enter}");
 
@@ -49,7 +56,7 @@ describe("SearchTagator", () => {
   it("positions suggestions below the input by default", async () => {
     render(<ControlledSearchTagator knownTags={["cat"]} initialValue="ca" />);
 
-    await userEvent.click(screen.getByRole("textbox", { name: "Search tags" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Search tags" }));
 
     const listbox = await screen.findByRole("listbox", { name: "Tag suggestions" });
     expect(listbox).toHaveClass("top-[calc(100%+8px)]");
@@ -68,7 +75,7 @@ describe("SearchTagator", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("textbox", { name: "Search tags" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Search tags" }));
 
     const listbox = await screen.findByRole("listbox", { name: "Tag suggestions" });
     expect(listbox).toHaveClass("bottom-[calc(100%+8px)]");
@@ -78,7 +85,7 @@ describe("SearchTagator", () => {
   it("keeps negative prefix when suggestion replaces active token", async () => {
     render(<ControlledSearchTagator knownTags={["cat"]} initialValue="-ca" />);
 
-    const input = screen.getByRole("textbox", { name: "Search tags" }) as HTMLInputElement;
+    const input = screen.getByRole("combobox", { name: "Search tags" }) as HTMLInputElement;
     await userEvent.click(input);
 
     await waitFor(() => {
@@ -95,7 +102,7 @@ describe("SearchTagator", () => {
   it("keeps suggestion list closed when input is empty", async () => {
     render(<ControlledSearchTagator knownTags={["cat", "car"]} initialValue="" />);
 
-    const input = screen.getByRole("textbox", { name: "Search tags" }) as HTMLInputElement;
+    const input = screen.getByRole("combobox", { name: "Search tags" }) as HTMLInputElement;
     await userEvent.click(input);
 
     expect(screen.queryByRole("listbox", { name: "Tag suggestions" })).not.toBeInTheDocument();
@@ -121,7 +128,7 @@ describe("SearchTagator", () => {
       </div>
     );
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
 
     await waitFor(() => {
@@ -148,7 +155,7 @@ describe("SearchTagator", () => {
       />
     );
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
     await userEvent.keyboard("{Enter}");
 
@@ -170,7 +177,7 @@ describe("SearchTagator", () => {
       />
     );
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
 
     await waitFor(() => {
@@ -202,7 +209,7 @@ describe("SearchTagator", () => {
       />
     );
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
 
     const listbox = await screen.findByRole("listbox", { name: "Tag suggestions" });
@@ -242,7 +249,7 @@ describe("SearchTagator", () => {
       />
     );
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
 
     const listbox = await screen.findByRole("listbox", { name: "Tag suggestions" });
@@ -271,7 +278,7 @@ describe("SearchTagator", () => {
       />
     );
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
 
     await screen.findByRole("listbox", { name: "Tag suggestions" });
@@ -284,7 +291,7 @@ describe("SearchTagator", () => {
   it("does not open suggestions for has-no-tags metatag input", async () => {
     render(<ControlledSearchTagator knownTags={["tags", "tagstone", "cat"]} initialValue="tags" />);
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
 
     await waitFor(() => {
@@ -302,7 +309,7 @@ describe("SearchTagator", () => {
       />
     );
 
-    const input = screen.getByRole("textbox", { name: "Search tags" });
+    const input = screen.getByRole("combobox", { name: "Search tags" });
     await userEvent.click(input);
 
     await waitFor(() => {
@@ -310,6 +317,23 @@ describe("SearchTagator", () => {
     });
 
     expect((input as HTMLInputElement).value).toBe("gN:trip-2026");
+  });
+
+  it("consumes Escape when closing an open suggestion list", async () => {
+    const onOuterKeyDown = vi.fn();
+    render(
+      <div onKeyDown={onOuterKeyDown}>
+        <ControlledSearchTagator knownTags={["cat"]} initialValue="ca" />
+      </div>
+    );
+
+    const input = screen.getByRole("combobox", { name: "Search tags" });
+    await userEvent.click(input);
+    await screen.findByRole("listbox", { name: "Tag suggestions" });
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("listbox", { name: "Tag suggestions" })).not.toBeInTheDocument();
+    expect(onOuterKeyDown).not.toHaveBeenCalled();
   });
 });
 

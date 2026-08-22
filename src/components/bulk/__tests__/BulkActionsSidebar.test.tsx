@@ -140,8 +140,8 @@ describe("BulkActionsSidebar", () => {
     const firstHandle = screen.getByTestId("bulk-group-drag-handle-1");
     expect(firstTile).not.toHaveAttribute("draggable");
     expect(firstHandle).not.toHaveAttribute("draggable");
-    expect(firstHandle).toHaveAttribute("aria-label", "Drag item 1 to reorder");
-    expect(screen.queryByRole("button", { name: /Move 1\.jpg/ })).not.toBeInTheDocument();
+    expect(firstHandle).toHaveAttribute("aria-label", "Reorder item 1 with drag or arrow keys");
+    expect(firstHandle).toHaveRole("button");
 
     fireEvent.pointerDown(firstHandle, { button: 0 });
     expect(firstTile).toHaveClass("opacity-60", "ring-2");
@@ -151,6 +151,11 @@ describe("BulkActionsSidebar", () => {
     expect(onReorderGroupAsset).toHaveBeenCalledTimes(1);
     fireEvent.pointerUp(window);
     expect(firstTile).not.toHaveClass("opacity-60", "ring-2");
+
+    fireEvent.keyDown(firstHandle, { key: "ArrowDown" });
+    expect(onReorderGroupAsset).toHaveBeenLastCalledWith(1, 2);
+    fireEvent.keyDown(firstHandle, { key: "ArrowUp" });
+    expect(onReorderGroupAsset).toHaveBeenCalledTimes(2);
   });
 
   it("does not expose group ordering until a group key is set", () => {

@@ -47,7 +47,7 @@ export function useLightboxTagging({
     if (tagEditingDisabled) return;
     const normalized = normalizeTags(nextTags);
     onTagEditorChange(normalized);
-    void onSaveTags(normalized);
+    void Promise.resolve(onSaveTags(normalized)).catch(() => {});
   }, [onSaveTags, onTagEditorChange, tagEditingDisabled]);
 
   const addTag = useCallback((rawValue: string) => {

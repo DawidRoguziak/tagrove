@@ -17,11 +17,16 @@ export function LightboxInfoPanel({ open, selected, onToggle }: LightboxInfoPane
       <UiIconButton
         icon="info"
         active={open}
+        aria-expanded={open}
+        aria-controls="lightbox-info-panel"
         aria-label={t("lightbox.showInfo")}
         title={t("lightbox.info")}
         onClick={onToggle}
       />
       <aside
+        id="lightbox-info-panel"
+        aria-hidden={!open}
+        ref={(node) => node?.toggleAttribute("inert", !open)}
         className={`panel-scroll absolute z-[6] grid max-h-[min(380px,calc(100vh-140px))] w-[min(360px,calc(100vw-2.5rem))] content-start gap-3 overflow-auto rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-4 shadow-[var(--shadow-popover)] backdrop-blur-xl transition-[opacity,translate] duration-150 bottom-[calc(100%+10px)] right-0 lg:bottom-auto lg:right-[calc(100%+12px)] lg:top-1/2 lg:-translate-y-1/2 ${
           open
             ? "pointer-events-auto translate-y-0 opacity-100 lg:translate-y-[-50%]"

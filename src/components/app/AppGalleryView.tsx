@@ -1,4 +1,4 @@
-import { BulkActionsSidebar } from "../bulk/BulkActionsSidebar";
+import { lazy, Suspense } from "react";
 import { TileSizeSlider } from "../common/TileSizeSlider";
 import { GalleryGrid } from "../gallery/GalleryGrid";
 import { TopBar } from "../topbar/TopBar";
@@ -7,6 +7,14 @@ import type {
   AppGallerySearchController,
   BulkSelectionController
 } from "./types";
+import { LazyErrorBoundary } from "../UI/LazyErrorBoundary";
+import { UiAlert } from "../UI/UiAlert";
+import { UiButton } from "../UI/UiButton";
+import { useTranslation } from "react-i18next";
+
+const BulkActionsSidebar = lazy(() =>
+  import("../bulk/BulkActionsSidebar").then((module) => ({ default: module.BulkActionsSidebar }))
+);
 
 interface AppGalleryViewProps {
   search: AppGallerySearchController;
@@ -24,6 +32,7 @@ export function AppGalleryView({
   bulkSelection,
   onOpenSettingsView,
 }: AppGalleryViewProps) {
+  const { t } = useTranslation();
   return (
     <>
       <TopBar
@@ -77,11 +86,30 @@ export function AppGalleryView({
         />
 
         {bulkSelection.selectionModeEnabled ? (
-          <BulkActionsSidebar
-            controller={bulkSelection}
-            thumbs={media.thumbs}
-            renderingThumbnailIds={media.renderingThumbnailIds}
-          />
+          <LazyErrorBoundary
+            resetKey={bulkSelection.selectionModeEnabled}
+            fallback={
+              <aside className="m-4 grid content-start gap-3" aria-label={t("bulk.panel.ariaLabel")}>
+                <UiAlert tone="error" title={t("lazyLoad.bulkFailed")}>
+                  {t("lazyLoad.retryDescription")}
+                </UiAlert>
+                <div className="flex gap-2">
+                  <UiButton onClick={() => window.location.reload()}>{t("gallery.retry")}</UiButton>
+                  <UiButton variant="ghost" onClick={bulkSelection.onToggleSelectionMode}>
+                    {t("controls.disableBulkActions")}
+                  </UiButton>
+                </div>
+              </aside>
+            }
+          >
+            <Suspense fallback={<p className="p-4" role="status">{t("common.loading")}</p>}>
+              <BulkActionsSidebar
+                controller={bulkSelection}
+                thumbs={media.thumbs}
+                renderingThumbnailIds={media.renderingThumbnailIds}
+              />
+            </Suspense>
+          </LazyErrorBoundary>
         ) : null}
       </div>
 

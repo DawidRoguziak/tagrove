@@ -9,6 +9,7 @@
     "yes": "ANO",
     "no": "Ne"
   },
+  "lazyLoad": { "settingsFailed": "Nastavení se nepodařilo načíst", "bulkFailed": "Hromadné akce se nepodařilo načíst", "lightboxFailed": "Náhled se nepodařilo načíst", "retryDescription": "Znovu načtěte aplikaci a opakujte načtení této části rozhraní." },
   "topBar": {
     "openSettings": "Otevřít nastavení"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "Odebrat ze skupiny",
       "removeGroups": "Odebrat ze skupin",
       "orderHeading": "Pořadí skupiny",
-      "orderDescription": "Přetažením položek za úchyty nastavte jejich pořadí.",
-      "dragHandleAria": "Přetažením položky {{position}} změňte pořadí",
+      "orderDescription": "Pořadí nastavte přetažením položek nebo klávesami se šipkami na jejich úchytech.",
+      "dragHandleAria": "Změnit pořadí položky {{position}} přetažením nebo klávesami se šipkami",
       "tagsHeading": "Tagy",
       "tagsMultipleDescription": "Nové tagy se přidají ke všem vybraným položkám. Stávající tagy zůstanou zachovány.",
       "tagsSingleDescription": "Přidejte tagy nebo odeberte aktuální tagy vybrané položky.",
@@ -149,6 +150,8 @@
     "exitFullscreen": "Ukončit celou obrazovku (F)",
     "deleteMedia": "Smazat médium",
     "closePreview": "Zavřít náhled",
+    "previewDialog": "Náhled {{name}}",
+    "previewDialogDescription": "Náhled média a ovládací prvky pro úpravy.",
     "showTagging": "Zobrazit tagování",
     "tags": "Tagy",
     "taggingHeading": "Tagování",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "Načítání úplného seznamu tagů...",
     "tagDetailsLoadFailedTitle": "Tagy se nepodařilo načíst",
     "tagDetailsLoadFailed": "Úplný seznam tagů se nepodařilo načíst. Úpravy zůstávají zakázané.",
-    "retryTagDetails": "Znovu načíst tagy"
+    "retryTagDetails": "Znovu načíst tagy",
+    "assetDetailsLoadFailed": "Podrobnosti média se nepodařilo načíst.",
+    "retryAssetDetails": "Znovu načíst podrobnosti",
+    "saveFailedTitle": "Změnu se nepodařilo uložit",
+    "favoriteSaveFailed": "Změna oblíbených nebyla uložena. Zkuste to znovu tlačítkem oblíbených.",
+    "mediaGroupSaveFailed": "Změna skupiny médií nebyla uložena. Hodnoty zůstaly zachovány; zkuste znovu tlačítkem Použít."
   },
   "settings": {
     "page": {

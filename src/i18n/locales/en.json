@@ -9,6 +9,7 @@
     "yes": "YES",
     "no": "No"
   },
+  "lazyLoad": { "settingsFailed": "Settings could not be loaded", "bulkFailed": "Bulk actions could not be loaded", "lightboxFailed": "The preview could not be loaded", "retryDescription": "Reload the application to retry loading this part of the interface." },
   "topBar": {
     "openSettings": "Open settings"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "Remove from group",
       "removeGroups": "Remove from groups",
       "orderHeading": "Group order",
-      "orderDescription": "Drag items by their handles to set their order.",
-      "dragHandleAria": "Drag item {{position}} to reorder",
+      "orderDescription": "Drag items or use the arrow keys on their handles to set their order.",
+      "dragHandleAria": "Reorder item {{position}} with drag or arrow keys",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "New tags are added to every selected item. Existing tags are kept.",
       "tagsSingleDescription": "Add tags or remove the current tags from the selected item.",
@@ -149,6 +150,8 @@
     "exitFullscreen": "Exit fullscreen (F)",
     "deleteMedia": "Delete media",
     "closePreview": "Close preview",
+    "previewDialog": "Preview {{name}}",
+    "previewDialogDescription": "Media preview and editing controls.",
     "showTagging": "Show tagging",
     "tags": "Tags",
     "taggingHeading": "Tagging",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "Loading complete tag list...",
     "tagDetailsLoadFailedTitle": "Could not load tags",
     "tagDetailsLoadFailed": "The complete tag list could not be loaded. Editing remains disabled.",
-    "retryTagDetails": "Retry loading tags"
+    "retryTagDetails": "Retry loading tags",
+    "assetDetailsLoadFailed": "The media details could not be loaded.",
+    "retryAssetDetails": "Retry loading details",
+    "saveFailedTitle": "Could not save change",
+    "favoriteSaveFailed": "The favorite change was not saved. Use the favorite button to retry.",
+    "mediaGroupSaveFailed": "The media group change was not saved. Your values remain available; choose Apply to retry."
   },
   "settings": {
     "page": {

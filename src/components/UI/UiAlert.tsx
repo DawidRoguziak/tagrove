@@ -22,7 +22,7 @@ export function UiAlert({ tone = "info", title, className = "", children, ...pro
   return (
     <div role="alert" className={classes} {...props}>
       {title ? <p className="m-0 text-xs font-semibold leading-5 text-base-content">{title}</p> : null}
-      <p className={`m-0 text-xs leading-5 text-base-content/78 ${title ? "mt-0.5" : ""}`}>{children}</p>
+      <div className={`m-0 text-xs leading-5 text-base-content/78 ${title ? "mt-0.5" : ""}`}>{children}</div>
     </div>
   );
 }

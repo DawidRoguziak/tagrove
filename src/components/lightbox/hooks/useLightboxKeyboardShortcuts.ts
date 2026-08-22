@@ -3,7 +3,6 @@ import type { SelectedAsset } from "../../../types";
 
 interface UseLightboxKeyboardShortcutsOptions {
   selected: SelectedAsset | null;
-  onClose: () => void;
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
   onToggleFullscreen: () => Promise<void>;
@@ -14,7 +13,6 @@ interface UseLightboxKeyboardShortcutsOptions {
 
 export function useLightboxKeyboardShortcuts({
   selected,
-  onClose,
   onNavigatePrevious,
   onNavigateNext,
   onToggleFullscreen,
@@ -33,15 +31,6 @@ export function useLightboxKeyboardShortcuts({
       const target = event.target instanceof HTMLElement ? event.target : null;
       const isFormControl =
         target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || Boolean(target?.isContentEditable);
-
-      if (event.key === "Escape") {
-        if (document.fullscreenElement) {
-          return;
-        }
-
-        onClose();
-        return;
-      }
 
       if (isFormControl) {
         return;
@@ -94,5 +83,5 @@ export function useLightboxKeyboardShortcuts({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, onNavigateNext, onNavigatePrevious, onResetZoom, onToggleFullscreen, onZoomIn, onZoomOut, selectedKind]);
+  }, [onNavigateNext, onNavigatePrevious, onResetZoom, onToggleFullscreen, onZoomIn, onZoomOut, selectedKind]);
 }

@@ -103,7 +103,7 @@ export function useAppShellController() {
   });
 
   const onSearchSubmit = useCallback(() => {
-    void searchFilters.handleSearchSubmit(library.refresh);
+    void searchFilters.handleSearchSubmit(library.refresh).catch(() => {});
   }, [library.refresh, searchFilters]);
 
   const onApplyTagListSearch = useCallback(
@@ -114,7 +114,7 @@ export function useAppShellController() {
   );
 
   const onClearSearch = useCallback(() => {
-    void searchFilters.handleClearSearch(library.refresh);
+    void searchFilters.handleClearSearch(library.refresh).catch(() => {});
   }, [library.refresh, searchFilters]);
 
   const onMediaKindChange = useCallback(
@@ -185,12 +185,12 @@ export function useAppShellController() {
     void Promise.all([
       library.hydrateKnownTags(),
       settingsActions.scan.refreshScanRoots().catch(() => [])
-    ]);
+    ]).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    void library.refresh();
+    void library.refresh().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     searchFilters.appliedParsedFilter.include.join("|"),
@@ -274,6 +274,7 @@ export function useAppShellController() {
       tagFailed: selection.tagFailed,
       tagDetailsLoading: selection.tagDetailsLoading,
       tagDetailsFailed: selection.tagDetailsFailed,
+      assetDetailsFailed: selection.assetDetailsFailed,
       onRetryTagDetails: selection.retryTagDetails,
       mediaGroupKeyEditor: selection.mediaGroupKeyEditor,
       mediaGroupOrderEditor: selection.mediaGroupOrderEditor,

@@ -139,7 +139,7 @@ export function TagListModal({
     const node = event.currentTarget;
     const remainingScroll = node.scrollHeight - node.scrollTop - node.clientHeight;
     if (remainingScroll <= LOAD_MORE_THRESHOLD_PX) {
-      void loadMore();
+      void loadMore().catch(() => {});
     }
   };
 

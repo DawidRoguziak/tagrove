@@ -205,8 +205,8 @@ export function useLibraryAssets({
           // released through pageFailureEpoch so the virtual range re-requests.
           if (generation === generationRef.current) {
             setLoadError(error instanceof Error ? error.message : String(error));
+            setPageFailureEpoch((epoch) => epoch + 1);
           }
-          setPageFailureEpoch((epoch) => epoch + 1);
           throw error instanceof Error ? error : new Error(String(error));
         } finally {
           if (inFlightPagesRef.current.get(pageOffset) === request) {
@@ -226,7 +226,7 @@ export function useLibraryAssets({
       const firstOffset = Math.floor(Math.max(0, startIndex) / pageSize) * pageSize;
       const lastOffset = Math.floor(Math.min(total - 1, Math.max(startIndex, endIndex)) / pageSize) * pageSize;
       for (let pageOffset = firstOffset; pageOffset <= lastOffset; pageOffset += pageSize) {
-        void loadPage(pageOffset);
+        void loadPage(pageOffset).catch(() => {});
       }
     },
     [loadPage, pageSize, total]
@@ -234,7 +234,7 @@ export function useLibraryAssets({
 
   const handleReachEnd = useCallback(() => {
     if (loading || offset >= total) return;
-    void loadPage(Math.floor(offset / pageSize) * pageSize);
+    void loadPage(Math.floor(offset / pageSize) * pageSize).catch(() => {});
   }, [loadPage, loading, offset, pageSize, total]);
 
   const getAssetAt = useCallback(

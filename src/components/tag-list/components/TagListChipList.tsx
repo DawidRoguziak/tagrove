@@ -43,11 +43,17 @@ export function TagListChipList({
             type="button"
             className={tagClasses}
             aria-pressed={tagMode !== null}
+            aria-keyshortcuts="Shift+Enter Shift+Space"
             aria-label={getButtonAriaLabel(tag, stateLabel)}
             title={getButtonTitle(tag, stateLabel)}
             disabled={disabled}
             onClick={(event) => onTagClick(tag, event.detail)}
             onDoubleClick={() => onTagDoubleClick(tag)}
+            onKeyDown={(event) => {
+              if (!event.shiftKey || (event.key !== "Enter" && event.key !== " ")) return;
+              event.preventDefault();
+              onTagDoubleClick(tag);
+            }}
           >
             {tag}
           </button>

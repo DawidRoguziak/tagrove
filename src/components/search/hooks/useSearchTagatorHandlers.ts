@@ -166,7 +166,9 @@ export function useSearchTagatorHandlers({
         }
 
         if (event.key === "Escape") {
+          event.stopPropagation();
           setSuggestionsOpen(false);
+          return;
         }
       }
 

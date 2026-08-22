@@ -297,12 +297,48 @@ describe("useSelectionState", () => {
 
     act(() => result.current.setSelected(asset));
     await waitFor(() => expect(result.current.tagDetailsFailed).toBe(true));
+    expect(result.current.assetDetailsFailed).toBe(true);
     act(() => result.current.saveTags(["new"]));
     expect(serviceMocks.saveLightboxTagsAction).not.toHaveBeenCalled();
 
     act(() => result.current.retryTagDetails());
     await waitFor(() => expect(result.current.tagEditor).toEqual(["existing"]));
     expect(result.current.tagDetailsFailed).toBe(false);
+    expect(result.current.assetDetailsFailed).toBe(false);
+  });
+
+  it("keeps a details failure visible after canonical tags arrive and allows retry", async () => {
+    const fullAsset = createAsset({ id: 23, tags: ["canonical"] });
+    const { path: _path, size_bytes: _sizeBytes, tags: _tags, ...summary } = fullAsset;
+    const firstDetails = deferred<AssetDetails | null>();
+    apiMocks.getAssetDetails
+      .mockReturnValueOnce(firstDetails.promise)
+      .mockResolvedValueOnce(fullAsset);
+    const { result } = renderHook(() => {
+      const assetTagState = useAssetTagState();
+      const selection = useSelectionState({
+        assets: [summary], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assetTagState
+      });
+      return { assetTagState, selection };
+    });
+
+    act(() => result.current.selection.setSelected(summary));
+    act(() => {
+      const token = result.current.assetTagState.beginMutation(23);
+      expect(token).not.toBeNull();
+      result.current.assetTagState.settleMutation(token!, ["canonical"]);
+    });
+    act(() => firstDetails.reject(new Error("load failed")));
+
+    await waitFor(() => expect(result.current.selection.assetDetailsFailed).toBe(true));
+    expect(result.current.selection.tagDetailsFailed).toBe(false);
+    expect(result.current.selection.tagEditor).toEqual(["canonical"]);
+    expect(result.current.selection.selected?.path).toBeNull();
+
+    act(() => result.current.selection.retryTagDetails());
+    await waitFor(() => expect(result.current.selection.selected?.path).toBe(fullAsset.path));
+    expect(result.current.selection.assetDetailsFailed).toBe(false);
   });
 
   it("applies shared canonical tags and ignores details that predate a bulk mutation", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MutableRefObject, RefObject } from "react";
 import { SearchSuggestionsList } from "./components/SearchSuggestionsList";
 import { useSearchTagatorHandlers } from "./hooks/useSearchTagatorHandlers";
@@ -56,6 +56,9 @@ export function SearchTagator({
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const [FuseClass, setFuseClass] = useState<typeof Fuse | null>(null);
+  const generatedId = useId();
+  const resolvedInputId = inputId ?? `${generatedId}-input`;
+  const listboxId = `${generatedId}-listbox`;
 
   const activeToken = useMemo(() => readActiveToken(value, caretPosition), [value, caretPosition]);
 
@@ -63,22 +66,26 @@ export function SearchTagator({
   useEffect(() => {
     if (!inputFocused || FuseClass) return;
     let active = true;
-    void import("fuse.js").then((module) => {
-      if (active) setFuseClass(() => module.default);
-    });
+    void import("fuse.js")
+      .then((module) => {
+        if (active) setFuseClass(() => module.default);
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
   }, [FuseClass, inputFocused]);
 
   const fuse = useMemo(
-    () => (FuseClass ? createTagFuse(knownTags, FuseClass) : null),
+    () => createTagFuse(knownTags, FuseClass ?? undefined),
     [FuseClass, knownTags]
   );
   const suggestions = useMemo(
-    () => (fuse ? buildTagSuggestions({ activeToken, usedTags, fuse }) : []),
+    () => buildTagSuggestions({ activeToken, usedTags, fuse }),
     [activeToken, fuse, usedTags]
   );
+  const previousSuggestionsRef = useRef(suggestions);
+  const popupOpen = inputFocused && shouldOpenSuggestions(value) && suggestionsOpen && suggestions.length > 0;
 
   useEffect(() => {
     if (!inputFocused || !shouldOpenSuggestions(value)) {
@@ -86,13 +93,20 @@ export function SearchTagator({
     }
   }, [inputFocused, value]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const previousSuggestions = previousSuggestionsRef.current;
+    previousSuggestionsRef.current = suggestions;
     if (suggestions.length === 0) {
       setActiveSuggestionIdx(defaultActiveSuggestionIdx);
       return;
     }
 
     setActiveSuggestionIdx((prev) => {
+      const previousValue = previousSuggestions[prev]?.value;
+      const matchingIndex = previousValue
+        ? suggestions.findIndex((suggestion) => suggestion.value === previousValue)
+        : -1;
+      if (matchingIndex >= 0) return matchingIndex;
       if (prev < 0) {
         return autoSelectFirstSuggestion ? 0 : -1;
       }
@@ -123,13 +137,22 @@ export function SearchTagator({
   return (
     <div className="relative min-w-0">
       <input
-        id={inputId}
+        id={resolvedInputId}
         ref={handlers.setInputNode}
         className={inputClassName}
         value={value}
         disabled={disabled}
         {...browserAssistDisabledProps}
         aria-label={ariaLabel}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={popupOpen}
+        aria-controls={popupOpen ? listboxId : undefined}
+        aria-activedescendant={
+          popupOpen && activeSuggestionIdx >= 0
+            ? `${listboxId}-option-${activeSuggestionIdx}`
+            : undefined
+        }
         onFocus={handlers.handleInputFocus}
         onClick={handlers.updateCaret}
         onSelect={handlers.updateCaret}
@@ -139,8 +162,9 @@ export function SearchTagator({
         placeholder={placeholder ?? t("search.placeholder")}
       />
 
-      {inputFocused && shouldOpenSuggestions(value) && suggestionsOpen && suggestions.length > 0 ? (
+      {popupOpen ? (
         <SearchSuggestionsList
+          id={listboxId}
           suggestions={suggestions}
           activeSuggestionIdx={activeSuggestionIdx}
           listboxAriaLabel={listboxAriaLabel ?? t("search.tagSuggestions")}

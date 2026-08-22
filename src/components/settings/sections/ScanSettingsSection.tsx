@@ -51,7 +51,8 @@ export function ScanSettingsSection({
       return;
     }
 
-    sectionElement.scrollIntoView({ behavior: "smooth", block: "center" });
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    sectionElement.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
   }, [highlighted]);
 
   return (

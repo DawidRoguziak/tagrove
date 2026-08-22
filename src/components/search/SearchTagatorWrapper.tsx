@@ -100,7 +100,7 @@ export function SearchTagatorWrapper({
               value={mediaKind}
               onChange={(event) => {
                 submitAfterMediaKindChangeRef.current = submitOnParentCommit;
-                void onMediaKindChange(event.target.value as SearchMediaKind);
+                void Promise.resolve(onMediaKindChange(event.target.value as SearchMediaKind)).catch(() => {});
               }}
             >
               <option value="all">{t("search.mediaKinds.all")}</option>
@@ -115,7 +115,7 @@ export function SearchTagatorWrapper({
               className="h-full w-full min-h-0 rounded-none border-y-0 border-r-0 border-l border-base-content/10 bg-base-200/85 text-base-content/85 shadow-none hover:bg-base-200 hover:text-base-content focus-visible:shadow-[0_0_0_2px_oklch(var(--p)/0.2)]"
               onClick={() => {
                 submitAfterFavoritesChangeRef.current = submitOnParentCommit;
-                void onFavoritesOnlyChange(!favoritesOnly);
+                void Promise.resolve(onFavoritesOnlyChange(!favoritesOnly)).catch(() => {});
               }}
               aria-label={
                 favoritesOnly ? t("search.favoritesOnly.disable") : t("search.favoritesOnly.enable")

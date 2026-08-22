@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type MouseEvent, type PointerEvent, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type RefObject } from "react";
 
 interface UseLightboxModalHandlersOptions {
   selectedId: number | null;
@@ -26,6 +26,9 @@ export function useLightboxModalHandlers({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [mediaGroupFailed, setMediaGroupFailed] = useState(false);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
 
   useEffect(() => {
     if (selectedId === null) {
@@ -37,6 +40,7 @@ export function useLightboxModalHandlers({
     setDeleteConfirmOpen(false);
     setDeleteSubmitting(false);
     setDeleteError(null);
+    setMediaGroupFailed(false);
   }, [selectedId]);
 
   const handleEnterFullscreen = useCallback(() => {
@@ -49,18 +53,15 @@ export function useLightboxModalHandlers({
     const nextKey = nextKeyRaw.length > 0 ? nextKeyRaw : null;
 
     const orderRaw = mediaGroupOrderEditor.trim();
-    if (!orderRaw) {
-      void onSaveMediaGroup?.({ key: nextKey, order: null });
-      return;
-    }
+    const parsedOrder = orderRaw ? Number(orderRaw) : null;
+    if (parsedOrder !== null && !Number.isFinite(parsedOrder)) return;
 
-    const parsedOrder = Number(orderRaw);
-    if (!Number.isFinite(parsedOrder)) {
-      return;
-    }
-
-    void onSaveMediaGroup?.({ key: nextKey, order: parsedOrder });
-  }, [mediaGroupKeyEditor, mediaGroupOrderEditor, onSaveMediaGroup]);
+    const requestedAssetId = selectedId;
+    setMediaGroupFailed(false);
+    void Promise.resolve(onSaveMediaGroup?.({ key: nextKey, order: parsedOrder })).catch(() => {
+      if (selectedIdRef.current === requestedAssetId) setMediaGroupFailed(true);
+    });
+  }, [mediaGroupKeyEditor, mediaGroupOrderEditor, onSaveMediaGroup, selectedId]);
 
   const handleDeleteMedia = useCallback(async () => {
     if (deleteSubmitting) {
@@ -140,6 +141,7 @@ export function useLightboxModalHandlers({
     deleteConfirmOpen,
     deleteSubmitting,
     deleteError,
+    mediaGroupFailed,
     handleEnterFullscreen,
     handleApplyMediaGroup,
     handleShellPointerDownCapture,

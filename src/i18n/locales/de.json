@@ -9,6 +9,7 @@
     "yes": "JA",
     "no": "Nein"
   },
+  "lazyLoad": { "settingsFailed": "Einstellungen konnten nicht geladen werden", "bulkFailed": "Stapelaktionen konnten nicht geladen werden", "lightboxFailed": "Die Vorschau konnte nicht geladen werden", "retryDescription": "Laden Sie die Anwendung neu, um diesen Teil der Oberfläche erneut zu laden." },
   "topBar": {
     "openSettings": "Einstellungen öffnen"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "Aus Gruppe entfernen",
       "removeGroups": "Aus Gruppen entfernen",
       "orderHeading": "Gruppenreihenfolge",
-      "orderDescription": "Elemente an ihren Griffen ziehen, um die Reihenfolge festzulegen.",
-      "dragHandleAria": "Element {{position}} ziehen, um die Reihenfolge zu ändern",
+      "orderDescription": "Elemente ziehen oder die Pfeiltasten an ihren Griffen verwenden, um die Reihenfolge festzulegen.",
+      "dragHandleAria": "Element {{position}} durch Ziehen oder mit den Pfeiltasten neu anordnen",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "Neue Tags werden allen ausgewählten Elementen hinzugefügt. Bestehende Tags bleiben erhalten.",
       "tagsSingleDescription": "Tags hinzufügen oder aktuelle Tags des ausgewählten Elements entfernen.",
@@ -149,6 +150,8 @@
     "exitFullscreen": "Vollbild verlassen (F)",
     "deleteMedia": "Medium löschen",
     "closePreview": "Vorschau schließen",
+    "previewDialog": "Vorschau von {{name}}",
+    "previewDialogDescription": "Medienvorschau und Bearbeitungssteuerelemente.",
     "showTagging": "Tagging anzeigen",
     "tags": "Tags",
     "taggingHeading": "Tagging",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "Vollständige Tag-Liste wird geladen...",
     "tagDetailsLoadFailedTitle": "Tags konnten nicht geladen werden",
     "tagDetailsLoadFailed": "Die vollständige Tag-Liste konnte nicht geladen werden. Die Bearbeitung bleibt deaktiviert.",
-    "retryTagDetails": "Tags erneut laden"
+    "retryTagDetails": "Tags erneut laden",
+    "assetDetailsLoadFailed": "Die Mediendetails konnten nicht geladen werden.",
+    "retryAssetDetails": "Details erneut laden",
+    "saveFailedTitle": "Änderung konnte nicht gespeichert werden",
+    "favoriteSaveFailed": "Die Favoritenänderung wurde nicht gespeichert. Mit der Favoritentaste erneut versuchen.",
+    "mediaGroupSaveFailed": "Die Mediengruppenänderung wurde nicht gespeichert. Die Werte bleiben erhalten; mit Anwenden erneut versuchen."
   },
   "settings": {
     "page": {

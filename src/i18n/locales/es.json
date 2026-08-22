@@ -9,6 +9,7 @@
     "yes": "SÍ",
     "no": "No"
   },
+  "lazyLoad": { "settingsFailed": "No se pudo cargar la configuración", "bulkFailed": "No se pudieron cargar las acciones en lote", "lightboxFailed": "No se pudo cargar la vista previa", "retryDescription": "Vuelve a cargar la aplicación para intentar cargar de nuevo esta parte de la interfaz." },
   "topBar": {
     "openSettings": "Abrir ajustes"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "Quitar del grupo",
       "removeGroups": "Quitar de los grupos",
       "orderHeading": "Orden del grupo",
-      "orderDescription": "Arrastra los elementos por sus asas para definir el orden.",
-      "dragHandleAria": "Arrastra el elemento {{position}} para cambiar el orden",
+      "orderDescription": "Arrastra los elementos o usa las flechas en sus asas para definir el orden.",
+      "dragHandleAria": "Reordena el elemento {{position}} arrastrándolo o con las flechas",
       "tagsHeading": "Etiquetas",
       "tagsMultipleDescription": "Las nuevas etiquetas se añaden a todos los elementos seleccionados. Las existentes se conservan.",
       "tagsSingleDescription": "Añade etiquetas o elimina las actuales del elemento seleccionado.",
@@ -149,6 +150,8 @@
     "exitFullscreen": "Salir de pantalla completa (F)",
     "deleteMedia": "Eliminar contenido multimedia",
     "closePreview": "Cerrar vista previa",
+    "previewDialog": "Vista previa de {{name}}",
+    "previewDialogDescription": "Vista previa multimedia y controles de edición.",
     "showTagging": "Mostrar etiquetado",
     "tags": "Etiquetas",
     "taggingHeading": "Etiquetado",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "Cargando la lista completa de etiquetas...",
     "tagDetailsLoadFailedTitle": "No se pudieron cargar las etiquetas",
     "tagDetailsLoadFailed": "No se pudo cargar la lista completa de etiquetas. La edición permanece desactivada.",
-    "retryTagDetails": "Reintentar la carga"
+    "retryTagDetails": "Reintentar la carga",
+    "assetDetailsLoadFailed": "No se pudieron cargar los detalles del archivo.",
+    "retryAssetDetails": "Reintentar la carga de detalles",
+    "saveFailedTitle": "No se pudo guardar el cambio",
+    "favoriteSaveFailed": "El cambio de favorito no se guardó. Usa el botón de favorito para reintentar.",
+    "mediaGroupSaveFailed": "El cambio del grupo multimedia no se guardó. Los valores siguen disponibles; selecciona Aplicar para reintentar."
   },
   "settings": {
     "page": {

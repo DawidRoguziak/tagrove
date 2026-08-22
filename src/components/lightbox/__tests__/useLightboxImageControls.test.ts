@@ -156,7 +156,7 @@ describe("useLightboxImageControls", () => {
       await Promise.resolve();
     });
 
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("zooms with wheel and blocks backdrop close during suppression window", async () => {

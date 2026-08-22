@@ -119,7 +119,7 @@ describe("DuplicateResolverDialog", () => {
       />
     );
 
-    fireEvent.mouseDown(screen.getByRole("dialog"));
+    fireEvent.mouseDown(screen.getByRole("dialog").parentElement as HTMLElement);
     expect(onClose).toHaveBeenCalledTimes(1);
 
     rerender(
@@ -134,7 +134,7 @@ describe("DuplicateResolverDialog", () => {
       />
     );
 
-    fireEvent.mouseDown(screen.getByRole("dialog"));
+    fireEvent.mouseDown(screen.getByRole("dialog").parentElement as HTMLElement);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

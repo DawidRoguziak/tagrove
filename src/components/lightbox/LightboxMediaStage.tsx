@@ -11,11 +11,13 @@ import { toMediaSrc } from "../../api";
 import type { SelectedAsset } from "../../types";
 import { LightboxVideoPlayer } from "./LightboxVideoPlayer";
 import { useLightboxVideoSource } from "./hooks/useLightboxVideoSource";
+import { UiButton } from "../UI/UiButton";
 
 interface LightboxMediaStageProps {
   selected: SelectedAsset;
   detailsLoading?: boolean;
   detailsFailed?: boolean;
+  onRetryDetails?: () => void;
   mediaViewportRef: MutableRefObject<HTMLDivElement | null>;
   lightboxImageRef: MutableRefObject<HTMLImageElement | null>;
   lightboxVideoPlayerRef: MutableRefObject<MediaPlayerInstance | null>;
@@ -35,6 +37,7 @@ interface LightboxMediaStageProps {
 export function LightboxMediaStage({
   selected,
   detailsFailed = false,
+  onRetryDetails = () => {},
   mediaViewportRef,
   lightboxImageRef,
   lightboxVideoPlayerRef,
@@ -109,8 +112,9 @@ export function LightboxMediaStage({
             data-testid="lightbox-details-error"
             className="flex h-full w-full items-center justify-center p-6"
           >
-            <div className="rounded-[var(--radius-control)] border border-warning/52 bg-warning/14 px-5 py-4 text-center text-sm font-semibold text-base-content">
-              {t("lightbox.tagDetailsLoadFailed")}
+            <div className="grid gap-3 rounded-[var(--radius-control)] border border-warning/52 bg-warning/14 px-5 py-4 text-center text-sm font-semibold text-base-content">
+              <span>{t("lightbox.assetDetailsLoadFailed")}</span>
+              <UiButton onClick={onRetryDetails}>{t("lightbox.retryAssetDetails")}</UiButton>
             </div>
           </div>
         ) : (
@@ -167,6 +171,12 @@ export function LightboxMediaStage({
             onClick={onImageClick}
             draggable={false}
           />
+        </div>
+      ) : null}
+      {detailsLoaded && detailsFailed ? (
+        <div className="absolute bottom-4 left-4 z-[3] flex items-center gap-3 rounded-[var(--radius-control)] border border-warning/52 bg-base-100/92 px-3 py-2 text-xs shadow-[var(--shadow-floating)]" role="alert">
+           <span>{t("lightbox.assetDetailsLoadFailed")}</span>
+           <UiButton className="btn-sm" onClick={onRetryDetails}>{t("lightbox.retryAssetDetails")}</UiButton>
         </div>
       ) : null}
     </div>

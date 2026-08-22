@@ -1,9 +1,14 @@
-import { useEffect, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useUiLayer } from "./UiLayerProvider";
 
 export type UiModalSize = "small" | "medium" | "large" | "xlarge";
 
-interface UiModalProps {
+type UiModalName =
+  | { ariaLabel: string; labelledBy?: never }
+  | { ariaLabel?: never; labelledBy: string };
+
+type UiModalProps = UiModalName & {
   open: boolean;
   onClose: () => void;
   closeOnOverlayClick?: boolean;
@@ -11,11 +16,13 @@ interface UiModalProps {
   size?: UiModalSize;
   ariaLabel?: string;
   labelledBy?: string;
+  describedBy?: string;
   className?: string;
   contentClassName?: string;
   testId?: string;
+  getRestoreFocus?: () => HTMLElement | null;
   children: ReactNode;
-}
+};
 
 const sizeClasses: Record<UiModalSize, string> = {
   small: "w-[90vw] max-w-[clamp(20rem,88vw,28.75rem)]",
@@ -32,27 +39,22 @@ export function UiModal({
   size = "medium",
   ariaLabel,
   labelledBy,
+  describedBy,
   className = "",
   contentClassName = "",
   testId,
+  getRestoreFocus,
   children
 }: UiModalProps) {
-  useEffect(() => {
-    if (!open || !closeOnEscape) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [closeOnEscape, onClose, open]);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const { isTopLayer, layerId } = useUiLayer({
+    active: open,
+    modal: true,
+    containerRef: contentRef,
+    closeOnEscape,
+    onEscape: onClose,
+    getRestoreFocus
+  });
 
   if (!open) {
     return null;
@@ -75,18 +77,25 @@ export function UiModal({
   return createPortal(
     <div
       className={overlayClasses}
-      role="dialog"
-      aria-modal="true"
-      aria-label={ariaLabel}
-      aria-labelledby={labelledBy}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && closeOnOverlayClick) {
+        if (event.target === event.currentTarget && closeOnOverlayClick && isTopLayer) {
           onClose();
         }
       }}
       data-testid={testId}
+      data-ui-layer={layerId}
     >
-      <div className={contentClasses} onMouseDown={(event) => event.stopPropagation()}>
+      <div
+        ref={contentRef}
+        className={contentClasses}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+        tabIndex={-1}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         {children}
       </div>
     </div>,

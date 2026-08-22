@@ -482,7 +482,6 @@ export function useLightboxImageControls({
 
   useLightboxKeyboardShortcuts({
     selected,
-    onClose,
     onNavigatePrevious,
     onNavigateNext,
     onToggleFullscreen: toggleFullscreen,

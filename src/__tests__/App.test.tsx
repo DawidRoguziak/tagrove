@@ -436,7 +436,7 @@ describe("App", () => {
     const enableSelectionButton = screen.getByRole("button", { name: "Enable bulk actions" });
     await userEvent.click(enableSelectionButton);
 
-    const panel = screen.getByTestId("bulk-action-panel");
+    const panel = await screen.findByTestId("bulk-action-panel");
     expect(panel).toBeInTheDocument();
     expect(panel.parentElement).toHaveClass(
       "min-h-[calc(100vh-4.5rem)]",
@@ -834,7 +834,8 @@ describe("App", () => {
 
     expect(await screen.findByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026")).toBeInTheDocument();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Open settings" }));
+    const settingsButton = await screen.findByRole("button", { name: "Open settings" });
+    await userEvent.click(settingsButton);
 
     expect(await screen.findByRole("button", { name: "Back" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026")).not.toBeInTheDocument();
@@ -843,6 +844,9 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
 
     expect(await screen.findByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open settings" })).toHaveFocus();
+    });
   });
 
   it("closes settings with Escape key", async () => {

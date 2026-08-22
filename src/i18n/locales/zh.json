@@ -9,6 +9,7 @@
     "yes": "是",
     "no": "否"
   },
+  "lazyLoad": { "settingsFailed": "无法加载设置", "bulkFailed": "无法加载批量操作", "lightboxFailed": "无法加载预览", "retryDescription": "请重新加载应用程序以重试加载此界面。" },
   "topBar": {
     "openSettings": "打开设置"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "从组中移除",
       "removeGroups": "从各组中移除",
       "orderHeading": "组内顺序",
-      "orderDescription": "拖动项目的手柄以设置顺序。",
-      "dragHandleAria": "拖动第 {{position}} 项以调整顺序",
+      "orderDescription": "拖动项目，或在其手柄上使用方向键来设置顺序。",
+      "dragHandleAria": "拖动第 {{position}} 项或使用方向键调整顺序",
       "tagsHeading": "标签",
       "tagsMultipleDescription": "新标签会添加到所有选定项目，现有标签将保留。",
       "tagsSingleDescription": "为所选项目添加标签或移除当前标签。",
@@ -149,6 +150,8 @@
     "exitFullscreen": "退出全屏 (F)",
     "deleteMedia": "删除媒体",
     "closePreview": "关闭预览",
+    "previewDialog": "预览 {{name}}",
+    "previewDialogDescription": "媒体预览和编辑控件。",
     "showTagging": "显示标签",
     "tags": "标签",
     "taggingHeading": "标签管理",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "正在加载完整标签列表...",
     "tagDetailsLoadFailedTitle": "无法加载标签",
     "tagDetailsLoadFailed": "无法加载完整标签列表。编辑功能仍处于禁用状态。",
-    "retryTagDetails": "重试加载标签"
+    "retryTagDetails": "重试加载标签",
+    "assetDetailsLoadFailed": "无法加载媒体详细信息。",
+    "retryAssetDetails": "重试加载详细信息",
+    "saveFailedTitle": "无法保存更改",
+    "favoriteSaveFailed": "收藏更改未保存。请使用收藏按钮重试。",
+    "mediaGroupSaveFailed": "媒体组更改未保存。输入值仍然保留；请选择“应用”重试。"
   },
   "settings": {
     "page": {

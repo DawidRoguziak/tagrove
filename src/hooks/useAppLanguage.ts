@@ -7,7 +7,9 @@ export function useAppLanguage() {
   useTranslation();
 
   const setLanguage = useCallback((nextLanguage: AppLanguage) => {
-    void changeAppLanguage(nextLanguage);
+    void changeAppLanguage(nextLanguage).catch((error) => {
+      console.error("Changing the application language failed", error);
+    });
   }, []);
 
   return {

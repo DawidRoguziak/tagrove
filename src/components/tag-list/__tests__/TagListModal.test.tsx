@@ -181,6 +181,20 @@ describe("TagListModal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("uses Shift+Enter as the keyboard equivalent of tag exclusion", async () => {
+    apiMocks.listTags.mockResolvedValueOnce(createTagListPage(["cherry"]));
+    const onApplySearch = vi.fn().mockResolvedValue(undefined);
+    render(<TagListModal open onClose={vi.fn()} onApplySearch={onApplySearch} />);
+
+    const tag = await screen.findByRole("button", { name: "cherry, state: inactive" });
+    tag.focus();
+    fireEvent.keyDown(tag, { key: "Enter", shiftKey: true });
+    expect(screen.getByRole("button", { name: "cherry, state: excluded" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(onApplySearch).toHaveBeenCalledWith("-cherry"));
+  });
+
   it("keeps the modal open when applying the search fails", async () => {
     vi.useFakeTimers();
     apiMocks.listTags.mockResolvedValueOnce(createTagListPage(["Alpha"]));

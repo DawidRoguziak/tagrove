@@ -68,6 +68,8 @@ void i18n.use(initReactI18next).init({
   interpolation: {
     escapeValue: false
   }
+}).catch((error) => {
+  console.error("i18n initialization failed", error);
 });
 
 function persistLanguage(language: AppLanguage) {

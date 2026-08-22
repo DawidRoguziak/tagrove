@@ -97,7 +97,7 @@ export function BulkActionsSidebar({
         tagFocusFrameRef.current = null;
         tagInputRef.current?.focus();
       });
-    });
+    }).catch(() => {});
   };
 
   const submitTag = () => {
@@ -168,7 +168,7 @@ export function BulkActionsSidebar({
         <UiButton
           variant={normalizedGroupKey ? "primary" : "danger"}
           className="w-full justify-center"
-          onClick={() => void controller.onApplyGroup()}
+          onClick={() => void controller.onApplyGroup().catch(() => {})}
           disabled={controlsDisabled || controller.groupApplying}
         >
           {controller.groupApplying
@@ -195,6 +195,7 @@ export function BulkActionsSidebar({
           <div
             className="panel-scroll grid min-h-0 gap-2 overflow-y-auto overscroll-contain"
             data-testid="bulk-group-order-list"
+            role="list"
           >
             {orderedAssets.map((asset, index) => {
               const thumbPath = thumbs[asset.id];
@@ -208,6 +209,7 @@ export function BulkActionsSidebar({
                   }`}
                   data-asset-id={asset.id}
                   data-testid={`bulk-group-tile-${asset.id}`}
+                  role="listitem"
                   onPointerEnter={() => {
                     const draggedAssetId = draggingAssetIdRef.current;
                     if (
@@ -244,7 +246,8 @@ export function BulkActionsSidebar({
                     ) : null}
                   </div>
                   <span className="min-w-0 flex-1" aria-hidden="true" />
-                  <span
+                  <button
+                    type="button"
                     className={`grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-lg text-base-content/55 transition-colors ${
                       controller.groupApplying
                         ? "cursor-not-allowed opacity-45"
@@ -252,7 +255,16 @@ export function BulkActionsSidebar({
                     }`}
                     data-testid={`bulk-group-drag-handle-${asset.id}`}
                     aria-label={t("bulk.panel.dragHandleAria", { position: index + 1 })}
+                    aria-keyshortcuts="ArrowUp ArrowDown"
                     title={t("bulk.panel.dragHandleAria", { position: index + 1 })}
+                    disabled={controller.groupApplying}
+                    onKeyDown={(event) => {
+                      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+                      event.preventDefault();
+                      const targetIndex = event.key === "ArrowUp" ? index - 1 : index + 1;
+                      const target = orderedAssets[targetIndex];
+                      if (target) controller.onReorderGroupAsset(asset.id, target.id);
+                    }}
                     onPointerDown={(event) => {
                       if (event.button > 0 || controller.groupApplying) return;
                       event.preventDefault();
@@ -262,7 +274,7 @@ export function BulkActionsSidebar({
                     }}
                   >
                     <UiIcon name="grip-vertical" className="h-5 w-5" />
-                  </span>
+                  </button>
                 </div>
               );
             })}
@@ -295,7 +307,7 @@ export function BulkActionsSidebar({
           }
           onRemoveTag={
             controller.tagMode === "single"
-              ? (tag) => void controller.onRemoveTag(tag)
+              ? (tag) => void controller.onRemoveTag(tag).catch(() => {})
               : undefined
           }
           getRemoveTagAriaLabel={(tag) => t("bulk.tagModal.removeTagAria", { tag })}

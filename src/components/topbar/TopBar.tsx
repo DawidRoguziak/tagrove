@@ -56,6 +56,7 @@ export function TopBar({
 
         <div className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
           <UiIconButton
+            id="open-settings-button"
             icon="settings"
             onClick={onOpenSettingsView}
             aria-label={t("topBar.openSettings")}

@@ -9,6 +9,7 @@
     "yes": "OUI",
     "no": "Non"
   },
+  "lazyLoad": { "settingsFailed": "Impossible de charger les paramètres", "bulkFailed": "Impossible de charger les actions groupées", "lightboxFailed": "Impossible de charger l'aperçu", "retryDescription": "Rechargez l'application pour réessayer de charger cette partie de l'interface." },
   "topBar": {
     "openSettings": "Ouvrir les paramètres"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "Retirer du groupe",
       "removeGroups": "Retirer des groupes",
       "orderHeading": "Ordre du groupe",
-      "orderDescription": "Faites glisser les éléments par leur poignée pour définir leur ordre.",
-      "dragHandleAria": "Faites glisser l’élément {{position}} pour modifier l’ordre",
+      "orderDescription": "Faites glisser les éléments ou utilisez les touches fléchées sur leur poignée pour définir leur ordre.",
+      "dragHandleAria": "Réorganiser l’élément {{position}} par glissement ou avec les touches fléchées",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "Les nouveaux tags sont ajoutés à tous les éléments sélectionnés. Les tags existants sont conservés.",
       "tagsSingleDescription": "Ajoutez des tags ou supprimez les tags actuels de l’élément sélectionné.",
@@ -149,6 +150,8 @@
     "exitFullscreen": "Quitter le plein écran (F)",
     "deleteMedia": "Supprimer le média",
     "closePreview": "Fermer l’aperçu",
+    "previewDialog": "Aperçu de {{name}}",
+    "previewDialogDescription": "Aperçu du média et commandes de modification.",
     "showTagging": "Afficher les tags",
     "tags": "Tags",
     "taggingHeading": "Tagging",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "Chargement de la liste complète des tags...",
     "tagDetailsLoadFailedTitle": "Impossible de charger les tags",
     "tagDetailsLoadFailed": "La liste complète des tags n’a pas pu être chargée. La modification reste désactivée.",
-    "retryTagDetails": "Réessayer le chargement"
+    "retryTagDetails": "Réessayer le chargement",
+    "assetDetailsLoadFailed": "Impossible de charger les détails du média.",
+    "retryAssetDetails": "Réessayer le chargement des détails",
+    "saveFailedTitle": "Impossible d’enregistrer la modification",
+    "favoriteSaveFailed": "La modification du favori n’a pas été enregistrée. Utilisez le bouton Favori pour réessayer.",
+    "mediaGroupSaveFailed": "La modification du groupe de médias n’a pas été enregistrée. Les valeurs sont conservées ; choisissez Appliquer pour réessayer."
   },
   "settings": {
     "page": {

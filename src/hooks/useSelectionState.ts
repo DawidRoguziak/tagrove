@@ -117,6 +117,7 @@ export function useSelectionState({
   const [tagFailed, setTagFailed] = useState(false);
   const [tagDetailsLoading, setTagDetailsLoading] = useState(false);
   const [tagDetailsFailed, setTagDetailsFailed] = useState(false);
+  const [assetDetailsFailed, setAssetDetailsFailed] = useState(false);
   const [mediaGroupKeyEditor, setMediaGroupKeyEditor] = useState("");
   const [mediaGroupOrderEditor, setMediaGroupOrderEditor] = useState("");
 
@@ -158,6 +159,7 @@ export function useSelectionState({
     setTagFailed(false);
     setTagDetailsLoading(false);
     setTagDetailsFailed(false);
+    setAssetDetailsFailed(false);
     setMediaGroupKeyEditor("");
     setMediaGroupOrderEditor("");
   }, [assetTagState.epoch]);
@@ -316,6 +318,7 @@ export function useSelectionState({
       setTagFailed(false);
       setTagDetailsLoading(false);
       setTagDetailsFailed(false);
+      setAssetDetailsFailed(false);
       setMediaGroupKeyEditor("");
       setMediaGroupOrderEditor("");
       return;
@@ -479,6 +482,7 @@ export function useSelectionState({
         putCachedDetails(mergedCached);
         setTagDetailsLoading(false);
         setTagDetailsFailed(false);
+        setAssetDetailsFailed(false);
         setSelectedState(mergedCached);
         return;
       }
@@ -488,16 +492,19 @@ export function useSelectionState({
     setSelectedState(summaryToView(summary, authoritative?.tags ?? []));
     setTagDetailsLoading(!authoritative);
     setTagDetailsFailed(false);
+    setAssetDetailsFailed(false);
     const detailGeneration = assetTagState.captureGeneration(summary.id);
     void getAssetDetails(summary.id).then((details) => {
       if (selectionRequestRef.current !== requestId) return;
       if (!details) {
+        setAssetDetailsFailed(true);
         if (!assetTagState.get(summary.id)) setTagDetailsFailed(true);
         return;
       }
       const accepted = assetTagState.publishDetails(details.id, details.tags, detailGeneration);
       const authoritativeDetails = assetTagState.get(details.id);
       if (!accepted && !authoritativeDetails) {
+        setAssetDetailsFailed(true);
         setTagDetailsFailed(true);
         return;
       }
@@ -506,11 +513,13 @@ export function useSelectionState({
       putCachedDetails(merged);
       setSelectedState(merged);
       setTagDetailsFailed(false);
+      setAssetDetailsFailed(false);
       const index = selectedIndexRef.current;
       if (index !== null) prefetchAdjacentDetails(index);
     }).catch(() => {
-      if (selectionRequestRef.current === requestId && !assetTagState.get(summary.id)) {
-        setTagDetailsFailed(true);
+      if (selectionRequestRef.current === requestId) {
+        setAssetDetailsFailed(true);
+        if (!assetTagState.get(summary.id)) setTagDetailsFailed(true);
       }
     }).finally(() => {
       if (selectionRequestRef.current === requestId) setTagDetailsLoading(false);
@@ -521,9 +530,9 @@ export function useSelectionState({
 
   const retryTagDetails = useCallback(() => {
     const current = selectedRef.current;
-    if (!current || assetTagState.get(current.id)) return;
+    if (!current || (!assetDetailsFailed && !tagDetailsFailed)) return;
     selectAsset(current, selectedIndexRef.current ?? undefined);
-  }, [assetTagState, selectAsset]);
+  }, [assetDetailsFailed, selectAsset, tagDetailsFailed]);
 
   const navigateBy = useCallback((step: -1 | 1) => {
     const currentIndex = navigationTargetIndexRef.current ?? selectedIndexRef.current;
@@ -598,6 +607,7 @@ export function useSelectionState({
     tagFailed,
     tagDetailsLoading,
     tagDetailsFailed,
+    assetDetailsFailed,
     saveTags,
     retryTags,
     retryTagDetails,
@@ -614,6 +624,7 @@ export function useSelectionState({
   }), [
     deleteSelectedAsset, handleSelectNext, handleSelectPrevious, mediaGroupKeyEditor,
     mediaGroupOrderEditor, retryTagDetails, retryTags, saveMediaGroup, saveTags, selectAsset, selected,
-    tagDetailsFailed, tagDetailsLoading, tagEditor, tagFailed, tagSaving, toggleSelectedFavorite
+    assetDetailsFailed, tagDetailsFailed, tagDetailsLoading, tagEditor, tagFailed, tagSaving,
+    toggleSelectedFavorite
   ]);
 }

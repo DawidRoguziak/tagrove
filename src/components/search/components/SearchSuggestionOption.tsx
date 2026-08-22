@@ -2,6 +2,7 @@ import { renderHighlightedMatch } from "../renderHighlightedMatch";
 import type { TagSuggestion } from "../types";
 
 interface SearchSuggestionOptionProps {
+  id: string;
   suggestion: TagSuggestion;
   index: number;
   active: boolean;
@@ -9,6 +10,7 @@ interface SearchSuggestionOptionProps {
 }
 
 export function SearchSuggestionOption({
+  id,
   suggestion,
   index,
   active,
@@ -24,7 +26,9 @@ export function SearchSuggestionOption({
   return (
     <button
       type="button"
+      id={id}
       role="option"
+      tabIndex={-1}
       aria-selected={active}
       className="w-full rounded-lg border-0 bg-transparent px-2.5 py-[7px] text-left text-base-content transition-colors duration-100 hover:bg-base-content/12 focus-visible:bg-base-content/12 focus-visible:outline-hidden"
       style={activeStyle}

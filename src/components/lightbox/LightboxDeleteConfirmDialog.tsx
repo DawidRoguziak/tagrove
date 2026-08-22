@@ -3,6 +3,7 @@ import { UiButton } from "../UI/UiButton";
 import { browserAssistDisabledProps } from "../UI/inputBehavior";
 import { useTranslation } from "react-i18next";
 import { UiAlert } from "../UI/UiAlert";
+import { UiModal } from "../UI/UiModal";
 
 interface LightboxDeleteConfirmDialogProps {
   open: boolean;
@@ -38,30 +39,24 @@ export function LightboxDeleteConfirmDialog({
     };
   }, [open]);
 
-  if (!open) {
-    return null;
-  }
-
   const confirmWord = t("lightbox.deleteConfirm.confirmWord");
   const canConfirm =
     confirmationText.trim().localeCompare(confirmWord.trim(), undefined, { sensitivity: "base" }) === 0;
 
   return (
-    <div
-      className="fixed inset-0 z-40 grid place-items-center bg-base-300/70 p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClose();
-      }}
+    <UiModal
+      open={open}
+      onClose={onClose}
+      closeOnEscape={!isSubmitting}
+      closeOnOverlayClick={!isSubmitting}
+      size="small"
+      labelledBy="lightbox-delete-confirm-heading"
+      describedBy="lightbox-delete-confirm-description"
+      contentClassName="grid gap-2.5"
+      testId="lightbox-delete-confirm-dialog"
     >
-      <div
-        className="grid w-full max-w-[460px] gap-2.5 rounded-[14px] border border-base-content/30 bg-base-100 p-4 shadow-[var(--shadow-modal)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h3 className="m-0">{t("lightbox.deleteConfirm.heading")}</h3>
-        <p className="m-0 text-[13px] leading-[1.4] text-base-content/65">
+        <h3 id="lightbox-delete-confirm-heading" className="m-0">{t("lightbox.deleteConfirm.heading")}</h3>
+        <p id="lightbox-delete-confirm-description" className="m-0 text-[13px] leading-[1.4] text-base-content/65">
           {t("lightbox.deleteConfirm.description")}
         </p>
         {errorMessage ? (
@@ -94,7 +89,6 @@ export function LightboxDeleteConfirmDialog({
             {t("lightbox.deleteConfirm.confirm")}
           </UiButton>
         </div>
-      </div>
-    </div>
+    </UiModal>
   );
 }

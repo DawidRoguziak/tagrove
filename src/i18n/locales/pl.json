@@ -9,6 +9,7 @@
     "yes": "TAK",
     "no": "Nie"
   },
+  "lazyLoad": { "settingsFailed": "Nie udało się załadować ustawień", "bulkFailed": "Nie udało się załadować akcji zbiorczych", "lightboxFailed": "Nie udało się załadować podglądu", "retryDescription": "Uruchom aplikację ponownie, aby ponowić ładowanie tej części interfejsu." },
   "topBar": {
     "openSettings": "Otworz ustawienia"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "Usuń z grupy",
       "removeGroups": "Usuń z grup",
       "orderHeading": "Kolejność w grupie",
-      "orderDescription": "Przeciągnij elementy za uchwyty, aby ustawić kolejność.",
-      "dragHandleAria": "Przeciągnij element {{position}}, aby zmienić kolejność",
+      "orderDescription": "Przeciągnij elementy lub użyj klawiszy strzałek na ich uchwytach, aby ustawić kolejność.",
+      "dragHandleAria": "Zmień kolejność elementu {{position}} przeciąganiem lub klawiszami strzałek",
       "tagsHeading": "Tagi",
       "tagsMultipleDescription": "Nowe tagi są dodawane do wszystkich zaznaczonych elementów. Istniejące tagi pozostają bez zmian.",
       "tagsSingleDescription": "Dodawaj tagi lub usuwaj aktualne tagi zaznaczonego elementu.",
@@ -149,6 +150,8 @@
     "exitFullscreen": "Wyjdz z pelnego ekranu (F)",
     "deleteMedia": "Usun medium",
     "closePreview": "Zamknij podglad",
+    "previewDialog": "Podgląd {{name}}",
+    "previewDialogDescription": "Podgląd multimediów i kontrolki edycji.",
     "showTagging": "Pokaz tagowanie",
     "tags": "Tagi",
     "taggingHeading": "Tagowanie",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "Wczytywanie pełnej listy tagów...",
     "tagDetailsLoadFailedTitle": "Nie udało się wczytać tagów",
     "tagDetailsLoadFailed": "Nie udało się wczytać pełnej listy tagów. Edycja pozostaje wyłączona.",
-    "retryTagDetails": "Ponów wczytywanie tagów"
+    "retryTagDetails": "Ponów wczytywanie tagów",
+    "assetDetailsLoadFailed": "Nie udało się wczytać szczegółów pliku.",
+    "retryAssetDetails": "Ponów wczytywanie szczegółów",
+    "saveFailedTitle": "Nie udało się zapisać zmiany",
+    "favoriteSaveFailed": "Zmiana ulubionych nie została zapisana. Użyj ponownie przycisku ulubionych.",
+    "mediaGroupSaveFailed": "Zmiana grupy mediów nie została zapisana. Wartości pozostały w polach; wybierz Zastosuj, aby ponowić."
   },
   "settings": {
     "page": {

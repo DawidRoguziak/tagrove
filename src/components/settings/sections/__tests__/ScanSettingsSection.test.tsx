@@ -7,6 +7,7 @@ import { ScanSettingsSection } from "../ScanSettingsSection";
 describe("ScanSettingsSection", () => {
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
   });
 
   it("renders roots and triggers all scan actions", async () => {
@@ -76,5 +77,33 @@ describe("ScanSettingsSection", () => {
     expect(screen.getByRole("button", { name: "Rescan all" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Render thumbnails for all indexed assets" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Retry failed thumbnails only" })).toBeDisabled();
+  });
+
+  it("avoids smooth scrolling when reduced motion is requested", () => {
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+
+    render(
+      <ScanSettingsSection
+        scanRoots={[]}
+        highlighted
+        isOperationLocked={false}
+        thumbnailBulkRunning={false}
+        cancelThumbnailRunning={false}
+        operationState={createSectionOperationState("scan")}
+        onPickFolder={() => {}}
+        onRescanRoot={() => {}}
+        onRemoveRoot={() => {}}
+        onRescanAll={() => {}}
+        onRenderAllThumbnails={() => {}}
+        onRenderFailedThumbnails={() => {}}
+        onCancelThumbnailRender={() => {}}
+      />
+    );
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "auto", block: "center" });
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   });
 });

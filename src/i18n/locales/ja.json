@@ -9,6 +9,7 @@
     "yes": "はい",
     "no": "いいえ"
   },
+  "lazyLoad": { "settingsFailed": "設定を読み込めませんでした", "bulkFailed": "一括操作を読み込めませんでした", "lightboxFailed": "プレビューを読み込めませんでした", "retryDescription": "この画面を再度読み込むには、アプリケーションを再読み込みしてください。" },
   "topBar": {
     "openSettings": "設定を開く"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "グループから外す",
       "removeGroups": "グループから外す",
       "orderHeading": "グループ内の順序",
-      "orderDescription": "項目のハンドルをドラッグして順序を設定します。",
-      "dragHandleAria": "項目 {{position}} をドラッグして並べ替え",
+      "orderDescription": "項目をドラッグするか、ハンドル上で矢印キーを使って順序を設定します。",
+      "dragHandleAria": "項目 {{position}} をドラッグまたは矢印キーで並べ替え",
       "tagsHeading": "タグ",
       "tagsMultipleDescription": "新しいタグを選択したすべての項目に追加します。既存のタグは保持されます。",
       "tagsSingleDescription": "選択項目のタグを追加または削除します。",
@@ -149,6 +150,8 @@
     "exitFullscreen": "全画面表示を終了 (F)",
     "deleteMedia": "メディアを削除",
     "closePreview": "プレビューを閉じる",
+    "previewDialog": "{{name}} のプレビュー",
+    "previewDialogDescription": "メディアのプレビューと編集コントロール。",
     "showTagging": "タグ付けを表示",
     "tags": "タグ",
     "taggingHeading": "タグ付け",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "完全なタグ一覧を読み込んでいます...",
     "tagDetailsLoadFailedTitle": "タグを読み込めませんでした",
     "tagDetailsLoadFailed": "完全なタグ一覧を読み込めませんでした。編集は無効のままです。",
-    "retryTagDetails": "タグの読み込みを再試行"
+    "retryTagDetails": "タグの読み込みを再試行",
+    "assetDetailsLoadFailed": "メディアの詳細を読み込めませんでした。",
+    "retryAssetDetails": "詳細の読み込みを再試行",
+    "saveFailedTitle": "変更を保存できませんでした",
+    "favoriteSaveFailed": "お気に入りの変更を保存できませんでした。お気に入りボタンでもう一度お試しください。",
+    "mediaGroupSaveFailed": "メディアグループの変更を保存できませんでした。入力値は保持されています。適用を選んでもう一度お試しください。"
   },
   "settings": {
     "page": {

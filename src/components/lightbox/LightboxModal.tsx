@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { SelectedAsset } from "../../types";
 import { LightboxDeleteConfirmDialog } from "./LightboxDeleteConfirmDialog";
 import { LightboxMediaStage } from "./LightboxMediaStage";
@@ -8,6 +9,8 @@ import { useLightboxMediaGroupClipboard } from "./hooks/useLightboxMediaGroupCli
 import { useLightboxImageControls } from "./useLightboxImageControls";
 import { useLightboxTagging } from "./useLightboxTagging";
 import { useTranslation } from "react-i18next";
+import { useUiLayer } from "../UI/UiLayerProvider";
+import { UiAlert } from "../UI/UiAlert";
 
 interface LightboxModalProps {
   selected: SelectedAsset | null;
@@ -19,6 +22,7 @@ interface LightboxModalProps {
   tagFailed?: boolean;
   tagDetailsLoading?: boolean;
   tagDetailsFailed?: boolean;
+  assetDetailsFailed?: boolean;
   onRetryTagDetails?: () => void;
   mediaGroupKeyEditor?: string;
   mediaGroupOrderEditor?: string;
@@ -28,9 +32,10 @@ interface LightboxModalProps {
   knownTags: string[];
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
-  onToggleFavorite: () => void;
+  onToggleFavorite: () => void | Promise<void>;
   onDeleteMedia?: () => void | Promise<void>;
   onClose: () => void;
+  getRestoreFocus?: () => HTMLElement | null;
 }
 
 export function LightboxModal({
@@ -43,6 +48,7 @@ export function LightboxModal({
   tagFailed = false,
   tagDetailsLoading = false,
   tagDetailsFailed = false,
+  assetDetailsFailed = false,
   onRetryTagDetails = () => {},
   mediaGroupKeyEditor = "",
   mediaGroupOrderEditor = "",
@@ -54,12 +60,20 @@ export function LightboxModal({
   onNavigateNext,
   onToggleFavorite,
   onDeleteMedia = () => {},
-  onClose
+  onClose,
+  getRestoreFocus
 }: LightboxModalProps) {
   const { t } = useTranslation();
   const tagPopoverContainerRef = useRef<HTMLDivElement | null>(null);
   const infoPopoverContainerRef = useRef<HTMLDivElement | null>(null);
   const selectedId = selected?.id ?? null;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const [favoriteFailed, setFavoriteFailed] = useState(false);
+
+  useEffect(() => {
+    setFavoriteFailed(false);
+  }, [selectedId]);
 
   const handlers = useLightboxModalHandlers({
     selectedId,
@@ -95,6 +109,16 @@ export function LightboxModal({
   });
 
   const clipboard = useLightboxMediaGroupClipboard(mediaGroupKeyEditor, selectedId);
+  const { isTopLayer, layerId } = useUiLayer({
+    active: selected !== null,
+    modal: true,
+    containerRef: mediaControls.lightboxShellRef,
+    closeOnEscape: !mediaControls.isFullscreen,
+    onEscape: () => {
+      onClose();
+    },
+    getRestoreFocus
+  });
   const groupCopyConfirmed = clipboard.groupCopyConfirmed;
   const copyMediaGroupTitle = groupCopyConfirmed
     ? t("lightbox.copyMediaGroup.copied")
@@ -104,10 +128,13 @@ export function LightboxModal({
 
   if (!selected) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[55] grid place-items-center bg-neutral/62 p-2 backdrop-blur-sm sm:p-5"
-      onClick={mediaControls.tryCloseLightbox}
+      onClick={() => {
+        if (isTopLayer) mediaControls.tryCloseLightbox();
+      }}
+      data-ui-layer={layerId}
     >
       <div
         className={[
@@ -122,9 +149,17 @@ export function LightboxModal({
           .filter(Boolean)
           .join(" ")}
         ref={mediaControls.lightboxShellRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("lightbox.previewDialog", { name: selected.file_name })}
+        aria-describedby="lightbox-dialog-description"
+        tabIndex={-1}
         onPointerDownCapture={handlers.handleShellPointerDownCapture}
         onClick={handlers.handleShellClick}
       >
+        <span id="lightbox-dialog-description" className="sr-only">
+          {t("lightbox.previewDialogDescription")}
+        </span>
         <LightboxToolbar
           selected={selected}
           mediaGroupKeyEditor={mediaGroupKeyEditor}
@@ -156,7 +191,13 @@ export function LightboxModal({
           onMediaGroupOrderChange={onMediaGroupOrderEditorChange}
           onApplyMediaGroup={handlers.handleApplyMediaGroup}
           onToggleInfoPanel={handlers.handleToggleInfoPanel}
-          onToggleFavorite={onToggleFavorite}
+          onToggleFavorite={() => {
+            const requestedAssetId = selectedId;
+            setFavoriteFailed(false);
+            void Promise.resolve(onToggleFavorite()).catch(() => {
+              if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
+            });
+          }}
           onCopyMediaGroup={() => {
             void clipboard.copyMediaGroup();
           }}
@@ -169,8 +210,26 @@ export function LightboxModal({
           t={t}
         />
 
+        {favoriteFailed || handlers.mediaGroupFailed ? (
+          <div className="absolute left-3 top-3 z-[5] grid max-w-[min(28rem,calc(100%-6rem))] gap-2">
+            {favoriteFailed ? (
+              <UiAlert tone="error" title={t("lightbox.saveFailedTitle")} className="shadow-[var(--shadow-floating)]">
+                {t("lightbox.favoriteSaveFailed")}
+              </UiAlert>
+            ) : null}
+            {handlers.mediaGroupFailed ? (
+              <UiAlert tone="error" title={t("lightbox.saveFailedTitle")} className="shadow-[var(--shadow-floating)]">
+                {t("lightbox.mediaGroupSaveFailed")}
+              </UiAlert>
+            ) : null}
+          </div>
+        ) : null}
+
         <LightboxMediaStage
           selected={selected}
+          detailsLoading={tagDetailsLoading}
+          detailsFailed={assetDetailsFailed}
+          onRetryDetails={onRetryTagDetails}
           mediaViewportRef={mediaControls.mediaViewportRef}
           lightboxImageRef={mediaControls.lightboxImageRef}
           lightboxVideoPlayerRef={mediaControls.lightboxVideoPlayerRef}
@@ -195,6 +254,7 @@ export function LightboxModal({
         onClose={handlers.handleCloseDeleteConfirm}
         onConfirm={handlers.handleConfirmDeleteMedia}
       />
-    </div>
+    </div>,
+    document.body
   );
 }

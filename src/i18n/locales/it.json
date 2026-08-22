@@ -9,6 +9,7 @@
     "yes": "SÌ",
     "no": "No"
   },
+  "lazyLoad": { "settingsFailed": "Impossibile caricare le impostazioni", "bulkFailed": "Impossibile caricare le azioni multiple", "lightboxFailed": "Impossibile caricare l'anteprima", "retryDescription": "Ricarica l'applicazione per riprovare a caricare questa parte dell'interfaccia." },
   "topBar": {
     "openSettings": "Apri impostazioni"
   },
@@ -97,8 +98,8 @@
       "removeGroup": "Rimuovi dal gruppo",
       "removeGroups": "Rimuovi dai gruppi",
       "orderHeading": "Ordine del gruppo",
-      "orderDescription": "Trascina gli elementi dalle maniglie per impostare l’ordine.",
-      "dragHandleAria": "Trascina l’elemento {{position}} per riordinarlo",
+      "orderDescription": "Trascina gli elementi o usa i tasti freccia sulle maniglie per impostare l’ordine.",
+      "dragHandleAria": "Riordina l’elemento {{position}} trascinandolo o con i tasti freccia",
       "tagsHeading": "Tag",
       "tagsMultipleDescription": "I nuovi tag vengono aggiunti a tutti gli elementi selezionati. I tag esistenti vengono mantenuti.",
       "tagsSingleDescription": "Aggiungi tag o rimuovi quelli correnti dall’elemento selezionato.",
@@ -149,6 +150,8 @@
     "exitFullscreen": "Esci da schermo intero (F)",
     "deleteMedia": "Elimina media",
     "closePreview": "Chiudi anteprima",
+    "previewDialog": "Anteprima di {{name}}",
+    "previewDialogDescription": "Anteprima multimediale e controlli di modifica.",
     "showTagging": "Mostra tagging",
     "tags": "Tag",
     "taggingHeading": "Tagging",
@@ -196,7 +199,12 @@
     "tagDetailsLoading": "Caricamento dell’elenco completo dei tag...",
     "tagDetailsLoadFailedTitle": "Impossibile caricare i tag",
     "tagDetailsLoadFailed": "Non è stato possibile caricare l’elenco completo dei tag. La modifica resta disabilitata.",
-    "retryTagDetails": "Riprova a caricare i tag"
+    "retryTagDetails": "Riprova a caricare i tag",
+    "assetDetailsLoadFailed": "Impossibile caricare i dettagli del file.",
+    "retryAssetDetails": "Riprova a caricare i dettagli",
+    "saveFailedTitle": "Impossibile salvare la modifica",
+    "favoriteSaveFailed": "La modifica dei preferiti non è stata salvata. Usa il pulsante dei preferiti per riprovare.",
+    "mediaGroupSaveFailed": "La modifica del gruppo multimediale non è stata salvata. I valori restano disponibili; scegli Applica per riprovare."
   },
   "settings": {
     "page": {

@@ -1,6 +1,6 @@
 # System overview
 
-This page describes the architecture that is implemented today. The source code and executable configuration are authoritative. Planning documents under `docs/plans/` are not evidence of current behavior.
+This page describes the architecture that is implemented today. The source code and executable configuration are authoritative.
 
 For narrower contracts, use the canonical pages for [frontend architecture](../frontend/architecture-and-ui-conventions.md), [IPC](ipc-contract.md), [database persistence](../subsystems/database.md), [scanning](../subsystems/scanning-and-indexing.md), [library queries and the gallery](../subsystems/library-query-and-gallery.md), [thumbnails](../subsystems/thumbnails.md), [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md), [lightbox behavior](../subsystems/lightbox.md), [settings operations](../subsystems/settings-operations.md), and [data safety and portability](../subsystems/data-safety-and-portability.md).
 

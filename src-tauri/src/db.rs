@@ -1190,7 +1190,10 @@ pub fn remove_scan_root(conn: &Connection, path: &str) -> anyhow::Result<()> {
 pub fn list_assets_for_thumbnail_render(conn: &Connection) -> anyhow::Result<Vec<ThumbnailAsset>> {
     let mut out = Vec::new();
     let mut stmt = conn.prepare(
-        "SELECT id, path, kind, modified_at, duration_ms, thumb_path FROM assets ORDER BY id ASC",
+        "
+        SELECT id, path, kind, modified_at, duration_ms, thumb_path, size_bytes, fingerprint_mtime_ns
+        FROM assets ORDER BY id ASC
+        ",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(ThumbnailAsset {
@@ -1200,6 +1203,8 @@ pub fn list_assets_for_thumbnail_render(conn: &Connection) -> anyhow::Result<Vec
             modified_at: row.get(3)?,
             duration_ms: row.get(4)?,
             thumb_path: row.get(5)?,
+            size_bytes: row.get(6)?,
+            fingerprint_mtime_ns: row.get(7)?,
         })
     })?;
 
@@ -1218,7 +1223,7 @@ pub fn list_failed_assets_for_thumbnail_render(
     let mut out = Vec::new();
     let mut stmt = conn.prepare(
         "
-        SELECT a.id, a.path, a.kind, a.modified_at, a.duration_ms, a.thumb_path
+        SELECT a.id, a.path, a.kind, a.modified_at, a.duration_ms, a.thumb_path, a.size_bytes, a.fingerprint_mtime_ns
         FROM assets a
         JOIN thumbnail_failures tf ON tf.asset_id = a.id AND tf.asset_modified_at = a.modified_at
         ORDER BY tf.last_failed_at ASC, a.id ASC
@@ -1232,6 +1237,8 @@ pub fn list_failed_assets_for_thumbnail_render(
             modified_at: row.get(3)?,
             duration_ms: row.get(4)?,
             thumb_path: row.get(5)?,
+            size_bytes: row.get(6)?,
+            fingerprint_mtime_ns: row.get(7)?,
         })
     })?;
 
@@ -2440,8 +2447,15 @@ pub fn upsert_scanned_asset(
     generation: i64,
 ) -> anyhow::Result<()> {
     upsert_asset(conn, asset)?;
+    // The precise fingerprint is the thumbnail source version. When it changed
+    // (including a same-second modification that upsert_asset alone cannot
+    // detect), the previously stored path points at a stale version's target
+    // and must be released together with the fingerprint update.
     conn.execute(
-        "UPDATE assets SET fingerprint_mtime_ns = ?1 WHERE path = ?2",
+        "UPDATE assets
+         SET fingerprint_mtime_ns = ?1,
+             thumb_path = CASE WHEN assets.fingerprint_mtime_ns = ?1 THEN assets.thumb_path ELSE NULL END
+         WHERE path = ?2",
         params![fingerprint_mtime_ns, asset.path],
     )?;
     conn.execute(
@@ -2769,7 +2783,10 @@ pub fn get_asset_for_thumbnail(
 ) -> anyhow::Result<Option<ThumbnailAsset>> {
     let asset = conn
         .query_row(
-            "SELECT id, path, kind, modified_at, duration_ms, thumb_path FROM assets WHERE id = ?1",
+            "
+            SELECT id, path, kind, modified_at, duration_ms, thumb_path, size_bytes, fingerprint_mtime_ns
+            FROM assets WHERE id = ?1
+            ",
             params![asset_id],
             |row| {
                 Ok(ThumbnailAsset {
@@ -2779,6 +2796,8 @@ pub fn get_asset_for_thumbnail(
                     modified_at: row.get(3)?,
                     duration_ms: row.get(4)?,
                     thumb_path: row.get(5)?,
+                    size_bytes: row.get(6)?,
+                    fingerprint_mtime_ns: row.get(7)?,
                 })
             },
         )
@@ -2786,35 +2805,105 @@ pub fn get_asset_for_thumbnail(
     Ok(asset)
 }
 
-pub fn update_asset_thumbnail_path_if_changed(
+/// Outcome of a compare-and-set thumbnail write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThumbnailCasOutcome {
+    /// The asset still matches the expected source version; the path was
+    /// stored (or already equaled the requested value).
+    Applied,
+    /// The record was re-indexed after the task snapshot was taken; nothing
+    /// was written and any produced file must be discarded by the caller.
+    VersionMismatch,
+}
+
+fn thumbnail_cas_execute(
     conn: &Connection,
     asset_id: i64,
     thumb_path: Option<&str>,
-) -> anyhow::Result<()> {
-    conn.execute(
-        "UPDATE assets SET thumb_path = ?1 WHERE id = ?2 AND COALESCE(thumb_path, '') != COALESCE(?1, '')",
-        params![thumb_path, asset_id],
+    version: &crate::thumbs::SourceVersion,
+) -> anyhow::Result<ThumbnailCasOutcome> {
+    let changed = conn.execute(
+        "
+        UPDATE assets SET thumb_path = ?1
+        WHERE id = ?2 AND path = ?3 AND size_bytes = ?4 AND fingerprint_mtime_ns = ?5
+          AND COALESCE(thumb_path, '') != COALESCE(?1, '')
+        ",
+        params![
+            thumb_path,
+            asset_id,
+            version.path,
+            version.size_bytes,
+            version.mtime_ns
+        ],
     )?;
-    Ok(())
+    if changed > 0 {
+        return Ok(ThumbnailCasOutcome::Applied);
+    }
+
+    // Zero rows can mean either a version mismatch or an already-equal value.
+    // Re-read to distinguish: an equal stored path with matching version is a
+    // successful no-op; anything else is a lost race against a re-index.
+    let current = conn
+        .query_row(
+            "SELECT COALESCE(thumb_path, '') FROM assets WHERE id = ?1",
+            params![asset_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let expected = thumb_path.unwrap_or_default();
+    match current {
+        Some(stored) if stored == expected => {
+            let version_matches = conn.query_row(
+                "SELECT COUNT(*) FROM assets
+                 WHERE id = ?1 AND path = ?2 AND size_bytes = ?3 AND fingerprint_mtime_ns = ?4",
+                params![asset_id, version.path, version.size_bytes, version.mtime_ns],
+                |row| row.get::<_, i64>(0),
+            )? > 0;
+            if version_matches {
+                Ok(ThumbnailCasOutcome::Applied)
+            } else {
+                Ok(ThumbnailCasOutcome::VersionMismatch)
+            }
+        }
+        _ => Ok(ThumbnailCasOutcome::VersionMismatch),
+    }
 }
 
-pub fn update_asset_thumbnail_paths_batch(
+/// Compare-and-set of `assets.thumb_path` guarded by the exact source version
+/// the render was started for. A stale result never overwrites a re-indexed
+/// record; the caller receives [`ThumbnailCasOutcome::VersionMismatch`] and is
+/// responsible for removing the produced file.
+pub fn update_asset_thumbnail_path_if_version_matches(
     conn: &Connection,
-    updates: &[(i64, Option<String>)],
-) -> anyhow::Result<()> {
+    asset_id: i64,
+    thumb_path: Option<&str>,
+    version: &crate::thumbs::SourceVersion,
+) -> anyhow::Result<ThumbnailCasOutcome> {
+    thumbnail_cas_execute(conn, asset_id, thumb_path, version)
+}
+
+/// Versioned batch write of thumbnail paths. Each row is a compare-and-set
+/// guarded by the source version captured when its render started; IDs whose
+/// guard no longer matches are returned so callers can remove their produced
+/// files instead of leaving stale-version targets behind.
+pub fn update_asset_thumbnail_paths_batch_versioned(
+    conn: &Connection,
+    updates: &[(i64, Option<String>, crate::thumbs::SourceVersion)],
+) -> anyhow::Result<Vec<i64>> {
     if updates.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
+    let mut stale = Vec::new();
     let tx = conn.unchecked_transaction()?;
-    for (asset_id, thumb_path) in updates {
-        tx.execute(
-            "UPDATE assets SET thumb_path = ?1 WHERE id = ?2 AND COALESCE(thumb_path, '') != COALESCE(?1, '')",
-            params![thumb_path.as_deref(), asset_id],
-        )?;
+    for (asset_id, thumb_path, version) in updates {
+        let outcome = thumbnail_cas_execute(&tx, *asset_id, thumb_path.as_deref(), version)?;
+        if outcome == ThumbnailCasOutcome::VersionMismatch {
+            stale.push(*asset_id);
+        }
     }
     tx.commit()?;
-    Ok(())
+    Ok(stale)
 }
 
 pub fn get_assets_for_thumbnails_by_ids(
@@ -2828,7 +2917,7 @@ pub fn get_assets_for_thumbnails_by_ids(
     for chunk in asset_ids.chunks(500) {
         let placeholders = vec!["?"; chunk.len()].join(",");
         let sql = format!(
-            "SELECT id, path, kind, modified_at, duration_ms, thumb_path
+            "SELECT id, path, kind, modified_at, duration_ms, thumb_path, size_bytes, fingerprint_mtime_ns
              FROM assets WHERE id IN ({placeholders})"
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -2840,6 +2929,8 @@ pub fn get_assets_for_thumbnails_by_ids(
                 modified_at: row.get(3)?,
                 duration_ms: row.get(4)?,
                 thumb_path: row.get(5)?,
+                size_bytes: row.get(6)?,
+                fingerprint_mtime_ns: row.get(7)?,
             })
         })?;
         for row in rows {
@@ -3119,10 +3210,10 @@ mod tests {
     use crate::models::NewAsset;
 
     use super::{
-        clear_thumbnail_failure, current_library_revision, delete_asset_by_id_with_thumb,
-        delete_assets_by_prefix_with_thumbs, get_asset_media_group, get_asset_path_and_thumb_by_id,
-        grouped_bucket_stats_sql, init_schema, list_assets, list_assets_for_csv_export,
-        list_assets_for_thumbnail_render, list_assets_with_meta,
+        add_scan_root, clear_thumbnail_failure, current_library_revision,
+        delete_asset_by_id_with_thumb, delete_assets_by_prefix_with_thumbs, get_asset_media_group,
+        get_asset_path_and_thumb_by_id, grouped_bucket_stats_sql, init_schema, list_assets,
+        list_assets_for_csv_export, list_assets_for_thumbnail_render, list_assets_with_meta,
         list_duplicate_assets_by_file_name_key, list_duplicate_file_name_counts,
         list_asset_summaries_by_ids, list_failed_assets_for_thumbnail_render,
         list_failed_thumbnail_asset_ids,
@@ -3131,8 +3222,10 @@ mod tests {
         root_descendant_like_pattern,
         set_asset_favorite, set_asset_media_group, set_asset_tags, set_asset_tags_with_revision,
         set_assets_media_group_bulk, set_asset_favorite_with_revision,
-        set_asset_media_group_with_revision, try_list_ordered_asset_ids_with_meta,
-        upsert_asset, AssetMetaFilter,
+        set_asset_media_group_with_revision,
+        try_list_ordered_asset_ids_with_meta, update_asset_thumbnail_path_if_version_matches,
+        update_asset_thumbnail_paths_batch_versioned, upsert_asset, upsert_scanned_asset,
+        ThumbnailCasOutcome, AssetMetaFilter,
     };
 
     #[test]
@@ -4138,6 +4231,146 @@ mod tests {
 
         let failed_ids = list_failed_thumbnail_asset_ids(&conn).expect("failed ids after delete");
         assert_eq!(failed_ids, vec![2]);
+    }
+
+    fn insert_scanned_asset(
+        conn: &Connection,
+        path: &str,
+        size_bytes: i64,
+        modified_at: i64,
+        mtime_ns: i64,
+        thumb_path: Option<&str>,
+    ) {
+        add_scan_root(conn, "C:\\media").expect("add scan root");
+        upsert_scanned_asset(
+            conn,
+            &NewAsset {
+                path: path.to_string(),
+                kind: "image".to_string(),
+                size_bytes,
+                modified_at,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_path: thumb_path.map(str::to_string),
+            },
+            mtime_ns,
+            "C:\\media",
+            1,
+        )
+        .expect("insert scanned asset");
+    }
+
+    #[test]
+    fn thumbnail_cas_applies_when_source_version_matches() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_scanned_asset(&conn, "C:\\media\\a.jpg", 100, 5, 5_000_000_000, None);
+
+        let version = crate::thumbs::SourceVersion::new("C:\\media\\a.jpg", 100, 5_000_000_000);
+        let outcome = update_asset_thumbnail_path_if_version_matches(
+            &conn,
+            1,
+            Some("C:\\thumbs\\a.jpg"),
+            &version,
+        )
+        .expect("cas apply");
+        assert_eq!(outcome, ThumbnailCasOutcome::Applied);
+
+        // Applying the same value again is still a successful no-op.
+        let repeat = update_asset_thumbnail_path_if_version_matches(
+            &conn,
+            1,
+            Some("C:\\thumbs\\a.jpg"),
+            &version,
+        )
+        .expect("cas repeat");
+        assert_eq!(repeat, ThumbnailCasOutcome::Applied);
+    }
+
+    #[test]
+    fn thumbnail_cas_rejects_result_of_reindexed_version() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_scanned_asset(&conn, "C:\\media\\a.jpg", 100, 5, 5_000_000_000, None);
+
+        // Render started for this snapshot...
+        let stale_version =
+            crate::thumbs::SourceVersion::new("C:\\media\\a.jpg", 100, 5_000_000_000);
+        // ...but a scan re-indexed the file (same second, new nanosecond
+        // fingerprint and size) before the render completed.
+        insert_scanned_asset(&conn, "C:\\media\\a.jpg", 200, 5, 5_999_999_999, None);
+
+        let outcome = update_asset_thumbnail_path_if_version_matches(
+            &conn,
+            1,
+            Some("C:\\thumbs\\stale.jpg"),
+            &stale_version,
+        )
+        .expect("cas stale");
+        assert_eq!(outcome, ThumbnailCasOutcome::VersionMismatch);
+
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT thumb_path FROM assets WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read thumb path");
+        assert_eq!(
+            stored, None,
+            "a stale-version result must never be published"
+        );
+    }
+
+    #[test]
+    fn thumbnail_batch_cas_reports_stale_ids_for_cleanup() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_scanned_asset(&conn, "C:\\media\\a.jpg", 10, 1, 1_000_000_000, None);
+        insert_scanned_asset(&conn, "C:\\media\\b.jpg", 20, 2, 2_000_000_000, None);
+
+        let fresh = crate::thumbs::SourceVersion::new("C:\\media\\a.jpg", 10, 1_000_000_000);
+        let stale = crate::thumbs::SourceVersion::new("C:\\media\\b.jpg", 20, 9_999_999_999);
+        let stale_ids = update_asset_thumbnail_paths_batch_versioned(
+            &conn,
+            &[
+                (1, Some("C:\\thumbs\\a.jpg".to_string()), fresh),
+                (2, Some("C:\\thumbs\\b-stale.jpg".to_string()), stale),
+            ],
+        )
+        .expect("batch cas");
+
+        assert_eq!(stale_ids, vec![2]);
+    }
+
+    #[test]
+    fn rescan_clears_thumb_reference_when_precise_fingerprint_changes_within_same_second() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_scanned_asset(&conn, "C:\\media\\a.jpg", 10, 7, 7_000_000_001, None);
+        update_asset_thumbnail_path_if_version_matches(
+            &conn,
+            1,
+            Some("C:\\thumbs\\old.jpg"),
+            &crate::thumbs::SourceVersion::new("C:\\media\\a.jpg", 10, 7_000_000_001),
+        )
+        .expect("store old thumb");
+
+        // Same seconds-resolution modified_at, changed file contents.
+        insert_scanned_asset(&conn, "C:\\media\\a.jpg", 30, 7, 7_500_000_000, None);
+
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT thumb_path FROM assets WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read thumb path");
+        assert_eq!(
+            stored, None,
+            "same-second modification must release the stale thumbnail reference"
+        );
     }
 
     #[test]

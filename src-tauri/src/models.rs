@@ -168,7 +168,11 @@ pub enum RenameAssetStatus {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum DuplicateResolutionChangeInput {
     Rename {
         asset_id: i64,
@@ -362,4 +366,6 @@ pub struct ThumbnailAsset {
     pub modified_at: i64,
     pub duration_ms: Option<i64>,
     pub thumb_path: Option<String>,
+    pub size_bytes: i64,
+    pub fingerprint_mtime_ns: i64,
 }

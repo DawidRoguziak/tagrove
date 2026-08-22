@@ -106,8 +106,8 @@ Root normalization trims whitespace, converts `/` to `\`, and removes trailing s
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `ensureThumbnailsStream` / `ensure_thumbnails` | `requestId`, `visibleIds`, `prefetchIds`, `onEvent: Channel<ThumbnailStreamEvent>` | `void` after processing | Filters IDs to positive unique values, takes at most 64 visible and then 64 additional prefetch IDs, prioritizes visible work, streams results, and persists paths/failures. The `requestId` compatibility field is accepted but ignored by Rust. |
-| `ensurePageThumbnails` / `ensure_page_thumbnails` | `assetIds: number[]` | `ThumbnailBatchResult` | De-duplicates IDs, treats all as high priority, returns `ready` items and `failed` IDs, and also broadcasts `thumbnail-ready` for every ready item. No backend batch-size clamp is applied. |
+| `ensureThumbnailsStream` / `ensure_thumbnails` | `requestId`, `visibleIds`, `prefetchIds`, `onEvent: Channel<ThumbnailStreamEvent>` | `void` after processing | Filters IDs to positive unique values, takes at most 64 visible and then 64 additional prefetch IDs, prioritizes visible work, streams results, and persists paths/failures. A request whose `requestId` is lower than the highest previously observed id is rejected immediately with no channel events; the frontend sends its queue generation, so abandoned generations do no backend work. |
+| `ensurePageThumbnails` / `ensure_page_thumbnails` | `assetIds: number[]` | `ThumbnailBatchResult` | De-duplicates IDs, treats all as high priority, returns `ready` items and `failed` IDs, and also broadcasts `thumbnail-ready` for every ready item. The backend clamps the batch to 256 unique IDs. |
 | `ensureAssetThumbnail` / `ensure_asset_thumbnail` | `assetId` | `string \| null` | Reuses a valid thumbnail or generates one at high priority. Unknown assets, missing source files, and generation failures return `null`; failure state is persisted. |
 | `renderAllThumbnails` / `render_all_thumbnails` | none | `ThumbnailRenderSummary` | Starts one process-wide bulk run; a concurrent bulk run rejects. Previously recorded failures are counted as `skipped_failed`. |
 | `renderFailedThumbnails` / `render_failed_thumbnails` | none | `ThumbnailRenderSummary` | Same bulk-run guard, but retries only recorded failures and does not skip them. |
@@ -123,7 +123,7 @@ type ThumbnailStreamEvent =
   | { event: "done"; data: { ready: number; failed: number } };
 ```
 
-`ready` is sent as each existing or newly generated thumbnail becomes available. After processing, failures are sent and one `done` summary is sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter to ignore late messages after reset; it does not rely on the ignored backend `requestId`.
+`ready` is sent as each existing or newly generated thumbnail becomes available. After processing, failures are sent and one `done` summary is sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter both as the `requestId` (the backend rejects stale ids without doing work) and to ignore late messages after reset.
 
 The legacy `thumbnail-ready` application event carries one `ThumbnailBatchItem` payload (`asset_id`, `thumb_path`) and is emitted only by `ensure_page_thumbnails`. It is separate from the channel and from `process-progress`.
 
@@ -214,14 +214,14 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 ## Known limitations
 
 - Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check. `ScanSummary.completion` is looser in TypeScript than the current Rust response.
-- `requestId` on `ensure_thumbnails` remains an ignored compatibility field; query supersession now uses both the backend registration token and the frontend `generation`, but it is still process-global, so another window or independent caller can supersede this window's request.
+- `requestId` on `ensure_thumbnails` rejects only lower ids than the highest observed; it is not a cancellation token. In-flight scheduler jobs of a superseded generation still run to completion, and another window or independent caller can still supersede this window's request.
 - `list_assets`, `ensure_asset_thumbnail`, and `ensure_page_thumbnails` remain registered alongside their primary session/channel replacements. The legacy thumbnail broadcast has no correlation identifier.
 - IPC errors are text only. Consumers cannot reliably distinguish validation, not-found, busy, filesystem, database, worker, or platform failures except by message text.
 - Numeric Rust IDs/counters are exposed as JavaScript `number` without an explicit safe-integer guard.
 - Event delivery is best effort. `process-progress`, `thumbnail-ready`, and channel sends commonly ignore delivery errors; events can be missed and must not be used as a commit signal.
 - `process-progress` is a shared broadcast with free-form `phase` and human-readable `message`; it has no request ID, sequence number, or version.
 - Favorite and media-group setters resolve even if an unknown asset ID changed zero rows. Tag replacement, delete, and rename reject unknown IDs; bulk tag/group operations skip missing IDs and report processed counts or IDs.
-- Runtime validation is uneven: unsupported query kinds degrade to no filter, non-finite group order degrades to `null`, and the legacy page-thumbnail endpoint has no batch cap.
+- Runtime validation is uneven: unsupported query kinds degrade to no filter and non-finite group order degrades to `null`. The legacy page-thumbnail endpoint clamps batches at 256 IDs but has no per-asset rate limiting.
 - `src/__tests__/api.test.ts` covers legacy `listAssets`, tag-mutation payload/result seams, and media-path normalization, but it does not exhaustively lock down every wrapper, response shape, channel, or event.
 
 ## Safe contract-change checklist

@@ -19,17 +19,70 @@ const VIDEO_TOOL_POLL_INTERVAL: Duration = Duration::from_millis(25);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-pub fn thumb_target(thumbs_dir: &Path, source_path: &Path, modified_at: i64) -> PathBuf {
+/// Bump when thumbnail identity inputs or rendering rules change. Version 2
+/// hashes path, size bytes, and nanosecond mtime instead of seconds-resolution
+/// `modified_at`; targets produced by older versions are regenerated on demand.
+pub const THUMB_CACHE_VERSION: u32 = 2;
+
+/// Upper bound on source pixels accepted before a full decode. The decoded
+/// RGB8 buffer alone would be three times this many bytes; Lanczos resizing
+/// needs additional intermediates, so exceeding images are rejected outright.
+pub const MAX_DECODE_PIXELS: u64 = 50_000_000;
+
+/// Identity of the exact source file version a thumbnail belongs to.
+///
+/// Every stage of the pipeline (scheduler task, result, SQL compare-and-set)
+/// carries this value so a render finished for an older file version can never
+/// be published onto a record that was re-indexed in the meantime.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceVersion {
+    pub path: String,
+    pub size_bytes: i64,
+    pub mtime_ns: i64,
+}
+
+impl SourceVersion {
+    pub fn new(path: impl Into<String>, size_bytes: i64, mtime_ns: i64) -> Self {
+        Self {
+            path: path.into(),
+            size_bytes,
+            mtime_ns,
+        }
+    }
+}
+
+pub fn thumb_target(thumbs_dir: &Path, version: &SourceVersion) -> PathBuf {
     let mut hasher = Sha256::new();
-    hasher.update(source_path.to_string_lossy().as_bytes());
-    hasher.update(modified_at.to_le_bytes());
+    hasher.update(THUMB_CACHE_VERSION.to_le_bytes());
+    hasher.update([0u8]);
+    hasher.update(version.path.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(version.size_bytes.to_le_bytes());
+    hasher.update(version.mtime_ns.to_le_bytes());
     let key = format!("{:x}", hasher.finalize());
     thumbs_dir.join(format!("{}.jpg", key))
+}
+
+fn probe_image_dimensions(source_path: &Path) -> anyhow::Result<(u32, u32)> {
+    let reader = image::ImageReader::open(source_path)?;
+    Ok(reader.with_guessed_format()?.into_dimensions()?)
+}
+
+/// Pure budget rule: whether a source image must be rejected before decode.
+pub fn exceeds_decode_budget(width: u32, height: u32) -> bool {
+    u64::from(width) * u64::from(height) > MAX_DECODE_PIXELS
 }
 
 pub fn create_image_thumb(source_path: &Path, target_path: &Path) -> anyhow::Result<()> {
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
+    }
+
+    let (source_width, source_height) = probe_image_dimensions(source_path)?;
+    if exceeds_decode_budget(source_width, source_height) {
+        return Err(anyhow::anyhow!(
+            "image {source_width}x{source_height} exceeds decode budget of {MAX_DECODE_PIXELS} pixels"
+        ));
     }
 
     let image = image::open(source_path)?;
@@ -403,10 +456,46 @@ fn terminate_child(child: &mut Child) {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_video_thumb, parse_duration_ms_from_ffmpeg_stderr,
+        create_video_thumb, exceeds_decode_budget, parse_duration_ms_from_ffmpeg_stderr,
         parse_duration_ms_from_ffprobe_stdout, probe_video_duration_ms, resolve_video_seek_seconds,
-        top_biased_square_crop_rect,
+        thumb_target, top_biased_square_crop_rect, SourceVersion, MAX_DECODE_PIXELS,
     };
+
+    #[test]
+    fn thumb_target_is_stable_for_identical_source_versions() {
+        let dir = std::path::Path::new("/tmp");
+        let version = SourceVersion::new("/media/a.png", 123, 456);
+        assert_eq!(thumb_target(dir, &version), thumb_target(dir, &version));
+    }
+
+    #[test]
+    fn thumb_target_changes_when_any_version_component_changes() {
+        let dir = std::path::Path::new("/tmp");
+        let base = SourceVersion::new("/media/a.png", 123, 456);
+        let by_size = SourceVersion::new("/media/a.png", 124, 456);
+        let by_mtime = SourceVersion::new("/media/a.png", 123, 457);
+        let by_path = SourceVersion::new("/media/b.png", 123, 456);
+
+        for changed in [by_size, by_mtime, by_path] {
+            assert_ne!(
+                thumb_target(dir, &base),
+                thumb_target(dir, &changed),
+                "target must differ after source change"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_budget_rejects_extreme_dimensions_only() {
+        assert!(!exceeds_decode_budget(0, 0));
+        assert!(!exceeds_decode_budget(390, 390));
+        assert!(!exceeds_decode_budget(10_000, 5_000));
+        // Exactly at the budget is still allowed.
+        let side = (MAX_DECODE_PIXELS as f64).sqrt() as u32;
+        assert!(!exceeds_decode_budget(side, side));
+        assert!(exceeds_decode_budget(side, side + 1));
+        assert!(exceeds_decode_budget(u32::MAX, u32::MAX));
+    }
 
     #[test]
     fn top_biased_crop_rect_is_used_for_tall_images() {
@@ -491,8 +580,16 @@ mod tests {
         let thumb = tmp.path().join("sample.jpg");
         let status = std::process::Command::new(ffmpeg)
             .args([
-                "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
-                "color=c=blue:s=64x64:d=0.5", "-pix_fmt", "yuv420p", "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=64x64:d=0.5",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
             ])
             .arg(&video)
             .status()

@@ -1,6 +1,9 @@
 use std::{
     path::PathBuf,
-    sync::{atomic::AtomicBool, Mutex, RwLock},
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        Mutex, RwLock,
+    },
 };
 
 use crate::services::thumb_scheduler::ThumbnailScheduler;
@@ -14,4 +17,11 @@ pub struct AppState {
     pub thumb_scheduler: ThumbnailScheduler,
     pub thumbnail_render_all_running: AtomicBool,
     pub thumbnail_render_all_cancel_requested: AtomicBool,
+    /// Monotonic epoch guarding thumbnail publication. Cleared-thumbnail
+    /// workflows bump it so results rendered before the reset are dropped
+    /// instead of being written back to SQLite.
+    pub thumbnail_generation: AtomicU64,
+    /// Highest frontend request id seen by the streaming endpoint. Older
+    /// request ids belong to abandoned generations and are rejected.
+    pub thumbnail_latest_request_id: AtomicU64,
 }

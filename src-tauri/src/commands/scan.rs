@@ -120,6 +120,8 @@ mod tests {
             thumb_scheduler: ThumbnailScheduler::new(1, PathBuf::from("ffmpeg")),
             thumbnail_render_all_running: AtomicBool::new(false),
             thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+            thumbnail_generation: std::sync::atomic::AtomicU64::new(0),
+            thumbnail_latest_request_id: std::sync::atomic::AtomicU64::new(0),
         }
     }
 

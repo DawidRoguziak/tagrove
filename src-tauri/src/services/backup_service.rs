@@ -1261,6 +1261,8 @@ mod tests {
             thumb_scheduler: ThumbnailScheduler::new(1, PathBuf::from("ffmpeg")),
             thumbnail_render_all_running: AtomicBool::new(false),
             thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+            thumbnail_generation: std::sync::atomic::AtomicU64::new(0),
+            thumbnail_latest_request_id: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -1473,7 +1475,10 @@ mod tests {
                 duration_ms: None,
                 thumb_path: Some(r"C:\old-profile\thumbs\legacy.jpg".to_string()),
             };
-            db::upsert_scanned_asset(&conn, &asset, 12, source_root, 1)
+            // Precise nanosecond fingerprint must match the seconds-derived
+            // approximation stored by upsert_asset, mirroring the production
+            // invariant after any scanned upsert.
+            db::upsert_scanned_asset(&conn, &asset, 12_000_000_000, source_root, 1)
                 .expect("insert asset");
             db::set_asset_tags(&conn, 1, &["travel".to_string()]).expect("set tags");
             db::set_asset_favorite(&conn, 1, true).expect("set favorite");

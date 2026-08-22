@@ -56,7 +56,7 @@ Concrete examples:
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
 5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema and reconciles pending source-file operations before serving media;
-6. starts the loopback video server, resolves ffmpeg, creates the thumbnail scheduler, and manages `AppState` plus the separate media-server state;
+6. starts the loopback video server, resolves ffmpeg, creates the thumbnail scheduler (refusing startup when its worker threads could not be launched), and manages `AppState` plus the separate media-server state;
 7. registers every frontend-callable command; and
 8. runs the generated Tauri context until the application exits.
 
@@ -88,7 +88,7 @@ Startup failure in any setup step prevents the windowed application from enterin
 - the resolved `ffmpeg_path` (also copied into the scheduler);
 - `scan_lock` and `thumb_lock`;
 - the shared `ThumbnailScheduler`; and
-- atomics that enforce one bulk-thumbnail render and carry its cancellation request.
+- atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and track the highest observed thumbnail request id.
 
 The `InstanceLock` and `MediaServerState` are separately managed by Tauri so their lock/listener lifetimes match the application. Dropping `MediaServerState` signals shutdown, aborts active connection tasks, drains their `JoinSet`, and joins the dedicated server thread. Transient listener errors use bounded exponential backoff; eight consecutive failures stop the listener and make later video-URL requests report that the server is unavailable. The query manager, its connection-pool registry, and the database maintenance gate are process-wide `OnceLock` singletons rather than `AppState` fields. Every application-created live-database connection owns a maintenance lease for its full lifetime.
 
@@ -185,7 +185,7 @@ Known limitations include:
 - `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
 - Several command handlers contain filesystem/DB orchestration instead of being strictly thin adapters.
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.
-- The frontend passes a generation as `start_asset_query.generation` and a request ID to `ensure_thumbnails`, but the backend currently discards both values. Supersession is process-global in the query manager, while stale frontend thumbnail messages are filtered locally by generation.
+- The frontend passes a generation as `start_asset_query.generation`; query supersession is process-global in the query manager. The `ensure_thumbnails` request ID is now honored as a staleness guard: ids lower than the highest observed are rejected without work, while stale frontend messages remain filtered locally by generation.
 - Many progress emissions deliberately ignore delivery errors; completion of the underlying operation does not guarantee that every progress update reached the WebView.
 - Packaging supports Windows and Linux x86-64; Windows sidecars must be supplied locally, Linux requires system ffmpeg/ffprobe, and the production identifier still uses the example domain.
 

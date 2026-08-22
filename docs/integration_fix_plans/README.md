@@ -5,8 +5,8 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 ## Stan planu
 
 - Ostatnia aktualizacja: 2026-08-22
-- Aktualny etap: 05 ukończony
-- Następny krok: w nowej sesji rozpocząć wyłącznie Etap 06 od ponownego odczytu jego planu i aktualnego kodu
+- Aktualny etap: 06 ukończony
+- Następny krok: w nowej sesji rozpocząć wyłącznie Etap 07 od ponownego odczytu jego planu i aktualnego kodu
 - Otwarte blokery: brak
 - Ukończony wcześniej fundament: bezpieczny częściowy skan i blokada pojedynczej instancji profilu
 
@@ -18,7 +18,7 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 | 03 | [Spójny backup i restore](03-consistent-backup-and-restore.md) | Snapshot SQLite, maintenance lock i odzyskiwalna podmiana danych | Krytyczny | Ukończony |
 | 04 | [Zapytania i invalidation](04-query-sessions-and-invalidation.md) | Generacje zapytań, revision, membership i kolejność galerii | Wysoki | Ukończony |
 | 05 | [Selekcja i cache](05-selection-cache-and-details.md) | Globalne indeksy, summary/details, cache epoch i Shift-zaznaczenie | Wysoki | Ukończony |
-| 06 | [Miniatury i praca w tle](06-thumbnails-and-background-workers.md) | Wersjonowanie miniaturek, scheduler, timeouty i awarie workerów | Wysoki | Oczekuje |
+| 06 | [Miniatury i praca w tle](06-thumbnails-and-background-workers.md) | Wersjonowanie miniaturek, scheduler, timeouty i awarie workerów | Wysoki | Ukończony |
 | 07 | [CSV, tagi i revision](07-csv-tags-and-revision-atomicity.md) | Atomowy import CSV i jeden invariant tagów | Wysoki | Oczekuje |
 | 08 | [Błędy, modale i dostępność](08-modals-errors-and-accessibility.md) | Retry, stos warstw, Escape, fokus i ARIA | Średni | Oczekuje |
 | 09 | [Lokalizacja i quality gates](09-localization-and-quality-gates.md) | Kompletność locale, generator, CI i przypięcie narzędzi | Średni | Oczekuje |

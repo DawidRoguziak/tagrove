@@ -12,7 +12,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    sync::{atomic::AtomicBool, Mutex, RwLock},
+    sync::{atomic::AtomicBool, atomic::AtomicU64, Mutex, RwLock},
 };
 
 use tauri::Manager;
@@ -83,6 +83,16 @@ pub fn run() {
             let ffmpeg_path = resolve_ffmpeg_path(&resource_dir);
             let thumb_scheduler =
                 ThumbnailScheduler::new(resolve_thumbnail_worker_count(), ffmpeg_path.clone());
+            // Demand calls block on scheduler results; a scheduler whose
+            // workers never started would hang every thumbnail command.
+            // Refuse the startup instead of entering a wedged state.
+            let worker_spawn_failures = thumb_scheduler.worker_spawn_failures();
+            if worker_spawn_failures > 0 {
+                return Err(format!(
+                    "failed to start {worker_spawn_failures} thumbnail worker thread(s); refusing to run with an unhealthy thumbnail scheduler"
+                )
+                .into());
+            }
 
             app.manage(AppState {
                 db_path,
@@ -93,6 +103,8 @@ pub fn run() {
                 thumb_scheduler,
                 thumbnail_render_all_running: AtomicBool::new(false),
                 thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+                thumbnail_generation: AtomicU64::new(0),
+                thumbnail_latest_request_id: AtomicU64::new(0),
             });
 
             Ok(())

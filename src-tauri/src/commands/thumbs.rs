@@ -1,100 +1,141 @@
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, Manager};
 
 use crate::{
-    app::{
-        locks::{with_thumb_lock, with_thumb_read_lock},
-        state::AppState,
-    },
+    app::{locks::with_thumb_lock, locks::with_thumb_read_lock, state::AppState},
     models::{ThumbnailBatchResult, ThumbnailRenderSummary, ThumbnailStreamEvent, VideoToolStatus},
     services::thumb_service,
     thumbs,
 };
 
-#[tauri::command(async)]
-pub fn get_video_tool_status(state: State<AppState>) -> VideoToolStatus {
-    let (ffmpeg_available, ffprobe_available) = thumbs::video_tool_status(&state.ffmpeg_path);
-    VideoToolStatus {
-        ffmpeg_available,
-        ffprobe_available,
-    }
+// Every thumbnail command performs blocking work (SQLite, filesystem scans,
+// scheduler waits). Each body runs on the blocking thread pool via
+// `spawn_blocking`, and the thumb lock is acquired inside that blocking task
+// so no lock is ever held across an await.
+
+#[tauri::command]
+pub async fn get_video_tool_status(app: tauri::AppHandle) -> Result<VideoToolStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let (ffmpeg_available, ffprobe_available) = thumbs::video_tool_status(&state.ffmpeg_path);
+        Ok(VideoToolStatus {
+            ffmpeg_available,
+            ffprobe_available,
+        })
+    })
+    .await
+    .map_err(|e| format!("video tool status worker failed: {e}"))?
 }
 
-#[tauri::command(async)]
-pub fn render_all_thumbnails(
-    state: State<AppState>,
+#[tauri::command]
+pub async fn render_all_thumbnails(
     app: tauri::AppHandle,
 ) -> Result<ThumbnailRenderSummary, String> {
-    with_thumb_read_lock(&state, || {
-        thumb_service::render_all_thumbnails(&state, &app)
-    })
-    .map_err(|e| e.to_string())
-}
-
-#[tauri::command(async)]
-pub fn render_failed_thumbnails(
-    state: State<AppState>,
-    app: tauri::AppHandle,
-) -> Result<ThumbnailRenderSummary, String> {
-    with_thumb_read_lock(&state, || {
-        thumb_service::render_failed_thumbnails(&state, &app)
-    })
-    .map_err(|e| e.to_string())
-}
-
-#[tauri::command(async)]
-pub fn cancel_render_all_thumbnails(state: State<AppState>) -> Result<bool, String> {
-    with_thumb_read_lock(&state, || {
-        thumb_service::cancel_render_all_thumbnails(&state)
-    })
-    .map_err(|e| e.to_string())
-}
-
-#[tauri::command(async)]
-pub fn clear_all_thumbnails(
-    state: State<AppState>,
-    app: tauri::AppHandle,
-) -> Result<usize, String> {
-    with_thumb_lock(&state, || thumb_service::clear_all_thumbnails(&state, &app))
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_thumb_read_lock(&state, || {
+            thumb_service::render_all_thumbnails(&state, &app)
+        })
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command(async)]
-pub fn ensure_asset_thumbnail(
-    asset_id: i64,
-    state: State<AppState>,
-) -> Result<Option<String>, String> {
-    with_thumb_read_lock(&state, || {
-        thumb_service::ensure_asset_thumbnail(asset_id, &state)
     })
-    .map_err(|e| e.to_string())
+    .await
+    .map_err(|e| format!("thumbnail render worker failed: {e}"))?
 }
 
-#[tauri::command(async)]
-pub fn ensure_page_thumbnails(
+#[tauri::command]
+pub async fn render_failed_thumbnails(
+    app: tauri::AppHandle,
+) -> Result<ThumbnailRenderSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_thumb_read_lock(&state, || {
+            thumb_service::render_failed_thumbnails(&state, &app)
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("thumbnail render worker failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn cancel_render_all_thumbnails(app: tauri::AppHandle) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_thumb_read_lock(&state, || {
+            thumb_service::cancel_render_all_thumbnails(&state)
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("thumbnail cancellation worker failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn clear_all_thumbnails(app: tauri::AppHandle) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_thumb_lock(&state, || thumb_service::clear_all_thumbnails(&state, &app))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("thumbnail clear worker failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn ensure_asset_thumbnail(
+    asset_id: i64,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_thumb_read_lock(&state, || {
+            thumb_service::ensure_asset_thumbnail(asset_id, &state)
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("thumbnail demand worker failed: {e}"))?
+}
+
+#[tauri::command]
+pub async fn ensure_page_thumbnails(
     asset_ids: Vec<i64>,
-    state: State<AppState>,
     app: tauri::AppHandle,
 ) -> Result<ThumbnailBatchResult, String> {
-    with_thumb_read_lock(&state, || {
-        thumb_service::ensure_page_thumbnails(asset_ids, &state, &app)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_thumb_read_lock(&state, || {
+            thumb_service::ensure_page_thumbnails(asset_ids, &state, &app)
+        })
+        .map_err(|e| e.to_string())
     })
-    .map_err(|e| e.to_string())
+    .await
+    .map_err(|e| format!("thumbnail page worker failed: {e}"))?
 }
 
-#[tauri::command(async)]
-pub fn ensure_thumbnails(
+#[tauri::command]
+pub async fn ensure_thumbnails(
     request_id: u64,
     visible_ids: Vec<i64>,
     prefetch_ids: Vec<i64>,
     on_event: Channel<ThumbnailStreamEvent>,
-    state: State<AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let _ = request_id;
-    with_thumb_read_lock(&state, || {
-        thumb_service::ensure_thumbnails_stream(visible_ids, prefetch_ids, &state, &app, on_event)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_thumb_read_lock(&state, || {
+            thumb_service::ensure_thumbnails_stream(
+                request_id,
+                visible_ids,
+                prefetch_ids,
+                &state,
+                &app,
+                on_event,
+            )
+        })
+        .map_err(|e| e.to_string())
     })
-    .map_err(|e| e.to_string())
+    .await
+    .map_err(|e| format!("thumbnail stream worker failed: {e}"))?
 }
 
 #[cfg(test)]
@@ -103,7 +144,7 @@ mod tests {
         fs,
         path::{Path, PathBuf},
         sync::{
-            atomic::{AtomicBool, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
             Mutex, RwLock,
         },
     };
@@ -111,8 +152,6 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::{app::state::AppState, db, services::thumb_scheduler::ThumbnailScheduler};
-
-    use super::cancel_render_all_thumbnails;
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
         AppState {
@@ -124,6 +163,8 @@ mod tests {
             thumb_scheduler: ThumbnailScheduler::new(1, PathBuf::from("ffmpeg")),
             thumbnail_render_all_running: AtomicBool::new(false),
             thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+            thumbnail_generation: AtomicU64::new(0),
+            thumbnail_latest_request_id: AtomicU64::new(0),
         }
     }
 
@@ -143,7 +184,8 @@ mod tests {
 
         let state = create_test_state(&db_path, &thumbs_dir);
         let accepted =
-            cancel_render_all_thumbnails(as_state(&state)).expect("cancel command result");
+            crate::services::thumb_service::cancel_render_all_thumbnails(&as_state(&state))
+                .expect("cancel command result");
         assert!(!accepted);
         assert!(!state
             .thumbnail_render_all_cancel_requested
@@ -166,7 +208,8 @@ mod tests {
             .store(true, Ordering::SeqCst);
 
         let accepted =
-            cancel_render_all_thumbnails(as_state(&state)).expect("cancel command result");
+            crate::services::thumb_service::cancel_render_all_thumbnails(&as_state(&state))
+                .expect("cancel command result");
         assert!(accepted);
         assert!(state
             .thumbnail_render_all_cancel_requested

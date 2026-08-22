@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import type { Asset } from "../../../types";
+import type { SelectedAsset } from "../../../types";
 
 interface UseLightboxKeyboardShortcutsOptions {
-  selected: Asset | null;
+  selected: SelectedAsset | null;
   onClose: () => void;
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;

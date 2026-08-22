@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { Asset } from "../../types";
+import type { AssetSummary } from "../../types";
 import type { SearchFilterValidationError } from "../../utils/media";
 import type { BulkSelectionInteraction } from "../gallery/GalleryGrid";
 import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
@@ -42,9 +42,9 @@ export interface AppGallerySearchController {
 }
 
 export interface AppGalleryMediaController {
-  assets: Asset[];
+  assets: AssetSummary[];
   assetCount: number;
-  getAssetAt: (index: number) => Asset | undefined;
+  getAssetAt: (index: number) => AssetSummary | undefined;
   selectedId: number | null;
   thumbs: Record<number, string>;
   tileSize: number;
@@ -62,7 +62,7 @@ export interface AppGalleryMediaController {
   onVirtualRangeChange: (startIndex: number, endIndex: number) => void;
   onCtrlWheelZoom: (deltaY: number) => void;
   onTileSizeChange: (nextSize: number) => void;
-  onSelect: (asset: Asset) => void;
+  onSelect: (asset: AssetSummary) => void;
   hasScanRoots: boolean;
   onAddFirstFolder: () => void;
   loadError: string | null;
@@ -73,7 +73,7 @@ export interface AppGalleryMediaController {
 export interface BulkSelectionController {
   selectionModeEnabled: boolean;
   selectedAssetIds: Set<number>;
-  selectedAssets: Asset[];
+  selectedAssets: AssetSummary[];
   knownTags: string[];
   groupKeyDraft: string;
   orderedAssetIds: number[];

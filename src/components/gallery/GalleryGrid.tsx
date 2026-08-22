@@ -1,6 +1,6 @@
 import { memo, useRef } from "react";
 import type { RefObject } from "react";
-import type { Asset } from "../../types";
+import type { AssetSummary } from "../../types";
 import { GalleryEmptyState } from "./GalleryEmptyState";
 import { GalleryStatusFooter } from "./GalleryStatusFooter";
 import { GalleryTile } from "./GalleryTile";
@@ -12,7 +12,7 @@ import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
 const EMPTY_SELECTED_IDS = new Set<number>();
 const GROUP_BACKPLATE_EDGE = 4;
 
-function getMediaGroupKey(asset: Asset | undefined): string | null {
+function getMediaGroupKey(asset: AssetSummary | undefined): string | null {
   const mediaGroupKey = asset?.media_group_key?.trim();
   return mediaGroupKey || null;
 }
@@ -35,9 +35,9 @@ export interface BulkSelectionInteraction {
 }
 
 interface GalleryGridProps {
-  assets: Asset[];
+  assets: AssetSummary[];
   assetCount?: number;
-  getAssetAt?: (index: number) => Asset | undefined;
+  getAssetAt?: (index: number) => AssetSummary | undefined;
   selectedId: number | null;
   thumbs: Record<number, string>;
   tileSize: number;
@@ -51,7 +51,7 @@ interface GalleryGridProps {
   onReachEnd: () => void;
   onVirtualRangeChange?: (startIndex: number, endIndex: number) => void;
   onCtrlWheelZoom?: (deltaY: number) => void;
-  onSelect: (asset: Asset) => void;
+  onSelect: (asset: AssetSummary) => void;
   hasScanRoots?: boolean;
   onAddFirstFolder?: () => void;
   selectionModeEnabled?: boolean;

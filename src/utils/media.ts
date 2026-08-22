@@ -1,4 +1,4 @@
-import type { Asset, SearchMetaFilter } from "../types";
+import type { AssetSummary, SearchMetaFilter } from "../types";
 
 export interface ParsedFilterTags {
   include: string[];
@@ -161,7 +161,7 @@ export function parseFilterTags(input: string): ParsedFilterTags {
   };
 }
 
-export function mapThumbs(items: Asset[]): Record<number, string> {
+export function mapThumbs(items: AssetSummary[]): Record<number, string> {
   const output: Record<number, string> = {};
   for (const item of items) {
     if (item.thumb_path) {

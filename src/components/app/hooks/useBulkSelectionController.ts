@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getAssetDetails, setAssetTags } from "../../../api";
-import type { Asset, AssetDetails } from "../../../types";
+import type { AssetDetails, AssetSummary } from "../../../types";
 import { applyBulkMediaGroupAction } from "../../bulk/grouping/services/applyBulkMediaGroupAction";
 import {
   deriveBulkGroupSelectionState,
@@ -17,16 +17,53 @@ import type { BulkSelectionInteraction } from "../../gallery/GalleryGrid";
 import {
   bulkTagMutationRequiresRefresh
 } from "../services/libraryInvalidationService";
-import { updateAssetTags } from "../services/assetMutationService";
 import { useAssetTagState } from "./useAssetTagState";
 import type { AssetTagStateController } from "./useAssetTagState";
 
+interface CachedDetail {
+  details: AssetDetails;
+  epoch: number;
+}
+
+function getCachedDetail(
+  cache: Map<number, CachedDetail>,
+  assetId: number,
+  epoch: number
+): AssetDetails | null {
+  const entry = cache.get(assetId);
+  if (!entry) return null;
+  if (entry.epoch !== epoch) {
+    cache.delete(assetId);
+    return null;
+  }
+  cache.delete(assetId);
+  cache.set(assetId, entry);
+  return entry.details;
+}
+
+function putCachedDetail(
+  cache: Map<number, CachedDetail>,
+  limit: number,
+  details: AssetDetails,
+  epoch: number
+): void {
+  cache.delete(details.id);
+  cache.set(details.id, { details, epoch });
+  while (cache.size > limit) {
+    const oldest = cache.keys().next();
+    if (oldest.done) break;
+    cache.delete(oldest.value);
+  }
+}
+
 interface UseBulkSelectionControllerOptions {
-  assets: Asset[];
+  assets: AssetSummary[];
+  queryEpoch?: number;
+  getIdsRangeAsync?: (startIndex: number, endIndex: number) => Promise<number[]>;
   knownTags: string[];
   settingsViewOpen: boolean;
   queueThumbnailsByIds: (assetIds: number[]) => void;
-  setAssets: Dispatch<SetStateAction<Asset[]>>;
+  setAssets: Dispatch<SetStateAction<AssetSummary[]>>;
   refresh: () => Promise<void>;
   refreshKnownTags: () => Promise<string[]>;
   assetTagState?: AssetTagStateController;
@@ -40,6 +77,8 @@ function normalizedGroupIdentity(value: string | null): string | null {
 
 export function useBulkSelectionController({
   assets,
+  queryEpoch = 0,
+  getIdsRangeAsync,
   knownTags,
   settingsViewOpen,
   queueThumbnailsByIds,
@@ -66,12 +105,17 @@ export function useBulkSelectionController({
   const [tagDetailsRetry, setTagDetailsRetry] = useState(0);
   const [tagApplying, setTagApplying] = useState(false);
   const [tagSaveFailed, setTagSaveFailed] = useState(false);
-  const detailsCacheRef = useRef<Map<number, AssetDetails>>(new Map());
+  const detailsCacheRef = useRef<Map<number, CachedDetail>>(new Map());
+  const DETAILS_CACHE_LIMIT = 256;
   const detailsRequestRef = useRef(0);
   const groupOperationRef = useRef(false);
   const tagOperationRef = useRef(false);
   const tagOperationGenerationRef = useRef(0);
   const observedTagEpochRef = useRef(assetTagState.epoch);
+  const observedQueryEpochRef = useRef(queryEpoch);
+  // Anchor position in the global session snapshot, independent of the
+  // sparse render cache (eviction must not move or drop it).
+  const selectionAnchorIndexRef = useRef<number | null>(null);
   const skipDetailsForEpochRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -118,20 +162,18 @@ export function useBulkSelectionController({
     setSelectionAnchorId(null);
   }, [selectionModeEnabled]);
 
+  // Selection is stored as bare IDs and survives page eviction. Records that
+  // leave the active filter stay selected; they are simply not rendered.
+  // A new query session reorders global indexes, so only the range anchor
+  // (an index, not an ID) must be invalidated.
   useEffect(() => {
-    const availableIds = new Set(assets.map((asset) => asset.id));
-    setSelectedAssetIds((previous) => {
-      if (!previous.size) return previous;
-      const next = new Set<number>();
-      for (const id of previous) {
-        if (availableIds.has(id)) next.add(id);
-      }
-      return next.size === previous.size ? previous : next;
-    });
-    setSelectionAnchorId((previous) =>
-      previous === null || availableIds.has(previous) ? previous : null
-    );
-  }, [assets]);
+    if (observedQueryEpochRef.current === queryEpoch) return;
+    observedQueryEpochRef.current = queryEpoch;
+    // A new session may reuse IDs for changed rows; cached details are stale.
+    detailsCacheRef.current.clear();
+    selectionAnchorIndexRef.current = null;
+  }, [queryEpoch]);
+
 
   useEffect(() => {
     const derived = deriveBulkGroupSelectionState(selectedAssets);
@@ -167,7 +209,7 @@ export function useBulkSelectionController({
       return;
     }
 
-    const cached = detailsCacheRef.current.get(asset.id);
+    const cached = getCachedDetail(detailsCacheRef.current, asset.id, assetTagState.epoch);
     if (cached) {
       const generation = assetTagState.captureGeneration(asset.id);
       const accepted = assetTagState.publishDetails(asset.id, cached.tags, generation);
@@ -205,7 +247,7 @@ export function useBulkSelectionController({
           return;
         }
         const tags = authoritative?.tags ?? details.tags;
-        detailsCacheRef.current.set(details.id, { ...details, tags });
+        putCachedDetail(detailsCacheRef.current, DETAILS_CACHE_LIMIT, { ...details, tags }, assetTagState.epoch);
         setSingleAssetTags(tags);
       })
       .catch(() => {
@@ -248,25 +290,38 @@ export function useBulkSelectionController({
           return next;
         });
         setSelectionAnchorId((previous) => previous ?? assetId);
+        selectionAnchorIndexRef.current = selectionAnchorIndexRef.current ?? assetIndex;
         return;
       }
 
       if (shift) {
-        const anchorIndex = selectionAnchorId === null ? undefined : assetIndexById.get(selectionAnchorId);
-        if (anchorIndex !== undefined) {
+        // Both ends are global session indexes; the tile-provided index is the
+        // virtualizer index, never the compact cache array position. Without a
+        // stored global anchor the Shift press degrades to a plain selection
+        // instead of guessing an index from the sparse render cache.
+        const anchorIndex = selectionAnchorIndexRef.current;
+        if (anchorIndex !== null) {
           const from = Math.min(anchorIndex, assetIndex);
           const to = Math.max(anchorIndex, assetIndex);
-          const rangeAssetIds = assets.slice(from, to + 1).map((asset) => asset.id);
-          setSelectedAssetIds((previous) => {
-            const next = ctrlLike ? new Set(previous) : new Set<number>();
-            for (const id of rangeAssetIds) next.add(id);
-            return next;
-          });
-          return;
+          const rangeResolver = getIdsRangeAsync;
+          if (rangeResolver) {
+            void rangeResolver(from, to).then((rangeAssetIds) => {
+              setSelectedAssetIds((previous) => {
+                const next = ctrlLike ? new Set(previous) : new Set<number>();
+                for (const id of rangeAssetIds) next.add(id);
+                return next;
+              });
+            }).catch(() => {
+              // A failed range read leaves the current selection untouched;
+              // the next Shift click retries the whole range.
+            });
+            return;
+          }
         }
       }
 
       setSelectionAnchorId(assetId);
+      selectionAnchorIndexRef.current = assetIndex;
       if (ctrlLike) {
         setSelectedAssetIds((previous) => {
           const next = new Set(previous);
@@ -278,7 +333,7 @@ export function useBulkSelectionController({
       }
       setSelectedAssetIds(new Set([assetId]));
     },
-    [assetIndexById, assets, selectionAnchorId, selectionModeEnabled]
+    [assetIndexById, getIdsRangeAsync, selectionAnchorId, selectionModeEnabled]
   );
 
   const onToggleSelectionMode = useCallback(() => {
@@ -311,18 +366,23 @@ export function useBulkSelectionController({
 
       const normalizedKey = normalizedDraft || null;
       capturedOrderedIds.forEach((assetId, index) => {
-        const cached = detailsCacheRef.current.get(assetId);
+        const cached = getCachedDetail(detailsCacheRef.current, assetId, assetTagState.epoch);
         if (!cached) return;
         const order = normalizedKey
           ? capturedOrderedIds.length === 1 && preservesExistingGroup
             ? singleAsset?.media_group_order ?? 1
             : index + 1
           : null;
-        detailsCacheRef.current.set(assetId, {
-          ...cached,
-          media_group_key: normalizedKey,
-          media_group_order: order
-        });
+        putCachedDetail(
+          detailsCacheRef.current,
+          DETAILS_CACHE_LIMIT,
+          {
+            ...cached,
+            media_group_key: normalizedKey,
+            media_group_order: order
+          },
+          assetTagState.epoch
+        );
       });
 
       if (selectionKeyRef.current === capturedSelectionKey) {
@@ -375,9 +435,15 @@ export function useBulkSelectionController({
         try {
           const result = await setAssetTags(assetId, nextTags);
           if (!assetTagState.settleMutation(mutationToken, result.tags)) return false;
-          setAssets((previous) => updateAssetTags(previous, assetId, result.tags));
-          const cached = detailsCacheRef.current.get(assetId);
-          if (cached) detailsCacheRef.current.set(assetId, { ...cached, tags: result.tags });
+          const cached = getCachedDetail(detailsCacheRef.current, assetId, assetTagState.epoch);
+          if (cached) {
+            putCachedDetail(
+              detailsCacheRef.current,
+              DETAILS_CACHE_LIMIT,
+              { ...cached, tags: result.tags },
+              assetTagState.epoch
+            );
+          }
           if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
           void refreshKnownTags().catch(() => []);
           if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilterTags)) {
@@ -428,8 +494,15 @@ export function useBulkSelectionController({
           returnedIds.add(item.asset_id);
           if (!assetTagState.settleMutation(token, item.tags)) continue;
           acceptedResults += 1;
-          const cached = detailsCacheRef.current.get(item.asset_id);
-          if (cached) detailsCacheRef.current.set(item.asset_id, { ...cached, tags: item.tags });
+          const cached = getCachedDetail(detailsCacheRef.current, item.asset_id, assetTagState.epoch);
+          if (cached) {
+            putCachedDetail(
+              detailsCacheRef.current,
+              DETAILS_CACHE_LIMIT,
+              { ...cached, tags: item.tags },
+              assetTagState.epoch
+            );
+          }
         }
         for (const [assetId, token] of mutationTokens) {
           if (!returnedIds.has(assetId)) assetTagState.settleMutation(token);
@@ -482,9 +555,15 @@ export function useBulkSelectionController({
       try {
         const result = await setAssetTags(assetId, nextTags);
         if (!assetTagState.settleMutation(mutationToken, result.tags)) return;
-        setAssets((previous) => updateAssetTags(previous, assetId, result.tags));
-        const cached = detailsCacheRef.current.get(assetId);
-        if (cached) detailsCacheRef.current.set(assetId, { ...cached, tags: result.tags });
+        const cached = getCachedDetail(detailsCacheRef.current, assetId, assetTagState.epoch);
+        if (cached) {
+          putCachedDetail(
+            detailsCacheRef.current,
+            DETAILS_CACHE_LIMIT,
+            { ...cached, tags: result.tags },
+            assetTagState.epoch
+          );
+        }
         if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
         void refreshKnownTags().catch(() => []);
       } catch {

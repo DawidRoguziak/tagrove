@@ -1,5 +1,5 @@
 import { setAssetsMediaGroupBulk } from "../../../../api";
-import type { Asset } from "../../../../types";
+import type { AssetSummary } from "../../../../types";
 import {
   applyBulkMediaGroupToAssets,
   type BulkMediaGroupAssignment
@@ -10,7 +10,7 @@ import {
   uniqueOrderedAssetIds
 } from "./bulkGroupOrderService";
 
-type SetAssets = (updater: (previous: Asset[]) => Asset[]) => void;
+type SetAssets = (updater: (previous: AssetSummary[]) => AssetSummary[]) => void;
 
 interface ApplyBulkMediaGroupActionArgs {
   assetIdsInOrder: number[];

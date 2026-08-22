@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../types";
+import type { AssetDetails, AssetSummary, SelectedAsset } from "../../types";
 import { useSelectionState } from "../useSelectionState";
 import { useAssetTagState } from "../../components/app/hooks/useAssetTagState";
 
@@ -14,9 +14,11 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function createAsset(partial: Partial<Asset> & { id: number }): Asset {
+function createAsset(partial: Partial<SelectedAsset> & { id: number }): SelectedAsset {
   return {
     id: partial.id,
+    file_name: partial.file_name ?? `${partial.id}.jpg`,
+    preview_path: partial.preview_path ?? null,
     path: partial.path ?? `C:/library/${partial.id}.jpg`,
     kind: partial.kind ?? "image",
     size_bytes: partial.size_bytes ?? 100,
@@ -32,13 +34,22 @@ function createAsset(partial: Partial<Asset> & { id: number }): Asset {
   };
 }
 
+function createDetails(asset: SelectedAsset, tags: string[]): AssetDetails {
+  return asDetails(asset, tags);
+}
+
+function asDetails(asset: SelectedAsset, tags: string[]): AssetDetails {
+  if (asset.path === null || asset.size_bytes === null) {
+    throw new Error("not detail-complete");
+  }
+  return { ...asset, path: asset.path, size_bytes: asset.size_bytes, tags };
+}
+
 const serviceMocks = vi.hoisted(() => ({
   saveLightboxTagsAction: vi.fn(),
   toggleLightboxFavoriteAction: vi.fn(),
   saveLightboxMediaGroupAction: vi.fn(),
-  deleteLightboxAssetAction: vi.fn(),
-  selectNextLightboxAssetAction: vi.fn(),
-  selectPreviousLightboxAssetAction: vi.fn()
+  deleteLightboxAssetAction: vi.fn()
 }));
 
 const apiMocks = vi.hoisted(() => ({
@@ -66,14 +77,6 @@ vi.mock("../../components/lightbox/services/deleteLightboxAssetAction", () => ({
   deleteLightboxAssetAction: serviceMocks.deleteLightboxAssetAction
 }));
 
-vi.mock("../../components/lightbox/services/selectNextLightboxAssetAction", () => ({
-  selectNextLightboxAssetAction: serviceMocks.selectNextLightboxAssetAction
-}));
-
-vi.mock("../../components/lightbox/services/selectPreviousLightboxAssetAction", () => ({
-  selectPreviousLightboxAssetAction: serviceMocks.selectPreviousLightboxAssetAction
-}));
-
 describe("useSelectionState", () => {
   const setAssets = vi.fn();
   const refresh = vi.fn(async () => {});
@@ -87,8 +90,6 @@ describe("useSelectionState", () => {
     serviceMocks.toggleLightboxFavoriteAction.mockReset().mockResolvedValue(undefined);
     serviceMocks.saveLightboxMediaGroupAction.mockReset().mockResolvedValue(undefined);
     serviceMocks.deleteLightboxAssetAction.mockReset().mockResolvedValue(undefined);
-    serviceMocks.selectNextLightboxAssetAction.mockReset();
-    serviceMocks.selectPreviousLightboxAssetAction.mockReset();
     apiMocks.getAssetDetails.mockReset().mockResolvedValue(null);
   });
 
@@ -141,7 +142,7 @@ describe("useSelectionState", () => {
     });
 
     const { result, rerender } = renderHook(
-      ({ assets }: { assets: Asset[] }) =>
+      ({ assets }: { assets: AssetSummary[] }) =>
         useSelectionState({
           assets,
           setAssets,
@@ -245,7 +246,7 @@ describe("useSelectionState", () => {
 
   it("keeps a successful final-tag removal authoritative over a late detail response and cached reopen", async () => {
     const asset = createAsset({ id: 5, tags: ["old"] });
-    const lateDetails = deferred<Asset>();
+    const lateDetails = deferred<AssetDetails>();
     apiMocks.getAssetDetails.mockReturnValueOnce(lateDetails.promise);
     serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }, tags: string[]) => {
       onSaved?.(5, tags);
@@ -259,7 +260,7 @@ describe("useSelectionState", () => {
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledWith(5));
     act(() => result.current.saveTags([]));
     await waitFor(() => expect(serviceMocks.saveLightboxTagsAction).toHaveBeenCalledTimes(1));
-    act(() => lateDetails.resolve({ ...asset, tags: ["old"] }));
+    act(() => lateDetails.resolve(asDetails(asset, ["old"])));
     await act(async () => { await lateDetails.promise; });
     act(() => result.current.setSelected(null));
     act(() => result.current.setSelected(asset));
@@ -268,7 +269,7 @@ describe("useSelectionState", () => {
 
   it("blocks tag replacement until details establish an authoritative base", async () => {
     const asset = createAsset({ id: 20, tags: [] });
-    const details = deferred<Asset | null>();
+    const details = deferred<AssetDetails | null>();
     apiMocks.getAssetDetails.mockReturnValueOnce(details.promise);
     const { result } = renderHook(() => useSelectionState({
       assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags
@@ -279,7 +280,7 @@ describe("useSelectionState", () => {
     act(() => result.current.saveTags(["new"]));
     expect(serviceMocks.saveLightboxTagsAction).not.toHaveBeenCalled();
 
-    act(() => details.resolve({ ...asset, tags: ["existing"] }));
+    act(() => details.resolve(asDetails(asset, ["existing"])));
     await waitFor(() => expect(result.current.tagDetailsLoading).toBe(false));
     act(() => result.current.saveTags(["existing", "new"]));
     expect(serviceMocks.saveLightboxTagsAction).toHaveBeenCalledTimes(1);
@@ -306,7 +307,7 @@ describe("useSelectionState", () => {
 
   it("applies shared canonical tags and ignores details that predate a bulk mutation", async () => {
     const asset = createAsset({ id: 22, tags: [] });
-    const details = deferred<Asset | null>();
+    const details = deferred<AssetDetails | null>();
     apiMocks.getAssetDetails.mockReturnValueOnce(details.promise);
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
@@ -326,7 +327,7 @@ describe("useSelectionState", () => {
     await waitFor(() => expect(result.current.selection.tagEditor).toEqual(["bulk"]));
     expect(result.current.selection.tagDetailsLoading).toBe(false);
 
-    act(() => details.resolve({ ...asset, tags: ["stale"] }));
+    act(() => details.resolve(asDetails(asset, ["stale"])));
     await act(async () => { await details.promise; });
     expect(result.current.selection.tagEditor).toEqual(["bulk"]);
     expect(result.current.selection.selected?.tags).toEqual(["bulk"]);
@@ -391,7 +392,7 @@ describe("useSelectionState", () => {
 
   it("does not let details publish while a lightbox mutation is pending", async () => {
     const asset = createAsset({ id: 23, tags: ["cat"] });
-    const lateDetails = deferred<Asset | null>();
+    const lateDetails = deferred<AssetDetails | null>();
     const pendingSave = deferred<void>();
     apiMocks.getAssetDetails.mockReturnValueOnce(lateDetails.promise);
     serviceMocks.saveLightboxTagsAction.mockImplementation(({ onSaved }, tags: string[]) =>
@@ -411,7 +412,7 @@ describe("useSelectionState", () => {
 
     act(() => result.current.selection.setSelected(asset));
     act(() => result.current.selection.saveTags(["cat", "dog"]));
-    act(() => lateDetails.resolve({ ...asset, tags: ["stale"] }));
+    act(() => lateDetails.resolve(asDetails(asset, ["stale"])));
     await act(async () => { await lateDetails.promise; });
 
     expect(result.current.selection.tagEditor).toEqual(["cat", "dog"]);
@@ -423,7 +424,7 @@ describe("useSelectionState", () => {
 
   it("clears local caches on identity reset and reloads a reused asset ID", async () => {
     const asset = createAsset({ id: 24, tags: [] });
-    const oldDetails = deferred<Asset | null>();
+    const oldDetails = deferred<AssetDetails | null>();
     apiMocks.getAssetDetails
       .mockReturnValueOnce(oldDetails.promise)
       .mockResolvedValueOnce({ ...asset, path: "C:/library/reused.jpg", tags: ["new"] });
@@ -441,9 +442,9 @@ describe("useSelectionState", () => {
     act(() => result.current.assetTagState.reset());
     await waitFor(() => expect(result.current.selection.selected).toBeNull());
 
-    act(() => result.current.selection.setSelected({ ...asset, path: "C:/library/reused.jpg" }));
+    act(() => result.current.selection.setSelected(createAsset({ id: 24, path: "C:/library/reused.jpg", tags: [] })));
     await waitFor(() => expect(result.current.selection.tagEditor).toEqual(["new"]));
-    act(() => oldDetails.resolve({ ...asset, tags: ["old"] }));
+    act(() => oldDetails.resolve({ ...createDetails(asset, ["old"]) }));
     await act(async () => { await oldDetails.promise; });
 
     expect(result.current.selection.selected?.path).toBe("C:/library/reused.jpg");
@@ -452,7 +453,7 @@ describe("useSelectionState", () => {
 
   it("invalidates pending details as soon as deletion succeeds", async () => {
     const asset = createAsset({ id: 25, tags: [] });
-    const pendingDetails = deferred<Asset | null>();
+    const pendingDetails = deferred<AssetDetails | null>();
     apiMocks.getAssetDetails.mockReturnValueOnce(pendingDetails.promise);
     serviceMocks.deleteLightboxAssetAction.mockImplementation(async ({ onDeleted }) => {
       onDeleted?.(25);
@@ -468,7 +469,7 @@ describe("useSelectionState", () => {
 
     act(() => result.current.selection.setSelected(asset));
     await act(async () => { await result.current.selection.deleteSelectedAsset(); });
-    act(() => pendingDetails.resolve({ ...asset, tags: ["stale"] }));
+    act(() => pendingDetails.resolve({ ...createDetails(asset, ["stale"]) }));
     await act(async () => { await pendingDetails.promise; });
 
     expect(result.current.selection.selected).toBeNull();
@@ -477,8 +478,8 @@ describe("useSelectionState", () => {
 
   it("accumulates rapid Right presses and only commits the latest response", async () => {
     const assets = [createAsset({ id: 1 }), createAsset({ id: 2 }), createAsset({ id: 3 })];
-    const secondAsset = deferred<Asset | undefined>();
-    const thirdAsset = deferred<Asset | undefined>();
+    const secondAsset = deferred<AssetSummary | undefined>();
+    const thirdAsset = deferred<AssetSummary | undefined>();
     const getAssetAtAsync = vi.fn((index: number) => {
       if (index === 1) return secondAsset.promise;
       if (index === 2) return thirdAsset.promise;
@@ -511,8 +512,8 @@ describe("useSelectionState", () => {
 
   it("lets rapid Right then Left return to the original target despite reverse responses", async () => {
     const assets = [createAsset({ id: 1 }), createAsset({ id: 2 }), createAsset({ id: 3 })];
-    const originalAsset = deferred<Asset | undefined>();
-    const secondAsset = deferred<Asset | undefined>();
+    const originalAsset = deferred<AssetSummary | undefined>();
+    const secondAsset = deferred<AssetSummary | undefined>();
     const getAssetAtAsync = vi.fn((index: number) => {
       if (index === 0) return originalAsset.promise;
       if (index === 1) return secondAsset.promise;
@@ -608,5 +609,69 @@ describe("useSelectionState", () => {
       result.current.handleSelectPrevious();
     });
     await waitFor(() => expect(result.current.selected?.id).toBe(first.id));
+  });
+
+  it("rolls the navigation target back when the target record is unavailable", async () => {
+    const assets = [createAsset({ id: 1 }), createAsset({ id: 2 })];
+    let failNext = true;
+    const getAssetAtAsync = vi.fn((index: number) =>
+      index === 1 && failNext ? Promise.resolve(undefined) : Promise.resolve(assets[index])
+    );
+    const { result } = renderHook(() => useSelectionState({
+      assets, setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+      assetCount: assets.length, getAssetAtAsync
+    }));
+    act(() => result.current.setSelected(assets[0]!, 0));
+
+    act(() => result.current.handleSelectNext());
+    await waitFor(() => expect(getAssetAtAsync).toHaveBeenCalledTimes(1));
+
+    // The record becomes available; the retry must target the same index.
+    failNext = false;
+    act(() => result.current.handleSelectNext());
+    await waitFor(() => expect(result.current.selected?.id).toBe(2));
+    expect(getAssetAtAsync).toHaveBeenLastCalledWith(1);
+  });
+
+  it("recomputes the lightbox position from a new query session", async () => {
+    const initialAssets = [createAsset({ id: 1 }), createAsset({ id: 2 }), createAsset({ id: 3 })];
+    const getAssetAtAsync = vi.fn((index: number) => Promise.resolve(initialAssets[index]));
+    const { result, rerender } = renderHook(
+      ({ assets, queryEpoch }: { assets: AssetSummary[]; queryEpoch: number }) =>
+        useSelectionState({
+          assets, setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+          assetCount: 3, queryEpoch, getAssetAtAsync
+        }),
+      { initialProps: { assets: initialAssets, queryEpoch: 1 } }
+    );
+    act(() => result.current.setSelected(initialAssets[0]!, 0));
+
+    // The fresh session reordered the snapshot: id 1 now sits at global index 2.
+    const reordered = [initialAssets[1]!, initialAssets[2]!, initialAssets[0]!];
+    rerender({ assets: reordered, queryEpoch: 2 });
+
+    act(() => result.current.handleSelectNext());
+    // From the recomputed index 2 the next record is the wrapped index 0,
+    // not index 1 from the stale session ordering.
+    expect(getAssetAtAsync).toHaveBeenLastCalledWith(0);
+  });
+
+  it("re-fetches details after a new query epoch instead of trusting the cache", async () => {
+    const asset = createAsset({ id: 40, tags: [] });
+    apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: ["loaded"] });
+    const { result, rerender } = renderHook(
+      ({ queryEpoch }: { queryEpoch: number }) =>
+        useSelectionState({
+          assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags, queryEpoch
+        }),
+      { initialProps: { queryEpoch: 1 } }
+    );
+    act(() => result.current.setSelected(asset));
+    await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.setSelected(null));
+    rerender({ queryEpoch: 2 });
+    act(() => result.current.setSelected(asset));
+    await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2));
   });
 });

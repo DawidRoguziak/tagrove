@@ -1,4 +1,4 @@
-import type { Asset } from "../../../../types";
+import type { AssetSummary } from "../../../../types";
 
 export interface BulkMediaGroupAssignment {
   assetId: number;
@@ -42,12 +42,12 @@ export function buildBulkMediaGroupAssignments(
   }));
 }
 
-function normalizedGroupIdentity(asset: Asset): string | null {
+function normalizedGroupIdentity(asset: AssetSummary): string | null {
   const key = normalizeGroupKey(asset.media_group_key ?? "");
   return key ? key.toLowerCase() : null;
 }
 
-export function deriveBulkGroupSelectionState(selectedAssets: Asset[]): BulkGroupSelectionState {
+export function deriveBulkGroupSelectionState(selectedAssets: AssetSummary[]): BulkGroupSelectionState {
   if (selectedAssets.length === 0) {
     return { groupKey: "", hasConflictingGroups: false, orderedAssetIds: [] };
   }

@@ -1,11 +1,11 @@
-import type { Asset } from "../../types";
+import type { SelectedAsset } from "../../types";
 import { formatBytes, formatDuration } from "../../utils/media";
 import { UiIconButton } from "../UI/UiIconButton";
 import { useTranslation } from "react-i18next";
 
 interface LightboxInfoPanelProps {
   open: boolean;
-  selected: Asset;
+  selected: SelectedAsset;
   onToggle: () => void;
 }
 
@@ -31,12 +31,12 @@ export function LightboxInfoPanel({ open, selected, onToggle }: LightboxInfoPane
         <h3 className="m-0 text-base">{t("lightbox.infoHeading")}</h3>
         <div className="grid gap-2 rounded-xl bg-base-200/45 p-3 text-[13px] text-base-content/82">
           <span><strong className="font-semibold text-base-content">{t("lightbox.type")}:</strong> {selected.kind}</span>
-          <span><strong className="font-semibold text-base-content">{t("lightbox.size")}:</strong> {formatBytes(selected.size_bytes)}</span>
+          <span><strong className="font-semibold text-base-content">{t("lightbox.size")}:</strong> {selected.size_bytes === null ? "-" : formatBytes(selected.size_bytes)}</span>
           <span>
             <strong className="font-semibold text-base-content">{t("lightbox.dimensions")}:</strong> {selected.width ?? "-"} x {selected.height ?? "-"}
           </span>
           <span><strong className="font-semibold text-base-content">{t("lightbox.duration")}:</strong> {formatDuration(selected.duration_ms)}</span>
-          <span className="break-all text-xs leading-relaxed text-base-content/60">{t("lightbox.path")}: {selected.path}</span>
+          <span className="break-all text-xs leading-relaxed text-base-content/60">{t("lightbox.path")}: {selected.path ?? selected.file_name}</span>
         </div>
       </aside>
     </div>

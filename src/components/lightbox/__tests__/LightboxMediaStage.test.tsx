@@ -2,7 +2,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { MediaPlayerInstance } from "@vidstack/react";
 import type { MutableRefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../types";
+import type { SelectedAsset } from "../../../types";
 import { LightboxMediaStage } from "../LightboxMediaStage";
 
 const apiMocks = vi.hoisted(() => ({
@@ -25,12 +25,12 @@ vi.mock("../LightboxVideoPlayer", () => ({
   }
 }));
 
-function createVideo(id: number): Asset {
+function createVideo(id: number): SelectedAsset {
   return {
     id,
-    path: `C:/media/${id}.mp4`,
+    file_name: `${id}.mp4`,
+    preview_path: null,
     kind: "video",
-    size_bytes: 100,
     modified_at: id,
     width: 160,
     height: 90,
@@ -39,11 +39,13 @@ function createVideo(id: number): Asset {
     is_favorite: false,
     media_group_key: null,
     media_group_order: null,
+    path: `C:/media/${id}.mp4`,
+    size_bytes: 100,
     tags: []
   };
 }
 
-function stageProps(selected: Asset) {
+function stageProps(selected: SelectedAsset) {
   return {
     selected,
     mediaViewportRef: { current: null } as MutableRefObject<HTMLDivElement | null>,

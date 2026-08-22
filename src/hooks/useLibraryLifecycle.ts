@@ -1,11 +1,11 @@
 import { useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { Asset } from "../types";
+import type { AssetSummary } from "../types";
 
 interface UseLibraryLifecycleOptions {
   resetThumbnailQueue: () => void;
   setThumbs: Dispatch<SetStateAction<Record<number, string>>>;
-  setAssets: Dispatch<SetStateAction<Asset[]>>;
+  setAssets: Dispatch<SetStateAction<AssetSummary[]>>;
   setTotal: Dispatch<SetStateAction<number>>;
   setOffset: Dispatch<SetStateAction<number>>;
   setKnownTags: Dispatch<SetStateAction<string[]>>;

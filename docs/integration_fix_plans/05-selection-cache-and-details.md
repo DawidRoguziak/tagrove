@@ -52,4 +52,14 @@ Oddzielić częściowe dane galerii od pełnych szczegółów, oprzeć zaznaczen
 
 ## Dziennik
 
-- Brak wpisów.
+### 2026-08-22 — Etap 05 ukończony (frontend-only, bez zmian w IPC)
+
+Zmienione pliki: `src/types.ts` (usunięto `Asset`; nowe `SelectedAsset`, `AssetPage.items → AssetDetails[]`), `src/hooks/useLibraryAssets.ts` (surowe `AssetSummary` w cache, `queryEpoch`, `getIdsRangeAsync`), `src/hooks/useSelectionState.ts` (widok `SelectedAsset`, LRU-256 details cache z epoką i czyszczeniem na nową sesję, cofanie navigation target, przeliczanie indeksu po zmianie sesji), `src/components/app/hooks/useBulkSelectionController.ts` (zaznaczenie po ID przeżywa eviction, anchor jako globalny indeks, Shift-range przez `getIdsRangeAsync`, LRU details cache), `src/components/app/services/assetMutationService.ts` (usunięto `updateAssetTags` — tagi nie żyją w cache galerii), warstwy gallery/lightbox/bulk przeniesione na `AssetSummary`/`SelectedAsset`, media stage wymaga details przed źródłem mediów (spinner / komunikat błędu zamiast wymyślonego źródła), info panel pokazuje `-` dla nieznanego rozmiaru. Usunięto martwe `selectNext/selectPreviousLightboxAssetAction` i `mergeBulkTagsInAssets` wraz z testami. Backend i kontrakt IPC bez zmian — Shift-range realizuje stronicowany `getIdsRangeAsync` nad istniejącą sesją (sekwencyjne strony po offsetach, odrzucenie całego zakresu przy błędzie strony).
+
+Decyzje projektowe:
+- Rekord wypadający z aktywnego filtra pozostaje zaznaczony (ID-y nie są przycinane do widocznych); operacje masowe działają na przecięciu z wczytanymi podsumowaniami.
+- Anchor Shift-zakresu to wyłącznie zapisany globalny indeks; po restarcie sesji jest unieważniany (Shift bez kotwicy = zwykłe zaznaczenie), nigdy nie zgadujemy indeksu ze zbitej tablicy cache.
+- Ścieżka startowa lightboxa: GIF/video startują z `preview_path`, obrazy czekają na details (koniec ze ścieżką fabrykowaną z `file_name`).
+- Nowa sesja (`queryEpoch`) czyści oba details cache i przelicza indeks lightboxa przez `getAssetIndex`; brak pozycji = nawigacja relacyjna uśpiona do ponownego wyboru.
+
+Testy: frontend 63 pliki / 335 testów zielonych (nowe: surowe summaries, queryEpoch, getIdsRangeAsync happy/failure, globalny Shift-range, selection vs eviction, reset anchora po epoch, cofanie nawigacji, rekomputacja indeksu, re-fetch details po nowej sesji).

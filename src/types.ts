@@ -10,22 +10,6 @@ export type SearchMetaFilter =
       groupName: string;
     };
 
-export interface Asset {
-  id: number;
-  path: string;
-  kind: MediaKind;
-  size_bytes: number;
-  modified_at: number;
-  width: number | null;
-  height: number | null;
-  duration_ms: number | null;
-  thumb_path: string | null;
-  is_favorite: boolean;
-  media_group_key: string | null;
-  media_group_order: number | null;
-  tags: string[];
-}
-
 export interface AssetSummary {
   id: number;
   file_name: string;
@@ -44,6 +28,12 @@ export interface AssetSummary {
 export interface AssetDetails extends AssetSummary {
   path: string;
   size_bytes: number;
+  tags: string[];
+}
+
+export interface SelectedAsset extends AssetSummary {
+  path: string | null;
+  size_bytes: number | null;
   tags: string[];
 }
 
@@ -250,7 +240,7 @@ export interface VideoToolStatus {
 }
 
 export interface AssetPage {
-  items: Asset[];
+  items: AssetDetails[];
   total: number;
 }
 

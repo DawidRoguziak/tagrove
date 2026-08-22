@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../types";
+import type { AssetSummary } from "../../../types";
 import { GalleryGrid } from "../GalleryGrid";
 
 vi.mock("../../../api", () => ({
@@ -38,11 +38,11 @@ class TestResizeObserver implements ResizeObserver {
   }
 }
 
-const sampleAsset: Asset = {
+const sampleAsset: AssetSummary = {
   id: 7,
-  path: "C:/media/a.jpg",
+  file_name: "a.jpg",
+  preview_path: null,
   kind: "image",
-  size_bytes: 2048,
   modified_at: 1700000000,
   width: 1200,
   height: 800,
@@ -50,29 +50,30 @@ const sampleAsset: Asset = {
   thumb_path: null,
   is_favorite: false,
   media_group_key: null,
-  media_group_order: null,
-  tags: []
+  media_group_order: null
 };
 
-const sampleGifAsset: Asset = {
+const sampleGifAsset: AssetSummary = {
   ...sampleAsset,
   id: 8,
-  path: "C:/media/a.gif",
+  file_name: "a.gif",
+  preview_path: "C:/media/a.gif",
   kind: "gif"
 };
 
 const transparentThumbnailSrc =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
-function createGifAssets(count: number): Asset[] {
+function createGifAssets(count: number): AssetSummary[] {
   return Array.from({ length: count }, (_, index) => ({
     ...sampleGifAsset,
     id: index + 1,
-    path: `C:/media/gif-${index + 1}.gif`
+    file_name: `gif-${index + 1}.gif`,
+    preview_path: `C:/media/gif-${index + 1}.gif`
   }));
 }
 
-function createGifThumbs(assets: Asset[]): Record<number, string> {
+function createGifThumbs(assets: AssetSummary[]): Record<number, string> {
   return Object.fromEntries(
     assets.map((asset, index) => [asset.id, `C:/thumbs/gif-${index + 1}.jpg`])
   );
@@ -175,7 +176,7 @@ describe("GalleryGrid", () => {
       />
     );
 
-    const preview = getByAltText("C:/media/a.jpg");
+    const preview = getByAltText("a.jpg");
     expect(preview).toHaveAttribute("src", "media://C:/thumbs/a.jpg");
     expect(preview).not.toHaveAttribute("loading");
   });
@@ -199,7 +200,7 @@ describe("GalleryGrid", () => {
       />
     );
 
-    const preview = getByAltText("C:/media/a.jpg");
+    const preview = getByAltText("a.jpg");
     fireEvent.error(preview);
 
     expect(preview).toHaveAttribute("src", transparentThumbnailSrc);
@@ -224,7 +225,7 @@ describe("GalleryGrid", () => {
       />
     );
 
-    fireEvent.error(getByAltText("C:/media/a.jpg"));
+    fireEvent.error(getByAltText("a.jpg"));
 
     rerender(
       <GalleryGrid
@@ -242,7 +243,7 @@ describe("GalleryGrid", () => {
       />
     );
 
-    expect(getByAltText("C:/media/a.jpg")).toHaveAttribute(
+    expect(getByAltText("a.jpg")).toHaveAttribute(
       "src",
       "media://C:/thumbs/a-retry.jpg"
     );

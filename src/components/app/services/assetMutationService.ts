@@ -1,24 +1,20 @@
-import type { Asset } from "../../../types";
+import type { AssetSummary, SelectedAsset } from "../../../types";
 
 export interface BulkMediaGroupAssignment {
   assetId: number;
   mediaGroupOrder: number | null;
 }
 
-export function updateAssetTags(assets: Asset[], assetId: number, tags: string[]): Asset[] {
-  return assets.map((asset) => (asset.id === assetId ? { ...asset, tags } : asset));
-}
-
-export function updateAssetFavorite(assets: Asset[], assetId: number, isFavorite: boolean): Asset[] {
+export function updateAssetFavorite(assets: AssetSummary[], assetId: number, isFavorite: boolean): AssetSummary[] {
   return assets.map((asset) => (asset.id === assetId ? { ...asset, is_favorite: isFavorite } : asset));
 }
 
 export function updateAssetMediaGroup(
-  assets: Asset[],
+  assets: AssetSummary[],
   assetId: number,
   mediaGroupKey: string | null,
   mediaGroupOrder: number | null
-): Asset[] {
+): AssetSummary[] {
   return assets.map((asset) =>
     asset.id === assetId
       ? {
@@ -30,7 +26,7 @@ export function updateAssetMediaGroup(
   );
 }
 
-export function updateSelectedTags(selected: Asset | null, tags: string[]): Asset | null {
+export function updateSelectedTags(selected: SelectedAsset | null, tags: string[]): SelectedAsset | null {
   if (!selected) {
     return selected;
   }
@@ -42,10 +38,10 @@ export function updateSelectedTags(selected: Asset | null, tags: string[]): Asse
 }
 
 export function updateSelectedTagsIfMatchingAsset(
-  selected: Asset | null,
+  selected: SelectedAsset | null,
   assetId: number,
   tags: string[]
-): Asset | null {
+): SelectedAsset | null {
   if (!selected || selected.id !== assetId) {
     return selected;
   }
@@ -53,7 +49,7 @@ export function updateSelectedTagsIfMatchingAsset(
   return updateSelectedTags(selected, tags);
 }
 
-export function updateSelectedFavorite(selected: Asset | null, isFavorite: boolean): Asset | null {
+export function updateSelectedFavorite(selected: SelectedAsset | null, isFavorite: boolean): SelectedAsset | null {
   if (!selected) {
     return selected;
   }
@@ -65,10 +61,10 @@ export function updateSelectedFavorite(selected: Asset | null, isFavorite: boole
 }
 
 export function updateSelectedFavoriteIfMatchingAsset(
-  selected: Asset | null,
+  selected: SelectedAsset | null,
   assetId: number,
   isFavorite: boolean
-): Asset | null {
+): SelectedAsset | null {
   if (!selected || selected.id !== assetId) {
     return selected;
   }
@@ -77,10 +73,10 @@ export function updateSelectedFavoriteIfMatchingAsset(
 }
 
 export function updateSelectedMediaGroup(
-  selected: Asset | null,
+  selected: SelectedAsset | null,
   mediaGroupKey: string | null,
   mediaGroupOrder: number | null
-): Asset | null {
+): SelectedAsset | null {
   if (!selected) {
     return selected;
   }
@@ -93,11 +89,11 @@ export function updateSelectedMediaGroup(
 }
 
 export function updateSelectedMediaGroupIfMatchingAsset(
-  selected: Asset | null,
+  selected: SelectedAsset | null,
   assetId: number,
   mediaGroupKey: string | null,
   mediaGroupOrder: number | null
-): Asset | null {
+): SelectedAsset | null {
   if (!selected || selected.id !== assetId) {
     return selected;
   }
@@ -106,10 +102,10 @@ export function updateSelectedMediaGroupIfMatchingAsset(
 }
 
 export function applyBulkMediaGroupToAssets(
-  assets: Asset[],
+  assets: AssetSummary[],
   mediaGroupKey: string | null,
   assignments: BulkMediaGroupAssignment[]
-): Asset[] {
+): AssetSummary[] {
   if (!assets.length || !assignments.length) {
     return assets;
   }

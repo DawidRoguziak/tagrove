@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../../types";
+import type { AssetSummary, SelectedAsset } from "../../../../types";
 import { toggleLightboxFavoriteAction } from "../toggleLightboxFavoriteAction";
 
 const apiMocks = vi.hoisted(() => ({
@@ -14,12 +14,12 @@ vi.mock("../../../../api", async () => {
   };
 });
 
-function createAsset(id: number, isFavorite: boolean): Asset {
+function createSummary(id: number, isFavorite: boolean): AssetSummary {
   return {
     id,
-    path: `C:/media/${id}.jpg`,
+    file_name: `${id}.jpg`,
+    preview_path: null,
     kind: "image",
-    size_bytes: 200,
     modified_at: 100,
     width: 400,
     height: 300,
@@ -27,7 +27,15 @@ function createAsset(id: number, isFavorite: boolean): Asset {
     thumb_path: null,
     is_favorite: isFavorite,
     media_group_key: null,
-    media_group_order: null,
+    media_group_order: null
+  };
+}
+
+function createAsset(id: number, isFavorite: boolean): SelectedAsset {
+  return {
+    ...createSummary(id, isFavorite),
+    path: `C:/media/${id}.jpg`,
+    size_bytes: 200,
     tags: []
   };
 }
@@ -41,13 +49,13 @@ describe("toggleLightboxFavoriteAction", () => {
     apiMocks.setAssetFavorite.mockResolvedValue(undefined);
     const refresh = vi.fn().mockResolvedValue(undefined);
 
-    let assets = [createAsset(1, true), createAsset(2, false)];
-    let selected: Asset | null = createAsset(1, true);
+    let assets = [createSummary(1, true), createSummary(2, false)];
+    let selected: SelectedAsset | null = createAsset(1, true);
 
-    const setAssets = vi.fn((updater: (previous: Asset[]) => Asset[]) => {
+    const setAssets = vi.fn((updater: (previous: AssetSummary[]) => AssetSummary[]) => {
       assets = updater(assets);
     });
-    const setSelected = vi.fn((updater: (previous: Asset | null) => Asset | null) => {
+    const setSelected = vi.fn((updater: (previous: SelectedAsset | null) => SelectedAsset | null) => {
       selected = updater(selected);
     });
 
@@ -69,13 +77,13 @@ describe("toggleLightboxFavoriteAction", () => {
     apiMocks.setAssetFavorite.mockResolvedValue(undefined);
     const refresh = vi.fn().mockResolvedValue(undefined);
 
-    let assets = [createAsset(1, false), createAsset(2, false)];
-    let selected: Asset | null = createAsset(1, false);
+    let assets = [createSummary(1, false), createSummary(2, false)];
+    let selected: SelectedAsset | null = createAsset(1, false);
 
-    const setAssets = vi.fn((updater: (previous: Asset[]) => Asset[]) => {
+    const setAssets = vi.fn((updater: (previous: AssetSummary[]) => AssetSummary[]) => {
       assets = updater(assets);
     });
-    const setSelected = vi.fn((updater: (previous: Asset | null) => Asset | null) => {
+    const setSelected = vi.fn((updater: (previous: SelectedAsset | null) => SelectedAsset | null) => {
       selected = updater(selected);
     });
 

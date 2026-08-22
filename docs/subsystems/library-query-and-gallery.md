@@ -49,7 +49,7 @@ Query start, page reads, and detail reads run as blocking work outside the async
 The cache in `useLibraryAssets` has three coordinated structures:
 
 - `pages: Map<pageOffset, assetId[]>` records which IDs occupy each loaded page;
-- `assetsById: Map<assetId, Asset>` stores the summary-derived objects; and
+- `assetsById: Map<assetId, AssetSummary>` stores the summaries verbatim; and
 - `lru: pageOffset[]` records page merge recency, newest first.
 
 A merge replaces or adds the page, upserts its assets, moves that page offset to the front, and evicts from the back until exactly no more than 12 pages remain. Eviction deletes the page and its asset objects and the thumbnail-map cleanup effect removes thumbnails for IDs no longer present. A cache hit does not currently promote the page, so the policy is merge-recency rather than true read-recency.
@@ -68,13 +68,9 @@ Only one request per page offset is started at a time. A ref-backed Promise map 
 
 Sessions materialize `AssetSummary`, not full `Asset` rows. A summary contains display and ordering metadata, thumbnail state, and media-group fields, but not byte size or tags. SQLite puts the source path in `preview_path` for GIF and video summaries so either media type can start from a valid source before the separate detail read. Ordinary image summaries keep it null.
 
-For compatibility with gallery and mutation code, `summaryToAsset` creates an intentionally incomplete `Asset`:
+The page cache stores `AssetSummary` objects verbatim: nothing fabricates a path, byte size, or tag list, so a cache entry can never masquerade as a complete record. Gallery tiles read only summary fields (`file_name`, `preview_path`, thumbnail state, kind, media-group fields).
 
-- `path` is `preview_path` for a GIF or video and otherwise the file name;
-- `size_bytes` is `0`; and
-- `tags` is `[]`.
-
-These values are placeholders, not claims about the underlying file. Selecting a tile immediately opens the lightbox with the summary-derived object, then `useSelectionState` calls `getAssetDetails`. A successful `AssetDetails` replaces it with the full path, size, and tags. Selection-request IDs prevent a late detail response from replacing a newer selection. Details for the previous and next global indices are also prefetched, using `getAssetAtAsync` when their pages are absent. A missing detail row or failed detail request leaves the summary usable. See [lightbox](lightbox.md) for the editing and navigation behavior built on this boundary.
+Selecting a tile opens the lightbox with a `SelectedAsset` view built from the summary: `path` starts as the summary's `preview_path` (a valid source for GIF/video; null for ordinary images), and `size_bytes` starts as null. The lightbox media stage renders a loading placeholder until details arrive, or a failure notice when the detail read fails, so no operation consumes an invented path. `useSelectionState` then calls `getAssetDetails`; a successful `AssetDetails` replaces the view with the full path, size, and tags. Selection-request IDs prevent a late detail response from replacing a newer selection. Details for the previous and next global indices are also prefetched, using `getAssetAtAsync` when their pages are absent. A missing detail row or failed detail request leaves the summary view usable. See [lightbox](lightbox.md) for the editing and navigation behavior built on this boundary.
 
 ### Virtual range loading and thumbnail prefetch
 
@@ -120,7 +116,7 @@ An invoke or database error rejects the corresponding promise and records a gall
 
 - Backend supersession, TTL, and the four-session LRU are process-wide. Another window or independent caller can supersede an uncached start or evict this window's session.
 - The frontend cache's LRU list is updated only when a page merges, not when it is read. `assets` and bulk-selection operations cover loaded pages only, and `getAssetIndex` cannot locate an unloaded asset.
-- The detail cache in `useSelectionState` has no revision or lifecycle invalidation. Reselecting an asset after a mutation or database restore can reuse old path, size, tags, or other detail fields. The selection synchronization effect deliberately preserves the current full path and size and can preserve current tags when refreshed summaries carry the expected empty placeholder list.
+- The detail caches in `useSelectionState` and `useBulkSelectionController` are bounded LRU maps (256 entries) stamped with the tag-state identity epoch and cleared whenever a new query session starts. Reselecting an asset after a restore, identity reset, or session restart re-reads details instead of trusting stale path/size/tags. Ordinary favorite/group mutations still rely on the authoritative-tag overlay and local patches rather than a per-revision invalidation.
 - Refresh does not cancel in-flight backend page work; the generation guard only discards late responses after they finish. A `superseded` result is not retried automatically.
 - Tag-edit invalidation compares changed tags against applied include/exclude filters only. A tag change that alters group adjacency without touching tag filters relies on media-group/delete-style restarts elsewhere; favorite toggles under non-favorites views still patch locally.
 - The empty state depends only on `assetCount`, so it can appear during the initial load while `total` is still zero. Conversely, an in-progress refresh keeps the old nonempty grid visible. The footer does not expose asset-page loading and normally shows the end state whenever thumbnail generation is idle.

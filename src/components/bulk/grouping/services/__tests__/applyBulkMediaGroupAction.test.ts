@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../../../types";
+import type { AssetSummary } from "../../../../../types";
 import {
   applyBulkMediaGroupAction,
   buildApplyBulkMediaGroupPayload
@@ -17,12 +17,12 @@ vi.mock("../../../../../api", async () => {
   };
 });
 
-function createAsset(id: number): Asset {
+function createAsset(id: number): AssetSummary {
   return {
     id,
-    path: `C:/media/${id}.jpg`,
+    file_name: `${id}.jpg`,
+    preview_path: null,
     kind: "image",
-    size_bytes: 1,
     modified_at: 1,
     width: 100,
     height: 100,
@@ -30,9 +30,8 @@ function createAsset(id: number): Asset {
     thumb_path: null,
     is_favorite: false,
     media_group_key: null,
-    media_group_order: null,
-    tags: []
-  };
+    media_group_order: null
+  }
 }
 
 describe("applyBulkMediaGroupAction", () => {
@@ -58,7 +57,7 @@ describe("applyBulkMediaGroupAction", () => {
 
   it("applies bulk media group and patches assets in memory", async () => {
     let assets = [createAsset(1), createAsset(2), createAsset(3)];
-    const setAssets = vi.fn((updater: (previous: Asset[]) => Asset[]) => {
+    const setAssets = vi.fn((updater: (previous: AssetSummary[]) => AssetSummary[]) => {
       assets = updater(assets);
     });
 
@@ -83,11 +82,11 @@ describe("applyBulkMediaGroupAction", () => {
   });
 
   it("clears group keys and orders with a nullable bulk payload", async () => {
-    let assets: Asset[] = [
+    let assets: AssetSummary[] = [
       { ...createAsset(1), media_group_key: "legacy", media_group_order: 4 },
       { ...createAsset(2), media_group_key: "legacy", media_group_order: 5 }
     ];
-    const setAssets = vi.fn((updater: (previous: Asset[]) => Asset[]) => {
+    const setAssets = vi.fn((updater: (previous: AssetSummary[]) => AssetSummary[]) => {
       assets = updater(assets);
     });
 

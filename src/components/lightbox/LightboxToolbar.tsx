@@ -1,11 +1,11 @@
 import { UiIconButton } from "../UI/UiIconButton";
 import { LightboxInfoPanel } from "./LightboxInfoPanel";
 import { LightboxTagPanel } from "./LightboxTagPanel";
-import type { Asset } from "../../types";
+import type { SelectedAsset } from "../../types";
 import type { MutableRefObject, RefObject } from "react";
 
 interface LightboxToolbarProps {
-  selected: Asset;
+  selected: SelectedAsset;
   mediaGroupKeyEditor: string;
   mediaGroupOrderEditor: string;
   groupCopyConfirmed: boolean;

@@ -1,15 +1,15 @@
 import { act, renderHook } from "@testing-library/react";
 import type { MouseEvent, WheelEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../../types";
+import type { AssetSummary } from "../../../../types";
 import { useGalleryGridHandlers } from "../useGalleryGridHandlers";
 
-function createAsset(id: number): Asset {
+function createAsset(id: number): AssetSummary {
   return {
     id,
-    path: `C:/media/${id}.jpg`,
+    file_name: `${id}.jpg`,
+    preview_path: null,
     kind: "image",
-    size_bytes: 100,
     modified_at: 1,
     width: 100,
     height: 100,
@@ -17,9 +17,8 @@ function createAsset(id: number): Asset {
     thumb_path: null,
     is_favorite: false,
     media_group_key: null,
-    media_group_order: null,
-    tags: []
-  };
+    media_group_order: null
+  }
 }
 
 function createTileElement(assetId: number, assetIndex: number): HTMLButtonElement {

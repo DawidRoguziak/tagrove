@@ -8,12 +8,14 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MediaPlayerInstance } from "@vidstack/react";
 import { toMediaSrc } from "../../api";
-import type { Asset } from "../../types";
+import type { SelectedAsset } from "../../types";
 import { LightboxVideoPlayer } from "./LightboxVideoPlayer";
 import { useLightboxVideoSource } from "./hooks/useLightboxVideoSource";
 
 interface LightboxMediaStageProps {
-  selected: Asset;
+  selected: SelectedAsset;
+  detailsLoading?: boolean;
+  detailsFailed?: boolean;
   mediaViewportRef: MutableRefObject<HTMLDivElement | null>;
   lightboxImageRef: MutableRefObject<HTMLImageElement | null>;
   lightboxVideoPlayerRef: MutableRefObject<MediaPlayerInstance | null>;
@@ -32,6 +34,7 @@ interface LightboxMediaStageProps {
 
 export function LightboxMediaStage({
   selected,
+  detailsFailed = false,
   mediaViewportRef,
   lightboxImageRef,
   lightboxVideoPlayerRef,
@@ -48,7 +51,8 @@ export function LightboxMediaStage({
   onImagePointerEnd
 }: LightboxMediaStageProps) {
   const { t } = useTranslation();
-  const mediaKey = `${selected.id}\u0000${selected.kind}\u0000${selected.path}`;
+  const detailsLoaded = selected.path !== null;
+  const mediaKey = `${selected.id}\u0000${selected.kind}\u0000${selected.path ?? ""}`;
   const activationRef = useRef({ mediaKey, generation: 0 });
   if (activationRef.current.mediaKey !== mediaKey) {
     activationRef.current = {
@@ -68,6 +72,8 @@ export function LightboxMediaStage({
     selected.path,
     selected.kind === "video"
   );
+  // Without loaded details there is no verified source path: hold the previous
+  // media (or a loading placeholder) instead of guessing from summary fields.
   const mediaFailed = failedActivation === activationGeneration || videoSource.failed;
   const mediaStyle =
     mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
@@ -96,12 +102,31 @@ export function LightboxMediaStage({
               : t("lightbox.mediaError.image")}
           </div>
         </div>
+      ) : !detailsLoaded ? (
+        detailsFailed ? (
+          <div
+            role="alert"
+            data-testid="lightbox-details-error"
+            className="flex h-full w-full items-center justify-center p-6"
+          >
+            <div className="rounded-[var(--radius-control)] border border-warning/52 bg-warning/14 px-5 py-4 text-center text-sm font-semibold text-base-content">
+              {t("lightbox.tagDetailsLoadFailed")}
+            </div>
+          </div>
+        ) : (
+          <div
+            className="flex h-full w-full items-center justify-center"
+            data-testid="lightbox-details-loading"
+          >
+            <span className="h-[34px] w-[34px] animate-spin rounded-full border-[3px] border-base-content/25 border-t-primary" />
+          </div>
+        )
       ) : selected.kind === "video" && videoSource.src ? (
         <div className="flex h-full w-full items-center justify-center overflow-hidden">
           <LightboxVideoPlayer
             style={isFullscreen ? undefined : mediaStyle}
             src={videoSource.src}
-            title={selected.path}
+            title={selected.path ?? ""}
             aspectRatio={
               mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
                 ? `${mediaDisplaySize.width} / ${mediaDisplaySize.height}`
@@ -131,8 +156,8 @@ export function LightboxMediaStage({
             ref={(node) => {
               lightboxImageRef.current = node;
             }}
-            src={toMediaSrc(selected.path)}
-            alt={selected.path}
+            src={toMediaSrc(selected.path ?? "")}
+            alt={selected.file_name}
             style={mediaStyle}
             className={`origin-center shrink-0 select-none object-contain [backface-visibility:hidden] [will-change:transform] ${
               isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"

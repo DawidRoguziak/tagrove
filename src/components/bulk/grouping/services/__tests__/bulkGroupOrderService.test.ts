@@ -6,14 +6,14 @@ import {
   reorderAssetIdsByDrop,
   uniqueOrderedAssetIds
 } from "../bulkGroupOrderService";
-import type { Asset } from "../../../../../types";
+import type { AssetSummary } from "../../../../../types";
 
-function createAsset(id: number, groupKey: string | null, groupOrder: number | null): Asset {
+function createAsset(id: number, groupKey: string | null, groupOrder: number | null): AssetSummary {
   return {
     id,
-    path: `${id}.jpg`,
+    file_name: `${id}.jpg`,
+    preview_path: null,
     kind: "image",
-    size_bytes: 1,
     modified_at: 1,
     width: null,
     height: null,
@@ -21,8 +21,7 @@ function createAsset(id: number, groupKey: string | null, groupOrder: number | n
     thumb_path: null,
     is_favorite: false,
     media_group_key: groupKey,
-    media_group_order: groupOrder,
-    tags: []
+    media_group_order: groupOrder
   };
 }
 

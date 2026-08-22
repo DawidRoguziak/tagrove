@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import type { Asset } from "../../types";
+import type { SelectedAsset } from "../../types";
 import { LightboxDeleteConfirmDialog } from "./LightboxDeleteConfirmDialog";
 import { LightboxMediaStage } from "./LightboxMediaStage";
 import { LightboxToolbar } from "./LightboxToolbar";
@@ -10,7 +10,7 @@ import { useLightboxTagging } from "./useLightboxTagging";
 import { useTranslation } from "react-i18next";
 
 interface LightboxModalProps {
-  selected: Asset | null;
+  selected: SelectedAsset | null;
   tagEditor: string[];
   onTagEditorChange: (value: string[]) => void;
   onSaveTags: (tags?: string[]) => void | Promise<void>;

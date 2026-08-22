@@ -4,13 +4,13 @@ import {
   updateSelectedFavoriteIfMatchingAsset
 } from "../../app/services/assetMutationService";
 import { favoriteMutationRequiresRefresh } from "../../app/services/libraryInvalidationService";
-import type { Asset } from "../../../types";
+import type { AssetSummary, SelectedAsset } from "../../../types";
 
-type SetAssets = (updater: (previous: Asset[]) => Asset[]) => void;
-type SetSelected = (updater: (previous: Asset | null) => Asset | null) => void;
+type SetAssets = (updater: (previous: AssetSummary[]) => AssetSummary[]) => void;
+type SetSelected = (updater: (previous: SelectedAsset | null) => SelectedAsset | null) => void;
 
 interface ToggleLightboxFavoriteActionArgs {
-  selected: Asset | null;
+  selected: SelectedAsset | null;
   appliedFavoritesOnly: boolean;
   setAssets: SetAssets;
   setSelected: SetSelected;

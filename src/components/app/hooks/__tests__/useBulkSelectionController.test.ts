@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../../types";
+import type { AssetDetails, AssetSummary } from "../../../../types";
 import { useBulkSelectionController } from "../useBulkSelectionController";
 import { useAssetTagState } from "../useAssetTagState";
 
@@ -13,11 +13,20 @@ vi.mock("../../../../api", async () => {
 });
 vi.mock("../../../bulk/tagging/services/applyBulkTagsAction", () => actionMocks);
 
-function createAsset(id: number): Asset {
+function createAsset(id: number): AssetSummary {
   return {
-    id, path: `C:/media/${id}.jpg`, kind: "image", size_bytes: 1, modified_at: 1,
+    id, file_name: `${id}.jpg`, preview_path: null, kind: "image", modified_at: 1,
     width: 100, height: 100, duration_ms: null, thumb_path: null, is_favorite: false,
-    media_group_key: null, media_group_order: null, tags: []
+    media_group_key: null, media_group_order: null
+  };
+}
+
+function createDetails(summary: AssetSummary, tags: string[]): AssetDetails {
+  return {
+    ...summary,
+    path: `C:/media/${summary.id}.jpg`,
+    size_bytes: 1,
+    tags
   };
 }
 
@@ -27,7 +36,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function options(assets: Asset[], refresh = vi.fn(async () => {})) {
+function options(assets: AssetSummary[], refresh = vi.fn(async () => {})) {
   return {
     assets,
     knownTags: [],
@@ -54,9 +63,9 @@ describe("useBulkSelectionController", () => {
 
   it("ignores stale tag details after the single selection changes", async () => {
     const assets = [createAsset(1), createAsset(2)];
-    const firstDetails = deferred<Asset>();
+    const firstDetails = deferred<AssetDetails>();
     apiMocks.getAssetDetails.mockImplementation((assetId: number) =>
-      assetId === 1 ? firstDetails.promise : Promise.resolve({ ...assets[1]!, tags: ["dog"] })
+      assetId === 1 ? firstDetails.promise : Promise.resolve(createDetails(assets[1]!, ["dog"]))
     );
     const { result } = renderHook(() => useBulkSelectionController(options(assets)));
     act(() => result.current.onToggleSelectionMode());
@@ -65,7 +74,7 @@ describe("useBulkSelectionController", () => {
     select(result, 2, 1);
     await waitFor(() => expect(result.current.singleAssetTags).toEqual(["dog"]));
     await act(async () => {
-      firstDetails.resolve({ ...assets[0]!, tags: ["cat"] });
+      firstDetails.resolve(createDetails(assets[0]!, ["cat"]));
       await firstDetails.promise;
     });
     expect(result.current.singleAssetTags).toEqual(["dog"]);
@@ -142,7 +151,7 @@ describe("useBulkSelectionController", () => {
 
   it("does not cache details that finish after the asset was deleted", async () => {
     const asset = createAsset(1);
-    const pendingDetails = deferred<Asset | null>();
+    const pendingDetails = deferred<AssetDetails | null>();
     apiMocks.getAssetDetails.mockReturnValueOnce(pendingDetails.promise);
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
@@ -156,7 +165,7 @@ describe("useBulkSelectionController", () => {
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledWith(1));
     act(() => result.current.assetTagState.remove(1));
     await act(async () => {
-      pendingDetails.resolve({ ...asset, tags: ["stale"] });
+      pendingDetails.resolve({ ...createDetails(asset, ["stale"]) });
       await pendingDetails.promise;
     });
 
@@ -336,5 +345,67 @@ describe("useBulkSelectionController", () => {
     expect(added).toBe(true);
     expect(result.current.appliedBulkTags).toEqual(["travel"]);
     expect(result.current.tagSaveFailed).toBe(false);
+  });
+
+  it("selects the exact global Shift range through the ID resolver", async () => {
+    const assets = [createAsset(10), createAsset(11)];
+    const ranges: Array<[number, number]> = [];
+    const getIdsRangeAsync = vi.fn(async (from: number, to: number) => {
+      ranges.push([from, to]);
+      return [30, 31, 32];
+    });
+    const { result } = renderHook(() =>
+      useBulkSelectionController({ ...options(assets), getIdsRangeAsync })
+    );
+    act(() => result.current.onToggleSelectionMode());
+    act(() => result.current.onBulkSelectionInteraction({
+      assetId: 10, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+    }));
+    await act(async () => {
+      result.current.onBulkSelectionInteraction({
+        assetId: 99, assetIndex: 2, ctrlLike: false, shift: true, viaDrag: false
+      });
+    });
+    expect(ranges).toEqual([[0, 2]]);
+    expect([...result.current.selectedAssetIds].sort()).toEqual([30, 31, 32]);
+  });
+
+  it("keeps the selection when render-cache pages evict assets", () => {
+    const initialAssets = [createAsset(1), createAsset(2), createAsset(3)];
+    const { result, rerender } = renderHook(
+      ({ assets }: { assets: AssetSummary[] }) =>
+        useBulkSelectionController(options(assets)),
+      { initialProps: { assets: initialAssets } }
+    );
+    act(() => result.current.onToggleSelectionMode());
+    select(result, 1, 0);
+    select(result, 3, 2, true);
+    expect(result.current.selectedAssetIds.size).toBe(2);
+
+    // Eviction: only one summary remains available for rendering.
+    rerender({ assets: [createAsset(3)] });
+    expect(result.current.selectedAssetIds).toEqual(new Set([1, 3]));
+    // Renderable selection is the intersection with loaded summaries.
+    expect(result.current.selectedAssets.map((asset) => asset.id)).toEqual([3]);
+  });
+
+  it("degrades a Shift press without a valid anchor to a plain selection after a new query epoch", async () => {
+    const assets = [createAsset(1), createAsset(2)];
+    const getIdsRangeAsync = vi.fn(async () => [1, 2]);
+    const { result, rerender } = renderHook(
+      ({ assets, queryEpoch }: { assets: AssetSummary[]; queryEpoch: number }) =>
+        useBulkSelectionController({ ...options(assets), queryEpoch, getIdsRangeAsync }),
+      { initialProps: { assets, queryEpoch: 1 } }
+    );
+    act(() => result.current.onToggleSelectionMode());
+    select(result, 1, 0);
+    rerender({ assets: [createAsset(9), createAsset(1)], queryEpoch: 2 });
+    await act(async () => {
+      result.current.onBulkSelectionInteraction({
+        assetId: 9, assetIndex: 2, ctrlLike: false, shift: true, viaDrag: false
+      });
+    });
+    expect(getIdsRangeAsync).not.toHaveBeenCalled();
+    expect([...result.current.selectedAssetIds]).toEqual([9]);
   });
 });

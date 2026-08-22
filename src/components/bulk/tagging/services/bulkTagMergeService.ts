@@ -1,4 +1,3 @@
-import type { Asset } from "../../../../types";
 
 export function normalizeBulkTag(rawTag: string): string {
   return rawTag.trim().toLowerCase();
@@ -41,39 +40,4 @@ export function mergeTagLists(existingTags: string[], incomingTags: string[]): s
   }
 
   return merged;
-}
-
-export function mergeBulkTagsInAssets(
-  assets: Asset[],
-  selectedAssetIds: Set<number>,
-  incomingTags: string[]
-): Asset[] {
-  if (!assets.length || !selectedAssetIds.size) {
-    return assets;
-  }
-
-  const normalizedIncoming = normalizeBulkTagList(incomingTags);
-  if (!normalizedIncoming.length) {
-    return assets;
-  }
-
-  return assets.map((asset) => {
-    if (!selectedAssetIds.has(asset.id)) {
-      return asset;
-    }
-
-    const mergedTags = mergeTagLists(asset.tags, normalizedIncoming);
-    const isUnchanged =
-      mergedTags.length === asset.tags.length &&
-      mergedTags.every((tag, index) => tag === asset.tags[index]);
-
-    if (isUnchanged) {
-      return asset;
-    }
-
-    return {
-      ...asset,
-      tags: mergedTags
-    };
-  });
 }

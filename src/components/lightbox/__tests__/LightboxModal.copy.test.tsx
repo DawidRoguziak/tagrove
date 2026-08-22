@@ -1,6 +1,6 @@
 ﻿import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../types";
+import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
 
 vi.mock("../../../api", () => ({
@@ -8,11 +8,11 @@ vi.mock("../../../api", () => ({
   toMediaSrc: (path: string) => `media://${path}`
 }));
 
-const selectedAsset: Asset = {
+const selectedAsset: SelectedAsset = {
   id: 1,
-  path: "C:/media/1.jpg",
+  file_name: "1.jpg",
+  preview_path: null,
   kind: "image",
-  size_bytes: 1024,
   modified_at: 1700000000,
   width: 1200,
   height: 800,
@@ -21,6 +21,8 @@ const selectedAsset: Asset = {
   is_favorite: false,
   media_group_key: null,
   media_group_order: null,
+  path: "C:/media/1.jpg",
+  size_bytes: 1024,
   tags: []
 };
 

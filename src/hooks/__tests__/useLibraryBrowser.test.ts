@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset, AssetSummary } from "../../types";
+import type { AssetSummary } from "../../types";
 import { useLibraryBrowser } from "../useLibraryBrowser";
 
 function deferred<T>() {
@@ -11,12 +11,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function createAsset(id: number, thumbPath: string | null = null): Asset {
+function createAsset(id: number, thumbPath: string | null = null): AssetSummary {
   return {
     id,
-    path: `C:/library/${id}.jpg`,
+    file_name: `${id}.jpg`,
+    preview_path: null,
     kind: "image",
-    size_bytes: 100,
     modified_at: id,
     width: 100,
     height: 100,
@@ -24,8 +24,7 @@ function createAsset(id: number, thumbPath: string | null = null): Asset {
     thumb_path: thumbPath,
     is_favorite: false,
     media_group_key: null,
-    media_group_order: null,
-    tags: []
+    media_group_order: null
   };
 }
 
@@ -39,31 +38,15 @@ const apiMocks = vi.hoisted(() => ({
   listTags: vi.fn()
 }));
 
-function toSummary(asset: Asset): AssetSummary {
-  return {
-    id: asset.id,
-    file_name: asset.path.split("/").at(-1) ?? asset.path,
-    preview_path: asset.path,
-    kind: asset.kind,
-    modified_at: asset.modified_at,
-    width: asset.width,
-    height: asset.height,
-    duration_ms: asset.duration_ms,
-    thumb_path: asset.thumb_path,
-    is_favorite: asset.is_favorite,
-    media_group_key: asset.media_group_key,
-    media_group_order: asset.media_group_order
-  };
-}
 
-function ready(items: Asset[], total: number, offset = 0) {
+function ready(items: AssetSummary[], total: number, offset = 0) {
   return {
     status: "ready" as const,
     session_id: 1,
     revision: 1,
     total,
     offset,
-    items: items.map(toSummary)
+    items: items
   };
 }
 
@@ -135,9 +118,10 @@ describe("useLibraryBrowser", () => {
   });
 
   it("uses the full preview path for a provisional video asset", async () => {
-    const video: Asset = {
+    const video: AssetSummary = {
       ...createAsset(7),
-      path: "C:/library/clip.mp4",
+      file_name: "clip.mp4",
+      preview_path: "C:/library/clip.mp4",
       kind: "video",
       duration_ms: 10_000
     };
@@ -157,8 +141,8 @@ describe("useLibraryBrowser", () => {
       await result.current.refresh();
     });
 
-    expect(result.current.assets[0].path).toBe("C:/library/clip.mp4");
-    expect(result.current.assets[0].path).not.toBe("clip.mp4");
+    expect(result.current.assets[0].preview_path).toBe("C:/library/clip.mp4");
+    expect(result.current.assets[0].preview_path).not.toBe("clip.mp4");
   });
 
   it("forwards meta filters to asset loading", async () => {
@@ -253,8 +237,8 @@ describe("useLibraryBrowser", () => {
       await result.current.refresh();
     });
 
-    let firstLookup!: Promise<Asset | undefined>;
-    let secondLookup!: Promise<Asset | undefined>;
+    let firstLookup!: Promise<AssetSummary | undefined>;
+    let secondLookup!: Promise<AssetSummary | undefined>;
     act(() => {
       firstLookup = result.current.getAssetAtAsync(2);
       secondLookup = result.current.getAssetAtAsync(2);
@@ -262,7 +246,7 @@ describe("useLibraryBrowser", () => {
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
 
     nextPage.resolve(ready([createAsset(3), createAsset(4)], 4, 2));
-    let resolved!: Array<Asset | undefined>;
+    let resolved!: Array<AssetSummary | undefined>;
     await act(async () => {
       resolved = await Promise.all([firstLookup, secondLookup]);
     });

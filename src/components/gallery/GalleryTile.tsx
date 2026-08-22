@@ -2,7 +2,7 @@ import { memo, useSyncExternalStore, type MouseEvent } from "react";
 import { toMediaSrc } from "../../api";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../UI/ThumbnailImage";
 import { UiChip } from "../UI/UiChip";
-import type { Asset } from "../../types";
+import type { AssetSummary } from "../../types";
 import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
 
 const TilePreview = memo(function TilePreview({
@@ -11,7 +11,7 @@ const TilePreview = memo(function TilePreview({
   shouldAnimateGif,
   showRenderLoader
 }: {
-  asset: Asset;
+  asset: AssetSummary;
   thumbPath?: string;
   shouldAnimateGif: boolean;
   showRenderLoader: boolean;
@@ -19,7 +19,7 @@ const TilePreview = memo(function TilePreview({
   const src =
     asset.kind === "gif"
       ? shouldAnimateGif
-        ? toMediaSrc(asset.path)
+        ? toMediaSrc(asset.preview_path ?? asset.file_name)
         : thumbPath
           ? toMediaSrc(thumbPath)
           : TRANSPARENT_THUMBNAIL_SRC
@@ -32,7 +32,7 @@ const TilePreview = memo(function TilePreview({
       <ThumbnailImage
         className="block h-full w-full object-cover"
         src={src}
-        alt={asset.path}
+        alt={asset.preview_path ?? asset.file_name}
       />
       {showRenderLoader ? (
         <div
@@ -54,7 +54,7 @@ interface GalleryTileProps {
   itemStart: number;
   tilePixelSize: number;
   tileGap: number;
-  asset: Asset;
+  asset: AssetSummary;
   thumbPath?: string;
   shouldAnimateGif: boolean;
   showRenderLoader: boolean;

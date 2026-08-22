@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../../types";
+import type { AssetSummary, SelectedAsset } from "../../../../types";
 import { saveLightboxMediaGroupAction } from "../saveLightboxMediaGroupAction";
 
 const apiMocks = vi.hoisted(() => ({
@@ -14,12 +14,12 @@ vi.mock("../../../../api", async () => {
   };
 });
 
-function createAsset(id: number): Asset {
+function createSummary(id: number): AssetSummary {
   return {
     id,
-    path: `C:/media/${id}.jpg`,
+    file_name: `${id}.jpg`,
+    preview_path: null,
     kind: "image",
-    size_bytes: 150,
     modified_at: 10,
     width: 320,
     height: 240,
@@ -27,7 +27,15 @@ function createAsset(id: number): Asset {
     thumb_path: null,
     is_favorite: false,
     media_group_key: null,
-    media_group_order: null,
+    media_group_order: null
+  };
+}
+
+function createAsset(id: number): SelectedAsset {
+  return {
+    ...createSummary(id),
+    path: `C:/media/${id}.jpg`,
+    size_bytes: 150,
     tags: []
   };
 }
@@ -40,13 +48,13 @@ describe("saveLightboxMediaGroupAction", () => {
   it("saves media group without mutating editors directly", async () => {
     apiMocks.setAssetMediaGroup.mockResolvedValue(undefined);
 
-    let assets = [createAsset(1), createAsset(2)];
-    let selected: Asset | null = createAsset(2);
+    let assets = [createSummary(1), createSummary(2)];
+    let selected: SelectedAsset | null = createAsset(2);
 
-    const setAssets = vi.fn((updater: (previous: Asset[]) => Asset[]) => {
+    const setAssets = vi.fn((updater: (previous: AssetSummary[]) => AssetSummary[]) => {
       assets = updater(assets);
     });
-    const setSelected = vi.fn((updater: (previous: Asset | null) => Asset | null) => {
+    const setSelected = vi.fn((updater: (previous: SelectedAsset | null) => SelectedAsset | null) => {
       selected = updater(selected);
     });
     const setMediaGroupKeyEditor = vi.fn();

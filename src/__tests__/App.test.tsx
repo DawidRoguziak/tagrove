@@ -3,7 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import type { Asset } from "../types";
+import type { MediaKind } from "../types";
+
+type LegacyAssetRow = {
+  id: number;
+  path: string;
+  kind: MediaKind;
+  modified_at: number;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+  thumb_path: string | null;
+  is_favorite: boolean;
+  media_group_key: string | null;
+  media_group_order: number | null;
+};
 
 function createAsset(id: number, path: string) {
   return {
@@ -149,7 +163,7 @@ describe("App", () => {
         revision: 1,
         total: page.total,
         offset: 0,
-        items: page.items.map((asset: Asset) => ({
+        items: page.items.map((asset: LegacyAssetRow) => ({
           id: asset.id,
           file_name: asset.path.split("/").at(-1) ?? asset.path,
           preview_path: asset.path,

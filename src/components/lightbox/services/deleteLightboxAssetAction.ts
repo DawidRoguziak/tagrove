@@ -1,11 +1,11 @@
 import { deleteAsset } from "../../../api";
-import type { Asset, DeleteAssetSummary } from "../../../types";
+import type { AssetSummary, DeleteAssetSummary, SelectedAsset } from "../../../types";
 
-type SetAssets = (updater: (previous: Asset[]) => Asset[]) => void;
-type SetSelected = (updater: (previous: Asset | null) => Asset | null) => void;
+type SetAssets = (updater: (previous: AssetSummary[]) => AssetSummary[]) => void;
+type SetSelected = (updater: (previous: SelectedAsset | null) => SelectedAsset | null) => void;
 
 interface DeleteLightboxAssetActionArgs {
-  selected: Asset | null;
+  selected: SelectedAsset | null;
   setAssets: SetAssets;
   setSelected: SetSelected;
   refresh: () => Promise<void>;

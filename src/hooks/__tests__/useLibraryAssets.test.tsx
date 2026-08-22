@@ -165,6 +165,77 @@ describe("useLibraryAssets", () => {
     expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
   });
 
+  it("stores summaries verbatim without fabricating path, size, or tags", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)]));
+    const { result } = await renderAssets();
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    const stored = result.current.getAssetAt(0);
+    expect(stored).toEqual(createSummary(1));
+    expect(stored).not.toHaveProperty("tags");
+    expect(stored?.preview_path).toBeNull();
+  });
+
+  it("bumps queryEpoch only when a new session becomes current", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], 1, 7));
+    const { result } = await renderAssets();
+    expect(result.current.queryEpoch).toBe(0);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    const afterFirst = result.current.queryEpoch;
+    expect(afterFirst).toBeGreaterThan(0);
+
+    apiMocks.startAssetQuery.mockResolvedValueOnce({ status: "superseded" });
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.queryEpoch).toBe(afterFirst);
+  });
+
+  it("resolves ordered snapshot IDs across unloaded pages via getIdsRangeAsync", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(
+      readyStart([createSummary(1), createSummary(2)], 4, 5)
+    );
+    const { result } = await renderAssets();
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    apiMocks.getAssetQueryPage.mockResolvedValueOnce({
+      status: "ready",
+      session_id: 5,
+      revision: 3,
+      total: 4,
+      offset: PAGE_SIZE,
+      items: [createSummary(3), createSummary(4)]
+    });
+
+    let ids: number[] = [];
+    await act(async () => {
+      ids = await result.current.getIdsRangeAsync(1, 2);
+    });
+    expect(ids).toEqual([2, 3]);
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledWith(5, PAGE_SIZE, PAGE_SIZE);
+  });
+
+  it("rejects the whole ID range when a required page fails", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], 4, 5));
+    const { result } = await renderAssets();
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    apiMocks.getAssetQueryPage.mockRejectedValueOnce(new Error("page worker failed"));
+    await act(async () => {
+      // Index 1 is cached, index 2 needs the failing second page.
+      await expect(result.current.getIdsRangeAsync(1, 2)).rejects.toThrow("page worker failed");
+    });
+  });
+
   it("drops an obsolete page response captured before a refresh", async () => {
     let resolvePage!: (value: unknown) => void;
     apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], 4, 5));

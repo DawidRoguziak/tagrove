@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../types";
+import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
 
 const apiMocks = vi.hoisted(() => ({
@@ -13,11 +13,11 @@ vi.mock("../../../api", () => ({
   toMediaSrc: (path: string) => `media://${path}`
 }));
 
-const selectedAsset: Asset = {
+const selectedAsset: SelectedAsset = {
   id: 1,
-  path: "C:/media/1.jpg",
+  file_name: "1.jpg",
+  preview_path: null,
   kind: "image",
-  size_bytes: 1024,
   modified_at: 1700000000,
   width: 1200,
   height: 800,
@@ -26,10 +26,12 @@ const selectedAsset: Asset = {
   is_favorite: false,
   media_group_key: null,
   media_group_order: null,
+  path: "C:/media/1.jpg",
+  size_bytes: 1024,
   tags: []
 };
 
-const selectedVideoAsset: Asset = {
+const selectedVideoAsset: SelectedAsset = {
   ...selectedAsset,
   path: "C:/media/1.mp4",
   kind: "video",
@@ -154,11 +156,13 @@ describe("LightboxModal", () => {
   });
 
   it("shows a GIF error and resets it after navigation", () => {
-    const gifAsset: Asset = {
-      ...selectedAsset,
-      path: "C:/media/animation.gif",
-      kind: "gif"
-    };
+    const gifAsset: SelectedAsset = {
+  ...selectedAsset,
+  file_name: "animation.gif",
+  preview_path: "C:/media/animation.gif",
+  path: "C:/media/animation.gif",
+  kind: "gif"
+};
     const { rerender } = render(
       <LightboxModal
         selected={gifAsset}
@@ -173,12 +177,12 @@ describe("LightboxModal", () => {
       />
     );
 
-    fireEvent.error(screen.getByAltText(gifAsset.path));
+    fireEvent.error(screen.getByAltText(gifAsset.file_name));
     expect(screen.getByRole("alert")).toHaveTextContent("Could not display image or GIF");
 
     rerender(
       <LightboxModal
-        selected={{ ...selectedAsset, id: 2, path: "C:/media/2.jpg" }}
+        selected={{ ...selectedAsset, id: 2, file_name: "2.jpg", path: "C:/media/2.jpg" }}
         tagEditor={[]}
         onTagEditorChange={() => {}}
         onSaveTags={() => {}}
@@ -191,7 +195,7 @@ describe("LightboxModal", () => {
     );
 
     expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
-    expect(screen.getByAltText("C:/media/2.jpg")).toHaveAttribute("src", "media://C:/media/2.jpg");
+    expect(screen.getByAltText("2.jpg")).toHaveAttribute("src", "media://C:/media/2.jpg");
   });
 
   it("does not navigate with arrows while editing tags", async () => {

@@ -3,14 +3,14 @@ import {
   updateAssetMediaGroup,
   updateSelectedMediaGroupIfMatchingAsset
 } from "../../app/services/assetMutationService";
-import type { Asset } from "../../../types";
+import type { AssetSummary, SelectedAsset } from "../../../types";
 
-type SetAssets = (updater: (previous: Asset[]) => Asset[]) => void;
-type SetSelected = (updater: (previous: Asset | null) => Asset | null) => void;
+type SetAssets = (updater: (previous: AssetSummary[]) => AssetSummary[]) => void;
+type SetSelected = (updater: (previous: SelectedAsset | null) => SelectedAsset | null) => void;
 type SetText = (next: string) => void;
 
 interface SaveLightboxMediaGroupActionArgs {
-  selected: Asset | null;
+  selected: SelectedAsset | null;
   setAssets: SetAssets;
   setSelected: SetSelected;
   setMediaGroupKeyEditor?: SetText;

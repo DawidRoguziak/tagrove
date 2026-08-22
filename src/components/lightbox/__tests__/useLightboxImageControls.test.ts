@@ -1,15 +1,15 @@
 import { act, renderHook } from "@testing-library/react";
 import type { MouseEvent as ReactMouseEvent, SyntheticEvent, WheelEvent as ReactWheelEvent } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../types";
+import type { SelectedAsset } from "../../../types";
 import { useLightboxImageControls } from "../useLightboxImageControls";
 
-function createAsset(kind: Asset["kind"] = "image"): Asset {
+function createAsset(kind: SelectedAsset["kind"] = "image"): SelectedAsset {
   return {
     id: 1,
-    path: "C:/library/1.jpg",
+    file_name: "1.jpg",
+    preview_path: null,
     kind,
-    size_bytes: 100,
     modified_at: 1,
     width: 1200,
     height: 800,
@@ -18,6 +18,8 @@ function createAsset(kind: Asset["kind"] = "image"): Asset {
     is_favorite: false,
     media_group_key: null,
     media_group_order: null,
+    path: "C:/library/1.jpg",
+    size_bytes: 100,
     tags: []
   };
 }

@@ -1,16 +1,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Asset } from "../../../types";
+import type { AssetSummary } from "../../../types";
 import type { BulkSelectionController } from "../../app/types";
 import { BulkActionsSidebar } from "../BulkActionsSidebar";
 
-function createAsset(id: number, override: Partial<Asset> = {}): Asset {
+function createAsset(id: number, override: Partial<AssetSummary> = {}): AssetSummary {
   return {
     id,
-    path: `C:/media/${id}.jpg`,
+    file_name: `${id}.jpg`,
+    preview_path: null,
     kind: "image",
-    size_bytes: 1,
     modified_at: 1,
     width: 100,
     height: 100,
@@ -19,7 +19,6 @@ function createAsset(id: number, override: Partial<Asset> = {}): Asset {
     is_favorite: false,
     media_group_key: null,
     media_group_order: null,
-    tags: [],
     ...override
   };
 }

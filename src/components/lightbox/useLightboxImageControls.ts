@@ -5,7 +5,7 @@ import type {
   SyntheticEvent
 } from "react";
 import type { MediaPlayerInstance } from "@vidstack/react";
-import type { Asset } from "../../types";
+import type { SelectedAsset } from "../../types";
 import { useLightboxKeyboardShortcuts } from "./hooks/useLightboxKeyboardShortcuts";
 import { useLightboxViewportSize } from "./hooks/useLightboxViewportSize";
 import {
@@ -20,7 +20,7 @@ import {
 } from "./services/lightboxPanZoomService";
 
 interface UseLightboxImageControlsOptions {
-  selected: Asset | null;
+  selected: SelectedAsset | null;
   onClose: () => void;
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
@@ -51,7 +51,7 @@ function getWheelZoomFactor(currentZoomFactor: number, event: ZoomWheelEvent, pa
   return clampZoomFactor(currentZoomFactor * Math.exp(-normalizedDelta * WHEEL_ZOOM_SENSITIVITY));
 }
 
-function getAssetIntrinsicSize(selected: Asset | null): MediaDimensions {
+function getAssetIntrinsicSize(selected: SelectedAsset | null): MediaDimensions {
   return {
     width: Math.max(0, selected?.width ?? 0),
     height: Math.max(0, selected?.height ?? 0)

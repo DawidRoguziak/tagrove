@@ -70,9 +70,9 @@ describe("media utils", () => {
       mapThumbs([
         {
           id: 1,
-          path: "a",
+          file_name: "a.jpg",
+          preview_path: null,
           kind: "image",
-          size_bytes: 10,
           modified_at: 1,
           width: null,
           height: null,
@@ -80,14 +80,13 @@ describe("media utils", () => {
           thumb_path: "thumb-a",
           is_favorite: false,
           media_group_key: null,
-          media_group_order: null,
-          tags: []
+          media_group_order: null
         },
         {
           id: 2,
-          path: "b",
+          file_name: "b.mp4",
+          preview_path: "b.mp4",
           kind: "video",
-          size_bytes: 10,
           modified_at: 1,
           width: null,
           height: null,
@@ -95,8 +94,7 @@ describe("media utils", () => {
           thumb_path: null,
           is_favorite: false,
           media_group_key: null,
-          media_group_order: null,
-          tags: []
+          media_group_order: null
         }
       ])
     ).toEqual({ 1: "thumb-a" });

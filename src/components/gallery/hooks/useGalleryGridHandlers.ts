@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
-import type { Asset } from "../../../types";
+import type { AssetSummary } from "../../../types";
 import type { BulkSelectionInteraction } from "../GalleryGrid";
 
 interface UseGalleryGridHandlersOptions {
-  assets: Asset[];
-  getAssetAt?: (index: number) => Asset | undefined;
+  assets: AssetSummary[];
+  getAssetAt?: (index: number) => AssetSummary | undefined;
   selectionModeEnabled: boolean;
   onCtrlWheelZoom?: (deltaY: number) => void;
-  onSelect: (asset: Asset) => void;
+  onSelect: (asset: AssetSummary) => void;
   onBulkSelectionInteraction?: (interaction: BulkSelectionInteraction) => void;
 }
 
 interface TileContext {
-  asset: Asset;
+  asset: AssetSummary;
   assetIndex: number;
 }
 
@@ -42,7 +42,7 @@ export function useGalleryGridHandlers({
   const dragMovedRef = useRef(false);
 
   const assetById = useMemo(() => {
-    const lookup = new Map<number, Asset>();
+    const lookup = new Map<number, AssetSummary>();
     for (const asset of assets) {
       lookup.set(asset.id, asset);
     }

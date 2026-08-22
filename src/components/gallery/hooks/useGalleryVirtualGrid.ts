@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { Asset } from "../../../types";
+import type { AssetSummary } from "../../../types";
 
 const TILE_GAP = 10;
 const GIF_VIEWPORT_ANIMATE_THRESHOLD = 10;
 
 interface UseGalleryVirtualGridOptions {
   assetCount: number;
-  getAssetAt: (index: number) => Asset | undefined;
+  getAssetAt: (index: number) => AssetSummary | undefined;
   tileSize: number;
   hasMore: boolean;
   isLoading: boolean;
@@ -160,7 +160,7 @@ export function useGalleryVirtualGrid({
     virtualItems,
     visibleGifCount,
     itemsInViewport,
-    shouldAnimateGif: (asset: Asset, itemIndex: number) => {
+    shouldAnimateGif: (asset: AssetSummary, itemIndex: number) => {
       return (
         asset.kind === "gif" &&
         !itemVirtualizer.isScrolling &&

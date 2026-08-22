@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getAssetQueryPage, startAssetQuery } from "../api";
 import type { SearchMediaKind } from "../components/app/types";
-import type { Asset, AssetSummary, SearchMetaFilter } from "../types";
+import type { AssetSummary, SearchMetaFilter } from "../types";
 import { mapThumbs } from "../utils/media";
 
 const MAX_CACHED_PAGES = 12;
 
 interface PageCache {
   pages: Map<number, number[]>;
-  assetsById: Map<number, Asset>;
+  assetsById: Map<number, AssetSummary>;
   lru: number[];
 }
 
@@ -25,8 +25,8 @@ interface UseLibraryAssetsOptions {
 }
 
 interface UseLibraryAssetsResult {
-  assets: Asset[];
-  setAssets: Dispatch<SetStateAction<Asset[]>>;
+  assets: AssetSummary[];
+  setAssets: Dispatch<SetStateAction<AssetSummary[]>>;
   total: number;
   setTotal: Dispatch<SetStateAction<number>>;
   offset: number;
@@ -36,11 +36,13 @@ interface UseLibraryAssetsResult {
   loadError: string | null;
   retryLoad: () => Promise<void>;
   pageFailureEpoch: number;
+  queryEpoch: number;
   refresh: () => Promise<void>;
   handleReachEnd: () => void;
   ensureRange: (startIndex: number, endIndex: number) => void;
-  getAssetAt: (index: number) => Asset | undefined;
-  getAssetAtAsync: (index: number) => Promise<Asset | undefined>;
+  getAssetAt: (index: number) => AssetSummary | undefined;
+  getAssetAtAsync: (index: number) => Promise<AssetSummary | undefined>;
+  getIdsRangeAsync: (startIndex: number, endIndex: number) => Promise<number[]>;
   getAssetIndex: (assetId: number) => number | null;
 }
 
@@ -49,24 +51,6 @@ const EMPTY_CACHE: PageCache = {
   assetsById: new Map(),
   lru: []
 };
-
-function summaryToAsset(summary: AssetSummary): Asset {
-  return {
-    id: summary.id,
-    path: summary.preview_path ?? summary.file_name,
-    kind: summary.kind,
-    size_bytes: 0,
-    modified_at: summary.modified_at,
-    width: summary.width,
-    height: summary.height,
-    duration_ms: summary.duration_ms,
-    thumb_path: summary.thumb_path,
-    is_favorite: summary.is_favorite,
-    media_group_key: summary.media_group_key,
-    media_group_order: summary.media_group_order,
-    tags: []
-  };
-}
 
 export function useLibraryAssets({
   pageSize,
@@ -84,9 +68,10 @@ export function useLibraryAssets({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pageFailureEpoch, setPageFailureEpoch] = useState(0);
+  const [queryEpoch, setQueryEpoch] = useState(0);
   const sessionIdRef = useRef<number | null>(null);
   const generationRef = useRef(0);
-  const inFlightPagesRef = useRef<Map<number, Promise<Asset[] | undefined>>>(new Map());
+  const inFlightPagesRef = useRef<Map<number, Promise<AssetSummary[] | undefined>>>(new Map());
   const inFlightCountRef = useRef(0);
 
   const beginLoading = useCallback(() => {
@@ -98,16 +83,16 @@ export function useLibraryAssets({
     setLoading(inFlightCountRef.current > 0);
   }, []);
 
+  // Summaries are stored verbatim: no path/size/tags fabrication happens here.
   const mergePage = useCallback(
     (pageOffset: number, summaries: AssetSummary[], replace: boolean) => {
-      const pageAssets = summaries.map(summaryToAsset);
       setCache((previous) => {
         const pages = replace ? new Map<number, number[]>() : new Map(previous.pages);
-        const assetsById = replace ? new Map<number, Asset>() : new Map(previous.assetsById);
-        const pageIds = pageAssets.map((asset) => asset.id);
+        const assetsById = replace ? new Map(previous.assetsById) : new Map(previous.assetsById);
+        const pageIds = summaries.map((summary) => summary.id);
         pages.set(pageOffset, pageIds);
-        for (const asset of pageAssets) {
-          assetsById.set(asset.id, asset);
+        for (const summary of summaries) {
+          assetsById.set(summary.id, summary);
         }
 
         const lru = [pageOffset, ...(replace ? [] : previous.lru.filter((item) => item !== pageOffset))];
@@ -124,10 +109,10 @@ export function useLibraryAssets({
         return { pages, assetsById, lru };
       });
       setThumbs((previous) => {
-        const incoming = mapThumbs(pageAssets);
+        const incoming = mapThumbs(summaries);
         return replace ? incoming : { ...previous, ...incoming };
       });
-      setOffset((current) => Math.max(current, pageOffset + pageAssets.length));
+      setOffset((current) => Math.max(current, pageOffset + summaries.length));
     },
     [setThumbs]
   );
@@ -153,6 +138,7 @@ export function useLibraryAssets({
       });
       if (generation !== generationRef.current || result.status === "superseded") return;
       sessionIdRef.current = result.session_id;
+      setQueryEpoch((epoch) => epoch + 1);
       setTotal(result.total);
       setOffset(result.items.length);
       setLoadError(null);
@@ -195,13 +181,13 @@ export function useLibraryAssets({
       if (cache.pages.has(pageOffset)) {
         return (cache.pages.get(pageOffset) ?? [])
           .map((assetId) => cache.assetsById.get(assetId))
-          .filter((asset): asset is Asset => Boolean(asset));
+          .filter((summary): summary is AssetSummary => Boolean(summary));
       }
       const inFlight = inFlightPagesRef.current.get(pageOffset);
       if (inFlight) return inFlight;
 
       const generation = generationRef.current;
-      let request!: Promise<Asset[] | undefined>;
+      let request!: Promise<AssetSummary[] | undefined>;
       request = (async () => {
         beginLoading();
         try {
@@ -213,7 +199,7 @@ export function useLibraryAssets({
           }
           setLoadError(null);
           mergePage(result.offset, result.items, false);
-          return result.items.map(summaryToAsset);
+          return result.items;
         } catch (error) {
           // The failed page stays a retryable hole; the range dedup marker is
           // released through pageFailureEpoch so the virtual range re-requests.
@@ -271,6 +257,34 @@ export function useLibraryAssets({
     [getAssetAt, loadPage, pageSize]
   );
 
+  /** Ordered snapshot IDs for a global index range; loads only the pages that
+   * intersect it. Rejects when any required page fails to load, so callers can
+   * leave their state untouched instead of applying a partial range. */
+  const getIdsRangeAsync = useCallback(
+    async (startIndex: number, endIndex: number) => {
+      const from = Math.max(0, Math.min(startIndex, endIndex));
+      const to = Math.min(total - 1, Math.max(startIndex, endIndex));
+      if (from > to) return [];
+      const ids: number[] = [];
+      for (
+        let pageOffset = Math.floor(from / pageSize) * pageSize;
+        pageOffset <= to;
+        pageOffset += pageSize
+      ) {
+        const page = await loadPage(pageOffset);
+        if (!page) break;
+        const firstLocal = Math.max(0, from - pageOffset);
+        const lastLocal = Math.min(page.length - 1, to - pageOffset);
+        for (let local = firstLocal; local <= lastLocal; local += 1) {
+          const summary = page[local];
+          if (summary) ids.push(summary.id);
+        }
+      }
+      return ids;
+    },
+    [loadPage, pageSize, total]
+  );
+
   const getAssetIndex = useCallback(
     (assetId: number) => {
       for (const [pageOffset, ids] of cache.pages) {
@@ -300,7 +314,7 @@ export function useLibraryAssets({
     });
   }, [cache.assetsById, setThumbs]);
 
-  const setAssets = useCallback<Dispatch<SetStateAction<Asset[]>>>((action) => {
+  const setAssets = useCallback<Dispatch<SetStateAction<AssetSummary[]>>>((action) => {
     setCache((previous) => {
       const current = Array.from(previous.assetsById.values());
       const nextAssets = typeof action === "function" ? action(current) : action;
@@ -325,11 +339,13 @@ export function useLibraryAssets({
     loadError,
     retryLoad,
     pageFailureEpoch,
+    queryEpoch,
     refresh,
     handleReachEnd,
     ensureRange,
     getAssetAt,
     getAssetAtAsync,
+    getIdsRangeAsync,
     getAssetIndex
   };
 }

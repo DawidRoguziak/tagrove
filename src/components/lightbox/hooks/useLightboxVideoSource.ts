@@ -7,15 +7,16 @@ interface VideoSourceState {
   failed: boolean;
 }
 
-export function useLightboxVideoSource(assetId: number, path: string, isVideo: boolean) {
+export function useLightboxVideoSource(assetId: number, path: string | null, isVideo: boolean) {
   const requestGenerationRef = useRef(0);
-  const key = isVideo ? `${assetId}\u0000${path}` : "";
+  const ready = isVideo && path !== null;
+  const key = ready ? `${assetId}\u0000${path}` : "";
   const [state, setState] = useState<VideoSourceState>({ key: "", src: null, failed: false });
 
   useEffect(() => {
     const generation = ++requestGenerationRef.current;
     setState({ key, src: null, failed: false });
-    if (!isVideo) {
+    if (!ready) {
       return () => {
         requestGenerationRef.current += 1;
       };
@@ -45,12 +46,12 @@ export function useLightboxVideoSource(assetId: number, path: string, isVideo: b
     return () => {
       requestGenerationRef.current += 1;
     };
-  }, [assetId, isVideo, key, path]);
+  }, [assetId, key, path, ready]);
 
-  const isCurrent = state.key === key;
+  const isCurrent = state.key === key && key !== "";
   return {
     src: isCurrent ? state.src : null,
     failed: isCurrent && state.failed,
-    loading: isVideo && (!isCurrent || (!state.src && !state.failed))
+    loading: ready && (!isCurrent || (!state.src && !state.failed))
   };
 }

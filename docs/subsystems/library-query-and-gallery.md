@@ -61,6 +61,7 @@ Global-index access goes through these methods:
 - `getAssetAt(index)` computes the aligned page offset, finds the ID at the local page position, and returns the cached asset or `undefined` for a hole.
 - `getAssetAtAsync(index)` returns a cached asset or loads the aligned page, then returns that local position. Concurrent lookups for the same missing page await the same in-flight Promise and receive the same page result. Page-load failures reject; an unavailable position can resolve as `undefined`.
 - `getAssetIndex(assetId)` scans cached page ID arrays and returns the snapshot index only if that asset's page is loaded; otherwise it returns `null`.
+- `getIdsRangeAsync(from, to)` loads every intersecting page and returns the inclusive global ID range. It rejects the whole request when a page is stale, cancelled, failed, or lacks any expected position; callers never receive a silently truncated range.
 
 Only one request per page offset is started at a time. A ref-backed Promise map deduplicates callers, while a separate in-flight counter keeps `loading` true until all tracked query/page requests finish. Refresh clears the Promise map; an older request's `finally` removes its entry only if that exact Promise is still registered, so it cannot erase a newer-generation request for the same offset. A page response is discarded when its captured local generation is obsolete. The active session ID is captured before the request; no page is requested without a session or outside the current `total`. The frontend trusts a backend `ready` page's returned session and revision rather than comparing them again, because the backend page command is keyed by the supplied session ID.
 
@@ -106,7 +107,7 @@ The database revision is the authoritative invalidation epoch. Scans and query-v
 | Single/bulk media-group edit | Patches loaded objects locally and then always restarts the asset query, because group changes alter ordering and adjacency of the active view. |
 | Thumbnail generation or cleanup | Updates thumbnail state without changing query membership/order and does not bump the library revision. The thumbnail store is authoritative for production tiles. |
 
-Starting a refresh resets the active thumbnail queue but keeps the old asset cache and `total` visible until a current `ready` first page replaces them. Old start and page responses cannot merge after the local generation changes.
+Starting a refresh resets the active thumbnail queue but keeps the old asset cache and `total` visible until a current `ready` first page replaces them. Replacement clears both page IDs and `assetsById`, so rows retained only by an older session cannot leak into the new compact cache. Old start and page responses cannot merge after the local generation changes.
 
 ### Error behavior
 

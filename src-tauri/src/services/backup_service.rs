@@ -533,13 +533,20 @@ fn is_windows_absolute(path: &str) -> bool {
 
 fn mapped_path(path: &str, mappings: &[DbRootMapping]) -> Option<String> {
     mappings.iter().find_map(|mapping| {
-        if path.eq_ignore_ascii_case(&mapping.source_root) {
+        let normalized_path = path.replace('\\', "/");
+        let normalized_root = mapping
+            .source_root
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string();
+        if normalized_path.eq_ignore_ascii_case(&normalized_root) {
             return Some(mapping.target_root.clone());
         }
-        let source = mapping.source_root.trim_end_matches(['\\', '/']);
-        let suffix = path.get(source.len()..)?;
-        if path[..source.len()].eq_ignore_ascii_case(source) && suffix.starts_with(['\\', '/']) {
-            let suffix = suffix.trim_start_matches(['\\', '/']).replace('\\', "/");
+        let suffix = normalized_path.get(normalized_root.len()..)?;
+        if normalized_path[..normalized_root.len()].eq_ignore_ascii_case(&normalized_root)
+            && suffix.starts_with('/')
+        {
+            let suffix = suffix.trim_start_matches('/');
             return Some(
                 Path::new(&mapping.target_root)
                     .join(suffix)
@@ -604,7 +611,7 @@ fn rewrite_staged_paths(
     let mut rewritten = Vec::new();
     for asset in assets {
         validate_stored_path(&asset.path)?;
-        let source_root = roots
+        let assigned_roots = roots
             .iter()
             .filter(|root| {
                 path_is_within_root(&asset.path, root)
@@ -612,13 +619,14 @@ fn rewrite_staged_paths(
                         *asset_id == asset.id && mapped_root == *root
                     })
             })
-            .max_by_key(|root| root.len())
-            .ok_or_else(|| {
-                format!(
-                    "Asset path is outside its declared root mappings: {}",
-                    asset.path
-                )
-            })?;
+            .collect::<Vec<_>>();
+        if assigned_roots.is_empty() {
+            return Err(format!(
+                "Asset path is outside its declared root mappings: {}",
+                asset.path
+            )
+            .into());
+        }
         let next_path = if mappings.is_empty() {
             asset.path.clone()
         } else {
@@ -626,19 +634,25 @@ fn rewrite_staged_paths(
                 .ok_or_else(|| format!("Asset path has no root mapping: {}", asset.path))?
         };
         validate_stored_path(&next_path)?;
-        let target_root = if mappings.is_empty() {
-            source_root.as_str()
-        } else {
-            mappings
-                .iter()
-                .find(|mapping| mapping.source_root.eq_ignore_ascii_case(source_root))
-                .map(|mapping| mapping.target_root.as_str())
-                .ok_or_else(|| format!("Missing target mapping for scan root: {source_root}"))?
-        };
-        if !path_is_within_root(&next_path, target_root) {
-            return Err(format!("Mapped asset path escapes scan root: {next_path}").into());
+        let mut rewritten_roots = Vec::with_capacity(assigned_roots.len());
+        for assigned_root in assigned_roots {
+            let target_root = if mappings.is_empty() {
+                assigned_root.as_str()
+            } else {
+                mappings
+                    .iter()
+                    .find(|mapping| path_strings_equal(&mapping.source_root, assigned_root))
+                    .map(|mapping| mapping.target_root.as_str())
+                    .ok_or_else(|| {
+                        format!("Missing target mapping for scan root: {assigned_root}")
+                    })?
+            };
+            if !path_is_within_root(&next_path, target_root) {
+                return Err(format!("Mapped asset path escapes scan root: {next_path}").into());
+            }
+            validate_existing_path_within_root(&next_path, target_root)?;
+            rewritten_roots.push(target_root.to_string());
         }
-        validate_existing_path_within_root(&next_path, target_root)?;
         let target_key = if cfg!(any(windows, target_os = "macos")) {
             next_path.to_lowercase()
         } else {
@@ -668,7 +682,7 @@ fn rewrite_staged_paths(
             )?,
             None => None,
         };
-        rewritten.push((asset.id, next_path, file_name, next_thumb));
+        rewritten.push((asset.id, next_path, file_name, next_thumb, rewritten_roots));
     }
 
     let tx = conn.unchecked_transaction()?;
@@ -682,25 +696,30 @@ fn rewrite_staged_paths(
             )?;
         }
     }
-    for (id, path, file_name, thumb_path) in rewritten {
+    for (id, path, file_name, thumb_path, root_paths) in rewritten {
         tx.execute(
             "UPDATE assets SET path=?1, file_name=?2, file_name_key=?3, thumb_path=?4 WHERE id=?5",
             rusqlite::params![path, file_name, canonical_key(&file_name), thumb_path, id],
         )?;
+        if !mappings.is_empty() {
+            for root_path in root_paths {
+                tx.execute(
+                    "INSERT INTO asset_scan_roots(asset_id, root_path, last_seen_generation) VALUES (?1, ?2, 0)",
+                    rusqlite::params![id, root_path],
+                )?;
+            }
+        }
     }
     if !mappings.is_empty() {
-        for mapping in &mappings {
-            let escaped = mapping
-                .target_root
-                .trim_end_matches(['/', '\\'])
-                .replace('^', "^^")
-                .replace('%', "^%")
-                .replace('_', "^_");
-            let pattern = format!("{escaped}/%");
-            tx.execute(
-                "INSERT INTO asset_scan_roots(asset_id, root_path, last_seen_generation) SELECT id, ?1, 0 FROM assets WHERE path=?1 OR path LIKE ?2 ESCAPE '^'",
-                rusqlite::params![mapping.target_root, pattern],
-            )?;
+        let assets_without_roots: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM assets a WHERE NOT EXISTS (
+               SELECT 1 FROM asset_scan_roots ar WHERE ar.asset_id = a.id
+             )",
+            [],
+            |row| row.get(0),
+        )?;
+        if assets_without_roots != 0 {
+            return Err("Path rewrite left assets without scan-root mappings".into());
         }
     }
     tx.execute("DELETE FROM thumbnail_failures", [])?;
@@ -778,6 +797,12 @@ fn path_is_within_root(path: &str, root: &str) -> bool {
         || path
             .strip_prefix(&root)
             .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn path_strings_equal(left: &str, right: &str) -> bool {
+    left.replace('\\', "/")
+        .trim_end_matches('/')
+        .eq_ignore_ascii_case(right.replace('\\', "/").trim_end_matches('/'))
 }
 
 fn validate_existing_path_within_root(path: &str, root: &str) -> AppResult<()> {
@@ -1285,7 +1310,7 @@ mod tests {
         app::state::AppState, db, models::NewAsset, services::thumb_scheduler::ThumbnailScheduler,
     };
 
-    use super::{export_db_bundle, import_db_bundle, sanitize_zip_entry_path};
+    use super::{export_db_bundle, import_db_bundle, mapped_path, sanitize_zip_entry_path};
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
         AppState {
@@ -1317,6 +1342,34 @@ mod tests {
             duration_ms: None,
             thumb_path: None,
         }
+    }
+
+    #[test]
+    fn mapped_path_accepts_backslash_and_slash_source_separators() {
+        let target = PathBuf::from("/tmp/mapped-media");
+        let mappings = vec![crate::models::DbRootMapping {
+            source_root: r"C:\Users\Example\Pictures".to_string(),
+            target_root: target.to_string_lossy().into_owned(),
+        }];
+
+        assert_eq!(
+            mapped_path(r"C:\Users\Example\Pictures\album\photo.jpg", &mappings),
+            Some(
+                target
+                    .join("album/photo.jpg")
+                    .to_string_lossy()
+                    .into_owned()
+            )
+        );
+        assert_eq!(
+            mapped_path("C:/Users/Example/Pictures/album/photo.jpg", &mappings),
+            Some(
+                target
+                    .join("album/photo.jpg")
+                    .to_string_lossy()
+                    .into_owned()
+            )
+        );
     }
 
     #[test]
@@ -1592,6 +1645,10 @@ mod tests {
         assert_eq!(
             db::list_scan_roots(&conn).expect("roots"),
             vec![target_root.to_string_lossy().to_string()]
+        );
+        assert_eq!(
+            db::list_backup_asset_root_mappings(&conn).expect("asset root mappings"),
+            vec![(1, target_root.to_string_lossy().into_owned())]
         );
         assert_eq!(
             fs::read(target_thumbs.join("legacy.jpg")).expect("restored thumb"),

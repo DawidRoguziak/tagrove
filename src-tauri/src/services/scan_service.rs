@@ -22,6 +22,10 @@ use crate::db::delete_stale_assets_by_prefix;
 const MAX_SCAN_WORKERS: usize = 8;
 const SCAN_QUEUE_CAPACITY: usize = 1024;
 const SCAN_DB_BATCH_SIZE: usize = 512;
+// While discovery dispatches one full batch, workers may finish the already
+// queued tasks plus that batch before the next result drain.
+const SCAN_RESULT_QUEUE_CAPACITY: usize =
+    SCAN_QUEUE_CAPACITY + SCAN_DB_BATCH_SIZE + MAX_SCAN_WORKERS;
 
 pub fn sort_scan_roots_by_created_desc(roots: Vec<String>) -> Vec<String> {
     let mut roots_with_created_at = roots
@@ -92,7 +96,8 @@ pub fn scan_roots<R: tauri::Runtime>(
         let scan_worker_count = resolve_scan_worker_count(usize::MAX);
         let (task_sender, task_receiver) =
             mpsc::sync_channel::<(PathBuf, String, indexer::FileFingerprint)>(SCAN_QUEUE_CAPACITY);
-        let (result_sender, result_receiver) = mpsc::channel::<indexer::IndexResult>();
+        let (result_sender, result_receiver) =
+            mpsc::sync_channel::<indexer::IndexResult>(SCAN_RESULT_QUEUE_CAPACITY);
         let shared_task_receiver = Arc::new(Mutex::new(task_receiver));
         let mut worker_handles = Vec::with_capacity(scan_worker_count);
 

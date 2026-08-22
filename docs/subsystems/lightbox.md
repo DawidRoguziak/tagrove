@@ -125,7 +125,7 @@ The window-level shortcuts while an asset is selected are:
 | `+` / `=` | Zoom image/GIF in by 1.25 |
 | `-` | Zoom image/GIF out by 1.25 |
 
-After the fullscreen/Escape rule, shortcuts are suppressed when the event target is an `INPUT`, `TEXTAREA`, or contenteditable element. This lets tag suggestions and group/confirmation editors own arrows and typing. For video, all remaining lightbox shortcuts are also suppressed when the target is inside `[data-lightbox-video-player]`, leaving player keyboard behavior intact. Image-only zoom keys do nothing for video.
+While delete confirmation is open, the lightbox shortcut listener is disabled and the nested dialog owns Escape. Otherwise, after the fullscreen/Escape rule, shortcuts are suppressed when the event target is an `INPUT`, `TEXTAREA`, or contenteditable element. This lets tag suggestions and group editors own arrows and typing. For video, all remaining lightbox shortcuts are also suppressed when the target is inside `[data-lightbox-video-player]`, leaving player keyboard behavior intact. Image-only zoom keys do nothing for video.
 
 ## Backdrop-close and nested-overlay safety
 
@@ -148,6 +148,7 @@ The delete overlay stops propagation at both its backdrop and surface, so closin
 - Popover, clipboard timeout, drag listener, resize observer, fullscreen listener, keyboard listener, and animation-frame cleanup are scoped to their owning hook/component.
 - Input editing and Vidstack controls do not accidentally trigger navigation or image shortcuts.
 - Delete requires explicit localized text confirmation and prevents duplicate submission.
+- Escape closes only the nested delete confirmation while that dialog is open.
 
 ## Known limitations and maintenance hazards
 
@@ -157,7 +158,7 @@ The delete overlay stops propagation at both its backdrop and surface, so closin
 - Global index is captured at selection time and is not recomputed when the query/filter/order changes. A non-empty cache that no longer contains the selected ID leaves the lightbox open with the old index.
 - Tag replacements are serialized per asset, coalesce rapid drafts, and expose saving/failure/Retry state. Favorite and media-group writes still have no submitting state or mutation request guard, so rapid writes for those fields may resolve out of order.
 - The double-click and legacy mouse-down handlers are returned by `useLightboxImageControls` and unit-tested directly, but `LightboxMediaStage` currently wires neither one. Rendered images therefore single-click through 1.25x steps; the pixel-perfect double-click toggle is not reachable from the modal.
-- The lightbox shell itself has no dialog role, focus trap, or focus restoration. `Escape` is checked before form-control suppression, so pressing it in the nested delete input closes the entire lightbox when not fullscreen rather than only dismissing the confirmation.
+- The lightbox shell itself has no dialog role or focus trap. The nested delete dialog restores focus to the delete button, but closing the lightbox does not restore focus to the selected gallery tile.
 - Final staged-delete cleanup can fail after DB commit; the UI reports the recovery path and the durable journal retries cleanup at startup.
 - Fullscreen, clipboard, autoplay, and details failures are intentionally silent.
 

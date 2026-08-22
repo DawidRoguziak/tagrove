@@ -88,7 +88,7 @@ export function useLibraryAssets({
     (pageOffset: number, summaries: AssetSummary[], replace: boolean) => {
       setCache((previous) => {
         const pages = replace ? new Map<number, number[]>() : new Map(previous.pages);
-        const assetsById = replace ? new Map(previous.assetsById) : new Map(previous.assetsById);
+        const assetsById = replace ? new Map<number, AssetSummary>() : new Map(previous.assetsById);
         const pageIds = summaries.map((summary) => summary.id);
         pages.set(pageOffset, pageIds);
         for (const summary of summaries) {
@@ -272,12 +272,13 @@ export function useLibraryAssets({
         pageOffset += pageSize
       ) {
         const page = await loadPage(pageOffset);
-        if (!page) break;
+        if (!page) throw new Error("Asset ID range was cancelled");
         const firstLocal = Math.max(0, from - pageOffset);
-        const lastLocal = Math.min(page.length - 1, to - pageOffset);
+        const lastLocal = Math.min(pageSize - 1, to - pageOffset);
         for (let local = firstLocal; local <= lastLocal; local += 1) {
           const summary = page[local];
-          if (summary) ids.push(summary.id);
+          if (!summary) throw new Error("Asset ID range is incomplete");
+          ids.push(summary.id);
         }
       }
       return ids;

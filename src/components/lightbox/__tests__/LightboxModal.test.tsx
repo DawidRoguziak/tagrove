@@ -616,6 +616,7 @@ describe("LightboxModal", () => {
 
   it("closes only the nested confirmation on Escape and restores delete focus", async () => {
     const onClose = vi.fn();
+    const onNavigateNext = vi.fn();
     render(
       <UiLayerProvider>
         <LightboxModal
@@ -625,7 +626,7 @@ describe("LightboxModal", () => {
           onSaveTags={() => {}}
           knownTags={[]}
           onNavigatePrevious={() => {}}
-          onNavigateNext={() => {}}
+          onNavigateNext={onNavigateNext}
           onToggleFavorite={() => {}}
           onClose={onClose}
         />
@@ -635,6 +636,8 @@ describe("LightboxModal", () => {
     const deleteButton = screen.getByRole("button", { name: "Delete media" });
     await userEvent.click(deleteButton);
     expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(onNavigateNext).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));

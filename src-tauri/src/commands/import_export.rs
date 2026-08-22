@@ -31,7 +31,6 @@ pub fn clear_library_data(
     with_scan_and_thumb_lock(&state, || {
         let conn = db::open_connection(&state.db_path)?;
         let (removed_assets, removed_roots, thumbs) = db::clear_library_data(&conn)?;
-        db::bump_library_revision(&conn)?;
 
         let total = thumbs.len();
         let _ = emit_progress(

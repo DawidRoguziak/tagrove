@@ -1821,18 +1821,23 @@ pub fn clear_all_thumbnail_paths(conn: &Connection) -> anyhow::Result<Vec<String
 }
 
 pub fn clear_library_data(conn: &Connection) -> anyhow::Result<(usize, usize, Vec<String>)> {
+    let tx = conn.unchecked_transaction()?;
     let mut thumbs = Vec::new();
-    let mut stmt =
-        conn.prepare("SELECT DISTINCT thumb_path FROM assets WHERE thumb_path IS NOT NULL")?;
-    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-    for row in rows {
-        thumbs.push(row?);
+    {
+        let mut stmt =
+            tx.prepare("SELECT DISTINCT thumb_path FROM assets WHERE thumb_path IS NOT NULL")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            thumbs.push(row?);
+        }
     }
 
-    let removed_assets = conn.execute("DELETE FROM assets", [])?;
-    conn.execute("DELETE FROM thumbnail_failures", [])?;
-    conn.execute("DELETE FROM tags", [])?;
-    let removed_roots = conn.execute("DELETE FROM scan_roots", [])?;
+    let removed_assets = tx.execute("DELETE FROM assets", [])?;
+    tx.execute("DELETE FROM thumbnail_failures", [])?;
+    tx.execute("DELETE FROM tags", [])?;
+    let removed_roots = tx.execute("DELETE FROM scan_roots", [])?;
+    bump_library_revision_in_tx(&tx)?;
+    tx.commit()?;
 
     Ok((removed_assets, removed_roots, thumbs))
 }
@@ -2585,7 +2590,7 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
           HAVING COUNT(*) > 1
         )
         SELECT d.file_name_key, d.file_name_display, a.id, a.path,
-               a.record_version, a.size_bytes, a.fingerprint_mtime_ns
+               a.record_version, a.size_bytes
         FROM duplicate_names d
         JOIN assets a ON a.file_name_key = d.file_name_key
         ORDER BY d.asset_count DESC, d.file_name_key ASC, a.modified_at DESC, a.id DESC
@@ -2599,12 +2604,11 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
             row.get::<_, String>(3)?,
             row.get::<_, i64>(4)?,
             row.get::<_, i64>(5)?,
-            row.get::<_, i64>(6)?,
         ))
     })?;
     let mut current_key = String::new();
     for row in rows {
-        let (key, display, id, path, record_version, size_bytes, fingerprint_mtime_ns) = row?;
+        let (key, display, id, path, record_version, size_bytes) = row?;
         if current_key != key {
             current_key = key;
             groups.push(DuplicateGroup {
@@ -2618,7 +2622,6 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
                 path,
                 record_version,
                 size_bytes,
-                fingerprint_mtime_ns,
             });
         }
     }
@@ -2758,6 +2761,9 @@ pub fn prune_completed_scan_root_generation(
         [],
     )?;
     cleanup_orphan_tags(&tx)?;
+    if removed > 0 {
+        bump_library_revision_in_tx(&tx)?;
+    }
     tx.commit()?;
     Ok(removed)
 }
@@ -3459,11 +3465,12 @@ mod tests {
         list_duplicate_assets_by_file_name_key, list_duplicate_file_name_counts,
         list_failed_assets_for_thumbnail_render, list_failed_thumbnail_asset_ids,
         list_ordered_asset_ids_with_meta, list_tags_page, merge_asset_tags_bulk,
-        merge_asset_tags_bulk_with_revision, record_thumbnail_failure, rename_asset_file_by_id,
-        root_descendant_like_pattern, set_asset_favorite, set_asset_favorite_with_revision,
-        set_asset_media_group, set_asset_media_group_with_revision, set_asset_tags,
-        set_asset_tags_with_revision, set_assets_media_group_bulk,
-        try_list_ordered_asset_ids_with_meta, update_asset_thumbnail_path_if_version_matches,
+        merge_asset_tags_bulk_with_revision, prune_completed_scan_root_generation,
+        record_thumbnail_failure, rename_asset_file_by_id, root_descendant_like_pattern,
+        set_asset_favorite, set_asset_favorite_with_revision, set_asset_media_group,
+        set_asset_media_group_with_revision, set_asset_tags, set_asset_tags_with_revision,
+        set_assets_media_group_bulk, try_list_ordered_asset_ids_with_meta,
+        update_asset_thumbnail_path_if_version_matches,
         update_asset_thumbnail_paths_batch_versioned, upsert_asset, upsert_scanned_asset,
         validate_backup_database, AssetMetaFilter, ThumbnailCasOutcome,
     };
@@ -3477,6 +3484,90 @@ mod tests {
             root_descendant_like_pattern("/srv/100%_media"),
             "/srv/100^%^_media/%"
         );
+    }
+
+    #[test]
+    fn completed_scan_prune_bumps_revision_only_when_it_removes_an_asset() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        add_scan_root(&conn, "/media").expect("root");
+        upsert_scanned_asset(
+            &conn,
+            &NewAsset {
+                path: "/media/stale.jpg".to_string(),
+                kind: "image".to_string(),
+                size_bytes: 1,
+                modified_at: 1,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_path: None,
+            },
+            1,
+            "/media",
+            1,
+        )
+        .expect("asset");
+        let baseline = current_library_revision(&conn).expect("baseline");
+
+        assert_eq!(
+            prune_completed_scan_root_generation(&conn, "/media", 1).expect("no-op prune"),
+            0
+        );
+        assert_eq!(
+            current_library_revision(&conn).expect("no-op revision"),
+            baseline
+        );
+
+        assert_eq!(
+            prune_completed_scan_root_generation(&conn, "/media", 2).expect("prune"),
+            1
+        );
+        assert_eq!(
+            current_library_revision(&conn).expect("pruned revision"),
+            baseline + 1
+        );
+    }
+
+    #[test]
+    fn completed_scan_prune_rolls_back_asset_removal_when_revision_bump_fails() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        add_scan_root(&conn, "/media").expect("root");
+        upsert_scanned_asset(
+            &conn,
+            &NewAsset {
+                path: "/media/stale.jpg".to_string(),
+                kind: "image".to_string(),
+                size_bytes: 1,
+                modified_at: 1,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_path: None,
+            },
+            1,
+            "/media",
+            1,
+        )
+        .expect("asset");
+        let baseline = current_library_revision(&conn).expect("baseline");
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER fail_prune_revision
+             BEFORE UPDATE ON library_metadata
+             WHEN OLD.key = 'revision'
+             BEGIN SELECT RAISE(ABORT, 'injected revision failure'); END;",
+        )
+        .expect("trigger");
+
+        assert!(prune_completed_scan_root_generation(&conn, "/media", 2).is_err());
+        assert_eq!(
+            list_assets(&conn, 0, 10, &[], &[], None, false)
+                .expect("assets")
+                .total,
+            1
+        );
+        assert_eq!(current_library_revision(&conn).expect("revision"), baseline);
     }
 
     fn insert_asset(conn: &Connection, path: &str, kind: &str, modified_at: i64) {

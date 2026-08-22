@@ -26,7 +26,7 @@ flowchart LR
     CORE --> FS
     CORE --> TOOLS
     CMD -. "Result serialized as value or error string" .-> IPC
-    SVC -. "process-progress / thumbnail-ready" .-> IPC
+    SVC -. "process-progress / thumbnail channel" .-> IPC
     IPC -. "promise, event, or Channel message" .-> UI
 ```
 
@@ -37,7 +37,7 @@ The normal request path is:
 3. Feature hooks call typed wrappers in `src/api.ts`. Those wrappers are the frontend IPC seam: they translate UI concepts into Tauri command names and payloads, create an IPC `Channel` for streamed thumbnail results, use `convertFileSrc` for image/GIF URLs, and request private loopback URLs for video playback.
 4. Tauri dispatches the request to a function registered by `tauri::generate_handler!` in `src-tauri/src/lib.rs`. Command functions validate or normalize inputs, obtain `AppState`, acquire a workflow lock where required, and either perform a small operation or delegate to a service.
 5. Services coordinate scanning, query sessions, backups, progress, and thumbnail scheduling. `db.rs` owns SQL; `indexer.rs` discovers and inspects media; `thumbs.rs` performs image/video probing and rendering; filesystem mutations occur in the command or service responsible for that workflow.
-6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; on-demand thumbnail batches use a `Channel<ThumbnailStreamEvent>`, while some thumbnail workflows emit `thumbnail-ready`.
+6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; on-demand thumbnail batches use a `Channel<ThumbnailStreamEvent>`.
 
 Concrete examples:
 

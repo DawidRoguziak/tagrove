@@ -53,7 +53,7 @@ Each valid root is processed as one streaming pipeline:
 1. A per-root generation is derived from the current Unix timestamp in nanoseconds, capped at `i64::MAX`; the root's zero-based position is added with saturation.
 2. The discovery thread walks supported files, reads their fingerprints, and accumulates discovery batches of at most **512** files.
 3. One SQL query per discovery batch fetches existing fingerprints by exact paths. An unchanged `(kind, size_bytes, modified_at_ns)` asset bypasses metadata probing and is queued for a root-generation touch. Everything else enters the worker task queue.
-4. The task queue is a bounded synchronous channel with capacity **1,024**. The scan starts `min(available_parallelism, 8)` workers, with a minimum of one; the current streaming call supplies an unknown/unbounded file count, so the discovered count does not reduce this number. Workers share the task receiver and inspect files concurrently. The result channel is unbounded.
+4. The task queue is a bounded synchronous channel with capacity **1,024**. The scan starts `min(available_parallelism, 8)` workers, with a minimum of one; the current streaming call supplies an unknown/unbounded file count, so the discovered count does not reduce this number. Workers share the task receiver and inspect files concurrently. The result channel is also bounded, at **1,544** entries (`1,024 + 512 + 8`), so workers apply backpressure instead of accumulating unbounded metadata.
 5. Unchanged IDs are flushed when their accumulator reaches **512**, but a whole discovery batch is appended before that check; one touch transaction can therefore contain **512–1,023** IDs, with a final transaction of **1–511**. Successful changed/new results commit in transactions of at most **512** assets. Each changed upsert writes the asset metadata, exact nanosecond fingerprint, and `(asset_id, root_path, generation)` mapping.
 6. During discovery, ready worker results are drained so database writes and indexing overlap the walk. After discovery, the sender is closed, remaining unchanged touches and worker results are consumed, the last partial write batch is committed, and all workers are joined.
 7. Only a complete root enters generation pruning. After all supplied roots, a non-empty scan bumps the library revision once and runs `PRAGMA optimize` once.
@@ -72,7 +72,7 @@ A root is complete only when all of these are true:
 - every supported discovered file produced a fingerprint; and
 - every queued changed/new file produced an indexed item.
 
-For a complete root, pruning transactionally deletes mappings for that root whose generation is stale, deletes globally orphaned assets, deletes thumbnail failures for missing assets, and removes orphan tags. `ScanSummary.removed` counts deleted asset rows, not stale mappings. For a partial root, pruning is skipped entirely, so older mappings and assets are preserved; successful touches and upserts from that same partial pass remain committed.
+For a complete root, pruning transactionally deletes mappings for that root whose generation is stale, deletes globally orphaned assets, deletes thumbnail failures for missing assets, removes orphan tags, and conditionally bumps the revision when an asset row was removed. A revision failure rolls back that prune. `ScanSummary.removed` counts deleted asset rows, not stale mappings. For a partial root, pruning is skipped entirely, so older mappings and assets are preserved; successful touches and upserts from that same partial pass remain committed.
 
 Generation pruning does not delete thumbnail files belonging to assets removed by a completed scan. In contrast, explicit root removal collects orphan thumbnail paths in its database transaction and tries to delete those files afterward.
 
@@ -98,9 +98,9 @@ The scan is not one database transaction. Unchanged touches, each changed write 
 
 - a warning-level traversal, fingerprint, or per-file indexing failure returns a successful partial summary; completed batches remain stored and stale cleanup for that root is skipped;
 - a hard database, queue, worker-disconnect, thread-spawn, or worker-panic error fails the command; earlier transactions remain committed, later roots are not processed, and the final revision bump and optimization may not run;
-- a revision-bump failure happens after root writes/prunes and leaves them committed without the expected query-session invalidation;
+- a final revision-bump failure can leave earlier touch/write transactions committed, but changed write batches and destructive prunes each carry their own transactional revision bump;
 - an optimization failure happens after the revision bump and turns the command into an error even though scan data and the new revision are already committed; and
-- explicit root removal commits the database deletion before its best-effort thumbnail deletions, while its revision bump is a separate statement between those stages.
+- explicit root removal commits its database deletion and revision together before best-effort thumbnail deletions.
 
 Errors cross the IPC boundary as strings. `spawn_blocking` join failures are reported as `scan worker failed: ...` or `rescan worker failed: ...`; internal scan-worker disconnection and panic paths have their own string messages. There is no rollback spanning SQLite, source metadata reads, external video tools, and thumbnail files.
 
@@ -123,10 +123,9 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 - Extension-only kind detection can admit corrupt or mislabeled files. Image dimensions and video duration are optional, and their probe failures do not contribute to `failed` or partial completion.
 - A subsecond-only file change can be detected and reindexed through `fingerprint_mtime_ns`, while `upsert_asset` preserves an existing thumbnail whenever whole-second `modified_at` is unchanged. Thumbnail naming also uses whole seconds, so that change can retain a stale thumbnail.
 - Generation values come from wall-clock time rather than a persistent monotonic sequence. The scan mutex prevents simultaneous scans in one process, but uniqueness is not enforced by SQLite.
-- The worker task queue is bounded, but the result channel is not; a sufficiently slow database/discovery consumer can accumulate completed metadata results in memory.
 - Scan pruning removes database rows but does not delete their thumbnail files. Reindexing a file whose whole-second modification time changed also clears the database thumbnail path without deleting the old file. Root removal does delete recorded thumbnails, but only best-effort after the database commit; failed deletions are not returned as errors.
 - Progress is best effort, shared with other workflows, uncorrelated, and uneven for small or unchanged roots. Human-readable messages are not a stable API.
-- Batch commits and the final revision bump are not atomic together. A hard failure can expose partial new data without a revision change, and there is no resume journal or cancellation mechanism.
+- The scan is not one transaction. Each changed batch and destructive prune invalidates sessions atomically, but a hard failure can still leave an intentionally partial sequence of committed batches; there is no resume journal or cancellation mechanism.
 - Current focused tests do not execute the full Tauri `scan_roots` pipeline with overlapping roots, forced partial discovery, generation pruning, batch-boundary failures, worker panic/disconnect, or revision/optimization fault injection.
 
 ## Safe change checklist

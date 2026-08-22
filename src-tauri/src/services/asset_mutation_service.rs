@@ -287,7 +287,7 @@ fn apply_file_mutation_batch(
                     .staging_path
                     .as_ref()
                     .context("delete has no staging path")?;
-                match fs::remove_file(staging_path) {
+                match remove_file_and_sync_parent(staging_path) {
                     Ok(()) => {
                         if db::remove_pending_file_operation(conn, &operation_id, item.asset.id)
                             .is_ok()
@@ -380,6 +380,7 @@ fn validate_and_prepare(
         })
         .collect::<HashSet<_>>();
     let database_paths = db::list_asset_paths(conn)?;
+    let asset_root_mappings = db::list_backup_asset_root_mappings(conn)?;
 
     for change in &input.changes {
         let (asset_id, expected_path, expected_record_version) = match change {
@@ -413,6 +414,13 @@ fn validate_and_prepare(
                     .with_context(|| format!("cannot inspect source '{}'", asset.path))
             }
         };
+        if !source_state {
+            validate_source_within_assigned_root(
+                asset.id,
+                Path::new(&asset.path),
+                &asset_root_mappings,
+            )?;
+        }
         let action = match change {
             DuplicateResolutionChangeInput::Delete { .. } => PreparedAction::Delete,
             DuplicateResolutionChangeInput::Rename { new_file_name, .. } => {
@@ -540,6 +548,30 @@ fn validate_final_duplicate_names(
     Ok(())
 }
 
+fn validate_source_within_assigned_root(
+    asset_id: i64,
+    source: &Path,
+    mappings: &[(i64, String)],
+) -> anyhow::Result<()> {
+    let canonical_source = source
+        .canonicalize()
+        .with_context(|| format!("cannot canonicalize source '{}'", source.display()))?;
+    let mut has_assignment = false;
+    for (_, root) in mappings.iter().filter(|(id, _)| *id == asset_id) {
+        has_assignment = true;
+        if Path::new(root)
+            .canonicalize()
+            .is_ok_and(|canonical_root| canonical_source.starts_with(canonical_root))
+        {
+            return Ok(());
+        }
+    }
+    if !has_assignment {
+        anyhow::bail!("asset {asset_id} has no assigned scan root");
+    }
+    anyhow::bail!("asset {asset_id} source escapes its assigned scan roots through a symbolic link")
+}
+
 fn rollback_files(prepared: &mut [PreparedMutation]) -> HashSet<i64> {
     let mut failures = HashSet::new();
     for item in prepared.iter_mut().rev() {
@@ -654,6 +686,7 @@ fn clear_restored_journal(
 }
 
 pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::Result<()> {
+    let scan_roots = db::list_scan_roots(conn)?;
     for operation in db::list_pending_file_operations(conn)? {
         let original = Path::new(&operation.original_path);
         let staging = Path::new(&operation.staging_path);
@@ -662,7 +695,10 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
 
         if db_committed {
             if operation.action == "delete" {
-                match fs::remove_file(staging) {
+                if fs::symlink_metadata(staging).is_ok() {
+                    validate_recovery_staging_path(original, staging, &scan_roots)?;
+                }
+                match remove_file_and_sync_parent(staging) {
                     Ok(()) => {}
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                     Err(_) => continue,
@@ -719,6 +755,30 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
     Ok(())
 }
 
+fn validate_recovery_staging_path(
+    original: &Path,
+    staging: &Path,
+    scan_roots: &[String],
+) -> anyhow::Result<()> {
+    let canonical_staging = staging
+        .canonicalize()
+        .with_context(|| format!("cannot canonicalize recovery path '{}'", staging.display()))?;
+    let confined = scan_roots.iter().any(|root| {
+        let root = Path::new(root);
+        original.starts_with(root)
+            && root
+                .canonicalize()
+                .is_ok_and(|canonical_root| canonical_staging.starts_with(canonical_root))
+    });
+    if !confined {
+        anyhow::bail!(
+            "pending delete recovery path '{}' escapes the source's scan roots",
+            staging.display()
+        );
+    }
+    Ok(())
+}
+
 pub fn validate_file_name(raw: &str) -> anyhow::Result<String> {
     let value = raw.trim();
     if value.is_empty() {
@@ -767,7 +827,7 @@ fn unique_staging_path(source: &Path) -> PathBuf {
 }
 
 #[cfg(target_os = "linux")]
-fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
+fn platform_rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
     let source = CString::new(source.as_os_str().as_bytes())
@@ -791,7 +851,7 @@ fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
 }
 
 #[cfg(windows)]
-fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
+fn platform_rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::{
         core::PCWSTR,
@@ -818,9 +878,123 @@ fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
-fn rename_no_replace(_source: &Path, _target: &Path) -> io::Result<()> {
+fn platform_rename_no_replace(_source: &Path, _target: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "atomic no-clobber rename is unsupported on this platform",
     ))
+}
+
+fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
+    platform_rename_no_replace(source, target)?;
+    sync_parent_directory(source)?;
+    if source.parent() != target.parent() {
+        sync_parent_directory(target)?;
+    }
+    Ok(())
+}
+
+fn remove_file_and_sync_parent(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => sync_parent_directory(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => sync_parent_directory(path),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(path: &Path) -> io::Result<()> {
+    fs::File::open(
+        path.parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?,
+    )?
+    .sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::{delete_asset, validate_recovery_staging_path};
+    use crate::{db, models::NewAsset};
+
+    #[cfg(unix)]
+    #[test]
+    fn delete_rejects_source_reached_through_symlinked_parent_escape() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("root");
+        let outside = tmp.path().join("outside");
+        let thumbs = tmp.path().join("thumbs");
+        fs::create_dir_all(&root).expect("root");
+        fs::create_dir_all(&outside).expect("outside");
+        fs::create_dir_all(&thumbs).expect("thumbs");
+        fs::write(outside.join("asset.jpg"), b"source").expect("source");
+        symlink(&outside, root.join("escape")).expect("symlink");
+        let escaped_path = root.join("escape/asset.jpg");
+
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        db::init_schema(&conn).expect("schema");
+        db::add_scan_root(&conn, &root.to_string_lossy()).expect("scan root");
+        db::upsert_scanned_asset(
+            &conn,
+            &NewAsset {
+                path: escaped_path.to_string_lossy().into_owned(),
+                kind: "image".to_string(),
+                size_bytes: 6,
+                modified_at: 1,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_path: None,
+            },
+            1,
+            &root.to_string_lossy(),
+            1,
+        )
+        .expect("asset");
+
+        let error = delete_asset(&conn, &thumbs, 1).expect_err("escape must be rejected");
+        assert!(error
+            .to_string()
+            .contains("escapes its assigned scan roots"));
+        assert!(outside.join("asset.jpg").exists());
+        assert!(db::get_file_mutation_asset(&conn, 1)
+            .expect("asset query")
+            .is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_rejects_staging_path_reached_through_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("root");
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&root).expect("root");
+        fs::create_dir_all(&outside).expect("outside");
+        fs::write(outside.join("staged.jpg"), b"source").expect("staged source");
+        symlink(&outside, root.join("escape")).expect("symlink");
+
+        let error = validate_recovery_staging_path(
+            &root.join("asset.jpg"),
+            &root.join("escape/staged.jpg"),
+            &[root.to_string_lossy().into_owned()],
+        )
+        .expect_err("escape must be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("escapes the source's scan roots"));
+        assert!(outside.join("staged.jpg").exists());
+    }
 }

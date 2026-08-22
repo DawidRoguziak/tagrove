@@ -22,8 +22,8 @@ use commands::{
     assets::{
         apply_duplicate_resolution_batch, delete_asset, find_duplicate_assets, get_asset_details,
         get_asset_query_page, get_video_stream_url, list_assets, list_tags, merge_asset_tags_bulk,
-        rename_asset_file, set_asset_favorite, set_asset_media_group, set_asset_tags,
-        set_assets_media_group_bulk, start_asset_query,
+        set_asset_favorite, set_asset_media_group, set_asset_tags, set_assets_media_group_bulk,
+        start_asset_query,
     },
     import_export::{
         clear_library_data, export_db_bundle, export_tags_csv, import_db_bundle, import_tags_csv,
@@ -31,9 +31,8 @@ use commands::{
     },
     scan::{add_scan_root, list_scan_roots, remove_scan_root, rescan_all_roots, scan_folder},
     thumbs::{
-        cancel_render_all_thumbnails, clear_all_thumbnails, ensure_asset_thumbnail,
-        ensure_page_thumbnails, ensure_thumbnails, get_video_tool_status, render_all_thumbnails,
-        render_failed_thumbnails,
+        cancel_render_all_thumbnails, clear_all_thumbnails, ensure_thumbnails,
+        get_video_tool_status, render_all_thumbnails, render_failed_thumbnails,
     },
     window::sync_window_theme,
 };
@@ -115,8 +114,6 @@ pub fn run() {
             add_scan_root,
             remove_scan_root,
             rescan_all_roots,
-            ensure_asset_thumbnail,
-            ensure_page_thumbnails,
             ensure_thumbnails,
             get_video_tool_status,
             render_all_thumbnails,
@@ -136,7 +133,6 @@ pub fn run() {
             set_assets_media_group_bulk,
             delete_asset,
             find_duplicate_assets,
-            rename_asset_file,
             apply_duplicate_resolution_batch,
             list_tags,
             export_tags_csv,

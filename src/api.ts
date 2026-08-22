@@ -16,14 +16,12 @@ import type {
   DuplicateResolutionBatchChange,
   DuplicateResolutionBatchSummary,
   DuplicateScanSummary,
-  RenameAssetSummary,
   RemoveRootSummary,
   ScanSummary,
   SearchMetaFilter,
   SetAssetTagsSummary,
   StartAssetQueryResult,
   TagListPage,
-  ThumbnailBatchResult,
   ThumbnailStreamEvent,
   ThumbnailRenderSummary,
   VideoToolStatus
@@ -216,18 +214,6 @@ export async function applyDuplicateResolutionBatch(
   return await invoke<DuplicateResolutionBatchSummary>("apply_duplicate_resolution_batch", {
     input: { scanRevision, changes }
   });
-}
-
-export async function renameAssetFile(assetId: number, newFileName: string): Promise<RenameAssetSummary> {
-  return await invoke<RenameAssetSummary>("rename_asset_file", { assetId, newFileName });
-}
-
-export async function ensureAssetThumbnail(assetId: number): Promise<string | null> {
-  return await invoke<string | null>("ensure_asset_thumbnail", { assetId });
-}
-
-export async function ensurePageThumbnails(assetIds: number[]): Promise<ThumbnailBatchResult> {
-  return await invoke<ThumbnailBatchResult>("ensure_page_thumbnails", { assetIds });
 }
 
 export async function ensureThumbnailsStream(

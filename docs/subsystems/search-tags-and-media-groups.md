@@ -70,13 +70,13 @@ Apply disables closing interactions while in flight. Success closes the modal; r
 
 ### Bulk selection
 
-Bulk state covers only assets currently present in the frontend gallery cache. Turning selection mode off clears the selected-ID set and anchor. Whenever the cached asset array changes, selected IDs that are no longer present are pruned and a missing anchor is cleared. Enabling bulk mode adds a sticky right column beside the gallery, bounded to the viewport height. The column itself does not scroll: long ordering content scrolls inside the compact thumbnail list, while long tag content scrolls inside the tag list so headings and controls remain visible. Changing the selected-ID set resets its group draft, order, tag feedback, and request state.
+Bulk selection stores IDs independently of gallery-page eviction; the sidebar can render details only for selected rows currently represented in the cache. Turning selection mode off clears the selected-ID set and anchor. A new query session clears the global-index anchor and invalidates an in-flight Shift range. Enabling bulk mode adds a sticky right column beside the gallery, bounded to the viewport height. The column itself does not scroll: long ordering content scrolls inside the compact thumbnail list, while long tag content scrolls inside the tag list so headings and controls remain visible. Changing the selected-ID set resets its group draft, order, tag feedback, and request state.
 
 Current pointer and modifier behavior is:
 
 - A primary-button pointer down without Ctrl/Cmd or Shift starts additive drag selection and immediately adds that tile. Entering more tiles while held adds them; drag never removes an item. The following ordinary click is suppressed.
 - Ctrl-click or Cmd-click toggles one ID and makes it the new anchor.
-- Shift-click uses the anchor when it can be found. It selects the inclusive `assets` slice between anchor and clicked indices, replacing the prior set; Ctrl/Cmd+Shift unions that range into the prior set. A range operation does not move the anchor.
+- Shift-click uses the global-index anchor and resolves the inclusive ID range through the active query session, replacing the prior set; Ctrl/Cmd+Shift unions that range into the prior set. A range operation does not move the anchor. A response captured for an older query epoch or superseded by another range request is ignored.
 - If Shift has no usable anchor, handling falls through to an ordinary single-item replacement and sets that item as anchor.
 - A plain click delivered without the preceding pointer-down path, such as a synthesized click, replaces selection with that one ID and sets the anchor.
 The sidebar's group and tag controls remain disabled until at least one item is selected. Multiple selected assets request thumbnails for the compact ordering list.
@@ -111,8 +111,8 @@ All five mutation commands bump or conditionally bump the library revision as de
 - There is no quoted-tag grammar. Whitespace and CSV delimiters are rejected rather than represented inside one tag.
 - Applied-filter refresh dependencies serialize tag arrays with `join("|")`. A literal `|` inside a tag can make distinct arrays share the same dependency string and suppress a required refresh. Semantically equivalent raw edits can also change displayed applied text without a new query because refresh watches parsed values.
 - Tag-list selection is always a new expression. Opening it does not show or preserve the current include/exclude choices, and applying it discards any existing normal or meta-filter search text. Its 220 ms timer is mouse-oriented; selection does not expose an equivalent explicit include/exclude keyboard command beyond activating the tag buttons.
-- Bulk selection is cache-scoped, not query-scoped. Cache eviction or a filter refresh can silently prune selected IDs.
-- Shift ranges mix the clicked tile's global virtual index with an anchor index and slice from the compact cached `assets` array. After sparse, out-of-order page loading or eviction, the selected range can be incomplete or wrong. Drag selection is add-only, and an ordinary pointer click also follows the additive pointer-down path; individual deselection requires Ctrl/Cmd.
+- Selected IDs survive page eviction, but sidebar operations still act on the selected rows that can be resolved to loaded summaries/details. A new query invalidates the Shift anchor rather than guessing its new position.
+- Drag selection is add-only, and an ordinary pointer click also follows the additive pointer-down path; individual deselection requires Ctrl/Cmd.
 - Tag, favorite, and group patches update loaded objects but do not rebuild session IDs, page membership, or group order. Except for removing a favorite from a favorites-only view, the gallery can remain inconsistent with the new database query until an explicit refresh or stale-page recovery. See [library query and gallery](library-query-and-gallery.md).
 - Gallery summaries carry `tags: []`; the shared tag coordinator and local detail caches therefore carry canonical complete tag arrays rather than patching incomplete summary arrays.
 - Tag mutation plus revision is atomic, but local patches and best-effort known-tag refresh remain outside the database transaction. Other mutation families retain their documented transaction gaps.

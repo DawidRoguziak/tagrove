@@ -132,7 +132,6 @@ pub struct DuplicateAsset {
     pub path: String,
     pub record_version: i64,
     pub size_bytes: i64,
-    pub fingerprint_mtime_ns: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]

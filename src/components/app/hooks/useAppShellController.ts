@@ -85,6 +85,7 @@ export function useAppShellController() {
     refreshKnownTags: library.refreshKnownTags,
     assetTagState,
     assetCount: library.assetCount,
+    queryEpoch: library.queryEpoch,
     getAssetAtAsync: library.getAssetAtAsync,
     getAssetIndex: library.getAssetIndex,
     appliedFilterTags
@@ -92,6 +93,8 @@ export function useAppShellController() {
 
   const bulkSelection = useBulkSelectionController({
     assets: library.assets,
+    queryEpoch: library.queryEpoch,
+    getIdsRangeAsync: library.getIdsRangeAsync,
     knownTags: library.knownTags,
     settingsViewOpen,
     queueThumbnailsByIds: library.queueThumbnailsByIds,

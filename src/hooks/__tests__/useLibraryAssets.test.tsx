@@ -62,7 +62,9 @@ describe("useLibraryAssets", () => {
   });
 
   it("replaces the cache with the ready first page of the current generation", async () => {
-    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)]));
+    apiMocks.startAssetQuery
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)]))
+      .mockResolvedValueOnce(readyStart([createSummary(9)], 1, 8));
     const { result } = await renderAssets();
 
     await act(async () => {
@@ -76,6 +78,11 @@ describe("useLibraryAssets", () => {
     expect(apiMocks.startAssetQuery).toHaveBeenCalledWith(
       expect.objectContaining({ generation: 1, pageSize: PAGE_SIZE })
     );
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.assets.map((asset) => asset.id)).toEqual([9]);
   });
 
   it("ignores a superseded start and keeps the previous cache visible", async () => {
@@ -223,7 +230,9 @@ describe("useLibraryAssets", () => {
   });
 
   it("rejects the whole ID range when a required page fails", async () => {
-    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], 4, 5));
+    apiMocks.startAssetQuery.mockResolvedValue(
+      readyStart([createSummary(1), createSummary(2)], 4, 5)
+    );
     const { result } = await renderAssets();
     await act(async () => {
       await result.current.refresh();
@@ -233,6 +242,21 @@ describe("useLibraryAssets", () => {
     await act(async () => {
       // Index 1 is cached, index 2 needs the failing second page.
       await expect(result.current.getIdsRangeAsync(1, 2)).rejects.toThrow("page worker failed");
+    });
+  });
+
+  it("rejects an ID range cancelled by a stale session", async () => {
+    apiMocks.startAssetQuery
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)], 4, 5))
+      .mockResolvedValueOnce(readyStart([createSummary(9)], 1, 6));
+    const { result } = await renderAssets();
+    await act(async () => {
+      await result.current.refresh();
+    });
+    apiMocks.getAssetQueryPage.mockResolvedValueOnce({ status: "stale" });
+
+    await act(async () => {
+      await expect(result.current.getIdsRangeAsync(1, 2)).rejects.toThrow("cancelled");
     });
   });
 

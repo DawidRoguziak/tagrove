@@ -15,7 +15,6 @@ function makeGroup(fileName: string, ids: number[]): DuplicateGroup {
       path: `C:/media/folder-${index + 1}/${fileName}`,
       record_version: 1,
       size_bytes: 10,
-      fingerprint_mtime_ns: 100 + index
     }))
   };
 }

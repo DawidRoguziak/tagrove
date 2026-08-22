@@ -37,6 +37,22 @@ export interface SelectedAsset extends AssetSummary {
   tags: string[];
 }
 
+export interface LegacyAsset {
+  id: number;
+  path: string;
+  kind: MediaKind;
+  size_bytes: number;
+  modified_at: number;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+  thumb_path: string | null;
+  is_favorite: boolean;
+  media_group_key: string | null;
+  media_group_order: number | null;
+  tags: string[];
+}
+
 export interface AssetQueryFilters {
   tags_and: string[];
   tags_not: string[];
@@ -71,7 +87,7 @@ export type ThumbnailStreamEvent =
   | { event: "done"; data: { ready: number; failed: number } };
 
 export interface ScanSummary {
-  completion?: "complete" | "partial";
+  completion: "complete" | "partial";
   indexed: number;
   removed: number;
   failed: number;
@@ -95,7 +111,6 @@ export interface DuplicateAsset {
   path: string;
   record_version: number;
   size_bytes: number;
-  fingerprint_mtime_ns: number;
 }
 
 export interface DuplicateGroup {
@@ -108,16 +123,6 @@ export interface DuplicateScanSummary {
   duplicate_groups: number;
   duplicate_assets: number;
   revision: number;
-}
-
-export interface RenameAssetSummary {
-  asset_id: number;
-  old_path: string;
-  new_path: string;
-  removed_thumbnails: number;
-  revision: number;
-  status: "renamed" | "cleanup_pending";
-  recovery_path: string | null;
 }
 
 export type DuplicateResolutionBatchChange =
@@ -189,11 +194,6 @@ export interface ThumbnailBatchItem {
   thumb_path: string;
 }
 
-export interface ThumbnailBatchResult {
-  ready: ThumbnailBatchItem[];
-  failed: number[];
-}
-
 export interface ClearLibrarySummary {
   removed_assets: number;
   removed_roots: number;
@@ -240,7 +240,7 @@ export interface VideoToolStatus {
 }
 
 export interface AssetPage {
-  items: AssetDetails[];
+  items: LegacyAsset[];
   total: number;
 }
 

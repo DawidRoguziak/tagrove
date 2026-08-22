@@ -26,6 +26,7 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run format:check
+      - run: bun run audit:js
       - run: bun run test
       - run: bun run build
 
@@ -44,6 +45,8 @@ jobs:
         with:
           workspaces: src-tauri
       - run: cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo install cargo-audit --version 0.22.0 --locked
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195

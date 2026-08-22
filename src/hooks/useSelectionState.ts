@@ -408,10 +408,12 @@ export function useSelectionState({
         setSelected: setSelectedState,
         refresh
       });
+      const cached = getCachedDetails(selected.id);
+      if (cached) putCachedDetails({ ...cached, is_favorite: !selected.is_favorite });
     } finally {
       assetTagState.settleMutation(mutationToken);
     }
-  }, [appliedFavoritesOnly, assetTagState, refresh, selected, setAssets]);
+  }, [appliedFavoritesOnly, assetTagState, getCachedDetails, putCachedDetails, refresh, selected, setAssets]);
 
   const saveMediaGroup = useCallback(async (next: { key: string | null; order: number | null }) => {
     if (!selected) return;
@@ -419,13 +421,21 @@ export function useSelectionState({
     if (!mutationToken) return;
     try {
       await saveLightboxMediaGroupAction({ selected, setAssets, setSelected: setSelectedState }, next);
+      const cached = getCachedDetails(selected.id);
+      if (cached) {
+        putCachedDetails({
+          ...cached,
+          media_group_key: next.key,
+          media_group_order: next.order
+        });
+      }
       // Media-group changes always affect grouping/ordering, so start a new
       // session instead of relying on the local patch.
       void refresh().catch(() => {});
     } finally {
       assetTagState.settleMutation(mutationToken);
     }
-  }, [assetTagState, refresh, selected, setAssets]);
+  }, [assetTagState, getCachedDetails, putCachedDetails, refresh, selected, setAssets]);
 
   const prefetchAdjacentDetails = useCallback((index: number) => {
     if (assetCount <= 1) return;

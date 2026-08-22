@@ -26,7 +26,7 @@ Run commands from the repository root.
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
-| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, and locked Clippy with warnings denied. |
+| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with documented upstream exceptions. |
 | `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, and desktop E2E. It stops at the first failed layer. |
 
 `bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It deliberately does not run `bun run build`, so its Tauri overlay disables `beforeBuildCommand` and it consumes the `dist/` already on disk.
@@ -44,7 +44,7 @@ There is no numeric coverage threshold. CI runs the complete frontend and backen
 
 ## Continuous integration
 
-`.github/workflows/quality.yml` runs on pull requests and pushes to `main`. The frontend job uses Node `22.22.0`, Bun `1.4.0`, and `bun install --frozen-lockfile`; it validates locales, generator tests, TypeScript application/configuration projects, Biome, Vitest, and the production frontend build. The Rust job uses `rust-toolchain.toml`, `cargo fetch --locked`, rustfmt, locked Clippy with warnings denied, and locked Cargo tests.
+`.github/workflows/quality.yml` runs on pull requests and pushes to `main`. The frontend job uses Node `22.22.0`, Bun `1.4.0`, and `bun install --frozen-lockfile`; it validates locales, generator tests, TypeScript application/configuration projects, Biome, production dependencies with `bun audit`, Vitest, and the production frontend build. The Rust job uses `rust-toolchain.toml`, `cargo fetch --locked`, pinned `cargo-audit 0.22.0`, rustfmt, locked Clippy with warnings denied, locked Cargo tests, and the RustSec gate defined by `audit:rust`.
 
 CI does not launch an unqualified Tauri development or release profile and does not touch production app data. Real desktop E2E remains in the isolated `.e2e` profile and in the Linux Docker release gate because hosted runners need a WebDriver/display stack. Installed Windows sidecars still require the manual package smoke test below.
 

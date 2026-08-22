@@ -5,8 +5,8 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 ## Stan planu
 
 - Ostatnia aktualizacja: 2026-08-22
-- Aktualny etap: brak aktywnego etapu; Etap 09 ukończony
-- Następny krok: rozpocząć Etap 10 - Weryfikacja końcowa
+- Aktualny etap: brak; Etapy 00-10 ukończone
+- Następny krok: monitorować zaakceptowane ryzyka i wykonać platformowe bramki wydania
 - Otwarte blokery: brak
 - Ukończony wcześniej fundament: bezpieczny częściowy skan i blokada pojedynczej instancji profilu
 
@@ -22,7 +22,11 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 | 07 | [CSV, tagi i revision](07-csv-tags-and-revision-atomicity.md) | Atomowy import CSV i jeden invariant tagów | Wysoki | Ukończony |
 | 08 | [Błędy, modale i dostępność](08-modals-errors-and-accessibility.md) | Retry, stos warstw, Escape, fokus i ARIA | Średni | Ukończony |
 | 09 | [Lokalizacja i quality gates](09-localization-and-quality-gates.md) | Kompletność locale, generator, CI i przypięcie narzędzi | Średni | Ukończony |
-| 10 | [Weryfikacja końcowa](10-final-integrity-verification.md) | Audyt kontraktów, danych, konfiguracji i pełna walidacja | Wysoki | Oczekuje |
+| 10 | [Weryfikacja końcowa](10-final-integrity-verification.md) | Audyt kontraktów, danych, konfiguracji i pełna walidacja | Wysoki | Ukończony |
+
+## Końcowe Ryzyka
+
+Pełny rejestr i uzasadnienie wyjątków znajduje się w [Etapie 10](10-final-integrity-verification.md). Pozostają: systemowe okno TOCTOU operacji ścieżkowych; dwa advisory `quick-xml` w transitive drzewie Tauri; wysokie advisory wyłącznie w dev-only drzewie WebdriverIO przy zielonym audycie produkcyjnym; best-effort cleanup miniaturek; oraz niewykonane manualne/platformowe smoke testy pakietów, dostępności i tłumaczeń.
 
 ## Wiążące decyzje
 
@@ -57,8 +61,8 @@ Ten katalog jest nadrzędnym źródłem prawdy dla prac nad integralnością Med
 - Główne pliki JSON przechodzą parsowanie.
 - `git diff --check` nie wykazał błędów whitespace.
 - Nie ma nierozwiązanych konfliktów Git.
-- Warstwy testowe istnieją dla frontendu, Rust i desktop E2E, ale repozytorium nie ma workflow CI.
-- Bun, Node, Rust i Cargo nie są przypięte na poziomie repozytorium.
+- Warstwy testowe istnieją dla frontendu, Rust i desktop E2E; workflow CI sprawdza frontend, Rust i advisory, a desktop E2E pozostaje bramką lokalną/Docker.
+- Bun, Node i Rust są przypięte na poziomie repozytorium; Cargo używa lockfile i przypiętego toolchaina Rust.
 - Zmiany bazowe obejmujące media server, nawigację lightboxa, cache stron i E2E zostały sklasyfikowane i rozliczone w Etapie 00.
 
 ## Szablon dziennika etapu

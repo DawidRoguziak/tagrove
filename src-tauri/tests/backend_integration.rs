@@ -120,12 +120,17 @@ fn clear_library_data_removes_assets_roots_tags_and_failures() {
     db::set_asset_tags(&conn, 1, &["cat".to_string(), "vacation".to_string()]).expect("tags a");
     db::set_asset_tags(&conn, 2, &["dog".to_string()]).expect("tags b");
     db::record_thumbnail_failure(&conn, 1, 10, Some("thumb error")).expect("record fail");
+    let baseline_revision = db::current_library_revision(&conn).expect("baseline revision");
 
     let (removed_assets, removed_roots, thumbs) =
         db::clear_library_data(&conn).expect("clear data");
     assert_eq!(removed_assets, 2);
     assert_eq!(removed_roots, 2);
     assert_eq!(thumbs, vec!["shared-thumb.jpg".to_string()]);
+    assert_eq!(
+        db::current_library_revision(&conn).expect("revision after clear"),
+        baseline_revision + 1
+    );
 
     let page =
         db::list_assets(&conn, 0, 100, &[], &[], None, false).expect("list assets after clear");
@@ -139,6 +144,40 @@ fn clear_library_data_removes_assets_roots_tags_and_failures() {
 
     let failed = db::list_failed_thumbnail_asset_ids(&conn).expect("failed ids after clear");
     assert!(failed.is_empty());
+}
+
+#[test]
+fn clear_library_data_rolls_back_deletes_when_revision_bump_fails() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("media.db");
+    let conn = db::open_connection(&db_path).expect("open db");
+    db::init_schema(&conn).expect("init schema");
+    let root = tmp.path().join("library");
+    std::fs::create_dir_all(&root).expect("create root");
+    db::add_scan_root(&conn, &root.to_string_lossy()).expect("add root");
+    db::upsert_asset(&conn, &new_asset(&root.join("a.jpg"), "image", 1, None))
+        .expect("upsert asset");
+    let baseline = db::current_library_revision(&conn).expect("baseline revision");
+    conn.execute_batch(
+        "CREATE TEMP TRIGGER fail_clear_revision
+         BEFORE UPDATE ON library_metadata
+         WHEN OLD.key = 'revision'
+         BEGIN SELECT RAISE(ABORT, 'injected revision failure'); END;",
+    )
+    .expect("create trigger");
+
+    assert!(db::clear_library_data(&conn).is_err());
+    assert_eq!(
+        db::list_assets(&conn, 0, 10, &[], &[], None, false)
+            .expect("assets")
+            .total,
+        1
+    );
+    assert_eq!(db::list_scan_roots(&conn).expect("roots").len(), 1);
+    assert_eq!(
+        db::current_library_revision(&conn).expect("revision"),
+        baseline
+    );
 }
 
 #[test]

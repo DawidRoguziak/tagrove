@@ -26,7 +26,6 @@ const apiMocks = vi.hoisted(() => {
     importDbBundle: vi.fn(),
     importTagsCsv: vi.fn(),
     listScanRoots: vi.fn(),
-    renameAssetFile: vi.fn(),
     removeScanRoot: vi.fn(),
     renderAllThumbnails: vi.fn(),
     renderFailedThumbnails: vi.fn(),
@@ -123,12 +122,6 @@ describe("useSettingsActions", () => {
       status: "committed",
       revision: 2,
       results: [],
-      removed_thumbnails: 0
-    });
-    apiMocks.renameAssetFile.mockResolvedValue({
-      asset_id: 1,
-      old_path: "C:/media/a.jpg",
-      new_path: "C:/media/b.jpg",
       removed_thumbnails: 0
     });
     apiMocks.deleteAsset.mockResolvedValue({
@@ -417,14 +410,12 @@ describe("useSettingsActions", () => {
               path: "C:/media/a/same.jpg",
               record_version: 1,
               size_bytes: 10,
-              fingerprint_mtime_ns: 100
             },
             {
               id: 2,
               path: "C:/media/b/same.jpg",
               record_version: 1,
               size_bytes: 10,
-              fingerprint_mtime_ns: 200
             }
           ]
         }
@@ -574,7 +565,7 @@ describe("useSettingsActions", () => {
     });
 
     expect(result.current.duplicateOperationState.message).toBe("No pending duplicate changes to apply");
-    expect(apiMocks.renameAssetFile).not.toHaveBeenCalled();
+    expect(apiMocks.applyDuplicateResolutionBatch).not.toHaveBeenCalled();
     expect(apiMocks.deleteAsset).not.toHaveBeenCalled();
   });
 
@@ -595,7 +586,7 @@ describe("useSettingsActions", () => {
       ]);
     });
 
-    expect(apiMocks.renameAssetFile).not.toHaveBeenCalled();
+    expect(apiMocks.applyDuplicateResolutionBatch).not.toHaveBeenCalled();
     expect(apiMocks.deleteAsset).not.toHaveBeenCalled();
     expect(result.current.duplicateOperationState.message).toContain("File name cannot be empty");
   });

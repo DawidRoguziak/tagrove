@@ -71,7 +71,6 @@ const apiMocks = vi.hoisted(() => {
     addScanRoot: vi.fn(),
     cancelRenderAllThumbnails: vi.fn(),
     clearLibraryData: vi.fn(),
-    ensurePageThumbnails: vi.fn(),
     exportDbBundle: vi.fn(),
     exportTagsCsv: vi.fn(),
     importDbBundle: vi.fn(),
@@ -197,7 +196,6 @@ describe("App", () => {
       media_group_key: null
     });
     apiMocks.listScanRoots.mockResolvedValue([]);
-    apiMocks.ensurePageThumbnails.mockResolvedValue({ ready: [], failed: [] });
     apiMocks.cancelRenderAllThumbnails.mockResolvedValue(true);
     apiMocks.scanFolder.mockResolvedValue({ indexed: 0, removed: 0, failed: 0 });
     apiMocks.removeScanRoot.mockResolvedValue({ removed_assets: 0, removed_thumbnails: 0 });

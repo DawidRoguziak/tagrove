@@ -177,7 +177,7 @@ fn render_bulk_thumbnails_inner<R: tauri::Runtime>(
                 Some("source file not found"),
             );
             if let Some(existing) = asset.thumb_path {
-                let _ = fs::remove_file(existing);
+                let _ = remove_thumbnail_file(&state.thumbs_dir, Path::new(&existing));
             }
             emit_render_progress(app, mode.progress_phase(), processed, total);
             continue;
@@ -473,7 +473,7 @@ pub fn ensure_asset_thumbnail(asset_id: i64, state: &State<AppState>) -> AppResu
             Some("source file not found"),
         );
         if let Some(existing) = asset.thumb_path {
-            let _ = fs::remove_file(existing);
+            let _ = remove_thumbnail_file(&state.thumbs_dir, Path::new(&existing));
         }
         return Ok(None);
     }
@@ -1027,8 +1027,9 @@ mod tests {
     };
 
     use super::{
-        cancel_render_all_thumbnails, delete_thumbnail_files, ensure_asset_thumbnail,
-        publish_thumbnail_updates, wait_next_render_result_with_stall, ThumbnailTaskResult,
+        cancel_render_all_thumbnails, delete_thumbnail_files, delete_thumbnail_files_in_root,
+        ensure_asset_thumbnail, publish_thumbnail_updates, wait_next_render_result_with_stall,
+        ThumbnailTaskResult,
     };
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
@@ -1206,6 +1207,21 @@ mod tests {
         assert_eq!(removed, 2);
         assert!(!existing_a.exists());
         assert!(!existing_b.exists());
+    }
+
+    #[test]
+    fn delete_thumbnail_files_does_not_remove_file_outside_thumbnail_root() {
+        let tmp = tempdir().expect("tempdir");
+        let thumbs = tmp.path().join("thumbs");
+        let outside = tmp.path().join("outside.jpg");
+        fs::create_dir_all(&thumbs).expect("create thumbs");
+        fs::write(&outside, b"outside").expect("write outside file");
+
+        let removed =
+            delete_thumbnail_files_in_root(&thumbs, vec![outside.to_string_lossy().into_owned()]);
+
+        assert_eq!(removed, 0);
+        assert_eq!(fs::read(&outside).expect("outside survives"), b"outside");
     }
 
     fn insert_scanned_asset(

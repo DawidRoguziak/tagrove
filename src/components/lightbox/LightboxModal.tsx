@@ -101,6 +101,7 @@ export function LightboxModal({
   });
 
   const mediaControls = useLightboxImageControls({
+    keyboardShortcutsEnabled: !handlers.deleteConfirmOpen,
     selected,
     onClose,
     onNavigatePrevious,

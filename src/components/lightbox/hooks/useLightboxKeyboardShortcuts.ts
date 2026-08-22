@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { SelectedAsset } from "../../../types";
 
 interface UseLightboxKeyboardShortcutsOptions {
+  enabled?: boolean;
   selected: SelectedAsset | null;
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
@@ -12,6 +13,7 @@ interface UseLightboxKeyboardShortcutsOptions {
 }
 
 export function useLightboxKeyboardShortcuts({
+  enabled = true,
   selected,
   onNavigatePrevious,
   onNavigateNext,
@@ -23,7 +25,7 @@ export function useLightboxKeyboardShortcuts({
   const selectedKind = selected?.kind ?? null;
 
   useEffect(() => {
-    if (selectedKind === null) {
+    if (!enabled || selectedKind === null) {
       return;
     }
 
@@ -83,5 +85,5 @@ export function useLightboxKeyboardShortcuts({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onNavigateNext, onNavigatePrevious, onResetZoom, onToggleFullscreen, onZoomIn, onZoomOut, selectedKind]);
+  }, [enabled, onNavigateNext, onNavigatePrevious, onResetZoom, onToggleFullscreen, onZoomIn, onZoomOut, selectedKind]);
 }

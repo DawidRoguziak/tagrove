@@ -23,6 +23,9 @@ const CSV_HEADERS: [&str; 5] = [
     "media_group_key",
     "media_group_order",
 ];
+const MAX_CSV_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_CSV_RECORDS: usize = 100_000;
+const MAX_CSV_FIELD_BYTES: usize = 1024 * 1024;
 
 pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary> {
     let conn = db::open_connection(db_path)?;
@@ -84,20 +87,41 @@ pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary
 
 pub fn import_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvImportSummary> {
     let source = PathBuf::from(path.trim());
-    if !source.is_file() {
+    let file = fs::File::open(&source)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
         return Err("CSV import path does not exist or is not a file".into());
     }
-    let file = fs::File::open(source)?;
-    let records = parse_csv_document(file)?;
+    validate_csv_file_size(metadata.len())?;
+    let document = read_with_byte_limit(file, MAX_CSV_FILE_BYTES)?;
+    let records = parse_csv_document(document.as_slice())?;
     let mut conn = db::open_connection(db_path)?;
     db::import_csv_records(&mut conn, &records).map_err(Into::into)
 }
 
+fn read_with_byte_limit(reader: impl Read, max_bytes: u64) -> AppResult<Vec<u8>> {
+    let mut document = Vec::new();
+    reader.take(max_bytes + 1).read_to_end(&mut document)?;
+    if document.len() as u64 > max_bytes {
+        return Err(format!("CSV exceeds the {max_bytes}-byte file size limit").into());
+    }
+    Ok(document)
+}
+
 fn parse_csv_document(reader: impl Read) -> AppResult<Vec<CsvImportRecord>> {
+    parse_csv_document_with_limits(reader, MAX_CSV_RECORDS, MAX_CSV_FIELD_BYTES)
+}
+
+fn parse_csv_document_with_limits(
+    reader: impl Read,
+    max_records: usize,
+    max_field_bytes: usize,
+) -> AppResult<Vec<CsvImportRecord>> {
     let mut reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
         .from_reader(reader);
     let headers = reader.headers()?.clone();
+    validate_csv_fields(&headers, 1, max_field_bytes)?;
     let mut indices = [None; CSV_HEADERS.len()];
     for (index, raw_header) in headers.iter().enumerate() {
         let header = raw_header.trim();
@@ -119,8 +143,12 @@ fn parse_csv_document(reader: impl Read) -> AppResult<Vec<CsvImportRecord>> {
 
     let mut parsed = Vec::new();
     for (row_index, record) in reader.records().enumerate() {
+        if row_index >= max_records {
+            return Err(format!("CSV exceeds the limit of {max_records} records").into());
+        }
         let record =
             record.with_context(|| format!("Invalid CSV record at row {}", row_index + 2))?;
+        validate_csv_fields(&record, row_index + 2, max_field_bytes)?;
         let value = |header_index: usize| record.get(indices[header_index]).unwrap_or("").trim();
         let favorite = parse_favorite(value(2), row_index + 2)?;
         let media_group_order = parse_group_order(value(4), row_index + 2)?;
@@ -138,6 +166,26 @@ fn parse_csv_document(reader: impl Read) -> AppResult<Vec<CsvImportRecord>> {
         });
     }
     Ok(parsed)
+}
+
+fn validate_csv_file_size(size: u64) -> AppResult<()> {
+    if size > MAX_CSV_FILE_BYTES {
+        return Err(format!("CSV exceeds the {MAX_CSV_FILE_BYTES}-byte file size limit").into());
+    }
+    Ok(())
+}
+
+fn validate_csv_fields(
+    record: &csv::StringRecord,
+    row: usize,
+    max_field_bytes: usize,
+) -> AppResult<()> {
+    if record.iter().any(|field| field.len() > max_field_bytes) {
+        return Err(
+            format!("CSV field at row {row} exceeds the {max_field_bytes}-byte limit").into(),
+        );
+    }
+    Ok(())
 }
 
 fn parse_favorite(raw: &str, row: usize) -> AppResult<Option<bool>> {
@@ -268,7 +316,10 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{export_tags_csv, parse_csv_document};
+    use super::{
+        export_tags_csv, parse_csv_document, parse_csv_document_with_limits, read_with_byte_limit,
+        validate_csv_file_size, MAX_CSV_FILE_BYTES,
+    };
     use crate::{
         db::{self, CsvImportRecord},
         models::NewAsset,
@@ -412,5 +463,41 @@ mod tests {
             let csv = format!("{HEADERS}{row}\n");
             assert!(parse_csv_document(Cursor::new(csv)).is_err());
         }
+    }
+
+    #[test]
+    fn csv_file_size_limit_accepts_boundary_and_rejects_next_byte() {
+        assert!(validate_csv_file_size(MAX_CSV_FILE_BYTES).is_ok());
+        assert!(validate_csv_file_size(MAX_CSV_FILE_BYTES + 1).is_err());
+    }
+
+    #[test]
+    fn bounded_csv_read_accepts_boundary_and_rejects_next_byte() {
+        assert_eq!(
+            read_with_byte_limit(Cursor::new(b"1234"), 4).unwrap(),
+            b"1234"
+        );
+        assert!(read_with_byte_limit(Cursor::new(b"12345"), 4).is_err());
+    }
+
+    #[test]
+    fn parser_enforces_record_limit_at_boundary() {
+        let at_limit = format!("{HEADERS}a.jpg,cat,1,,\nb.jpg,dog,0,,\n");
+        assert_eq!(
+            parse_csv_document_with_limits(Cursor::new(at_limit), 2, 64)
+                .expect("records at limit")
+                .len(),
+            2
+        );
+        let over_limit = format!("{HEADERS}a.jpg,cat,1,,\nb.jpg,dog,0,,\nc.jpg,bird,1,,\n");
+        assert!(parse_csv_document_with_limits(Cursor::new(over_limit), 2, 64).is_err());
+    }
+
+    #[test]
+    fn parser_enforces_field_limit_at_boundary() {
+        let at_limit = format!("{HEADERS}a.jpg,cat,1,{},\n", "x".repeat(32));
+        assert!(parse_csv_document_with_limits(Cursor::new(at_limit), 1, 32).is_ok());
+        let over_limit = format!("{HEADERS}a.jpg,cat,1,{},\n", "x".repeat(33));
+        assert!(parse_csv_document_with_limits(Cursor::new(over_limit), 1, 32).is_err());
     }
 }

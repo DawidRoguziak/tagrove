@@ -12,9 +12,9 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 - Invoke argument keys are camelCase (`assetId`, `tagsAnd`, `pageSize`, `onEvent`), while the corresponding Rust parameters are snake_case (`asset_id`, `tags_and`, `page_size`, `on_event`). Nested inputs opt into or explicitly define camelCase where needed: `BulkMediaGroupUpdateInput` uses `rename_all = "camelCase"`, and `AssetMetaFilterInput` uses `type`, `hasNoTags`/`groupName`, `tagCount`, and `groupName`.
 - Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/types.ts`, including `session_id`, `thumb_path`, `removed_assets`, and similar fields.
 - Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; thumbnail channel messages use `{ event: "ready" | "failed" | "done", data: ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case.
-- Rust `Option<T>` becomes `T | null` over IPC. The wrappers explicitly send `null` for media kind `"all"`, an absent search meta-filter, and nullable media-group values. `get_asset_details` and `ensure_asset_thumbnail` also use `null` for not found/unavailable results. Rust `()` is exposed as `Promise<void>`.
+- Rust `Option<T>` becomes `T | null` over IPC. The wrappers explicitly send `null` for media kind `"all"`, an absent search meta-filter, and nullable media-group values. `get_asset_details` also uses `null` for a missing row. Rust `()` is exposed as `Promise<void>`.
 - Rust `i64`, `u64`, and `usize` values are represented as JavaScript `number`. Current IDs, counts, revisions, offsets, and session IDs are expected to remain within JavaScript's safe-integer range; the type layer does not enforce that bound.
-- `src/types.ts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is currently optional in TypeScript for compatibility, although Rust always emits it.
+- `src/types.ts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
 - All registered command failures reject the invoke promise with text. Command boundaries return `Result<_, String>` and flatten `AppError`, worker-join failures, validation failures, and platform errors to a message; there is no structured IPC error code or error payload.
 
 ### Shared response shapes
@@ -23,24 +23,23 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 
 | Rust / TypeScript model | Serialized fields |
 | --- | --- |
-| `Asset` / `Asset` | `id`, `path`, `kind`, `size_bytes`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_path?`, `is_favorite`, `media_group_key?`, `media_group_order?`, `tags` |
+| `Asset` / `LegacyAsset` | `id`, `path`, `kind`, `size_bytes`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_path?`, `is_favorite`, `media_group_key?`, `media_group_order?`, `tags` |
 | `AssetSummary` / `AssetSummary` | `id`, `file_name`, `preview_path?`, `kind`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_path?`, `is_favorite`, `media_group_key?`, `media_group_order?` |
 | `AssetDetails` / `AssetDetails` | All `AssetSummary` fields flattened into the object, plus `path`, `size_bytes`, `tags` |
-| `AssetPage` / `AssetPage` | `items: Asset[]`, `total` |
+| `AssetPage` / `AssetPage` | `items: LegacyAsset[]`, `total` |
 | `TagListPage` / `TagListPage` | `items: string[]`, `total` |
 | `StartAssetQueryResult` / `StartAssetQueryResult` | `ready` has `session_id`, `revision`, `total`, `offset`, `items: AssetSummary[]`; `superseded` has only `status` |
 | `AssetQueryPageResult` / `AssetQueryPageResult` | `ready` has the same fields as query-start `ready`; `stale` has only `status` |
 | `ScanSummary` / `ScanSummary` | `completion: "complete" \| "partial"`, `indexed`, `removed`, `failed` |
 | `RemoveRootSummary` / `RemoveRootSummary` | `removed_assets`, `removed_thumbnails` |
 | `DeleteAssetSummary` / `DeleteAssetSummary` | `removed_assets`, `removed_thumbnails`, `source_status: "deleted" \| "missing" \| "cleanup_pending"`, `revision`, `recovery_path?` |
-| `DuplicateAsset`, `DuplicateGroup`, `DuplicateScanSummary` / same | Asset: `id`, `path`, `record_version`, `size_bytes`, `fingerprint_mtime_ns`; group: `file_name`, `assets`; summary: `groups`, `duplicate_groups`, `duplicate_assets`, `revision` |
-| `RenameAssetSummary` / `RenameAssetSummary` | `asset_id`, `old_path`, `new_path`, `removed_thumbnails`, `revision`, `status: "renamed" \| "cleanup_pending"`, `recovery_path?` |
+| `DuplicateAsset`, `DuplicateGroup`, `DuplicateScanSummary` / same | Asset: `id`, `path`, `record_version`, `size_bytes`; group: `file_name`, `assets`; summary: `groups`, `duplicate_groups`, `duplicate_assets`, `revision` |
 | `DuplicateResolutionBatchSummary` / same | `status: "committed" \| "rolled_back" \| "recovery_required"`, `revision`, `results`, `removed_thumbnails`; each result has `asset_id`, item `status`, `old_path`, `new_path?`, and `recovery_path?` |
 | `SetAssetTagsSummary` / `SetAssetTagsSummary` | `asset_id`, `changed`, `tags`, `revision` |
 | `BulkTagMergeSummary` / `BulkTagMergeSummary` | `processed_assets`, `updated_assets`, `processed_asset_ids`, `updated_asset_ids`, `results`, `revision` |
 | `BulkMediaGroupSummary` / `BulkMediaGroupSummary` | `processed_assets`, `updated_assets`, `media_group_key?` |
 | `ThumbnailRenderSummary` / `ThumbnailRenderSummary` | `generated`, `failed`, `skipped_failed`, `processed`, `total`, `cancelled` |
-| `ThumbnailBatchItem`, `ThumbnailBatchResult` / same | Item: `asset_id`, `thumb_path`; result: `ready: ThumbnailBatchItem[]`, `failed: number[]` |
+| `ThumbnailBatchItem` / `ThumbnailBatchItem` | `asset_id`, `thumb_path`; carried by the `ready` thumbnail channel variant |
 | `ClearLibrarySummary` / `ClearLibrarySummary` | `removed_assets`, `removed_roots`, `removed_thumbnails` |
 | `CsvExportSummary`, `CsvImportSummary` / same | Export: `rows`; import: `rows_read`, `rows_applied`, `assets_matched`, `assets_updated` |
 | `DbBundleExportSummary`, `DbBundleImportSummary` / same | Export: `copied_files`, `copied_thumbnails`; import: `restored_files`, `restored_thumbnails` |
@@ -83,7 +82,6 @@ For both session and legacy queries, tags are trimmed, lowercased, de-duplicated
 | `setAssetsMediaGroupBulk` / `set_assets_media_group_bulk` | `updates: { assetId, mediaGroupOrder }[]`, `mediaGroupKey: string \| null` | `BulkMediaGroupSummary` | Drops non-positive/duplicate IDs, trims blank key to `null`, maps non-finite orders to `null`, and bumps the revision only when rows changed. The returned key is the normalized value. |
 | `deleteAsset` / `delete_asset` | `assetId` | `DeleteAssetSummary` | Rejects an unknown ID. An existing source is moved to same-directory staging before one DB/revision transaction; a DB failure restores it. A missing source commits stale metadata removal with `source_status: "missing"`; failed final staged cleanup returns `cleanup_pending` and a recovery path. |
 | `findDuplicateAssets` / `find_duplicate_assets` | none | `DuplicateScanSummary` | Groups database assets by duplicate file name and emits duplicate-scan progress. It does not hash file contents. |
-| `renameAssetFile` / `rename_asset_file` | `assetId`, `newFileName` | `RenameAssetSummary` | Uses the same staged service as the batch. Portable validation also rejects control characters, trailing dot/space, and reserved Windows device names. Target installation is atomic no-clobber on supported Linux/Windows targets; DB mutation and revision are one transaction. |
 | `applyDuplicateResolutionBatch` / `apply_duplicate_resolution_batch` | `input: { scanRevision, changes }`; each tagged change includes `assetId`, `expectedPath`, `expectedRecordVersion`, and rename also has `newFileName` | `DuplicateResolutionBatchSummary` | Validates the complete snapshot, IDs, versions, names, filesystem and DB collisions, and touched duplicate groups before mutation. Runs once under combined locks, stages all sources, commits one DB transaction/revision, and returns per-item commit, rollback, or recovery state. Rename targets that are another batch source are rejected. |
 
 The single-item favorite and group setters do not validate that an ID affected a row before resolving. Single tag replacement rejects a missing ID; bulk tag merge skips missing IDs and reports processed IDs. See [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md) and [lightbox](../subsystems/lightbox.md) for the user workflows built on these calls.
@@ -102,13 +100,11 @@ Root normalization trims whitespace, converts `/` to `\`, and removes trailing s
 
 ### Thumbnails
 
-`ensureThumbnailsStream`/`ensure_thumbnails` is the primary on-demand gallery API. `ensurePageThumbnails` and its `thumbnail-ready` broadcast are retained legacy behavior; `ensureAssetThumbnail` is the single-item compatibility API. The current production queue consumes only the channel API.
+`ensureThumbnailsStream`/`ensure_thumbnails` is the only registered on-demand gallery API. The old single-asset and page commands still have internal Rust helpers but are not registered and have no frontend wrappers.
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `ensureThumbnailsStream` / `ensure_thumbnails` | `requestId`, `visibleIds`, `prefetchIds`, `onEvent: Channel<ThumbnailStreamEvent>` | `void` after processing | Filters IDs to positive unique values, takes at most 64 visible and then 64 additional prefetch IDs, prioritizes visible work, streams results, and persists paths/failures. A request whose `requestId` is lower than the highest previously observed id is rejected immediately with no channel events; the frontend sends its queue generation, so abandoned generations do no backend work. |
-| `ensurePageThumbnails` / `ensure_page_thumbnails` | `assetIds: number[]` | `ThumbnailBatchResult` | De-duplicates IDs, treats all as high priority, returns `ready` items and `failed` IDs, and also broadcasts `thumbnail-ready` for every ready item. The backend clamps the batch to 256 unique IDs. |
-| `ensureAssetThumbnail` / `ensure_asset_thumbnail` | `assetId` | `string \| null` | Reuses a valid thumbnail or generates one at high priority. Unknown assets, missing source files, and generation failures return `null`; failure state is persisted. |
 | `renderAllThumbnails` / `render_all_thumbnails` | none | `ThumbnailRenderSummary` | Starts one process-wide bulk run; a concurrent bulk run rejects. Previously recorded failures are counted as `skipped_failed`. |
 | `renderFailedThumbnails` / `render_failed_thumbnails` | none | `ThumbnailRenderSummary` | Same bulk-run guard, but retries only recorded failures and does not skip them. |
 | `cancelRenderAllThumbnails` / `cancel_render_all_thumbnails` | none | `boolean` | Returns `true` and sets the cancellation flag only while either bulk mode is running; already completed ready results are retained. |
@@ -125,14 +121,12 @@ type ThumbnailStreamEvent =
 
 `ready` is sent as each existing or newly generated thumbnail becomes available. After processing, failures are sent and one `done` summary is sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter both as the `requestId` (the backend rejects stale ids without doing work) and to ignore late messages after reset.
 
-The legacy `thumbnail-ready` application event carries one `ThumbnailBatchItem` payload (`asset_id`, `thumb_path`) and is emitted only by `ensure_page_thumbnails`. It is separate from the channel and from `process-progress`.
-
 ### Import, export, and destructive data operations
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `exportTagsCsv` / `export_tags_csv` | `path: string` | `CsvExportSummary` | Trims and rejects an empty or protected target, creates parent directories, and atomically publishes `file_name,tags,favorite,media_group_key,media_group_order` through a synced sibling temporary file. |
-| `importTagsCsv` / `import_tags_csv` | `path: string` | `CsvImportSummary` | Requires an existing file and exactly one of each standard header. It parses and validates the whole document, matches assets by the shared Unicode-lowercase basename key, merges normalized tags, updates favorite/group fields, and conditionally bumps revision in the same all-or-nothing transaction. |
+| `importTagsCsv` / `import_tags_csv` | `path: string` | `CsvImportSummary` | Opens a regular file, rejects more than 64 MiB while reading at most one byte past that limit, and requires exactly one of each standard header. It parses and validates the whole document, matches assets by the shared Unicode-lowercase basename key, merges normalized tags, updates favorite/group fields, and conditionally bumps revision in the same all-or-nothing transaction. |
 | `exportDbBundle` / `export_db_bundle` | `path: string` | `DbBundleExportSummary` | Trims and rejects an empty or colliding target, creates a ZIP from one SQLite Backup API snapshot plus thumbnail files, syncs a unique temporary archive, and atomically publishes it. Current exports contain no WAL/SHM entry. |
 | `inspectDbBundle` / `inspect_db_bundle` | `path: string` | `DbBundleInspection` | Validates archive limits, manifest compatibility, SQLite integrity/schema, and manifest/database roots without writing the candidate database; reports roots requiring Windows-to-Linux mapping. |
 | `importDbBundle` / `import_db_bundle` | `path: string`, `rootMappings: { sourceRoot, targetRoot }[]` | `DbBundleImportSummary` | Repeats full archive/database validation, migrates only accepted legacy staging, validates/rewrites every media and thumbnail path, then performs a maintenance-gated journaled replacement. Linux rejects Windows roots without complete mappings and detects mapped path collisions. |
@@ -213,15 +207,15 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 
 ## Known limitations
 
-- Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check. `ScanSummary.completion` is looser in TypeScript than the current Rust response.
+- Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check.
 - `requestId` on `ensure_thumbnails` rejects only lower ids than the highest observed; it is not a cancellation token. In-flight scheduler jobs of a superseded generation still run to completion, and another window or independent caller can still supersede this window's request.
-- `list_assets`, `ensure_asset_thumbnail`, and `ensure_page_thumbnails` remain registered alongside their primary session/channel replacements. The legacy thumbnail broadcast has no correlation identifier.
+- `list_assets` remains registered because desktop E2E uses it for direct workflow assertions; production gallery code uses query sessions.
 - IPC errors are text only. Consumers cannot reliably distinguish validation, not-found, busy, filesystem, database, worker, or platform failures except by message text.
 - Numeric Rust IDs/counters are exposed as JavaScript `number` without an explicit safe-integer guard.
-- Event delivery is best effort. `process-progress`, `thumbnail-ready`, and channel sends commonly ignore delivery errors; events can be missed and must not be used as a commit signal.
+- Event delivery is best effort. `process-progress` and thumbnail channel sends commonly ignore delivery errors; events can be missed and must not be used as a commit signal.
 - `process-progress` is a shared broadcast with free-form `phase` and human-readable `message`; it has no request ID, sequence number, or version.
 - Favorite and media-group setters resolve even if an unknown asset ID changed zero rows. Tag replacement, delete, and rename reject unknown IDs; bulk tag/group operations skip missing IDs and report processed counts or IDs.
-- Runtime validation is uneven: unsupported query kinds degrade to no filter and non-finite group order degrades to `null`. The legacy page-thumbnail endpoint clamps batches at 256 IDs but has no per-asset rate limiting.
+- Runtime validation is uneven: unsupported query kinds degrade to no filter and non-finite group order degrades to `null`.
 - `src/__tests__/api.test.ts` covers legacy `listAssets`, tag-mutation payload/result seams, and media-path normalization, but it does not exhaustively lock down every wrapper, response shape, channel, or event.
 
 ## Safe contract-change checklist

@@ -92,7 +92,6 @@ export function useBulkSelectionController({
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
   const [selectionModeEnabled, setSelectionModeEnabled] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<number>>(new Set());
-  const [selectionAnchorId, setSelectionAnchorId] = useState<number | null>(null);
   const [groupKeyDraft, setGroupKeyDraft] = useState("");
   const [orderedAssetIds, setOrderedAssetIds] = useState<number[]>([]);
   const [hasConflictingGroups, setHasConflictingGroups] = useState(false);
@@ -111,6 +110,7 @@ export function useBulkSelectionController({
   const groupOperationRef = useRef(false);
   const tagOperationRef = useRef(false);
   const tagOperationGenerationRef = useRef(0);
+  const rangeRequestRef = useRef(0);
   const observedTagEpochRef = useRef(assetTagState.epoch);
   const observedQueryEpochRef = useRef(queryEpoch);
   // Anchor position in the global session snapshot, independent of the
@@ -125,10 +125,10 @@ export function useBulkSelectionController({
     detailsRequestRef.current += 1;
     detailsCacheRef.current.clear();
     tagOperationGenerationRef.current += 1;
+    rangeRequestRef.current += 1;
     tagOperationRef.current = false;
     groupOperationRef.current = false;
     setSelectedAssetIds(new Set());
-    setSelectionAnchorId(null);
     setSingleAssetTags([]);
     setAppliedBulkTags([]);
     setTagDetailsLoading(false);
@@ -138,15 +138,6 @@ export function useBulkSelectionController({
     setGroupApplying(false);
     setGroupFailed(false);
   }, [assetTagState.epoch]);
-
-  const assetIndexById = useMemo(() => {
-    const indexMap = new Map<number, number>();
-    for (let index = 0; index < assets.length; index += 1) {
-      const asset = assets[index];
-      if (asset) indexMap.set(asset.id, index);
-    }
-    return indexMap;
-  }, [assets]);
 
   const selectedAssets = useMemo(() => {
     if (!selectedAssetIds.size) return [];
@@ -159,7 +150,7 @@ export function useBulkSelectionController({
   useEffect(() => {
     if (selectionModeEnabled) return;
     setSelectedAssetIds(new Set());
-    setSelectionAnchorId(null);
+    selectionAnchorIndexRef.current = null;
   }, [selectionModeEnabled]);
 
   // Selection is stored as bare IDs and survives page eviction. Records that
@@ -172,6 +163,7 @@ export function useBulkSelectionController({
     // A new session may reuse IDs for changed rows; cached details are stale.
     detailsCacheRef.current.clear();
     selectionAnchorIndexRef.current = null;
+    rangeRequestRef.current += 1;
   }, [queryEpoch]);
 
 
@@ -281,6 +273,8 @@ export function useBulkSelectionController({
     (interaction: BulkSelectionInteraction) => {
       if (!selectionModeEnabled) return;
       const { assetId, assetIndex, ctrlLike, shift, viaDrag } = interaction;
+      const requestId = rangeRequestRef.current + 1;
+      rangeRequestRef.current = requestId;
 
       if (viaDrag) {
         setSelectedAssetIds((previous) => {
@@ -289,7 +283,6 @@ export function useBulkSelectionController({
           next.add(assetId);
           return next;
         });
-        setSelectionAnchorId((previous) => previous ?? assetId);
         selectionAnchorIndexRef.current = selectionAnchorIndexRef.current ?? assetIndex;
         return;
       }
@@ -305,7 +298,9 @@ export function useBulkSelectionController({
           const to = Math.max(anchorIndex, assetIndex);
           const rangeResolver = getIdsRangeAsync;
           if (rangeResolver) {
+            const requestEpoch = queryEpoch;
             void rangeResolver(from, to).then((rangeAssetIds) => {
+              if (rangeRequestRef.current !== requestId || observedQueryEpochRef.current !== requestEpoch) return;
               setSelectedAssetIds((previous) => {
                 const next = ctrlLike ? new Set(previous) : new Set<number>();
                 for (const id of rangeAssetIds) next.add(id);
@@ -320,7 +315,6 @@ export function useBulkSelectionController({
         }
       }
 
-      setSelectionAnchorId(assetId);
       selectionAnchorIndexRef.current = assetIndex;
       if (ctrlLike) {
         setSelectedAssetIds((previous) => {
@@ -333,12 +327,13 @@ export function useBulkSelectionController({
       }
       setSelectedAssetIds(new Set([assetId]));
     },
-    [assetIndexById, getIdsRangeAsync, selectionAnchorId, selectionModeEnabled]
+    [getIdsRangeAsync, queryEpoch, selectionModeEnabled]
   );
 
   const onToggleSelectionMode = useCallback(() => {
+    if (selectionModeEnabled) rangeRequestRef.current += 1;
     setSelectionModeEnabled((previous) => !previous);
-  }, []);
+  }, [selectionModeEnabled]);
 
   const onApplyGroup = useCallback(async () => {
     if (!selectedAssets.length || groupOperationRef.current) return;
@@ -577,6 +572,9 @@ export function useBulkSelectionController({
         }
         if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
         void refreshKnownTags().catch(() => []);
+        if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilterTags)) {
+          void refresh().catch(() => {});
+        }
       } catch {
         assetTagState.settleMutation(mutationToken);
         if (selectionKeyRef.current === capturedSelectionKey) setTagSaveFailed(true);
@@ -587,7 +585,7 @@ export function useBulkSelectionController({
         }
       }
     },
-    [assetTagState, refreshKnownTags, selectedAssets, selectionKey, setAssets]
+    [appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectedAssets, selectionKey, setAssets]
   );
 
   const onRetryTagDetails = useCallback(() => {

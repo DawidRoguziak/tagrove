@@ -15,6 +15,7 @@ use crate::thumbs;
 /// Hard cap on jobs that may sit in the scheduler queues at once. Enqueueing
 /// beyond this bound fails fast instead of growing memory without limits.
 pub const MAX_PENDING_JOBS: usize = 2048;
+pub const MAX_WAITERS_PER_JOB: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThumbnailPriority {
@@ -138,6 +139,15 @@ impl ThumbnailScheduler {
         }
 
         if state.jobs.contains_key(&key) {
+            if state
+                .jobs
+                .get(&key)
+                .is_some_and(|job| job.waiters.len() >= MAX_WAITERS_PER_JOB)
+            {
+                return Err(format!(
+                    "thumbnail job waiter limit reached ({MAX_WAITERS_PER_JOB} waiters)"
+                ));
+            }
             let should_promote = matches!(priority, ThumbnailPriority::High)
                 && state
                     .jobs
@@ -676,6 +686,42 @@ mod tests {
             "enqueue past the queue bound must fail fast"
         );
         assert!(overflow.unwrap_err().contains("full"));
+
+        *release.lock().expect("release lock") = true;
+    }
+
+    #[test]
+    fn scheduler_rejects_waiter_when_job_waiter_limit_is_full() {
+        let release = Arc::new(Mutex::new(false));
+        let release_clone = Arc::clone(&release);
+        let scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                while !*release_clone.lock().expect("release lock") {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                Some(task.target_path.to_string_lossy().to_string())
+            }),
+        );
+
+        let mut receivers = Vec::new();
+        for asset_id in 0..super::MAX_WAITERS_PER_JOB {
+            receivers.push(
+                scheduler
+                    .enqueue(
+                        task(asset_id as i64 + 1, "C:/tmp/waiter-limit.jpg"),
+                        ThumbnailPriority::Low,
+                    )
+                    .expect("waiter within limit"),
+            );
+        }
+
+        let overflow = scheduler.enqueue(
+            task(99_999, "C:/tmp/waiter-limit.jpg"),
+            ThumbnailPriority::High,
+        );
+        assert!(overflow.unwrap_err().contains("waiter limit"));
 
         *release.lock().expect("release lock") = true;
     }

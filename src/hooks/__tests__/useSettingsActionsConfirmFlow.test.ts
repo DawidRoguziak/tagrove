@@ -18,7 +18,6 @@ const apiMocks = vi.hoisted(() => {
     importDbBundle: vi.fn(),
     importTagsCsv: vi.fn(),
     listScanRoots: vi.fn(),
-    renameAssetFile: vi.fn(),
     removeScanRoot: vi.fn(),
     renderAllThumbnails: vi.fn(),
     renderFailedThumbnails: vi.fn(),
@@ -92,13 +91,6 @@ describe("useSettingsActions confirmation flows", () => {
       ],
       removed_thumbnails: 0
     });
-    apiMocks.renameAssetFile.mockReset();
-    apiMocks.renameAssetFile.mockResolvedValue({
-      asset_id: 1,
-      old_path: "C:/media/a.jpg",
-      new_path: "C:/media/b.jpg",
-      removed_thumbnails: 0
-    });
     apiMocks.deleteAsset.mockReset();
     apiMocks.deleteAsset.mockResolvedValue({
       removed_assets: 1,
@@ -142,7 +134,7 @@ describe("useSettingsActions confirmation flows", () => {
       changes: [{ assetId: 1, type: "delete" }],
       deleteCount: 1
     });
-    expect(apiMocks.renameAssetFile).not.toHaveBeenCalled();
+    expect(apiMocks.applyDuplicateResolutionBatch).not.toHaveBeenCalled();
     expect(apiMocks.deleteAsset).not.toHaveBeenCalled();
 
     act(() => {
@@ -150,7 +142,7 @@ describe("useSettingsActions confirmation flows", () => {
     });
 
     expect(result.current.pendingDuplicateDeleteConfirm).toBeNull();
-    expect(apiMocks.renameAssetFile).not.toHaveBeenCalled();
+    expect(apiMocks.applyDuplicateResolutionBatch).not.toHaveBeenCalled();
     expect(apiMocks.deleteAsset).not.toHaveBeenCalled();
     expect(result.current.duplicateOperationState.message).toBe("Applying duplicate changes cancelled.");
   });
@@ -166,14 +158,12 @@ describe("useSettingsActions confirmation flows", () => {
               path: "C:/media/a.jpg",
               record_version: 3,
               size_bytes: 10,
-              fingerprint_mtime_ns: 100
             },
             {
               id: 2,
               path: "C:/media/b.jpg",
               record_version: 4,
               size_bytes: 20,
-              fingerprint_mtime_ns: 200
             }
           ]
         }
@@ -211,7 +201,7 @@ describe("useSettingsActions confirmation flows", () => {
       ],
       deleteCount: 1
     });
-    expect(apiMocks.renameAssetFile).not.toHaveBeenCalled();
+    expect(apiMocks.applyDuplicateResolutionBatch).not.toHaveBeenCalled();
     expect(apiMocks.deleteAsset).not.toHaveBeenCalled();
 
     await act(async () => {

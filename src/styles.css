@@ -221,8 +221,16 @@ a:focus-visible {
 }
 
 .lightbox-video-player .media-button--cast,
-.lightbox-video-player .media-button--pip {
+.lightbox-video-player .media-button--pip,
+.lightbox-video-player .media-button--fullscreen {
   display: none;
+}
+
+.lightbox-video-player .media-button--native-fullscreen {
+  position: absolute;
+  right: calc(var(--media-scale-unit) * 0.75);
+  bottom: calc(var(--media-scale-unit) * 0.75);
+  z-index: 4;
 }
 
 button,

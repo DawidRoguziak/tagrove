@@ -32,7 +32,6 @@
   "bundle": {
     "active": true,
     "icon": [
-      "icons/icon.ico",
       "icons/image_viewer_3000_32x32.png",
       "icons/image_viewer_3000_64x64.png",
       "icons/image_viewer_3000_126x128.png",

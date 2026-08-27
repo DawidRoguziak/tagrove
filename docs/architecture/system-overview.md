@@ -17,6 +17,8 @@ flowchart LR
     DB[("SQLite media.db")]
     FS["Media files and app-data thumbs/"]
     TOOLS["ffmpeg / ffprobe"]
+    VIDEO["VideoPlayerService / libmpv"]
+    GTK["GtkGLArea / OpenGL"]
 
     UI --> API --> IPC --> CMD
     CMD --> SVC
@@ -25,8 +27,9 @@ flowchart LR
     CORE --> DB
     CORE --> FS
     CORE --> TOOLS
+    SVC --> VIDEO --> GTK
     CMD -. "Result serialized as value or error string" .-> IPC
-    SVC -. "process-progress / thumbnail channel" .-> IPC
+    SVC -. "progress / thumbnail and video channels" .-> IPC
     IPC -. "promise, event, or Channel message" .-> UI
 ```
 
@@ -34,10 +37,10 @@ The normal request path is:
 
 1. `src/main.tsx` loads i18n and styles, applies the persisted theme before rendering, and mounts `App` under React `StrictMode`. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.
 2. `App.tsx` delegates application state and actions to `useAppShellController`; settings, bulk-action, and lightbox views are lazy-loaded and prefetched after 1.5 seconds.
-3. Feature hooks call typed wrappers in `src/api.ts`. Those wrappers are the frontend IPC seam: they translate UI concepts into Tauri command names and payloads, create an IPC `Channel` for streamed thumbnail results, use `convertFileSrc` for image/GIF URLs, and request private loopback URLs for video playback.
+3. Feature hooks call typed wrappers in `src/api.ts`. Those wrappers translate UI concepts into Tauri command names and payloads, create IPC channels for thumbnail and video events, and use `convertFileSrc` for image/GIF URLs.
 4. Tauri dispatches the request to a function registered by `tauri::generate_handler!` in `src-tauri/src/lib.rs`. Command functions validate or normalize inputs, obtain `AppState`, acquire a workflow lock where required, and either perform a small operation or delegate to a service.
 5. Services coordinate scanning, query sessions, backups, progress, and thumbnail scheduling. `db.rs` owns SQL; `indexer.rs` discovers and inspects media; `thumbs.rs` performs image/video probing and rendering; filesystem mutations occur in the command or service responsible for that workflow.
-6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; on-demand thumbnail batches use a `Channel<ThumbnailStreamEvent>`.
+6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; on-demand thumbnail batches and native video sessions use channels.
 
 Concrete examples:
 
@@ -45,18 +48,18 @@ Concrete examples:
 - A scan invokes `scan_folder` or `rescan_all_roots`, takes the scan lock, walks supported files, fingerprints them, extracts metadata (including video duration through ffprobe/ffmpeg), commits batched SQLite updates, and removes stale database rows. Scanning reads source media; it does not copy it into app data.
 - Visible gallery items are queued by asset ID. `ensure_thumbnails` takes a shared thumbnail lock and submits deduplicated high-priority jobs to the process-wide scheduler. Images are decoded in Rust; video frames use ffmpeg. Successful paths and failures are persisted in SQLite, and the generated files live under the profile's `thumbs/` directory.
 - Delete, rename, root removal, library clear, and bundle restore cross both SQLite and the filesystem. These operations take both workflow locks, always in the order described below.
-- Image, GIF, and thumbnail paths returned to React are normalized from Windows backslashes before `convertFileSrc` maps them to Tauri's asset protocol. Video playback uses a tokenized `127.0.0.1` URL resolved by asset ID; the dedicated Hyper/Tokio server streams the file with asynchronous, backpressure-aware GET, HEAD, and byte-range responses without carrying bytes through IPC. It accepts at most 32 active connections, closes clients that do not finish headers within five seconds, bounds request preparation to ten seconds and stalled writes to 30 seconds, and disables HTTP keep-alive.
+- Image, GIF, and thumbnail paths use Tauri's asset protocol. Video opens by asset ID. A blocking worker verifies the SQLite row, media kind, canonical regular file, assigned roots, and symlink containment. The canonical path then goes directly to libmpv. Frames render through libmpv's OpenGL API into a GTK `GLArea` beneath the transparent WebView inside an opaque GTK window; video bytes do not pass through IPC or the asset protocol.
 
 ## Executable bootstrap and runtime lifecycle
 
-`src-tauri/src/main.rs` is deliberately only the binary entry point. It hides the console window in non-debug Windows builds and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`, which:
+`src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`, which:
 
 1. creates a `tauri::Builder` and installs the dialog plugin;
 2. during `setup`, refuses a debug build whose effective identifier is the production identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema and reconciles pending source-file operations before serving media;
-6. starts the loopback video server, resolves ffmpeg, creates the thumbnail scheduler (refusing startup when its worker threads could not be launched), and manages `AppState` plus the separate media-server state;
+5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema and reconciles pending source-file operations;
+6. creates the process-wide `VideoPlayerService`, installs the GTK video surface, resolves ffmpeg, creates the thumbnail scheduler, and manages application state;
 7. registers every frontend-callable command; and
 8. runs the generated Tauri context until the application exits.
 
@@ -72,7 +75,8 @@ Startup failure in any setup step prevents the windowed application from enterin
 | `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
 | `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
-| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, asynchronous loopback video streaming, scan orchestration, thumbnail workflows, backup/restore, and progress emission. |
+| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, native video playback, scan orchestration, thumbnail workflows, backup/restore, and progress emission. |
+| `video_surface.rs` | GTK overlay/GLArea placement and libmpv OpenGL rendering. |
 | `db.rs` | Schema initialization and SQLite queries/transactions. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
 | `indexer.rs` | Supported-file discovery, fingerprints, and media metadata extraction. |
 | `thumbs.rs` | Image/video thumbnail creation and video duration probing. |
@@ -90,7 +94,7 @@ Startup failure in any setup step prevents the windowed application from enterin
 - the shared `ThumbnailScheduler`; and
 - atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and track the highest observed thumbnail request id.
 
-The `InstanceLock` and `MediaServerState` are separately managed by Tauri so their lock/listener lifetimes match the application. Dropping `MediaServerState` signals shutdown, aborts active connection tasks, drains their `JoinSet`, and joins the dedicated server thread. Transient listener errors use bounded exponential backoff; eight consecutive failures stop the listener and make later video-URL requests report that the server is unavailable. The query manager, its connection-pool registry, and the database maintenance gate are process-wide `OnceLock` singletons rather than `AppState` fields. Every application-created live-database connection owns a maintenance lease for its full lifetime.
+The `InstanceLock` and `VideoPlayerService` are separately managed by Tauri so their lifetimes match the application. The player service owns one process-wide libmpv handle, one active session, a dedicated event thread, and monotonically increasing open/session IDs. It rejects stale sessions and superseded opens. The query manager, its connection-pool registry, and the database maintenance gate are process-wide `OnceLock` singletons rather than `AppState` fields. Every application-created live-database connection owns a maintenance lease for its full lifetime.
 
 ## Profiles, identifiers, and data isolation
 
@@ -130,28 +134,18 @@ Whenever both ordinary workflow locks are needed, `with_scan_and_thumb_lock` acq
 
 The React settings runner also suppresses concurrent settings operations in one mounted frontend, but that is a user-interface convenience, not a backend safety boundary. Direct IPC callers can still invoke commands concurrently.
 
-## Bundled media tools and resources
+## Native media dependencies
 
-The Windows platform bundle config declares `binaries/ffmpeg` and `binaries/ffprobe` as Tauri external binaries. The required Windows target-triple executables are ignored by Git and must be supplied manually:
+The supported Linux build uses system libmpv, GTK3, WebKitGTK 4.1, EGL/GLX, ffmpeg, and ffprobe. libmpv performs interactive playback. ffmpeg and ffprobe are separate indexing and thumbnail tools. `lib.rs` searches resource, executable-adjacent, and `/usr/bin` locations for `ffmpeg`, then falls back to `PATH`; probing checks a sibling `ffprobe`, `/usr/bin/ffprobe`, and `PATH`. Missing ffmpeg tools degrade duration and thumbnail work, while missing libmpv/GTK/OpenGL prevents native playback or application linkage.
 
-- `src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe`
-- `src-tauri/binaries/ffprobe-x86_64-pc-windows-msvc.exe`
-
-A fresh checkout does not contain these files and cannot produce a complete Windows package until both are provided.
-
-At runtime, `lib.rs` looks for ffmpeg in the Tauri resource directory, `binaries/` subdirectories, locations adjacent to the executable, and parent `resources/` directories. In each location it tries `ffmpeg.exe`, `ffmpeg`, then the lexicographically first regular file whose stem starts with `ffmpeg-`. If none exists, it falls back to the command name `ffmpeg` and therefore the process `PATH`.
-
-Duration probing derives a matching ffprobe name from the selected ffmpeg suffix, then tries `ffprobe.exe`/`ffprobe` beside it and finally `ffprobe` on `PATH`. Linux packages intentionally have no sidecar and use the system tools through this fallback. If ffprobe cannot provide a duration, probing falls back to parsing ffmpeg output. Video tools have timeouts, and Windows launches them without a console window. A missing or unusable tool therefore degrades video metadata/thumbnail work rather than preventing application bootstrap.
-
-## Tauri security surface and Windows packaging
+## Tauri security surface and Linux packaging
 
 Current configuration is permissive and should be treated as current state, not a recommended end state:
 
 - `capabilities/default.json` applies to the `main` window and grants `core:default` plus `dialog:default` (open, save, and message dialogs). Application commands are those explicitly registered in `lib.rs`.
-- The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `['**']`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails still use this path; video URLs instead expose only SQLite-owned video IDs through a tokenized loopback server.
+- The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `['**']`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails use this path. Video sources are authorized by asset ID and opened only by libmpv.
 - `app.security.csp` is `null`, so the configuration does not install a Content Security Policy.
-- The Windows release window passes WebView2 arguments that disable Microsoft OOUI/PDF UI and SmartScreen protection and relax autoplay. The dev overlay repeats those arguments; the E2E window configuration does not.
-- Platform configs bundle MSI/NSIS with both media tools on Windows and disable bundling for the native Linux executable, which uses host media tools and GStreamer plugins. macOS and ARM targets are not configured.
+- Linux bundling is disabled; the release artifact is a native x86-64 executable built against the system media and graphics stack. Other platforms and ARM are not configured.
 
 Security-sensitive changes should review capabilities, CSP, asset scope, dialog permissions, WebView arguments, and the direct `convertFileSrc` flow together. See [setup and build](../development/setup-and-build.md) for build prerequisites and commands.
 
@@ -175,7 +169,7 @@ Current guarantees include:
 
 Known limitations include:
 
-- CSP is disabled, the asset scope is global, and release/dev disable WebView2 SmartScreen protection.
+- CSP is disabled and the asset scope is global.
 - The profile lock has no direct automated test, and bootstrap/profile guards and ffmpeg search precedence are not directly unit-tested.
 - Workflow locking remains selective outside database maintenance. Tag/favorite/group writes, CSV import, adding roots, and reads may overlap a scan, but they cannot overlap bundle snapshot/replacement because every live connection participates in the maintenance gate.
 - `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
@@ -183,7 +177,7 @@ Known limitations include:
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.
 - The frontend passes a generation as `start_asset_query.generation`; query supersession is process-global in the query manager. The `ensure_thumbnails` request ID is now honored as a staleness guard: ids lower than the highest observed are rejected without work, while stale frontend messages remain filtered locally by generation.
 - Many progress emissions deliberately ignore delivery errors; completion of the underlying operation does not guarantee that every progress update reached the WebView.
-- Packaging supports Windows and Linux x86-64; Windows sidecars must be supplied locally, Linux requires system ffmpeg/ffprobe, and the production identifier still uses the example domain.
+- Packaging supports Linux x86-64 only, depends on the documented system media/graphics libraries, and the production identifier still uses the example domain.
 
 ## Safe-change checklist
 
@@ -196,21 +190,21 @@ Before merging an architectural change:
 - For database writes, use transactions where a workflow must be atomic, bump the library revision when query-visible state changes, and invalidate process caches/pools when replacing the database. Follow [database](../subsystems/database.md) and [data safety](../subsystems/data-safety-and-portability.md) guidance.
 - For file mutations, define failure ordering and rollback/repair behavior across the database, source file, thumbnail, WAL/SHM sidecars, and restore staging.
 - Never reuse the production identifier or app-data cleanup target for dev/E2E. Preserve the E2E identifier/title/target assertions when changing configuration.
-- When changing product, crate, or binary names, update packaging, icons, sidecar names, E2E paths, user-visible text, and data migration intentionally.
+- When changing product, crate, or binary names, update packaging, icons, E2E paths, user-visible text, and data migration intentionally.
 - When changing media loading, assess CSP, capabilities, asset-protocol scope, and whether paths can be constrained to registered roots and profile thumbnails.
-- When changing ffmpeg packaging, verify both ffmpeg and its matching ffprobe for every target triple and test installed-package resource layout, not only PATH-based development behavior.
+- When changing native media dependencies, verify libmpv/GTK/OpenGL linkage and both ffmpeg tools in the Linux artifact.
 
 ## Verification map
 
 Use [testing](../development/testing.md) for the full test workflow. The most relevant existing checks are:
 
-- `src/__tests__/api.test.ts`: invoke payload mapping and Windows-path normalization before `convertFileSrc`.
+- `src/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
 - Frontend hook/component tests under `src/hooks/**/__tests__` and `src/components/**/__tests__`: query lifecycle, thumbnail queues, settings progress, mutation refreshes, and UI behavior.
 - Rust unit tests in `db.rs`, `commands/*`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.
 - `e2e/build-e2e.js` and `e2e/wdio.conf.js`: destructive-test isolation and real desktop build/driver setup.
 - `e2e/specs/*.e2e.js`: real-window smoke and workflows covering settings, filtering, roots, bulk edits, lightbox mutations, CSV, and DB bundles.
-- `src-tauri/tauri.conf*.json`, `capabilities/default.json`, `Cargo.toml`, locally supplied `binaries/`, checked-in `icons/`, `package.json`, and `index.html`: configuration checks that tests do not fully replace.
+- `src-tauri/tauri.conf*.json`, `capabilities/default.json`, `Cargo.toml`, checked-in `icons/`, `package.json`, and `index.html`: configuration checks that tests do not fully replace.
 
-At minimum, run `bun run build`, `bun run test`, and `bun run test:backend` after code changes. Run `bun run test:e2e:tauri` for IPC, bootstrap, profile, packaging-adjacent, filesystem, or full-workflow changes. Installed MSI/NSIS resource layout and sidecar launch still require a packaged Windows smoke test beyond the unbundled E2E executable.
+At minimum, run `bun run build`, `bun run test`, and `bun run test:backend` after code changes. Run `bun run test:e2e:tauri` for IPC, bootstrap, profile, packaging-adjacent, filesystem, or full-workflow changes. Build the Docker Linux artifact to verify release linkage and its dependency manifest.

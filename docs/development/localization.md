@@ -108,7 +108,7 @@ Runtime tests for initial language resolution and persistence remain separate fr
 
 Pass `--overwrite` only for an intentional full machine-translation draft:
 
-```powershell
+```bash
 bun run locale:generate -- --overwrite
 ```
 
@@ -120,14 +120,14 @@ The generator protects placeholders and newlines with sentinel values. The post-
 
 ### Read-only parity check
 
-```powershell
+```bash
 bun run locale:check
 bun run test:locale-tools
 ```
 
 Run the relevant existing tests and TypeScript/Vite build after localization changes:
 
-```powershell
+```bash
 bun run test -- src/components/settings/sections/__tests__/AppearanceSection.test.tsx src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx
 bun run build
 ```

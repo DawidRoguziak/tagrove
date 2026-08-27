@@ -1,20 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getVideoStreamUrl, listAssets, mergeAssetTagsBulk, setAssetTags, toMediaSrc } from "../api";
+import {
+  closeVideo,
+  controlVideo,
+  listAssets,
+  mergeAssetTagsBulk,
+  openVideo,
+  setAssetTags,
+  setVideoBounds,
+  toMediaSrc
+} from "../api";
 
 const coreMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
-  convertFileSrc: vi.fn((path: string) => `tauri://${path}`)
+  convertFileSrc: vi.fn((path: string) => `tauri://${path}`),
+  channels: [] as Array<{ onmessage?: (event: unknown) => void }>
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: coreMocks.invoke,
-  convertFileSrc: coreMocks.convertFileSrc
+  convertFileSrc: coreMocks.convertFileSrc,
+  Channel: class {
+    onmessage?: (event: unknown) => void;
+
+    constructor() {
+      coreMocks.channels.push(this);
+    }
+  }
 }));
 
 describe("api contract", () => {
   beforeEach(() => {
     coreMocks.invoke.mockReset();
     coreMocks.convertFileSrc.mockClear();
+    coreMocks.channels.length = 0;
   });
 
   it("maps mediaKind=all to null kind in listAssets invoke payload", async () => {
@@ -64,19 +82,41 @@ describe("api contract", () => {
     });
   });
 
-  it("normalizes windows slashes before converting media source", () => {
-    const result = toMediaSrc("C:\\library\\cats\\photo.jpg");
+  it("converts a media path through Tauri", () => {
+    const result = toMediaSrc("/library/cats/photo.jpg");
 
-    expect(coreMocks.convertFileSrc).toHaveBeenCalledWith("C:/library/cats/photo.jpg");
-    expect(result).toBe("tauri://C:/library/cats/photo.jpg");
+    expect(coreMocks.convertFileSrc).toHaveBeenCalledWith("/library/cats/photo.jpg");
+    expect(result).toBe("tauri:///library/cats/photo.jpg");
   });
 
-  it("requests a private stream URL by asset id without converting it", async () => {
-    const url = "http://127.0.0.1:43210/token/video/7.mp4";
-    coreMocks.invoke.mockResolvedValueOnce(url);
+  it("maps native video session payloads and channel events", async () => {
+    const onEvent = vi.fn();
+    const bounds = { x: 10, y: 20, width: 640, height: 360 };
+    coreMocks.invoke.mockResolvedValueOnce(17).mockResolvedValue(undefined);
 
-    await expect(getVideoStreamUrl(7)).resolves.toBe(url);
-    expect(coreMocks.invoke).toHaveBeenCalledWith("get_video_stream_url", { assetId: 7 });
-    expect(coreMocks.convertFileSrc).not.toHaveBeenCalled();
+    await expect(openVideo(4, 9, bounds, onEvent)).resolves.toBe(17);
+    const channel = coreMocks.channels[0];
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(1, "open_video", {
+      assetId: 4,
+      generation: 9,
+      bounds,
+      onEvent: channel
+    });
+    channel?.onmessage?.({ session_id: 17, type: "playing" });
+    expect(onEvent).toHaveBeenCalledWith({ session_id: 17, type: "playing" });
+
+    await setVideoBounds(17, bounds);
+    await controlVideo(17, { type: "seek", time: 3.5 });
+    await closeVideo(17);
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(2, "set_video_bounds", {
+      sessionId: 17,
+      bounds
+    });
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(3, "control_video", {
+      sessionId: 17,
+      command: { type: "seek", time: 3.5 }
+    });
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(4, "close_video", { sessionId: 17 });
   });
+
 });

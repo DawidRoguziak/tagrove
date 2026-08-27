@@ -13,7 +13,6 @@
 *.tsbuildinfo
 /coverage/
 /.nyc_output/
-/src-tauri/binaries/*.exe
 
 # Local tools, editors, and agent state
 /.idea/
@@ -21,7 +20,6 @@
 /.vs/
 /.codex/
 /.opencode/
-/msedgedriver.exe
 *.swp
 
 # Local configuration and logs

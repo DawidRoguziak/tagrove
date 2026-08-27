@@ -1,0 +1,628 @@
+use std::{
+    cell::{Cell, RefCell},
+    ffi::{c_char, c_int, c_void, CStr, CString},
+    ptr::NonNull,
+    rc::Rc,
+    sync::{mpsc, OnceLock},
+    time::Duration,
+};
+
+use gtk::{glib, prelude::*};
+use libloading::Library;
+use libmpv2_sys as mpv_sys;
+use tauri::WebviewWindow;
+
+use crate::{commands::video::VideoBounds, services::video_player_service::VideoPlayerService};
+
+const GL_DRAW_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
+const GL_DRAW_FRAMEBUFFER: u32 = 0x8CA9;
+const GL_FRAMEBUFFER_COMPLETE: u32 = 0x8CD5;
+const GL_NO_ERROR: u32 = 0;
+
+thread_local! {
+    static SURFACE: RefCell<Option<VideoSurface>> = const { RefCell::new(None) };
+}
+
+struct VideoSurface {
+    fixed: gtk::Fixed,
+    gl_area: gtk::GLArea,
+    sessions: SurfaceSessions,
+    _overlay: gtk::Overlay,
+    render_context: Rc<RefCell<RenderContextState>>,
+    _render_source: glib::SourceId,
+}
+
+enum RenderContextState {
+    Pending,
+    Ready(MpvRenderContext),
+    Failed(String),
+}
+
+struct MpvRenderContext {
+    context: NonNull<mpv_sys::mpv_render_context>,
+    _update_sender: Box<async_channel::Sender<()>>,
+}
+
+impl MpvRenderContext {
+    fn new(
+        mpv: &'static libmpv2::Mpv,
+        update_sender: async_channel::Sender<()>,
+    ) -> Result<Self, String> {
+        let mut init_params = mpv_sys::mpv_opengl_init_params {
+            get_proc_address: Some(mpv_get_proc_address),
+            get_proc_address_ctx: std::ptr::null_mut(),
+        };
+        let mut params = [
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_API_TYPE,
+                data: mpv_sys::MPV_RENDER_API_TYPE_OPENGL
+                    .as_ptr()
+                    .cast_mut()
+                    .cast(),
+            },
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_INIT_PARAMS,
+                data: (&mut init_params as *mut mpv_sys::mpv_opengl_init_params).cast(),
+            },
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        let mut context = std::ptr::null_mut();
+        let result = unsafe {
+            mpv_sys::mpv_render_context_create(&mut context, mpv.ctx.as_ptr(), params.as_mut_ptr())
+        };
+        if result < 0 {
+            return Err(format!(
+                "libmpv render context initialization failed: {}",
+                mpv_error_message(result)
+            ));
+        }
+        let context = NonNull::new(context)
+            .ok_or_else(|| "libmpv returned a null render context".to_string())?;
+        let update_sender = Box::new(update_sender);
+        unsafe {
+            mpv_sys::mpv_render_context_set_update_callback(
+                context.as_ptr(),
+                Some(render_update_callback),
+                (&*update_sender as *const async_channel::Sender<()>)
+                    .cast_mut()
+                    .cast(),
+            );
+        }
+        Ok(Self {
+            context,
+            _update_sender: update_sender,
+        })
+    }
+
+    fn update(&self) -> u64 {
+        unsafe { mpv_sys::mpv_render_context_update(self.context.as_ptr()) }
+    }
+
+    fn render(&self, fbo: i32, width: i32, height: i32) -> Result<(), String> {
+        let mut fbo = mpv_sys::mpv_opengl_fbo {
+            fbo,
+            w: width,
+            h: height,
+            internal_format: 0,
+        };
+        let mut flip_y: c_int = 1;
+        let mut params = [
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
+                data: (&mut fbo as *mut mpv_sys::mpv_opengl_fbo).cast(),
+            },
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y,
+                data: (&mut flip_y as *mut c_int).cast(),
+            },
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ];
+        let result = unsafe {
+            mpv_sys::mpv_render_context_render(self.context.as_ptr(), params.as_mut_ptr())
+        };
+        if result < 0 {
+            Err(mpv_error_message(result))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for MpvRenderContext {
+    fn drop(&mut self) {
+        unsafe {
+            mpv_sys::mpv_render_context_set_update_callback(
+                self.context.as_ptr(),
+                None,
+                std::ptr::null_mut(),
+            );
+            mpv_sys::mpv_render_context_free(self.context.as_ptr());
+        }
+    }
+}
+
+unsafe extern "C" fn render_update_callback(context: *mut c_void) {
+    if let Some(sender) = (context as *const async_channel::Sender<()>).as_ref() {
+        let _ = sender.try_send(());
+    }
+}
+
+unsafe extern "C" fn mpv_get_proc_address(_: *mut c_void, name: *const c_char) -> *mut c_void {
+    if name.is_null() {
+        return std::ptr::null_mut();
+    }
+    get_proc_address(CStr::from_ptr(name))
+}
+
+fn mpv_error_message(code: c_int) -> String {
+    let message = unsafe { mpv_sys::mpv_error_string(code) };
+    if message.is_null() {
+        format!("mpv error {code}")
+    } else {
+        unsafe { CStr::from_ptr(message) }
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
+#[derive(Default)]
+struct SurfaceSessions {
+    latest: u64,
+    active: Option<u64>,
+}
+
+impl SurfaceSessions {
+    fn activate(&mut self, session_id: u64) -> bool {
+        if session_id < self.latest {
+            return false;
+        }
+        self.latest = session_id;
+        self.active = Some(session_id);
+        true
+    }
+
+    fn close(&mut self, session_id: u64) -> bool {
+        if self.active != Some(session_id) {
+            return false;
+        }
+        self.active = None;
+        true
+    }
+}
+
+pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), String> {
+    let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
+    let vbox = window.default_vbox().map_err(|error| error.to_string())?;
+    let webview = vbox
+        .children()
+        .into_iter()
+        .next()
+        .ok_or_else(|| "Tauri WebView widget is unavailable".to_string())?;
+
+    vbox.remove(&webview);
+    gtk_window.remove(&vbox);
+
+    let overlay = gtk::Overlay::new();
+    let fixed = gtk::Fixed::new();
+    fixed.set_hexpand(true);
+    fixed.set_vexpand(true);
+
+    let gl_area = gtk::GLArea::new();
+    gl_area.set_auto_render(false);
+    gl_area.set_has_alpha(false);
+    gl_area.set_can_focus(false);
+    gl_area.set_visible(false);
+    fixed.put(&gl_area, 0, 0);
+
+    webview.set_hexpand(true);
+    webview.set_vexpand(true);
+    overlay.add(&webview);
+    overlay.add_overlay(&fixed);
+    overlay.set_overlay_pass_through(&fixed, true);
+    gtk_window.add(&overlay);
+    overlay.show();
+    fixed.show();
+    webview.show();
+
+    let render_context = Rc::new(RefCell::new(RenderContextState::Pending));
+    let (render_tx, render_rx) = async_channel::bounded(1);
+    let mpv = player.mpv();
+    {
+        let render_context = Rc::clone(&render_context);
+        gl_area.connect_realize(move |area| {
+            area.make_current();
+            if let Some(error) = area.error() {
+                *render_context.borrow_mut() = RenderContextState::Failed(error.to_string());
+                return;
+            }
+            let Ok(mpv) = &mpv else {
+                *render_context.borrow_mut() = RenderContextState::Failed(
+                    mpv.as_ref()
+                        .err()
+                        .cloned()
+                        .unwrap_or_else(|| "libmpv is unavailable".to_string()),
+                );
+                return;
+            };
+            match MpvRenderContext::new(mpv, render_tx.clone()) {
+                Ok(context) => {
+                    *render_context.borrow_mut() = RenderContextState::Ready(context);
+                }
+                Err(error) => {
+                    let message = format!("libmpv render context initialization failed: {error}");
+                    eprintln!("{message}");
+                    *render_context.borrow_mut() = RenderContextState::Failed(message);
+                }
+            }
+        });
+    }
+    {
+        let render_context = Rc::clone(&render_context);
+        gl_area.connect_unrealize(move |_| {
+            *render_context.borrow_mut() = RenderContextState::Pending;
+        });
+    }
+    {
+        let render_context = Rc::clone(&render_context);
+        let logged_render_target = Cell::new(false);
+        gl_area.connect_render(move |area, _| {
+            area.make_current();
+            if let Some(error) = area.error() {
+                eprintln!("native video GL context failed: {error}");
+                return glib::Propagation::Stop;
+            }
+            area.attach_buffers();
+            let scale = area.scale_factor().max(1);
+            let width = area.allocated_width().saturating_mul(scale);
+            let height = area.allocated_height().saturating_mul(scale);
+            if width <= 0 || height <= 0 {
+                return glib::Propagation::Proceed;
+            }
+            let fbo = match current_draw_framebuffer() {
+                Ok(fbo) => fbo,
+                Err(error) => {
+                    eprintln!("native video framebuffer query failed: {error}");
+                    return glib::Propagation::Stop;
+                }
+            };
+            let framebuffer_status = current_framebuffer_status();
+            if !logged_render_target.get() {
+                eprintln!(
+                    "native video render target: api={}, fbo={fbo}, size={width}x{height}, scale={scale}, status={}",
+                    current_context_api(),
+                    framebuffer_status
+                        .as_ref()
+                        .map(|status| format!("0x{status:04x}"))
+                        .unwrap_or_else(|error| error.clone())
+                );
+                logged_render_target.set(true);
+            }
+            if framebuffer_status != Ok(GL_FRAMEBUFFER_COMPLETE) {
+                return glib::Propagation::Stop;
+            }
+            if let RenderContextState::Ready(context) = &*render_context.borrow() {
+                let update_flags = context.update();
+                if let Err(error) = context.render(fbo, width, height) {
+                    eprintln!("libmpv frame render failed: {error}");
+                }
+                if let Ok(error) = current_gl_error() {
+                    if error != GL_NO_ERROR {
+                        eprintln!(
+                            "native video OpenGL error after render: 0x{error:04x}, update_flags=0x{update_flags:x}"
+                        );
+                    }
+                }
+            }
+            glib::Propagation::Stop
+        });
+    }
+    {
+        let gl_area = gl_area.clone();
+        overlay.connect_realize(move |_| {
+            if !gl_area.is_realized() {
+                gl_area.realize();
+            }
+        });
+    }
+    let render_area = gl_area.clone();
+    let render_source = glib::timeout_add_local(Duration::from_millis(8), move || {
+        if render_rx.try_recv().is_ok() {
+            render_area.queue_render();
+        }
+        glib::ControlFlow::Continue
+    });
+
+    SURFACE.with(|surface| {
+        *surface.borrow_mut() = Some(VideoSurface {
+            fixed,
+            gl_area,
+            sessions: SurfaceSessions::default(),
+            _overlay: overlay,
+            render_context,
+            _render_source: render_source,
+        });
+    });
+    Ok(())
+}
+
+pub fn ensure_ready(window: &WebviewWindow) -> Result<(), String> {
+    run_on_main_thread_result(window, || {
+        SURFACE.with(|surface| {
+            let surface = surface.borrow();
+            let surface = surface
+                .as_ref()
+                .ok_or_else(|| "native video surface is unavailable".to_string())?;
+            if !surface.gl_area.is_realized() {
+                surface.gl_area.realize();
+            }
+            let readiness = match &*surface.render_context.borrow() {
+                RenderContextState::Ready(_) => Ok(()),
+                RenderContextState::Pending => {
+                    Err("native video render context is not ready".to_string())
+                }
+                RenderContextState::Failed(message) => Err(message.clone()),
+            };
+            readiness
+        })
+    })
+}
+
+pub fn set_bounds(
+    window: &WebviewWindow,
+    session_id: u64,
+    bounds: VideoBounds,
+) -> Result<(), String> {
+    let scale = window.scale_factor().map_err(|error| error.to_string())?;
+    let inner = window.inner_size().map_err(|error| error.to_string())?;
+    let max_width = f64::from(inner.width) / scale;
+    let max_height = f64::from(inner.height) / scale;
+    let x = bounds.x.min(max_width);
+    let y = bounds.y.min(max_height);
+    let width = bounds.width.min((max_width - x).max(0.0));
+    let height = bounds.height.min((max_height - y).max(0.0));
+
+    run_on_main_thread(window, move || {
+        SURFACE.with(|surface| {
+            let mut surface = surface.borrow_mut();
+            let Some(surface) = surface.as_mut() else {
+                return;
+            };
+            if !surface.sessions.activate(session_id) {
+                return;
+            }
+            if width == 0.0 || height == 0.0 {
+                surface.gl_area.hide();
+                return;
+            }
+            surface
+                .fixed
+                .move_(&surface.gl_area, x.round() as i32, y.round() as i32);
+            surface
+                .gl_area
+                .set_size_request(width.round() as i32, height.round() as i32);
+            surface.gl_area.show();
+            surface.gl_area.queue_render();
+        });
+    })
+}
+
+pub fn hide(window: &WebviewWindow, session_id: u64) -> Result<(), String> {
+    run_on_main_thread(window, move || {
+        SURFACE.with(|surface| {
+            let mut surface = surface.borrow_mut();
+            if let Some(surface) = surface.as_mut() {
+                if surface.sessions.close(session_id) {
+                    surface.gl_area.hide();
+                }
+            }
+        });
+    })
+}
+
+fn run_on_main_thread(
+    window: &WebviewWindow,
+    operation: impl FnOnce() + Send + 'static,
+) -> Result<(), String> {
+    run_on_main_thread_result(window, move || {
+        operation();
+        Ok(())
+    })
+}
+
+fn run_on_main_thread_result<T: Send + 'static>(
+    window: &WebviewWindow,
+    operation: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let (done_tx, done_rx) = mpsc::sync_channel(1);
+    window
+        .run_on_main_thread(move || {
+            let _ = done_tx.send(operation());
+        })
+        .map_err(|error| error.to_string())?;
+    done_rx
+        .recv()
+        .map_err(|_| "GTK main-thread operation was cancelled".to_string())?
+}
+
+fn get_proc_address(name: &CStr) -> *mut c_void {
+    unsafe {
+        if has_current_glx_context() {
+            let pointer = direct_symbol(gl_library(), name);
+            if !pointer.is_null() {
+                return pointer;
+            }
+            let pointer = glx_proc_address(name);
+            if !pointer.is_null() {
+                return pointer;
+            }
+        }
+        if has_current_egl_context() {
+            for library in [gles_library(), gl_library()] {
+                let pointer = direct_symbol(library, name);
+                if !pointer.is_null() {
+                    return pointer;
+                }
+            }
+            let pointer = egl_proc_address(name);
+            if !pointer.is_null() {
+                return pointer;
+            }
+        }
+
+        for library in [gl_library(), gles_library()] {
+            let pointer = direct_symbol(library, name);
+            if !pointer.is_null() {
+                return pointer;
+            }
+        }
+        let pointer = egl_proc_address(name);
+        if !pointer.is_null() {
+            return pointer;
+        }
+        glx_proc_address(name)
+    }
+}
+
+unsafe fn direct_symbol(library: Option<&Library>, name: &CStr) -> *mut c_void {
+    library
+        .and_then(|library| {
+            library
+                .get::<*mut c_void>(name.to_bytes_with_nul())
+                .ok()
+                .map(|symbol| *symbol)
+        })
+        .unwrap_or(std::ptr::null_mut())
+}
+
+unsafe fn egl_proc_address(name: &CStr) -> *mut c_void {
+    type GetProcAddress = unsafe extern "C" fn(*const c_char) -> *mut c_void;
+    egl_library()
+        .and_then(|library| library.get::<GetProcAddress>(b"eglGetProcAddress\0").ok())
+        .map(|symbol| symbol(name.as_ptr()))
+        .unwrap_or(std::ptr::null_mut())
+}
+
+unsafe fn glx_proc_address(name: &CStr) -> *mut c_void {
+    type GetProcAddress = unsafe extern "C" fn(*const u8) -> *mut c_void;
+    gl_library()
+        .and_then(|library| {
+            library
+                .get::<GetProcAddress>(b"glXGetProcAddressARB\0")
+                .ok()
+        })
+        .map(|symbol| symbol(name.as_ptr().cast()))
+        .unwrap_or(std::ptr::null_mut())
+}
+
+fn current_context_api() -> &'static str {
+    unsafe {
+        if has_current_glx_context() {
+            "glx"
+        } else if has_current_egl_context() {
+            "egl"
+        } else {
+            "unknown"
+        }
+    }
+}
+
+unsafe fn has_current_egl_context() -> bool {
+    type GetCurrentContext = unsafe extern "C" fn() -> *mut c_void;
+    egl_library()
+        .and_then(|library| {
+            library
+                .get::<GetCurrentContext>(b"eglGetCurrentContext\0")
+                .ok()
+        })
+        .is_some_and(|symbol| !symbol().is_null())
+}
+
+unsafe fn has_current_glx_context() -> bool {
+    type GetCurrentContext = unsafe extern "C" fn() -> *mut c_void;
+    gl_library()
+        .and_then(|library| {
+            library
+                .get::<GetCurrentContext>(b"glXGetCurrentContext\0")
+                .ok()
+        })
+        .is_some_and(|symbol| !symbol().is_null())
+}
+
+fn current_draw_framebuffer() -> Result<i32, String> {
+    let pointer = gl_function("glGetIntegerv")?;
+    type GetInteger = unsafe extern "C" fn(u32, *mut i32);
+    let function: GetInteger = unsafe { std::mem::transmute(pointer) };
+    let mut framebuffer = 0;
+    unsafe { function(GL_DRAW_FRAMEBUFFER_BINDING, &mut framebuffer) };
+    Ok(framebuffer)
+}
+
+fn current_framebuffer_status() -> Result<u32, String> {
+    let pointer = gl_function("glCheckFramebufferStatus")?;
+    type CheckFramebufferStatus = unsafe extern "C" fn(u32) -> u32;
+    let function: CheckFramebufferStatus = unsafe { std::mem::transmute(pointer) };
+    Ok(unsafe { function(GL_DRAW_FRAMEBUFFER) })
+}
+
+fn current_gl_error() -> Result<u32, String> {
+    let pointer = gl_function("glGetError")?;
+    type GetError = unsafe extern "C" fn() -> u32;
+    let function: GetError = unsafe { std::mem::transmute(pointer) };
+    Ok(unsafe { function() })
+}
+
+fn gl_function(name: &str) -> Result<*mut c_void, String> {
+    let name = CString::new(name).map_err(|error| error.to_string())?;
+    let pointer = get_proc_address(&name);
+    if pointer.is_null() {
+        Err(format!(
+            "OpenGL symbol {} is unavailable",
+            name.to_string_lossy()
+        ))
+    } else {
+        Ok(pointer)
+    }
+}
+
+fn egl_library() -> Option<&'static Library> {
+    static LIBRARY: OnceLock<Option<Library>> = OnceLock::new();
+    LIBRARY
+        .get_or_init(|| unsafe { Library::new("libEGL.so.1").ok() })
+        .as_ref()
+}
+
+fn gl_library() -> Option<&'static Library> {
+    static LIBRARY: OnceLock<Option<Library>> = OnceLock::new();
+    LIBRARY
+        .get_or_init(|| unsafe { Library::new("libGL.so.1").ok() })
+        .as_ref()
+}
+
+fn gles_library() -> Option<&'static Library> {
+    static LIBRARY: OnceLock<Option<Library>> = OnceLock::new();
+    LIBRARY
+        .get_or_init(|| unsafe { Library::new("libGLESv2.so.2").ok() })
+        .as_ref()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SurfaceSessions;
+
+    #[test]
+    fn stale_surface_tasks_cannot_replace_or_hide_the_latest_session() {
+        let mut sessions = SurfaceSessions::default();
+        assert!(sessions.activate(1));
+        assert!(sessions.activate(2));
+        assert!(!sessions.activate(1));
+        assert!(!sessions.close(1));
+        assert!(sessions.close(2));
+        assert!(!sessions.activate(1));
+    }
+}

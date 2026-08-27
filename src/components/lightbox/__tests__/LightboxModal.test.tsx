@@ -6,11 +6,17 @@ import { LightboxModal } from "../LightboxModal";
 import { UiLayerProvider } from "../../UI/UiLayerProvider";
 
 const apiMocks = vi.hoisted(() => ({
-  getVideoStreamUrl: vi.fn()
+  openVideo: vi.fn(),
+  setVideoBounds: vi.fn(),
+  controlVideo: vi.fn(),
+  closeVideo: vi.fn()
 }));
 
 vi.mock("../../../api", () => ({
-  getVideoStreamUrl: apiMocks.getVideoStreamUrl,
+  openVideo: apiMocks.openVideo,
+  setVideoBounds: apiMocks.setVideoBounds,
+  controlVideo: apiMocks.controlVideo,
+  closeVideo: apiMocks.closeVideo,
   toMediaSrc: (path: string) => `media://${path}`
 }));
 
@@ -41,8 +47,10 @@ const selectedVideoAsset: SelectedAsset = {
 
 describe("LightboxModal", () => {
   beforeEach(() => {
-    apiMocks.getVideoStreamUrl.mockReset();
-    apiMocks.getVideoStreamUrl.mockImplementation(async (assetId: number) => `http://video/${assetId}.mp4`);
+    apiMocks.openVideo.mockReset().mockResolvedValue(1);
+    apiMocks.setVideoBounds.mockReset().mockResolvedValue(undefined);
+    apiMocks.controlVideo.mockReset().mockResolvedValue(undefined);
+    apiMocks.closeVideo.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -75,7 +83,7 @@ describe("LightboxModal", () => {
     expect(onNavigatePrevious).toHaveBeenCalledTimes(1);
   });
 
-  it("loops video playback in lightbox", async () => {
+  it("opens native video by asset id without rendering an HTML video", async () => {
     render(
       <LightboxModal
         selected={selectedVideoAsset}
@@ -90,14 +98,13 @@ describe("LightboxModal", () => {
       />
     );
 
-    await waitFor(() => expect(apiMocks.getVideoStreamUrl).toHaveBeenCalledWith(1));
-    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
-    expect(document.querySelector("video")).toHaveAttribute("loop");
+    await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
+    expect(apiMocks.openVideo.mock.calls[0]?.[0]).toBe(1);
+    expect(document.querySelector("video")).toBeNull();
   });
 
-  it("shows a video error when stream URL resolution fails", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    apiMocks.getVideoStreamUrl.mockRejectedValueOnce(new Error("stream unavailable"));
+  it("shows a video error when native open fails", async () => {
+    apiMocks.openVideo.mockRejectedValueOnce(new Error("player unavailable"));
 
     render(
       <LightboxModal
@@ -114,72 +121,6 @@ describe("LightboxModal", () => {
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not play video");
-    consoleError.mockRestore();
-  });
-
-  it("shows a video error and resets it when the selected source changes", async () => {
-    const { rerender } = render(
-      <LightboxModal
-        selected={selectedVideoAsset}
-        tagEditor={[]}
-        onTagEditorChange={() => {}}
-        onSaveTags={() => {}}
-        knownTags={[]}
-        onNavigatePrevious={() => {}}
-        onNavigateNext={() => {}}
-        onToggleFavorite={() => {}}
-        onClose={() => {}}
-      />
-    );
-
-    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
-    const video = document.querySelector("video");
-    expect(video).not.toBeNull();
-    fireEvent.error(video!);
-    expect(screen.getByRole("alert")).toHaveTextContent("Could not play video");
-
-    rerender(
-      <LightboxModal
-        selected={{ ...selectedVideoAsset, path: "C:/media/2.mp4" }}
-        tagEditor={[]}
-        onTagEditorChange={() => {}}
-        onSaveTags={() => {}}
-        knownTags={[]}
-        onNavigatePrevious={() => {}}
-        onNavigateNext={() => {}}
-        onToggleFavorite={() => {}}
-        onClose={() => {}}
-      />
-    );
-
-    expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
-    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
-  });
-
-  it("ignores an aborted native video error", async () => {
-    render(
-      <LightboxModal
-        selected={selectedVideoAsset}
-        tagEditor={[]}
-        onTagEditorChange={() => {}}
-        onSaveTags={() => {}}
-        knownTags={[]}
-        onNavigatePrevious={() => {}}
-        onNavigateNext={() => {}}
-        onToggleFavorite={() => {}}
-        onClose={() => {}}
-      />
-    );
-
-    await waitFor(() => expect(document.querySelector("video")).not.toBeNull());
-    const video = document.querySelector("video")!;
-    Object.defineProperty(video, "error", {
-      configurable: true,
-      value: { code: 1, message: "The operation was aborted" }
-    });
-    fireEvent.error(video);
-
-    expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
   });
 
   it("shows a GIF error and resets it after navigation", () => {

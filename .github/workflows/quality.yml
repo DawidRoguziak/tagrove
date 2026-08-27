@@ -39,6 +39,7 @@ jobs:
         run: >-
           sudo apt-get update && sudo apt-get install --yes
           libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          libgtk-3-dev libmpv-dev libegl-dev libgl-dev libglx-dev
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@v2

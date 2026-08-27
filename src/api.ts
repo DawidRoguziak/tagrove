@@ -26,6 +26,7 @@ import type {
   ThumbnailRenderSummary,
   VideoToolStatus
 } from "./types";
+import type { MpvVideoEvent, VideoBounds, VideoControl } from "./components/lightbox/mpvVideoTypes";
 
 export async function startAssetQuery(params: {
   tagsAnd: string[];
@@ -63,8 +64,27 @@ export async function getAssetDetails(assetId: number): Promise<AssetDetails | n
   return await invoke<AssetDetails | null>("get_asset_details", { assetId });
 }
 
-export async function getVideoStreamUrl(assetId: number): Promise<string> {
-  return await invoke<string>("get_video_stream_url", { assetId });
+export async function openVideo(
+  assetId: number,
+  generation: number,
+  bounds: VideoBounds,
+  onEvent: (event: MpvVideoEvent) => void
+): Promise<number> {
+  const channel = new Channel<MpvVideoEvent>();
+  channel.onmessage = onEvent;
+  return await invoke<number>("open_video", { assetId, generation, bounds, onEvent: channel });
+}
+
+export async function setVideoBounds(sessionId: number, bounds: VideoBounds): Promise<void> {
+  await invoke("set_video_bounds", { sessionId, bounds });
+}
+
+export async function controlVideo(sessionId: number, command: VideoControl): Promise<void> {
+  await invoke("control_video", { sessionId, command });
+}
+
+export async function closeVideo(sessionId: number): Promise<void> {
+  await invoke("close_video", { sessionId });
 }
 
 export async function scanFolder(path: string): Promise<ScanSummary> {
@@ -233,9 +253,7 @@ export async function ensureThumbnailsStream(
 }
 
 export function toMediaSrc(path: string): string {
-  const isWindowsPath = /^[A-Za-z]:[\\/]/.test(path) || /^\\\\[^\\]/.test(path);
-  const normalized = isWindowsPath ? path.replace(/\\/g, "/") : path;
-  return convertFileSrc(normalized);
+  return convertFileSrc(path);
 }
 export async function syncNativeWindowTheme(theme: "light" | "dark"): Promise<void> {
   await invoke("sync_window_theme", { theme });

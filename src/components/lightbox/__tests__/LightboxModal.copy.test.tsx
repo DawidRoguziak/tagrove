@@ -4,7 +4,6 @@ import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
 
 vi.mock("../../../api", () => ({
-  getVideoStreamUrl: async (assetId: number) => `http://video/${assetId}.mp4`,
   toMediaSrc: (path: string) => `media://${path}`
 }));
 

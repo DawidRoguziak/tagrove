@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   SyntheticEvent
 } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SelectedAsset } from "../../types";
-import type { LightboxVideoPlayerHandle } from "./LightboxVideoPlayer";
 import { useLightboxKeyboardShortcuts } from "./hooks/useLightboxKeyboardShortcuts";
 import { useLightboxViewportSize } from "./hooks/useLightboxViewportSize";
+import type { LightboxVideoPlayerHandle } from "./LightboxVideoPlayer";
 import {
   buildImageTransform,
   calculateFittedMediaSize,
@@ -244,10 +244,15 @@ export function useLightboxImageControls({
   );
 
   const handleVideoLoadedMetadata = useCallback((dimensions: MediaDimensions) => {
-    setIntrinsicMediaSize({
+    const nextSize = {
       width: dimensions.width || Math.max(0, selected?.width ?? 0),
       height: dimensions.height || Math.max(0, selected?.height ?? 0)
-    });
+    };
+    setIntrinsicMediaSize((current) =>
+      current.width === nextSize.width && current.height === nextSize.height
+        ? current
+        : nextSize
+    );
   }, [selected?.height, selected?.width]);
 
   const handleVideoFullscreenChange = useCallback((fullscreen: boolean) => {

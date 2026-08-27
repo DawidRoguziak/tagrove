@@ -32,6 +32,12 @@ pub struct AssetPathRow {
     pub path: String,
 }
 
+pub struct VideoAssetSource {
+    pub path: String,
+    pub kind: String,
+    pub scan_roots: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct CsvImportRecord {
     pub file_name_key: String,
@@ -3052,6 +3058,38 @@ pub fn get_asset_for_thumbnail(
         )
         .optional()?;
     Ok(asset)
+}
+
+pub fn get_video_asset_source(
+    conn: &Connection,
+    asset_id: i64,
+) -> anyhow::Result<Option<VideoAssetSource>> {
+    let mut statement = conn.prepare(
+        "
+        SELECT a.path, a.kind, ar.root_path
+        FROM assets a
+        LEFT JOIN asset_scan_roots ar ON ar.asset_id = a.id
+        WHERE a.id = ?1
+        ORDER BY ar.root_path
+        ",
+    )?;
+    let mut rows = statement.query(params![asset_id])?;
+    let Some(first) = rows.next()? else {
+        return Ok(None);
+    };
+    let path = first.get(0)?;
+    let kind = first.get(1)?;
+    let mut scan_roots: Vec<String> = first.get::<_, Option<String>>(2)?.into_iter().collect();
+    while let Some(row) = rows.next()? {
+        if let Some(root) = row.get::<_, Option<String>>(2)? {
+            scan_roots.push(root);
+        }
+    }
+    Ok(Some(VideoAssetSource {
+        path,
+        kind,
+        scan_roots,
+    }))
 }
 
 /// Outcome of a compare-and-set thumbnail write.

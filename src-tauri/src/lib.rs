@@ -7,6 +7,7 @@ pub mod models;
 pub mod services;
 pub mod thumbs;
 pub mod utils;
+pub mod video_surface;
 
 use std::{
     collections::HashSet,
@@ -18,12 +19,12 @@ use std::{
 use tauri::Manager;
 
 use app::{instance_lock::InstanceLock, state::AppState};
+use commands::video::{close_video, control_video, open_video, set_video_bounds};
 use commands::{
     assets::{
         apply_duplicate_resolution_batch, delete_asset, find_duplicate_assets, get_asset_details,
-        get_asset_query_page, get_video_stream_url, list_assets, list_tags, merge_asset_tags_bulk,
-        set_asset_favorite, set_asset_media_group, set_asset_tags, set_assets_media_group_bulk,
-        start_asset_query,
+        get_asset_query_page, list_assets, list_tags, merge_asset_tags_bulk, set_asset_favorite,
+        set_asset_media_group, set_asset_tags, set_assets_media_group_bulk, start_asset_query,
     },
     import_export::{
         clear_library_data, export_db_bundle, export_tags_csv, import_db_bundle, import_tags_csv,
@@ -36,9 +37,7 @@ use commands::{
     },
     window::sync_window_theme,
 };
-use services::{
-    asset_mutation_service, media_server::MediaServerState, thumb_scheduler::ThumbnailScheduler,
-};
+use services::{asset_mutation_service, thumb_scheduler::ThumbnailScheduler};
 
 #[cfg(debug_assertions)]
 const PRODUCTION_APP_IDENTIFIER: &str = "com.example.mediatagger";
@@ -72,14 +71,24 @@ pub fn run() {
             let conn = db::open_connection(&db_path)?;
             db::init_schema(&conn)?;
             asset_mutation_service::recover_pending_file_operations(&conn)?;
-            let media_server = MediaServerState::start(db_path.clone())?;
-            app.manage(media_server);
 
             let resource_dir = app
                 .path()
                 .resource_dir()
                 .map_err(|e| format!("cannot resolve resource_dir: {e}"))?;
             let ffmpeg_path = resolve_ffmpeg_path(&resource_dir);
+            // GTK activates the environment locale during Tauri initialization, so
+            // libmpv's required numeric locale must be restored after GTK starts.
+            let locale = unsafe { libc::setlocale(libc::LC_NUMERIC, c"C".as_ptr()) };
+            if locale.is_null() {
+                return Err("failed to activate the C numeric locale".into());
+            }
+            let player = services::video_player_service::VideoPlayerService::new();
+            let main_window = app
+                .get_webview_window("main")
+                .ok_or("main WebView window is unavailable")?;
+            video_surface::setup(&main_window, &player)?;
+            app.manage(player);
             let thumb_scheduler =
                 ThumbnailScheduler::new(resolve_thumbnail_worker_count(), ffmpeg_path.clone());
             // Demand calls block on scheduler results; a scheduler whose
@@ -125,7 +134,6 @@ pub fn run() {
             start_asset_query,
             get_asset_query_page,
             get_asset_details,
-            get_video_stream_url,
             set_asset_tags,
             merge_asset_tags_bulk,
             set_asset_favorite,
@@ -140,7 +148,11 @@ pub fn run() {
             export_db_bundle,
             inspect_db_bundle,
             import_db_bundle,
-            sync_window_theme
+            sync_window_theme,
+            open_video,
+            set_video_bounds,
+            control_video,
+            close_video
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");
@@ -152,7 +164,6 @@ fn resolve_ffmpeg_path(resource_dir: &Path) -> PathBuf {
         extend_ffmpeg_candidates(&mut candidates, &directory);
     }
 
-    #[cfg(not(windows))]
     candidates.push(PathBuf::from("/usr/bin/ffmpeg"));
 
     for candidate in candidates {
@@ -188,13 +199,7 @@ fn collect_ffmpeg_candidate_dirs(resource_dir: &Path) -> Vec<PathBuf> {
 }
 
 fn extend_ffmpeg_candidates(candidates: &mut Vec<PathBuf>, directory: &Path) {
-    #[cfg(windows)]
-    candidates.push(directory.join("ffmpeg.exe"));
     candidates.push(directory.join("ffmpeg"));
-    #[cfg(windows)]
-    if let Some(sidecar) = resolve_sidecar_ffmpeg(directory) {
-        candidates.push(sidecar);
-    }
 }
 
 fn is_executable_file(path: &Path) -> bool {
@@ -205,36 +210,8 @@ fn is_executable_file(path: &Path) -> bool {
         return false;
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode() & 0o111 != 0
-    }
-
-    #[cfg(not(unix))]
-    true
-}
-
-#[cfg(windows)]
-fn resolve_sidecar_ffmpeg(directory: &Path) -> Option<PathBuf> {
-    let mut sidecar_candidates = fs::read_dir(directory)
-        .ok()?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            if !path.is_file() {
-                return false;
-            }
-
-            path.file_stem()
-                .and_then(|stem| stem.to_str())
-                .map(|stem| stem.starts_with("ffmpeg-"))
-                .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
-
-    sidecar_candidates.sort_unstable();
-    sidecar_candidates.into_iter().next()
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
 }
 
 fn resolve_thumbnail_worker_count() -> usize {

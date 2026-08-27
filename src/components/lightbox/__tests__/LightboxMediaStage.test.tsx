@@ -1,27 +1,30 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { MutableRefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxMediaStage } from "../LightboxMediaStage";
 import type { LightboxVideoPlayerHandle } from "../LightboxVideoPlayer";
 
-const apiMocks = vi.hoisted(() => ({
-  getVideoStreamUrl: vi.fn()
-}));
-
 const videoPlayerMocks = vi.hoisted(() => ({
-  activations: [] as Array<{ src: string; onError: () => void }>
+  activations: [] as Array<{ assetId: number; generation: number; onError: () => void }>
 }));
 
 vi.mock("../../../api", () => ({
-  getVideoStreamUrl: apiMocks.getVideoStreamUrl,
   toMediaSrc: (path: string) => `media://${path}`
 }));
 
 vi.mock("../LightboxVideoPlayer", () => ({
-  LightboxVideoPlayer: ({ src, onError }: { src: string; onError: () => void }) => {
-    videoPlayerMocks.activations.push({ src, onError });
-    return <div data-testid="mock-video-player" data-src={src} />;
+  LightboxVideoPlayer: ({
+    assetId,
+    generation,
+    onError
+  }: {
+    assetId: number;
+    generation: number;
+    onError: () => void;
+  }) => {
+    videoPlayerMocks.activations.push({ assetId, generation, onError });
+    return <div data-testid="mock-video-player" data-asset-id={assetId} />;
   }
 }));
 
@@ -67,40 +70,28 @@ function stageProps(selected: SelectedAsset) {
 
 describe("LightboxMediaStage", () => {
   beforeEach(() => {
-    apiMocks.getVideoStreamUrl.mockReset().mockImplementation(
-      async (assetId: number) => `http://video/${assetId}.mp4`
-    );
     videoPlayerMocks.activations.length = 0;
   });
 
   afterEach(cleanup);
 
-  it("retries A after A to B to A and ignores a late error from the first activation", async () => {
+  it("retries A after A to B to A and ignores a late error from the first activation", () => {
     const first = createVideo(1);
     const second = createVideo(2);
     const { rerender } = render(<LightboxMediaStage {...stageProps(first)} />);
 
-    await waitFor(() => expect(screen.getByTestId("mock-video-player")).toHaveAttribute(
-      "data-src",
-      "http://video/1.mp4"
-    ));
+    expect(screen.getByTestId("mock-video-player")).toHaveAttribute("data-asset-id", "1");
     const staleFirstError = videoPlayerMocks.activations.at(-1)!.onError;
     act(() => staleFirstError());
     expect(screen.getByTestId("lightbox-media-error")).toBeInTheDocument();
 
     rerender(<LightboxMediaStage {...stageProps(second)} />);
     expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId("mock-video-player")).toHaveAttribute(
-      "data-src",
-      "http://video/2.mp4"
-    ));
+    expect(screen.getByTestId("mock-video-player")).toHaveAttribute("data-asset-id", "2");
 
     rerender(<LightboxMediaStage {...stageProps(first)} />);
     expect(screen.queryByTestId("lightbox-media-error")).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId("mock-video-player")).toHaveAttribute(
-      "data-src",
-      "http://video/1.mp4"
-    ));
+    expect(screen.getByTestId("mock-video-player")).toHaveAttribute("data-asset-id", "1");
     const currentFirstError = videoPlayerMocks.activations.at(-1)!.onError;
 
     act(() => staleFirstError());

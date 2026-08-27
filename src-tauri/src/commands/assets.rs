@@ -12,10 +12,7 @@ use crate::{
         DuplicateScanSummary, RenameAssetSummary, SetAssetTagsSummary, StartAssetQueryResult,
         TagListPage,
     },
-    services::{
-        asset_mutation_service, asset_query_service, db_pool, media_server::MediaServerState,
-        progress::emit_progress,
-    },
+    services::{asset_mutation_service, asset_query_service, db_pool, progress::emit_progress},
     utils::tags::normalize_and_validate_tags,
 };
 
@@ -88,19 +85,6 @@ pub async fn get_asset_details(
     .await
     .map_err(|e| format!("asset details worker failed: {e}"))?
     .map_err(|e: crate::error::AppError| e.to_string())
-}
-
-#[tauri::command]
-pub fn get_video_stream_url(
-    asset_id: i64,
-    media_server: State<'_, MediaServerState>,
-) -> Result<String, String> {
-    if asset_id <= 0 {
-        return Err("Asset id must be positive".to_string());
-    }
-    media_server
-        .video_url(asset_id)
-        .map_err(|error| error.to_string())
 }
 
 fn normalize_query_filters(

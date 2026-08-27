@@ -16,8 +16,6 @@ const VIDEO_SEEK_DURATION_EPSILON: f64 = 0.001;
 const VIDEO_THUMB_TIMEOUT: Duration = Duration::from_secs(45);
 const VIDEO_PROBE_TIMEOUT: Duration = Duration::from_secs(12);
 const VIDEO_TOOL_POLL_INTERVAL: Duration = Duration::from_millis(25);
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Bump when thumbnail identity inputs or rendering rules change. Version 2
 /// hashes path, size bytes, and nanosecond mtime instead of seconds-resolution
@@ -320,13 +318,10 @@ fn ffprobe_candidates(ffmpeg_path: &Path) -> Vec<PathBuf> {
     }
 
     if let Some(parent) = ffmpeg_path.parent() {
-        #[cfg(windows)]
-        candidates.push(parent.join("ffprobe.exe"));
         candidates.push(parent.join("ffprobe"));
     }
 
     candidates.push(PathBuf::from("ffprobe"));
-    #[cfg(not(windows))]
     candidates.push(PathBuf::from("/usr/bin/ffprobe"));
 
     let mut deduped = Vec::new();
@@ -350,14 +345,8 @@ fn is_launchable_tool_path(path: &Path) -> bool {
         return false;
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode() & 0o111 != 0
-    }
-
-    #[cfg(not(unix))]
-    true
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
 }
 
 pub fn video_tool_status(ffmpeg_path: &Path) -> (bool, bool) {
@@ -384,15 +373,6 @@ fn ffmpeg_command(ffmpeg_path: &Path) -> Command {
 }
 
 fn video_tool_command(tool_path: &Path) -> Command {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let mut command = Command::new(tool_path);
-        command.creation_flags(CREATE_NO_WINDOW);
-        command
-    }
-
-    #[cfg(not(windows))]
     Command::new(tool_path)
 }
 

@@ -28,25 +28,11 @@ function resolveTauriDriverPath() {
     return process.env.TAURI_DRIVER_PATH;
   }
 
-  const exeSuffix = process.platform === "win32" ? ".exe" : "";
-  return path.resolve(os.homedir(), ".cargo", "bin", `tauri-driver${exeSuffix}`);
+  return path.resolve(os.homedir(), ".cargo", "bin", "tauri-driver");
 }
 
 function resolveNativeDriverPath() {
-  if (process.platform !== "win32") {
-    return process.env.WEBKIT_WEBDRIVER_PATH ?? "/usr/bin/WebKitWebDriver";
-  }
-
-  if (process.env.MSEDGEDRIVER_PATH) {
-    return process.env.MSEDGEDRIVER_PATH;
-  }
-
-  const localPath = path.resolve(projectRoot, "msedgedriver.exe");
-  if (fs.existsSync(localPath)) {
-    return localPath;
-  }
-
-  return null;
+  return process.env.WEBKIT_WEBDRIVER_PATH ?? "/usr/bin/WebKitWebDriver";
 }
 
 function runOrFail(command, args, cwd) {
@@ -62,14 +48,6 @@ function runOrFail(command, args, cwd) {
 }
 
 function resolveAppDataRoot() {
-  if (process.platform === "win32") {
-    return process.env.APPDATA ?? path.resolve(os.homedir(), "AppData", "Roaming");
-  }
-
-  if (process.platform === "darwin") {
-    return path.resolve(os.homedir(), "Library", "Application Support");
-  }
-
   return process.env.XDG_DATA_HOME ?? path.resolve(os.homedir(), ".local", "share");
 }
 
@@ -152,7 +130,6 @@ function onShutdown(fn) {
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
   process.on("SIGHUP", cleanup);
-  process.on("SIGBREAK", cleanup);
 }
 
 export const config = {

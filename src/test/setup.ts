@@ -1,6 +1,22 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
-import i18n from "../i18n";
+
+const storage = new Map<string, string>();
+const localStorage: Storage = {
+  get length() {
+    return storage.size;
+  },
+  clear: () => storage.clear(),
+  getItem: (key) => storage.get(key) ?? null,
+  key: (index) => Array.from(storage.keys())[index] ?? null,
+  removeItem: (key) => {
+    storage.delete(key);
+  },
+  setItem: (key, value) => {
+    storage.set(key, value);
+  }
+};
+Object.defineProperty(window, "localStorage", { configurable: true, value: localStorage });
 
 class MockIntersectionObserver implements IntersectionObserver {
   readonly root: Element | null = null;
@@ -36,4 +52,5 @@ if (!window.cancelAnimationFrame) {
   };
 }
 
+const { default: i18n } = await import("../i18n");
 void i18n.changeLanguage("en");

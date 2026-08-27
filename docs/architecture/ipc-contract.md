@@ -12,6 +12,7 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 - Invoke argument keys are camelCase (`assetId`, `tagsAnd`, `pageSize`, `onEvent`), while the corresponding Rust parameters are snake_case (`asset_id`, `tags_and`, `page_size`, `on_event`). Nested inputs opt into or explicitly define camelCase where needed: `BulkMediaGroupUpdateInput` uses `rename_all = "camelCase"`, and `AssetMetaFilterInput` uses `type`, `hasNoTags`/`groupName`, `tagCount`, and `groupName`.
 - Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/types.ts`, including `session_id`, `thumb_path`, `removed_assets`, and similar fields.
 - Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; thumbnail channel messages use `{ event: "ready" | "failed" | "done", data: ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case.
+- Native video events use a `type` discriminant and include `session_id`. Video controls use camelCase discriminants and fields because their Rust enum has `rename_all = "camelCase"`.
 - Rust `Option<T>` becomes `T | null` over IPC. The wrappers explicitly send `null` for media kind `"all"`, an absent search meta-filter, and nullable media-group values. `get_asset_details` also uses `null` for a missing row. Rust `()` is exposed as `Promise<void>`.
 - Rust `i64`, `u64`, and `usize` values are represented as JavaScript `number`. Current IDs, counts, revisions, offsets, and session IDs are expected to remain within JavaScript's safe-integer range; the type layer does not enforce that bound.
 - `src/types.ts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
@@ -49,6 +50,8 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 
 `AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. This lets the lightbox use a valid immediate media source while details continue loading.
 
+`MpvVideoEvent` is `{ session_id, type, ... }`. Variants are `loading`, `metadata` (`duration`, `width`, `height`), `playing`, `paused`, `waiting`, `time` (`current_time`), `volume` (`volume`, `muted`), `rate`, `tracks`, `fullscreen`, `ended`, and `error` (`message`). The frontend accepts events only for the session returned by `open_video`.
+
 `kind` is typed as `MediaKind` (`image | gif | video`) in TypeScript, while the serialized Rust model stores it as an unrestricted `String`; correctness currently comes from indexing/database invariants rather than serde validation on output.
 
 ### Asset queries and reads
@@ -60,7 +63,10 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 | `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, registers the request in arrival order before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The frontend `generation` participates in supersession together with the backend registration token. |
 | `getAssetQueryPage` / `get_asset_query_page` | `sessionId: number`, `offset: number`, `limit: number` (default 128) | `AssetQueryPageResult` (`ready` or `stale`) | Returns summaries from the frozen session order. Limit is clamped to 1–256 and offset past the end is clamped to the total. |
 | `getAssetDetails` / `get_asset_details` | `assetId: number` | `AssetDetails \| null` | Returns the full path, size, and tags in addition to summary fields; unknown IDs return `null`. |
-| `getVideoStreamUrl` / `get_video_stream_url` | `assetId: number` | `string` | Validates that the ID identifies an existing video file and returns a process-private loopback HTTP URL. The endpoint resolves the path from SQLite again and never accepts a frontend-supplied filesystem path. |
+| `openVideo` / `open_video` | `assetId`, `generation`, finite non-negative `bounds`, `onEvent: Channel<MpvVideoEvent>` | `sessionId: number` | Resolves and authorizes the canonical video path in a blocking worker, supersedes an older pending/open session, opens it in process-wide libmpv, and positions the GTK video surface. The frontend never supplies a path. |
+| `setVideoBounds` / `set_video_bounds` | `sessionId`, finite non-negative `bounds` | `void` | Rejects stale sessions and moves/resizes the native surface using WebView coordinates and scale factor. |
+| `controlVideo` / `control_video` | `sessionId`, tagged `command` | `void` | Rejects stale sessions. Supports play, pause, non-negative seek, volume 0–1, mute, rate 0.25–4, nonblank track IDs, and native-window fullscreen. |
+| `closeVideo` / `close_video` | `sessionId` | `void` | Stops the current libmpv session and hides the GTK surface; stale sessions reject. |
 | `listAssets` / `list_assets` | `offset`, `limit`, `tagsAnd`, `tagsNot`, `kind`, `favoritesOnly`, `metaFilter` | `AssetPage` | Legacy direct query returning full `Asset` rows. Negative offsets become 0 and limits are clamped to 1–500. It does not provide session consistency. |
 | `listTags` / `list_tags` | `query: string`, `offset: number`, `limit: number` | `TagListPage` | Trims the search query, matches tag names case-insensitively, clamps offset to at least 0, and clamps limit to 1–200. |
 
@@ -138,7 +144,7 @@ These operations' locking, transaction, archive, rollback, and filesystem guaran
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `syncNativeWindowTheme` / `sync_window_theme` | `theme: "light" \| "dark"` | `void` | Rejects any other string. Sets the native theme and background; on Windows it also sets caption, border, and title-text colors. |
+| `syncNativeWindowTheme` / `sync_window_theme` | `theme: "light" \| "dark"` | `void` | Rejects any other string and sets the native theme and background. |
 
 ### Query session states
 
@@ -198,10 +204,11 @@ Consumers must filter by phase because the event name is shared and broadcasts a
 | Meta-filter | Reject negative `tagCount` and blank `groupName`; require the tagged camelCase shape. |
 | Bulk asset IDs | Tag/group mutation APIs drop non-positive and duplicate IDs. Streamed thumbnails do the same and cap visible/prefetch groups at 64 each. |
 | Media group | Blank key becomes `null`; non-finite order becomes `null`. |
-| Root path | Trim, use Windows separators, remove non-drive trailing separators; add/scan requires an existing directory. |
+| Root path | Trim and remove trailing `/` except for filesystem root; add/scan requires an existing directory. |
 | CSV/bundle paths | Trim; exports reject empty paths and create parents. CSV export also rejects the active profile, indexed roots, and indexed source files. Imports require an existing file. Bundle inspection/import reject unsafe or duplicate recognized ZIP paths, symbolic-link entries, resource-limit violations, missing `media.db`, incompatible manifests/databases, and unsafe persisted media/thumbnail paths. |
 | Rename | File name only; rejects blank/dot names, separators, control/listed Windows-invalid characters, trailing dot/space, reserved device names, same path, and occupied filesystem or indexed destinations. |
 | Theme | Exactly `light` or `dark`. |
+| Video bounds/control | Bounds must be finite and non-negative. Seek is non-negative; volume is 0–1; rate is 0.25–4; selected track IDs must be nonblank. Current-session checks reject late controls, bounds, and closes. |
 
 Deserialization itself rejects missing required arguments, wrong JSON types, invalid tagged-union shapes, negative values sent to unsigned Rust parameters, and non-representable numbers before command logic runs. Frontend TypeScript types help normal callers but are not runtime validation for arbitrary IPC callers.
 
@@ -216,7 +223,7 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 - `process-progress` is a shared broadcast with free-form `phase` and human-readable `message`; it has no request ID, sequence number, or version.
 - Favorite and media-group setters resolve even if an unknown asset ID changed zero rows. Tag replacement, delete, and rename reject unknown IDs; bulk tag/group operations skip missing IDs and report processed counts or IDs.
 - Runtime validation is uneven: unsupported query kinds degrade to no filter and non-finite group order degrades to `null`.
-- `src/__tests__/api.test.ts` covers legacy `listAssets`, tag-mutation payload/result seams, and media-path normalization, but it does not exhaustively lock down every wrapper, response shape, channel, or event.
+- `src/__tests__/api.test.ts` covers legacy `listAssets`, tag mutation, native video session/channel payloads, and media-path conversion, but it does not exhaustively lock down every wrapper, response shape, or event.
 
 ## Safe contract-change checklist
 
@@ -235,11 +242,11 @@ When changing IPC:
 
 ### Relevant tests
 
-- `src/__tests__/api.test.ts` checks invoke payload mapping for `list_assets` and slash normalization before `convertFileSrc`.
+- `src/__tests__/api.test.ts` checks selected invoke payloads, native video channel delivery, and media-path conversion.
 - `src/hooks/__tests__/useLibraryBrowser.test.ts` exercises the session-query wrapper contract through the library hooks, including filters and pagination.
 - `src/hooks/__tests__/useThumbnailQueue.test.ts` exercises streamed ready/failed handling, batching, and ignoring messages after the frontend generation changes.
 - `src/components/settings/services/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings hook tests cover subscription lifetimes and command workflows.
-- Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, and `import_export.rs` cover filename/root/CSV validation and cancellation behavior.
-- Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, and `asset_query_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive safety, query primitives, clamps, session reuse/supersession/stale-eviction semantics, and persistence behavior.
+- Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, `video.rs`, and `import_export.rs` cover filename/root/CSV/video validation and cancellation behavior.
+- Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, `asset_query_service.rs`, `video_source_service.rs`, and `video_player_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive and video-source safety, query/session semantics, and persistence behavior.
 - `src-tauri/tests/backend_integration.rs` and `backend_e2e.rs` cover file-backed cross-layer mutation/import workflows but do not exercise JavaScript serialization.
 - `e2e/specs/*.e2e.js` exercises the registered commands through a real desktop WebView and is the strongest existing check for Rust/TypeScript integration.

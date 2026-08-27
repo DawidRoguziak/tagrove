@@ -255,58 +255,13 @@ fn validate_export_target(
     Ok(target)
 }
 
-#[cfg(unix)]
 fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
     fs::rename(source, target)?;
     Ok(())
 }
 
-#[cfg(windows)]
-fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::{
-        core::PCWSTR,
-        Win32::Storage::FileSystem::{
-            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-        },
-    };
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let target = target
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    unsafe {
-        MoveFileExW(
-            PCWSTR(source.as_ptr()),
-            PCWSTR(target.as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    }
-    .map_err(|error| error.to_string().into())
-}
-
-#[cfg(not(any(unix, windows)))]
-fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
-    if target.exists() {
-        return Err("Atomic CSV replacement is unsupported on this platform".into());
-    }
-    fs::rename(source, target)?;
-    Ok(())
-}
-
-#[cfg(unix)]
 fn sync_parent_directory(path: &Path) -> AppResult<()> {
     fs::File::open(path.parent().ok_or("CSV export path has no parent")?)?.sync_all()?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn sync_parent_directory(_path: &Path) -> AppResult<()> {
     Ok(())
 }
 

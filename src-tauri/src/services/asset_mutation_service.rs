@@ -826,7 +826,6 @@ fn unique_staging_path(source: &Path) -> PathBuf {
         .join(format!(".mediatagger-{token}.pending"))
 }
 
-#[cfg(target_os = "linux")]
 fn platform_rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
@@ -848,41 +847,6 @@ fn platform_rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
     } else {
         Err(io::Error::last_os_error())
     }
-}
-
-#[cfg(windows)]
-fn platform_rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::{
-        core::PCWSTR,
-        Win32::Storage::FileSystem::{MoveFileExW, MOVE_FILE_FLAGS},
-    };
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let target = target
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    unsafe {
-        MoveFileExW(
-            PCWSTR(source.as_ptr()),
-            PCWSTR(target.as_ptr()),
-            MOVE_FILE_FLAGS(0),
-        )
-    }
-    .map_err(|error| io::Error::new(io::ErrorKind::Other, error))
-}
-
-#[cfg(not(any(target_os = "linux", windows)))]
-fn platform_rename_no_replace(_source: &Path, _target: &Path) -> io::Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "atomic no-clobber rename is unsupported on this platform",
-    ))
 }
 
 fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {

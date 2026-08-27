@@ -1,15 +1,18 @@
 import { I18nProvider } from "@videojs/react/i18n";
-import { MinimalVideoSkin, Video, VideoPlayer, usePlayer } from "@videojs/react/video";
-import type { CSSProperties, MutableRefObject, SyntheticEvent } from "react";
-import { useEffect } from "react";
+import { MinimalVideoSkin, VideoPlayer } from "@videojs/react/video";
+import type { CSSProperties, MutableRefObject } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { MpvMediaAdapter } from "./MpvMediaAdapter";
+import { MpvMediaComponent } from "./MpvMediaComponent";
 
 export interface LightboxVideoPlayerHandle {
   toggleFullscreen: () => Promise<void>;
 }
 
 interface LightboxVideoPlayerProps {
-  src: string;
+  assetId: number;
+  generation: number;
   title: string;
   aspectRatio: string;
   style?: CSSProperties;
@@ -19,56 +22,9 @@ interface LightboxVideoPlayerProps {
   onError: () => void;
 }
 
-function describeMediaError(error: MediaError | null) {
-  const code = error?.code ?? 0;
-  const category =
-    code === 2
-      ? "transport"
-      : code === 3
-        ? "decode-or-codec"
-        : code === 4
-          ? "unsupported-source-or-codec"
-          : code === 1
-            ? "aborted"
-            : "unknown";
-  return { code, category, message: error?.message ?? "" };
-}
-
-function LightboxVideoPlayerAdapter({
-  playerRef,
-  onFullscreenChange
-}: Pick<LightboxVideoPlayerProps, "playerRef" | "onFullscreenChange">) {
-  const player = usePlayer();
-  const fullscreen = usePlayer(
-    (state) =>
-      typeof state === "object" &&
-      state !== null &&
-      "fullscreen" in state &&
-      state.fullscreen === true
-  );
-
-  useEffect(() => {
-    const handle: LightboxVideoPlayerHandle = {
-      toggleFullscreen: () => player.toggleFullscreen()
-    };
-    playerRef.current = handle;
-
-    return () => {
-      if (playerRef.current === handle) {
-        playerRef.current = null;
-      }
-    };
-  }, [player, playerRef]);
-
-  useEffect(() => {
-    onFullscreenChange(fullscreen);
-  }, [fullscreen, onFullscreenChange]);
-
-  return null;
-}
-
 export function LightboxVideoPlayer({
-  src,
+  assetId,
+  generation,
   title,
   aspectRatio,
   style,
@@ -77,70 +33,63 @@ export function LightboxVideoPlayer({
   onFullscreenChange,
   onError
 }: LightboxVideoPlayerProps) {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language;
+  const [adapter, setAdapter] = useState<MpvMediaAdapter | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const handleFullscreenChange = useCallback(
+    (nextFullscreen: boolean) => {
+      setFullscreen(nextFullscreen);
+      onFullscreenChange(nextFullscreen);
+    },
+    [onFullscreenChange]
+  );
 
-  const reportError = (event: SyntheticEvent<HTMLVideoElement>) => {
-    const description = describeMediaError(event.currentTarget.error);
-    if (description.code === 1) {
-      return;
-    }
-    console.error("[lightbox] Video playback failed", {
-      ...description,
-      src,
-      path: title,
-      event
-    });
-    onError();
-  };
+  useEffect(() => {
+    if (!adapter) return;
+    const handle: LightboxVideoPlayerHandle = {
+      toggleFullscreen: () =>
+        fullscreen ? adapter.exitFullscreen() : adapter.requestFullscreen()
+    };
+    playerRef.current = handle;
+    return () => {
+      if (playerRef.current === handle) playerRef.current = null;
+    };
+  }, [adapter, fullscreen, playerRef]);
 
   return (
-    <div className="max-h-full max-w-full" style={style}>
-      <VideoPlayer key={src}>
+    <div className="h-full w-full max-h-full max-w-full" style={style}>
+      <VideoPlayer key={`${assetId}:${generation}`}>
         <I18nProvider locale={locale}>
           <MinimalVideoSkin
             className="lightbox-video-player h-full w-full"
             data-lightbox-video-player
+            data-native-video-active
             aria-label={title}
             style={{ aspectRatio }}
           >
-            <Video
-              ref={(video) => {
-                if (video) {
-                  video.muted = false;
-                  video.volume = 1;
+            <MpvMediaComponent
+              assetId={assetId}
+              generation={generation}
+              onAdapter={setAdapter}
+              onLoadedMetadata={onLoadedMetadata}
+              onFullscreenChange={handleFullscreenChange}
+              onError={onError}
+            />
+            <button
+              type="button"
+              className="media-button media-button--subtle media-button--icon media-button--native-fullscreen"
+              aria-label={t("lightbox.fullscreen")}
+              onClick={() => {
+                if (adapter) {
+                  void (fullscreen ? adapter.exitFullscreen() : adapter.requestFullscreen());
                 }
               }}
-              src={src}
-              autoPlay
-              muted={false}
-              loop
-              playsInline
-              preload="metadata"
-              disablePictureInPicture
-              onCanPlay={(event) => {
-                const video = event.currentTarget;
-                if (!video.paused) {
-                  return;
-                }
-
-                video.muted = false;
-                video.volume = 1;
-                void video.play().catch(() => {});
-              }}
-              onLoadedMetadata={(event) => {
-                const video = event.currentTarget;
-                onLoadedMetadata({
-                  width: video.videoWidth,
-                  height: video.videoHeight
-                });
-              }}
-              onError={reportError}
-            />
-            <LightboxVideoPlayerAdapter
-              playerRef={playerRef}
-              onFullscreenChange={onFullscreenChange}
-            />
+            >
+              <svg className="media-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            </button>
           </MinimalVideoSkin>
         </I18nProvider>
       </VideoPlayer>

@@ -14,7 +14,6 @@ src-tauri/target
 src-tauri/target-*
 src-tauri/.target-*-root-stage[0-9][0-9]
 src-tauri/gen/schemas
-src-tauri/binaries/*.exe
 *.log
 .env
 .env.*

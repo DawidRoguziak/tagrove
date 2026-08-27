@@ -1,9 +1,9 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const iconsRoot = path.resolve(__dirname, "..", "..", "src-tauri", "icons");
@@ -218,6 +218,7 @@ async function seedLibraryWithPlayableMedia(prefix) {
       "-c:a",
       "aac",
       "-shortest",
+      ...(index === 1 ? ["-movflags", "+faststart"] : []),
       "-y",
       videoPath
     ]);
@@ -657,6 +658,7 @@ describe("MediaTagger desktop workflows", () => {
       throw new Error("Expected exactly two generated videos in the filtered query");
     }
     const [firstVideo, secondVideo] = videoQuery.items;
+
     const firstVideoTile = await $(`button[data-asset-id="${firstVideo.id}"]`);
     await firstVideoTile.waitForDisplayed({ timeout: 15000 });
     await firstVideoTile.click();
@@ -667,6 +669,19 @@ describe("MediaTagger desktop workflows", () => {
       timeout: 10000,
       timeoutMsg: "Expected the first generated MP4 in the lightbox"
     });
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(
+          () =>
+            document.querySelectorAll("video").length === 0 &&
+            document.querySelectorAll(".native-video-mask").length === 0 &&
+            getComputedStyle(document.querySelector("#root")).visibility === "visible"
+        ),
+      {
+        timeout: 15000,
+        timeoutMsg: "Expected an active native video surface without an HTML video element"
+      }
+    );
     await browser.execute(() => {
       for (const key of ["ArrowRight", "ArrowLeft", "ArrowRight"]) {
         window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
@@ -675,7 +690,10 @@ describe("MediaTagger desktop workflows", () => {
     await browser.waitUntil(
       async () => {
         const currentPlayer = await $("[data-lightbox-video-player]");
-        return (await currentPlayer.getAttribute("aria-label")) === secondVideo.preview_path;
+        return (
+          (await currentPlayer.getAttribute("aria-label")) === secondVideo.preview_path &&
+          (await browser.execute(() => document.querySelectorAll("video").length)) === 0
+        );
       },
       {
         timeout: 10000,
@@ -688,7 +706,10 @@ describe("MediaTagger desktop workflows", () => {
     await browser.waitUntil(
       async () => {
         const currentPlayer = await $("[data-lightbox-video-player]");
-        return (await currentPlayer.getAttribute("aria-label")) === firstVideo.preview_path;
+        return (
+          (await currentPlayer.getAttribute("aria-label")) === firstVideo.preview_path &&
+          (await browser.execute(() => document.querySelectorAll("video").length)) === 0
+        );
       },
       {
         timeout: 10000,
@@ -696,89 +717,35 @@ describe("MediaTagger desktop workflows", () => {
       }
     );
 
-    const video = await $("[data-lightbox-video-player] video");
-    await video.waitForDisplayed({ timeout: 10000 });
-    await browser.waitUntil(async () => Number(await video.getProperty("readyState")) >= 2, {
-      timeout: 15000,
-      timeoutMsg: "Expected generated MP4 to reach playable readyState"
-    });
-    const initialTime = Number(await video.getProperty("currentTime"));
-    await browser.waitUntil(
-      async () => Number(await video.getProperty("currentTime")) > initialTime + 0.2,
-      {
-        timeout: 10000,
-        timeoutMsg: "Expected generated MP4 playback to advance"
-      }
+    const timelinePlayer = await $("[data-lightbox-video-player]");
+    await browser
+      .action("pointer", { parameters: { pointerType: "mouse" } })
+      .move({ origin: timelinePlayer, x: 0, y: 0, duration: 100 })
+      .perform();
+    const timeline = await $(
+      "[data-lightbox-video-player] .media-time-controls > .media-slider"
     );
-    const loopResult = await browser.executeAsync((element, done) => {
-      let previousTime = element.currentTime;
-      let sawNearEnd = false;
-      const finish = (result) => {
-        clearTimeout(timeout);
-        clearInterval(interval);
-        element.removeEventListener("error", onError);
-        done(result);
-      };
-      const checkTime = () => {
-        const currentTime = element.currentTime;
-        if (currentTime >= element.duration - 1.2) sawNearEnd = true;
-        if (sawNearEnd && previousTime > currentTime + 2 && currentTime < 1.5 && !element.paused) {
-          finish({ looped: true, error: false });
-          return;
-        }
-        previousTime = currentTime;
-      };
-      const onError = () => finish({ looped: false, error: true });
-      const timeout = setTimeout(() => finish({
-        looped: false,
-        error: false,
-        currentTime: element.currentTime,
-        duration: element.duration,
-        paused: element.paused,
-        readyState: element.readyState,
-        networkState: element.networkState,
-        buffered: Array.from({ length: element.buffered.length }, (_, index) => [
-          element.buffered.start(index),
-          element.buffered.end(index)
-        ]),
-        sawNearEnd
-      }), 15000);
-      const interval = setInterval(checkTime, 50);
-      element.addEventListener("error", onError, { once: true });
-      Promise.resolve(element.play()).catch(() => {});
-    }, video);
-    if (!loopResult?.looped || loopResult.error) {
-      throw new Error(`Expected generated MP4 to reach the end and loop: ${JSON.stringify(loopResult)}`);
+    await timeline.waitForDisplayed({ timeout: 5000 });
+    const timelineRect = JSON.parse(
+      await browser.execute((element) => {
+        const rect = element.getBoundingClientRect();
+        return JSON.stringify({
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        });
+      }, timeline)
+    );
+    if (timelineRect.width < 80 || timelineRect.height < 8) {
+      throw new Error(`Invalid rendered timeline bounds: ${JSON.stringify(timelineRect)}`);
     }
-    const loopedTime = Number(await video.getProperty("currentTime"));
-    await browser.waitUntil(
-      async () => Number(await video.getProperty("currentTime")) > loopedTime + 0.3,
-      {
-        timeout: 10000,
-        timeoutMsg: "Expected playback to continue after looping"
-      }
-    );
-    let settledTime = Number(await video.getProperty("currentTime"));
-    await browser.waitUntil(
-      async () => {
-        const currentTime = Number(await video.getProperty("currentTime"));
-        const progressing = currentTime > settledTime;
-        settledTime = currentTime;
-        return (
-          Number(await video.getProperty("readyState")) >= 2 &&
-          !(await video.getProperty("paused")) &&
-          progressing &&
-          !(await $('[data-testid="lightbox-media-error"]').isExisting())
-        );
-      },
-      {
-        timeout: 10000,
-        timeoutMsg: "Expected ready, advancing playback without a media error"
-      }
-    );
     if (await $('[data-testid="lightbox-media-error"]').isExisting()) {
       throw new Error("Generated MP4 displayed the media error fallback");
     }
+    const closeVideoPreviewButton = await $('button[aria-label="Close preview"]');
+    await closeVideoPreviewButton.click();
+    await closeVideoPreviewButton.waitForDisplayed({ timeout: 10000, reverse: true });
   });
 
   it("roundtrips tags through CSV export/import commands", async () => {

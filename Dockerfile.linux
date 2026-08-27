@@ -10,16 +10,14 @@ RUN pacman -Syu --noconfirm \
       curl \
       ffmpeg \
       file \
-      gst-libav \
-      gst-plugins-bad \
-      gst-plugins-base-libs \
-      gst-plugins-good \
+      gtk3 \
+      libglvnd \
+      mpv \
       openssl \
       rustup \
       unzip \
       xz \
       dbus \
-      xorg-server-xvfb \
       webkit2gtk-4.1 \
     && pacman -Scc --noconfirm
 
@@ -39,12 +37,15 @@ RUN mkdir -p /tmp/node-install /tmp/bun-install \
 
 RUN rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt \
     && rustup default 1.98.0 \
-    && cargo install tauri-driver --locked \
     && rustc -vV \
     && cargo --version \
     && bun --version \
     && node --version \
+    && pkg-config --modversion gtk+-3.0 \
     && pkg-config --modversion webkit2gtk-4.1 \
+    && pkg-config --modversion mpv \
+    && objdump -T /usr/lib/libEGL.so.1 | grep -q 'eglGetProcAddress' \
+    && objdump -T /usr/lib/libGL.so.1 | grep -q 'glXGetProcAddressARB' \
     && ffmpeg -version | head -n 1
 
 WORKDIR /workspace
@@ -57,22 +58,17 @@ RUN cargo fetch --manifest-path src-tauri/Cargo.toml --locked
 
 COPY . .
 
-FROM dependencies AS test
-RUN bun run build && bun run test && bun run test:backend
-
-FROM test AS e2e
-ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=en
-RUN pacman -S --needed --noconfirm webkitgtk-6.0 && pacman -Scc --noconfirm
-RUN dbus-run-session -- xvfb-run --auto-servernum bun run test:e2e:tauri
-
-FROM e2e AS release
+FROM dependencies AS release
 RUN bun run tauri:build:linux \
     && ldd src-tauri/target/release/media_tagger > /tmp/media-tagger-ldd.txt \
+    && grep -q 'libmpv' /tmp/media-tagger-ldd.txt \
+    && grep -q 'libgtk-3' /tmp/media-tagger-ldd.txt \
     && ! grep -q 'not found' /tmp/media-tagger-ldd.txt
 
 FROM scratch AS staged-artifacts
 
 COPY --from=release /workspace/src-tauri/target/release/media_tagger /out/media_tagger
+COPY --from=release /workspace/src-tauri/icons/image_viewer_3000_512x512.png /out/image-viewer-3000.png
 
 FROM release AS manifest
 RUN set -e; { \
@@ -82,6 +78,12 @@ RUN set -e; { \
       cargo --version; \
       bun --version; \
       node --version; \
+      printf 'gtk='; pkg-config --modversion gtk+-3.0; \
+      printf 'webkitgtk='; pkg-config --modversion webkit2gtk-4.1; \
+      printf 'mpv='; pkg-config --modversion mpv; \
+      printf 'egl='; pkg-config --modversion egl; \
+      printf 'gl='; pkg-config --modversion gl; \
+      printf 'glx='; pkg-config --modversion glx; \
       cargo install --list; \
       ffmpeg -version | head -n 1; \
       printf '\nshared-library dependencies:\n'; \

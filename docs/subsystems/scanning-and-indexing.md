@@ -16,11 +16,11 @@ The registered commands expose four root operations and two ways to start a scan
 
 Removing an unknown root is therefore a successful no-op at the root/asset level, but the command still bumps the library revision. `RemoveRootSummary.removed_assets` counts database assets deleted, while `removed_thumbnails` counts only thumbnail files whose `remove_file` call succeeded after the database transaction.
 
-## Platform path identity and discovery
+## Path identity and discovery
 
-`normalize_root_path` trims surrounding whitespace on every platform. On Windows it replaces every `/` with `\` and removes trailing backslashes while preserving a drive root such as `C:\`. On Unix it preserves forward slashes and removes trailing `/` except for the filesystem root `/`. The command validates the resulting `PathBuf` with `exists()` and `is_dir()`.
+`normalize_root_path` trims surrounding whitespace and removes trailing `/` except for the filesystem root `/`. The command validates the resulting `PathBuf` with `exists()` and `is_dir()`.
 
-The normalizer does not canonicalize `.` or `..`, resolve junctions, expand relative paths, normalize drive-letter case, case-fold components, or obtain a long-path/canonical spelling. SQLite keys roots and assets by their stored text, so alternate spellings can become distinct roots or asset identities even when Windows resolves them to the same directory or file.
+The normalizer does not canonicalize `.` or `..`, resolve symlinks, expand relative paths, case-fold components, or obtain a canonical spelling. SQLite keys roots and assets by their stored text, so alternate spellings can become distinct root or asset identities.
 
 Discovery recursively uses `WalkDir::new(root).follow_links(false)`. Entries that are not regular files are ignored, so symbolic-link entries are not indexed and linked directories are not traversed. An unreadable or otherwise failing walk entry increments `traversal_errors`, traversal continues where possible, and the discovery report becomes partial. A failure returned by the visitor itself is different: it aborts discovery and propagates as a command error.
 
@@ -117,7 +117,7 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 
 ## Known limitations
 
-- Path normalization is platform-shaped string cleanup, not canonicalization. Relative paths, case variants, dot segments, Windows UNC/extended-length spellings, junctions, symlinks, and aliases can produce duplicate logical roots or fail exact path/mapping comparisons.
+- Path normalization is string cleanup, not canonicalization. Relative paths, case variants, dot segments, symlinks, and aliases can produce duplicate logical roots or fail exact path/mapping comparisons.
 - SQL prefix compatibility/backfill helpers construct `LIKE` patterns without escaping `%` or `_` in root names. The generation pipeline itself matches discovered paths exactly, but legacy mapping backfill can overmatch such roots.
 - Symlinked files and directories are intentionally absent from discovery; no option exposes follow-links behavior.
 - Extension-only kind detection can admit corrupt or mislabeled files. Image dimensions and video duration are optional, and their probe failures do not contribute to `failed` or partial completion.
@@ -151,4 +151,4 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 - `src-tauri/src/thumbs.rs` covers ffprobe/ffmpeg duration parsing and related duration/seek edge cases; these are parser tests rather than live-tool scan integration.
 - `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` exercise scan-root persistence as part of library clear and data workflows, but do not run the complete discovery/worker/generation pipeline.
 
-Run the focused Rust unit tests plus the repository's backend integration suite after scanning changes. Tests that require actual filesystem traversal, timestamp resolution, permissions, symlinks/junctions, or media sidecars should use explicit platform gating and assert the intended complete-versus-partial outcome.
+Run the focused Rust unit tests plus the repository's backend integration suite after scanning changes. Tests that require actual filesystem traversal, timestamp resolution, permissions, symlinks, or media tools should assert the intended complete-versus-partial outcome.

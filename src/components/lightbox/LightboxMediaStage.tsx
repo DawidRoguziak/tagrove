@@ -4,16 +4,15 @@ import type {
   PointerEventHandler,
   ReactEventHandler
 } from "react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toMediaSrc } from "../../api";
 import type { SelectedAsset } from "../../types";
+import { UiButton } from "../UI/UiButton";
 import {
   LightboxVideoPlayer,
   type LightboxVideoPlayerHandle
 } from "./LightboxVideoPlayer";
-import { useLightboxVideoSource } from "./hooks/useLightboxVideoSource";
-import { UiButton } from "../UI/UiButton";
 
 interface LightboxMediaStageProps {
   selected: SelectedAsset;
@@ -67,19 +66,14 @@ export function LightboxMediaStage({
   }
   const activationGeneration = activationRef.current.generation;
   const [failedActivation, setFailedActivation] = useState<number | null>(null);
-  const reportMediaFailure = () => {
+  const reportMediaFailure = useCallback(() => {
     if (activationRef.current.generation === activationGeneration) {
       setFailedActivation(activationGeneration);
     }
-  };
-  const videoSource = useLightboxVideoSource(
-    selected.id,
-    selected.path,
-    selected.kind === "video"
-  );
+  }, [activationGeneration]);
   // Without loaded details there is no verified source path: hold the previous
   // media (or a loading placeholder) instead of guessing from summary fields.
-  const mediaFailed = failedActivation === activationGeneration || videoSource.failed;
+  const mediaFailed = failedActivation === activationGeneration;
   const mediaStyle =
     mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
       ? {
@@ -127,11 +121,12 @@ export function LightboxMediaStage({
             <span className="h-[34px] w-[34px] animate-spin rounded-full border-[3px] border-base-content/25 border-t-primary" />
           </div>
         )
-      ) : selected.kind === "video" && videoSource.src ? (
+      ) : selected.kind === "video" ? (
         <div className="flex h-full w-full items-center justify-center overflow-hidden">
           <LightboxVideoPlayer
             style={isFullscreen ? undefined : mediaStyle}
-            src={videoSource.src}
+            assetId={selected.id}
+            generation={activationGeneration}
             title={selected.path ?? ""}
             aspectRatio={
               mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
@@ -146,7 +141,7 @@ export function LightboxMediaStage({
             onError={reportMediaFailure}
           />
         </div>
-      ) : selected.kind !== "video" ? (
+      ) : (
         <div
           className={`flex h-full w-full touch-none items-center justify-center overflow-hidden ${
             isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : ""
@@ -174,7 +169,7 @@ export function LightboxMediaStage({
             draggable={false}
           />
         </div>
-      ) : null}
+      )}
       {detailsLoaded && detailsFailed ? (
         <div className="absolute bottom-4 left-4 z-[3] flex items-center gap-3 rounded-[var(--radius-control)] border border-warning/52 bg-base-100/92 px-3 py-2 text-xs shadow-[var(--shadow-floating)]" role="alert">
            <span>{t("lightbox.assetDetailsLoadFailed")}</span>

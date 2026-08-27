@@ -48,13 +48,13 @@ The render seek is chosen from the stored duration:
 
 The clamp keeps a known positive seek at most `duration - 0.001` seconds. Rendering runs `ffmpeg` with one decoder thread, no stdin, audio, subtitles, or data, selects one frame, scales it to width 390 while preserving aspect ratio, uses JPEG quality value 7, and writes through the same temporary-publication path as images. Each attempt times out after 45 seconds. When the chosen nonzero seek errors or creates no target, the scheduler makes one fallback attempt at zero seconds. There is no further retry inside that job.
 
-Both probing and rendering poll child completion every 25 ms. A timed-out child is killed and waited on. On Windows, `ffmpeg` and `ffprobe` are launched with `CREATE_NO_WINDOW`, so scans and thumbnail generation do not flash console windows.
+Both probing and rendering poll child completion every 25 ms. A timed-out child is killed and waited on.
 
 ### ffmpeg and ffprobe discovery
 
-The Tauri bundle declares `binaries/ffmpeg` and `binaries/ffprobe` as external binaries. At startup, ffmpeg discovery searches the resource directory and its `binaries` child, then equivalent executable-adjacent and `resources` locations. In each directory it considers `ffmpeg.exe`, `ffmpeg`, and the lexically first file whose stem starts with `ffmpeg-`. The first existing candidate wins; otherwise the scheduler stores bare `ffmpeg` for operating-system `PATH` lookup.
+At startup, ffmpeg discovery searches the resource directory and its `binaries` child, then equivalent executable-adjacent and `resources` locations. In each directory it considers `ffmpeg`; it then checks `/usr/bin/ffmpeg` and finally falls back to `PATH`.
 
-For a probe, the code derives an ffprobe name by replacing an `ffmpeg` filename prefix while retaining its suffix, then tries sibling `ffprobe.exe`, sibling `ffprobe`, and bare `ffprobe`, with duplicate paths removed. If those fail, the ffmpeg stderr fallback uses the already-resolved ffmpeg path. A missing or unlaunchable video tool therefore becomes an absent duration and, later, a thumbnail failure rather than preventing application startup.
+For a probe, the code derives a matching sibling `ffprobe`, then tries `/usr/bin/ffprobe` and bare `ffprobe`, with duplicate paths removed. If those fail, the ffmpeg stderr fallback uses the already-resolved ffmpeg path. A missing or unlaunchable video tool therefore becomes an absent duration and, later, a thumbnail failure rather than preventing application startup.
 
 ### Shared scheduler
 
@@ -123,7 +123,7 @@ Asset/root deletion and rename clear related rows and best-effort remove known t
 - Thumbnail identity covers path, size bytes, and nanosecond `fingerprint_mtime_ns` under cache version 2. File contents are hashed neither at scan time nor here: two different files with identical size and nanosecond mtime share one target. A render-algorithm or JPEG-setting change requires bumping `THUMB_CACHE_VERSION`; targets from older versions are regenerated on demand while old files linger as unreferenced orphans until an explicit cleanup.
 - Bulk cancellation does not remove shared scheduler jobs. Work already queued can consume CPU and publish files after cancellation; each publication still passes its version guard, but only results ready at the drain are committed to the bulk summary/database batch.
 - The scheduler has no shutdown protocol; workers live for the whole process lifetime.
-- Video rendering is capped at two active jobs in code, but there is no focused test for that cap or for choosing a runnable image behind blocked videos. There are also no process-level tests for timeout killing, Windows hidden-process flags, bundled/PATH tool discovery, fallback rendering, or real ffmpeg output.
+- Video rendering is capped at two active jobs in code, but there is no focused test for that cap or for choosing a runnable image behind blocked videos. There are also no process-level tests for timeout killing, resource/PATH tool discovery, fallback rendering, or real ffmpeg output.
 - Stream channel sends and progress broadcasts are best effort. The backend `requestId` staleness guard rejects abandoned generations' requests upfront but cannot cancel in-flight scheduler jobs, and rendering continues when the frontend drops the receiver.
 - Frontend failures are sticky only until queue reset and are not surfaced per tile. There is no automatic backoff or retry in the production queue; reset or an explicit backend retry workflow is required.
 - Temporary files left by process termination are not swept at startup. Failed best-effort deletion and rescan version changes can also leave orphan JPEGs, because cleanup is reference-driven rather than a directory reconciliation pass.
@@ -137,8 +137,8 @@ Asset/root deletion and rename clear related rows and best-effort remove known t
 1. Preserve one target identity across every entry point. The key already carries a cache version (`THUMB_CACHE_VERSION`); if identity inputs or rendering rules change, bump it and plan regeneration/cleanup of orphaned targets; test same-path versions, same-second modifications, and old database references.
 2. Keep temporary writes and final publication in the same directory. Test decode/render failure, stale temporary files, an already-present final target, and concurrent waiters without exposing a partial JPEG.
 3. For image changes, test the 390-pixel bound, aspect preservation, exact `1.6` crop threshold, 96-pixel top bias and clamp, GIF decoding, RGB/JPEG conversion, and small/zero-dimension edge behavior.
-4. For video changes, test every seek boundary, unknown duration, zero-second fallback, scale/output arguments, nonzero exit, missing executables, probe parsing, 12/45-second timeouts, child termination, and Windows `CREATE_NO_WINDOW` behavior.
-5. Keep bundled ffmpeg and ffprobe configuration aligned with startup and sibling discovery. Exercise resource, sidecar, executable-adjacent, and system `PATH` layouts on supported packaging targets.
+4. For video changes, test every seek boundary, unknown duration, zero-second fallback, scale/output arguments, nonzero exit, missing executables, probe parsing, 12/45-second timeouts, and child termination.
+5. Keep ffmpeg and ffprobe discovery aligned. Exercise resource, executable-adjacent, `/usr/bin`, and system `PATH` layouts.
 6. Preserve scheduler target de-duplication, waiter fan-out, low-to-high promotion, FIFO priority, image progress around blocked videos, worker bounds, the two-video cap, panic-safe terminal results, and the `MAX_PENDING_JOBS` queue bound. Startup must keep refusing to run when worker threads fail to spawn.
 7. Keep the Rust stream event enum, TypeScript union, API wrapper, command registration, positive-ID filtering, exact 64-visible/64-prefetch caps, priority split, and one terminal `done` synchronized. Follow the [IPC contract](../architecture/ipc-contract.md) for any transport change.
 8. Preserve frontend 64-item batching, 36 ms queue coalescing, 24 ms UI flushing, queued/in-flight de-duplication, failure suppression, generation checks, reset semantics, and per-asset store notification. Test rejected invokes, messages after reset, unmount, and overlapping queue additions.

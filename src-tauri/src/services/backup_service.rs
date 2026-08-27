@@ -1162,81 +1162,19 @@ fn remove_database_sidecars(db_path: &Path) -> AppResult<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn publish_archive(source: &Path, target: &Path) -> AppResult<()> {
     fs::rename(source, target)?;
     Ok(())
 }
 
-#[cfg(windows)]
-fn publish_archive(source: &Path, target: &Path) -> AppResult<()> {
-    move_file_windows(source, target, true)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn publish_archive(source: &Path, target: &Path) -> AppResult<()> {
-    if target.exists() {
-        return Err("Atomic archive replacement is unsupported on this platform".into());
-    }
-    fs::rename(source, target)?;
-    Ok(())
-}
-
-#[cfg(unix)]
 fn rename_durable(source: &Path, target: &Path) -> AppResult<()> {
     fs::rename(source, target)?;
     Ok(())
 }
 
-#[cfg(windows)]
-fn rename_durable(source: &Path, target: &Path) -> AppResult<()> {
-    move_file_windows(source, target, false)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn rename_durable(source: &Path, target: &Path) -> AppResult<()> {
-    fs::rename(source, target)?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn move_file_windows(source: &Path, target: &Path, replace: bool) -> AppResult<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::{
-        core::PCWSTR,
-        Win32::Storage::FileSystem::{
-            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-        },
-    };
-
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let target = target
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect::<Vec<_>>();
-    let flags = if replace {
-        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
-    } else {
-        MOVEFILE_WRITE_THROUGH
-    };
-    unsafe { MoveFileExW(PCWSTR(source.as_ptr()), PCWSTR(target.as_ptr()), flags) }
-        .map_err(|error| error.to_string().into())
-}
-
-#[cfg(unix)]
 fn sync_parent_directory(path: &Path) -> AppResult<()> {
     let parent = path.parent().ok_or("Path has no parent directory")?;
     fs::File::open(parent)?.sync_all()?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn sync_parent_directory(_path: &Path) -> AppResult<()> {
     Ok(())
 }
 
@@ -1552,7 +1490,6 @@ mod tests {
         assert_eq!(page.total, 1);
     }
 
-    #[cfg(not(windows))]
     #[test]
     fn imports_windows_bundle_with_root_mapping_and_preserves_asset_metadata() {
         let tmp = tempdir().expect("tempdir");

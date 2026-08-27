@@ -103,6 +103,62 @@ describe("LightboxModal", () => {
     expect(document.querySelector("video")).toBeNull();
   });
 
+  it("gives video a 20px viewport gutter and a single visual frame", () => {
+    const { rerender } = render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    const backdrop = document.querySelector("[data-lightbox-backdrop]");
+    const dialog = screen.getByRole("dialog");
+    const videoStage = document.querySelector('[data-lightbox-media-stage="video"]');
+
+    expect(backdrop).toHaveClass("p-5");
+    expect(backdrop).not.toHaveClass("p-2");
+    expect(dialog).toHaveAttribute("data-lightbox-kind", "video");
+    expect(dialog).toHaveClass(
+      "lightbox-shell--video",
+      "h-[min(calc(100vh-40px),1180px)]",
+      "w-[min(calc(100vw-40px),1780px)]"
+    );
+    expect(videoStage).toHaveClass("lightbox-media-stage--video");
+    expect(document.querySelector("[data-lightbox-video-player]")).toHaveClass(
+      "lightbox-video-player"
+    );
+    expect(document.querySelector('[data-lightbox-toolbar="video"]')).toHaveClass(
+      "bottom-[88px]"
+    );
+
+    rerender(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    expect(document.querySelector("[data-lightbox-backdrop]")).toHaveClass("p-2", "sm:p-5");
+    expect(screen.getByRole("dialog")).not.toHaveClass("lightbox-shell--video");
+    expect(document.querySelector('[data-lightbox-media-stage="image"]')).not.toHaveClass(
+      "lightbox-media-stage--video"
+    );
+  });
+
   it("uses an immersive shell and hides the lightbox toolbar in video fullscreen", async () => {
     render(
       <LightboxModal
@@ -120,7 +176,7 @@ describe("LightboxModal", () => {
 
     await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
     const activeSession = apiMocks.setVideoBounds.mock.calls.at(-1)?.[0] as number;
-    const eventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[3] as
+    const eventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[4] as
       | ((event: { session_id: number; type: "fullscreen"; fullscreen: boolean }) => void)
       | undefined;
 
@@ -136,7 +192,7 @@ describe("LightboxModal", () => {
       "border-0"
     );
     expect(screen.queryByRole("button", { name: "Close preview" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Exit fullscreen (F)" })).toBeInTheDocument();
+    expect(document.querySelector("[data-native-video-active]")).not.toBeNull();
   });
 
   it("shows a video error when native open fails", async () => {

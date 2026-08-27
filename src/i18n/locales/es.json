@@ -149,6 +149,7 @@
     "toggleFullscreen": "Alternar pantalla completa",
     "fullscreen": "Pantalla completa (F)",
     "exitFullscreen": "Salir de pantalla completa (F)",
+    "videoControls": { "play": "Reproducir", "pause": "Pausa", "mute": "Silenciar", "unmute": "Activar sonido", "seek": "Buscar", "playbackRate": "Velocidad de reproducción" },
     "deleteMedia": "Eliminar contenido multimedia",
     "closePreview": "Cerrar vista previa",
     "previewDialog": "Vista previa de {{name}}",

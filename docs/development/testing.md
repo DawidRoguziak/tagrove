@@ -152,7 +152,7 @@ Only then does it recursively remove the E2E directory with retries. An `EPERM` 
 
 ### Fixtures, selectors, and destructive workflows
 
-`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, copies valid PNG icons or generates a small GIF and two MP4 files with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only those roots and artifacts. Video coverage checks authorized native opening, rapid source switching, Video.js controls, absence of an HTML `<video>`, error fallback, and native-surface cleanup. WebDriver cannot inspect pixels rendered by the underlying `GtkGLArea`.
+`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, copies valid PNG icons or generates a small GIF and two MP4 files with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only those roots and artifacts. Video coverage checks authorized native opening, the full native-player footprint, hidden DOM controls, rapid source switching, absence of an HTML `<video>`, error fallback, and native-surface cleanup. WebDriver cannot inspect pixels or controls rendered by GTK above the WebView.
 
 The workflow suite deliberately tests library clear, scan-root removal, backup restore, and permanent media deletion. Keep every deletable media fixture under a newly created temp root. Never change a destructive spec to index a personal directory, the repository root, or production app data. Do not weaken the identifier, target-directory, app-data-path, or live-title guards to make a failing run proceed.
 
@@ -190,7 +190,7 @@ Current limitations:
 - Desktop selectors assume English, but the harness does not currently set the application language deterministically.
 - An `EPERM` during E2E app-data deletion leaves stale isolated data and does not fail fast.
 - The standalone `tauri:build:e2e` script can embed stale `dist/`; only the full desktop test command builds the frontend first.
-- Native video playback depends on libmpv, GTK, and OpenGL. WebDriver sees the Video.js control DOM and lifecycle markers but not decoded `GtkGLArea` pixels.
+- Native video playback depends on libmpv, GTK, and OpenGL. WebDriver sees the hidden Video.js lifecycle DOM, but not decoded `GtkGLArea` pixels or the native GTK control overlay.
 - Backend fixtures cover many filesystem semantics but do not constitute exhaustive testing on every supported filesystem or operating system.
 
 ## Troubleshooting

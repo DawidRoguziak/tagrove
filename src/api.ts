@@ -26,7 +26,12 @@ import type {
   ThumbnailRenderSummary,
   VideoToolStatus
 } from "./types";
-import type { MpvVideoEvent, VideoBounds, VideoControl } from "./components/lightbox/mpvVideoTypes";
+import type {
+  MpvVideoEvent,
+  NativeVideoControlLabels,
+  VideoBounds,
+  VideoControl
+} from "./components/lightbox/mpvVideoTypes";
 
 export async function startAssetQuery(params: {
   tagsAnd: string[];
@@ -68,11 +73,18 @@ export async function openVideo(
   assetId: number,
   generation: number,
   bounds: VideoBounds,
+  controlLabels: NativeVideoControlLabels,
   onEvent: (event: MpvVideoEvent) => void
 ): Promise<number> {
   const channel = new Channel<MpvVideoEvent>();
   channel.onmessage = onEvent;
-  return await invoke<number>("open_video", { assetId, generation, bounds, onEvent: channel });
+  return await invoke<number>("open_video", {
+    assetId,
+    generation,
+    bounds,
+    controlLabels,
+    onEvent: channel
+  });
 }
 
 export async function setVideoBounds(sessionId: number, bounds: VideoBounds): Promise<void> {

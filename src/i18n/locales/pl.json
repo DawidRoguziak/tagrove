@@ -149,6 +149,7 @@
     "toggleFullscreen": "Przelacz pelny ekran",
     "fullscreen": "Pelny ekran (F)",
     "exitFullscreen": "Wyjdz z pelnego ekranu (F)",
+    "videoControls": { "play": "Odtworz", "pause": "Pauza", "mute": "Wycisz", "unmute": "Wlacz dzwiek", "seek": "Przewin", "playbackRate": "Predkosc odtwarzania" },
     "deleteMedia": "Usun medium",
     "closePreview": "Zamknij podglad",
     "previewDialog": "Podgląd {{name}}",

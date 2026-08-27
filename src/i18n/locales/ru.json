@@ -149,6 +149,7 @@
     "toggleFullscreen": "Переключить полноэкранный режим",
     "fullscreen": "Полноэкранный режим (F)",
     "exitFullscreen": "Выйти из полноэкранного режима (F)",
+    "videoControls": { "play": "Воспроизвести", "pause": "Пауза", "mute": "Выключить звук", "unmute": "Включить звук", "seek": "Перемотка", "playbackRate": "Скорость воспроизведения" },
     "deleteMedia": "Удалить медиа",
     "closePreview": "Закрыть просмотр",
     "previewDialog": "Предпросмотр {{name}}",

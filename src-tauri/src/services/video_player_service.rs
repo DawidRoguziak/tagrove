@@ -66,7 +66,53 @@ struct ActiveSession {
     session_id: u64,
     _generation: u64,
     events: Channel<VideoEvent>,
-    fullscreen: bool,
+    playback: PlaybackSnapshot,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PlaybackSnapshot {
+    pub session_id: u64,
+    pub duration: f64,
+    pub current_time: f64,
+    pub paused: bool,
+    pub volume: f64,
+    pub muted: bool,
+    pub rate: f64,
+    pub fullscreen: bool,
+}
+
+impl PlaybackSnapshot {
+    fn new(session_id: u64) -> Self {
+        Self {
+            session_id,
+            duration: 0.0,
+            current_time: 0.0,
+            paused: true,
+            volume: 1.0,
+            muted: false,
+            rate: 1.0,
+            fullscreen: false,
+        }
+    }
+
+    fn apply(&mut self, payload: &VideoEventPayload) {
+        match payload {
+            VideoEventPayload::Metadata { duration, .. } => self.duration = *duration,
+            VideoEventPayload::Playing => self.paused = false,
+            VideoEventPayload::Paused | VideoEventPayload::Ended => self.paused = true,
+            VideoEventPayload::Time { current_time } => self.current_time = *current_time,
+            VideoEventPayload::Volume { volume, muted } => {
+                self.volume = *volume;
+                self.muted = *muted;
+            }
+            VideoEventPayload::Rate { rate } => self.rate = *rate,
+            VideoEventPayload::Fullscreen { fullscreen } => self.fullscreen = *fullscreen,
+            VideoEventPayload::Loading
+            | VideoEventPayload::Waiting
+            | VideoEventPayload::Tracks
+            | VideoEventPayload::Error { .. } => {}
+        }
+    }
 }
 
 impl VideoPlayerService {
@@ -139,7 +185,7 @@ impl VideoPlayerService {
                 session_id,
                 _generation: generation,
                 events,
-                fullscreen: false,
+                playback: PlaybackSnapshot::new(session_id),
             });
             session_id
         };
@@ -193,7 +239,7 @@ impl VideoPlayerService {
     pub fn fullscreen_for(&self, session_id: u64) -> Result<bool, String> {
         let state = self.state();
         match &state.active {
-            Some(active) if active.session_id == session_id => Ok(active.fullscreen),
+            Some(active) if active.session_id == session_id => Ok(active.playback.fullscreen),
             _ => Err("stale video session".to_string()),
         }
     }
@@ -202,14 +248,14 @@ impl VideoPlayerService {
         self.state()
             .active
             .as_ref()
-            .is_some_and(|active| active.fullscreen)
+            .is_some_and(|active| active.playback.fullscreen)
     }
 
     pub fn set_fullscreen_state(&self, session_id: u64, fullscreen: bool) -> Result<(), String> {
         let mut state = self.state();
         match &mut state.active {
             Some(active) if active.session_id == session_id => {
-                active.fullscreen = fullscreen;
+                active.playback.fullscreen = fullscreen;
                 Ok(())
             }
             _ => Err("stale video session".to_string()),
@@ -218,6 +264,10 @@ impl VideoPlayerService {
 
     pub fn send_fullscreen(&self, session_id: u64, fullscreen: bool) {
         self.send(session_id, VideoEventPayload::Fullscreen { fullscreen });
+    }
+
+    pub(crate) fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
+        self.state().active.as_ref().map(|active| active.playback)
     }
 
     fn start_event_thread(&self) {
@@ -308,8 +358,9 @@ impl VideoPlayerService {
     }
 
     fn send_current(&self, payload: VideoEventPayload) {
-        let state = self.state();
-        if let Some(active) = &state.active {
+        let mut state = self.state();
+        if let Some(active) = &mut state.active {
+            active.playback.apply(&payload);
             let _ = active.events.send(VideoEvent {
                 session_id: active.session_id,
                 payload,
@@ -318,9 +369,10 @@ impl VideoPlayerService {
     }
 
     fn send(&self, session_id: u64, payload: VideoEventPayload) {
-        let state = self.state();
-        if let Some(active) = &state.active {
+        let mut state = self.state();
+        if let Some(active) = &mut state.active {
             if active.session_id == session_id {
+                active.playback.apply(&payload);
                 let _ = active.events.send(VideoEvent {
                     session_id,
                     payload,
@@ -381,7 +433,7 @@ mod tests {
             session_id,
             _generation: 1,
             events: Channel::new(|_| Ok(())),
-            fullscreen: false,
+            playback: PlaybackSnapshot::new(session_id),
         });
     }
 
@@ -415,5 +467,39 @@ mod tests {
         service.clear_if_current(7);
         assert!(!service.active_fullscreen());
         assert_eq!(service.fullscreen_for(7), Err("stale video session".into()));
+    }
+
+    #[test]
+    fn keeps_a_native_control_snapshot_in_sync_with_player_events() {
+        let service = VideoPlayerService::unavailable("test player");
+        activate_test_session(&service, 7);
+
+        service.send(
+            7,
+            VideoEventPayload::Metadata {
+                duration: 42.0,
+                width: 1280,
+                height: 720,
+            },
+        );
+        service.send(7, VideoEventPayload::Playing);
+        service.send(7, VideoEventPayload::Time { current_time: 12.5 });
+        service.send(
+            7,
+            VideoEventPayload::Volume {
+                volume: 0.4,
+                muted: true,
+            },
+        );
+        service.send(7, VideoEventPayload::Rate { rate: 1.5 });
+
+        let snapshot = service.playback_snapshot().expect("active snapshot");
+        assert_eq!(snapshot.session_id, 7);
+        assert_eq!(snapshot.duration, 42.0);
+        assert_eq!(snapshot.current_time, 12.5);
+        assert!(!snapshot.paused);
+        assert_eq!(snapshot.volume, 0.4);
+        assert!(snapshot.muted);
+        assert_eq!(snapshot.rate, 1.5);
     }
 }

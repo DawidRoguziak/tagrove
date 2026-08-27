@@ -149,6 +149,7 @@
     "toggleFullscreen": "Vollbild umschalten",
     "fullscreen": "Vollbild (F)",
     "exitFullscreen": "Vollbild verlassen (F)",
+    "videoControls": { "play": "Wiedergabe", "pause": "Pause", "mute": "Stummschalten", "unmute": "Ton einschalten", "seek": "Spulen", "playbackRate": "Wiedergabegeschwindigkeit" },
     "deleteMedia": "Medium löschen",
     "closePreview": "Vorschau schließen",
     "previewDialog": "Vorschau von {{name}}",

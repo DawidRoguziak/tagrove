@@ -149,6 +149,7 @@
     "toggleFullscreen": "전체 화면 전환",
     "fullscreen": "전체 화면 (F)",
     "exitFullscreen": "전체 화면 종료 (F)",
+    "videoControls": { "play": "재생", "pause": "일시 정지", "mute": "음소거", "unmute": "음소거 해제", "seek": "탐색", "playbackRate": "재생 속도" },
     "deleteMedia": "미디어 삭제",
     "closePreview": "미리보기 닫기",
     "previewDialog": "{{name}} 미리보기",

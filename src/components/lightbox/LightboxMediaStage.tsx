@@ -13,7 +13,6 @@ import {
   LightboxVideoPlayer,
   type LightboxVideoPlayerHandle
 } from "./LightboxVideoPlayer";
-import { getNativeVideoPlayerSize } from "./nativeVideoLayout";
 
 interface LightboxMediaStageProps {
   selected: SelectedAsset;
@@ -82,18 +81,15 @@ export function LightboxMediaStage({
           height: `${mediaDisplaySize.height}px`
         }
       : undefined;
-  const videoPlayerSize = getNativeVideoPlayerSize(mediaDisplaySize);
-  const videoPlayerStyle =
-    videoPlayerSize.width > 0 && videoPlayerSize.height > 0
-      ? {
-          width: `${videoPlayerSize.width}px`,
-          height: `${videoPlayerSize.height}px`
-        }
-      : undefined;
 
   return (
     <div
-      className="relative h-full min-h-0 w-full overflow-hidden bg-[radial-gradient(circle_at_center,oklch(var(--b2)/0.72),oklch(var(--b3)/0.98))] [contain:paint]"
+      className={`relative h-full min-h-0 w-full overflow-hidden [contain:paint] ${
+        selected.kind === "video"
+          ? "lightbox-media-stage--video"
+          : "bg-[radial-gradient(circle_at_center,oklch(var(--b2)/0.72),oklch(var(--b3)/0.98))]"
+      }`}
+      data-lightbox-media-stage={selected.kind}
       ref={(node) => {
         mediaViewportRef.current = node;
       }}
@@ -133,7 +129,7 @@ export function LightboxMediaStage({
       ) : selected.kind === "video" ? (
         <div className="flex h-full w-full items-center justify-center overflow-hidden">
           <LightboxVideoPlayer
-            style={isFullscreen ? undefined : videoPlayerStyle}
+            style={isFullscreen ? undefined : mediaStyle}
             assetId={selected.id}
             generation={activationGeneration}
             title={selected.path ?? ""}
@@ -180,7 +176,12 @@ export function LightboxMediaStage({
         </div>
       )}
       {detailsLoaded && detailsFailed ? (
-        <div className="absolute bottom-4 left-4 z-[3] flex items-center gap-3 rounded-[var(--radius-control)] border border-warning/52 bg-base-100/92 px-3 py-2 text-xs shadow-[var(--shadow-floating)]" role="alert">
+        <div
+          className={`absolute left-4 z-[3] flex items-center gap-3 rounded-[var(--radius-control)] border border-warning/52 bg-base-100/92 px-3 py-2 text-xs shadow-[var(--shadow-floating)] ${
+            selected.kind === "video" ? "bottom-[88px]" : "bottom-4"
+          }`}
+          role="alert"
+        >
            <span>{t("lightbox.assetDetailsLoadFailed")}</span>
            <UiButton className="btn-sm" onClick={onRetryDetails}>{t("lightbox.retryAssetDetails")}</UiButton>
         </div>

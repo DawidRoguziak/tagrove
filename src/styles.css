@@ -202,14 +202,23 @@ a:focus-visible {
 
 .lightbox-video-player {
   --media-accent-color: oklch(var(--p));
-  --media-border-radius: 14px;
+  --media-border-radius: 0;
   --media-scale-unit: 16px;
-  --native-video-control-strip-height: 72px;
-  border: 1px solid oklch(var(--bc) / 0.2);
-  background: #0b0b0b;
+  border: 0;
+  background: var(--lightbox-video-surface, #0b0b0b);
   max-height: 100%;
   max-width: 100%;
-  box-shadow: var(--shadow-surface);
+  box-shadow: none;
+}
+
+.lightbox-shell--video {
+  --lightbox-video-surface: #0b0b0b;
+  border-color: rgb(240 240 232 / 0.14);
+  background: var(--lightbox-video-surface);
+}
+
+.lightbox-media-stage--video {
+  background: var(--lightbox-video-surface, #0b0b0b);
 }
 
 .lightbox-video-player:fullscreen,
@@ -223,20 +232,7 @@ a:focus-visible {
 }
 
 .lightbox-video-player[data-native-video-active] .media-controls {
-  inset-inline: 0;
-  bottom: 0;
-  min-height: var(--native-video-control-strip-height);
-  align-content: center;
-  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
-  color: #f0f0e8;
-  border-radius: 0 0 var(--container-border-radius) var(--container-border-radius);
-  background: linear-gradient(180deg, rgb(15 17 17 / 0.94), rgb(11 11 11 / 0.99));
-  box-shadow: inset 0 1px 0 rgb(240 240 232 / 0.12);
-  backdrop-filter: none;
-}
-
-.lightbox-video-player[data-native-fullscreen] .media-controls {
-  border-radius: 0;
+  display: none;
 }
 
 .lightbox-video-player .media-button--cast,

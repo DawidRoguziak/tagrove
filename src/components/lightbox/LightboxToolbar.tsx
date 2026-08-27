@@ -86,8 +86,9 @@ export function LightboxToolbar({
   return (
     <div
       className={`absolute right-2.5 z-[4] flex gap-1.5 rounded-2xl border border-white/10 bg-neutral/34 p-1.5 shadow-[var(--shadow-floating)] backdrop-blur-xl lg:bottom-auto lg:right-3.5 lg:top-1/2 lg:grid lg:-translate-y-1/2 ${
-        selected.kind === "video" ? "bottom-20" : "bottom-2.5"
+        selected.kind === "video" ? "bottom-[88px]" : "bottom-2.5"
       }`}
+      data-lightbox-toolbar={selected.kind}
     >
       <div
         ref={(node) => {

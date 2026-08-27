@@ -5,6 +5,17 @@ export interface VideoBounds {
   height: number;
 }
 
+export interface NativeVideoControlLabels {
+  play: string;
+  pause: string;
+  mute: string;
+  unmute: string;
+  seek: string;
+  playbackRate: string;
+  fullscreen: string;
+  exitFullscreen: string;
+}
+
 export type VideoControl =
   | { type: "play" }
   | { type: "pause" }

@@ -682,6 +682,70 @@ describe("MediaTagger desktop workflows", () => {
         timeoutMsg: "Expected an active native video surface without an HTML video element"
       }
     );
+    const videoLightboxGeometry = JSON.parse(
+      await browser.execute(() => {
+        const dialog = document.querySelector('[role="dialog"][data-lightbox-kind="video"]');
+        const currentPlayer = document.querySelector("[data-lightbox-video-player]");
+        const controls = currentPlayer?.querySelector(".media-controls");
+        if (
+          !(dialog instanceof HTMLElement) ||
+          !(currentPlayer instanceof HTMLElement) ||
+          !(controls instanceof HTMLElement)
+        ) {
+          throw new Error("Expected video lightbox geometry targets");
+        }
+        const dialogRect = dialog.getBoundingClientRect();
+        const playerRect = currentPlayer.getBoundingClientRect();
+        const playerStyle = getComputedStyle(currentPlayer);
+        const controlsStyle = getComputedStyle(controls);
+        const aspectParts = playerStyle.aspectRatio.split("/").map(Number);
+        const declaredAspect = aspectParts[0] / aspectParts[1];
+        const renderedAspect = playerRect.width / playerRect.height;
+        return JSON.stringify({
+          gaps: {
+            top: dialogRect.top,
+            right: window.innerWidth - dialogRect.right,
+            bottom: window.innerHeight - dialogRect.bottom,
+            left: dialogRect.left
+          },
+          player: {
+            borderTopWidth: playerStyle.borderTopWidth,
+            borderRadius: playerStyle.borderRadius,
+            boxShadow: playerStyle.boxShadow,
+            aspectDelta: Math.abs(declaredAspect - renderedAspect)
+          },
+          domControlsDisplay: controlsStyle.display
+        });
+      })
+    );
+    for (const [edge, gap] of Object.entries(videoLightboxGeometry.gaps)) {
+      if (gap < 19.5) {
+        throw new Error(
+          `Expected at least 20px video lightbox clearance at ${edge}, received ${gap}`
+        );
+      }
+    }
+    if (
+      videoLightboxGeometry.player.borderTopWidth !== "0px" ||
+      videoLightboxGeometry.player.borderRadius !== "0px" ||
+      videoLightboxGeometry.player.boxShadow !== "none"
+    ) {
+      throw new Error(
+        `Expected a borderless video player inside the lightbox frame: ${JSON.stringify(
+          videoLightboxGeometry.player
+        )}`
+      );
+    }
+    if (
+      videoLightboxGeometry.player.aspectDelta > 0.02 ||
+      videoLightboxGeometry.domControlsDisplay !== "none"
+    ) {
+      throw new Error(
+        `Expected the full native player footprint without a separate DOM control rail: ${JSON.stringify(
+          videoLightboxGeometry
+        )}`
+      );
+    }
     await browser.execute(() => {
       for (const key of ["ArrowRight", "ArrowLeft", "ArrowRight"]) {
         window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
@@ -717,29 +781,6 @@ describe("MediaTagger desktop workflows", () => {
       }
     );
 
-    const timelinePlayer = await $("[data-lightbox-video-player]");
-    await browser
-      .action("pointer", { parameters: { pointerType: "mouse" } })
-      .move({ origin: timelinePlayer, x: 0, y: 0, duration: 100 })
-      .perform();
-    const timeline = await $(
-      "[data-lightbox-video-player] .media-time-controls > .media-slider"
-    );
-    await timeline.waitForDisplayed({ timeout: 5000 });
-    const timelineRect = JSON.parse(
-      await browser.execute((element) => {
-        const rect = element.getBoundingClientRect();
-        return JSON.stringify({
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height
-        });
-      }, timeline)
-    );
-    if (timelineRect.width < 80 || timelineRect.height < 8) {
-      throw new Error(`Invalid rendered timeline bounds: ${JSON.stringify(timelineRect)}`);
-    }
     if (await $('[data-testid="lightbox-media-error"]').isExisting()) {
       throw new Error("Generated MP4 displayed the media error fallback");
     }

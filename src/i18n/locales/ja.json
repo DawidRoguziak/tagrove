@@ -149,6 +149,7 @@
     "toggleFullscreen": "全画面表示を切り替え",
     "fullscreen": "全画面表示 (F)",
     "exitFullscreen": "全画面表示を終了 (F)",
+    "videoControls": { "play": "再生", "pause": "一時停止", "mute": "ミュート", "unmute": "ミュート解除", "seek": "シーク", "playbackRate": "再生速度" },
     "deleteMedia": "メディアを削除",
     "closePreview": "プレビューを閉じる",
     "previewDialog": "{{name}} のプレビュー",

@@ -149,6 +149,7 @@
     "toggleFullscreen": "Toggle fullscreen",
     "fullscreen": "Fullscreen (F)",
     "exitFullscreen": "Exit fullscreen (F)",
+    "videoControls": { "play": "Play", "pause": "Pause", "mute": "Mute", "unmute": "Unmute", "seek": "Seek", "playbackRate": "Playback speed" },
     "deleteMedia": "Delete media",
     "closePreview": "Close preview",
     "previewDialog": "Preview {{name}}",

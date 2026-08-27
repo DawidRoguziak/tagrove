@@ -92,14 +92,25 @@ describe("api contract", () => {
   it("maps native video session payloads and channel events", async () => {
     const onEvent = vi.fn();
     const bounds = { x: 10, y: 20, width: 640, height: 360 };
+    const controlLabels = {
+      play: "Play",
+      pause: "Pause",
+      mute: "Mute",
+      unmute: "Unmute",
+      seek: "Seek",
+      playbackRate: "Playback speed",
+      fullscreen: "Fullscreen",
+      exitFullscreen: "Exit fullscreen"
+    };
     coreMocks.invoke.mockResolvedValueOnce(17).mockResolvedValue(undefined);
 
-    await expect(openVideo(4, 9, bounds, onEvent)).resolves.toBe(17);
+    await expect(openVideo(4, 9, bounds, controlLabels, onEvent)).resolves.toBe(17);
     const channel = coreMocks.channels[0];
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(1, "open_video", {
       assetId: 4,
       generation: 9,
       bounds,
+      controlLabels,
       onEvent: channel
     });
     channel?.onmessage?.({ session_id: 17, type: "playing" });

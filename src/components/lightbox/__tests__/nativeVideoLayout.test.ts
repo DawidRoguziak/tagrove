@@ -1,29 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  getNativeVideoFrameViewport,
-  getNativeVideoPlayerSize,
-  measureNativeVideoBounds,
-  NATIVE_VIDEO_CONTROL_STRIP_HEIGHT
-} from "../nativeVideoLayout";
+import { measureNativeVideoBounds } from "../nativeVideoLayout";
 
 describe("nativeVideoLayout", () => {
-  it("reserves the control strip while keeping the player inside the viewport", () => {
-    const viewport = { width: 1280, height: 800 };
-    const frameViewport = getNativeVideoFrameViewport(viewport);
-    const playerSize = getNativeVideoPlayerSize({ width: 1280, height: 720 });
-
-    expect(frameViewport).toEqual({
-      width: 1280,
-      height: 800 - NATIVE_VIDEO_CONTROL_STRIP_HEIGHT
-    });
-    expect(playerSize).toEqual({
-      width: 1280,
-      height: 720 + NATIVE_VIDEO_CONTROL_STRIP_HEIGHT
-    });
-    expect(playerSize.height).toBeLessThanOrEqual(viewport.height);
-  });
-
-  it("publishes rounded native bounds above the control strip", () => {
+  it("uses the complete player footprint for the native frame", () => {
     const element = document.createElement("div");
     element.getBoundingClientRect = () => ({
       x: 12.4,
@@ -41,18 +20,29 @@ describe("nativeVideoLayout", () => {
       x: 12,
       y: 25,
       width: 641,
-      height: 360
+      height: 432
     });
   });
 
-  it("does not publish a negative frame height for a short container", () => {
-    expect(getNativeVideoFrameViewport({ width: 200, height: 40 })).toEqual({
+  it("keeps a short player height intact", () => {
+    const element = document.createElement("div");
+    element.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
       width: 200,
-      height: 0
+      height: 40,
+      top: 0,
+      left: 0,
+      right: 200,
+      bottom: 40,
+      toJSON: () => ({})
     });
-    expect(getNativeVideoPlayerSize({ width: 0, height: 0 })).toEqual({
-      width: 0,
-      height: 0
+
+    expect(measureNativeVideoBounds(element)).toEqual({
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 40
     });
   });
 });

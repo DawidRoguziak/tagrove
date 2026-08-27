@@ -16,6 +16,44 @@ pub struct VideoBounds {
     pub height: f64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoControlLabels {
+    pub play: String,
+    pub pause: String,
+    pub mute: String,
+    pub unmute: String,
+    pub seek: String,
+    pub playback_rate: String,
+    pub fullscreen: String,
+    pub exit_fullscreen: String,
+}
+
+impl VideoControlLabels {
+    fn validate(mut self) -> Result<Self, String> {
+        for label in [
+            &mut self.play,
+            &mut self.pause,
+            &mut self.mute,
+            &mut self.unmute,
+            &mut self.seek,
+            &mut self.playback_rate,
+            &mut self.fullscreen,
+            &mut self.exit_fullscreen,
+        ] {
+            let trimmed = label.trim();
+            if trimmed.is_empty()
+                || trimmed.chars().count() > 120
+                || trimmed.chars().any(char::is_control)
+            {
+                return Err("video control labels must contain 1-120 visible characters".into());
+            }
+            *label = trimmed.to_string();
+        }
+        Ok(self)
+    }
+}
+
 impl VideoBounds {
     pub fn validate(self) -> Result<Self, String> {
         if [self.x, self.y, self.width, self.height]
@@ -44,10 +82,13 @@ pub enum VideoControl {
 }
 
 #[tauri::command]
+// Tauri injects the window and both managed states in addition to the wire arguments.
+#[allow(clippy::too_many_arguments)]
 pub async fn open_video(
     asset_id: i64,
     generation: u64,
     bounds: VideoBounds,
+    control_labels: VideoControlLabels,
     on_event: Channel<VideoEvent>,
     window: WebviewWindow,
     player: State<'_, VideoPlayerService>,
@@ -57,6 +98,7 @@ pub async fn open_video(
         return Err("asset id must be positive".to_string());
     }
     let bounds = bounds.validate()?;
+    let control_labels = control_labels.validate()?;
     let open_token = player.begin_open();
     let db_path = app.db_path.clone();
     let path = tauri::async_runtime::spawn_blocking(move || {
@@ -78,6 +120,13 @@ pub async fn open_video(
     }
     let session_id = player.open(open_token, generation, &source, on_event)?;
     if let Err(error) = crate::video_surface::set_bounds(&window, session_id, bounds) {
+        let _ = player.close(session_id);
+        let _ = crate::video_surface::hide(&window, session_id);
+        return Err(error);
+    }
+    if let Err(error) =
+        crate::video_surface::set_control_labels(&window, session_id, control_labels)
+    {
         let _ = player.close(session_id);
         let _ = crate::video_surface::hide(&window, session_id);
         return Err(error);
@@ -123,13 +172,7 @@ pub fn control_video(
             PlayerCommand::SelectSubtitleTrack(track_id)
         }
         VideoControl::SetFullscreen { fullscreen } => {
-            player.require_current(session_id)?;
-            window
-                .set_fullscreen(fullscreen)
-                .map_err(|error| error.to_string())?;
-            player.set_fullscreen_state(session_id, fullscreen)?;
-            player.send_fullscreen(session_id, fullscreen);
-            return Ok(());
+            return crate::video_surface::set_fullscreen(&window, &player, session_id, fullscreen);
         }
         _ => return Err("invalid video control value".to_string()),
     };
@@ -178,5 +221,26 @@ mod tests {
             .validate()
             .is_err());
         }
+    }
+
+    #[test]
+    fn validates_and_trims_native_control_labels() {
+        let labels = VideoControlLabels {
+            play: " Play ".into(),
+            pause: "Pause".into(),
+            mute: "Mute".into(),
+            unmute: "Unmute".into(),
+            seek: "Seek".into(),
+            playback_rate: "Playback speed".into(),
+            fullscreen: "Fullscreen".into(),
+            exit_fullscreen: "Exit fullscreen".into(),
+        }
+        .validate()
+        .expect("valid labels");
+        assert_eq!(labels.play, "Play");
+
+        let mut invalid = labels;
+        invalid.seek = "\n".into();
+        assert!(invalid.validate().is_err());
     }
 }

@@ -5,7 +5,10 @@ import { StrictMode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MpvMediaAdapter } from "../MpvMediaAdapter";
 import { MpvMediaComponent } from "../MpvMediaComponent";
-import { LightboxVideoPlayer } from "../LightboxVideoPlayer";
+import {
+  LightboxVideoPlayer,
+  type LightboxVideoPlayerHandle
+} from "../LightboxVideoPlayer";
 import type { MpvVideoEvent } from "../mpvVideoTypes";
 
 const apiMocks = vi.hoisted(() => ({
@@ -170,9 +173,9 @@ describe("MpvMediaAdapter Video.js prototype", () => {
     expect(commands.setRate).toHaveBeenCalledWith(1.5);
   });
 
-  it("places the native fullscreen action in the Video.js control bar", async () => {
+  it("exposes fullscreen control while native GTK owns the visible controls", async () => {
     const onFullscreenChange = vi.fn();
-    const playerRef = { current: null };
+    const playerRef: { current: LightboxVideoPlayerHandle | null } = { current: null };
     render(
       <LightboxVideoPlayer
         assetId={123}
@@ -188,15 +191,12 @@ describe("MpvMediaAdapter Video.js prototype", () => {
 
     await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
     const activeSession = apiMocks.setVideoBounds.mock.calls.at(-1)?.[0] as number;
-    const eventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[3] as
+    const eventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[4] as
       | ((event: MpvVideoEvent) => void)
       | undefined;
-    const enterButton = await screen.findByRole("button", { name: "Fullscreen (F)" });
-    const controls = document.querySelector(".media-controls");
-
-    expect(controls).not.toBeNull();
-    expect(controls?.contains(enterButton)).toBe(true);
-    fireEvent.click(enterButton);
+    await waitFor(() => expect(playerRef.current).not.toBeNull());
+    expect(document.querySelector("[data-native-video-active]")).not.toBeNull();
+    await playerRef.current?.toggleFullscreen();
     await waitFor(() =>
       expect(apiMocks.controlVideo).toHaveBeenCalledWith(activeSession, {
         type: "setFullscreen",
@@ -207,11 +207,8 @@ describe("MpvMediaAdapter Video.js prototype", () => {
     act(() => {
       eventHandler?.({ session_id: activeSession, type: "fullscreen", fullscreen: true });
     });
-    const exitButton = screen.getByRole("button", { name: "Exit fullscreen (F)" });
-    expect(exitButton).toHaveAttribute("aria-pressed", "true");
     expect(onFullscreenChange).toHaveBeenLastCalledWith(true);
-
-    fireEvent.click(exitButton);
+    await playerRef.current?.toggleFullscreen();
     await waitFor(() =>
       expect(apiMocks.controlVideo).toHaveBeenCalledWith(activeSession, {
         type: "setFullscreen",
@@ -232,7 +229,7 @@ describe("MpvMediaAdapter Video.js prototype", () => {
     await waitFor(() => expect(apiMocks.setVideoBounds).toHaveBeenCalled());
     const initialOpenCount = apiMocks.openVideo.mock.calls.length;
     const activeSession = apiMocks.setVideoBounds.mock.calls.at(-1)?.[0] as number;
-    const latestEventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[3] as
+    const latestEventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[4] as
       | ((event: MpvVideoEvent) => void)
       | undefined;
     expect(latestEventHandler).toBeDefined();

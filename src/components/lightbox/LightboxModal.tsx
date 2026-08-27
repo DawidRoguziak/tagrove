@@ -126,8 +126,9 @@ export function LightboxModal({
     : clipboard.canCopyMediaGroup
       ? t("lightbox.copyMediaGroup.title")
       : t("lightbox.copyMediaGroup.unavailable");
-  const videoFullscreen = selected?.kind === "video" && mediaControls.isFullscreen;
-  const imageFullscreen = selected?.kind !== "video" && mediaControls.isFullscreen;
+  const isVideo = selected?.kind === "video";
+  const videoFullscreen = isVideo && mediaControls.isFullscreen;
+  const imageFullscreen = !isVideo && mediaControls.isFullscreen;
 
   if (!selected) return null;
 
@@ -137,12 +138,13 @@ export function LightboxModal({
         "fixed inset-0 z-[55] grid place-items-center",
         videoFullscreen
           ? "bg-neutral p-0 backdrop-blur-none"
-          : "bg-neutral/62 p-2 backdrop-blur-sm sm:p-5"
+          : `bg-neutral/62 backdrop-blur-sm ${isVideo ? "p-5" : "p-2 sm:p-5"}`
       ].join(" ")}
       onClick={() => {
         if (isTopLayer) mediaControls.tryCloseLightbox();
       }}
       data-ui-layer={layerId}
+      data-lightbox-backdrop
     >
       <div
         className={[
@@ -151,12 +153,19 @@ export function LightboxModal({
             ? `h-full min-h-0 w-full rounded-none border-0 shadow-none ${
                 videoFullscreen ? "bg-neutral" : "bg-base-100"
               }`
-            : [
-                "h-[min(96vh,1180px)] min-h-[360px] w-[min(99vw,1780px)] rounded-[var(--radius-surface)]",
-                "border border-[var(--border-soft)] bg-[var(--surface-solid)] shadow-[var(--shadow-modal)]",
-                "sm:min-h-[460px] sm:w-[min(97vw,1680px)] sm:rounded-[var(--radius-panel)]",
-                "lg:h-[min(95vh,1280px)] lg:w-[min(96vw,1840px)]"
-              ].join(" ")
+            : isVideo
+              ? [
+                  "lightbox-shell--video h-[min(calc(100vh-40px),1180px)] min-h-0",
+                  "w-[min(calc(100vw-40px),1780px)] rounded-[var(--radius-surface)]",
+                  "border shadow-[var(--shadow-modal)] sm:rounded-[var(--radius-panel)]",
+                  "lg:h-[min(calc(100vh-40px),1280px)] lg:w-[min(calc(100vw-40px),1840px)]"
+                ].join(" ")
+              : [
+                  "h-[min(96vh,1180px)] min-h-[360px] w-[min(99vw,1780px)] rounded-[var(--radius-surface)]",
+                  "border border-[var(--border-soft)] bg-[var(--surface-solid)] shadow-[var(--shadow-modal)]",
+                  "sm:min-h-[460px] sm:w-[min(97vw,1680px)] sm:rounded-[var(--radius-panel)]",
+                  "lg:h-[min(95vh,1280px)] lg:w-[min(96vw,1840px)]"
+                ].join(" ")
         ]
           .filter(Boolean)
           .join(" ")}
@@ -165,6 +174,7 @@ export function LightboxModal({
         aria-modal="true"
         aria-label={t("lightbox.previewDialog", { name: selected.file_name })}
         aria-describedby="lightbox-dialog-description"
+        data-lightbox-kind={selected.kind}
         tabIndex={-1}
         onPointerDownCapture={handlers.handleShellPointerDownCapture}
         onClick={handlers.handleShellClick}

@@ -149,6 +149,7 @@
     "toggleFullscreen": "Přepnout celou obrazovku",
     "fullscreen": "Celá obrazovka (F)",
     "exitFullscreen": "Ukončit celou obrazovku (F)",
+    "videoControls": { "play": "Přehrát", "pause": "Pozastavit", "mute": "Ztlumit", "unmute": "Zapnout zvuk", "seek": "Posunout", "playbackRate": "Rychlost přehrávání" },
     "deleteMedia": "Smazat médium",
     "closePreview": "Zavřít náhled",
     "previewDialog": "Náhled {{name}}",

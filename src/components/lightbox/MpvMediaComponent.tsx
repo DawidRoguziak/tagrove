@@ -3,11 +3,23 @@ import { useEffect, useRef, useState } from "react";
 import { closeVideo, controlVideo, openVideo, setVideoBounds } from "../../api";
 import { MpvMediaAdapter } from "./MpvMediaAdapter";
 import { measureNativeVideoBounds } from "./nativeVideoLayout";
-import type { MpvVideoEvent } from "./mpvVideoTypes";
+import type { MpvVideoEvent, NativeVideoControlLabels } from "./mpvVideoTypes";
+
+const DEFAULT_CONTROL_LABELS: NativeVideoControlLabels = {
+  play: "Play",
+  pause: "Pause",
+  mute: "Mute",
+  unmute: "Unmute",
+  seek: "Seek",
+  playbackRate: "Playback speed",
+  fullscreen: "Fullscreen",
+  exitFullscreen: "Exit fullscreen"
+};
 
 interface MpvMediaComponentProps {
   assetId?: number;
   generation?: number;
+  controlLabels?: NativeVideoControlLabels;
   adapter?: MpvMediaAdapter;
   onAdapter?: (adapter: MpvMediaAdapter | null) => void;
   onLoadedMetadata?: (dimensions: { width: number; height: number }) => void;
@@ -18,6 +30,7 @@ interface MpvMediaComponentProps {
 export function MpvMediaComponent({
   assetId,
   generation = 0,
+  controlLabels = DEFAULT_CONTROL_LABELS,
   adapter: providedAdapter,
   onAdapter,
   onLoadedMetadata,
@@ -116,6 +129,7 @@ export function MpvMediaComponent({
           assetId,
           generation,
           measureNativeVideoBounds(container),
+          controlLabels,
           applyEvent
         );
         if (cancelled) {
@@ -151,7 +165,7 @@ export function MpvMediaComponent({
       if (sessionRef.current === sessionId) sessionRef.current = null;
       if (sessionId !== null) void closeVideo(sessionId).catch(() => {});
     };
-  }, [adapter, assetId, container, generation]);
+  }, [adapter, assetId, container, controlLabels, generation]);
 
   return null;
 }

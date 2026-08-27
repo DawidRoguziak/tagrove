@@ -1,12 +1,17 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { MutableRefObject } from "react";
+import type { CSSProperties, MutableRefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxMediaStage } from "../LightboxMediaStage";
 import type { LightboxVideoPlayerHandle } from "../LightboxVideoPlayer";
 
 const videoPlayerMocks = vi.hoisted(() => ({
-  activations: [] as Array<{ assetId: number; generation: number; onError: () => void }>
+  activations: [] as Array<{
+    assetId: number;
+    generation: number;
+    onError: () => void;
+    style?: CSSProperties;
+  }>
 }));
 
 vi.mock("../../../api", () => ({
@@ -17,14 +22,16 @@ vi.mock("../LightboxVideoPlayer", () => ({
   LightboxVideoPlayer: ({
     assetId,
     generation,
-    onError
+    onError,
+    style
   }: {
     assetId: number;
     generation: number;
     onError: () => void;
+    style?: CSSProperties;
   }) => {
-    videoPlayerMocks.activations.push({ assetId, generation, onError });
-    return <div data-testid="mock-video-player" data-asset-id={assetId} />;
+    videoPlayerMocks.activations.push({ assetId, generation, onError, style });
+    return <div data-testid="mock-video-player" data-asset-id={assetId} style={style} />;
   }
 }));
 
@@ -74,6 +81,15 @@ describe("LightboxMediaStage", () => {
   });
 
   afterEach(cleanup);
+
+  it("fits video to the complete native player footprint", () => {
+    render(<LightboxMediaStage {...stageProps(createVideo(1))} />);
+
+    expect(screen.getByTestId("mock-video-player")).toHaveStyle({
+      width: "160px",
+      height: "90px"
+    });
+  });
 
   it("retries A after A to B to A and ignores a late error from the first activation", () => {
     const first = createVideo(1);

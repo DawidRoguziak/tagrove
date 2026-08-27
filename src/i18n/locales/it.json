@@ -149,6 +149,7 @@
     "toggleFullscreen": "Attiva/disattiva schermo intero",
     "fullscreen": "Schermo intero (F)",
     "exitFullscreen": "Esci da schermo intero (F)",
+    "videoControls": { "play": "Riproduci", "pause": "Pausa", "mute": "Disattiva audio", "unmute": "Attiva audio", "seek": "Scorri", "playbackRate": "Velocità di riproduzione" },
     "deleteMedia": "Elimina media",
     "closePreview": "Chiudi anteprima",
     "previewDialog": "Anteprima di {{name}}",

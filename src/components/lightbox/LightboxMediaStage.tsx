@@ -13,6 +13,7 @@ import {
   LightboxVideoPlayer,
   type LightboxVideoPlayerHandle
 } from "./LightboxVideoPlayer";
+import { getNativeVideoPlayerSize } from "./nativeVideoLayout";
 
 interface LightboxMediaStageProps {
   selected: SelectedAsset;
@@ -81,6 +82,14 @@ export function LightboxMediaStage({
           height: `${mediaDisplaySize.height}px`
         }
       : undefined;
+  const videoPlayerSize = getNativeVideoPlayerSize(mediaDisplaySize);
+  const videoPlayerStyle =
+    videoPlayerSize.width > 0 && videoPlayerSize.height > 0
+      ? {
+          width: `${videoPlayerSize.width}px`,
+          height: `${videoPlayerSize.height}px`
+        }
+      : undefined;
 
   return (
     <div
@@ -124,7 +133,7 @@ export function LightboxMediaStage({
       ) : selected.kind === "video" ? (
         <div className="flex h-full w-full items-center justify-center overflow-hidden">
           <LightboxVideoPlayer
-            style={isFullscreen ? undefined : mediaStyle}
+            style={isFullscreen ? undefined : videoPlayerStyle}
             assetId={selected.id}
             generation={activationGeneration}
             title={selected.path ?? ""}

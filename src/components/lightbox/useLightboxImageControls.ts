@@ -6,6 +6,7 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SelectedAsset } from "../../types";
 import { useLightboxKeyboardShortcuts } from "./hooks/useLightboxKeyboardShortcuts";
+import { getNativeVideoFrameViewport } from "./nativeVideoLayout";
 import { useLightboxViewportSize } from "./hooks/useLightboxViewportSize";
 import type { LightboxVideoPlayerHandle } from "./LightboxVideoPlayer";
 import {
@@ -98,7 +99,9 @@ export function useLightboxImageControls({
   const selectedId = selected?.id ?? null;
   const selectedKind = selected?.kind ?? null;
   const isImageSelected = selectedKind !== null && selectedKind !== "video";
-  const fittedMediaLayout = calculateFittedMediaSize(intrinsicMediaSize, mediaSize);
+  const fitViewport =
+    selectedKind === "video" ? getNativeVideoFrameViewport(mediaSize) : mediaSize;
+  const fittedMediaLayout = calculateFittedMediaSize(intrinsicMediaSize, fitViewport);
   const mediaDisplaySize = useMemo(
     () => ({
       width: fittedMediaLayout.width,
@@ -486,6 +489,7 @@ export function useLightboxImageControls({
   useLightboxKeyboardShortcuts({
     enabled: keyboardShortcutsEnabled,
     selected,
+    isFullscreen,
     onNavigatePrevious,
     onNavigateNext,
     onToggleFullscreen: toggleFullscreen,

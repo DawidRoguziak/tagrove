@@ -71,6 +71,11 @@ pub async fn open_video(
         .map_err(|error| error.to_string())?
         .to_string();
     crate::video_surface::ensure_ready(&window)?;
+    if player.active_fullscreen() {
+        window
+            .set_fullscreen(false)
+            .map_err(|error| error.to_string())?;
+    }
     let session_id = player.open(open_token, generation, &source, on_event)?;
     if let Err(error) = crate::video_surface::set_bounds(&window, session_id, bounds) {
         let _ = player.close(session_id);
@@ -122,6 +127,7 @@ pub fn control_video(
             window
                 .set_fullscreen(fullscreen)
                 .map_err(|error| error.to_string())?;
+            player.set_fullscreen_state(session_id, fullscreen)?;
             player.send_fullscreen(session_id, fullscreen);
             return Ok(());
         }
@@ -136,9 +142,16 @@ pub fn close_video(
     window: WebviewWindow,
     player: State<'_, VideoPlayerService>,
 ) -> Result<(), String> {
+    let exit_fullscreen_result = match player.fullscreen_for(session_id) {
+        Ok(true) => window
+            .set_fullscreen(false)
+            .map_err(|error| error.to_string()),
+        Ok(false) => Ok(()),
+        Err(error) => Err(error),
+    };
     let close_result = player.close(session_id);
     let hide_result = crate::video_surface::hide(&window, session_id);
-    close_result.and(hide_result)
+    exit_fullscreen_result.and(close_result).and(hide_result)
 }
 
 #[cfg(test)]

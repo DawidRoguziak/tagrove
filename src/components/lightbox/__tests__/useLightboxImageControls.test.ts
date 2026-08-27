@@ -179,6 +179,45 @@ describe("useLightboxImageControls", () => {
     expect(toggleFullscreen).toHaveBeenCalledTimes(1);
   });
 
+  it("owns video F and fullscreen Escape while focus is inside Video.js", async () => {
+    const toggleFullscreen = vi.fn(async () => {});
+    const { result } = renderHook(() =>
+      useLightboxImageControls({
+        selected: createAsset("video"),
+        onClose: vi.fn(),
+        onNavigatePrevious: vi.fn(),
+        onNavigateNext: vi.fn(),
+        onEnterFullscreen: vi.fn()
+      })
+    );
+    result.current.lightboxVideoPlayerRef.current = { toggleFullscreen };
+    const player = document.createElement("div");
+    player.dataset.lightboxVideoPlayer = "";
+    const focusedButton = document.createElement("button");
+    player.append(focusedButton);
+    document.body.append(player);
+    focusedButton.focus();
+
+    await act(async () => {
+      focusedButton.dispatchEvent(new KeyboardEvent("keydown", { key: "F", bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(toggleFullscreen).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.handleVideoFullscreenChange(true);
+    });
+    await act(async () => {
+      focusedButton.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+      );
+      await Promise.resolve();
+    });
+    expect(toggleFullscreen).toHaveBeenCalledTimes(2);
+
+    player.remove();
+  });
+
   it("zooms with wheel and blocks backdrop close during suppression window", async () => {
     const onClose = vi.fn();
 

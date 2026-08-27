@@ -5,6 +5,7 @@ import { StrictMode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MpvMediaAdapter } from "../MpvMediaAdapter";
 import { MpvMediaComponent } from "../MpvMediaComponent";
+import { LightboxVideoPlayer } from "../LightboxVideoPlayer";
 import type { MpvVideoEvent } from "../mpvVideoTypes";
 
 const apiMocks = vi.hoisted(() => ({
@@ -167,6 +168,56 @@ describe("MpvMediaAdapter Video.js prototype", () => {
     expect(commands.setVolume).toHaveBeenCalledWith(0.4);
     expect(commands.setMuted).toHaveBeenCalledWith(true);
     expect(commands.setRate).toHaveBeenCalledWith(1.5);
+  });
+
+  it("places the native fullscreen action in the Video.js control bar", async () => {
+    const onFullscreenChange = vi.fn();
+    const playerRef = { current: null };
+    render(
+      <LightboxVideoPlayer
+        assetId={123}
+        generation={4}
+        title="Native video"
+        aspectRatio="16 / 9"
+        playerRef={playerRef}
+        onLoadedMetadata={() => {}}
+        onFullscreenChange={onFullscreenChange}
+        onError={() => {}}
+      />
+    );
+
+    await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
+    const activeSession = apiMocks.setVideoBounds.mock.calls.at(-1)?.[0] as number;
+    const eventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[3] as
+      | ((event: MpvVideoEvent) => void)
+      | undefined;
+    const enterButton = await screen.findByRole("button", { name: "Fullscreen (F)" });
+    const controls = document.querySelector(".media-controls");
+
+    expect(controls).not.toBeNull();
+    expect(controls?.contains(enterButton)).toBe(true);
+    fireEvent.click(enterButton);
+    await waitFor(() =>
+      expect(apiMocks.controlVideo).toHaveBeenCalledWith(activeSession, {
+        type: "setFullscreen",
+        fullscreen: true
+      })
+    );
+
+    act(() => {
+      eventHandler?.({ session_id: activeSession, type: "fullscreen", fullscreen: true });
+    });
+    const exitButton = screen.getByRole("button", { name: "Exit fullscreen (F)" });
+    expect(exitButton).toHaveAttribute("aria-pressed", "true");
+    expect(onFullscreenChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(exitButton);
+    await waitFor(() =>
+      expect(apiMocks.controlVideo).toHaveBeenCalledWith(activeSession, {
+        type: "setFullscreen",
+        fullscreen: false
+      })
+    );
   });
 
   it("keeps the current native session across callback changes and metadata rerenders", async () => {

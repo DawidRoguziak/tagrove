@@ -126,12 +126,19 @@ export function LightboxModal({
     : clipboard.canCopyMediaGroup
       ? t("lightbox.copyMediaGroup.title")
       : t("lightbox.copyMediaGroup.unavailable");
+  const videoFullscreen = selected?.kind === "video" && mediaControls.isFullscreen;
+  const imageFullscreen = selected?.kind !== "video" && mediaControls.isFullscreen;
 
   if (!selected) return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[55] grid place-items-center bg-neutral/62 p-2 backdrop-blur-sm sm:p-5"
+      className={[
+        "fixed inset-0 z-[55] grid place-items-center",
+        videoFullscreen
+          ? "bg-neutral p-0 backdrop-blur-none"
+          : "bg-neutral/62 p-2 backdrop-blur-sm sm:p-5"
+      ].join(" ")}
       onClick={() => {
         if (isTopLayer) mediaControls.tryCloseLightbox();
       }}
@@ -139,13 +146,17 @@ export function LightboxModal({
     >
       <div
         className={[
-          "relative overflow-hidden border border-[var(--border-soft)] bg-[var(--surface-solid)] shadow-[var(--shadow-modal)] transition-all duration-200",
-          "h-[min(96vh,1180px)] min-h-[360px] w-[min(99vw,1780px)] rounded-[var(--radius-surface)]",
-          "sm:min-h-[460px] sm:w-[min(97vw,1680px)] sm:rounded-[var(--radius-panel)]",
-          "lg:h-[min(95vh,1280px)] lg:w-[min(96vw,1840px)]",
-          selected.kind !== "video" && mediaControls.isFullscreen
-            ? "h-full min-h-0 w-full rounded-none border-0 bg-base-100 shadow-none"
-            : ""
+          "relative overflow-hidden transition-all duration-200",
+          videoFullscreen || imageFullscreen
+            ? `h-full min-h-0 w-full rounded-none border-0 shadow-none ${
+                videoFullscreen ? "bg-neutral" : "bg-base-100"
+              }`
+            : [
+                "h-[min(96vh,1180px)] min-h-[360px] w-[min(99vw,1780px)] rounded-[var(--radius-surface)]",
+                "border border-[var(--border-soft)] bg-[var(--surface-solid)] shadow-[var(--shadow-modal)]",
+                "sm:min-h-[460px] sm:w-[min(97vw,1680px)] sm:rounded-[var(--radius-panel)]",
+                "lg:h-[min(95vh,1280px)] lg:w-[min(96vw,1840px)]"
+              ].join(" ")
         ]
           .filter(Boolean)
           .join(" ")}
@@ -161,55 +172,57 @@ export function LightboxModal({
         <span id="lightbox-dialog-description" className="sr-only">
           {t("lightbox.previewDialogDescription")}
         </span>
-        <LightboxToolbar
-          selected={selected}
-          mediaGroupKeyEditor={mediaGroupKeyEditor}
-          mediaGroupOrderEditor={mediaGroupOrderEditor}
-          groupCopyConfirmed={groupCopyConfirmed}
-          canCopyMediaGroup={clipboard.canCopyMediaGroup}
-          copyMediaGroupTitle={copyMediaGroupTitle}
-          isFullscreen={mediaControls.isFullscreen}
-          tagsPanelOpen={handlers.tagsPanelOpen}
-          infoPanelOpen={handlers.infoPanelOpen}
-          selectedTags={tagging.selectedTags}
-          tagDraft={tagging.tagDraft}
-          knownTags={tagging.availableKnownTags}
-          tagInputRef={tagging.tagInputRef}
-          tagSaving={tagging.tagSaving}
-          tagFailed={tagging.tagFailed}
-          tagDetailsLoading={tagDetailsLoading}
-          tagDetailsFailed={tagDetailsFailed}
-          tagEditingDisabled={tagging.tagEditingDisabled}
-          tagPopoverContainerRef={tagPopoverContainerRef}
-          infoPopoverContainerRef={infoPopoverContainerRef}
-          onToggleTagsPanel={handlers.handleToggleTagsPanel}
-          onRemoveTag={tagging.removeTag}
-          onTagDraftChange={tagging.setTagDraft}
-          onAddTag={tagging.addTag}
-          onRetryTags={tagging.retryTags}
-          onRetryTagDetails={onRetryTagDetails}
-          onMediaGroupKeyChange={onMediaGroupKeyEditorChange}
-          onMediaGroupOrderChange={onMediaGroupOrderEditorChange}
-          onApplyMediaGroup={handlers.handleApplyMediaGroup}
-          onToggleInfoPanel={handlers.handleToggleInfoPanel}
-          onToggleFavorite={() => {
-            const requestedAssetId = selectedId;
-            setFavoriteFailed(false);
-            void Promise.resolve(onToggleFavorite()).catch(() => {
-              if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
-            });
-          }}
-          onCopyMediaGroup={() => {
-            void clipboard.copyMediaGroup();
-          }}
-          onResetZoom={mediaControls.resetZoom}
-          onToggleFullscreen={() => {
-            void mediaControls.toggleFullscreen();
-          }}
-          onOpenDeleteConfirm={handlers.handleOpenDeleteConfirm}
-          onCloseLightbox={handlers.handleCloseLightbox}
-          t={t}
-        />
+        {videoFullscreen ? null : (
+          <LightboxToolbar
+            selected={selected}
+            mediaGroupKeyEditor={mediaGroupKeyEditor}
+            mediaGroupOrderEditor={mediaGroupOrderEditor}
+            groupCopyConfirmed={groupCopyConfirmed}
+            canCopyMediaGroup={clipboard.canCopyMediaGroup}
+            copyMediaGroupTitle={copyMediaGroupTitle}
+            isFullscreen={mediaControls.isFullscreen}
+            tagsPanelOpen={handlers.tagsPanelOpen}
+            infoPanelOpen={handlers.infoPanelOpen}
+            selectedTags={tagging.selectedTags}
+            tagDraft={tagging.tagDraft}
+            knownTags={tagging.availableKnownTags}
+            tagInputRef={tagging.tagInputRef}
+            tagSaving={tagging.tagSaving}
+            tagFailed={tagging.tagFailed}
+            tagDetailsLoading={tagDetailsLoading}
+            tagDetailsFailed={tagDetailsFailed}
+            tagEditingDisabled={tagging.tagEditingDisabled}
+            tagPopoverContainerRef={tagPopoverContainerRef}
+            infoPopoverContainerRef={infoPopoverContainerRef}
+            onToggleTagsPanel={handlers.handleToggleTagsPanel}
+            onRemoveTag={tagging.removeTag}
+            onTagDraftChange={tagging.setTagDraft}
+            onAddTag={tagging.addTag}
+            onRetryTags={tagging.retryTags}
+            onRetryTagDetails={onRetryTagDetails}
+            onMediaGroupKeyChange={onMediaGroupKeyEditorChange}
+            onMediaGroupOrderChange={onMediaGroupOrderEditorChange}
+            onApplyMediaGroup={handlers.handleApplyMediaGroup}
+            onToggleInfoPanel={handlers.handleToggleInfoPanel}
+            onToggleFavorite={() => {
+              const requestedAssetId = selectedId;
+              setFavoriteFailed(false);
+              void Promise.resolve(onToggleFavorite()).catch(() => {
+                if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
+              });
+            }}
+            onCopyMediaGroup={() => {
+              void clipboard.copyMediaGroup();
+            }}
+            onResetZoom={mediaControls.resetZoom}
+            onToggleFullscreen={() => {
+              void mediaControls.toggleFullscreen();
+            }}
+            onOpenDeleteConfirm={handlers.handleOpenDeleteConfirm}
+            onCloseLightbox={handlers.handleCloseLightbox}
+            t={t}
+          />
+        )}
 
         {favoriteFailed || handlers.mediaGroupFailed ? (
           <div className="absolute left-3 top-3 z-[5] grid max-w-[min(28rem,calc(100%-6rem))] gap-2">

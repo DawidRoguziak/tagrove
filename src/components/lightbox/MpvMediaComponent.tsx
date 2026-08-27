@@ -2,7 +2,8 @@ import { useContainer, useMediaAttach } from "@videojs/react";
 import { useEffect, useRef, useState } from "react";
 import { closeVideo, controlVideo, openVideo, setVideoBounds } from "../../api";
 import { MpvMediaAdapter } from "./MpvMediaAdapter";
-import type { MpvVideoEvent, VideoBounds } from "./mpvVideoTypes";
+import { measureNativeVideoBounds } from "./nativeVideoLayout";
+import type { MpvVideoEvent } from "./mpvVideoTypes";
 
 interface MpvMediaComponentProps {
   assetId?: number;
@@ -12,22 +13,6 @@ interface MpvMediaComponentProps {
   onLoadedMetadata?: (dimensions: { width: number; height: number }) => void;
   onFullscreenChange?: (fullscreen: boolean) => void;
   onError?: (message: string) => void;
-}
-
-const NATIVE_VIDEO_CONTROL_STRIP_HEIGHT = 72;
-
-function measure(element: HTMLElement): VideoBounds {
-  const rect = element.getBoundingClientRect();
-  const x = Math.max(0, Math.round(rect.left));
-  const y = Math.max(0, Math.round(rect.top));
-  const right = Math.max(x, Math.round(rect.right));
-  const bottom = Math.max(y, Math.round(rect.bottom));
-  return {
-    x,
-    y,
-    width: right - x,
-    height: Math.max(0, bottom - y - NATIVE_VIDEO_CONTROL_STRIP_HEIGHT)
-  };
 }
 
 export function MpvMediaComponent({
@@ -83,7 +68,7 @@ export function MpvMediaComponent({
       callbacksRef.current.onError?.(message);
     };
     const publishCurrentBounds = (sessionId: number) => {
-      const bounds = measure(container);
+      const bounds = measureNativeVideoBounds(container);
       const operation = boundsQueue.catch(() => {}).then(async () => {
         if (cancelled || sessionRef.current !== sessionId) return;
         await setVideoBounds(sessionId, bounds);
@@ -127,7 +112,12 @@ export function MpvMediaComponent({
 
     void (async () => {
       try {
-        const sessionId = await openVideo(assetId, generation, measure(container), applyEvent);
+        const sessionId = await openVideo(
+          assetId,
+          generation,
+          measureNativeVideoBounds(container),
+          applyEvent
+        );
         if (cancelled) {
           await closeVideo(sessionId).catch(() => {});
           return;

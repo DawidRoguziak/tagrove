@@ -83,7 +83,7 @@ Image and GIF source paths pass through `toMediaSrc`.
 
 - `image` and `gif` use the same non-draggable `<img>` stage. GIF animation is browser-native, and both kinds receive the image fit, zoom, and pan behavior.
 - `video` keeps Video.js 10 `VideoPlayer` and `MinimalVideoSkin` as the control/state UI, but attaches `MpvMediaAdapter` through public `useMediaAttach`; it renders no `<video>`. `MpvMediaComponent` opens an authorized native session by asset ID, sends adapter controls to Tauri, applies session-filtered backend events, publishes measured bounds, and closes the session on unmount.
-- The backend validates the SQLite row, video kind, canonical regular file, assigned roots, and symlink containment before passing the canonical path to libmpv. One process-wide player uses `vo=libmpv`, `hwdec=auto-safe`, infinite looping, volume 100, and unmuted playback. GTK positions an input-pass-through `GLArea` above the WebView and reserves the bottom of the Video.js player for its controls. This avoids relying on WebKitGTK alpha compositing, which can keep a transparent page opaque over sibling GTK widgets. The render context must be ready before libmpv receives `loadfile`.
+- The backend validates the SQLite row, video kind, canonical regular file, assigned roots, and symlink containment before passing the canonical path to libmpv. One process-wide player uses `vo=libmpv`, `hwdec=auto-safe`, infinite looping, volume 100, and unmuted playback. GTK positions an input-pass-through `GLArea` above the WebView. A shared 72 px layout constant reserves the bottom control rail, so fitted video dimensions describe the decoded frame rather than the combined frame-and-controls box. This avoids relying on WebKitGTK alpha compositing, which can keep a transparent page opaque over sibling GTK widgets. The render context must be ready before libmpv receives `loadfile`.
 - libmpv metadata events supply duration and intrinsic dimensions. Before that, selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`. `I18nProvider` follows the active i18next language. Picture-in-picture and remote playback are unavailable through the adapter.
 
 Image/GIF load failures, native-session open failures, and backend video error events replace the failed media with a localized alert. Every asset ID/kind/path activation receives a new generation, so A→B→A retries A and a late callback from the first A activation cannot fail the new one. Open tokens reject superseded backend work; session IDs filter late events and commands. Original media is independent of thumbnail generation and thumbnail cache state.
@@ -113,20 +113,20 @@ Transform writes are coalesced to one `requestAnimationFrame`: callers update re
 
 For images and GIFs, fullscreen targets the lightbox shell. If another element is fullscreen, it is exited first. `fullscreenchange` derives `isFullscreen` from whether that exact shell is the fullscreen element; fullscreen CSS removes the shell's bounds, radius, border, and shadow. Toolbar and `F` can toggle it.
 
-For video, fullscreen delegates through the local `LightboxVideoPlayerHandle`, which calls `MpvMediaAdapter.requestFullscreen()` or `exitFullscreen()`. The adapter sends `setFullscreen`; Rust toggles the Tauri window and returns a `fullscreen` event. The stock Video.js fullscreen control is hidden and the custom native-fullscreen button remains visible. `F` also toggles it when the event is outside the player subtree. Entering either fullscreen mode closes popovers. Fullscreen API failures are intentionally swallowed.
+For video, fullscreen delegates through the local `LightboxVideoPlayerHandle`, which calls `MpvMediaAdapter.requestFullscreen()` or `exitFullscreen()`. The adapter sends `setFullscreen`; Rust toggles the Tauri window, records the state on the active session, and returns a `fullscreen` event. The stock Video.js fullscreen control is hidden because it targets DOM fullscreen. The custom native control is portaled into the skin's right control group, where it follows the Video.js layout and visibility. Native fullscreen removes backdrop padding and lightbox chrome, expands the shell to the window, and hides the lightbox toolbar. `F` always reaches the native action, including from inside the player, and `Escape` exits native fullscreen before it can close the lightbox. Closing or replacing a fullscreen video session restores the window first. Entering either fullscreen mode closes popovers. Fullscreen API failures are intentionally swallowed.
 
 The window-level shortcuts while an asset is selected are:
 
 | Key | Behavior |
 | --- | --- |
-| `Escape` | Close the lightbox unless any document element is fullscreen; in fullscreen the browser/player handles exit first |
+| `Escape` | Exit image or native video fullscreen first; otherwise close the lightbox |
 | `ArrowLeft` / `ArrowRight` | Previous/next global result with wrap |
 | `F` | Toggle image-shell or video-player fullscreen |
 | `0` | Reset image/GIF zoom |
 | `+` / `=` | Zoom image/GIF in by 1.25 |
 | `-` | Zoom image/GIF out by 1.25 |
 
-While delete confirmation is open, the lightbox shortcut listener is disabled and the nested dialog owns Escape. Otherwise, after the fullscreen/Escape rule, shortcuts are suppressed when the event target is an `INPUT`, `TEXTAREA`, or contenteditable element. This lets tag suggestions and group editors own arrows and typing. For video, all remaining lightbox shortcuts are also suppressed when the target is inside `[data-lightbox-video-player]`, leaving player keyboard behavior intact. Image-only zoom keys do nothing for video.
+While delete confirmation is open, the lightbox shortcut listener is disabled and the nested dialog owns Escape. Otherwise, form controls keep their keys. Native video `F` and fullscreen `Escape` are captured before Video.js can invoke its DOM-fullscreen hotkey. Other shortcuts are suppressed when the target is inside `[data-lightbox-video-player]`, leaving playback, seeking, and volume keys with Video.js. Image-only zoom keys do nothing for video.
 
 ## Backdrop-close and nested-overlay safety
 

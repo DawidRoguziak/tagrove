@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
@@ -101,6 +101,42 @@ describe("LightboxModal", () => {
     await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
     expect(apiMocks.openVideo.mock.calls[0]?.[0]).toBe(1);
     expect(document.querySelector("video")).toBeNull();
+  });
+
+  it("uses an immersive shell and hides the lightbox toolbar in video fullscreen", async () => {
+    render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
+    const activeSession = apiMocks.setVideoBounds.mock.calls.at(-1)?.[0] as number;
+    const eventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[3] as
+      | ((event: { session_id: number; type: "fullscreen"; fullscreen: boolean }) => void)
+      | undefined;
+
+    expect(screen.getByRole("button", { name: "Close preview" })).toBeInTheDocument();
+    act(() => {
+      eventHandler?.({ session_id: activeSession, type: "fullscreen", fullscreen: true });
+    });
+
+    expect(screen.getByRole("dialog")).toHaveClass(
+      "h-full",
+      "w-full",
+      "rounded-none",
+      "border-0"
+    );
+    expect(screen.queryByRole("button", { name: "Close preview" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Exit fullscreen (F)" })).toBeInTheDocument();
   });
 
   it("shows a video error when native open fails", async () => {

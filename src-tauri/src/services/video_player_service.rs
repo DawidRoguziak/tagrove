@@ -66,6 +66,7 @@ struct ActiveSession {
     session_id: u64,
     _generation: u64,
     events: Channel<VideoEvent>,
+    fullscreen: bool,
 }
 
 impl VideoPlayerService {
@@ -138,6 +139,7 @@ impl VideoPlayerService {
                 session_id,
                 _generation: generation,
                 events,
+                fullscreen: false,
             });
             session_id
         };
@@ -184,6 +186,32 @@ impl VideoPlayerService {
         let state = self.state();
         match &state.active {
             Some(active) if active.session_id == session_id => Ok(()),
+            _ => Err("stale video session".to_string()),
+        }
+    }
+
+    pub fn fullscreen_for(&self, session_id: u64) -> Result<bool, String> {
+        let state = self.state();
+        match &state.active {
+            Some(active) if active.session_id == session_id => Ok(active.fullscreen),
+            _ => Err("stale video session".to_string()),
+        }
+    }
+
+    pub fn active_fullscreen(&self) -> bool {
+        self.state()
+            .active
+            .as_ref()
+            .is_some_and(|active| active.fullscreen)
+    }
+
+    pub fn set_fullscreen_state(&self, session_id: u64, fullscreen: bool) -> Result<(), String> {
+        let mut state = self.state();
+        match &mut state.active {
+            Some(active) if active.session_id == session_id => {
+                active.fullscreen = fullscreen;
+                Ok(())
+            }
             _ => Err("stale video session".to_string()),
         }
     }
@@ -348,6 +376,15 @@ pub enum PlayerCommand {
 mod tests {
     use super::*;
 
+    fn activate_test_session(service: &VideoPlayerService, session_id: u64) {
+        service.state().active = Some(ActiveSession {
+            session_id,
+            _generation: 1,
+            events: Channel::new(|_| Ok(())),
+            fullscreen: false,
+        });
+    }
+
     #[test]
     fn rejects_stale_sessions_and_superseded_opens() {
         let service = VideoPlayerService::unavailable("test player");
@@ -358,5 +395,25 @@ mod tests {
             service.require_current(1),
             Err("stale video session".into())
         );
+    }
+
+    #[test]
+    fn tracks_fullscreen_only_for_the_active_session() {
+        let service = VideoPlayerService::unavailable("test player");
+        activate_test_session(&service, 7);
+
+        assert_eq!(service.fullscreen_for(7), Ok(false));
+        assert_eq!(service.set_fullscreen_state(7, true), Ok(()));
+        assert_eq!(service.fullscreen_for(7), Ok(true));
+        assert!(service.active_fullscreen());
+        assert_eq!(
+            service.set_fullscreen_state(8, false),
+            Err("stale video session".into())
+        );
+        assert_eq!(service.fullscreen_for(7), Ok(true));
+
+        service.clear_if_current(7);
+        assert!(!service.active_fullscreen());
+        assert_eq!(service.fullscreen_for(7), Err("stale video session".into()));
     }
 }

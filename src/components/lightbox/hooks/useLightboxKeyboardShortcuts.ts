@@ -4,6 +4,7 @@ import type { SelectedAsset } from "../../../types";
 interface UseLightboxKeyboardShortcutsOptions {
   enabled?: boolean;
   selected: SelectedAsset | null;
+  isFullscreen: boolean;
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
   onToggleFullscreen: () => Promise<void>;
@@ -15,6 +16,7 @@ interface UseLightboxKeyboardShortcutsOptions {
 export function useLightboxKeyboardShortcuts({
   enabled = true,
   selected,
+  isFullscreen,
   onNavigatePrevious,
   onNavigateNext,
   onToggleFullscreen,
@@ -39,6 +41,25 @@ export function useLightboxKeyboardShortcuts({
       }
 
       const isVideoPlayerTarget = Boolean(target?.closest("[data-lightbox-video-player]"));
+
+      if (
+        selectedKind === "video" &&
+        isFullscreen &&
+        event.key === "Escape"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void onToggleFullscreen();
+        return;
+      }
+
+      if (event.key === "f" || event.key === "F") {
+        event.preventDefault();
+        event.stopPropagation();
+        void onToggleFullscreen();
+        return;
+      }
+
       if (selectedKind === "video" && isVideoPlayerTarget) {
         return;
       }
@@ -52,12 +73,6 @@ export function useLightboxKeyboardShortcuts({
       if (event.key === "ArrowRight") {
         event.preventDefault();
         onNavigateNext();
-        return;
-      }
-
-      if (event.key === "f" || event.key === "F") {
-        event.preventDefault();
-        void onToggleFullscreen();
         return;
       }
 
@@ -83,7 +98,7 @@ export function useLightboxKeyboardShortcuts({
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [enabled, onNavigateNext, onNavigatePrevious, onResetZoom, onToggleFullscreen, onZoomIn, onZoomOut, selectedKind]);
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [enabled, isFullscreen, onNavigateNext, onNavigatePrevious, onResetZoom, onToggleFullscreen, onZoomIn, onZoomOut, selectedKind]);
 }

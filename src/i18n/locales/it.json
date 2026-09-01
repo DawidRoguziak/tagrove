@@ -10,7 +10,12 @@
     "yes": "SÌ",
     "no": "No"
   },
-  "lazyLoad": { "settingsFailed": "Impossibile caricare le impostazioni", "bulkFailed": "Impossibile caricare le azioni multiple", "lightboxFailed": "Impossibile caricare l'anteprima", "retryDescription": "Ricarica l'applicazione per riprovare a caricare questa parte dell'interfaccia." },
+  "lazyLoad": {
+    "settingsFailed": "Impossibile caricare le impostazioni",
+    "bulkFailed": "Impossibile caricare le azioni multiple",
+    "lightboxFailed": "Impossibile caricare l'anteprima",
+    "retryDescription": "Ricarica l'applicazione per riprovare a caricare questa parte dell'interfaccia."
+  },
   "topBar": {
     "openSettings": "Apri impostazioni"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "Attiva/disattiva schermo intero",
     "fullscreen": "Schermo intero (F)",
     "exitFullscreen": "Esci da schermo intero (F)",
-    "videoControls": { "play": "Riproduci", "pause": "Pausa", "mute": "Disattiva audio", "unmute": "Attiva audio", "seek": "Scorri", "playbackRate": "Velocità di riproduzione" },
+    "videoControls": {
+      "play": "Riproduci",
+      "pause": "Pausa",
+      "mute": "Disattiva audio",
+      "unmute": "Attiva audio",
+      "seek": "Scorri",
+      "playbackRate": "Velocità di riproduzione"
+    },
     "deleteMedia": "Elimina media",
     "closePreview": "Chiudi anteprima",
+    "openPanel": "Apri pannello del file",
+    "closePanel": "Chiudi pannello del file",
     "previewDialog": "Anteprima di {{name}}",
     "previewDialogDescription": "Anteprima multimediale e controlli di modifica.",
-    "showTagging": "Mostra tagging",
     "tags": "Tag",
+    "sidebarAria": "Azioni sul file",
     "taggingHeading": "Tagging",
     "noTags": "Nessun tag",
     "addTag": "Aggiungi tag",
@@ -164,6 +178,7 @@
     "mediaGroup": "Gruppo media",
     "removeTagAria": "Rimuovi tag {{tag}}",
     "showInfo": "Mostra informazioni",
+    "hideInfo": "Nascondi informazioni",
     "info": "Informazioni",
     "infoHeading": "Informazioni",
     "type": "Tipo",

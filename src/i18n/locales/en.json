@@ -10,7 +10,12 @@
     "yes": "YES",
     "no": "No"
   },
-  "lazyLoad": { "settingsFailed": "Settings could not be loaded", "bulkFailed": "Bulk actions could not be loaded", "lightboxFailed": "The preview could not be loaded", "retryDescription": "Reload the application to retry loading this part of the interface." },
+  "lazyLoad": {
+    "settingsFailed": "Settings could not be loaded",
+    "bulkFailed": "Bulk actions could not be loaded",
+    "lightboxFailed": "The preview could not be loaded",
+    "retryDescription": "Reload the application to retry loading this part of the interface."
+  },
   "topBar": {
     "openSettings": "Open settings"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "Toggle fullscreen",
     "fullscreen": "Fullscreen (F)",
     "exitFullscreen": "Exit fullscreen (F)",
-    "videoControls": { "play": "Play", "pause": "Pause", "mute": "Mute", "unmute": "Unmute", "seek": "Seek", "playbackRate": "Playback speed" },
+    "videoControls": {
+      "play": "Play",
+      "pause": "Pause",
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "seek": "Seek",
+      "playbackRate": "Playback speed"
+    },
     "deleteMedia": "Delete media",
     "closePreview": "Close preview",
+    "openPanel": "Open asset panel",
+    "closePanel": "Close asset panel",
     "previewDialog": "Preview {{name}}",
     "previewDialogDescription": "Media preview and editing controls.",
-    "showTagging": "Show tagging",
     "tags": "Tags",
+    "sidebarAria": "Asset actions",
     "taggingHeading": "Tagging",
     "noTags": "No tags",
     "addTag": "Add tag",
@@ -164,6 +178,7 @@
     "mediaGroup": "Media group",
     "removeTagAria": "Remove tag {{tag}}",
     "showInfo": "Show info",
+    "hideInfo": "Hide info",
     "info": "Info",
     "infoHeading": "Information",
     "type": "Type",

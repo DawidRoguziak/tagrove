@@ -4,10 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSectionOperationState } from "../../services/operationStateService";
 import { ScanSettingsSection } from "../ScanSettingsSection";
 
+const originalMatchMedia = window.matchMedia;
+
 describe("ScanSettingsSection", () => {
   afterEach(() => {
     cleanup();
-    vi.unstubAllGlobals();
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
   });
 
   it("renders roots and triggers all scan actions", async () => {
@@ -83,7 +85,10 @@ describe("ScanSettingsSection", () => {
     const scrollIntoView = vi.fn();
     const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
-    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn(() => ({ matches: true }))
+    });
 
     render(
       <ScanSettingsSection

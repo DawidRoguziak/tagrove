@@ -10,7 +10,12 @@
     "yes": "JA",
     "no": "Nein"
   },
-  "lazyLoad": { "settingsFailed": "Einstellungen konnten nicht geladen werden", "bulkFailed": "Stapelaktionen konnten nicht geladen werden", "lightboxFailed": "Die Vorschau konnte nicht geladen werden", "retryDescription": "Laden Sie die Anwendung neu, um diesen Teil der Oberfläche erneut zu laden." },
+  "lazyLoad": {
+    "settingsFailed": "Einstellungen konnten nicht geladen werden",
+    "bulkFailed": "Stapelaktionen konnten nicht geladen werden",
+    "lightboxFailed": "Die Vorschau konnte nicht geladen werden",
+    "retryDescription": "Laden Sie die Anwendung neu, um diesen Teil der Oberfläche erneut zu laden."
+  },
   "topBar": {
     "openSettings": "Einstellungen öffnen"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "Vollbild umschalten",
     "fullscreen": "Vollbild (F)",
     "exitFullscreen": "Vollbild verlassen (F)",
-    "videoControls": { "play": "Wiedergabe", "pause": "Pause", "mute": "Stummschalten", "unmute": "Ton einschalten", "seek": "Spulen", "playbackRate": "Wiedergabegeschwindigkeit" },
+    "videoControls": {
+      "play": "Wiedergabe",
+      "pause": "Pause",
+      "mute": "Stummschalten",
+      "unmute": "Ton einschalten",
+      "seek": "Spulen",
+      "playbackRate": "Wiedergabegeschwindigkeit"
+    },
     "deleteMedia": "Medium löschen",
     "closePreview": "Vorschau schließen",
+    "openPanel": "Medienpanel öffnen",
+    "closePanel": "Medienpanel schließen",
     "previewDialog": "Vorschau von {{name}}",
     "previewDialogDescription": "Medienvorschau und Bearbeitungssteuerelemente.",
-    "showTagging": "Tagging anzeigen",
     "tags": "Tags",
+    "sidebarAria": "Medienaktionen",
     "taggingHeading": "Tagging",
     "noTags": "Keine Tags",
     "addTag": "Tag hinzufügen",
@@ -164,6 +178,7 @@
     "mediaGroup": "Mediengruppe",
     "removeTagAria": "Tag {{tag}} entfernen",
     "showInfo": "Informationen anzeigen",
+    "hideInfo": "Informationen ausblenden",
     "info": "Info",
     "infoHeading": "Informationen",
     "type": "Typ",

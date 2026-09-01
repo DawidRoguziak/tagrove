@@ -10,7 +10,12 @@
     "yes": "ANO",
     "no": "Ne"
   },
-  "lazyLoad": { "settingsFailed": "Nastavení se nepodařilo načíst", "bulkFailed": "Hromadné akce se nepodařilo načíst", "lightboxFailed": "Náhled se nepodařilo načíst", "retryDescription": "Znovu načtěte aplikaci a opakujte načtení této části rozhraní." },
+  "lazyLoad": {
+    "settingsFailed": "Nastavení se nepodařilo načíst",
+    "bulkFailed": "Hromadné akce se nepodařilo načíst",
+    "lightboxFailed": "Náhled se nepodařilo načíst",
+    "retryDescription": "Znovu načtěte aplikaci a opakujte načtení této části rozhraní."
+  },
   "topBar": {
     "openSettings": "Otevřít nastavení"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "Přepnout celou obrazovku",
     "fullscreen": "Celá obrazovka (F)",
     "exitFullscreen": "Ukončit celou obrazovku (F)",
-    "videoControls": { "play": "Přehrát", "pause": "Pozastavit", "mute": "Ztlumit", "unmute": "Zapnout zvuk", "seek": "Posunout", "playbackRate": "Rychlost přehrávání" },
+    "videoControls": {
+      "play": "Přehrát",
+      "pause": "Pozastavit",
+      "mute": "Ztlumit",
+      "unmute": "Zapnout zvuk",
+      "seek": "Posunout",
+      "playbackRate": "Rychlost přehrávání"
+    },
     "deleteMedia": "Smazat médium",
     "closePreview": "Zavřít náhled",
+    "openPanel": "Otevřít panel souboru",
+    "closePanel": "Zavřít panel souboru",
     "previewDialog": "Náhled {{name}}",
     "previewDialogDescription": "Náhled média a ovládací prvky pro úpravy.",
-    "showTagging": "Zobrazit tagování",
     "tags": "Tagy",
+    "sidebarAria": "Akce se souborem",
     "taggingHeading": "Tagování",
     "noTags": "Žádné tagy",
     "addTag": "Přidat tag",
@@ -164,6 +178,7 @@
     "mediaGroup": "Skupina médií",
     "removeTagAria": "Odstranit tag {{tag}}",
     "showInfo": "Zobrazit informace",
+    "hideInfo": "Skrýt informace",
     "info": "Informace",
     "infoHeading": "Informace",
     "type": "Typ",

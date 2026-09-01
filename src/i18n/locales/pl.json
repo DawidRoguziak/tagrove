@@ -10,7 +10,12 @@
     "yes": "TAK",
     "no": "Nie"
   },
-  "lazyLoad": { "settingsFailed": "Nie udało się załadować ustawień", "bulkFailed": "Nie udało się załadować akcji zbiorczych", "lightboxFailed": "Nie udało się załadować podglądu", "retryDescription": "Uruchom aplikację ponownie, aby ponowić ładowanie tej części interfejsu." },
+  "lazyLoad": {
+    "settingsFailed": "Nie udało się załadować ustawień",
+    "bulkFailed": "Nie udało się załadować akcji zbiorczych",
+    "lightboxFailed": "Nie udało się załadować podglądu",
+    "retryDescription": "Uruchom aplikację ponownie, aby ponowić ładowanie tej części interfejsu."
+  },
   "topBar": {
     "openSettings": "Otworz ustawienia"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "Przelacz pelny ekran",
     "fullscreen": "Pelny ekran (F)",
     "exitFullscreen": "Wyjdz z pelnego ekranu (F)",
-    "videoControls": { "play": "Odtworz", "pause": "Pauza", "mute": "Wycisz", "unmute": "Wlacz dzwiek", "seek": "Przewin", "playbackRate": "Predkosc odtwarzania" },
+    "videoControls": {
+      "play": "Odtworz",
+      "pause": "Pauza",
+      "mute": "Wycisz",
+      "unmute": "Wlacz dzwiek",
+      "seek": "Przewin",
+      "playbackRate": "Predkosc odtwarzania"
+    },
     "deleteMedia": "Usun medium",
     "closePreview": "Zamknij podglad",
+    "openPanel": "Otwórz panel zasobu",
+    "closePanel": "Zamknij panel zasobu",
     "previewDialog": "Podgląd {{name}}",
     "previewDialogDescription": "Podgląd multimediów i kontrolki edycji.",
-    "showTagging": "Pokaz tagowanie",
     "tags": "Tagi",
+    "sidebarAria": "Akcje zasobu",
     "taggingHeading": "Tagowanie",
     "noTags": "Brak tagow",
     "addTag": "Dodaj tag",
@@ -164,6 +178,7 @@
     "mediaGroup": "Grupa mediow",
     "removeTagAria": "Usun tag {{tag}}",
     "showInfo": "Pokaz informacje",
+    "hideInfo": "Ukryj informacje",
     "info": "Info",
     "infoHeading": "Informacje",
     "type": "Typ",

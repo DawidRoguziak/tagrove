@@ -13,7 +13,7 @@ describe("LightboxDeleteConfirmDialog", () => {
       <LightboxDeleteConfirmDialog open={false} isSubmitting={false} onClose={() => {}} onConfirm={() => {}} />
     );
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).not.toBeInTheDocument();
   });
 
   it("enables confirm only when input equals Yes (case-insensitive)", async () => {

@@ -10,7 +10,12 @@
     "yes": "SÍ",
     "no": "No"
   },
-  "lazyLoad": { "settingsFailed": "No se pudo cargar la configuración", "bulkFailed": "No se pudieron cargar las acciones en lote", "lightboxFailed": "No se pudo cargar la vista previa", "retryDescription": "Vuelve a cargar la aplicación para intentar cargar de nuevo esta parte de la interfaz." },
+  "lazyLoad": {
+    "settingsFailed": "No se pudo cargar la configuración",
+    "bulkFailed": "No se pudieron cargar las acciones en lote",
+    "lightboxFailed": "No se pudo cargar la vista previa",
+    "retryDescription": "Vuelve a cargar la aplicación para intentar cargar de nuevo esta parte de la interfaz."
+  },
   "topBar": {
     "openSettings": "Abrir ajustes"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "Alternar pantalla completa",
     "fullscreen": "Pantalla completa (F)",
     "exitFullscreen": "Salir de pantalla completa (F)",
-    "videoControls": { "play": "Reproducir", "pause": "Pausa", "mute": "Silenciar", "unmute": "Activar sonido", "seek": "Buscar", "playbackRate": "Velocidad de reproducción" },
+    "videoControls": {
+      "play": "Reproducir",
+      "pause": "Pausa",
+      "mute": "Silenciar",
+      "unmute": "Activar sonido",
+      "seek": "Buscar",
+      "playbackRate": "Velocidad de reproducción"
+    },
     "deleteMedia": "Eliminar contenido multimedia",
     "closePreview": "Cerrar vista previa",
+    "openPanel": "Abrir panel del recurso",
+    "closePanel": "Cerrar panel del recurso",
     "previewDialog": "Vista previa de {{name}}",
     "previewDialogDescription": "Vista previa multimedia y controles de edición.",
-    "showTagging": "Mostrar etiquetado",
     "tags": "Etiquetas",
+    "sidebarAria": "Acciones del recurso",
     "taggingHeading": "Etiquetado",
     "noTags": "Sin etiquetas",
     "addTag": "Añadir etiqueta",
@@ -164,6 +178,7 @@
     "mediaGroup": "Grupo multimedia",
     "removeTagAria": "Eliminar etiqueta {{tag}}",
     "showInfo": "Mostrar información",
+    "hideInfo": "Ocultar información",
     "info": "Información",
     "infoHeading": "Información",
     "type": "Tipo",

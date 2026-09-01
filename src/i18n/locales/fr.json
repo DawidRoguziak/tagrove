@@ -10,7 +10,12 @@
     "yes": "OUI",
     "no": "Non"
   },
-  "lazyLoad": { "settingsFailed": "Impossible de charger les paramètres", "bulkFailed": "Impossible de charger les actions groupées", "lightboxFailed": "Impossible de charger l'aperçu", "retryDescription": "Rechargez l'application pour réessayer de charger cette partie de l'interface." },
+  "lazyLoad": {
+    "settingsFailed": "Impossible de charger les paramètres",
+    "bulkFailed": "Impossible de charger les actions groupées",
+    "lightboxFailed": "Impossible de charger l'aperçu",
+    "retryDescription": "Rechargez l'application pour réessayer de charger cette partie de l'interface."
+  },
   "topBar": {
     "openSettings": "Ouvrir les paramètres"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "Basculer en plein écran",
     "fullscreen": "Plein écran (F)",
     "exitFullscreen": "Quitter le plein écran (F)",
-    "videoControls": { "play": "Lecture", "pause": "Pause", "mute": "Couper le son", "unmute": "Activer le son", "seek": "Avancer ou reculer", "playbackRate": "Vitesse de lecture" },
+    "videoControls": {
+      "play": "Lecture",
+      "pause": "Pause",
+      "mute": "Couper le son",
+      "unmute": "Activer le son",
+      "seek": "Avancer ou reculer",
+      "playbackRate": "Vitesse de lecture"
+    },
     "deleteMedia": "Supprimer le média",
     "closePreview": "Fermer l’aperçu",
+    "openPanel": "Ouvrir le panneau du média",
+    "closePanel": "Fermer le panneau du média",
     "previewDialog": "Aperçu de {{name}}",
     "previewDialogDescription": "Aperçu du média et commandes de modification.",
-    "showTagging": "Afficher les tags",
     "tags": "Tags",
+    "sidebarAria": "Actions sur le média",
     "taggingHeading": "Tagging",
     "noTags": "Aucun tag",
     "addTag": "Ajouter un tag",
@@ -164,6 +178,7 @@
     "mediaGroup": "Groupe de médias",
     "removeTagAria": "Supprimer le tag {{tag}}",
     "showInfo": "Afficher les informations",
+    "hideInfo": "Masquer les informations",
     "info": "Infos",
     "infoHeading": "Informations",
     "type": "Type",

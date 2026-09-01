@@ -14,7 +14,6 @@ function options(overrides: Partial<Parameters<typeof useLightboxTagging>[0]> = 
     tagDetailsLoading: false,
     tagDetailsFailed: false,
     knownTags: ["cat", "dog"],
-    tagsPanelOpen: true,
     ...overrides
   };
 }

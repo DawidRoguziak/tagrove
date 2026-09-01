@@ -48,6 +48,7 @@ struct NativeVideoControls {
     time_label: gtk::Label,
     seek: gtk::Scale,
     rate_button: gtk::MenuButton,
+    rate_popover: gtk::Popover,
     fullscreen_button: gtk::Button,
     fullscreen_icon: gtk::Image,
     session_id: Rc<Cell<Option<u64>>>,
@@ -467,7 +468,7 @@ impl NativeVideoControls {
             });
         }
 
-        rate_popover.show_all();
+        rate_choices.show_all();
         row.show_all();
 
         Self {
@@ -479,6 +480,7 @@ impl NativeVideoControls {
             time_label,
             seek,
             rate_button,
+            rate_popover,
             fullscreen_button,
             fullscreen_icon,
             session_id,
@@ -487,6 +489,9 @@ impl NativeVideoControls {
     }
 
     fn activate(&self, session_id: u64) {
+        if self.session_id.get() != Some(session_id) {
+            self.rate_popover.popdown();
+        }
         self.session_id.set(Some(session_id));
         self.root.show();
     }
@@ -494,6 +499,7 @@ impl NativeVideoControls {
     fn deactivate(&self, session_id: u64) {
         if self.session_id.get() == Some(session_id) {
             self.session_id.set(None);
+            self.rate_popover.popdown();
             self.root.hide();
         }
     }

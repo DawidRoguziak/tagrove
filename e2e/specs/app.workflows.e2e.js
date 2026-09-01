@@ -492,6 +492,60 @@ describe("MediaTagger desktop workflows", () => {
     await noFoldersHeading.waitForDisplayed({ timeout: 15000 });
   });
 
+  it("uses a drawer for lightbox actions in a narrow window", async () => {
+    await resetLibraryState();
+    await seedLibraryWithTempRoot("lightbox-drawer", 1);
+    await ensureGalleryView();
+
+    const originalWindowSize = await browser.getWindowSize();
+    try {
+      await browser.setWindowSize(600, 760);
+      const firstTile = await $('button[data-asset-index="0"]');
+      await firstTile.waitForDisplayed({ timeout: 15000 });
+      await firstTile.click();
+
+      const openPanelButton = await $('button[aria-label="Open asset panel"]');
+      await openPanelButton.waitForDisplayed({ timeout: 10000 });
+      const sidebar = await $("[data-lightbox-toolbar]");
+      await browser.waitUntil(async () => (await sidebar.getAttribute("aria-hidden")) === "true", {
+        timeout: 5000,
+        timeoutMsg: "Expected the narrow lightbox sidebar to start closed"
+      });
+
+      await openPanelButton.click();
+      const tagInput = await $("#lightbox-tag-draft-input");
+      await tagInput.waitForDisplayed({ timeout: 10000 });
+      await browser.waitUntil(async () => (await sidebar.getAttribute("aria-hidden")) === "false", {
+        timeout: 5000,
+        timeoutMsg: "Expected the lightbox drawer to open"
+      });
+
+      const editorOrderIsCorrect = await browser.execute(() => {
+        const group = document.querySelector('[data-testid="lightbox-media-group-panel"]');
+        const tags = document.querySelector('[data-testid="lightbox-tag-panel"]');
+        return Boolean(group && tags && (group.compareDocumentPosition(tags) & Node.DOCUMENT_POSITION_FOLLOWING));
+      });
+      if (!editorOrderIsCorrect) {
+        throw new Error("Expected media group controls above tagging in the lightbox drawer");
+      }
+
+      await browser.keys("Escape");
+      const reopenedPanelButton = await $('button[aria-label="Open asset panel"]');
+      await reopenedPanelButton.waitForDisplayed({ timeout: 10000 });
+      const dialog = await $('[role="dialog"][data-lightbox-kind]');
+      await dialog.waitForDisplayed({ timeout: 5000 });
+      await browser.keys("Escape");
+      await dialog.waitForDisplayed({ timeout: 10000, reverse: true });
+    } finally {
+      const dialog = await $('[role="dialog"][data-lightbox-kind]');
+      if (await dialog.isExisting()) {
+        await browser.keys("Escape");
+        if (await dialog.isExisting()) await browser.keys("Escape");
+      }
+      await browser.setWindowSize(originalWindowSize.width, originalWindowSize.height);
+    }
+  });
+
   it("supports lightbox tagging, media group editing and delete confirmation", async () => {
     await resetLibraryState();
     await seedLibraryWithTempRoot("lightbox", 2);
@@ -517,10 +571,6 @@ describe("MediaTagger desktop workflows", () => {
 
     const removeFromFavoritesButton = await $('button[aria-label="Remove from favorites"]');
     await removeFromFavoritesButton.waitForDisplayed({ timeout: 10000 });
-
-    const taggingButton = await $('button[aria-label="Show tagging"]');
-    await taggingButton.waitForDisplayed({ timeout: 10000 });
-    await taggingButton.click();
 
     const uniqueTag = `lightbox-e2e-${Date.now()}`;
     const tagInput = await $("#lightbox-tag-draft-input");

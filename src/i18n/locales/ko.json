@@ -10,7 +10,12 @@
     "yes": "예",
     "no": "아니요"
   },
-  "lazyLoad": { "settingsFailed": "설정을 불러오지 못했습니다", "bulkFailed": "일괄 작업을 불러오지 못했습니다", "lightboxFailed": "미리보기를 불러오지 못했습니다", "retryDescription": "이 화면을 다시 불러오려면 애플리케이션을 새로고침하세요." },
+  "lazyLoad": {
+    "settingsFailed": "설정을 불러오지 못했습니다",
+    "bulkFailed": "일괄 작업을 불러오지 못했습니다",
+    "lightboxFailed": "미리보기를 불러오지 못했습니다",
+    "retryDescription": "이 화면을 다시 불러오려면 애플리케이션을 새로고침하세요."
+  },
   "topBar": {
     "openSettings": "설정 열기"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "전체 화면 전환",
     "fullscreen": "전체 화면 (F)",
     "exitFullscreen": "전체 화면 종료 (F)",
-    "videoControls": { "play": "재생", "pause": "일시 정지", "mute": "음소거", "unmute": "음소거 해제", "seek": "탐색", "playbackRate": "재생 속도" },
+    "videoControls": {
+      "play": "재생",
+      "pause": "일시 정지",
+      "mute": "음소거",
+      "unmute": "음소거 해제",
+      "seek": "탐색",
+      "playbackRate": "재생 속도"
+    },
     "deleteMedia": "미디어 삭제",
     "closePreview": "미리보기 닫기",
+    "openPanel": "미디어 패널 열기",
+    "closePanel": "미디어 패널 닫기",
     "previewDialog": "{{name}} 미리보기",
     "previewDialogDescription": "미디어 미리보기 및 편집 컨트롤입니다.",
-    "showTagging": "태깅 표시",
     "tags": "태그",
+    "sidebarAria": "미디어 작업",
     "taggingHeading": "태깅",
     "noTags": "태그 없음",
     "addTag": "태그 추가",
@@ -164,6 +178,7 @@
     "mediaGroup": "미디어 그룹",
     "removeTagAria": "태그 {{tag}} 제거",
     "showInfo": "정보 표시",
+    "hideInfo": "정보 숨기기",
     "info": "정보",
     "infoHeading": "정보",
     "type": "유형",

@@ -82,6 +82,42 @@ describe("SearchTagator", () => {
     expect(listbox).not.toHaveClass("top-[calc(100%+8px)]");
   });
 
+  it("can portal suggestions above the input without inheriting parent overflow", async () => {
+    render(
+      <div data-testid="clipping-parent" style={{ overflow: "hidden" }}>
+        <SearchTagator
+          value="ca"
+          onValueChange={vi.fn()}
+          knownTags={["cat", "car"]}
+          suggestionsPlacement="above"
+          suggestionsStrategy="viewport"
+          ariaLabel="Search tags"
+          listboxAriaLabel="Tag suggestions"
+        />
+      </div>
+    );
+
+    const input = screen.getByRole("combobox", { name: "Search tags" });
+    vi.spyOn(input, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 500,
+      top: 500,
+      left: 100,
+      right: 340,
+      bottom: 532,
+      width: 240,
+      height: 32,
+      toJSON: () => ({})
+    });
+    await userEvent.click(input);
+
+    const listbox = await screen.findByRole("listbox", { name: "Tag suggestions" });
+    expect(listbox.parentElement).toBe(document.body);
+    expect(listbox).toHaveClass("fixed", "z-[70]", "overflow-y-auto");
+    expect(listbox).toHaveStyle({ left: "100px", width: "240px", bottom: "276px" });
+    expect(input).toHaveAttribute("aria-controls", listbox.id);
+  });
+
   it("keeps negative prefix when suggestion replaces active token", async () => {
     render(<ControlledSearchTagator knownTags={["cat"]} initialValue="-ca" />);
 

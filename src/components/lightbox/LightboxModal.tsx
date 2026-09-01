@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SelectedAsset } from "../../types";
-import { LightboxDeleteConfirmDialog } from "./LightboxDeleteConfirmDialog";
 import { LightboxMediaStage } from "./LightboxMediaStage";
-import { LightboxToolbar } from "./LightboxToolbar";
+import { LightboxToolbar, SIDEBAR_CLOSE_BUTTON_ID } from "./LightboxToolbar";
 import { useLightboxModalHandlers } from "./hooks/useLightboxModalHandlers";
 import { useLightboxMediaGroupClipboard } from "./hooks/useLightboxMediaGroupClipboard";
 import { useLightboxImageControls } from "./useLightboxImageControls";
@@ -11,6 +10,14 @@ import { useLightboxTagging } from "./useLightboxTagging";
 import { useTranslation } from "react-i18next";
 import { useUiLayer } from "../UI/UiLayerProvider";
 import { UiAlert } from "../UI/UiAlert";
+import { UiIconButton } from "../UI/UiIconButton";
+
+const NARROW_LIGHTBOX_QUERY = "(max-width: 767px)";
+const SIDEBAR_TRIGGER_BUTTON_ID = "lightbox-sidebar-trigger-button";
+
+function readNarrowLightbox(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia(NARROW_LIGHTBOX_QUERY).matches;
+}
 
 interface LightboxModalProps {
   selected: SelectedAsset | null;
@@ -64,8 +71,8 @@ export function LightboxModal({
   getRestoreFocus
 }: LightboxModalProps) {
   const { t } = useTranslation();
-  const tagPopoverContainerRef = useRef<HTMLDivElement | null>(null);
-  const infoPopoverContainerRef = useRef<HTMLDivElement | null>(null);
+  const sidebarWasOpenRef = useRef(false);
+  const [isNarrow, setIsNarrow] = useState(readNarrowLightbox);
   const selectedId = selected?.id ?? null;
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -81,9 +88,7 @@ export function LightboxModal({
     mediaGroupOrderEditor,
     onSaveMediaGroup,
     onDeleteMedia,
-    onClose,
-    tagPopoverContainerRef,
-    infoPopoverContainerRef
+    onClose
   });
 
   const tagging = useLightboxTagging({
@@ -96,12 +101,11 @@ export function LightboxModal({
     tagFailed,
     tagDetailsLoading,
     tagDetailsFailed,
-    knownTags,
-    tagsPanelOpen: handlers.tagsPanelOpen
+    knownTags
   });
 
   const mediaControls = useLightboxImageControls({
-    keyboardShortcutsEnabled: !handlers.deleteConfirmOpen,
+    keyboardShortcutsEnabled: !handlers.deleteConfirmOpen && !(isNarrow && handlers.sidebarOpen),
     selected,
     onClose,
     onNavigatePrevious,
@@ -114,12 +118,46 @@ export function LightboxModal({
     active: selected !== null,
     modal: true,
     containerRef: mediaControls.lightboxShellRef,
-    closeOnEscape: !mediaControls.isFullscreen,
+    closeOnEscape: !mediaControls.isFullscreen && !handlers.deleteConfirmOpen,
     onEscape: () => {
-      onClose();
+      if (isNarrow && handlers.sidebarOpen) {
+        handlers.handleCloseSidebar();
+      } else {
+        onClose();
+      }
     },
     getRestoreFocus
   });
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mediaQuery = window.matchMedia(NARROW_LIGHTBOX_QUERY);
+    const updateLayout = () => {
+      setIsNarrow(mediaQuery.matches);
+      if (mediaQuery.matches) handlers.handleCloseSidebar();
+    };
+    updateLayout();
+    mediaQuery.addEventListener("change", updateLayout);
+    return () => mediaQuery.removeEventListener("change", updateLayout);
+  }, [handlers.handleCloseSidebar]);
+
+  useEffect(() => {
+    if (!isNarrow) {
+      sidebarWasOpenRef.current = false;
+      return;
+    }
+
+    const wasOpen = sidebarWasOpenRef.current;
+    sidebarWasOpenRef.current = handlers.sidebarOpen;
+    const frame = window.requestAnimationFrame(() => {
+      if (handlers.sidebarOpen) {
+        document.getElementById(SIDEBAR_CLOSE_BUTTON_ID)?.focus();
+      } else if (wasOpen) {
+        document.getElementById(SIDEBAR_TRIGGER_BUTTON_ID)?.focus();
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [handlers.sidebarOpen, isNarrow]);
   const groupCopyConfirmed = clipboard.groupCopyConfirmed;
   const copyMediaGroupTitle = groupCopyConfirmed
     ? t("lightbox.copyMediaGroup.copied")
@@ -129,6 +167,7 @@ export function LightboxModal({
   const isVideo = selected?.kind === "video";
   const videoFullscreen = isVideo && mediaControls.isFullscreen;
   const imageFullscreen = !isVideo && mediaControls.isFullscreen;
+  const hideNativeVideoForSidebar = Boolean(isVideo && isNarrow && handlers.sidebarOpen);
 
   if (!selected) return null;
 
@@ -141,7 +180,14 @@ export function LightboxModal({
           : `bg-neutral/62 backdrop-blur-sm ${isVideo ? "p-5" : "p-2 sm:p-5"}`
       ].join(" ")}
       onClick={() => {
-        if (isTopLayer) mediaControls.tryCloseLightbox();
+        if (!isTopLayer) return;
+        if (isNarrow && handlers.sidebarOpen) {
+          if (!handlers.deleteConfirmOpen && !handlers.deleteSubmitting) {
+            handlers.handleCloseSidebar();
+          }
+          return;
+        }
+        mediaControls.tryCloseLightbox();
       }}
       data-ui-layer={layerId}
       data-lightbox-backdrop
@@ -153,22 +199,16 @@ export function LightboxModal({
             ? `h-full min-h-0 w-full rounded-none border-0 shadow-none ${
                 videoFullscreen ? "bg-neutral" : "bg-base-100"
               }`
-            : isVideo
-              ? [
-                  "lightbox-shell--video h-[min(calc(100vh-40px),1180px)] min-h-0",
-                  "w-[min(calc(100vw-40px),1780px)] rounded-[var(--radius-surface)]",
-                  "border shadow-[var(--shadow-modal)] sm:rounded-[var(--radius-panel)]",
-                  "lg:h-[min(calc(100vh-40px),1280px)] lg:w-[min(calc(100vw-40px),1840px)]"
-                ].join(" ")
-              : [
-                  "h-[min(96vh,1180px)] min-h-[360px] w-[min(99vw,1780px)] rounded-[var(--radius-surface)]",
-                  "border border-[var(--border-soft)] bg-[var(--surface-solid)] shadow-[var(--shadow-modal)]",
-                  "sm:min-h-[460px] sm:w-[min(97vw,1680px)] sm:rounded-[var(--radius-panel)]",
-                  "lg:h-[min(95vh,1280px)] lg:w-[min(96vw,1840px)]"
-                ].join(" ")
-        ]
-          .filter(Boolean)
-          .join(" ")}
+            : [
+                "h-[min(calc(100vh-40px),1180px)] min-h-[360px] w-[min(calc(100vw-40px),1800px)]",
+                "rounded-[var(--radius-surface)] border shadow-[var(--shadow-modal)]",
+                "sm:min-h-[460px] sm:w-[min(calc(100vw-40px),1860px)] sm:rounded-[var(--radius-panel)]",
+                "lg:h-[min(calc(100vh-40px),1280px)] lg:w-[min(calc(100vw-40px),1920px)]",
+                isVideo
+                  ? "lightbox-shell--video border-white/10"
+                  : "border-[var(--border-soft)] bg-[var(--surface-solid)]"
+              ].join(" ")
+        ].join(" ")}
         ref={mediaControls.lightboxShellRef}
         role="dialog"
         aria-modal="true"
@@ -176,108 +216,191 @@ export function LightboxModal({
         aria-describedby="lightbox-dialog-description"
         data-lightbox-kind={selected.kind}
         tabIndex={-1}
-        onPointerDownCapture={handlers.handleShellPointerDownCapture}
         onClick={handlers.handleShellClick}
       >
         <span id="lightbox-dialog-description" className="sr-only">
           {t("lightbox.previewDialogDescription")}
         </span>
-        {videoFullscreen ? null : (
-          <LightboxToolbar
+
+        {videoFullscreen ? (
+          <LightboxMediaStage
             selected={selected}
-            mediaGroupKeyEditor={mediaGroupKeyEditor}
-            mediaGroupOrderEditor={mediaGroupOrderEditor}
-            groupCopyConfirmed={groupCopyConfirmed}
-            canCopyMediaGroup={clipboard.canCopyMediaGroup}
-            copyMediaGroupTitle={copyMediaGroupTitle}
+            detailsLoading={tagDetailsLoading}
+            detailsFailed={assetDetailsFailed}
+            onRetryDetails={onRetryTagDetails}
+            mediaViewportRef={mediaControls.mediaViewportRef}
+            lightboxImageRef={mediaControls.lightboxImageRef}
+            lightboxVideoPlayerRef={mediaControls.lightboxVideoPlayerRef}
+            isZoomed={mediaControls.isZoomed}
+            mediaDisplaySize={mediaControls.mediaDisplaySize}
+            isDragging={mediaControls.isDragging}
             isFullscreen={mediaControls.isFullscreen}
-            tagsPanelOpen={handlers.tagsPanelOpen}
-            infoPanelOpen={handlers.infoPanelOpen}
-            selectedTags={tagging.selectedTags}
-            tagDraft={tagging.tagDraft}
-            knownTags={tagging.availableKnownTags}
-            tagInputRef={tagging.tagInputRef}
-            tagSaving={tagging.tagSaving}
-            tagFailed={tagging.tagFailed}
-            tagDetailsLoading={tagDetailsLoading}
-            tagDetailsFailed={tagDetailsFailed}
-            tagEditingDisabled={tagging.tagEditingDisabled}
-            tagPopoverContainerRef={tagPopoverContainerRef}
-            infoPopoverContainerRef={infoPopoverContainerRef}
-            onToggleTagsPanel={handlers.handleToggleTagsPanel}
-            onRemoveTag={tagging.removeTag}
-            onTagDraftChange={tagging.setTagDraft}
-            onAddTag={tagging.addTag}
-            onRetryTags={tagging.retryTags}
-            onRetryTagDetails={onRetryTagDetails}
-            onMediaGroupKeyChange={onMediaGroupKeyEditorChange}
-            onMediaGroupOrderChange={onMediaGroupOrderEditorChange}
-            onApplyMediaGroup={handlers.handleApplyMediaGroup}
-            onToggleInfoPanel={handlers.handleToggleInfoPanel}
-            onToggleFavorite={() => {
-              const requestedAssetId = selectedId;
-              setFavoriteFailed(false);
-              void Promise.resolve(onToggleFavorite()).catch(() => {
-                if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
-              });
-            }}
-            onCopyMediaGroup={() => {
-              void clipboard.copyMediaGroup();
-            }}
-            onResetZoom={mediaControls.resetZoom}
-            onToggleFullscreen={() => {
-              void mediaControls.toggleFullscreen();
-            }}
-            onOpenDeleteConfirm={handlers.handleOpenDeleteConfirm}
-            onCloseLightbox={handlers.handleCloseLightbox}
-            t={t}
+            onImageLoad={mediaControls.handleImageLoad}
+            onVideoLoadedMetadata={mediaControls.handleVideoLoadedMetadata}
+            onVideoFullscreenChange={mediaControls.handleVideoFullscreenChange}
+            onImageClick={mediaControls.handleImageClick}
+            onImagePointerDown={mediaControls.handleImagePointerDown}
+            onImagePointerMove={mediaControls.handleImagePointerMove}
+            onImagePointerEnd={mediaControls.handleImagePointerEnd}
           />
-        )}
+        ) : (
+          <div
+            className={[
+              "relative grid h-full min-h-0",
+              isNarrow
+                ? "grid-cols-1 grid-rows-[auto_minmax(0,1fr)]"
+                : "grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,22rem)]"
+            ].join(" ")}
+          >
+            {isNarrow ? (
+              <header className="relative z-[6] flex min-h-11 items-center justify-between gap-2 border-b border-[var(--border-soft)] bg-[var(--surface-solid)] px-2 py-1.5">
+                <span className="min-w-0 truncate text-xs font-semibold text-base-content" title={selected.file_name}>
+                  {selected.file_name}
+                </span>
+                {!handlers.sidebarOpen ? (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <UiIconButton
+                      id={SIDEBAR_TRIGGER_BUTTON_ID}
+                      icon="bulk-actions"
+                      iconClassName="h-4 w-4 shrink-0"
+                      className="h-8 w-8 min-h-8"
+                      aria-label={t("lightbox.openPanel")}
+                      title={t("lightbox.openPanel")}
+                      onClick={handlers.handleOpenSidebar}
+                    />
+                    <UiIconButton
+                      icon="close"
+                      iconClassName="h-4 w-4 shrink-0"
+                      className="h-8 w-8 min-h-8"
+                      aria-label={t("lightbox.closePreview")}
+                      title={t("common.close")}
+                      onClick={handlers.handleCloseLightbox}
+                    />
+                  </div>
+                ) : null}
+              </header>
+            ) : null}
 
-        {favoriteFailed || handlers.mediaGroupFailed ? (
-          <div className="absolute left-3 top-3 z-[5] grid max-w-[min(28rem,calc(100%-6rem))] gap-2">
-            {favoriteFailed ? (
-              <UiAlert tone="error" title={t("lightbox.saveFailedTitle")} className="shadow-[var(--shadow-floating)]">
-                {t("lightbox.favoriteSaveFailed")}
-              </UiAlert>
+            <div
+              className={[
+                "relative h-full min-h-0 min-w-0 overflow-hidden",
+                hideNativeVideoForSidebar ? "hidden" : ""
+              ].join(" ")}
+            >
+              {favoriteFailed || handlers.mediaGroupFailed ? (
+                <div className="absolute left-3 top-3 z-[5] grid max-w-[min(28rem,calc(100%-6rem))] gap-2">
+                  {favoriteFailed ? (
+                    <UiAlert
+                      tone="error"
+                      title={t("lightbox.saveFailedTitle")}
+                      className="shadow-[var(--shadow-floating)]"
+                    >
+                      {t("lightbox.favoriteSaveFailed")}
+                    </UiAlert>
+                  ) : null}
+                  {handlers.mediaGroupFailed ? (
+                    <UiAlert
+                      tone="error"
+                      title={t("lightbox.saveFailedTitle")}
+                      className="shadow-[var(--shadow-floating)]"
+                    >
+                      {t("lightbox.mediaGroupSaveFailed")}
+                    </UiAlert>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <LightboxMediaStage
+                selected={selected}
+                detailsLoading={tagDetailsLoading}
+                detailsFailed={assetDetailsFailed}
+                onRetryDetails={onRetryTagDetails}
+                mediaViewportRef={mediaControls.mediaViewportRef}
+                lightboxImageRef={mediaControls.lightboxImageRef}
+                lightboxVideoPlayerRef={mediaControls.lightboxVideoPlayerRef}
+                isZoomed={mediaControls.isZoomed}
+                mediaDisplaySize={mediaControls.mediaDisplaySize}
+                isDragging={mediaControls.isDragging}
+                isFullscreen={mediaControls.isFullscreen}
+                onImageLoad={mediaControls.handleImageLoad}
+                onVideoLoadedMetadata={mediaControls.handleVideoLoadedMetadata}
+                onVideoFullscreenChange={mediaControls.handleVideoFullscreenChange}
+                onImageClick={mediaControls.handleImageClick}
+                onImagePointerDown={mediaControls.handleImagePointerDown}
+                onImagePointerMove={mediaControls.handleImagePointerMove}
+                onImagePointerEnd={mediaControls.handleImagePointerEnd}
+              />
+            </div>
+
+            {isNarrow && handlers.sidebarOpen ? (
+              <div
+                className="absolute inset-0 z-[7] bg-neutral/52 backdrop-blur-[1px]"
+                data-testid="lightbox-sidebar-scrim"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (!handlers.deleteConfirmOpen && !handlers.deleteSubmitting) {
+                    handlers.handleCloseSidebar();
+                  }
+                }}
+              />
             ) : null}
-            {handlers.mediaGroupFailed ? (
-              <UiAlert tone="error" title={t("lightbox.saveFailedTitle")} className="shadow-[var(--shadow-floating)]">
-                {t("lightbox.mediaGroupSaveFailed")}
-              </UiAlert>
-            ) : null}
+
+            <LightboxToolbar
+              selected={selected}
+              mediaGroupKeyEditor={mediaGroupKeyEditor}
+              mediaGroupOrderEditor={mediaGroupOrderEditor}
+              groupCopyConfirmed={groupCopyConfirmed}
+              canCopyMediaGroup={clipboard.canCopyMediaGroup}
+              copyMediaGroupTitle={copyMediaGroupTitle}
+              isNarrow={isNarrow}
+              sidebarOpen={handlers.sidebarOpen}
+              isFullscreen={mediaControls.isFullscreen}
+              selectedTags={tagging.selectedTags}
+              tagDraft={tagging.tagDraft}
+              knownTags={tagging.availableKnownTags}
+              tagInputRef={tagging.tagInputRef}
+              tagSaving={tagging.tagSaving}
+              tagFailed={tagging.tagFailed}
+              tagDetailsLoading={tagDetailsLoading}
+              tagDetailsFailed={tagDetailsFailed}
+              tagEditingDisabled={tagging.tagEditingDisabled}
+              onRemoveTag={tagging.removeTag}
+              onTagDraftChange={tagging.setTagDraft}
+              onAddTag={tagging.addTag}
+              onRetryTags={tagging.retryTags}
+              onRetryTagDetails={onRetryTagDetails}
+              onMediaGroupKeyChange={onMediaGroupKeyEditorChange}
+              onMediaGroupOrderChange={onMediaGroupOrderEditorChange}
+              onApplyMediaGroup={handlers.handleApplyMediaGroup}
+              infoPanelOpen={handlers.infoPanelOpen}
+              onToggleInfo={handlers.handleToggleInfoPanel}
+              onCloseSidebar={handlers.handleCloseSidebar}
+              onToggleFavorite={() => {
+                const requestedAssetId = selectedId;
+                setFavoriteFailed(false);
+                void Promise.resolve(onToggleFavorite()).catch(() => {
+                  if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
+                });
+              }}
+              onCopyMediaGroup={() => {
+                void clipboard.copyMediaGroup();
+              }}
+              onResetZoom={mediaControls.resetZoom}
+              onToggleFullscreen={() => {
+                void mediaControls.toggleFullscreen();
+              }}
+              onOpenDeleteConfirm={handlers.handleOpenDeleteConfirm}
+              onCloseLightbox={handlers.handleCloseLightbox}
+              deleteConfirmOpen={handlers.deleteConfirmOpen}
+              deleteSubmitting={handlers.deleteSubmitting}
+              deleteError={handlers.deleteError}
+              onDeleteConfirmClose={handlers.handleCloseDeleteConfirm}
+              onDeleteConfirmSubmit={handlers.handleConfirmDeleteMedia}
+              t={t}
+            />
           </div>
-        ) : null}
-
-        <LightboxMediaStage
-          selected={selected}
-          detailsLoading={tagDetailsLoading}
-          detailsFailed={assetDetailsFailed}
-          onRetryDetails={onRetryTagDetails}
-          mediaViewportRef={mediaControls.mediaViewportRef}
-          lightboxImageRef={mediaControls.lightboxImageRef}
-          lightboxVideoPlayerRef={mediaControls.lightboxVideoPlayerRef}
-          isZoomed={mediaControls.isZoomed}
-          mediaDisplaySize={mediaControls.mediaDisplaySize}
-          isDragging={mediaControls.isDragging}
-          isFullscreen={mediaControls.isFullscreen}
-          onImageLoad={mediaControls.handleImageLoad}
-          onVideoLoadedMetadata={mediaControls.handleVideoLoadedMetadata}
-          onVideoFullscreenChange={mediaControls.handleVideoFullscreenChange}
-          onImageClick={mediaControls.handleImageClick}
-          onImagePointerDown={mediaControls.handleImagePointerDown}
-          onImagePointerMove={mediaControls.handleImagePointerMove}
-          onImagePointerEnd={mediaControls.handleImagePointerEnd}
-        />
+        )}
       </div>
-
-      <LightboxDeleteConfirmDialog
-        open={handlers.deleteConfirmOpen}
-        isSubmitting={handlers.deleteSubmitting}
-        errorMessage={handlers.deleteError}
-        onClose={handlers.handleCloseDeleteConfirm}
-        onConfirm={handlers.handleConfirmDeleteMedia}
-      />
     </div>,
     document.body
   );

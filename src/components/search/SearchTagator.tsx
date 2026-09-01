@@ -24,6 +24,7 @@ interface SearchTagatorProps {
   keepSuggestionsOpenOnPick?: boolean;
   autoSelectFirstSuggestion?: boolean;
   suggestionsPlacement?: "above" | "below";
+  suggestionsStrategy?: "inline" | "viewport";
   disabled?: boolean;
 }
 
@@ -47,6 +48,7 @@ export function SearchTagator({
   keepSuggestionsOpenOnPick = false,
   autoSelectFirstSuggestion = true,
   suggestionsPlacement = "below",
+  suggestionsStrategy = "inline",
   disabled = false
 }: SearchTagatorProps) {
   const { t } = useTranslation();
@@ -85,6 +87,7 @@ export function SearchTagator({
     [activeToken, fuse, usedTags]
   );
   const previousSuggestionsRef = useRef(suggestions);
+  const inputNodeRef = useRef<HTMLInputElement | null>(null);
   const popupOpen = inputFocused && shouldOpenSuggestions(value) && suggestionsOpen && suggestions.length > 0;
 
   useEffect(() => {
@@ -138,7 +141,10 @@ export function SearchTagator({
     <div className="relative min-w-0">
       <input
         id={resolvedInputId}
-        ref={handlers.setInputNode}
+        ref={(node) => {
+          inputNodeRef.current = node;
+          handlers.setInputNode(node);
+        }}
         className={inputClassName}
         value={value}
         disabled={disabled}
@@ -169,6 +175,8 @@ export function SearchTagator({
           activeSuggestionIdx={activeSuggestionIdx}
           listboxAriaLabel={listboxAriaLabel ?? t("search.tagSuggestions")}
           placement={suggestionsPlacement}
+          strategy={suggestionsStrategy}
+          anchorElement={inputNodeRef.current}
           onPick={handlers.applySuggestion}
         />
       ) : null}

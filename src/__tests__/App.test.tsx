@@ -64,6 +64,12 @@ function selectAssetByPath(path: string) {
   fireEvent.mouseUp(window);
 }
 
+async function typeAssetTag(tag: string) {
+  const input = screen.getByLabelText("Add tag");
+  await userEvent.click(input);
+  await userEvent.type(input, `${tag}{Enter}`);
+}
+
 const virtualizerState = vi.hoisted(() => ({ renderItems: false }));
 
 const apiMocks = vi.hoisted(() => {
@@ -508,7 +514,7 @@ describe("App", () => {
       expect(apiMocks.setAssetTags).toHaveBeenCalledWith(1, ["dog"]);
     });
 
-    await userEvent.type(screen.getByLabelText("Add tag"), "travel{Enter}");
+    await typeAssetTag("travel");
     await waitFor(() => {
       expect(apiMocks.setAssetTags).toHaveBeenCalledWith(1, ["dog", "travel"]);
     });
@@ -539,9 +545,11 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "Disable bulk actions" }));
 
     await userEvent.click(tile);
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
     expect(screen.getByText("dog")).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText("Add tag"), "bird{Enter}");
+    const birdInput = screen.getByLabelText("Add tag");
+    await userEvent.click(birdInput);
+    await userEvent.type(birdInput, "bird{Enter}");
     await waitFor(() => {
       expect(apiMocks.setAssetTags).toHaveBeenLastCalledWith(1, ["cat", "dog", "bird"]);
     });
@@ -567,8 +575,8 @@ describe("App", () => {
     const tile = screen.getByAltText("C:/media/a.jpg").closest("button");
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
-    await userEvent.type(screen.getByLabelText("Add tag"), "dog{Enter}");
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
+    await typeAssetTag("dog");
     await waitFor(() => expect(apiMocks.setAssetTags).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: "Close preview" }));
 
@@ -620,8 +628,8 @@ describe("App", () => {
     const tile = screen.getByAltText("C:/media/a.jpg").closest("button");
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
-    await userEvent.type(screen.getByLabelText("Add tag"), "bird{Enter}");
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
+    await typeAssetTag("bird");
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument());
     expect(apiMocks.setAssetTags).toHaveBeenCalledTimes(1);
 
@@ -664,8 +672,8 @@ describe("App", () => {
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(1));
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
-    await userEvent.type(screen.getByLabelText("Add tag"), "local{Enter}");
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
+    await typeAssetTag("local");
     await waitFor(() => expect(apiMocks.setAssetTags).toHaveBeenCalledWith(1, ["old", "local"]));
     await userEvent.click(await screen.findByRole("button", { name: "Close preview" }));
 
@@ -682,9 +690,9 @@ describe("App", () => {
     if (!reopenedTile) throw new Error("Missing reopened gallery tile");
     await userEvent.click(reopenedTile);
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2));
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
     expect(screen.getByText("imported")).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText("Add tag"), "new{Enter}");
+    await typeAssetTag("new");
     await waitFor(() => {
       expect(apiMocks.setAssetTags).toHaveBeenLastCalledWith(1, ["old", "local", "imported", "new"]);
     });
@@ -713,8 +721,8 @@ describe("App", () => {
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(1));
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
-    await userEvent.type(screen.getByLabelText("Add tag"), "local{Enter}");
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
+    await typeAssetTag("local");
     await waitFor(() => expect(apiMocks.setAssetTags).toHaveBeenCalledWith(1, ["old", "local"]));
     await userEvent.click(await screen.findByRole("button", { name: "Close preview" }));
 
@@ -731,9 +739,9 @@ describe("App", () => {
     if (!reopenedTile) throw new Error("Missing reopened gallery tile");
     await userEvent.click(reopenedTile);
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2));
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
     expect(screen.getByText("partially-imported")).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText("Add tag"), "new{Enter}");
+    await typeAssetTag("new");
     await waitFor(() => {
       expect(apiMocks.setAssetTags).toHaveBeenLastCalledWith(1, ["old", "local", "partially-imported", "new"]);
     });
@@ -774,7 +782,7 @@ describe("App", () => {
     if (!reusedTile) throw new Error("Missing reused gallery tile");
     await userEvent.click(reusedTile);
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2));
-    await userEvent.click(await screen.findByRole("button", { name: "Show tagging" }));
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).not.toBeDisabled());
     expect(screen.getByText("fresh")).toBeInTheDocument();
   });
 

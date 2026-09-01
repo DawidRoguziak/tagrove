@@ -29,8 +29,8 @@ export function MediaGroupSetter({
   const { t } = useTranslation();
 
   return (
-    <div className="grid gap-2">
-      <div className="grid grid-cols-[minmax(0,7fr)_40px_minmax(88px,2fr)] items-center gap-2">
+    <div className="grid gap-1.5">
+      <div className="grid grid-cols-[minmax(0,1fr)_32px] items-center gap-1.5">
         <input
           id="lightbox-media-group-key-input"
           value={groupKey}
@@ -38,30 +38,32 @@ export function MediaGroupSetter({
           onChange={(event) => onGroupKeyChange(event.target.value)}
           placeholder={t("lightbox.mediaGroupKeyPlaceholder")}
           aria-label={t("lightbox.mediaGroupKeyAria")}
-          className="h-10 w-full"
+          className="h-8 w-full"
         />
 
         <UiIconButton
           icon="reset"
+          iconClassName="h-4 w-4 shrink-0"
+          className="h-8 w-8 min-h-8"
           aria-label={t("lightbox.generateGroupAria")}
           title={t("bulk.groupModal.generateUuid")}
           onClick={() => onGroupKeyChange(generateUuid())}
         />
-
-        <input
-          id="lightbox-media-group-order-input"
-          type="number"
-          step="any"
-          value={groupOrder}
-          {...browserAssistDisabledProps}
-          onChange={(event) => onGroupOrderChange(event.target.value)}
-          placeholder={t("lightbox.mediaGroupOrderPlaceholder")}
-          aria-label={t("lightbox.mediaGroupOrderAria")}
-          className="h-10 w-full"
-        />
       </div>
 
-      <UiButton variant="primary" type="button" className="h-9 min-h-9 justify-center" onClick={onApply}>
+      <input
+        id="lightbox-media-group-order-input"
+        type="number"
+        step="any"
+        value={groupOrder}
+        {...browserAssistDisabledProps}
+        onChange={(event) => onGroupOrderChange(event.target.value)}
+        placeholder={t("lightbox.mediaGroupOrderPlaceholder")}
+        aria-label={t("lightbox.mediaGroupOrderAria")}
+        className="h-8 w-full"
+      />
+
+      <UiButton variant="primary" type="button" className="h-6! min-h-6! justify-center text-xs" onClick={onApply}>
         {t("common.apply")}
       </UiButton>
     </div>

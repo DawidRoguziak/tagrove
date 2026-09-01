@@ -10,7 +10,12 @@
     "yes": "是",
     "no": "否"
   },
-  "lazyLoad": { "settingsFailed": "无法加载设置", "bulkFailed": "无法加载批量操作", "lightboxFailed": "无法加载预览", "retryDescription": "请重新加载应用程序以重试加载此界面。" },
+  "lazyLoad": {
+    "settingsFailed": "无法加载设置",
+    "bulkFailed": "无法加载批量操作",
+    "lightboxFailed": "无法加载预览",
+    "retryDescription": "请重新加载应用程序以重试加载此界面。"
+  },
   "topBar": {
     "openSettings": "打开设置"
   },
@@ -149,13 +154,22 @@
     "toggleFullscreen": "切换全屏",
     "fullscreen": "全屏 (F)",
     "exitFullscreen": "退出全屏 (F)",
-    "videoControls": { "play": "播放", "pause": "暂停", "mute": "静音", "unmute": "取消静音", "seek": "跳转", "playbackRate": "播放速度" },
+    "videoControls": {
+      "play": "播放",
+      "pause": "暂停",
+      "mute": "静音",
+      "unmute": "取消静音",
+      "seek": "跳转",
+      "playbackRate": "播放速度"
+    },
     "deleteMedia": "删除媒体",
     "closePreview": "关闭预览",
+    "openPanel": "打开媒体面板",
+    "closePanel": "关闭媒体面板",
     "previewDialog": "预览 {{name}}",
     "previewDialogDescription": "媒体预览和编辑控件。",
-    "showTagging": "显示标签",
     "tags": "标签",
+    "sidebarAria": "媒体操作",
     "taggingHeading": "标签管理",
     "noTags": "没有标签",
     "addTag": "添加标签",
@@ -164,6 +178,7 @@
     "mediaGroup": "媒体分组",
     "removeTagAria": "移除标签 {{tag}}",
     "showInfo": "显示信息",
+    "hideInfo": "隐藏信息",
     "info": "信息",
     "infoHeading": "信息",
     "type": "类型",

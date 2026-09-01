@@ -1,13 +1,10 @@
 import { act, renderHook } from "@testing-library/react";
-import type { MouseEvent, PointerEvent } from "react";
+import type { MouseEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { useLightboxModalHandlers } from "../useLightboxModalHandlers";
 
 describe("useLightboxModalHandlers", () => {
-  it("toggles popovers and resets state on selected id change", () => {
-    const tagContainer = document.createElement("div");
-    const infoContainer = document.createElement("div");
-
+  it("opens the sidebar, toggles info and resets state on selected id change", () => {
     const { result, rerender } = renderHook(
       ({ selectedId }: { selectedId: number | null }) =>
         useLightboxModalHandlers({
@@ -16,35 +13,33 @@ describe("useLightboxModalHandlers", () => {
           mediaGroupOrderEditor: "2",
           onSaveMediaGroup: vi.fn(),
           onDeleteMedia: vi.fn(async () => {}),
-          onClose: vi.fn(),
-          tagPopoverContainerRef: { current: tagContainer },
-          infoPopoverContainerRef: { current: infoContainer }
+          onClose: vi.fn()
         }),
       { initialProps: { selectedId: 1 } }
     );
 
     act(() => {
-      result.current.handleToggleTagsPanel();
+      result.current.handleOpenSidebar();
     });
-    expect(result.current.tagsPanelOpen).toBe(true);
+    expect(result.current.sidebarOpen).toBe(true);
     expect(result.current.infoPanelOpen).toBe(false);
 
     act(() => {
       result.current.handleToggleInfoPanel();
     });
     expect(result.current.infoPanelOpen).toBe(true);
-    expect(result.current.tagsPanelOpen).toBe(false);
+    expect(result.current.sidebarOpen).toBe(true);
 
     act(() => {
       result.current.handleOpenDeleteConfirm();
     });
     expect(result.current.deleteConfirmOpen).toBe(true);
-    expect(result.current.tagsPanelOpen).toBe(false);
+    expect(result.current.sidebarOpen).toBe(true);
     expect(result.current.infoPanelOpen).toBe(false);
 
     rerender({ selectedId: 2 });
 
-    expect(result.current.tagsPanelOpen).toBe(false);
+    expect(result.current.sidebarOpen).toBe(false);
     expect(result.current.infoPanelOpen).toBe(false);
     expect(result.current.deleteConfirmOpen).toBe(false);
     expect(result.current.deleteSubmitting).toBe(false);
@@ -61,9 +56,7 @@ describe("useLightboxModalHandlers", () => {
           mediaGroupOrderEditor: order,
           onSaveMediaGroup,
           onDeleteMedia: vi.fn(async () => {}),
-          onClose: vi.fn(),
-          tagPopoverContainerRef: { current: document.createElement("div") },
-          infoPopoverContainerRef: { current: document.createElement("div") }
+          onClose: vi.fn()
         }),
       { initialProps: { order: "12.5" } }
     );
@@ -86,48 +79,6 @@ describe("useLightboxModalHandlers", () => {
     expect(onSaveMediaGroup).toHaveBeenCalledTimes(2);
   });
 
-  it("closes tag popover when pointer event target is outside", () => {
-    const tagContainer = document.createElement("div");
-    const infoContainer = document.createElement("div");
-    const insideTag = document.createElement("button");
-    tagContainer.appendChild(insideTag);
-    const outside = document.createElement("div");
-
-    const { result } = renderHook(() =>
-      useLightboxModalHandlers({
-        selectedId: 1,
-        mediaGroupKeyEditor: "group",
-        mediaGroupOrderEditor: "1",
-        onSaveMediaGroup: vi.fn(),
-        onDeleteMedia: vi.fn(async () => {}),
-        onClose: vi.fn(),
-        tagPopoverContainerRef: { current: tagContainer },
-        infoPopoverContainerRef: { current: infoContainer }
-      })
-    );
-
-    act(() => {
-      result.current.handleToggleTagsPanel();
-    });
-    expect(result.current.tagsPanelOpen).toBe(true);
-
-    const insideEvent = {
-      target: insideTag
-    } as unknown as PointerEvent<HTMLDivElement>;
-    act(() => {
-      result.current.handleShellPointerDownCapture(insideEvent);
-    });
-    expect(result.current.tagsPanelOpen).toBe(true);
-
-    const outsideEvent = {
-      target: outside
-    } as unknown as PointerEvent<HTMLDivElement>;
-    act(() => {
-      result.current.handleShellPointerDownCapture(outsideEvent);
-    });
-    expect(result.current.tagsPanelOpen).toBe(false);
-  });
-
   it("handles delete confirmation flow and blocks close while submitting", async () => {
     const onClose = vi.fn();
     let resolveDelete: (() => void) | null = null;
@@ -145,9 +96,7 @@ describe("useLightboxModalHandlers", () => {
         mediaGroupOrderEditor: "1",
         onSaveMediaGroup: vi.fn(),
         onDeleteMedia,
-        onClose,
-        tagPopoverContainerRef: { current: document.createElement("div") },
-        infoPopoverContainerRef: { current: document.createElement("div") }
+        onClose
       })
     );
 

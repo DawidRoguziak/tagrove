@@ -22,7 +22,7 @@ The runtime path is:
 3. It calls `getAssetDetails(asset.id)` and replaces the summary with `AssetDetails` if that request is still current. Until a complete tag list is available from details or the shared authoritative tag state, tag editing is disabled.
 4. `LightboxModal` delegates persistent edits back to `useSelectionState`; local hooks manage panels, confirmation, clipboard feedback, media transforms, fullscreen, and shortcuts. Detail-load failure and tag-save failure are displayed and retried independently.
 
-The modal shell contains an absolute toolbar and a full-size media stage. The deletion confirmation is a separate fixed overlay rendered beside the shell inside the lightbox backdrop.
+At widths of at least 768 px the modal shell is a two-column panel: the media stage on the left and the action sidebar on the right. Below 768 px the media occupies the shell and the sidebar becomes an initially closed right drawer. The delete confirmation is inline at the bottom of the sidebar.
 
 ## Summary-to-details selection lifecycle
 
@@ -61,28 +61,32 @@ All lightbox mutations are backend-first: the action awaits its API command befo
 | Apply media group | `set_asset_media_group` | Replace group key and order in both places | No query or tag refresh |
 | Delete | `delete_asset` | Remove the ID from loaded pages and close the matching selection after a committed structured result | Start best-effort known-tag and query refreshes; refresh failure does not relabel the committed delete |
 
-Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `useSelectionState` is the only owner of save serialization/coalescing; `useLightboxTagging` only manages input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and starting the best-effort known-tag refresh. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. Opening the tag panel focuses its input on the next animation frame, and a successful add clears and refocuses it.
+Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `useSelectionState` is the only owner of save serialization/coalescing; `useLightboxTagging` only manages input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and starting the best-effort known-tag refresh. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. A successful add clears and refocuses the input.
 
 Media-group apply trims the key and converts an empty key to null. Empty order becomes null; any finite JavaScript number, including a decimal, is accepted; non-finite or unparseable input does nothing. The generate button uses `crypto.randomUUID()` when available, with a timestamp/random fallback. Applying does not mutate the editor controls directly; the selected-object update rehydrates them.
 
 Delete runs under the scan/thumbnail lock. An existing source is journaled and staged before one database/revision transaction; a missing source explicitly removes stale metadata. The frontend inspects `DeleteAssetSummary`: missing source and post-commit cleanup staging are announced separately, while a pre-commit filesystem rejection remains in the confirmation dialog and states that metadata was preserved.
 
-## Toolbar, popovers, clipboard, and confirmation
+## Toolbar, sidebar, confirmation, and clipboard
 
-The toolbar exposes tagging/group editing, information, favorite, group copy, reset zoom, image fullscreen, delete, and close. It has no pointer navigation buttons; navigation is keyboard-driven. The info popover shows kind, formatted byte size, dimensions, duration, and full path.
+On a wide viewport the sidebar occupies `clamp(18rem, 22vw, 22rem)` and the media uses the remaining width. It contains the action buttons (favorite, group copy, reset zoom, info, image fullscreen, delete, close), tagging/media-group editing, and an inline file-information section. Navigation remains keyboard-driven; there are no pointer navigation buttons. The sidebar keeps a pinned header and one-row action rail while the middle area scrolls.
 
-Tag and info popovers are mutually exclusive. Toggling one closes the other. A shell-level pointer-down capture closes an open popover when the target lies outside that popover's container. Changing selected ID, opening delete confirmation, or entering fullscreen closes both; changing selected ID also resets confirmation/submission state. The shell's click handler stops propagation so ordinary interaction does not close the backdrop.
+The information section is toggleable and collapsed by default; its info button carries `aria-expanded`. The media-group editor follows it, with tagging directly below. Tag suggestions open below the input through a viewport-positioned portal, so sidebar overflow cannot clip them.
+
+Below 768 px the drawer starts closed. A compact header above the media opens it or closes the lightbox; keeping these controls outside the media bounds makes them visible above the native GTK video surface. The drawer has a maximum width of 22 rem; its scrim and Escape close only the drawer, then return focus to its trigger. Changing the selected asset or entering fullscreen closes it. While delete confirmation is open, its Escape and submitting guards take priority over drawer dismissal.
+
+Info and tagging are inline sections in the sidebar rather than popovers. There are no mutually exclusive popovers and no outside-pointer-dismiss behavior; selecting a new asset resets the delete-confirmation and submission state. The shell's click handler stops propagation so ordinary interaction does not close the backdrop.
 
 Group copy is enabled only when the trimmed editor key is non-empty and `navigator.clipboard.writeText` exists. Success swaps the copy icon to a confirmed state for 1,600 ms. Selection changes, key edits, failures, and unmount clear confirmation or its timer.
 
-Delete opens a nested modal, closes both popovers, clears its text each time it closes, and focuses the confirmation input on the next animation frame. Confirm is enabled only when trimmed input equals the localized confirmation word, case-insensitively. Submission is guarded against duplicates; close/cancel and both buttons are blocked while it is pending. The confirmation backdrop stops propagation before closing itself, and its inner surface stops propagation without closing. A committed delete closes the selection; missing/cleanup outcomes are announced first. A rejected pre-commit delete keeps the confirmation open with an alert, and post-commit refresh failures are only best-effort follow-up failures.
+Delete renders inline in the sidebar, not as a nested modal. Opening it clears its text and focuses the confirmation input on the next animation frame. Confirm is enabled only when trimmed input equals the localized confirmation word, case-insensitively. Submission is guarded against duplicates; close/cancel and both buttons are blocked while it is pending. While the confirmation is open the lightbox shortcut listener is disabled and Escape closes only the confirmation (restoring focus to the delete button), never the lightbox. A committed delete closes the selection; missing/cleanup outcomes are announced first. A rejected pre-commit delete keeps the confirmation open with an alert, and post-commit refresh failures are only best-effort follow-up failures.
 
 ## Media presentation
 
 Image and GIF source paths pass through `toMediaSrc`.
 
 - `image` and `gif` use the same non-draggable `<img>` stage. GIF animation is browser-native, and both kinds receive the image fit, zoom, and pan behavior.
-- `video` keeps Video.js 10 `VideoPlayer` and a hidden `MinimalVideoSkin` as the media-state bridge, attaches `MpvMediaAdapter` through public `useMediaAttach`, and renders no `<video>`. Visible controls belong to the native GTK surface. `MpvMediaComponent` opens an authorized native session by asset ID, sends adapter controls and localized native-control labels to Tauri, applies session-filtered backend events, publishes measured bounds, and closes the session on unmount.
+- On a wide viewport the media stage occupies only the left shell column. `measureNativeVideoBounds` therefore reports a rect inside that column, so the native GTK surface cannot cover the sidebar's DOM controls. Opening the narrow drawer hides the video stage; its resize observer publishes zero bounds, which hides the native GTK surface until the drawer closes. `video` keeps Video.js 10 `VideoPlayer` and a hidden `MinimalVideoSkin` as the media-state bridge, attaches `MpvMediaAdapter` through public `useMediaAttach`, and renders no `<video>`. Visible controls belong to the native GTK surface. `MpvMediaComponent` opens an authorized native session by asset ID, sends adapter controls and localized native-control labels to Tauri, applies session-filtered backend events, publishes measured bounds, and closes the session on unmount.
 - The backend validates the SQLite row, video kind, canonical regular file, assigned roots, and symlink containment before passing the canonical path to libmpv. One process-wide player uses `vo=libmpv`, `hwdec=auto-safe`, infinite looping, volume 100, and unmuted playback. GTK positions an input-pass-through `GLArea` above the WebView. The control bar is a direct `GtkOverlay` child sized only to the bottom 68 px of the video rectangle, so it accepts input without blocking the rest of the WebView. It contains play/pause, mute, time, seek, playback-rate, and fullscreen controls. The fitted dimensions describe the complete decoded-video footprint; no separate DOM control rail is reserved below it. The controls use a transparent-to-dark gradient only for contrast rather than a bordered panel. The non-fullscreen video dialog keeps at least 20 px from every window edge, and its shell owns the only visible border, radius, and shadow. The hidden Video.js skin remains the media-state adapter, while GTK receives authoritative playback state from the same session-checked libmpv events. This avoids relying on WebKitGTK alpha compositing, which cannot reliably place DOM controls over a sibling native widget. The render context must be ready before libmpv receives `loadfile`.
 - libmpv metadata events supply duration and intrinsic dimensions. Before that, selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`. `I18nProvider` follows the active i18next language. Picture-in-picture and remote playback are unavailable through the adapter.
 
@@ -111,9 +115,9 @@ Transform writes are coalesced to one `requestAnimationFrame`: callers update re
 
 ## Fullscreen and keyboard behavior
 
-For images and GIFs, fullscreen targets the lightbox shell. If another element is fullscreen, it is exited first. `fullscreenchange` derives `isFullscreen` from whether that exact shell is the fullscreen element; fullscreen CSS removes the shell's bounds, radius, border, and shadow. Toolbar and `F` can toggle it.
+For images and GIFs, fullscreen targets the lightbox shell. If another element is fullscreen, it is exited first. `fullscreenchange` derives `isFullscreen` from whether that exact shell is the fullscreen element; fullscreen CSS removes the shell's bounds, radius, border, and shadow. The sidebar remains part of the fullscreen shell, so its controls stay reachable. The fullscreen button and `F` toggle it.
 
-For video, fullscreen delegates through the local `LightboxVideoPlayerHandle`, which calls `MpvMediaAdapter.requestFullscreen()` or `exitFullscreen()`. The adapter and the native GTK fullscreen button share the same checked Rust fullscreen operation; Rust toggles the Tauri window, records the state on the active session, and returns a `fullscreen` event. The stock Video.js fullscreen control and the rest of its DOM control rail are hidden. Native fullscreen removes backdrop padding and lightbox chrome, expands the shell to the window, and hides the lightbox toolbar. `F` always reaches the native action, including while a GTK control owns focus, and `Escape` exits native fullscreen before it can close the lightbox. Closing or replacing a fullscreen video session restores the window first. Entering either fullscreen mode closes popovers. Fullscreen API failures from frontend shortcuts are intentionally swallowed.
+For video, fullscreen delegates through the local `LightboxVideoPlayerHandle`, which calls `MpvMediaAdapter.requestFullscreen()` or `exitFullscreen()`. The adapter and the native GTK fullscreen button share the same checked Rust fullscreen operation; Rust toggles the Tauri window, records the state on the active session, and returns a `fullscreen` event. The stock Video.js fullscreen control and the rest of its DOM control rail are hidden. Native fullscreen removes backdrop padding and lightbox chrome, expands the shell to the window, and hides the entire sidebar while the native surface covers the window. `F` always reaches the native action, including while a GTK control owns focus, and `Escape` exits native fullscreen before it can close the lightbox. Closing or replacing a fullscreen video session restores the window first. Entering either fullscreen mode closes the pending delete confirmation. Fullscreen API failures from frontend shortcuts are intentionally swallowed.
 
 The window-level shortcuts while an asset is selected are:
 
@@ -126,7 +130,7 @@ The window-level shortcuts while an asset is selected are:
 | `+` / `=` | Zoom image/GIF in by 1.25 |
 | `-` | Zoom image/GIF out by 1.25 |
 
-While delete confirmation is open, the lightbox shortcut listener is disabled and the nested dialog owns Escape. Otherwise, form controls keep their keys. Native video `F` and fullscreen `Escape` are handled by the WebView shortcut path or, when focus is inside the native overlay, by GTK. Other shortcuts are suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
+While delete confirmation is open, the lightbox shortcut listener is disabled and the inline confirmation owns Escape. Otherwise, form controls keep their keys. Native video `F` and fullscreen `Escape` are handled by the WebView shortcut path or, when focus is inside the native overlay, by GTK. Other shortcuts are suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
 
 ## Backdrop-close and nested-overlay safety
 
@@ -137,7 +141,7 @@ Clicking the outer backdrop calls `tryCloseLightbox`; clicking the shell stops p
 - drag start: 500 ms;
 - drag finish: 240 ms.
 
-The delete overlay stops propagation at both its backdrop and surface, so closing or operating the nested confirmation does not also close the lightbox. Its own submitting guard prevents backdrop cancellation until deletion settles.
+The inline delete confirmation is part of the sidebar, so while it is open a lightbox shortcut listener is disabled and Escape targets only the confirmation; its submitting guard prevents backdrop cancellation until deletion settles.
 
 ## Current guarantees
 
@@ -146,10 +150,10 @@ The delete overlay stops propagation at both its backdrop and surface, so closin
 - Persistent local state changes occur only after the backend command succeeds.
 - Mutation responses update selection only when its ID still matches the mutated asset.
 - Editor state follows selected details/cache state rather than maintaining a second saved model.
-- Popover, clipboard timeout, drag listener, resize observer, fullscreen listener, keyboard listener, and animation-frame cleanup are scoped to their owning hook/component.
+- Clipboard timeout, drag listener, resize observer, fullscreen listener, keyboard listener, and animation-frame cleanup are scoped to their owning hook/component.
 - Input editing and native video controls do not accidentally trigger navigation or image shortcuts.
 - Delete requires explicit localized text confirmation and prevents duplicate submission.
-- Escape closes only the nested delete confirmation while that dialog is open.
+- Escape closes only the inline delete confirmation while it is open.
 
 ## Known limitations and maintenance hazards
 
@@ -159,7 +163,7 @@ The delete overlay stops propagation at both its backdrop and surface, so closin
 - Global index is captured at selection time and is not recomputed when the query/filter/order changes. A non-empty cache that no longer contains the selected ID leaves the lightbox open with the old index.
 - Tag replacements are serialized per asset, coalesce rapid drafts, and expose saving/failure/Retry state. Favorite and media-group writes still have no submitting state or mutation request guard, so rapid writes for those fields may resolve out of order.
 - The double-click and legacy mouse-down handlers are returned by `useLightboxImageControls` and unit-tested directly, but `LightboxMediaStage` currently wires neither one. Rendered images therefore single-click through 1.25x steps; the pixel-perfect double-click toggle is not reachable from the modal.
-- The lightbox shell itself has no dialog role or focus trap. The nested delete dialog restores focus to the delete button, but closing the lightbox does not restore focus to the selected gallery tile.
+- The lightbox shell itself has no dialog role or focus trap. The inline delete confirmation restores focus to the delete button on close, but closing the lightbox does not restore focus to the selected gallery tile.
 - Final staged-delete cleanup can fail after DB commit; the UI reports the recovery path and the durable journal retries cleanup at startup.
 - Fullscreen, clipboard, autoplay, and details failures are intentionally silent.
 
@@ -183,13 +187,13 @@ Current focused coverage is split across:
 
 - `src/hooks/__tests__/useSelectionState.test.ts`: editor hydration, cache-to-selection synchronization, empty-library close, tag-mutation serialization/retry, pending-mutation detail barriers, restore/reset ID reuse, deletion tombstones, stale-detail protection, rapid Right/Right and Right/Left ordering, and delegation to mutation actions. It does not currently cover every details/prefetch race, global wrap, or unloaded-page navigation.
 - `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx`: A→B→A failure reset and rejection of a late error callback from an older activation.
-- `src/components/lightbox/__tests__/LightboxModal.test.tsx`: arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, popover outside-click, and delete confirmation.
+- `src/components/lightbox/__tests__/LightboxModal.test.tsx`: arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, and inline delete confirmation.
 - `src/components/lightbox/__tests__/MpvMediaAdapter.test.tsx`: Video.js adapter state, hidden DOM controls, waiting state, fullscreen delegation, native session lifecycle, and absence of an HTML video element.
 - `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx`: copy availability, clipboard write, confirmed state, and 1,600 ms reset.
-- `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` and `hooks/__tests__/useLightboxModalHandlers.test.ts`: confirmation text, nested close/confirm callbacks, popover reset/outside click, media-group parsing, and pending-delete guards.
+- `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` and `hooks/__tests__/useLightboxModalHandlers.test.ts`: confirmation text, inline close/confirm callbacks, media-group parsing, and pending-delete guards.
 - `src/components/lightbox/__tests__/useLightboxImageControls.test.ts`: keyboard navigation/zoom/fullscreen, wheel suppression, direct double-click zoom, drag fallback, and close timing.
 - `src/components/lightbox/services/__tests__`: backend-first local updates and follow-up refresh rules for tags, favorite, group, and deletion. The `selectPrevious/Next` service tests cover legacy non-runtime helpers only.
 - `src/components/app/services/__tests__/assetMutationService.test.ts`: immutable list/selection update helpers.
 - `src/__tests__/api.test.ts`: API payload/source conversion plus single and bulk tag mutation result mapping. `src/__tests__/App.test.tsx` mocks `getAssetDetails`, but currently has no end-to-end lightbox selection/details/mutation case.
 
-Minimum regression additions for lifecycle work should include deferred A/B details responses, close-before-response, cache revisit, two-item prefetch de-duplication, first/last wrap across unloaded pages, query refresh while open, mutation followed by cached revisit, rapid out-of-order mutations, nested-confirmation `Escape`, rendered double-click wiring, GIF transforms, video-target key ownership, and failed physical-file deletion reporting.
+Minimum regression additions for lifecycle work should include deferred A/B details responses, close-before-response, cache revisit, two-item prefetch de-duplication, first/last wrap across unloaded pages, query refresh while open, mutation followed by cached revisit, rapid out-of-order mutations, inline-confirmation `Escape`, rendered double-click wiring, GIF transforms, video-target key ownership, and failed physical-file deletion reporting.

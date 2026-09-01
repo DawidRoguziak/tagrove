@@ -6,6 +6,7 @@ interface UiIconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>
   icon: UiIconName;
   active?: boolean;
   danger?: boolean;
+  iconClassName?: string;
 }
 
 export function UiIconButton({
@@ -13,6 +14,7 @@ export function UiIconButton({
   active = false,
   danger = false,
   className = "",
+  iconClassName = "h-5 w-5 shrink-0",
   style,
   ...props
 }: UiIconButtonProps) {
@@ -33,7 +35,7 @@ export function UiIconButton({
       style={{ ...style, padding: 0 }}
       {...props}
     >
-      <UiIcon name={icon} filled={icon === "heart" && active} className="h-5 w-5 shrink-0" />
+      <UiIcon name={icon} filled={icon === "heart" && active} className={iconClassName} />
     </UiButton>
   );
 }

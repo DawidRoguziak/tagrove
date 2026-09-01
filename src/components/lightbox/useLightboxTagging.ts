@@ -12,7 +12,6 @@ interface UseLightboxTaggingOptions {
   tagDetailsLoading: boolean;
   tagDetailsFailed: boolean;
   knownTags: string[];
-  tagsPanelOpen: boolean;
 }
 
 export function useLightboxTagging({
@@ -25,8 +24,7 @@ export function useLightboxTagging({
   tagFailed,
   tagDetailsLoading,
   tagDetailsFailed,
-  knownTags,
-  tagsPanelOpen
+  knownTags
 }: UseLightboxTaggingOptions) {
   const tagInputRef = useRef<HTMLInputElement | null>(null);
   const [tagDraft, setTagDraft] = useState("");
@@ -63,12 +61,6 @@ export function useLightboxTagging({
     if (tagEditingDisabled) return;
     applyTags(selectedTags.filter((item) => item !== tag));
   }, [applyTags, selectedTags, tagEditingDisabled]);
-
-  useEffect(() => {
-    if (!tagsPanelOpen || tagEditingDisabled) return;
-    const frame = window.requestAnimationFrame(() => tagInputRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
-  }, [tagEditingDisabled, tagsPanelOpen]);
 
   return {
     tagInputRef,

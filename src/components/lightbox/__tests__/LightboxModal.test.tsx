@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
-import { UiLayerProvider } from "../../UI/UiLayerProvider";
 
 const apiMocks = vi.hoisted(() => ({
   openVideo: vi.fn(),
@@ -44,9 +43,27 @@ const selectedVideoAsset: SelectedAsset = {
   kind: "video",
   duration_ms: 20_000
 };
+const originalMatchMedia = window.matchMedia;
+
+function stubMatchMedia(matches: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn(() => ({
+      matches,
+      media: "(max-width: 767px)",
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn()
+    }))
+  });
+}
 
 describe("LightboxModal", () => {
   beforeEach(() => {
+    stubMatchMedia(false);
     apiMocks.openVideo.mockReset().mockResolvedValue(1);
     apiMocks.setVideoBounds.mockReset().mockResolvedValue(undefined);
     apiMocks.controlVideo.mockReset().mockResolvedValue(undefined);
@@ -56,6 +73,7 @@ describe("LightboxModal", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
   });
 
   it("handles left and right arrow navigation", async () => {
@@ -103,7 +121,7 @@ describe("LightboxModal", () => {
     expect(document.querySelector("video")).toBeNull();
   });
 
-  it("gives video a 20px viewport gutter and a single visual frame", () => {
+it("gives video a 20px viewport gutter and a single visual frame", () => {
     const { rerender } = render(
       <LightboxModal
         selected={selectedVideoAsset}
@@ -128,14 +146,18 @@ describe("LightboxModal", () => {
     expect(dialog).toHaveClass(
       "lightbox-shell--video",
       "h-[min(calc(100vh-40px),1180px)]",
-      "w-[min(calc(100vw-40px),1780px)]"
+      "w-[min(calc(100vw-40px),1800px)]"
     );
     expect(videoStage).toHaveClass("lightbox-media-stage--video");
     expect(document.querySelector("[data-lightbox-video-player]")).toHaveClass(
       "lightbox-video-player"
     );
-    expect(document.querySelector('[data-lightbox-toolbar="video"]')).toHaveClass(
-      "bottom-[88px]"
+    const toolbar = document.querySelector('[data-lightbox-toolbar="video"]');
+    expect(toolbar).not.toHaveClass("bottom-[88px]");
+    expect(toolbar).toHaveAttribute("aria-label", "Asset actions");
+    expect(toolbar?.parentElement).toHaveClass(
+      "grid",
+      "grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,22rem)]"
     );
 
     rerender(
@@ -276,8 +298,8 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     const tagsInput = screen.getByLabelText("Add tag");
+    await userEvent.click(tagsInput);
     tagsInput.focus();
     await userEvent.keyboard("{ArrowRight}");
     await userEvent.keyboard("{ArrowLeft}");
@@ -304,7 +326,6 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     expect(screen.getByTestId("lightbox-tag-list")).toHaveClass(
       "min-h-[48px]",
       "px-0",
@@ -322,7 +343,7 @@ describe("LightboxModal", () => {
     expect(onSaveTags).toHaveBeenCalledWith(["cat"]);
   });
 
-  it("hides already selected tags from suggestions", async () => {
+  it("opens tag suggestions below the input and hides already selected tags", async () => {
     render(
       <LightboxModal
         selected={selectedAsset}
@@ -337,11 +358,25 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     const tagsInput = screen.getByPlaceholderText("Type to add tag");
+    vi.spyOn(tagsInput, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 200,
+      top: 200,
+      left: 100,
+      right: 340,
+      bottom: 232,
+      width: 240,
+      height: 32,
+      toJSON: () => ({})
+    });
     await userEvent.type(tagsInput, "ca");
 
     const suggestions = screen.getByRole("listbox", { name: "Tagging suggestions" });
+    expect(suggestions).toHaveClass("fixed", "z-[70]");
+    expect(suggestions.parentElement).toBe(document.body);
+    expect(suggestions).toHaveStyle({ left: "100px", top: "240px", width: "240px" });
+    expect(suggestions.style.bottom).toBe("");
     expect(within(suggestions).queryByRole("option", { name: /cat/i })).not.toBeInTheDocument();
     expect(within(suggestions).getByRole("option", { name: /ca\s*r/i })).toBeInTheDocument();
   });
@@ -364,7 +399,6 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     const tagsInput = screen.getByLabelText("Add tag");
     await userEvent.type(tagsInput, "ca");
     await userEvent.keyboard("{ArrowDown}{Enter}");
@@ -395,8 +429,9 @@ describe("LightboxModal", () => {
       />
     );
 
-    const taggingPanel = screen.getByRole("heading", { name: "Tagging" }).closest("aside");
-    expect(taggingPanel?.className).toContain("pointer-events-auto");
+    const taggingPanel = screen.getByTestId("lightbox-tag-panel");
+    expect(taggingPanel).not.toHaveAttribute("inert");
+    expect(taggingPanel).not.toHaveAttribute("aria-hidden", "true");
     expect(screen.getByLabelText("Add tag")).toHaveFocus();
   });
 
@@ -415,7 +450,6 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     const tagsInput = screen.getByLabelText("Add tag");
     await userEvent.type(tagsInput, "ca");
 
@@ -436,7 +470,7 @@ describe("LightboxModal", () => {
     expect(suggestions[1]).toHaveAttribute("aria-selected", "false");
   });
 
-  it("focuses tag input on open so arrow keys work immediately", async () => {
+  it("focuses tag input so arrow keys work immediately", async () => {
     render(
       <LightboxModal
         selected={selectedAsset}
@@ -451,9 +485,8 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
-
     const tagInput = screen.getByLabelText("Add tag");
+    await userEvent.click(tagInput);
     await userEvent.type(tagInput, "ca");
 
     const suggestionsList = await screen.findByRole("listbox", { name: "Tagging suggestions" });
@@ -494,7 +527,6 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     await userEvent.click(screen.getByRole("button", { name: "Generate media group key" }));
     expect(onMediaGroupKeyEditorChange).toHaveBeenCalledWith(generatedUuid);
 
@@ -550,14 +582,13 @@ describe("LightboxModal", () => {
       "The favorite change was not saved. Use the favorite button to retry."
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
-    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+await userEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(await screen.findByText(
       "The media group change was not saved. Your values remain available; choose Apply to retry."
     )).toBeInTheDocument();
   });
 
-  it("closes popovers when clicking outside their container", async () => {
+it("keeps tags inline and info toggleable, off by default", async () => {
     render(
       <LightboxModal
         selected={selectedAsset}
@@ -572,23 +603,112 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
-    const taggingPanel = screen.getByRole("heading", { name: "Tagging" }).closest("aside");
-    expect(taggingPanel?.className).toContain("pointer-events-auto");
-    expect(taggingPanel).not.toHaveAttribute("inert");
-    expect(taggingPanel).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByTestId("lightbox-tag-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("lightbox-info-panel")).not.toBeInTheDocument();
+
+    const infoButton = screen.getByRole("button", { name: "Show info" });
+    await userEvent.click(infoButton);
+    expect(screen.getByTestId("lightbox-info-panel")).toBeInTheDocument();
+    expect(infoButton).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.click(infoButton);
+    expect(screen.queryByTestId("lightbox-info-panel")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
-    expect(taggingPanel?.className).toContain("pointer-events-none");
-    expect(taggingPanel).toHaveAttribute("inert");
-    expect(taggingPanel).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByTestId("lightbox-tag-panel")).toBeInTheDocument();
+  });
 
-    await userEvent.click(screen.getByRole("button", { name: "Show info" }));
-    const infoPanel = screen.getByRole("heading", { name: "Information" }).closest("aside");
-    expect(infoPanel?.className).toContain("pointer-events-auto");
+  it("keeps media group above tags and actions in the pinned lower rail", () => {
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
 
-    await userEvent.click(screen.getByRole("button", { name: "Add to favorites" }));
-    expect(infoPanel?.className).toContain("pointer-events-none");
+    const upperSection = screen.getByTestId("lightbox-sidebar-upper");
+    const mediaGroup = screen.getByTestId("lightbox-media-group-panel");
+    const tags = screen.getByTestId("lightbox-tag-panel");
+    const actionRail = screen.getByTestId("lightbox-action-rail");
+
+    expect(upperSection).toContainElement(mediaGroup);
+    expect(upperSection).toContainElement(tags);
+    expect(mediaGroup.compareDocumentPosition(tags) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tags).toHaveClass("border-t");
+    expect(tags).not.toHaveClass("mt-auto");
+    expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("h-6!", "min-h-6!");
+    expect(actionRail).toHaveClass("grid-flow-col", "auto-cols-fr");
+    expect(upperSection).not.toContainElement(actionRail);
+  });
+
+  it("uses a closed drawer on narrow viewports and closes it with Escape", async () => {
+    stubMatchMedia(true);
+    const onClose = vi.fn();
+    render(
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={onClose}
+      />
+    );
+
+    const sidebar = document.querySelector('[data-lightbox-toolbar="image"]');
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(sidebar).toHaveAttribute("inert");
+    expect(sidebar?.parentElement).toHaveClass("grid-rows-[auto_minmax(0,1fr)]");
+    expect(screen.getByRole("button", { name: "Open asset panel" }).closest("header")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+
+    expect(sidebar).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByTestId("lightbox-sidebar-scrim")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Close asset panel" })).toHaveFocus());
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByTestId("lightbox-sidebar-scrim")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Open asset panel" })).toHaveFocus());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("hides the native video stage while the narrow drawer is open", async () => {
+    stubMatchMedia(true);
+    render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={() => {}}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    const videoStage = document.querySelector('[data-lightbox-media-stage="video"]');
+    expect(videoStage?.parentElement).not.toHaveClass("hidden");
+
+    await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+    expect(videoStage?.parentElement).toHaveClass("hidden");
+
+    await userEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
+    expect(document.querySelector('[data-lightbox-media-stage="video"]')?.parentElement).not.toHaveClass("hidden");
   });
 
   it("disables tag editing while complete details are loading", async () => {
@@ -608,7 +728,6 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
     expect(screen.getByLabelText("Add tag")).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("Loading complete tag list");
     expect(onSaveTags).not.toHaveBeenCalled();
@@ -635,15 +754,14 @@ describe("LightboxModal", () => {
       />
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Show tagging" }));
-    expect(screen.getByText("The complete tag list could not be loaded. Editing remains disabled.")).toBeInTheDocument();
+expect(screen.getByText("The complete tag list could not be loaded. Editing remains disabled.")).toBeInTheDocument();
     expect(screen.getByText("The media details could not be loaded.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry loading details" }));
     expect(onRetryTagDetails).toHaveBeenCalledTimes(1);
     expect(onRetryTags).not.toHaveBeenCalled();
   });
 
-  it("opens delete confirmation and confirms after typing Yes", async () => {
+it("opens delete confirmation and confirms after typing Yes", async () => {
     const onDeleteMedia = vi.fn();
 
     render(
@@ -673,34 +791,37 @@ describe("LightboxModal", () => {
     expect(onDeleteMedia).toHaveBeenCalledTimes(1);
   });
 
-  it("closes only the nested confirmation on Escape and restores delete focus", async () => {
+  it("closes only the inline confirmation on Escape and restores delete focus", async () => {
     const onClose = vi.fn();
     const onNavigateNext = vi.fn();
     render(
-      <UiLayerProvider>
-        <LightboxModal
-          selected={selectedAsset}
-          tagEditor={[]}
-          onTagEditorChange={() => {}}
-          onSaveTags={() => {}}
-          knownTags={[]}
-          onNavigatePrevious={() => {}}
-          onNavigateNext={onNavigateNext}
-          onToggleFavorite={() => {}}
-          onClose={onClose}
-        />
-      </UiLayerProvider>
+      <LightboxModal
+        selected={selectedAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={() => {}}
+        onNavigateNext={onNavigateNext}
+        onToggleFavorite={() => {}}
+        onClose={onClose}
+      />
     );
 
     const deleteButton = screen.getByRole("button", { name: "Delete media" });
     await userEvent.click(deleteButton);
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(2);
+    expect(screen.getByTestId("lightbox-delete-confirm-dialog")).toBeInTheDocument();
+
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(onNavigateNext).not.toHaveBeenCalled();
-    fireEvent.keyDown(window, { key: "Escape" });
 
-    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
-    await waitFor(() => expect(deleteButton).toHaveFocus());
+    const input = screen.getByLabelText('Type "Yes"');
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).not.toBeInTheDocument()
+    );
+    expect(deleteButton).toHaveFocus();
     expect(onClose).not.toHaveBeenCalled();
   });
 });

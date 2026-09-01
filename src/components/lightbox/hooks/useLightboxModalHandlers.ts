@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 interface UseLightboxModalHandlersOptions {
   selectedId: number | null;
@@ -7,8 +7,6 @@ interface UseLightboxModalHandlersOptions {
   onSaveMediaGroup?: (next: { key: string | null; order: number | null }) => void | Promise<void>;
   onDeleteMedia: () => void | Promise<void>;
   onClose: () => void;
-  tagPopoverContainerRef: RefObject<HTMLDivElement | null>;
-  infoPopoverContainerRef: RefObject<HTMLDivElement | null>;
 }
 
 export function useLightboxModalHandlers({
@@ -17,11 +15,9 @@ export function useLightboxModalHandlers({
   mediaGroupOrderEditor,
   onSaveMediaGroup,
   onDeleteMedia,
-  onClose,
-  tagPopoverContainerRef,
-  infoPopoverContainerRef
+  onClose
 }: UseLightboxModalHandlersOptions) {
-  const [tagsPanelOpen, setTagsPanelOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [infoPanelOpen, setInfoPanelOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -35,7 +31,7 @@ export function useLightboxModalHandlers({
       return;
     }
 
-    setTagsPanelOpen(false);
+    setSidebarOpen(false);
     setInfoPanelOpen(false);
     setDeleteConfirmOpen(false);
     setDeleteSubmitting(false);
@@ -44,7 +40,7 @@ export function useLightboxModalHandlers({
   }, [selectedId]);
 
   const handleEnterFullscreen = useCallback(() => {
-    setTagsPanelOpen(false);
+    setSidebarOpen(false);
     setInfoPanelOpen(false);
   }, []);
 
@@ -80,42 +76,25 @@ export function useLightboxModalHandlers({
     }
   }, [deleteSubmitting, onDeleteMedia]);
 
-  const handleShellPointerDownCapture = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      const targetNode = event.target;
-      if (!(targetNode instanceof Node)) {
-        return;
-      }
-
-      if (tagsPanelOpen && tagPopoverContainerRef.current && !tagPopoverContainerRef.current.contains(targetNode)) {
-        setTagsPanelOpen(false);
-      }
-
-      if (infoPanelOpen && infoPopoverContainerRef.current && !infoPopoverContainerRef.current.contains(targetNode)) {
-        setInfoPanelOpen(false);
-      }
-    },
-    [infoPanelOpen, infoPopoverContainerRef, tagPopoverContainerRef, tagsPanelOpen]
-  );
-
   const handleShellClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
   }, []);
 
-  const handleToggleTagsPanel = useCallback(() => {
-    setTagsPanelOpen((previous) => !previous);
-    setInfoPanelOpen(false);
+  const handleOpenSidebar = useCallback(() => {
+    setSidebarOpen(true);
+  }, []);
+
+  const handleCloseSidebar = useCallback(() => {
+    setSidebarOpen(false);
   }, []);
 
   const handleToggleInfoPanel = useCallback(() => {
     setInfoPanelOpen((previous) => !previous);
-    setTagsPanelOpen(false);
   }, []);
 
   const handleOpenDeleteConfirm = useCallback(() => {
     setDeleteConfirmOpen(true);
     setDeleteError(null);
-    setTagsPanelOpen(false);
     setInfoPanelOpen(false);
   }, []);
 
@@ -136,7 +115,7 @@ export function useLightboxModalHandlers({
   }, [onClose]);
 
   return {
-    tagsPanelOpen,
+    sidebarOpen,
     infoPanelOpen,
     deleteConfirmOpen,
     deleteSubmitting,
@@ -144,9 +123,9 @@ export function useLightboxModalHandlers({
     mediaGroupFailed,
     handleEnterFullscreen,
     handleApplyMediaGroup,
-    handleShellPointerDownCapture,
     handleShellClick,
-    handleToggleTagsPanel,
+    handleOpenSidebar,
+    handleCloseSidebar,
     handleToggleInfoPanel,
     handleOpenDeleteConfirm,
     handleCloseDeleteConfirm,

@@ -28,6 +28,10 @@
   --color-warning-content: #ffffff;
   --color-error: #b13c38;
   --color-error-content: #ffffff;
+  --media-gif-bg: #1e40af;
+  --media-gif-content: #eff6ff;
+  --media-video-bg: #6b21a8;
+  --media-video-content: #faf5ff;
   --radius-selector: 4px;
   --radius-field: 4px;
   --radius-box: 6px;
@@ -60,6 +64,10 @@
   --color-warning-content: #241b0c;
   --color-error: #ee9790;
   --color-error-content: #2b1110;
+  --media-gif-bg: #1e3a8a;
+  --media-gif-content: #dbeafe;
+  --media-video-bg: #581c87;
+  --media-video-content: #f3e8ff;
   --radius-selector: 4px;
   --radius-field: 4px;
   --radius-box: 6px;

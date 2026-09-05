@@ -12,9 +12,9 @@ export function UiChip({ tone = "default", className = "", ...props }: UiChipPro
       ? "rounded-none rounded-bl-[var(--radius-surface)] border-r-0 border-t-0"
       : "rounded-[var(--radius-control)]",
     tone === "video"
-      ? "border-white/20 bg-[#141618]/90 text-[#edf0f2]"
+      ? "border-white/20 bg-[var(--media-video-bg)] text-[var(--media-video-content)]"
       : tone === "gif"
-        ? "border-white/20 bg-[#141618]/90 text-[#edf0f2]"
+        ? "border-white/20 bg-[var(--media-gif-bg)] text-[var(--media-gif-content)]"
         : "border-[var(--border-soft)] bg-[var(--surface-raised)] text-base-content",
     className
   ]

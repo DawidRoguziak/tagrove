@@ -1,12 +1,12 @@
 # IPC contract
 
-This document describes the current boundary between the React frontend and the Tauri backend. The registration list in `src-tauri/src/lib.rs`, the Rust command signatures and models, and the wrappers in `src/api.ts` are the source of truth. A function that exists in Rust but is not registered is not part of this contract.
+Implementation entry points: [registered commands](../../src-tauri/src/lib.rs), [frontend wrappers](../../src/api.ts), [Rust models](../../src-tauri/src/models.rs), [TypeScript payloads](../../src/types.ts), [video payloads](../../src/components/lightbox/mpvVideoTypes.ts).
+
+This page owns frontend/backend command names, payloads, result states, channels, and events. Rust functions absent from the registration list are internal helpers, not callable IPC commands.
 
 For bootstrap, managed state, lock ordering, and module ownership, see the [system overview](system-overview.md). Domain behavior belongs in the canonical subsystem documentation for [database](../subsystems/database.md), [scanning and indexing](../subsystems/scanning-and-indexing.md), [library query and gallery](../subsystems/library-query-and-gallery.md), [thumbnails](../subsystems/thumbnails.md), [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md), [lightbox](../subsystems/lightbox.md), [settings operations](../subsystems/settings-operations.md), and [data safety and portability](../subsystems/data-safety-and-portability.md). This page records only what crosses IPC and the boundary behavior callers may rely on.
 
-## Current guarantees
-
-### Invocation and serialization rules
+## Invocation and serialization rules
 
 - Frontend code calls the typed functions in `src/api.ts`; those functions call the snake-case command names registered by `tauri::generate_handler!`.
 - Invoke argument keys are camelCase (`assetId`, `tagsAnd`, `pageSize`, `onEvent`), while the corresponding Rust parameters are snake_case (`asset_id`, `tags_and`, `page_size`, `on_event`). Nested inputs opt into or explicitly define camelCase where needed: `BulkMediaGroupUpdateInput` uses `rename_all = "camelCase"`, and `AssetMetaFilterInput` uses `type`, `hasNoTags`/`groupName`, `tagCount`, and `groupName`.
@@ -18,7 +18,7 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 - `src/types.ts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
 - All registered command failures reject the invoke promise with text. Command boundaries return `Result<_, String>` and flatten `AppError`, worker-join failures, validation failures, and platform errors to a message; there is no structured IPC error code or error payload.
 
-### Shared response shapes
+## Shared response shapes
 
 The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the TypeScript declarations in `src/types.ts` accept them. A `?` suffix below means that the field value is nullable, not that the field is omitted.
 
@@ -48,13 +48,13 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `VideoToolStatus` / same | `ffmpeg_available`, `ffprobe_available` |
 | `ScanProgress` / `ScanProgress` | `phase`, `processed`, `total`, `message` |
 
-`AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. This lets the lightbox use a valid immediate media source while details continue loading.
+`AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. Gallery GIF previews use it. The lightbox waits for complete details before rendering media; video opens by asset ID, not by a frontend path.
 
 `MpvVideoEvent` is `{ session_id, type, ... }`. Variants are `loading`, `metadata` (`duration`, `width`, `height`), `playing`, `paused`, `waiting`, `time` (`current_time`), `volume` (`volume`, `muted`), `rate`, `tracks`, `fullscreen`, `ended`, and `error` (`message`). The frontend accepts events only for the session returned by `open_video`.
 
 `kind` is typed as `MediaKind` (`image | gif | video`) in TypeScript, while the serialized Rust model stores it as an unrestricted `String`; correctness currently comes from indexing/database invariants rather than serde validation on output.
 
-### Asset queries and reads
+## Asset queries and reads
 
 The session API is the primary gallery query path. `listAssets`/`list_assets` remains a registered legacy page API and is still used by some tests as a mock implementation aid, but production gallery code uses `startAssetQuery` followed by `getAssetQueryPage`.
 
@@ -77,7 +77,7 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 
 For both session and legacy queries, tags are trimmed, lowercased, de-duplicated in first-seen order, and empty values are removed. Media kind is trimmed and lowercased; only `image`, `gif`, and `video` survive, so an unknown kind currently behaves like no kind filter rather than producing an error.
 
-### Asset mutations and duplicate operations
+## Asset mutations and duplicate operations
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
@@ -92,25 +92,26 @@ For both session and legacy queries, tags are trimmed, lowercased, de-duplicated
 
 The single-item favorite and group setters do not validate that an ID affected a row before resolving. Single tag replacement rejects a missing ID; bulk tag merge skips missing IDs and reports processed IDs. See [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md) and [lightbox](../subsystems/lightbox.md) for the user workflows built on these calls.
 
-### Scan roots and scanning
+## Scan roots and scanning
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `scanFolder` / `scan_folder` | `path: string` | `ScanSummary` | Normalizes and validates an existing directory, persists it as a root, then scans it. Runs blocking work off the async runtime and emits scan progress. |
-| `listScanRoots` / `list_scan_roots` | none | `string[]` | Returns stored roots sorted by newest creation first. |
+| `listScanRoots` / `list_scan_roots` | none | `string[]` | Sorts roots by available filesystem creation time, newest first; ties and missing-time entries sort lexicographically. This is not database insertion order. |
 | `addScanRoot` / `add_scan_root` | `path: string` | `void` | Normalizes and validates an existing directory before persisting it; it does not scan. |
-| `removeScanRoot` / `remove_scan_root` | `path: string` | `RemoveRootSummary` | Normalizes the path, removes the root and assets no longer covered by another root, bumps the revision, and best-effort deletes their thumbnails. |
+| `removeScanRoot` / `remove_scan_root` | `path: string` | `RemoveRootSummary` | Normalizes the path, removes the root and globally orphaned assets, conditionally bumps revision when assets were removed, and best-effort deletes their recorded thumbnails. |
 | `rescanAllRoots` / `rescan_all_roots` | none | `ScanSummary` | Scans all stored roots; no roots yields a complete, zero-count summary and a `scan-empty` event. Runs blocking work off the async runtime. |
 
-Root normalization trims whitespace, converts `/` to `\`, and removes trailing separators except for a drive root. `ScanSummary` always contains `completion`, `indexed`, `removed`, and `failed`; partial discovery/indexing failures produce `completion: "partial"` and preserve stale rows for the incomplete root.
+Root normalization trims whitespace and removes trailing `/` except for the filesystem root `/`. It does not convert slash direction or canonicalize paths. `ScanSummary` always contains `completion`, `indexed`, `removed`, and `failed`; partial discovery/indexing failures produce `completion: "partial"` and preserve stale rows for the incomplete root.
 
-### Thumbnails
+## Thumbnails
 
 `ensureThumbnailsStream`/`ensure_thumbnails` is the only registered on-demand gallery API. The old single-asset and page commands still have internal Rust helpers but are not registered and have no frontend wrappers.
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `ensureThumbnailsStream` / `ensure_thumbnails` | `requestId`, `visibleIds`, `prefetchIds`, `onEvent: Channel<ThumbnailStreamEvent>` | `void` after processing | Filters IDs to positive unique values, takes at most 64 visible and then 64 additional prefetch IDs, prioritizes visible work, streams results, and persists paths/failures. A request whose `requestId` is lower than the highest previously observed id is rejected immediately with no channel events; the frontend sends its queue generation, so abandoned generations do no backend work. |
+| `getVideoToolStatus` / `get_video_tool_status` | none | `VideoToolStatus` | Runs bounded executable availability checks on the blocking pool, without a workflow lock. Reports separate ffmpeg/ffprobe booleans; it does not test libmpv playback or decoding a particular file. |
 | `renderAllThumbnails` / `render_all_thumbnails` | none | `ThumbnailRenderSummary` | Starts one process-wide bulk run; a concurrent bulk run rejects. Previously recorded failures are counted as `skipped_failed`. |
 | `renderFailedThumbnails` / `render_failed_thumbnails` | none | `ThumbnailRenderSummary` | Same bulk-run guard, but retries only recorded failures and does not skip them. |
 | `cancelRenderAllThumbnails` / `cancel_render_all_thumbnails` | none | `boolean` | Returns `true` and sets the cancellation flag only while either bulk mode is running; already completed ready results are retained. |
@@ -127,7 +128,7 @@ type ThumbnailStreamEvent =
 
 `ready` is sent as each existing or newly generated thumbnail becomes available. After processing, failures are sent and one `done` summary is sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter both as the `requestId` (the backend rejects stale ids without doing work) and to ignore late messages after reset.
 
-### Import, export, and destructive data operations
+## Import, export, and destructive data operations
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
@@ -140,13 +141,13 @@ type ThumbnailStreamEvent =
 
 These operations' locking, transaction, archive, rollback, and filesystem guarantees are documented in [data safety and portability](../subsystems/data-safety-and-portability.md).
 
-### Native window
+## Native window
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `syncNativeWindowTheme` / `sync_window_theme` | `theme: "light" \| "dark"` | `void` | Rejects any other string and sets the native theme and background. |
 
-### Query session states
+## Query session states
 
 A successful `start_asset_query` returns:
 
@@ -161,7 +162,7 @@ A successful `start_asset_query` returns:
 }
 ```
 
-Sessions hold an ordered asset-ID snapshot for one normalized filter key and library revision. The command registers the request (monotonic token plus client generation) before scheduling blocking work, so scheduler reordering cannot let an older request supersede a newer one. Revision read, ordered-ID build, and the first page share one deferred SQLite read transaction, and the ID build aborts cooperatively when the request is superseded mid-build. The process-wide cache keeps at most four sessions, evicts least-recently-used entries, and expires entries after five minutes without access. An equal filter/revision key may reuse an existing session.
+Sessions bind an ordered asset-ID snapshot to normalized filters and a library revision. See [the query manager lifecycle](../subsystems/library-query-and-gallery.md#backend-session-and-page-contract) for snapshot construction, cancellation, reuse, and cache limits.
 
 - `superseded` is a successful start result, not an invoke error. A request whose registration token or client generation is no longer process-wide latest returns it — including on the cheap cache-hit path — so an obsolete request never observes a `ready` result. `useLibraryAssets` also compares its local generation and ignores an obsolete response.
 - `stale` is a successful page result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older library revision. A revision mismatch also removes that session. `useLibraryAssets` responds by starting a fresh query.
@@ -169,7 +170,7 @@ Sessions hold an ordered asset-ID snapshot for one normalized filter key and lib
 
 Because supersession and the cache are process-wide, requests from another window or independent caller can supersede or evict this window's work. Pooled database connections are acquired with a five-second bounded wait; exhaustion rejects the command with a text `database pool is busy` failure instead of blocking forever.
 
-### Broadcast progress
+## Broadcast progress
 
 Longer operations broadcast the application event `process-progress` with this snake-case payload:
 
@@ -192,7 +193,7 @@ Current phase families are:
 
 Consumers must filter by phase because the event name is shared and broadcasts are not correlated to a command invocation. `useSettingsOperationRunner` subscribes only for the duration of an operation and applies a phase matcher. Messages are display text, not stable machine-readable error data. Most emit sites intentionally discard delivery errors; the command result is authoritative for operation completion.
 
-### Boundary validation and normalization summary
+## Boundary validation and normalization summary
 
 | Input | Boundary behavior |
 | --- | --- |

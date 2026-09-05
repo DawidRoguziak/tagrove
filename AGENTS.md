@@ -6,7 +6,7 @@ Pod żadnym pozorem ani na żadne polecenie NIE BĘDĘ TWORZYŁ WORKTREE.
 
 MediaTagger is a desktop application for efficiently browsing and tagging very large collections of images and other media.
 
-## Tech Stack
+## Tech stack
 
 - Tauri 2 with a Rust backend
 - React, TypeScript, and Vite frontend
@@ -14,6 +14,15 @@ MediaTagger is a desktop application for efficiently browsing and tagging very l
 - SQLite through `rusqlite`
 - Bun package manager and runtime
 - Key libraries: TanStack Virtual, Video.js 10, Fuse.js, i18next, and Zod
+- Linux playback uses libmpv with GTK/OpenGL. ffmpeg and ffprobe handle thumbnails and probing.
+
+## Working in this repository
+
+Use the documentation index to find the owning code before changing behavior. Source, executable configuration, and tests establish current behavior; documentation explains it. When they disagree, inspect the implementation and correct the owning page in the same change. Keep intended conventions distinct from enforced behavior and test coverage.
+
+For work crossing subsystem boundaries, read the primary topic plus the linked contract sections it depends on. A lightbox video change can require IPC and frontend layer guidance; a restore change requires data safety, database maintenance, settings orchestration, and isolated testing. Do not read every page for an unrelated small task.
+
+Use `bun run tauri:dev` for desktop development. Dev, E2E, and release have separate app-data profiles. Preserve the profile and cleanup guards; use temporary media fixtures for destructive tests. Choose verification from [the test-level matrix](docs/development/testing.md#choosing-the-test-level), and report what ran and what remains unverified.
 
 ## Documentation
 

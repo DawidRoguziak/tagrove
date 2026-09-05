@@ -1,5 +1,7 @@
 # Lightbox
 
+Implementation entry points: [selection lifecycle](../../src/hooks/useSelectionState.ts), [modal composition](../../src/components/lightbox/LightboxModal.tsx), [video adapter](../../src/components/lightbox/MpvMediaAdapter.ts), [native playback](../../src-tauri/src/services/video_player_service.rs), [GTK surface](../../src-tauri/src/video_surface.rs).
+
 The lightbox is the selected-asset workspace layered over the gallery. It owns full-media presentation, per-asset editing, deletion confirmation, image transforms, video playback, fullscreen, and keyboard navigation. Selection and mutation state live above the modal in `useSelectionState`; `LightboxModal` and its hooks own transient interaction state.
 
 Related documentation:
@@ -34,7 +36,7 @@ Successful current details are stored in a bounded LRU `Map<assetId, AssetDetail
 
 The selection-derived editors are reset from every new `selected` object:
 
-- tags remain a `string[]`, preserving internal whitespace inside each chip;
+- tags remain a normalized `string[]`; whitespace and CSV delimiters are invalid inside a tag;
 - a null group key becomes an empty string;
 - a null group order becomes an empty string, otherwise it is stringified;
 - closing clears all three editors and the selected global index.
@@ -49,16 +51,15 @@ Two guards keep navigation aligned with reality. When the resolved record for th
 
 This synchronization makes the selected object and its editors follow local cache mutations. The mutation helpers additionally use ID-checked selected-state updaters, so a response started for A cannot overwrite B after the user navigates.
 
-
 ## Persistent edits and refresh rules
 
 All lightbox mutations are backend-first: the action awaits its API command before updating frontend state. If the command rejects, local state is not intentionally changed.
 
 | Operation | Backend command | Local update after success | Follow-up |
 | --- | --- | --- | --- |
-| Add/remove tags | `set_asset_tags` | Replace tags on the cached asset, details cache, and still-matching selection | Start best-effort `refreshKnownTags()` |
+| Add/remove tags | `set_asset_tags` | Publish canonical tags to the shared coordinator, details cache, and still-matching selection | Best-effort known-tag refresh; restart the query when changed tags touch applied include/exclude filters |
 | Toggle favorite | `set_asset_favorite` | Replace `is_favorite` in both places | Refresh the query only when removing a favorite while the applied favorites-only filter is active |
-| Apply media group | `set_asset_media_group` | Replace group key and order in both places | No query or tag refresh |
+| Apply media group | `set_asset_media_group` | Patch loaded summaries, matching selection, and cached details | The selection controller starts a fresh query because grouping changes order and adjacency |
 | Delete | `delete_asset` | Remove the ID from loaded pages and close the matching selection after a committed structured result | Start best-effort known-tag and query refreshes; refresh failure does not relabel the committed delete |
 
 Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `useSelectionState` is the only owner of save serialization/coalescing; `useLightboxTagging` only manages input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and starting the best-effort known-tag refresh. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. A successful add clears and refocuses the input.
@@ -143,29 +144,17 @@ Clicking the outer backdrop calls `tryCloseLightbox`; clicking the shell stops p
 
 The inline delete confirmation is part of the sidebar, so while it is open a lightbox shortcut listener is disabled and Escape targets only the confirmation; its submitting guard prevents backdrop cancellation until deletion settles.
 
-## Current guarantees
-
-- A late primary details response cannot replace a newer selection or reopen a closed lightbox.
-- The current global index and modulo count provide cross-page, wrapping navigation when the index is known.
-- Persistent local state changes occur only after the backend command succeeds.
-- Mutation responses update selection only when its ID still matches the mutated asset.
-- Editor state follows selected details/cache state rather than maintaining a second saved model.
-- Clipboard timeout, drag listener, resize observer, fullscreen listener, keyboard listener, and animation-frame cleanup are scoped to their owning hook/component.
-- Input editing and native video controls do not accidentally trigger navigation or image shortcuts.
-- Delete requires explicit localized text confirmation and prevents duplicate submission.
-- Escape closes only the inline delete confirmation while it is open.
-
 ## Known limitations and maintenance hazards
 
 - The bounded details caches (256-entry LRU, epoch- and session-stamped) still rely on the authoritative-tag overlay for ordinary favorite/group mutations; only identity resets and query-session restarts clear them wholesale. Full DB restore and library clear advance the shared identity epoch and clear selection/bulk detail caches, requests, and pending tag mutation state. Successful deletion creates a per-ID tombstone generation before refresh work, so an older detail response cannot repopulate a deleted or reused ID.
 - Adjacent prefetch has no in-flight de-duplication or selection request generation. Rejections are caught and ignored. With exactly two results, previous and next resolve to the same index and can start duplicate details calls. Prefetch work may continue after selection or query changes, but a response cannot replace tags published by a newer mutation.
 - A cached selection returns before adjacent prefetch, so revisiting an asset does not warm its new neighbors.
-- Global index is captured at selection time and is not recomputed when the query/filter/order changes. A non-empty cache that no longer contains the selected ID leaves the lightbox open with the old index.
-- Tag replacements are serialized per asset, coalesce rapid drafts, and expose saving/failure/Retry state. Favorite and media-group writes still have no submitting state or mutation request guard, so rapid writes for those fields may resolve out of order.
+- Query changes recompute the selected index from loaded pages. If the selected asset is absent there, the lightbox remains open but relative navigation becomes inert until a fresh selection provides an index.
+- Tag replacements serialize/coalesce drafts and expose saving, failure, and Retry state. Favorite and group writes also acquire per-asset mutation ownership, but provide no equivalent local pending/error UI; a click while the asset is busy sends no additional command.
 - The double-click and legacy mouse-down handlers are returned by `useLightboxImageControls` and unit-tested directly, but `LightboxMediaStage` currently wires neither one. Rendered images therefore single-click through 1.25x steps; the pixel-perfect double-click toggle is not reachable from the modal.
-- The lightbox shell itself has no dialog role or focus trap. The inline delete confirmation restores focus to the delete button on close, but closing the lightbox does not restore focus to the selected gallery tile.
+- The lightbox is a named portal dialog registered with the shared layer manager. Focus restoration depends on the saved trigger still being connected; a virtualized gallery tile can disappear before close.
 - Final staged-delete cleanup can fail after DB commit; the UI reports the recovery path and the durable journal retries cleanup at startup.
-- Fullscreen, clipboard, autoplay, and details failures are intentionally silent.
+- Details and media failures have localized error UI; details also has Retry. Clipboard failure clears feedback, and some fullscreen shortcut failures are caught without an alert.
 
 ## Change checklist
 
@@ -185,7 +174,7 @@ When changing lightbox behavior:
 
 Current focused coverage is split across:
 
-- `src/hooks/__tests__/useSelectionState.test.ts`: editor hydration, cache-to-selection synchronization, empty-library close, tag-mutation serialization/retry, pending-mutation detail barriers, restore/reset ID reuse, deletion tombstones, stale-detail protection, rapid Right/Right and Right/Left ordering, and delegation to mutation actions. It does not currently cover every details/prefetch race, global wrap, or unloaded-page navigation.
+- `src/hooks/__tests__/useSelectionState.test.ts`: editor hydration, cache-to-selection synchronization, empty-library close, tag-mutation serialization/retry, pending-mutation detail barriers, restore/reset ID reuse, deletion tombstones, stale-detail protection, rapid Right/Right and Right/Left ordering, and delegation to mutation actions. It also covers query-position recomputation and failed navigation retries, but not every prefetch race or global wrap/unloaded-page combination.
 - `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx`: A→B→A failure reset and rejection of a late error callback from an older activation.
 - `src/components/lightbox/__tests__/LightboxModal.test.tsx`: arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, and inline delete confirmation.
 - `src/components/lightbox/__tests__/MpvMediaAdapter.test.tsx`: Video.js adapter state, hidden DOM controls, waiting state, fullscreen delegation, native session lifecycle, and absence of an HTML video element.

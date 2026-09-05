@@ -1,10 +1,12 @@
 # Settings operations
 
-This page describes the settings UI and its frontend orchestration as implemented today. The React hooks, components, API wrappers, and executable tests remain authoritative. Backend command payloads and event serialization belong in the [IPC contract](../architecture/ipc-contract.md); scan/index rules belong in [scanning and indexing](scanning-and-indexing.md); thumbnail scheduling and cancellation belong in [thumbnails](thumbnails.md); archive replacement, rollback, CSV semantics, and other import/export safety properties belong in [data safety and portability](data-safety-and-portability.md).
+Implementation entry points: [settings composition](../../src/hooks/useSettingsActions.ts), [operation runner](../../src/components/settings/hooks/useSettingsOperationRunner.ts), [import controller](../../src/components/settings/hooks/useImportExportSettingsActions.ts), [progress translation](../../src/components/settings/services/progressService.ts).
+
+This page owns settings state, operation sequencing, progress presentation, confirmations, and cache resets. [IPC](../architecture/ipc-contract.md) owns transport shapes, [scanning](scanning-and-indexing.md) owns indexing, [thumbnails](thumbnails.md) owns rendering/cancellation, and [data safety](data-safety-and-portability.md) owns CSV/bundle validation and recovery.
 
 ## Composition and state ownership
 
-`useAppShellController` constructs `useSettingsActions` even when the gallery is visible. The settings action state therefore has shell lifetime: it survives switching between the gallery and the lazy-loaded `AppSettingsView`, but not a complete app unmount or restart. On shell mount, scan roots are hydrated alongside known tags. `useSettingsView` independently owns whether the full-page settings view is open; Back and its window-level Escape listener return to the gallery.
+`useAppShellController` constructs `useSettingsActions` even when the gallery is visible. The settings action state therefore has shell lifetime: it survives switching between the gallery and the lazy-loaded `AppSettingsView`, but not a complete app unmount or restart. On shell mount, scan roots are hydrated alongside known tags. `useSettingsView` independently owns whether the full-page settings view is open; Back and the shell's registered settings-layer Escape handler return to the gallery.
 
 `AppSettingsView` supplies the sticky page header and renders `SettingsPanel` in full-view mode. `SettingsPanel` is the rendering/composition boundary for five sections:
 
@@ -20,8 +22,8 @@ The panel also mounts the remove-root, clear-library, duplicate resolver, duplic
 
 | Hook | Owned state and responsibility |
 | --- | --- |
-| `useScanSettingsActions` | Scan-root list, thumbnail bulk/cancel flags, remove-root candidate, and scan/thumbnail actions. |
-| `useImportExportSettingsActions` | File-dialog orchestration and the pending database-bundle source awaiting overwrite confirmation. |
+| `useScanSettingsActions` | Roots, video-tool availability, thumbnail bulk/cancel flags, remove-root candidate, and scan/thumbnail actions. |
+| `useImportExportSettingsActions` | File dialogs, bundle inspection/root mapping, and the source/mappings awaiting overwrite confirmation. |
 | `useDuplicateSettingsActions` | Resolver visibility, pending delete confirmation, duplicate snapshot/revision, and one backend batch application. |
 | `useDangerZoneSettingsActions` | Clear-library confirmation and action. |
 
@@ -88,6 +90,8 @@ Remove first stores the exact root path and opens an in-app confirmation. Cancel
 
 Per-root rescan calls `scanFolder(path)`; Rescan all is disabled when the frontend root list is empty and calls `rescanAllRoots()` otherwise. Both listen for scan progress and display either the normal or partial completion summary returned by the API. Discovery, cleanup, and partial-scan semantics are intentionally not repeated here; see [scanning and indexing](scanning-and-indexing.md).
 
+`useScanSettingsActions` reads `getVideoToolStatus` once on mount. Pending status is null; a rejected check becomes both tools unavailable. The section warns when ffmpeg or ffprobe is unavailable. This does not measure libmpv playback capability and does not automatically recheck after installing tools.
+
 ## Thumbnail bulk actions and cancellation
 
 Render all and Retry failed share the scan section and thumbnail progress matcher. Each sets `thumbnailBulkRunning` inside the runner action and clears it in an inner `finally`, so the Stop button exists only while the API call is outstanding. Their final summaries report generated, failed, skipped-failed, processed/total, and whether processing was cancelled.
@@ -101,7 +105,7 @@ The import/export controller only chooses paths, sequences confirmation and API 
 - CSV export opens a save dialog with a `CSV` filter and default `tags-export-YYYY-MM-DD_HH-mm.csv` name.
 - CSV import opens a single-file picker with a `CSV` filter. It has no additional in-app confirmation.
 - Database export opens a save dialog with a `ZIP` filter and default `media-backup-YYYY-MM-DD_HH-mm.zip` name.
-- Database import opens a single-file `ZIP` picker, stores the selected source path, releases the first runner invocation, and waits for an in-app overwrite confirmation. Confirm clears the stored path and starts a second exclusive operation; Cancel clears it without invoking the import.
+- Database import selects a ZIP and calls `inspectDbBundle`. If mapping is required, it asks for one target directory per source root. Cancelling any picker stops before confirmation. It then stores the source/mappings and releases the runner while awaiting overwrite confirmation; Confirm captures and clears both before starting the import phase.
 
 The timestamp uses local date/time and minute precision. Cancelling a native file dialog is a successful UI cancellation: no API call is made, the relevant section gets a cancellation message, and the runner unlocks normally.
 
@@ -135,7 +139,7 @@ Remove-root, clear-library, duplicate-delete, and database-import confirmations 
 
 Database import has two non-overlapping runner phases: file selection, then confirmation, then import. Duplicate deletion is the only intentionally nested modal flow: the resolver stays open underneath the later-rendered delete confirmation. Resolve or cancel that confirmation before interacting with the resolver again.
 
-There is no modal-stack manager. `UiModal` instances and `useSettingsView` each attach independent window Escape listeners. When the duplicate resolver, its delete confirmation, and settings view are all open and unlocked, one Escape event can invoke more than one close callback. There is also no focus trap or focus-return coordination. These are current limitations, not an ordering contract to extend.
+Settings and its dialogs use [the shared UI layer manager](../frontend/architecture-and-ui-conventions.md#modal-and-overlay-conventions). `SettingsViewLayer` owns page-level Escape; nested dialogs register above it, so managed dismissal targets the top layer and focus returns to its trigger when available. Keep this registration when adding a confirmation.
 
 ## Exact success refresh and reset matrix
 
@@ -151,28 +155,16 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Retry failed thumbnails | Refresh assets/query pages and known tags; publish the thumbnail summary. The inner `finally` clears `thumbnailBulkRunning`. No scan-root refresh or explicit thumbnail reset. |
 | Request thumbnail cancellation | Publish accepted/rejected/error status and clear `cancelThumbnailRunning`. No refresh/reset; the original render later owns its normal success follow-up. |
 | Export CSV | Publish row summary only. No refresh/reset. |
-| Import CSV | Refresh assets/query pages and known tags; publish import summary. No root refresh or thumbnail reset. |
+| Import CSV | Invalidate authoritative tags and both details caches inside the metadata barrier on success or rejection; after release, refresh assets and known tags, best-effort on rejection. Publish the success summary only after a successful refresh. |
 | Export database bundle | Publish copied-file/thumbnail summary only. No refresh/reset. |
 | Import confirmed database bundle | Reset thumbnail queue and replace `thumbs` with `{}`; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
 | Clear library | Reset thumbnail queue; replace `thumbs` with `{}`, assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
 | Find/rescan duplicates | Replace duplicate groups and count; publish scan summary. No library/root refresh or thumbnail reset, although visible duplicate IDs may be queued for previews. |
 | Apply duplicate changes | After the backend batch returns, refresh assets/query pages and known tags; scan duplicates; replace groups/count/revision; publish committed, rolled-back, or recovery-required summary. No root refresh or explicit thumbnail reset. |
 
-Native picker cancellation, confirmation cancellation, an empty duplicate change list, and a rejected/no-op thumbnail stop request perform no refresh or lifecycle reset. On failure, the runner does not perform compensating refreshes beyond work already completed inside the action before the error. Confirmed database restore and clear-library are deliberate exceptions: either command may reject after changing live state, so their identity-bound frontend caches are invalidated inside the tag-mutation barrier and their root/library refreshes are attempted best-effort before the original error is shown. Other follow-ups remain sequential: if a refresh itself fails, later follow-ups and the intended success summary do not run.
+Picker or confirmation cancellation, an empty duplicate batch, and a no-op thumbnail stop perform no lifecycle reset. The runner has no generic compensating refresh. CSV import, database restore, and clear-library actions explicitly invalidate their affected caches inside the metadata barrier on both success and rejection, then attempt relevant refreshes before showing an error. CSV database work is transactional, but an IPC rejection alone does not establish what the frontend observed. Other follow-ups remain sequential; a failed refresh prevents later follow-ups and the intended success summary.
 
-## Current guarantees and known limitations
-
-Current guarantees:
-
-- The ref lock prevents two runner-backed settings operations from starting through one mounted frontend controller, including same-tick calls before disabled controls rerender.
-- Only the initiating section shows loading/progress, while the global lock disables normal actions in every operation section.
-- Progress listeners are phase-filtered and unregistered in the runner's `finally` path.
-- Native-dialog cancellation and explicit confirmation cancellation do not invoke the destructive/import API.
-- Confirmation targets are captured before the dialog closes, so the confirmed root, archive path, or duplicate change set is the one passed to the action.
-- Root removal, database restore, clear-library, scans, imports, thumbnail renders, and duplicate application use the exact refresh/reset ordering in the matrix; restore and clear additionally invalidate and best-effort refresh after an uncertain command rejection.
-- Settings operations and their feedback continue while the full-page settings view is closed because their controller remains mounted in the shell.
-
-Known limitations:
+## Known limitations
 
 - The exclusive runner is not generally a backend safety boundary and does not coordinate another window, direct IPC caller, or a second frontend instance. Bundle export/restore independently use the backend's process-wide database maintenance gate.
 - The runner does not expose cancellation for scans, imports, clear-library, duplicate scans, or duplicate application. Only bulk thumbnail rendering has a stop request.
@@ -183,7 +175,7 @@ Known limitations:
 - The DB transaction does not make post-commit staged-delete or thumbnail cleanup transactional; those cases are surfaced as recovery-required results.
 - Root addition is sequential. A failure after one addition can leave earlier roots added while preventing the final root-list refresh.
 - Local lifecycle resets intentionally differ by operation; notably root removal does not clear the thumbnail path map, and duplicate mutations do not explicitly reset it.
-- Nested modal Escape/focus behavior is not coordinated, as described above.
+- Layer-manager focus restoration requires a connected trigger. Native GTK video controls are outside its DOM focus model; see [frontend layer limits](../frontend/architecture-and-ui-conventions.md#keyboard-and-accessibility).
 
 ## Change checklist
 
@@ -209,4 +201,4 @@ When changing settings behavior:
 - `src/components/settings/__tests__/*` covers panel wiring, operation-status rendering, destructive-dialog controls, and resolver staging/locking; `src/components/settings/sections/__tests__/*` covers section callbacks and locked disabled states.
 - `src/__tests__/App.test.tsx` covers the full-page settings route, Back/Escape, highlighted first-folder route, root confirmation, thumbnail stop/retry, section loaders, timestamped export names, and disabling other settings actions during a running operation.
 
-The current tests do not comprehensively exercise listener-registration failure, translated JSON/backend error formats, nested Escape competition, partial duplicate-application failure, or every cell of the refresh/reset matrix. Treat those as gaps when changing the corresponding behavior.
+The current tests do not comprehensively exercise listener-registration failure, translated JSON/backend error formats, every settings-specific nested focus transition, partial duplicate-application failure, or every cell of the refresh/reset matrix. Treat those as gaps when changing the corresponding behavior.

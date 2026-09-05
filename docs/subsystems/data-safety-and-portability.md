@@ -1,8 +1,8 @@
 # Data safety and portability
 
-This page describes the current, implemented safety boundary for destructive media operations, CSV metadata transfer, and database-bundle backup and restore. It is intentionally narrower than the UI confirmation flow in [settings operations](settings-operations.md): a confirmation reduces accidental invocation, but it does not make a multi-step database/filesystem workflow atomic. SQLite structure, transactions, WAL behavior, and the library revision are defined in [database persistence](database.md). Scan ownership is defined in [scanning and indexing](scanning-and-indexing.md), thumbnail lifecycle in [thumbnails](thumbnails.md), and the crossing payloads in the [IPC contract](../architecture/ipc-contract.md).
+Implementation entry points: [journaled file mutations](../../src-tauri/src/services/asset_mutation_service.rs), [bundle validation and recovery](../../src-tauri/src/services/backup_service.rs), [CSV transfer](../../src-tauri/src/services/csv_service.rs), [command orchestration](../../src-tauri/src/commands/import_export.rs).
 
-The implementation in `commands/assets.rs`, `commands/scan.rs`, `commands/thumbs.rs`, `commands/import_export.rs`, `services/backup_service.rs`, `services/thumb_service.rs`, and `db.rs` is authoritative.
+This page owns source-file mutations, CSV/bundle formats, validation, commit points, and recovery limits. [Settings](settings-operations.md) owns confirmation and refresh sequencing; confirmation alone does not make filesystem and database work atomic. [Database](database.md) owns SQLite transactions/revisions, [scanning](scanning-and-indexing.md) owns root membership, and [thumbnails](thumbnails.md) owns cache cleanup.
 
 ## Safety model
 
@@ -18,7 +18,7 @@ A SQLite transaction can protect only database statements. Filesystem rename/del
 
 | Operation | Backend lock | Database effect and order | Source-media effect | Thumbnail effect | Rollback and returned summary |
 | --- | --- | --- | --- | --- | --- |
-| Remove scan root | Scan mutex, then exclusive thumbnail write lock | In one transaction: delete the normalized root, let its mappings cascade, delete every asset with no remaining root mapping, clean failures and orphan tags, and bump revision. | Never deletes source media. Assets shared by another root remain indexed. | After commit, attempt each recorded orphan thumbnail deletion. | No filesystem rollback. `removed_assets` is committed orphan-row count; `removed_thumbnails` counts only successful file removals. Missing/failed files are not errors. |
+| Remove scan root | Combined workflow locks | In one transaction, delete root/mappings, globally orphaned assets, failures and tags; bump revision only if assets were removed. | Never deletes source media. Assets mapped to another root remain indexed. | Best-effort deletion of recorded orphan thumbnails after commit. | No filesystem rollback; returned counts distinguish committed asset removals from successful thumbnail deletions. |
 | Delete asset | Scan mutex, then exclusive thumbnail write lock | Validate the current row; journal and stage an existing source. In one transaction CAS-delete by ID/path/version, clear failure, clean orphan tags, and bump revision. | Missing source is explicit stale-record cleanup. Existing source is removed from staging only after commit. | Recorded thumbnail deletion is best effort after commit. | Pre-commit failure restores the source and preserves metadata. Final cleanup failure returns `cleanup_pending` with a recovery path. `deleted`, `missing`, and `cleanup_pending` are distinct. |
 | Rename asset file | Scan mutex, then exclusive thumbnail write lock | Journal and stage the source, atomically install a no-clobber target, then CAS-update path/name/version, clear failure, and bump revision in one transaction. | Same-directory only. Validation rejects separators, controls, Windows-invalid characters, trailing dot/space, reserved device names, same path, and occupied filesystem/indexed targets. | Old thumbnail deletion is best effort after commit. | Pre-commit failure runs reverse-order no-clobber rollback and retains journal data when uncertain. Linux uses `renameat2(RENAME_NOREPLACE)`. |
 | Clear all thumbnails | Exclusive thumbnail write lock only | Read distinct non-null paths, set all `assets.thumb_path` values to null, then delete all failure rows. Those statements are not one transaction and do not bump the library revision. | None. | After DB references are cleared, attempt every recorded file deletion with progress. | No rollback. Return value is only the number of successful file deletions. Failed/missing files can remain unreferenced; a DB error can leave partially cleared metadata and prevents later file cleanup. |
@@ -67,7 +67,7 @@ Favorite parsing accepts `1`, `true`, `yes`, `y`, and `on` as true and `0`, `fal
 
 Each nonblank imported filename is lowercased and matched exactly against `assets.file_name_key`. Matching is basename-only and fans out to every indexed asset with that key, across all roots and directories. It does not use the CSV path, hash, or any other identity. Repeated CSV rows may update and count the same asset repeatedly.
 
-### Merge, counters, and partial failure
+### Merge, counters, and transaction failure
 
 For a successfully returned import:
 
@@ -132,26 +132,11 @@ Before a Windows backup is installed on Linux, `inspect_db_bundle` reports every
 
 If restore reports that automatic rollback also failed, stop mutating the library and preserve copies of the app-data directory before restarting. Keep `restore-journal.json`, `media.db`, `media.db.restore-previous`, `restore-staging/media.db`, `thumbs`, `thumbs.restore-previous`, and `restore-staging/thumbs` together. Normal startup retries journal recovery before opening SQLite; if that fails, prefer a verified whole generation over manually combining paths.
 
-## Current guarantees and known limits
-
-Current guarantees are deliberately modest:
-
-- root removal preserves assets still mapped to another root and never deletes source files;
-- clear-library and clear-thumbnails never delete source media;
-- single-asset delete targets only its CAS-validated source and recorded thumbnail and preserves metadata after any pre-commit source failure;
-- rename cannot move to another directory, overwrite a target, or use a portable-invalid Windows basename;
-- duplicate apply validates all entries before mutation, takes one combined lock, and commits one DB/revision transaction;
-- destructive asset/root/bundle commands and clear-thumbnail work use the backend scan/thumb locks described above;
-- ZIP preflight bounds resource use, rejects unsafe/symlink/duplicate recognized entries, and verifies extracted byte counts;
-- import validates SQLite identity, structure, integrity, foreign keys, scalar data, roots, assets, thumbnails, and an empty local-operation journal before intentionally replacing live paths;
-- thumbnail cleanup canonicalizes stored paths and only removes regular files below the configured thumbnail directory;
-- successful query-visible mutations normally bump the library revision, and successful restore also clears query sessions and invalidates the pool.
-
-Known limits that must remain visible in changes and user messaging:
+## Known limitations
 
 - Source staging and the SQLite commit remain separate failure boundaries, but asset mutations expose rollback/recovery state and journal uncertain files. Thumbnail cleanup, archive I/O, and frontend refreshes remain separate.
 - Thumbnail best-effort deletion still suppresses individual cache-file errors. Source deletion distinguishes missing input, pre-commit I/O rejection with preserved metadata, and post-commit cleanup with a recovery path.
-- Remove-root and clear-library database work differ: root/orphan cleanup is transactional, clear-library contains multiple autocommit statements, and safe asset/batch mutation has its dedicated transaction.
+- Root removal and clear-library each use a database transaction. Thumbnail deletion happens afterward and remains best effort. Journaled source mutations add a separate staging/recovery boundary.
 - The fixed restore staging/previous names are recovery generations, not retained user backups. Successful committed cleanup deletes them; a new attempt refuses unexplained leftovers.
 - Archive export has one SQLite Backup API snapshot and atomic publication. Import validates integrity and format/application/schema identity and uses durable journal recovery, but bundles remain unsigned/unencrypted and filesystem durability still depends on the host filesystem honoring sync/rename guarantees.
 - Duplicate and CSV identity is case-insensitive basename, not content identity. Duplicate apply does not support source-target rename cycles; users must choose independent final names.
@@ -163,13 +148,13 @@ Known limits that must remain visible in changes and user messaging:
 
 1. Write down the intended commit point and exact ordering across DB, revision, source media, thumbnail files, cache invalidation, and frontend refresh. Do not label a workflow atomic unless all of those boundaries support it.
 2. Preserve the lock order: normal workflows take a database lease before the scan mutex and thumbnail write lock; exclusive bundle work takes maintenance before scan and thumbnail. Never enter maintenance while holding either lower lock.
-3. For deletion, decide whether DB-first behavior and success-only counters remain acceptable. If failures become actionable, return failed paths/reasons without redefining existing counts silently.
+3. For deletion, preserve the distinctions between missing source, pre-commit failure, and post-commit cleanup pending. Verify returned counts and recovery paths against both SQLite and surviving files.
 4. For rename, test filesystem-first failure, DB failure, compensation failure, thumbnail cleanup failure, and revision failure. Never assume the attempted rename-back succeeded.
 5. Keep duplicate identity, stored `file_name_key`, CSV matching, rename, and scan-derived basenames aligned. A switch to content hashing is a contract and migration change, not a query-only refactor.
 6. Keep the five CSV headers and parsing rules synchronized with Rust models, TypeScript types, UI messages, and the [IPC contract](../architecture/ipc-contract.md). Test missing/reordered/case-varied headers, quoting, malformed later rows, repeated rows, basename fan-out, no-ops, and delimiter-bearing tags.
-7. If CSV import becomes transactional, include all asset fields and the revision bump in the same designed boundary, and define how a large file affects lock time and progress.
-8. For bundle export, prefer a SQLite-supported consistent snapshot/checkpoint design before claiming consistency. Test concurrent metadata writes and failure after destination truncation.
-9. For restore, validate every archive entry before live mutation; bound entry count and expanded size; add integrity/foreign-key/application compatibility checks as requirements dictate. Keep staging on the same filesystem if rename atomicity is required.
+7. Preserve complete CSV validation before the single transaction, and commit every asset field with its conditional revision bump. Test a malformed later row and transaction failure without partial metadata changes.
+8. Preserve SQLite Backup API snapshots and temporary-file publication. Test concurrent metadata writes, export failure before publication, and preservation of an existing destination.
+9. Preserve archive preflight limits and SQLite integrity, foreign-key, schema, and application checks before live mutation. Keep restore staging on the profile filesystem so install and rollback use same-filesystem renames.
 10. Exercise failures at every rename in both move-aside and install phases. Preserve recovery generations until final initialization, revision bump, pool/query invalidation, and a verification read all succeed; surface rollback failure separately.
 11. Define path-remapping policy before calling bundles portable across profiles or machines. Test absent media, stale absolute thumbnail paths, optional sidecars, no thumbnails, legacy schemas, and a DB with a future or foreign schema.
 12. After an uncertain destructive or restore failure, make a byte-for-byte copy of all live, previous, staging, WAL, and SHM files before reopening or retrying. Reconcile the filesystem against DB rows, then restart and force a library/query refresh.
@@ -180,8 +165,8 @@ Known limits that must remain visible in changes and user messaging:
 - `src-tauri/src/commands/assets.rs` tests rename filename normalization; `src-tauri/src/db.rs` tests delete-path return values, duplicate basename groups, rename DB updates, thumbnail-reference clearing, root-prefix boundaries, and cleanup helpers.
 - `src-tauri/src/services/thumb_service.rs` tests successful thumbnail-file counting and selected thumbnail lifecycle behavior.
 - `src-tauri/src/services/csv_service.rs` tests headers, scalar parsing, complete pre-validation, basename fan-out, transaction rollback, and atomic export behavior. `src-tauri/src/utils/tags.rs` tests tag normalization, merge, CSV delimiters, and legacy separators.
-- `src-tauri/src/services/backup_service.rs` tests traversal sanitization, historical DB-sidecar export expectations, nested thumbnails, rejection without `media.db`, and a successful DB/thumbnail restore. The sidecar/temporary-profile fixtures require revision before they represent the current snapshot-only exporter.
+- `src-tauri/src/services/backup_service.rs` tests path sanitization, standalone snapshot export without sidecars, nested thumbnails, rejection without a database, successful restore, and Windows-to-Linux root mapping with metadata preservation.
 - `src-tauri/tests/backend_integration.rs` covers file-backed root-prefix deletion and clear-library DB state. `src-tauri/tests/backend_e2e.rs` covers a DB-level CSV-style tag merge, group metadata, and library clear workflow; it does not invoke the CSV command parser itself.
-- Frontend settings tests cover confirmation gates, exclusive-runner sequencing, summary display, refresh/reset follow-ups, and sequential duplicate actions. They do not turn those frontend behaviors into backend atomicity guarantees.
+- Frontend settings tests cover confirmation gates, exclusive-runner sequencing, summary display, refresh/reset follow-ups, and structured duplicate-batch outcomes. They do not turn those frontend behaviors into backend atomicity guarantees.
 
-There is currently no fault-injection coverage for suppressed filesystem deletion failures, rename compensation failure, a post-publication CSV directory-sync failure, inconsistent concurrent bundle export, move-aside failure, install rollback failure, post-install initialization failure, CSV or archive resource exhaustion, or cross-profile path remapping. Treat those as known untested recovery boundaries, not implemented hardening.
+There is currently no fault-injection coverage for suppressed filesystem deletion failures, rename compensation failure, a post-publication CSV directory-sync failure, inconsistent concurrent bundle export, move-aside failure, install rollback failure, post-install initialization failure, CSV or archive resource exhaustion, or every path-remapping collision and missing-file case. Successful Windows-to-Linux mapping is covered. These are test gaps; the validation and recovery mechanisms described above are implemented.

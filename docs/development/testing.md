@@ -1,10 +1,12 @@
 # Testing
 
+Implementation entry points: [Vitest configuration](../../vitest.config.ts), [frontend test setup](../../src/test/setup.ts), [CI workflow](../../.github/workflows/quality.yml), [desktop harness](../../e2e/wdio.conf.js).
+
 MediaTagger has four test layers. Use the lowest layer that can prove the behavior, then add a higher layer when the change crosses a contract or runtime boundary.
 
 ## Test layer matrix
 
-| Layer | Location | Runner and command | What it guarantees | What it does not guarantee |
+| Layer | Location | Runner and command | What it exercises | What it does not prove |
 | --- | --- | --- | --- | --- |
 | Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx`, and `src/__tests__/` | Vitest with `bun run test` | TypeScript services, hooks, React rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
 | Rust unit | `#[cfg(test)]` modules beside backend code in `src-tauri/src/` | Cargo through `bun run test:backend` | Isolated database helpers, validation, scanning/indexing helpers, thumbnail scheduling and parsing, backup helpers, and command/service logic | A JavaScript caller, desktop window, packaged resources, or a complete application workflow |
@@ -26,7 +28,16 @@ Run commands from the repository root.
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
-| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with documented upstream exceptions. |
+| `bun run typecheck` | Runs no-emit checks for application code and Vite/Vitest configuration. |
+| `bun run lint` | Runs Biome lint across its configured source, E2E, and script includes. |
+| `bun run format:check` | Checks formatting in `scripts`, `vite.config.ts`, and `vitest.config.ts`; it does not format application source or Markdown. |
+| `bun run locale:check` | Checks language resources and placeholder parity offline; see [localization](localization.md#automated-locale-contract). |
+| `bun run rust:fmt` | Runs `cargo fmt --all -- --check` for the backend manifest. |
+| `bun run rust:clippy` | Runs locked Clippy for all targets/features, denying warnings. |
+| `bun run rust:check` | Runs locked Cargo check for all targets/features. |
+| `bun run audit:js` | Runs `bun audit --production --audit-level=high`. |
+| `bun run audit:rust` | Runs Cargo audit against the Rust lockfile with the advisory exclusions described below. Requires `cargo-audit`. |
+| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with the explicit advisory exclusions in `audit:rust`. |
 | `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, and desktop E2E. It stops at the first failed layer. |
 
 `bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It deliberately does not run `bun run build`, so its Tauri overlay disables `beforeBuildCommand` and it consumes the `dist/` already on disk.
@@ -44,7 +55,7 @@ There is no numeric coverage threshold. CI runs the complete frontend and backen
 
 ## Continuous integration
 
-`.github/workflows/quality.yml` runs on pull requests and pushes to `main`. The frontend job uses Node `22.22.0`, Bun `1.4.0`, and `bun install --frozen-lockfile`; it validates locales, generator tests, TypeScript application/configuration projects, Biome, production dependencies with `bun audit`, Vitest, and the production frontend build. The Rust job uses `rust-toolchain.toml`, `cargo fetch --locked`, pinned `cargo-audit 0.22.0`, rustfmt, locked Clippy with warnings denied, locked Cargo tests, and the RustSec gate defined by `audit:rust`.
+`.github/workflows/quality.yml` runs on pull requests and pushes to `main`. The frontend job uses Node `22.22.0`, Bun `1.4.0`, and `bun install --frozen-lockfile`; it validates locales, generator tests, TypeScript application/configuration projects, Biome, production dependencies with `bun audit`, Vitest, and the production frontend build. The Rust job uses `rust-toolchain.toml`, `cargo fetch --locked`, pinned `cargo-audit 0.22.0`, rustfmt, locked Clippy with warnings denied, locked Cargo tests, and the RustSec gate matching `audit:rust`. The script and workflow currently exclude `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195`; they contain no rationale for those exclusions. Do not treat an excluded advisory as proof of safety.
 
 CI does not launch an unqualified Tauri development or release profile and does not touch production app data. Real desktop E2E uses the isolated `.e2e` profile and must be run explicitly on a configured Linux host. The Docker release build does not run tests.
 
@@ -85,9 +96,7 @@ Cargo may execute independent tests concurrently. Never use a shared fixed datab
 
 ## Real desktop E2E
 
-### Linux release and desktop E2E
-
-`./scripts/build-linux-docker.sh` builds the native release executable but does not run Vitest, Rust tests, or desktop E2E. Run `bun run test:e2e:tauri` separately on a host configured with the matching WebDriver when desktop testing is needed. `./scripts/release-linux-user.sh` is only a build wrapper and does not install or launch the application.
+Release production is documented in [setup and builds](setup-and-build.md#containerized-arch-linux-release). Its build does not run test suites.
 
 ### Linux prerequisites
 
@@ -112,7 +121,7 @@ The harness runs `media_tagger` with WebKitWebDriver.
 1. WebdriverIO `onPrepare` records the start time and validates the E2E build configuration.
 2. It removes only the expected old E2E executable and calls the guarded E2E app-data cleanup.
 3. It runs `bun run build`, producing a fresh frontend `dist/`.
-4. `buildE2eApp()` validates again, removes only the expected executable, sets `CARGO_TARGET_DIR` to the isolated target, and runs `tauri build --debug --no-bundle --config src-tauri/tauri.conf.e2e.json`.
+4. `buildE2eApp()` validates again, removes only the expected executable, sets `CARGO_TARGET_DIR` to the isolated target, and runs `tauri build --debug --no-bundle --config src-tauri/tauri.conf.e2e.json -- --locked`.
 5. The build helper verifies that the expected executable exists.
 6. WebdriverIO `beforeSession` starts `tauri-driver` with `--native-driver <WEBKIT_WEBDRIVER_PATH>`.
 7. WebdriverIO opens one session for the isolated application. `maxInstances: 1` keeps the shared desktop state serial.
@@ -162,6 +171,8 @@ The desktop harness does not force English. A fresh app chooses a stored languag
 
 ## Choosing the test level
 
+For documentation-only changes, verify local links/anchors, referenced commands and symbols, and `git diff --check`. Run an existing focused test only when it resolves a behavior claim. Builds, release scripts, and destructive desktop workflows are not documentation checks.
+
 | Change | Minimum focused proof | Add when applicable |
 | --- | --- | --- |
 | Pure TypeScript service, parser, or reducer | Vitest unit test | Component/hook test if rendering or React lifecycle matters |
@@ -172,16 +183,7 @@ The desktop harness does not force English. A fresh app chooses a stored languag
 | Destructive UI confirmation, filesystem mutation, import/export/restore, or critical user journey | Lower-layer tests for edge cases | Isolated desktop E2E for the representative happy path and safety guard |
 | Packaging, native libraries, or release resources | Build and lower-layer tests | Build and smoke-test the Linux artifact; release scripts do not run application tests automatically |
 
-## Guarantees and limitations
-
-Current guarantees:
-
-- Frontend tests run in a bounded two-fork jsdom pool with explicit API imports and common browser observers stubbed.
-- The full Cargo command covers library unit tests plus both public integration binaries against isolated fixtures.
-- Desktop E2E rebuilds `dist/`, validates the isolated profile/target, clears only the exact isolated app-data directory when it can do so safely, and rejects an unexpected live window title.
-- Desktop specs run with one WebDriver instance and workflow-created media/artifacts are unique temporary paths.
-
-Current limitations:
+## Known limitations
 
 - jsdom and mocked Tauri calls do not prove IPC serialization or native runtime behavior.
 - `backend_e2e.rs` does not test the desktop, command serialization, the native CSV dialog/parser path, or profile isolation.

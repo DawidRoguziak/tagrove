@@ -1,5 +1,7 @@
 # Local setup and builds
 
+Implementation entry points: [package scripts](../../package.json), [Rust manifest](../../src-tauri/Cargo.toml), [Linux build](../../Dockerfile.linux), [artifact export](../../scripts/build-linux-docker.sh).
+
 This page describes the setup and build behavior implemented by the current repository. Run the commands from the repository root. Configuration and lockfiles are authoritative; this page does not imply support for platforms or tool versions that the repository does not declare.
 
 ## Prerequisites
@@ -44,7 +46,11 @@ Build the artifact on CachyOS/Arch x86-64:
 
 `bun run release:linux:user` is an equivalent wrapper. The script only invokes `scripts/build-linux-docker.sh`. It does not run tests, install files, launch the application, inspect or copy the production database, or modify anything under `~/.local/` or `/usr/local/`.
 
-The resulting files are written to `artifacts/linux/`: `media_tagger`, `image-viewer-3000.png`, `build-manifest.txt`, and `SHA256SUMS`. Installation is a separate manual operation.
+The resulting files are written to `artifacts/linux/`: `media_tagger`, `image-viewer-3000.png`, `build-manifest.txt`, and `SHA256SUMS`. Installation is separate from building; the local reinstall helper is described below.
+
+### Local executable replacement
+
+[`scripts/reinstall-linux-user.sh`](../../scripts/reinstall-linux-user.sh) is a machine-specific helper. It changes to `/path/to/tagrove`, refuses replacement while `pgrep -x media_tagger` finds a process, verifies the existing artifact checksums, and installs the executable through a temporary sibling followed by rename to `$HOME/.local/bin/media_tagger`. It expects that directory to exist and does not install the icon, create a launcher, rebuild, or launch the app. The old executable is overwritten without keeping a backup. Inspect the hard-coded checkout before using it on another machine.
 
 ## Install dependencies
 
@@ -70,18 +76,12 @@ Do not replace either lockfile as an incidental setup step. Update it only as pa
 
 ## Package scripts
 
-The following are all current non-test scripts in `package.json`:
+Build and development entry points are listed below. [Testing and quality commands](testing.md#package-scripts) own validation, audits, and test runners; [localization](localization.md#locale-generator) owns `locale:generate`.
 
 | Command | What it does |
 | --- | --- |
 | `bun run dev` | Starts only the Vite development server. It does not compile or launch the Rust/Tauri application. |
-| `bun run build` | Runs the standalone TypeScript project build, including Vite and Vitest configuration, then runs `vite build`. |
-| `bun run typecheck` | Runs no-emit TypeScript checks for application code plus `vite.config.ts` and `vitest.config.ts`. |
-| `bun run lint` | Runs the repository Biome lint rules over TypeScript, JavaScript, and locale tooling. |
-| `bun run format:check` | Checks deterministic formatting for JavaScript configuration and quality/locale scripts. |
-| `bun run locale:check` | Validates every `AppLanguage` resource against `en.json`, including paths, types, and placeholders, without network access. |
-| `bun run rust:fmt` / `rust:clippy` / `rust:check` | Runs locked Rust formatting, lint, or compile gates. Clippy treats warnings as errors. |
-| `bun run quality` | Runs locale validation/tests, TypeScript, Biome, Rust formatting, and locked Clippy checks. |
+| `bun run build` | Runs both no-emit TypeScript checks, including Vite/Vitest configuration, then `vite build`. |
 | `bun run preview` | Serves an existing Vite production build for browser inspection. It does not build first and does not launch Tauri. |
 | `bun run tauri:dev` | Runs `tauri dev --config src-tauri/tauri.conf.dev.json`. This is the canonical desktop development command and selects the isolated development identifier and title. Tauri starts `bun run dev` through `beforeDevCommand`. |
 | `bun run tauri:build:release` | Runs `tauri build` for the supported Linux target. The Docker release command below is preferred for artifact production. |
@@ -90,8 +90,6 @@ The following are all current non-test scripts in `package.json`:
 | `bun run build:linux:docker` | Convenience wrapper for `scripts/build-linux-docker.sh`; requires Bun on the host, unlike invoking the shell script directly. |
 | `bun run release:linux:user` | Convenience wrapper for the CachyOS/Arch Docker build. It only creates files under `artifacts/linux/`. |
 | `bun run tauri` | Exposes the local Tauri CLI directly for explicit subcommands. It does not select the safe development overlay on its own. |
-
-The repository does not define a coverage threshold. Coverage output is diagnostic, not a merge contract.
 
 ## Development modes
 
@@ -124,17 +122,9 @@ Do not use an unqualified debug Tauri launch with the base configuration. In deb
 
 ## Desktop builds and profiles
 
-The user-facing product name is `Image Viewer 3000`. `MediaTagger` remains the internal project/crate identity, and the existing `com.example.mediatagger` identifiers remain unchanged because they own app-data locations. Correcting display text must never be treated as an identifier migration.
+The [architecture profile table](../architecture/system-overview.md#profiles-identifiers-and-data-isolation) owns identifiers, names, and app-data boundaries. Use `bun run tauri:dev` for development; a debug launch with the production identifier is rejected.
 
-| Profile | Command/configuration | Title | Identifier | Output and data boundary |
-| --- | --- | --- | --- | --- |
-| Release | `bun run tauri:build:release`; base plus Linux platform config | `Image Viewer 3000` | `com.example.mediatagger` | Normal `src-tauri/target` output and production app data. The Docker workflow exports the Linux executable to `artifacts/linux/`. |
-| Development | `bun run tauri:dev`; dev overlay merged over the base | `Image Viewer 3000 Dev` | `com.example.mediatagger.dev` | Debug build and a separate identifier-specific app-data directory. |
-| Desktop E2E | `bun run tauri:build:e2e`; E2E overlay merged over the base | `Image Viewer 3000 E2E` | `com.example.mediatagger.e2e` | Unbundled debug executable named `media_tagger` and a separate E2E app-data directory. |
-
-The effective identifier determines Tauri's app-data directory. Consequently, it isolates `media.db`, `thumbs/`, restore staging, and `instance.lock`. The three profiles can coexist because their identifiers differ. Changing an identifier is a data-location migration, not merely a label change.
-
-The standalone E2E build is intentionally narrower than the full desktop E2E test command. `tauri.conf.e2e.json` clears `beforeBuildCommand`, so `bun run tauri:build:e2e` expects an existing `dist/`. Before invoking Tauri it verifies the exact E2E identifier, the E2E window title, and the dedicated `target-e2e` path; it removes only the old expected executable, sets `CARGO_TARGET_DIR`, builds with `--debug --no-bundle`, and verifies that the expected executable exists. The full `bun run test:e2e:tauri` orchestration additionally validates and clears only the exact E2E app-data directory, runs `bun run build`, creates the E2E executable, and checks the live window title before destructive tests.
+The standalone `bun run tauri:build:e2e` consumes existing `dist/` because its overlay disables the frontend build. Run `bun run build` first or use `bun run test:e2e:tauri`, which builds the frontend automatically. The [desktop test guide](testing.md#real-desktop-e2e) owns target/title assertions, cleanup guards, and driver setup.
 
 ## Configuration ownership
 
@@ -159,7 +149,7 @@ The standalone E2E build is intentionally narrower than the full desktop E2E tes
 
 ## Native media dependencies
 
-The release does not bundle media tools or shared libraries. Startup resolves `ffmpeg` from resource/executable-adjacent directories, `/usr/bin`, or `PATH`; probing also checks matching `ffprobe` locations. Missing tools do not block startup, but duration probing and video thumbnail generation can fail. Interactive playback links to system libmpv and GTK3 and dynamically loads EGL or GLX entry points. The Docker build records those versions and rejects missing libmpv/GTK linkage or absent EGL/GLX symbols.
+The release links system libmpv/GTK and loads EGL/GLX entry points dynamically. The Docker build checks those symbols and verifies libmpv/GTK linkage with no missing dependencies inside the container. The host export script validates artifact shape, manifest fields, and checksums; it does not rerun `ldd` on the host. See [thumbnail tool discovery](../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery) for ffmpeg/ffprobe precedence and timeouts.
 
 ## Performance diagnostics
 
@@ -198,19 +188,7 @@ Keep dependency families aligned rather than updating one manifest in isolation:
 
 Run `bun install` for intentional JavaScript updates and an appropriate Cargo update for intentional Rust updates, then inspect `bun.lock` and `src-tauri/Cargo.lock`. Most manifest entries are semver ranges, so frozen/locked resolution and the pinned toolchains are both required. Neither lockfile pins rolling Linux system packages.
 
-## Guarantees and limitations
-
-Current build guarantees:
-
-- the canonical dev command selects a non-production identifier and fixed Vite URL;
-- a debug application refuses to start with the production identifier;
-- the frontend production build must pass the configured TypeScript checks before Vite bundles it;
-- release builds invoke the frontend build and merge the Linux configuration;
-- the Docker Linux workflow installs its toolchain and declared runtime media stack, then exports the native release binary, manifest, and checksums without running tests;
-- the E2E builder asserts its identifier, title, isolated target directory, and resulting executable; and
-- committed Bun and Cargo lockfiles capture exact dependency resolutions.
-
-Current limitations:
+## Known limitations
 
 - only Linux x86-64 packaging is configured;
 - the rolling `archlinux:base-devel` image and system packages are not digest/version pinned, so a later clean container build can use newer native dependencies;
@@ -218,8 +196,7 @@ Current limitations:
 - the debug guard rejects only the production identifier and cannot certify arbitrary custom overlays;
 - a standalone E2E build can package stale or missing frontend assets because its automatic frontend build is disabled;
 - Vite-only development cannot validate native IPC, dialogs, asset-protocol loading, app-data paths, or packaged resource layout;
-- unbundled E2E builds do not prove the release artifact's exact shared-library environment; and
-- there is no numeric coverage threshold.
+- unbundled E2E builds do not prove the release artifact's exact shared-library environment.
 
 ## Build checklist
 

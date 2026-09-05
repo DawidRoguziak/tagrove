@@ -1,10 +1,10 @@
 # Database persistence
 
-This page is the canonical description of MediaTagger's current SQLite schema and query semantics. The implementation in `src-tauri/src/db.rs`, the query services, and executable tests remain authoritative. For startup, profile isolation, and workflow locking, see the [system overview](../architecture/system-overview.md); for command validation, payloads, and query-session result states, see the [IPC contract](../architecture/ipc-contract.md). Workflow details belong in the narrower subsystem pages for [scanning and indexing](scanning-and-indexing.md), [library queries and the gallery](library-query-and-gallery.md), [search, tags, and media groups](search-tags-and-media-groups.md), and [data safety and portability](data-safety-and-portability.md), rather than here.
+Implementation entry points: [schema and SQL](../../src-tauri/src/db.rs), [connection pool](../../src-tauri/src/services/db_pool.rs), [query manager](../../src-tauri/src/services/asset_query_service.rs).
 
-## Current guarantees
+This page owns SQLite schema, migrations, derived fields, SQL filters/order, and revision transactions. [Architecture](../architecture/system-overview.md#in-process-locking-policy) owns startup and lock ordering, [IPC](../architecture/ipc-contract.md) owns transport validation, and [data safety](data-safety-and-portability.md) owns filesystem recovery. Query cache mechanics belong in [library query and gallery](library-query-and-gallery.md).
 
-### Database location and connection policy
+## Database location and connection policy
 
 The application stores `media.db` directly in the effective Tauri profile's app-data directory. Development, E2E, and release identifiers therefore use separate databases. Startup acquires that profile's `instance.lock` before opening the database, creates the app-data and thumbnail directories, calls `open_connection`, and runs `init_schema`. Initialization rejects a nonzero foreign `application_id` and a future `user_version`; after success it records MediaTagger's `application_id` (`0x4d544147`) and schema version (`1`). The path is retained in `AppState`; commands normally open their own connection to it.
 
@@ -24,7 +24,7 @@ Every connection created through `db::open_connection` applies:
 
 Gallery query sessions use the process-wide pool in `services/db_pool.rs`. A registry maps an exact `PathBuf` to a pool with at most four connections. Checkout reuses an idle connection, opens a configured connection while below the cap, or waits on a condition variable until one is returned. Dropping `PooledConnection` returns it to a live pool. Invalidation marks the removed pool closed, drops all idle connections, wakes waiters, and drops rather than recycles later returns; maintenance then waits for all checked-out leases to drain. Other commands and services call the same lease-owning `open_connection` boundary directly, including video-path resolution.
 
-### Schema
+## Schema
 
 `assets` is the central row for one indexed path.
 
@@ -60,7 +60,7 @@ The remaining tables are:
 
 Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_roots`. Deleting a `scan_roots` row automatically removes its root mappings. Tags are not deleted by cascade when their final asset mapping disappears; asset/tag mutation and asset-removal helpers explicitly call orphan-tag cleanup. Thumbnail failures likewise require explicit cleanup because they are not foreign-keyed.
 
-### Indexes
+## Indexes
 
 In addition to primary-key and unique indexes created by SQLite, initialization creates all of the following:
 
@@ -80,7 +80,7 @@ In addition to primary-key and unique indexes created by SQLite, initialization 
 | `idx_asset_tags_tag_asset` | `asset_tags(tag_id, asset_id)` |
 | `idx_asset_scan_roots_generation` | `asset_scan_roots(root_path, last_seen_generation, asset_id)` |
 
-### In-place initialization, migrations, and backfills
+## In-place initialization, migrations, and backfills
 
 There is no separate migration runner. `init_schema` is idempotent in-place initialization and uses `PRAGMA application_id`/`user_version` as a compatibility gate, not as a step-by-step migration ledger:
 
@@ -88,27 +88,27 @@ There is no separate migration runner. `init_schema` is idempotent in-place init
 2. It inspects `PRAGMA table_info(assets)` and independently adds legacy-missing `is_favorite`, `media_group_key`, `media_group_order`, `file_name`, `fingerprint_mtime_ns`, `tag_count`, `file_name_key`, `media_group_key_normalized`, and `record_version` columns. The legacy `file_name` alteration adds nullable `TEXT`, then a transaction fills null or blank values with the basename extracted from either `\` or `/` paths.
 3. When `performance_schema_version < 1`, it backfills blank `file_name_key` values with `lower(file_name)`, fills normalized group keys with `lower(trim(media_group_key))` for nonblank groups, recomputes every `tag_count` from `asset_tags`, and then records version `1`.
 4. It creates the query-performance indexes.
-5. When the version read at the beginning is below `2`, it backfills `asset_scan_roots` for every stored root. Matching is the exact root path or a Windows-style `root\%` prefix, and inserted mappings use generation `0`; it then records version `2`.
+5. When the version read at the beginning is below `2`, it backfills `asset_scan_roots` for every stored root. Matching uses the exact root path or an escaped descendant prefix with the stored root's slash style, and inserted mappings use generation `0`; it then records version `2`.
 6. Below version `3`, one transaction rebuilds every `file_name_key` with Rust Unicode lowercase and converts legacy delimiter-bearing tags into the same normalized tokens that CSV and search can represent. It repairs mappings/counts, removes orphan tags, conditionally bumps the library revision when visible data changed, and records version `3`.
 7. It runs `PRAGMA optimize` and records the current application ID and schema version.
 
 `performance_schema_version` gates these derived-data and mapping backfills only. It is not a complete historical schema version: presence checks, `CREATE ... IF NOT EXISTS`, and index creation handle structural compatibility independently. Bundle validation permits markerless legacy databases only when the known core tables, columns, declared types, metadata rows, integrity, foreign keys, and stored value types are valid; future or foreign markers are rejected before migration.
 
-### Derived-field invariants
+## Derived-field invariants
 
 Application-mediated writes maintain these invariants:
 
 - `file_name` is the final non-empty segment of `path`, accepting both slash styles. `file_name_key` uses Rust Unicode lowercase. Asset upsert, rename, mapped bundle import, duplicate lookup, and CSV import share that key; they do not compare full paths or file contents.
+- `media_group_key` preserves trimmed display spelling. Its normalized lookup key is `lower(trim(media_group_key))`, or null for a blank/missing key. Single and bulk setters update both fields.
+- Tag boundaries trim, Unicode-lowercase, remove empty values, and deduplicate in first-seen order. Whitespace, comma, semicolon, and control characters are invalid inside one tag. Replacement validates the asset, repairs mappings/counts and legacy spelling, cleans orphan tags, and conditionally bumps revision in one IMMEDIATE transaction with bounded busy retry.
+- `tag_count` is the number of assigned normalized tags. Query count filters read it directly; startup backfills repair older data from the mappings.
+- `upsert_scanned_asset` clears a thumbnail reference when the precise fingerprint changes, including same-second edits. Thumbnail failures still compare seconds-based `asset_modified_at`. See [thumbnail identity and limits](thumbnails.md#source-versions-cache-and-target-identity).
 
-Root-prefix SQL escapes `%`, `_`, and the escape character before using `LIKE ... ESCAPE '^'`, so filesystem names are always treated literally. On Unix, discovery skips paths that cannot be represented as UTF-8 instead of storing a lossy path identity.
-- `media_group_key` preserves the trimmed display spelling supplied by command callers. Blank command input becomes `NULL`. `media_group_key_normalized` is `NULL` for a missing/blank key and otherwise `lower(trim(media_group_key))`; single and bulk group setters update raw and normalized values together.
-- Tags entering command/query boundaries are trimmed, Unicode-lowercased by Rust, emptied values removed, and de-duplicated while preserving first-seen order. A tag containing whitespace, comma, semicolon, or a control character is rejected. `tags.name` is also unique with `NOCASE` collation. Replacing tags normalizes defensively, validates asset existence, deletes old mappings only for a change, inserts/reuses tag rows, derives `assets.tag_count` from mappings, removes unreferenced tag rows, and commits command-level mutation plus conditional revision bump in one IMMEDIATE transaction with bounded whole-transaction busy retry.
-- `tag_count` equals the number of normalized tags assigned through the tag helpers. The session query uses this field for exact-count filters; startup's version-1 backfill repairs it from mappings for pre-performance-schema databases.
-- Scan upsert stores the exact nanosecond fingerprint separately from the seconds-based `modified_at`. An unchanged `modified_at` preserves an existing thumbnail path; a changed value takes the incoming thumbnail value. Thumbnail failures are considered current only when their `asset_modified_at` equals the asset's `modified_at`.
+Root-prefix SQL escapes `%`, `_`, and `^` before using `LIKE ... ESCAPE '^'`. On Unix, discovery skips non-UTF-8 paths rather than storing a lossy identity.
 
 These are code invariants, not SQLite generated columns, checks, or triggers. Callers that issue ad hoc SQL or call low-level helpers with unnormalized values can violate them.
 
-### Filter semantics
+## Filter semantics
 
 The primary gallery path normalizes filters at the command boundary and builds an ordered ID snapshot:
 
@@ -122,7 +122,7 @@ The primary gallery path normalizes filters at the command boundary and builds a
 
 The registered legacy `list_assets` path applies the same user-visible composition and ordering, but computes exact tag counts from `asset_tags` and tests raw group text with `lower(trim(...))` instead of using the denormalized columns. Offset is floored at zero and limit is clamped to 1–500. Session pages clamp limit to 1–256 and clamp an offset beyond the end to the total.
 
-### Gallery and media-group ordering
+## Gallery and media-group ordering
 
 The legacy and session queries use the same bucket ordering:
 
@@ -133,11 +133,11 @@ The legacy and session queries use the same bucket ordering:
 
 This keeps the members returned by a query adjacent and positions the whole group by its newest matching member. Filtering happens before bucket statistics are calculated, so only members that pass the active filters affect the visible group's position. Summary materialization fetches IDs in chunks of 500 and reconstructs the requested ID order after SQLite returns the rows.
 
-### Library revision and query sessions
+## Library revision and query sessions
 
 `library_metadata.revision` starts at `1` and is incremented with one SQL update. It is the invalidation epoch for process-wide asset-query sessions, not a database migration version.
 
-A query start is registered process-wide in arrival order before any blocking work is scheduled; the registration token plus the client generation decide supersession. It then reads the current revision inside one deferred read transaction that also builds the ordered ID list and materializes the first page, so revision, snapshot IDs, and first-page summaries share a single SQLite snapshot. The expensive ordered-ID build checks a cooperative cancellation flag periodically and returns `None` when the request has been superseded mid-build. The cache key includes the revision and normalized filters. A ready session holds the full ordered asset-ID vector plus that revision; later pages read their summaries inside an equivalent read snapshot after re-checking the session revision. The cache retains at most four sessions, uses least-recently-used promotion, and expires a session after five minutes without access. A later page returns `stale` and removes the session when its stored revision differs from the database; missing, expired, or evicted sessions are also `stale`. Bundle restore additionally clears the query manager and invalidates its connection pool before replacement.
+Query starts and page reads use a deferred SQLite read transaction so the revision and materialized data share one snapshot. The ordered-ID query checks cooperative cancellation while building. Query-visible writes must commit their revision bump with the mutation. See [query session mechanics](library-query-and-gallery.md#backend-session-and-page-contract) for cache bounds, supersession, and invalidation; the [IPC contract](../architecture/ipc-contract.md#query-session-states) defines returned states.
 
 The following mutation families bump the revision:
 
@@ -153,13 +153,13 @@ The following mutation families bump the revision:
 | Resolve duplicate batch | Exactly once in the transaction containing every CAS rename/delete and cleanup. A pre-commit rollback does not bump. |
 | Remove a scan root | In the same transaction as root/orphan removal, only when orphaned assets were removed. |
 | Non-empty scan/rescan | Once per committed indexing batch (inside the batch transaction) and once more after all processed roots; an empty root list returns without a bump. |
-| CSV import | Once for the whole file, inside the single transaction that applies every row; the bump commits atomically with the applied rows. |
+| CSV import | Once for the whole file when at least one asset changed, inside the transaction applying every row. |
 | Clear library | Always after the database deletion sequence. |
 | Bundle restore | After installing and initializing the restored database; cached query state is also explicitly cleared. |
 
 Thumbnail-path and thumbnail-failure writes, adding a scan root without scanning, and other metadata-neutral reads/maintenance do not bump the revision because they do not change filter membership or gallery order. Query-visible changes made directly through low-level `db.rs` helpers also do not bump automatically; the orchestrating command/service owns that responsibility.
 
-### Transaction boundaries
+## Transaction boundaries
 
 The following multi-statement database operations use a SQLite transaction: legacy filename backfill; staged single/batch file mutation with one revision bump; legacy low-level rename; bulk group updates; tag replacement; bulk tag merge; scan-root removal plus orphan pruning; batches of scan-root touches; completed-generation pruning; scan write batches of up to 512 assets; and batch thumbnail-path updates. Batch renames first move DB paths to operation-private temporary identities so SQLite uniqueness does not make ordered rename cycles implicit; filesystem source-target cycles are rejected before mutation to keep rollback deterministic.
 
@@ -168,13 +168,13 @@ Single SQL statements are atomic individually. Tag replacement, bulk tag merge, 
 ## Known limitations
 
 - Schema initialization is not wrapped in one encompassing transaction. A failure can leave some tables, columns, indexes, or backfills applied while `performance_schema_version` still has its earlier value. Re-running initialization is intended to continue, but the version rows do not prove that every structural statement committed as one unit.
-- The version-1 and version-2 backfills each perform multiple autocommit statements before updating their marker. The version read once near the start is reused for both decisions. There is no downgrade path, checksum, migration history, or rejection of a database with a future version.
-- Derived columns are maintained only by application code. There are no triggers or constraints checking `tag_count`, `file_name_key`, `media_group_key_normalized`, boolean range, non-negative sizes/counts, valid media kinds, finite group order, or path/root normalization. A database imported with `performance_schema_version >= 2` is not given a general consistency rebuild.
+- The version-1 and version-2 backfills each perform multiple autocommit statements before updating their marker. The version read once near the start is reused for both decisions. There is no downgrade path, checksum, or migration history. `init_schema` rejects a future `user_version`; the separate performance backfill marker is not a complete schema compatibility check.
+- Derived columns are maintained only by application code. There are no triggers or constraints checking `tag_count`, `file_name_key`, `media_group_key_normalized`, boolean range, non-negative sizes/counts, valid media kinds, finite group order, or path/root normalization. A database already at performance version `3` is not given a general derived-data rebuild.
 - `thumbnail_failures.asset_id` has no foreign key. Most deletion paths clean failures explicitly and read paths purge stale rows, but referential integrity is eventual and helper-dependent.
 - Media-group ordering buckets use the case-preserving raw `media_group_key`, while group filtering uses the normalized key. Consequently, differently cased stored keys can match one group filter but form separate ordering buckets.
 - A session snapshots IDs and order, not complete asset rows. If query-visible code changes a row without a successful revision bump, later pages can materialize changed summaries against the old ID order. Favorite and media-group single-item setters deliberately bump for no-ops and missing IDs, causing harmless extra invalidation; tag replacement is no-op-aware and rejects missing IDs.
 - The query-start snapshot covers revision, ordered IDs, and the first page, but the read transaction is deferred: a write that commits between registration and the first read can still be included, which is safe. A mutation committing after the snapshot becomes visible only through the later `stale` page transition.
-- `clear_library_data` performs its asset, failure, tag and root deletes plus revision bump in one transaction. Delete-by-prefix also combines explicit cleanup statements without a transaction. Safe single-asset and duplicate-batch file mutations use their dedicated transaction instead.
+- The legacy delete-by-prefix helper combines cleanup statements without a surrounding transaction. Clear-library and journaled single/batch asset mutations use their own transactions.
 - Database transactions cannot make filesystem workflows atomic. Safe file mutations stage on each source filesystem and use a durable journal plus rollback/recovery outcomes; final staged-delete and thumbnail cleanup remain post-commit work. Bundle restore separately uses its own staging and rollback attempts.
 - The query pool bounds checkout at five seconds per acquisition attempt and reports a busy failure when exhausted; a caller that repeatedly retries can still wait indefinitely in aggregate. Maintenance invalidation wakes old-pool waiters and waits for checked-out connections to return, so a stalled database caller can correspondingly stall maintenance without a timeout.
 
@@ -197,6 +197,6 @@ Single SQL statements are atomic individually. Tag replacement, bulk tag merge, 
 - `src-tauri/src/utils/tags.rs` tests lock down trimming, lowercasing, de-duplication, stable merge order, and CSV tag splitting.
 - `src-tauri/tests/backend_integration.rs` uses a file-backed database for asset/tag/query flow, distinct thumbnail collection, library clearing, transactional bulk tag merge, and bulk group replacement.
 - `src-tauri/tests/backend_e2e.rs` covers the database-level CSV merge/group/library-clear workflow across multiple helpers.
-- Command/service tests in `commands/scan.rs`, `services/scan_service.rs`, `services/csv_service.rs`, and `services/backup_service.rs` cover root persistence/removal, safe scan cleanup, CSV parsing and atomic publication, bundle sidecar inclusion, restore validation, and restored database/thumbnail contents.
+- Command/service tests in `commands/scan.rs`, `services/scan_service.rs`, `services/csv_service.rs`, and `services/backup_service.rs` cover root persistence/removal, safe scan cleanup, CSV parsing and atomic publication, standalone bundle snapshots, legacy sidecar import, restore validation, and restored database/thumbnail contents.
 
-These tests validate many data primitives, but they do not substitute for the missing migration matrix or deliberate rollback/fault-injection tests listed under Known limitations. `services/asset_query_service.rs` now has a focused unit-test module covering equal-key session reuse, registration-order and generation supersession, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot start results; `db.rs` covers cooperative ID-build cancellation plus favorite/group/bulk-group same-transaction revision bumps. The connection pool's busy timeout itself is not yet directly unit-tested.
+These tests validate many data primitives, but they do not substitute for the missing migration matrix or deliberate rollback/fault-injection tests listed under Known limitations. `services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, registration-order and generation supersession, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot start results; `db.rs` covers cooperative ID-build cancellation plus favorite/group/bulk-group same-transaction revision bumps. The connection pool's busy timeout itself is not yet directly unit-tested.

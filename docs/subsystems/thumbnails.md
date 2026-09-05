@@ -1,14 +1,14 @@
 # Thumbnails
 
-This subsystem creates versioned JPEG previews, schedules demand and bulk work, persists paths and failures, and delivers per-asset updates to the virtual gallery. The implementation in `src-tauri/src/thumbs.rs`, `src-tauri/src/services/thumb_scheduler.rs`, `src-tauri/src/services/thumb_service.rs`, the thumbnail database functions, `src/hooks/useThumbnailQueue.ts`, and their executable tests is the source of truth.
+Implementation entry points: [rendering and tool probes](../../src-tauri/src/thumbs.rs), [scheduler](../../src-tauri/src/services/thumb_scheduler.rs), [publication and cleanup](../../src-tauri/src/services/thumb_service.rs), [frontend queue](../../src/hooks/useThumbnailQueue.ts).
+
+This page owns JPEG preview identity, rendering, tool discovery, scheduling, publication, retries, cancellation, and per-tile updates. Thumbnail files and their database references have separate commit boundaries.
 
 Command names, payload shapes, channel serialization, and shared progress-event rules live in the [IPC contract](../architecture/ipc-contract.md). Database schema and transaction conventions live in [database persistence](database.md), scan-time metadata and fingerprints in [scanning and indexing](scanning-and-indexing.md), gallery range loading and presentation in [library query and gallery](library-query-and-gallery.md), and app-data, resource, and lock lifecycles in the [system overview](../architecture/system-overview.md).
 
-## Current guarantees
+## Source versions, cache and target identity
 
-### Source versions, cache and target identity
-
-Every thumbnail job carries a `SourceVersion` — the exact source identity of `path`, `size_bytes`, and nanosecond `fingerprint_mtime_ns` read from SQLite when the task was created. The version travels through the scheduler task, is echoed back in the result, and acts as the compare-and-set guard for every database write. A render that finishes after its asset was re-indexed can never be published.
+Every thumbnail job carries a `SourceVersion` — the exact source identity of `path`, `size_bytes`, and nanosecond `fingerprint_mtime_ns` read from SQLite when the task was created. The version travels through the scheduler task, is echoed back in the result, and acts as the compare-and-set guard for every database write. The database compare-and-set rejects a result whose source version no longer matches. File publication happens earlier and stale produced files are removed best-effort after that check.
 
 The thumbnail directory is `<app-data>/thumbs` and is created at startup. `thumb_target` hashes these bytes with SHA-256:
 
@@ -21,17 +21,17 @@ The thumbnail directory is `<app-data>/thumbs` and is created at startup. `thumb
 
 The target is the lowercase hexadecimal digest plus `.jpg`. Asset ID, media kind, render settings, and file contents are not part of the key. The path makes one source version converge on one target across single-item, page, stream, and bulk entry points. A target already present on disk is treated as ready and its path is reconciled into SQLite through the same version guard.
 
-Version 2 replaced the original key (seconds-resolution `modified_at` only). Targets produced by earlier builds are not referenced anymore and are regenerated on demand under their new names; old files become orphans until an explicit cleanup clears them. Bumping `THUMB_CACHE_VERSION` again requires the same migration consideration.
+Cache version 2 includes path, size, and nanosecond mtime. Existing database thumbnail paths are still reused while the referenced file exists; a cache-version bump alone does not invalidate those references. If changing the key or renderer, explicitly decide how to clear old references and remove unreferenced files. Current cleanup is reference-driven and does not sweep every old cache file.
 
 When an incremental scan re-indexes a changed file whose seconds-resolution `modified_at` did not move (same-second modification), `upsert_scanned_asset` releases the stored `thumb_path` whenever the precise fingerprint value differs, so a superseded reference cannot survive the scan.
 
-### Image and GIF rendering
+## Image and GIF rendering
 
 Images and GIFs use the Rust `image` decoder and produce an RGB JPEG. Before a full decode, dimensions are probed from the file header; sources whose pixel count exceeds `MAX_DECODE_PIXELS` (50 megapixels) fail the job with a controlled error instead of allocating unbounded memory. The maximum normal thumbnail box is 390 by 390 pixels with Lanczos3 filtering. A portrait with `height / width >= 1.6` is handled specially: a square as wide as the source is cropped from `x = 0`, with its top at `min(96, height - width)`, and resized exactly to 390 by 390. Other images use aspect-preserving `thumbnail(390, 390)` behavior. The gallery applies `object-cover` when presenting the result.
 
 Rendering creates the parent directory, removes any old sibling temporary file, and writes `<target-stem>.tmp.jpg`. Publication renames that file to the final target. If the final target appeared before publication, the temporary file is removed and the existing target wins. Callers see a target only after the JPEG write completed; temporary files are never stored in `assets.thumb_path`.
 
-### Video probing and rendering
+## Video probing and rendering
 
 Video duration is collected during indexing. The probe tries derived `ffprobe` candidates in order and accepts the first finite, non-negative duration, rounded to milliseconds. If none succeeds, it invokes the resolved `ffmpeg` and parses the duration from stderr. Every probe process has a 12-second timeout.
 
@@ -50,13 +50,15 @@ The clamp keeps a known positive seek at most `duration - 0.001` seconds. Render
 
 Both probing and rendering poll child completion every 25 ms. A timed-out child is killed and waited on.
 
-### ffmpeg and ffprobe discovery
+## ffmpeg and ffprobe discovery
 
 At startup, ffmpeg discovery searches the resource directory and its `binaries` child, then equivalent executable-adjacent and `resources` locations. In each directory it considers `ffmpeg`; it then checks `/usr/bin/ffmpeg` and finally falls back to `PATH`.
 
-For a probe, the code derives a matching sibling `ffprobe`, then tries `/usr/bin/ffprobe` and bare `ffprobe`, with duplicate paths removed. If those fail, the ffmpeg stderr fallback uses the already-resolved ffmpeg path. A missing or unlaunchable video tool therefore becomes an absent duration and, later, a thumbnail failure rather than preventing application startup.
+For a probe, `ffprobe_candidates` tries a sibling name derived from the ffmpeg filename, a plain sibling `ffprobe`, bare `ffprobe` through `PATH`, then `/usr/bin/ffprobe`, removing duplicates. Failed probes fall back to the resolved ffmpeg's stderr duration. A missing or unlaunchable tool leaves duration absent or rendering failed without itself preventing startup.
 
-### Shared scheduler
+`get_video_tool_status` uses the same candidate builder. It runs `-version` with a three-second timeout per candidate and returns separate availability booleans. Settings reads these once when its shell-lived scan controller mounts. This is an executable check, not proof that a particular file decodes or native playback works.
+
+## Shared scheduler
 
 One process-wide `ThumbnailScheduler` is created at startup. Its worker count is `available_parallelism - 2`, clamped to 2 through 8, or 4 when parallelism cannot be read. A constructor still enforces at least one worker for tests and direct callers. Startup refuses to launch the application when any worker thread failed to spawn: demand calls would otherwise block forever waiting for results that can never arrive.
 
@@ -64,11 +66,11 @@ The scheduler has FIFO high- and low-priority queues. Workers search the high qu
 
 Jobs are keyed by the target path string. Enqueuing an existing target job attaches a waiter rather than starting another render, up to 256 waiters per target; the next enqueue fails fast. Each waiter retains its own asset ID and receives the shared result. This de-duplicates work across entry points while bounding fan-out memory. The scheduler permits at most two video jobs at once; image/GIF jobs may use the rest of the worker pool. Completion removes the job, decrements active-video accounting, wakes blocked workers, and sends the result to all waiters. A dropped receiver is ignored.
 
-The processor runs inside a panic guard (`catch_unwind`): a panicking job produces a failed result instead of killing the worker loop, and every waiter receives a terminal outcome. Combined with the bounded queue — `MAX_PENDING_JOBS = 2048`; enqueueing beyond it fails fast with a "queue is full" error — no accepted job can silently disappear or grow memory without limit.
+The processor uses `catch_unwind` so a job panic becomes a failed result and the worker loop continues. `MAX_PENDING_JOBS = 2048` bounds the queue; further enqueues fail with a queue-full error. Demand waits also have the deadlines described below. These controls do not make decoding or process shutdown infallible.
 
-### Demand APIs and streaming limits
+## Demand APIs and streaming limits
 
-All demand paths first trust an existing database thumbnail path only when that file still exists. Otherwise they derive the current target from the asset's source version, reuse it if present, or schedule rendering. Every result is published through a compare-and-set write guarded by the source version: `update_asset_thumbnail_path_if_version_matches` (single) and `update_asset_thumbnail_paths_batch_versioned` (batch) update `assets.thumb_path` only when the record's path, size, and fingerprint still match the snapshot. A lost race reports `VersionMismatch`, and the caller removes the produced file so no stale-version target lingers on disk. Success clears the recorded failure for the asset version; a missing source or failed render clears the stored path and records a failure.
+All demand paths first trust an existing database thumbnail path only when that file still exists. Otherwise they derive the current target from the asset's source version, reuse it if present, or schedule rendering. Every result is published through a compare-and-set write guarded by the source version: `update_asset_thumbnail_path_if_version_matches` (single) and `update_asset_thumbnail_paths_batch_versioned` (batch) update `assets.thumb_path` only when the record's path, size, and fingerprint still match the snapshot. A lost race reports `VersionMismatch`, and the caller attempts to remove the produced file. Cleanup failures can leave an unreferenced target. Success clears the recorded failure for the asset version; a missing source or failed render clears the stored path and records a failure.
 
 - `ensure_asset_thumbnail` is an internal, unregistered Rust helper with no frontend wrapper. It handles one asset at high priority and waits for its scheduler result with a 180-second budget (`DEMAND_JOB_TIMEOUT`); exceeding it returns a controlled timeout error instead of hanging. It returns `null` for an unknown asset, missing source, render failure, or a version lost to a concurrent re-index.
 - `ensure_page_thumbnails` is also internal and unregistered. It de-duplicates the supplied IDs, clamps the batch to 256 unique IDs (`MAX_PAGE_BATCH`), and treats every found asset as high priority. Waiting uses a 180-second stall deadline. Its legacy `thumbnail-ready` emission is an implementation detail and is not part of the registered IPC contract.
@@ -78,7 +80,7 @@ The frontend sends its queue generation as `requestId`. The backend tracks the h
 
 The stream sends `{ event: "ready" }` as each existing or generated path is found. After processing completes it sends one `{ event: "failed" }` for each failed ID, followed by one `{ event: "done" }` count. Ready events precede the final batch update of `assets.thumb_path`; the command result, not channel delivery, is the persistence boundary. Channel-send errors are ignored. See the [IPC contract](../architecture/ipc-contract.md) for the exact serialized union.
 
-### Bulk render, retry, and cancellation
+## Bulk render, retry, and cancellation
 
 Only one `render_all_thumbnails` or `render_failed_thumbnails` operation may coordinate work at a time. Both submit to the shared scheduler and keep at most 24 scheduler results pending. Actual execution remains bounded by the scheduler worker count, the two-video limit, and the scheduler-wide 2048-job queue cap.
 
@@ -88,13 +90,13 @@ The coordinator captures the thumbnail generation epoch when it starts and commi
 
 Cancellation is cooperative. `cancel_render_all_thumbnails` returns `false` when no bulk coordinator is running; otherwise it sets an atomic flag and returns `true`. The coordinator checks before each enqueue and while waiting for results at 50 ms intervals. On cancellation it stops enqueueing/waiting, drains results already ready, batch-commits the collected path updates, emits the mode's done phase, and returns a summary with `cancelled: true` and possibly `processed < total`.
 
-Scheduler jobs already queued or running are not removed or killed by bulk cancellation. They may still publish files after the bulk command returns, but results not ready during the nonblocking drain are not included in that bulk summary or database batch; each such result still publishes only through its own version guard. A later demand call discovers such a target on disk and reconciles its path.
+Scheduler jobs already queued or running are not removed or killed by bulk cancellation. They may still publish files after the bulk command returns, but results not ready during the nonblocking drain are not included in that bulk summary or database batch; those late files have no database publication from the completed coordinator. A later demand call discovers such a target on disk and reconciles its path.
 
-### Generation epoch
+## Generation epoch
 
-`clear_all_thumbnails` bumps a process-wide `thumbnail_generation` counter before removing anything. Every demand/bulk coordinator captures the epoch at start and re-checks it before committing: when the epoch advanced meanwhile, none of the collected results are written to SQLite and all their produced files are removed, so a cleared library cannot be repopulated by renders that were already in flight.
+`clear_all_thumbnails` bumps the process-wide `thumbnail_generation` counter. Page/stream and bulk coordinators capture that epoch before processing and recheck it before their database batch. A changed epoch skips those writes and attempts to remove the collected files. Workflow locks normally serialize clear against active coordinators. Scheduler jobs left behind by cancellation can still create unreferenced files after a coordinator returns.
 
-### Frontend queue and tile updates
+## Frontend queue and tile updates
 
 `useThumbnailQueue` maintains separate sets for queued and in-flight asset IDs plus a session-local failure set. `queueThumbnailsByIds` ignores non-positive IDs, IDs with a known or pending path, IDs failed during the current queue generation, and IDs already queued or in flight. A 36 ms timer coalesces requests. Processing is sequential by frontend batch, with up to 64 IDs per channel invocation; the backend scheduler provides parallel rendering inside that invocation.
 
@@ -104,7 +106,7 @@ As ready and failed messages arrive, the hook batches React state work behind a 
 
 `ThumbnailStore` mirrors thumbnail paths and rendering IDs, but subscriptions are keyed by asset ID. Each changed asset gets a monotonically increasing in-memory version and only its listeners are notified. `GalleryTile` consumes that version with `useSyncExternalStore`, reads its effective path/rendering state directly, and can update a tile without rerendering the entire virtual grid. A tile shows the transparent placeholder on absence or image-load error and shows a spinner only while rendering with no ready path. GIF animation and other gallery presentation rules are covered in [library query and gallery](library-query-and-gallery.md).
 
-### Locks, progress, cleanup, and database consistency
+## Locks, progress, cleanup, and database consistency
 
 Generation, demand, bulk retry, and cancellation commands take the thumbnail read lock. `clear_all_thumbnails` takes the write lock, so it waits for active readers and excludes new ones while it clears. Root removal, asset delete/rename, database bundle operations, and library clearing use the combined scan lock then thumbnail write lock where they touch thumbnail ownership. The lock ordering and process isolation are defined in the [system overview](../architecture/system-overview.md).
 
@@ -120,8 +122,8 @@ Asset/root deletion and rename clear related rows and best-effort remove known t
 
 ## Known limitations
 
-- Thumbnail identity covers path, size bytes, and nanosecond `fingerprint_mtime_ns` under cache version 2. File contents are hashed neither at scan time nor here: two different files with identical size and nanosecond mtime share one target. A render-algorithm or JPEG-setting change requires bumping `THUMB_CACHE_VERSION`; targets from older versions are regenerated on demand while old files linger as unreferenced orphans until an explicit cleanup.
-- Bulk cancellation does not remove shared scheduler jobs. Work already queued can consume CPU and publish files after cancellation; each publication still passes its version guard, but only results ready at the drain are committed to the bulk summary/database batch.
+- Thumbnail identity covers path, size, and nanosecond mtime under cache version 2. Content is not hashed, so changed bytes with unchanged identity reuse a target. A renderer/cache-version change needs explicit reference invalidation; existing recorded files are otherwise trusted and unreferenced old files are not swept.
+- Bulk cancellation does not remove shared scheduler jobs. Queued work can consume CPU and publish files afterward. Only results collected by the coordinator receive its version-checked database update; later demand can reconcile an existing target.
 - The scheduler has no shutdown protocol; workers live for the whole process lifetime.
 - Video rendering is capped at two active jobs in code, but there is no focused test for that cap or for choosing a runnable image behind blocked videos. There are also no process-level tests for timeout killing, resource/PATH tool discovery, fallback rendering, or real ffmpeg output.
 - Stream channel sends and progress broadcasts are best effort. The backend `requestId` staleness guard rejects abandoned generations' requests upfront but cannot cancel in-flight scheduler jobs, and rendering continues when the frontend drops the receiver.
@@ -145,7 +147,7 @@ Asset/root deletion and rename clear related rows and best-effort remove known t
 9. Treat cancellation as a partial commit. Test cancellation before enqueue, while below and at the 24-result window, during final drain, with image/video jobs still running, and verify summary counts, failure rows, published files, and subsequent reconciliation.
 10. Keep lock order consistent for generation, clear, rename/delete, scan-root removal, library clear, and bundle replacement. Test that exclusive cleanup cannot race a demand reader and that best-effort filesystem failure leaves truthful counts and recoverable database state.
 11. When changing failure policy, test count reset on asset-version change, stale-row cleanup, render-all skip, retry-failed ordering, success clearing, missing sources, and repeated failures. Keep seconds-versus-nanoseconds behavior explicit until the schema and target key migrate together.
-12. Run Rust formatting and focused `thumbs`, scheduler, service, database, and command tests; run the frontend queue and gallery tests; then exercise a packaged desktop build with real image, GIF, short/long video, bundled tools, system tools, cancellation, and cleanup.
+12. Run Rust formatting and focused `thumbs`, scheduler, service, database, and command tests; run the frontend queue and gallery tests; then exercise a packaged desktop build with real image, GIF, short/long video, system tool discovery, cancellation, and cleanup.
 
 ### Relevant existing tests
 

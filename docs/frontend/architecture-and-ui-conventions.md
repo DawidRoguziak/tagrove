@@ -1,5 +1,7 @@
 # Frontend architecture and UI conventions
 
+Implementation entry points: [app composition](../../src/App.tsx), [shell controller](../../src/components/app/hooks/useAppShellController.ts), [UI layer manager](../../src/components/UI/UiLayerProvider.tsx), [styles](../../src/styles.css).
+
 This document describes the frontend structure that exists today. The React code and its tests are authoritative; this guide is a map for making compatible changes, not a proposal for a new framework.
 
 Feature behavior belongs in the narrower canonical guides:
@@ -41,7 +43,7 @@ Keep state at the lowest owner that must coordinate every consumer. The current 
 | Thumbnail paths, queue state, rendering IDs, and thumbnail store | `useLibraryBrowser` and `useThumbnailQueue` | Shell lifetime; reset when query/library lifecycle requires it. |
 | Authoritative complete tag lists, identity epoch, and per-asset mutation generations | `useAssetTagState` | Shell lifetime; shared by lightbox and bulk. Mutation barriers are exclusive per asset, start before IPC, and reject details from before/during a pending write. A caller that cannot acquire every required asset sends no IPC and releases any locks already acquired. Restore/clear advances the identity epoch; deletion leaves a per-ID invalidation generation. |
 | Selected asset, loaded details, lightbox editor drafts, and serialized tag saves | `useSelectionState` | Shell lifetime; overlays shared authoritative tags onto its local detail cache, blocks replacement while the complete tag base is unknown, and clears selection-scoped state when appropriate. |
-| Bulk mode, selected IDs, anchor, sidebar drafts, detail cache, and applying flags | `useBulkSelectionController` | Shell lifetime; consumes the shared tag state, keeps detail-load and mutation failures separate, prunes invalid IDs as loaded assets change, and resets sidebar drafts when the selected-ID set changes. |
+| Bulk mode, selected IDs, anchor, sidebar drafts, detail cache, and applying flags | `useBulkSelectionController` | Shell lifetime; retains selected IDs across page eviction, consumes shared tag state, separates detail-load and mutation failures, and resets drafts when the selected-ID set changes. |
 | Settings operation locks, progress/messages, scan roots, pending confirmations, and duplicate state | `useSettingsActions` and its focused settings hooks | Shell lifetime even while the settings component is unmounted; backend data is refreshed by the owning action hook. See the settings guide. |
 | Theme | `useAppTheme` plus `themeService` | React state for the mounted shell, mirrored to `<html data-theme>`, local storage, and the native window when running under Tauri. |
 | Language | the i18next singleton plus `useAppLanguage` | Process-wide i18n state, mirrored to `<html lang>` and local storage. |
@@ -60,11 +62,11 @@ The gallery and settings are mutually exclusive children of the same `<main>` el
 - opening settings unmounts the gallery-owned bulk sidebar while its shell-owned selection state remains available;
 - the scan-root list and known tags are hydrated on shell mount, and applied search filters drive library refreshes from shell effects.
 
-Settings can be closed by the Back button or by the window-level Escape handler in `useSettingsView`. A normal settings open starts without a highlighted scan section; the empty-library "add first folder" route opens the same view with the scan section highlighted. Closing the view clears that transient highlight.
+Settings closes through Back or the layer registered by `SettingsViewLayer` in `App.tsx`. `useSettingsView` owns only the open boolean and callbacks. A normal settings open starts without a highlighted scan section; the empty-library "add first folder" route opens the same view with the scan section highlighted. Closing the view clears that transient highlight.
 
 ## Lazy loading and delayed prefetch
 
-The gallery shell, including its bulk-actions sidebar, is eagerly imported. The settings view and lightbox are `React.lazy` boundaries. Their shared `Suspense` fallbacks are `null`, so a surface can be temporarily absent while its chunk loads.
+The gallery and bulk sidebar are eagerly imported. Settings and lightbox use `React.lazy`. Settings shows a localized status while loading; lightbox shows a named loading dialog. `LazyErrorBoundary` supplies localized failure UI with reload and Back/Close actions. Its reset key follows settings visibility or selected asset ID; resetting the boundary alone does not guarantee a fresh download of a rejected lazy module.
 
 After `App` mounts, an effect schedules dynamic imports for both lazy surfaces after 1,500 ms. Opening one earlier starts its import immediately. The timer is cleared on cleanup; module loading itself is cached by the JavaScript module loader. Preserve this split when adding a large, infrequently used surface: make the initial render path explicit, cancel delayed work in cleanup, and do not assume prefetch completed before user interaction.
 
@@ -140,40 +142,25 @@ Global styles establish full-height roots, typography, field treatment, visible 
 
 ## Modal and overlay conventions
 
-`UiModal` renders into `document.body` with `createPortal`. When open it supplies `role="dialog"` and `aria-modal="true"`, accepts either `ariaLabel` or `labelledBy`, and renders one of four responsive width presets. By default:
+[UiLayerProvider](../../src/components/UI/UiLayerProvider.tsx), mounted by `App`, owns the DOM layer stack. [UiModal](../../src/components/UI/UiModal.tsx) and the specialized lightbox register modal layers and portal into `document.body`. `SettingsViewLayer` registers a nonmodal layer for page-level Escape.
 
-- Escape closes through a temporary `window` keydown listener;
-- a mouse down on the overlay closes, while a mouse down inside content does not;
-- consumers can disable either close path, which settings and bulk operations do while a destructive or applying operation is locked.
+- Only the top registered layer receives managed Escape dismissal. A locked top layer does not select a lower layer as a fallback. UiModal backdrop dismissal also checks top-layer ownership.
+- A top modal makes `#root` and lower registered modal elements inert and aria-hidden, and locks body scrolling. Cleanup removes those attributes and restores the previous body overflow.
+- Initial focus selects `[data-initial-focus]`, then the first tabbable descendant, then the container. Tab and Shift+Tab wrap inside the top modal.
+- Unregistering the top layer restores the supplied trigger or the previously focused connected element. If unavailable, it tries the next layer's initial focus.
+- `UiModal` requires exactly one of `ariaLabel` or `labelledBy` in its props and renders `role="dialog"` with `aria-modal="true"`. It supports four width presets and independently configurable Escape/backdrop closing.
 
-Every production dialog must provide a meaningful accessible name. A heading ID with `labelledBy` is preferred when the dialog has a visible heading; `ariaLabel` is appropriate otherwise. Explicit Close/Cancel actions remain required even when backdrop and Escape closing are enabled.
-
-The primitive does not manage focus. Input-led feature modals currently focus their primary input on the next animation frame and cancel that frame during cleanup. The main lightbox is a specialized, non-portal overlay with separate backdrop and keyboard logic; keep its detailed behavior in the [lightbox guide](../subsystems/lightbox.md). Do not assume every existing overlay inherits `UiModal` behavior.
+Provide translated names and explicit close actions. Register new overlays with the shared manager instead of adding independent global Escape listeners. Lightbox image/native fullscreen and inline confirmation still have specialized key handling, described in [lightbox](../subsystems/lightbox.md#fullscreen-and-keyboard-behavior).
 
 ## Keyboard and accessibility
 
-### Current guarantees
+Native controls, translated accessible names, pressed states, listbox suggestions, alerts, and status regions are the normal conventions. Global styles provide focus-visible feedback and a reduced-motion rule that minimizes animations/transitions and disables smooth scrolling.
 
-- Interactive controls are normally native buttons, inputs, selects, ranges, and progress elements.
-- Icon-only controls and important form controls supply translated accessible labels at their call sites.
-- Toggle controls expose state with `aria-pressed`; decorative icons and loaders are hidden from the accessibility tree.
-- Search suggestions use listbox/option semantics, alerts use `role="alert"`, and loading/count surfaces use status/live-region semantics where implemented.
-- Global and component styles expose `:focus-visible` feedback for the primary interactive control families.
-- Settings closes on Escape. `UiModal` supports configurable Escape and backdrop closing, and feature keyboard handlers avoid most text-entry targets before acting on shortcuts.
-- Input-led bulk, tag-list, and destructive-confirmation flows explicitly focus their main input after opening.
+The layer manager's tabbable selector excludes disabled controls, hidden elements, and inert ancestors, but it does not perform a complete computed-visibility or browser tab-order calculation. Standalone components rendered without the provider receive only fallback Escape handling. Tests that claim focus trapping or nested dismissal must mount the provider.
 
-### Known limitations
+GTK video controls are native widgets outside the DOM layer manager. Changes to video bounds, fullscreen, or sidebar visibility need desktop verification as well as DOM tests. See [native media presentation](../subsystems/lightbox.md#media-presentation).
 
-- There is no shared focus trap, focus-return mechanism, background `inert` management, body scroll lock, or modal stack manager.
-- `UiModal` allows its accessible-name props to be omitted, so naming is a caller responsibility rather than a type-level guarantee.
-- Window-level Escape listeners are independent. Nested overlays can have competing close handlers instead of a coordinated topmost-layer policy.
-- The specialized lightbox shell is not the shared portal dialog and does not itself expose `role="dialog"`/`aria-modal`; only its nested delete confirmation does.
-- Some complex pointer interactions, including drag-oriented ordering/selection, do not yet have equivalent documented keyboard workflows.
-- `UiProgressBar` renders a native progress element and adjacent text, but the primitive does not associate that text as the progress element's accessible name.
-- There is no explicit reduced-motion policy in global styles.
-- Unit tests exercise roles, labels, Escape/backdrop behavior, and selected keyboard flows in jsdom, but they are not a substitute for screen-reader, focus-order, contrast, zoom, or full keyboard-only audits.
-
-Treat these as limits of the current implementation, not permission to repeat them in new surfaces. A change that creates or deepens one should include the smallest practical improvement or a clearly scoped follow-up.
+Other limits remain: pointer drag ordering lacks an equivalent keyboard workflow, and `UiProgressBar` does not associate adjacent text as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
 
 ## Safe change checklist
 
@@ -184,7 +171,7 @@ Before changing frontend structure or UI behavior:
 3. Keep components free of raw Tauri `invoke` calls; update `src/api.ts` and follow the IPC contract for boundary changes.
 4. For mutations, await backend success before applying local patches. Update every in-memory representation, and refresh tags or query membership when affected.
 5. Make effects Strict-Mode-safe: unregister listeners/observers, cancel timers/frames, and ignore stale async responses.
-6. Preserve lazy boundaries for heavy, optional surfaces and provide an intentional loading experience if `fallback={null}` is no longer acceptable.
+6. Preserve lazy boundaries, visible loading states, and failure recovery for settings and lightbox. Test a rejected chunk as well as a delayed one.
 7. Reuse UI primitives and semantic theme tokens. Verify both light and dark themes and avoid hard-coded foreground/background pairs.
 8. Localize visible text, titles, labels, status text, and accessible names; follow the localization guide rather than editing one locale in isolation.
 9. For dialogs, provide a name, explicit close action, busy-state close policy, initial focus, Escape/backdrop tests, and a plan for restoring focus. Consider interaction with another open layer.
@@ -192,10 +179,10 @@ Before changing frontend structure or UI behavior:
 
 ## Test map
 
-The current suite supports the boundaries above:
+The existing tests exercise these boundaries:
 
 - `themeService`, `tileSizeService`, `filterService`, and `assetMutationService` tests cover deterministic policy and immutable patches.
-- `UiModal` tests cover closed rendering, backdrop and Escape options, inside clicks, and responsive size classes; `UiAlert` tests cover semantic role and tone styling.
+- `UiModal` tests cover closed rendering, backdrop/Escape options, top-layer dismissal, locked nested layers, focus trapping/restoration, app-root inertness, and responsive sizes; `UiAlert` tests cover semantic role and tone styling.
 - Hook tests cover query-cache lifecycle, stale/duplicate work protection, selection/editor synchronization, thumbnail queues, settings actions, confirmation flows, and shell search behavior.
 - `App.test.tsx` is the integration seam for initial hydration, gallery/settings replacement, Back and Escape navigation, modal flows, mutation wiring, and runtime theme application.
 - Focused component tests cover specialized keyboard, labeling, selection, and modal behavior. End-to-end Tauri tests cover behavior that requires the desktop runtime.

@@ -1,5 +1,7 @@
 # Localization
 
+Implementation entry points: [language registry](../../src/i18n/languages.ts), [runtime initialization](../../src/i18n/index.ts), [English resource](../../src/i18n/locales/en.json), [locale validator](../../scripts/validate-locales.mjs), [generator](../../scripts/generate-locales.mjs).
+
 MediaTagger uses i18next and react-i18next for frontend localization. English is the fallback language and the canonical translation tree. Locale data is bundled with the frontend; changing language does not require a network request.
 
 ## Supported languages and sources of truth
@@ -80,19 +82,9 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 6. Extend `AppearanceSection.test.tsx` to select the new value. Add runtime coverage for normalization/persistence if the new code introduces a region or script concern.
 7. Run parity, focused tests, a build, and the manual selector/reload checklist. Updating `scripts/generate-locales.mjs` is a separate decision and does not replace any of the preceding registration steps.
 
-## Runtime guarantees
-
-- Only a normalized member of `APP_LANGUAGES` becomes the application language through the normal startup path; unsupported startup values fall back to English.
-- English fallback is configured globally.
-- The active normalized code is reflected in the document `lang` attribute and persisted under the stable `media-tagger.language` key.
-- All 11 locale JSON files are imported into the current runtime resource object.
-- The language selector uses stable native labels rather than labels that change with the current UI language.
-
-The offline locale gate checks the corresponding repository invariants. It reads the language tuple without evaluating TypeScript and requires exactly one JSON resource per `AppLanguage`.
-
 ## Automated locale contract
 
-English currently has 336 leaf keys. `bun run locale:check` treats `en.json` as canonical and fails when any locale has:
+`bun run locale:check` counts the current English leaves and treats `en.json` as canonical. It fails when any locale has:
 
 - a missing, extra, or relocated leaf path;
 - a different primitive value type; or
@@ -114,7 +106,7 @@ bun run locale:generate -- --overwrite
 
 Both modes preserve the reviewed destructive confirmation words, including `Sì` and `Sí`, and run the offline locale contract after generation. Missing strings still use the unofficial Google Translate endpoint with retries and an in-memory cache. Network output is only a draft. Review wording, accessibility labels, interpolation, layout, and destructive prompts before committing it.
 
-The generator protects placeholders and newlines with sentinel values. The post-generation contract detects a changed or missing token, but it cannot judge translation quality. Do not use `--overwrite` as a routine update command.
+The generator protects placeholders and newlines with sentinel values. The placeholder contract detects changed or missing interpolation tokens, but does not separately compare newline counts or judge translation quality. Review both in the generated diff. Do not use `--overwrite` as a routine update command.
 
 ## Safe validation
 

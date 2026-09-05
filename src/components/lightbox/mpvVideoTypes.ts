@@ -28,6 +28,7 @@ export type VideoControl =
   | { type: "setFullscreen"; fullscreen: boolean };
 
 export type MpvVideoEvent = { session_id: number } & (
+  | { type: "pointerActivity" }
   | { type: "loading" }
   | { type: "metadata"; duration: number; width: number; height: number }
   | { type: "playing" }

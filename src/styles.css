@@ -367,3 +367,27 @@ select:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Opacity preserves keyboard discovery; idle controls never intercept the image. */
+.lightbox-panel-trigger {
+  transition: opacity 180ms ease;
+}
+.lightbox-panel-trigger--idle:not(:focus-visible) {
+  opacity: 0;
+  pointer-events: none;
+}
+[data-lightbox-toolbar] [data-ui="assigned-tag-list"] > span {
+  max-width: 100%;
+  min-width: 0;
+  border-radius: var(--radius-control);
+}
+[data-lightbox-toolbar] [data-ui="assigned-tag-list"] > span > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lightbox-panel-trigger { transition: none; }
+}
+
+/* Offscreen drawers must not create a scrollable area when a control gets focus. */
+.lightbox-layout { overflow: clip; }

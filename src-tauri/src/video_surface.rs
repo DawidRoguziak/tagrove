@@ -4,7 +4,7 @@ use std::{
     ptr::NonNull,
     rc::Rc,
     sync::{mpsc, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use gtk::{glib, prelude::*};
@@ -32,6 +32,7 @@ struct VideoSurface {
     controls: NativeVideoControls,
     sessions: SurfaceSessions,
     _overlay: gtk::Overlay,
+    _pointer_motion: gtk::EventControllerMotion,
     _css_provider: gtk::CssProvider,
     render_context: Rc<RefCell<RenderContextState>>,
     _render_source: glib::SourceId,
@@ -677,6 +678,32 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
     fixed.show();
     webview.show();
 
+    // Capture observes native controls as well as the pass-through picture without
+    // consuming input. The WebView uses the same activity timer for its controls.
+    let pointer_motion = gtk::EventControllerMotion::new(&gtk_window);
+    pointer_motion.set_propagation_phase(gtk::PropagationPhase::Capture);
+    {
+        let player = player.clone();
+        let last_motion = Cell::new(None::<Instant>);
+        let last_position = Cell::new(None::<(f64, f64)>);
+        pointer_motion.connect_motion(move |_, x, y| {
+            if last_position.replace(Some((x, y))) == Some((x, y)) {
+                return;
+            }
+            let now = Instant::now();
+            if last_motion
+                .get()
+                .is_some_and(|last| now.duration_since(last) < Duration::from_millis(100))
+            {
+                return;
+            }
+            last_motion.set(Some(now));
+            if let Some(snapshot) = player.playback_snapshot() {
+                player.pointer_activity(snapshot.session_id);
+            }
+        });
+    }
+
     let render_context = Rc::new(RefCell::new(RenderContextState::Pending));
     let (render_tx, render_rx) = async_channel::bounded(1);
     let mpv = player.mpv();
@@ -798,6 +825,7 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
             controls,
             sessions: SurfaceSessions::default(),
             _overlay: overlay,
+            _pointer_motion: pointer_motion,
             _css_provider: css_provider,
             render_context,
             _render_source: render_source,

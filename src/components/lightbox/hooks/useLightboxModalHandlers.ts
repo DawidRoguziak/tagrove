@@ -17,7 +17,6 @@ export function useLightboxModalHandlers({
   onDeleteMedia,
   onClose
 }: UseLightboxModalHandlersOptions) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [infoPanelOpen, setInfoPanelOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -31,7 +30,6 @@ export function useLightboxModalHandlers({
       return;
     }
 
-    setSidebarOpen(false);
     setInfoPanelOpen(false);
     setDeleteConfirmOpen(false);
     setDeleteSubmitting(false);
@@ -40,7 +38,6 @@ export function useLightboxModalHandlers({
   }, [selectedId]);
 
   const handleEnterFullscreen = useCallback(() => {
-    setSidebarOpen(false);
     setInfoPanelOpen(false);
   }, []);
 
@@ -80,14 +77,6 @@ export function useLightboxModalHandlers({
     event.stopPropagation();
   }, []);
 
-  const handleOpenSidebar = useCallback(() => {
-    setSidebarOpen(true);
-  }, []);
-
-  const handleCloseSidebar = useCallback(() => {
-    setSidebarOpen(false);
-  }, []);
-
   const handleToggleInfoPanel = useCallback(() => {
     setInfoPanelOpen((previous) => !previous);
   }, []);
@@ -115,7 +104,6 @@ export function useLightboxModalHandlers({
   }, [onClose]);
 
   return {
-    sidebarOpen,
     infoPanelOpen,
     deleteConfirmOpen,
     deleteSubmitting,
@@ -124,8 +112,6 @@ export function useLightboxModalHandlers({
     handleEnterFullscreen,
     handleApplyMediaGroup,
     handleShellClick,
-    handleOpenSidebar,
-    handleCloseSidebar,
     handleToggleInfoPanel,
     handleOpenDeleteConfirm,
     handleCloseDeleteConfirm,

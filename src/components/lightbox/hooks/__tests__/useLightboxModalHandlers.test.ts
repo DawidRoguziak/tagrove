@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { useLightboxModalHandlers } from "../useLightboxModalHandlers";
 
 describe("useLightboxModalHandlers", () => {
-  it("opens the sidebar, toggles info and resets state on selected id change", () => {
+  it("toggles info and resets selection-scoped state on selected id change", () => {
     const { result, rerender } = renderHook(
       ({ selectedId }: { selectedId: number | null }) =>
         useLightboxModalHandlers({
@@ -18,28 +18,21 @@ describe("useLightboxModalHandlers", () => {
       { initialProps: { selectedId: 1 } }
     );
 
-    act(() => {
-      result.current.handleOpenSidebar();
-    });
-    expect(result.current.sidebarOpen).toBe(true);
     expect(result.current.infoPanelOpen).toBe(false);
 
     act(() => {
       result.current.handleToggleInfoPanel();
     });
     expect(result.current.infoPanelOpen).toBe(true);
-    expect(result.current.sidebarOpen).toBe(true);
 
     act(() => {
       result.current.handleOpenDeleteConfirm();
     });
     expect(result.current.deleteConfirmOpen).toBe(true);
-    expect(result.current.sidebarOpen).toBe(true);
     expect(result.current.infoPanelOpen).toBe(false);
 
     rerender({ selectedId: 2 });
 
-    expect(result.current.sidebarOpen).toBe(false);
     expect(result.current.infoPanelOpen).toBe(false);
     expect(result.current.deleteConfirmOpen).toBe(false);
     expect(result.current.deleteSubmitting).toBe(false);

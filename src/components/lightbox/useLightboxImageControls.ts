@@ -584,6 +584,7 @@ export function useLightboxImageControls({
 
   useLightboxViewportSize({
     selectedId,
+    fullscreen: isFullscreen,
     mediaViewportRef,
     onSizeChange: handleMediaSizeChange
   });

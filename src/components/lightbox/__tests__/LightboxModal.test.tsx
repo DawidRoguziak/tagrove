@@ -44,6 +44,7 @@ const selectedVideoAsset: SelectedAsset = {
   duration_ms: 20_000
 };
 const originalMatchMedia = window.matchMedia;
+const originalResizeObserver = window.ResizeObserver;
 
 function stubMatchMedia(matches: boolean) {
   Object.defineProperty(window, "matchMedia", {
@@ -73,7 +74,32 @@ describe("LightboxModal", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    window.ResizeObserver = originalResizeObserver;
     Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+  });
+
+  it("retains collapsed state across media navigation and drafts across toggling", async () => {
+    const props = {
+      selected: selectedAsset, tagEditor: [], onTagEditorChange: vi.fn(), onSaveTags: vi.fn(),
+      knownTags: [], onNavigatePrevious: vi.fn(), onNavigateNext: vi.fn(), onToggleFavorite: vi.fn(), onClose: vi.fn()
+    };
+    const { rerender } = render(<LightboxModal {...props} />);
+    const draft = screen.getByPlaceholderText("Type to add tag");
+    await userEvent.type(draft, "unfinished");
+    await userEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
+    expect(document.getElementById("lightbox-sidebar")).toHaveAttribute("inert");
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveFocus());
+    await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+    expect(draft).toHaveValue("unfinished");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Close asset panel" })).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Open asset panel" })).toHaveFocus());
+    rerender(<LightboxModal {...props} selected={{ ...selectedAsset, id: 2, kind: "gif" }} />);
+    expect(screen.getByRole("button", { name: "Open asset panel" })).toBeInTheDocument();
+    expect(document.getElementById("lightbox-sidebar")).toHaveAttribute("inert");
+    rerender(<LightboxModal {...props} selected={null} />);
+    rerender(<LightboxModal {...props} />);
+    expect(screen.getByRole("button", { name: "Close asset panel" })).toBeInTheDocument();
   });
 
   it("handles left and right arrow navigation", async () => {
@@ -145,7 +171,7 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     expect(dialog).toHaveAttribute("data-lightbox-kind", "video");
     expect(dialog).toHaveClass(
       "lightbox-shell--video",
-      "h-[min(calc(100vh-40px),1180px)]",
+      "h-[min(calc(100dvh-40px),1180px)]",
       "w-[min(calc(100vw-40px),1800px)]"
     );
     expect(videoStage).toHaveClass("lightbox-media-stage--video");
@@ -644,7 +670,7 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     expect(tags).toHaveClass("border-t");
     expect(tags).not.toHaveClass("mt-auto");
     expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("h-6!", "min-h-6!");
-    expect(actionRail).toHaveClass("grid-flow-col", "auto-cols-fr");
+    expect(within(actionRail).getAllByRole("button")).toHaveLength(6);
     expect(upperSection).not.toContainElement(actionRail);
   });
 
@@ -668,8 +694,8 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     const sidebar = document.querySelector('[data-lightbox-toolbar="image"]');
     expect(sidebar).toHaveAttribute("aria-hidden", "true");
     expect(sidebar).toHaveAttribute("inert");
-    expect(sidebar?.parentElement).toHaveClass("grid-rows-[auto_minmax(0,1fr)]");
-    expect(screen.getByRole("button", { name: "Open asset panel" }).closest("header")).toBeInTheDocument();
+    expect(sidebar?.parentElement).toHaveClass("grid-rows-[minmax(0,1fr)]");
+    expect(screen.getByRole("button", { name: "Open asset panel" })).toHaveAttribute("aria-controls", "lightbox-sidebar");
 
     await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
 
@@ -686,6 +712,17 @@ it("keeps tags inline and info toggleable, off by default", async () => {
   });
 
   it("hides the native video stage while the narrow drawer is open", async () => {
+    const resizeCallbacks: Array<() => void> = [];
+    window.ResizeObserver = class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        if (target.matches("[data-lightbox-video-player], [data-lightbox-media-stage]")) {
+          resizeCallbacks.push(() => this.callback([], this));
+        }
+      }
+      unobserve() {}
+      disconnect() {}
+    };
     stubMatchMedia(true);
     render(
       <LightboxModal
@@ -706,9 +743,10 @@ it("keeps tags inline and info toggleable, off by default", async () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
     expect(videoStage?.parentElement).toHaveClass("hidden");
+    act(() => resizeCallbacks.forEach((callback) => callback()));
 
-    await userEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
-    expect(document.querySelector('[data-lightbox-media-stage="video"]')?.parentElement).not.toHaveClass("hidden");
+    await userEvent.click(await screen.findByRole("button", { name: "Close asset panel" }));
+    await waitFor(() => expect(document.querySelector('[data-lightbox-media-stage="video"]')?.parentElement).not.toHaveClass("hidden"));
   });
 
   it("disables tag editing while complete details are loading", async () => {

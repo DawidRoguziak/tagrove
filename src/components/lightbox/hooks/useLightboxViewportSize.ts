@@ -3,12 +3,14 @@ import type { RefObject } from "react";
 
 interface UseLightboxViewportSizeOptions {
   selectedId: number | null;
+  fullscreen: boolean;
   mediaViewportRef: RefObject<HTMLDivElement | null>;
   onSizeChange: (next: { width: number; height: number }) => void;
 }
 
 export function useLightboxViewportSize({
   selectedId,
+  fullscreen,
   mediaViewportRef,
   onSizeChange
 }: UseLightboxViewportSizeOptions) {
@@ -33,5 +35,5 @@ export function useLightboxViewportSize({
     const observer = new ResizeObserver(updateSize);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [mediaViewportRef, onSizeChange, selectedId]);
+  }, [mediaViewportRef, onSizeChange, selectedId, fullscreen]);
 }

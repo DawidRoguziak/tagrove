@@ -4,8 +4,9 @@ import type {
   PointerEventHandler,
   ReactEventHandler
 } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { VideoBounds } from "./mpvVideoTypes";
 import { toMediaSrc } from "../../api";
 import type { SelectedAsset } from "../../types";
 import { UiButton } from "../UI/UiButton";
@@ -29,6 +30,8 @@ interface LightboxMediaStageProps {
   onImageLoad: ReactEventHandler<HTMLImageElement>;
   onVideoLoadedMetadata: (dimensions: { width: number; height: number }) => void;
   onVideoFullscreenChange: (fullscreen: boolean) => void;
+  onPointerActivity?: () => void;
+  onNativeBounds?: (bounds: VideoBounds) => void;
   onImageClick: MouseEventHandler<HTMLImageElement>;
   onImagePointerDown: PointerEventHandler<HTMLDivElement>;
   onImagePointerMove: PointerEventHandler<HTMLDivElement>;
@@ -49,6 +52,8 @@ export function LightboxMediaStage({
   onImageLoad,
   onVideoLoadedMetadata,
   onVideoFullscreenChange,
+  onPointerActivity,
+  onNativeBounds,
   onImageClick,
   onImagePointerDown,
   onImagePointerMove,
@@ -74,6 +79,11 @@ export function LightboxMediaStage({
   // Without loaded details there is no verified source path: hold the previous
   // media (or a loading placeholder) instead of guessing from summary fields.
   const mediaFailed = failedActivation === activationGeneration;
+  useEffect(() => {
+    if (selected.kind === "video" && (!detailsLoaded || mediaFailed)) {
+      onNativeBounds?.({ x: 0, y: 0, width: 0, height: 0 });
+    }
+  }, [selected.kind, detailsLoaded, mediaFailed, onNativeBounds]);
   const mediaStyle =
     mediaDisplaySize.width > 0 && mediaDisplaySize.height > 0
       ? {
@@ -84,7 +94,7 @@ export function LightboxMediaStage({
 
   return (
     <div
-      className={`relative h-full min-h-0 w-full overflow-hidden [contain:paint] ${
+      className={`relative h-full min-h-0 min-w-0 w-full overflow-hidden [contain:paint] ${
         selected.kind === "video"
           ? "lightbox-media-stage--video"
           : "bg-[radial-gradient(circle_at_center,oklch(var(--b2)/0.72),oklch(var(--b3)/0.98))]"
@@ -143,6 +153,8 @@ export function LightboxMediaStage({
             playerRef={lightboxVideoPlayerRef}
             onLoadedMetadata={onVideoLoadedMetadata}
             onFullscreenChange={onVideoFullscreenChange}
+            onPointerActivity={onPointerActivity}
+            onNativeBounds={onNativeBounds}
             onError={reportMediaFailure}
           />
         </div>
@@ -165,7 +177,7 @@ export function LightboxMediaStage({
             src={toMediaSrc(selected.path ?? "")}
             alt={selected.file_name}
             style={mediaStyle}
-            className={`origin-center shrink-0 select-none object-contain [backface-visibility:hidden] [will-change:transform] ${
+            className={`max-h-full max-w-full origin-center shrink-0 select-none object-contain [backface-visibility:hidden] [will-change:transform] ${
               isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
             }`}
             onLoad={onImageLoad}

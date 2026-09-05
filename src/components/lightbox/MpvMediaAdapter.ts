@@ -405,6 +405,7 @@ export class MpvMediaAdapter extends EventTarget implements Video {
       case "error":
         this.updateError({ code: 3, message: event.message });
         break;
+      case "pointerActivity":
       case "tracks":
         break;
     }

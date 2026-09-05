@@ -67,3 +67,12 @@ export async function createPlayableFixtures(root, prefix) {
   }
   return { gifPath, videoPaths };
 }
+
+export async function createLightboxFixtures(root) {
+  for (const [name, size] of [["portrait", "800x4800"], ["panorama", "4800x400"], ["large", "4800x3200"]]) {
+    await execFileAsync(process.env.FFMPEG_PATH ?? "ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `testsrc2=size=${size}`,
+      "-frames:v", "1", "-y", path.join(root, `${name}-${"long_filename_".repeat(10)}.png`)
+    ]);
+  }
+}

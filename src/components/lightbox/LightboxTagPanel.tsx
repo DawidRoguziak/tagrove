@@ -44,7 +44,7 @@ export function LightboxTagPanel({
     <section
       aria-label={t("lightbox.taggingHeading")}
       data-testid="lightbox-tag-panel"
-      className="grid min-h-0 content-start gap-2 border-t border-[var(--border-soft)] pt-2"
+      className="grid min-h-0 min-w-0 shrink-0 grid-cols-[minmax(0,1fr)] content-start gap-2 border-t border-[var(--border-soft)] pt-2"
     >
       <h3 className="m-0 text-xs">{t("lightbox.taggingHeading")}</h3>
 
@@ -57,7 +57,7 @@ export function LightboxTagPanel({
         getRemoveTagAriaLabel={(tag) => t("lightbox.removeTagAria", { tag })}
       />
 
-      <div className="relative grid gap-1">
+      <div className="relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
         <label className="text-[11px] text-base-content/65" htmlFor="lightbox-tag-draft-input">
           {t("lightbox.addTag")}
         </label>

@@ -14,6 +14,7 @@ pub struct VideoEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum VideoEventPayload {
+    PointerActivity,
     Loading,
     Metadata {
         duration: f64,
@@ -107,7 +108,8 @@ impl PlaybackSnapshot {
             }
             VideoEventPayload::Rate { rate } => self.rate = *rate,
             VideoEventPayload::Fullscreen { fullscreen } => self.fullscreen = *fullscreen,
-            VideoEventPayload::Loading
+            VideoEventPayload::PointerActivity
+            | VideoEventPayload::Loading
             | VideoEventPayload::Waiting
             | VideoEventPayload::Tracks
             | VideoEventPayload::Error { .. } => {}
@@ -357,6 +359,10 @@ impl VideoPlayerService {
         }
     }
 
+    pub(crate) fn pointer_activity(&self, session_id: u64) {
+        self.send(session_id, VideoEventPayload::PointerActivity);
+    }
+
     fn send_current(&self, payload: VideoEventPayload) {
         let mut state = self.state();
         if let Some(active) = &mut state.active {
@@ -435,6 +441,32 @@ mod tests {
             events: Channel::new(|_| Ok(())),
             playback: PlaybackSnapshot::new(session_id),
         });
+    }
+
+    #[test]
+    fn pointer_activity_is_session_scoped_and_does_not_change_playback() {
+        let service = VideoPlayerService::unavailable("test player");
+        activate_test_session(&service, 7);
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let received = Arc::clone(&messages);
+        service.state().active.as_mut().unwrap().events = Channel::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                received.lock().unwrap().push(json);
+            }
+            Ok(())
+        });
+        service.pointer_activity(6);
+        assert!(messages.lock().unwrap().is_empty());
+        service.pointer_activity(7);
+        let messages = messages.lock().unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&messages[0]).unwrap(),
+            serde_json::json!({ "session_id": 7, "type": "pointerActivity" })
+        );
+        let snapshot = service.playback_snapshot().unwrap();
+        assert!(snapshot.paused);
+        assert_eq!(snapshot.current_time, 0.0);
     }
 
     #[test]

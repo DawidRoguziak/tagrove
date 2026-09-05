@@ -50,7 +50,7 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 
 `AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. Gallery GIF previews use it. The lightbox waits for complete details before rendering media; video opens by asset ID, not by a frontend path.
 
-`MpvVideoEvent` is `{ session_id, type, ... }`. Variants are `loading`, `metadata` (`duration`, `width`, `height`), `playing`, `paused`, `waiting`, `time` (`current_time`), `volume` (`volume`, `muted`), `rate`, `tracks`, `fullscreen`, `ended`, and `error` (`message`). The frontend accepts events only for the session returned by `open_video`.
+`MpvVideoEvent` is `{ session_id, type, ... }`. Variants are `pointerActivity`, `loading`, `metadata` (`duration`, `width`, `height`), `playing`, `paused`, `waiting`, `time` (`current_time`), `volume` (`volume`, `muted`), `rate`, `tracks`, `fullscreen`, `ended`, and `error` (`message`). The frontend accepts events only for the session returned by `open_video`. `pointerActivity` has no additional fields and reports throttled GTK mouse movement for lightbox control visibility; it does not update playback state. Native bounds callbacks are delivered to the lightbox only after `set_video_bounds` succeeds, so opening a sidebar can wait until the native surface is clear.
 
 `kind` is typed as `MediaKind` (`image | gif | video`) in TypeScript, while the serialized Rust model stores it as an unrestricted `String`; correctness currently comes from indexing/database invariants rather than serde validation on output.
 

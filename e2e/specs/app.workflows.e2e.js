@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
+import { copyPngFixtures, createPlayableFixtures, createLightboxFixtures } from "../fixtures.js";
 
 const tempMediaRoots = [];
 const tempArtifacts = [];
@@ -428,6 +428,117 @@ describe("MediaTagger desktop workflows", () => {
     await noFoldersHeading.waitForDisplayed({ timeout: 15000 });
   });
 
+  it("keeps lightbox panels inside the viewport and remembers collapse while browsing", async () => {
+    await resetLibraryState();
+    const root = await createTempMediaRoot("lightbox-layout", 0);
+    await createLightboxFixtures(root);
+    await invokeTauriCommand("add_scan_root", { path: root });
+    await invokeTauriCommand("rescan_all_roots");
+    const fixturePage = await listAssetsForAssertions();
+    for (const asset of fixturePage.items) {
+      await invokeTauriCommand("set_asset_tags", { assetId: asset.id, tags: ["long_tag_".repeat(30)] });
+    }
+    await browser.refresh();
+    await ensureGalleryView();
+    const original = await browser.getWindowSize();
+    const evidence = path.resolve("artifacts/lightbox-layout");
+    await fs.mkdir(evidence, { recursive: true });
+    try {
+      for (const [width, height] of [[1440, 900], [1000, 720], [600, 400], [320, 360]]) {
+        for (let index = 0; index < 3; index++) {
+          // Gallery layout is outside this test: open at the normal desktop size,
+          // then exercise the lightbox's own responsive transition.
+          await browser.setWindowSize(1440, 900);
+          await waitForTileAtIndex(index);
+          await $(`button[data-asset-index="${index}"]`).scrollIntoView({ block: "center" });
+          await $(`button[data-asset-index="${index}"]`).click();
+          await browser.setWindowSize(width, height);
+          if (width < 768) {
+            await $('button[aria-label="Open asset panel"]').waitForDisplayed();
+            await $('button[aria-label="Open asset panel"]').click();
+          }
+          await browser.waitUntil(() => browser.execute(() => {
+            const img = document.querySelector('[data-testid="lightbox-image"]');
+            return img?.complete && img.naturalWidth > 0;
+          }));
+          await browser.waitUntil(() => browser.execute(() => {
+            const sidebar = document.querySelector("[data-lightbox-toolbar]");
+            const stage = document.querySelector("[data-lightbox-media-stage]");
+            const dialog = document.querySelector("[data-lightbox-kind]");
+            const upper = document.querySelector('[data-testid="lightbox-sidebar-upper"]');
+            const rail = document.querySelector('[data-testid="lightbox-action-rail"]');
+            const image = document.querySelector('[data-testid="lightbox-image"]');
+            const panelRect = sidebar.getBoundingClientRect();
+            const stageRect = stage.getBoundingClientRect();
+            const dialogRect = dialog.getBoundingClientRect();
+            const imageRect = image.getBoundingClientRect();
+            return (innerWidth < 768 || panelRect.left >= stageRect.right - 1) && panelRect.right <= dialogRect.right + 1
+              && dialogRect.bottom <= innerHeight && dialogRect.top >= 0
+              && sidebar.scrollWidth <= sidebar.clientWidth + 1 && upper.scrollWidth <= upper.clientWidth + 1
+              && rail.getBoundingClientRect().bottom <= panelRect.bottom
+              && imageRect.width <= stageRect.width + 1 && imageRect.height <= stageRect.height + 1;
+          }), { timeout: 5000, timeoutMsg: "Lightbox content overflows its assigned viewport" });
+          await browser.saveScreenshot(path.join(evidence, `${width}-${index}-open.png`));
+          await $('button[aria-label="Close asset panel"]').click();
+          await browser.waitUntil(async () => (await $("[data-lightbox-toolbar]").getAttribute("aria-hidden")) === "true");
+          await browser.waitUntil(() => browser.execute(() =>
+            getComputedStyle(document.querySelector("#lightbox-sidebar-trigger-button")).opacity === "0"
+          ), { timeout: 6000, timeoutMsg: "Collapsed panel trigger did not fade after inactivity" });
+          await browser.saveScreenshot(path.join(evidence, `${width}-${index}-idle.png`));
+          await browser.keys("ArrowRight");
+          await $('button[aria-label="Open asset panel"]').waitForDisplayed();
+          await browser.waitUntil(async () => (await $("[data-lightbox-toolbar]").getAttribute("aria-hidden")) === "true");
+          await $('button[aria-label="Open asset panel"]').click();
+          await $('button[aria-label="Close asset panel"]').waitForDisplayed();
+          await browser.keys("Escape");
+          if (width < 768) await browser.keys("Escape");
+        }
+      }
+    } catch (error) {
+      console.log("LIGHTBOX_BOUNDS", JSON.stringify(await browser.execute(() =>
+        ["[data-lightbox-kind]", "[data-lightbox-toolbar]", "[data-lightbox-media-stage]", '[data-testid="lightbox-sidebar-upper"]', '[data-testid="lightbox-action-rail"]', '[data-testid="lightbox-image"]'].map((selector) => {
+          const el = document.querySelector(selector);
+          return { selector, rect: el?.getBoundingClientRect().toJSON(), clientWidth: el?.clientWidth, scrollWidth: el?.scrollWidth, viewport: [innerWidth, innerHeight] };
+        })
+      )));
+      await browser.saveScreenshot(path.join(evidence, "failure.png"));
+      throw error;
+    } finally {
+      if (await $("[data-lightbox-kind]").isExisting()) await browser.keys("Escape");
+      await browser.setWindowSize(original.width, original.height);
+    }
+  });
+
+  it("keeps the windowed video lightbox toggle outside native bounds", async () => {
+    await resetLibraryState();
+    await seedLibraryWithPlayableMedia("lightbox-video");
+    const page = await listAssetsForAssertions({ kind: "video" });
+    await ensureGalleryView();
+    await $(`button[data-asset-id="${page.items[0].id}"]`).click();
+    await $('button[aria-label="Close asset panel"]').waitForDisplayed();
+    await $('button[aria-label="Close asset panel"]').click();
+    await browser.waitUntil(() => browser.execute(() => {
+      const video = document.querySelector("[data-lightbox-video-player]").getBoundingClientRect();
+      const trigger = document.querySelector("#lightbox-sidebar-trigger-button").getBoundingClientRect();
+      return video.right <= trigger.left + 1;
+    }));
+    const beforeIdle = await $("[data-lightbox-video-player]").getSize();
+    await browser.waitUntil(() => browser.execute(() =>
+      getComputedStyle(document.querySelector("#lightbox-sidebar-trigger-button")).opacity === "0"
+    ), { timeout: 6000 });
+    const afterIdle = await $("[data-lightbox-video-player]").getSize();
+    if (JSON.stringify(beforeIdle) !== JSON.stringify(afterIdle)) throw new Error("Idle video bounds changed");
+    await browser.keys("Tab");
+    await $('button[aria-label="Open asset panel"]').click();
+    await $('button[aria-label="Close asset panel"]').waitForDisplayed();
+    await browser.waitUntil(() => browser.execute(() => {
+      const video = document.querySelector("[data-lightbox-video-player]").getBoundingClientRect();
+      const sidebar = document.querySelector("[data-lightbox-toolbar]").getBoundingClientRect();
+      return video.right <= sidebar.left + 1;
+    }));
+    await browser.keys("Escape");
+  });
+
   it("uses a drawer for lightbox actions in a narrow window", async () => {
     await resetLibraryState();
     await seedLibraryWithTempRoot("lightbox-drawer", 1);
@@ -448,6 +559,7 @@ describe("MediaTagger desktop workflows", () => {
         timeoutMsg: "Expected the narrow lightbox sidebar to start closed"
       });
 
+      await browser.keys("Tab");
       await openPanelButton.click();
       const tagInput = await $("#lightbox-tag-draft-input");
       await tagInput.waitForDisplayed({ timeout: 10000 });

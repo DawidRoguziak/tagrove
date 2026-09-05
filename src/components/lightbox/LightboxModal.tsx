@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SelectedAsset } from "../../types";
 import { LightboxMediaStage } from "./LightboxMediaStage";
@@ -12,12 +12,11 @@ import { useUiLayer } from "../UI/UiLayerProvider";
 import { UiAlert } from "../UI/UiAlert";
 import { UiIconButton } from "../UI/UiIconButton";
 
-const NARROW_LIGHTBOX_QUERY = "(max-width: 767px)";
-const SIDEBAR_TRIGGER_BUTTON_ID = "lightbox-sidebar-trigger-button";
+import { useLightboxSidebar } from "./hooks/useLightboxSidebar";
+import { useLightboxActivity } from "./hooks/useLightboxActivity";
+import type { VideoBounds } from "./mpvVideoTypes";
 
-function readNarrowLightbox(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia(NARROW_LIGHTBOX_QUERY).matches;
-}
+const SIDEBAR_TRIGGER_BUTTON_ID = "lightbox-sidebar-trigger-button";
 
 interface LightboxModalProps {
   selected: SelectedAsset | null;
@@ -71,8 +70,9 @@ export function LightboxModal({
   getRestoreFocus
 }: LightboxModalProps) {
   const { t } = useTranslation();
-  const sidebarWasOpenRef = useRef(false);
-  const [isNarrow, setIsNarrow] = useState(readNarrowLightbox);
+  const restoreTriggerFocusRef = useRef(true);
+  const sidebarWasOpenRef = useRef<boolean | null>(null);
+  const [nativePanelReady, setNativePanelReady] = useState(false);
   const selectedId = selected?.id ?? null;
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
@@ -91,6 +91,18 @@ export function LightboxModal({
     onClose
   });
 
+  const sidebar = useLightboxSidebar(selected !== null, handlers.deleteConfirmOpen || handlers.deleteSubmitting);
+  const { isNarrow, sidebarOpen, sidebarOccupied, closeSidebar: requestCloseSidebar } = sidebar;
+  const closeSidebar = useCallback((restoreFocus = true) => {
+    restoreTriggerFocusRef.current = restoreFocus;
+    requestCloseSidebar();
+  }, [requestCloseSidebar]);
+  const activity = useLightboxActivity(selected !== null);
+  const openSidebar = () => {
+    if (!sidebarOccupied) setNativePanelReady(false);
+    sidebar.openSidebar();
+  };
+
   const tagging = useLightboxTagging({
     selectedId,
     tagEditor,
@@ -105,7 +117,7 @@ export function LightboxModal({
   });
 
   const mediaControls = useLightboxImageControls({
-    keyboardShortcutsEnabled: !handlers.deleteConfirmOpen && !(isNarrow && handlers.sidebarOpen),
+    keyboardShortcutsEnabled: !handlers.deleteConfirmOpen && !(isNarrow && sidebarOpen),
     selected,
     onClose,
     onNavigatePrevious,
@@ -120,8 +132,8 @@ export function LightboxModal({
     containerRef: mediaControls.lightboxShellRef,
     closeOnEscape: !mediaControls.isFullscreen && !handlers.deleteConfirmOpen,
     onEscape: () => {
-      if (isNarrow && handlers.sidebarOpen) {
-        handlers.handleCloseSidebar();
+      if (isNarrow && sidebarOpen) {
+        closeSidebar();
       } else {
         onClose();
       }
@@ -129,35 +141,32 @@ export function LightboxModal({
     getRestoreFocus
   });
 
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const mediaQuery = window.matchMedia(NARROW_LIGHTBOX_QUERY);
-    const updateLayout = () => {
-      setIsNarrow(mediaQuery.matches);
-      if (mediaQuery.matches) handlers.handleCloseSidebar();
-    };
-    updateLayout();
-    mediaQuery.addEventListener("change", updateLayout);
-    return () => mediaQuery.removeEventListener("change", updateLayout);
-  }, [handlers.handleCloseSidebar]);
+  const sidebarVisible = sidebarOpen && (selected?.kind !== "video" || nativePanelReady);
 
   useEffect(() => {
-    if (!isNarrow) {
-      sidebarWasOpenRef.current = false;
-      return;
-    }
-
     const wasOpen = sidebarWasOpenRef.current;
-    sidebarWasOpenRef.current = handlers.sidebarOpen;
+    sidebarWasOpenRef.current = sidebarVisible;
+    if (wasOpen === null || wasOpen === sidebarVisible) return;
     const frame = window.requestAnimationFrame(() => {
-      if (handlers.sidebarOpen) {
-        document.getElementById(SIDEBAR_CLOSE_BUTTON_ID)?.focus();
-      } else if (wasOpen) {
-        document.getElementById(SIDEBAR_TRIGGER_BUTTON_ID)?.focus();
+      if (sidebarVisible) {
+        document.getElementById(SIDEBAR_CLOSE_BUTTON_ID)?.focus({ preventScroll: true });
+      } else if (wasOpen && !sidebarOpen) {
+        const target = restoreTriggerFocusRef.current
+          ? document.getElementById(SIDEBAR_TRIGGER_BUTTON_ID)
+          : mediaControls.lightboxShellRef.current;
+        target?.focus({ preventScroll: true });
+        activity.reveal();
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [handlers.sidebarOpen, isNarrow]);
+  }, [sidebarVisible, sidebarOpen, activity.reveal, mediaControls.lightboxShellRef]);
+
+  const handleNativeBounds = useCallback((bounds: VideoBounds) => {
+    const viewport = mediaControls.mediaViewportRef.current?.getBoundingClientRect();
+    if (viewport && (bounds.width === 0 || bounds.x + bounds.width <= viewport.right + 1)) {
+      setNativePanelReady(true);
+    }
+  }, [mediaControls.mediaViewportRef]);
   const groupCopyConfirmed = clipboard.groupCopyConfirmed;
   const copyMediaGroupTitle = groupCopyConfirmed
     ? t("lightbox.copyMediaGroup.copied")
@@ -167,7 +176,7 @@ export function LightboxModal({
   const isVideo = selected?.kind === "video";
   const videoFullscreen = isVideo && mediaControls.isFullscreen;
   const imageFullscreen = !isVideo && mediaControls.isFullscreen;
-  const hideNativeVideoForSidebar = Boolean(isVideo && isNarrow && handlers.sidebarOpen);
+  const hideNativeVideoForSidebar = Boolean(isVideo && isNarrow && sidebarOccupied);
 
   if (!selected) return null;
 
@@ -181,9 +190,9 @@ export function LightboxModal({
       ].join(" ")}
       onClick={() => {
         if (!isTopLayer) return;
-        if (isNarrow && handlers.sidebarOpen) {
+        if (isNarrow && sidebarOpen) {
           if (!handlers.deleteConfirmOpen && !handlers.deleteSubmitting) {
-            handlers.handleCloseSidebar();
+            closeSidebar();
           }
           return;
         }
@@ -194,16 +203,16 @@ export function LightboxModal({
     >
       <div
         className={[
-          "relative overflow-hidden transition-all duration-200",
+          "relative min-w-0 overflow-hidden",
           videoFullscreen || imageFullscreen
             ? `h-full min-h-0 w-full rounded-none border-0 shadow-none ${
                 videoFullscreen ? "bg-neutral" : "bg-base-100"
               }`
             : [
-                "h-[min(calc(100vh-40px),1180px)] min-h-[360px] w-[min(calc(100vw-40px),1800px)]",
+                "h-[min(calc(100dvh-40px),1180px)] min-h-0 w-[min(calc(100vw-40px),1800px)]",
                 "rounded-[var(--radius-surface)] border shadow-[var(--shadow-modal)]",
-                "sm:min-h-[460px] sm:w-[min(calc(100vw-40px),1860px)] sm:rounded-[var(--radius-panel)]",
-                "lg:h-[min(calc(100vh-40px),1280px)] lg:w-[min(calc(100vw-40px),1920px)]",
+                "sm:w-[min(calc(100vw-40px),1860px)] sm:rounded-[var(--radius-panel)]",
+                "lg:h-[min(calc(100dvh-40px),1280px)] lg:w-[min(calc(100vw-40px),1920px)]",
                 isVideo
                   ? "lightbox-shell--video border-white/10"
                   : "border-[var(--border-soft)] bg-[var(--surface-solid)]"
@@ -238,6 +247,8 @@ export function LightboxModal({
             onImageLoad={mediaControls.handleImageLoad}
             onVideoLoadedMetadata={mediaControls.handleVideoLoadedMetadata}
             onVideoFullscreenChange={mediaControls.handleVideoFullscreenChange}
+            onPointerActivity={activity.reveal}
+            onNativeBounds={handleNativeBounds}
             onImageClick={mediaControls.handleImageClick}
             onImagePointerDown={mediaControls.handleImagePointerDown}
             onImagePointerMove={mediaControls.handleImagePointerMove}
@@ -246,39 +257,26 @@ export function LightboxModal({
         ) : (
           <div
             className={[
-              "relative grid h-full min-h-0",
-              isNarrow
-                ? "grid-cols-1 grid-rows-[auto_minmax(0,1fr)]"
-                : "grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,22rem)]"
+              "lightbox-layout relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)]",
+              !isNarrow && sidebarOccupied
+                ? "grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,22rem)]"
+                : isVideo ? "grid-cols-[minmax(0,1fr)_54px]" : "grid-cols-[minmax(0,1fr)]"
             ].join(" ")}
           >
-            {isNarrow ? (
-              <header className="relative z-[6] flex min-h-11 items-center justify-between gap-2 border-b border-[var(--border-soft)] bg-[var(--surface-solid)] px-2 py-1.5">
-                <span className="min-w-0 truncate text-xs font-semibold text-base-content" title={selected.file_name}>
-                  {selected.file_name}
-                </span>
-                {!handlers.sidebarOpen ? (
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <UiIconButton
-                      id={SIDEBAR_TRIGGER_BUTTON_ID}
-                      icon="bulk-actions"
-                      iconClassName="h-4 w-4 shrink-0"
-                      className="h-8 w-8 min-h-8"
-                      aria-label={t("lightbox.openPanel")}
-                      title={t("lightbox.openPanel")}
-                      onClick={handlers.handleOpenSidebar}
-                    />
-                    <UiIconButton
-                      icon="close"
-                      iconClassName="h-4 w-4 shrink-0"
-                      className="h-8 w-8 min-h-8"
-                      aria-label={t("lightbox.closePreview")}
-                      title={t("common.close")}
-                      onClick={handlers.handleCloseLightbox}
-                    />
-                  </div>
-                ) : null}
-              </header>
+            {!sidebarOpen ? (
+              <div className="pointer-events-none absolute right-[10px] top-[10px] z-[9]">
+                <UiIconButton
+                  id={SIDEBAR_TRIGGER_BUTTON_ID}
+                  icon="arrow-left"
+                  iconClassName="h-4 w-4 shrink-0"
+                  className={`lightbox-panel-trigger pointer-events-auto h-[44px]! w-[44px]! min-h-[44px]! ${activity.visible ? "" : "lightbox-panel-trigger--idle"}`}
+                  aria-label={t("lightbox.openPanel")}
+                  title={t("lightbox.openPanel")}
+                  aria-expanded={false}
+                  aria-controls="lightbox-sidebar"
+                  onClick={openSidebar}
+                />
+              </div>
             ) : null}
 
             <div
@@ -325,6 +323,8 @@ export function LightboxModal({
                 onImageLoad={mediaControls.handleImageLoad}
                 onVideoLoadedMetadata={mediaControls.handleVideoLoadedMetadata}
                 onVideoFullscreenChange={mediaControls.handleVideoFullscreenChange}
+                onPointerActivity={activity.reveal}
+                onNativeBounds={handleNativeBounds}
                 onImageClick={mediaControls.handleImageClick}
                 onImagePointerDown={mediaControls.handleImagePointerDown}
                 onImagePointerMove={mediaControls.handleImagePointerMove}
@@ -332,14 +332,14 @@ export function LightboxModal({
               />
             </div>
 
-            {isNarrow && handlers.sidebarOpen ? (
+            {isNarrow && sidebarOpen ? (
               <div
                 className="absolute inset-0 z-[7] bg-neutral/52 backdrop-blur-[1px]"
                 data-testid="lightbox-sidebar-scrim"
                 onClick={(event) => {
                   event.stopPropagation();
                   if (!handlers.deleteConfirmOpen && !handlers.deleteSubmitting) {
-                    handlers.handleCloseSidebar();
+                    closeSidebar();
                   }
                 }}
               />
@@ -353,7 +353,8 @@ export function LightboxModal({
               canCopyMediaGroup={clipboard.canCopyMediaGroup}
               copyMediaGroupTitle={copyMediaGroupTitle}
               isNarrow={isNarrow}
-              sidebarOpen={handlers.sidebarOpen}
+              sidebarOpen={sidebarOpen}
+              sidebarVisible={sidebarVisible}
               isFullscreen={mediaControls.isFullscreen}
               selectedTags={tagging.selectedTags}
               tagDraft={tagging.tagDraft}
@@ -374,7 +375,7 @@ export function LightboxModal({
               onApplyMediaGroup={handlers.handleApplyMediaGroup}
               infoPanelOpen={handlers.infoPanelOpen}
               onToggleInfo={handlers.handleToggleInfoPanel}
-              onCloseSidebar={handlers.handleCloseSidebar}
+              onCloseSidebar={closeSidebar}
               onToggleFavorite={() => {
                 const requestedAssetId = selectedId;
                 setFavoriteFailed(false);

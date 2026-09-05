@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { closeVideo, controlVideo, openVideo, setVideoBounds } from "../../api";
 import { MpvMediaAdapter } from "./MpvMediaAdapter";
 import { measureNativeVideoBounds } from "./nativeVideoLayout";
-import type { MpvVideoEvent, NativeVideoControlLabels } from "./mpvVideoTypes";
+import type { MpvVideoEvent, NativeVideoControlLabels, VideoBounds } from "./mpvVideoTypes";
 
 const DEFAULT_CONTROL_LABELS: NativeVideoControlLabels = {
   play: "Play",
@@ -25,6 +25,8 @@ interface MpvMediaComponentProps {
   onLoadedMetadata?: (dimensions: { width: number; height: number }) => void;
   onFullscreenChange?: (fullscreen: boolean) => void;
   onError?: (message: string) => void;
+  onPointerActivity?: () => void;
+  onNativeBounds?: (bounds: VideoBounds) => void;
 }
 
 export function MpvMediaComponent({
@@ -35,13 +37,15 @@ export function MpvMediaComponent({
   onAdapter,
   onLoadedMetadata,
   onFullscreenChange,
-  onError
+  onError,
+  onPointerActivity,
+  onNativeBounds
 }: MpvMediaComponentProps) {
   const attachMedia = useMediaAttach();
   const container = useContainer();
   const sessionRef = useRef<number | null>(null);
-  const callbacksRef = useRef({ onLoadedMetadata, onFullscreenChange, onError });
-  callbacksRef.current = { onLoadedMetadata, onFullscreenChange, onError };
+  const callbacksRef = useRef({ onLoadedMetadata, onFullscreenChange, onError, onPointerActivity, onNativeBounds });
+  callbacksRef.current = { onLoadedMetadata, onFullscreenChange, onError, onPointerActivity, onNativeBounds };
   const [adapter] = useState(
     () =>
       providedAdapter ??
@@ -85,6 +89,7 @@ export function MpvMediaComponent({
       const operation = boundsQueue.catch(() => {}).then(async () => {
         if (cancelled || sessionRef.current !== sessionId) return;
         await setVideoBounds(sessionId, bounds);
+        if (!cancelled && sessionRef.current === sessionId) callbacksRef.current.onNativeBounds?.(bounds);
       });
       boundsQueue = operation;
       return operation;
@@ -112,6 +117,10 @@ export function MpvMediaComponent({
         return;
       }
       if (event.session_id !== openedSession) return;
+      if (event.type === "pointerActivity") {
+        callbacksRef.current.onPointerActivity?.();
+        return;
+      }
       adapter.applyBackendEvent(event);
       if (event.type === "metadata") {
         callbacksRef.current.onLoadedMetadata?.({ width: event.width, height: event.height });
@@ -148,6 +157,7 @@ export function MpvMediaComponent({
           if (sessionRef.current === sessionId) sessionRef.current = null;
           await closeVideo(sessionId).catch(() => {});
         }
+        callbacksRef.current.onNativeBounds?.({ x: 0, y: 0, width: 0, height: 0 });
         reportError("open", error);
       }
     })();

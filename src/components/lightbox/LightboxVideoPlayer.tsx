@@ -3,7 +3,7 @@ import { MinimalVideoSkin, VideoPlayer } from "@videojs/react/video";
 import type { CSSProperties, MutableRefObject } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { NativeVideoControlLabels } from "./mpvVideoTypes";
+import type { NativeVideoControlLabels, VideoBounds } from "./mpvVideoTypes";
 import type { MpvMediaAdapter } from "./MpvMediaAdapter";
 import { MpvMediaComponent } from "./MpvMediaComponent";
 
@@ -21,6 +21,8 @@ interface LightboxVideoPlayerProps {
   onLoadedMetadata: (dimensions: { width: number; height: number }) => void;
   onFullscreenChange: (fullscreen: boolean) => void;
   onError: () => void;
+  onPointerActivity?: () => void;
+  onNativeBounds?: (bounds: VideoBounds) => void;
 }
 
 export function LightboxVideoPlayer({
@@ -32,7 +34,9 @@ export function LightboxVideoPlayer({
   playerRef,
   onLoadedMetadata,
   onFullscreenChange,
-  onError
+  onError,
+  onPointerActivity,
+  onNativeBounds
 }: LightboxVideoPlayerProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language;
@@ -100,6 +104,8 @@ export function LightboxVideoPlayer({
               onLoadedMetadata={onLoadedMetadata}
               onFullscreenChange={handleFullscreenChange}
               onError={onError}
+              onPointerActivity={onPointerActivity}
+              onNativeBounds={onNativeBounds}
             />
           </MinimalVideoSkin>
         </I18nProvider>

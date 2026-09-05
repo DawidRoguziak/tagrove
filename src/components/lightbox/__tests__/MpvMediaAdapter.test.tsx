@@ -113,6 +113,28 @@ afterEach(() => {
 });
 
 describe("MpvMediaAdapter Video.js prototype", () => {
+  it("forwards only current-session pointer activity and acknowledged bounds", async () => {
+    const onActivity = vi.fn();
+    const onBounds = vi.fn();
+    let acknowledge: () => void = () => {};
+    apiMocks.setVideoBounds.mockImplementation(() => new Promise<void>((resolve) => { acknowledge = resolve; }));
+    render(
+      <VideoPlayer><I18nProvider locale="en"><MinimalVideoSkin>
+        <MpvMediaComponent assetId={123} onPointerActivity={onActivity} onNativeBounds={onBounds} />
+      </MinimalVideoSkin></I18nProvider></VideoPlayer>
+    );
+    await waitFor(() => expect(apiMocks.setVideoBounds).toHaveBeenCalled());
+    expect(onBounds).not.toHaveBeenCalled();
+    const onEvent = apiMocks.openVideo.mock.calls[0][4];
+    act(() => {
+      onEvent({ session_id: 999, type: "pointerActivity" });
+      onEvent({ session_id: 1, type: "pointerActivity" });
+    });
+    expect(onActivity).toHaveBeenCalledTimes(1);
+    await act(async () => acknowledge());
+    expect(onBounds).toHaveBeenCalledWith({ x: 0, y: 0, width: 0, height: 0 });
+  });
+
   it("drives MinimalVideoSkin playback, timeline, volume, and waiting state", async () => {
     const states: Snapshot[] = [];
     const adapter = new MpvMediaAdapter("asset:123");

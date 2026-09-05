@@ -56,7 +56,7 @@ export function LightboxDeleteConfirmDialog({
     <section
       aria-label={t("lightbox.deleteConfirm.heading")}
       data-testid="lightbox-delete-confirm-dialog"
-      className="grid gap-2.5 rounded-xl border border-error/32 bg-base-200/45 p-3"
+      className="grid gap-2.5 rounded-[var(--radius-control)] border border-error/32 bg-base-200/45 p-3"
       onKeyDown={(event) => {
         if (event.key !== "Escape" || isSubmitting) return;
         event.preventDefault();
@@ -84,7 +84,7 @@ export function LightboxDeleteConfirmDialog({
           value={confirmationText}
           {...browserAssistDisabledProps}
           onChange={(event) => setConfirmationText(event.currentTarget.value)}
-          className="input input-sm h-10 w-full rounded-xl border border-base-content/20 bg-base-100/70"
+          className="input input-sm h-10 w-full rounded-[var(--radius-control)] border border-base-content/20 bg-base-100/70"
           placeholder={t("lightbox.deleteConfirm.typeYesPlaceholder", { value: confirmWord })}
           disabled={isSubmitting}
         />

@@ -40,8 +40,8 @@ export function DuplicateAssetCard({
   const previewSrc = thumbPath ? toMediaSrc(thumbPath) : TRANSPARENT_THUMBNAIL_SRC;
 
   return (
-    <article className="grid gap-3 rounded-lg border border-base-content/15 bg-base-200/35 p-2.5 md:grid-cols-[150px_minmax(0,1fr)]">
-      <div className="relative mx-auto h-[150px] w-[150px] overflow-hidden rounded-xl border border-base-content/15 bg-base-100/80 shadow-[var(--shadow-tile)] md:mx-0">
+    <article className="grid gap-3 rounded-[var(--radius-control)] border border-base-content/15 bg-base-200/35 p-2.5 md:grid-cols-[150px_minmax(0,1fr)]">
+      <div className="relative mx-auto h-[150px] w-[150px] overflow-hidden rounded-[var(--radius-control)] border border-base-content/15 bg-base-100/80 shadow-[var(--shadow-tile)] md:mx-0">
         <ThumbnailImage
           className="block h-full w-full object-cover"
           src={previewSrc}
@@ -51,7 +51,7 @@ export function DuplicateAssetCard({
         />
         {isRendering ? (
           <div
-            className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_center,oklch(var(--b2)/0.2),oklch(var(--b1)/0.62))]"
+            className="absolute inset-0 grid place-items-center bg-base-100/60"
             aria-hidden="true"
           >
             <span className="h-[24px] w-[24px] animate-spin rounded-full border-[3px] border-base-content/25 border-t-primary" />
@@ -76,7 +76,7 @@ export function DuplicateAssetCard({
           value={renameValue}
           {...browserAssistDisabledProps}
           onChange={onRenameValueChange}
-          className="input input-sm h-10 w-full rounded-xl border border-base-content/20 bg-base-100/70"
+          className="input input-sm h-10 w-full rounded-[var(--radius-control)] border border-base-content/20 bg-base-100/70"
           placeholder={t("settings.duplicates.renamePlaceholder")}
           disabled={isOperationLocked || staged?.type === "delete"}
         />

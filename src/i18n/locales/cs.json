@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Neplatný payload změn duplicit",
     "unknownAssetInChanges": "Neznámé médium ve změnách: {{assetId}}",
     "duplicateGroupStillUnresolved": "Skupina \"{{fileName}}\": změny stále zanechávají duplicitní názvy souborů. Přejmenujte nebo smažte další položky v tomto bloku."
+  },
+  "workspace": {
+    "search": "Hledat",
+    "settingsNavigation": "Sekce nastavení",
+    "itemCount": "Položky: {{count}}"
   }
 }

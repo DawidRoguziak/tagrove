@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Nieprawidlowy zestaw zmian duplikatow",
     "unknownAssetInChanges": "Nieznany zasob w zmianach kolejki: {{assetId}}",
     "duplicateGroupStillUnresolved": "Grupa \"{{fileName}}\": zmiany w kolejce nadal zostawiaja duplikaty nazw. Zmien nazwy lub usun wiecej elementow w tym bloku."
+  },
+  "workspace": {
+    "search": "Szukaj",
+    "settingsNavigation": "Sekcje ustawień",
+    "itemCount": "Elementy: {{count}}"
   }
 }

@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Payload modifiche duplicati non valido",
     "unknownAssetInChanges": "Risorsa sconosciuta nelle modifiche in coda: {{assetId}}",
     "duplicateGroupStillUnresolved": "Gruppo \"{{fileName}}\": le modifiche in coda lasciano ancora nomi file duplicati. Rinomina o elimina più elementi in questo blocco."
+  },
+  "workspace": {
+    "search": "Cerca",
+    "settingsNavigation": "Sezioni delle impostazioni",
+    "itemCount": "Elementi: {{count}}"
   }
 }

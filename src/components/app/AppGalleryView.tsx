@@ -36,6 +36,18 @@ export function AppGalleryView({
   return (
     <>
       <TopBar
+        toolbarContent={<>
+          <span className="text-xs tabular-nums text-base-content/65" role="status">{t("workspace.itemCount", { count: media.assetCount })}</span>
+      <TileSizeSlider
+        tileSize={media.tileSize}
+        min={media.tileSizeMin}
+        max={media.tileSizeMax}
+        step={media.tileSizeStep}
+        onChange={media.onTileSizeChange}
+        selectionModeEnabled={bulkSelection.selectionModeEnabled}
+        onToggleSelectionMode={bulkSelection.onToggleSelectionMode}
+      />
+        </>}
         filterInput={search.filterInput}
         onFilterChange={search.onFilterChange}
         filterValidationError={search.filterValidationError}
@@ -51,11 +63,7 @@ export function AppGalleryView({
       />
 
       <div
-        className={`mx-auto grid min-h-[calc(100vh-4.5rem)] w-full ${
-          bulkSelection.selectionModeEnabled
-            ? "max-w-[2440px] grid-cols-[minmax(0,1fr)_clamp(28rem,33.6vw,33.6rem)]"
-            : "max-w-[1920px] grid-cols-1"
-        }`}
+        className={`workspace-body ${bulkSelection.selectionModeEnabled ? "workspace-body--bulk" : ""}`}
       >
         <GalleryGrid
           assets={media.assets}
@@ -113,15 +121,7 @@ export function AppGalleryView({
         ) : null}
       </div>
 
-      <TileSizeSlider
-        tileSize={media.tileSize}
-        min={media.tileSizeMin}
-        max={media.tileSizeMax}
-        step={media.tileSizeStep}
-        onChange={media.onTileSizeChange}
-        selectionModeEnabled={bulkSelection.selectionModeEnabled}
-        onToggleSelectionMode={bulkSelection.onToggleSelectionMode}
-      />
+
     </>
   );
 }

@@ -171,6 +171,25 @@ Desktop selectors currently mix stable IDs/classes/data attributes, `aria-label`
 
 The desktop harness does not force English. A fresh app chooses a stored language first and otherwise follows `navigator.language`, while the current specs assert English labels. Because pre-run cleanup removes the isolated profile, a manually persisted selection is not a durable fix; run with a browser environment that reports English or update the harness so language setup is deterministic. Vitest does force English through `src/test/setup.ts`; that does not affect the desktop process.
 
+### UI redesign matrix
+
+`e2e/specs/ui.redesign.e2e.js` is opt-in with `MEDIATAGGER_UI_REDESIGN=1`. It uses fresh
+copied media and the normal isolated E2E identity. It exercises both themes at 1440×900 and
+1000×720, search/suggestions, validation and empty results, bulk selection, tag browsing,
+lightbox deletion cancellation, settings navigation, duplicates and confirmation dialogs.
+It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the stacked bulk layout at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
+the private X11 display into a fresh timestamped `artifacts/ui-redesign/` subdirectory per run.
+The normal workflow suite covers narrow lightbox and native media behavior; the separate
+`MEDIATAGGER_GALLERY_PERF=1` suite exercises 2,048 images and cache eviction.
+
+Run the opt-in spec through the existing harness on a private X11 display with temporary
+XDG data/config/cache directories. Preserve all profile and cleanup guards. Example after
+setting those XDG directories and starting a private display:
+
+```sh
+MEDIATAGGER_UI_REDESIGN=1 bun run test:e2e:tauri --spec e2e/specs/ui.redesign.e2e.js
+```
+
 ### Persistent desktop control
 
 `e2e/control.js` reuses the E2E build configuration and shared media fixtures without running

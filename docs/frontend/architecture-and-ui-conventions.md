@@ -66,9 +66,9 @@ Settings closes through Back or the layer registered by `SettingsViewLayer` in `
 
 ## Lazy loading and delayed prefetch
 
-The gallery and bulk sidebar are eagerly imported. Settings and lightbox use `React.lazy`. Settings shows a localized status while loading; lightbox shows a named loading dialog. `LazyErrorBoundary` supplies localized failure UI with reload and Back/Close actions. Its reset key follows settings visibility or selected asset ID; resetting the boundary alone does not guarantee a fresh download of a rejected lazy module.
+The gallery is eagerly imported. Settings, the bulk sidebar, and lightbox use `React.lazy`. Settings shows a localized status while loading; lightbox shows a named loading dialog. `LazyErrorBoundary` supplies localized failure UI with reload and Back/Close actions. Its reset key follows settings visibility or selected asset ID; resetting the boundary alone does not guarantee a fresh download of a rejected lazy module.
 
-After `App` mounts, an effect schedules dynamic imports for both lazy surfaces after 1,500 ms. Opening one earlier starts its import immediately. The timer is cleared on cleanup; module loading itself is cached by the JavaScript module loader. Preserve this split when adding a large, infrequently used surface: make the initial render path explicit, cancel delayed work in cleanup, and do not assume prefetch completed before user interaction.
+After `App` mounts, an effect schedules dynamic imports for settings and lightbox after 1,500 ms. The bulk sidebar loads on demand. Opening one earlier starts its import immediately. The timer is cleared on cleanup; module loading itself is cached by the JavaScript module loader. Preserve this split when adding a large, infrequently used surface: make the initial render path explicit, cancel delayed work in cleanup, and do not assume prefetch completed before user interaction.
 
 ## Layer responsibilities
 
@@ -140,6 +140,34 @@ Prefer semantic DaisyUI colors (`primary`, `base-*`, `error`, and similar) and t
 
 Global styles establish full-height roots, typography, field treatment, visible keyboard focus for buttons, links, inputs, and selects, themed scrollbars, and Video.js skin variables. Preserve native elements where possible so keyboard and accessibility behavior come for free.
 
+## Compact studio visual system
+
+The full redesign is tracked in [the redesign plan](../ui-redesign-plan.md). Both themes use
+neutral workspace/panel colors, with primary green `#7CB87C` in dark mode and `#2D5A2D` in
+light mode. The root stays at 16px for Tailwind rem sizing; body copy is 14px. Controls use
+4px corners, panels 6px, dialogs 8px. Standard buttons are 36px high and compact tools 32px.
+System sans fonts serve prose and controls; paths and technical metadata use monospace.
+
+`TopBar` composes the identity, search field and Settings action in one header row. A second
+row contains media kind, favorites, tag browsing, the result count, bulk-mode toggle and
+thumbnail sizing. Both rows belong to one sticky header. The gallery uses the available
+width with square tiles and its existing measured 10px gaps. Bulk selection uses a green
+outline plus a checkmark; media-kind badges remain readable over arbitrary thumbnails.
+
+Bulk editing occupies a 360px inspector at window widths of at least 1000px, and follows
+the gallery below that width. The inspector scrolls independently on desktop. Its tag
+suggestions use the existing viewport portal so inspector overflow cannot clip them.
+
+Full-page settings uses 200px navigation beside mounted sections at widths of at least
+1000px, and wrapping navigation above the content below that width. Navigation focuses and
+scrolls to the corresponding section without changing the URL or unmounting operation UI.
+The active marker follows the scroll position; settings section choice is not persisted.
+Sections appear in scan, appearance, import/export, duplicates, and danger-zone order.
+
+Keep shared field rules in the CSS base layer so component utilities can make deliberate
+adjustments. Avoid adding nested field outlines, panel blur, decorative gradients, or
+pill-shaped buttons. Native video controls retain their contrast gradient over the picture.
+
 ## Modal and overlay conventions
 
 [UiLayerProvider](../../src/components/UI/UiLayerProvider.tsx), mounted by `App`, owns the DOM layer stack. [UiModal](../../src/components/UI/UiModal.tsx) and the specialized lightbox register modal layers and portal into `document.body`. `SettingsViewLayer` registers a nonmodal layer for page-level Escape.
@@ -160,7 +188,7 @@ The layer manager's tabbable selector excludes disabled controls, hidden element
 
 GTK video controls are native widgets outside the DOM layer manager. Changes to video bounds, fullscreen, or sidebar visibility need desktop verification as well as DOM tests. See [native media presentation](../subsystems/lightbox.md#media-presentation).
 
-Other limits remain: pointer drag ordering lacks an equivalent keyboard workflow, and `UiProgressBar` does not associate adjacent text as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
+Bulk group drag handles support ArrowUp/ArrowDown reordering. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
 
 ## Safe change checklist
 

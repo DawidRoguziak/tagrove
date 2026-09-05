@@ -58,32 +58,15 @@ function createController(
 describe("BulkActionsSidebar", () => {
   afterEach(cleanup);
 
-  it("renders as a sticky sidebar with disabled editors for an empty selection", () => {
+  it("renders as a scrollable inspector with disabled editors for an empty selection", () => {
     render(
       <BulkActionsSidebar controller={createController()} thumbs={{}} renderingThumbnailIds={{}} />
     );
 
     const sidebar = screen.getByTestId("bulk-action-panel");
-    expect(sidebar).toHaveClass("sticky");
-    expect(sidebar).not.toHaveClass(
-      "overflow-hidden",
-      "rounded-[var(--radius-surface)]",
-      "border",
-      "bg-[var(--surface-raised)]",
-      "p-3",
-      "shadow-[var(--shadow-floating)]",
-      "backdrop-blur-xl"
-    );
-    expect(sidebar).toHaveClass("grid-rows-[auto_auto_minmax(0,1fr)]");
+    expect(sidebar).toHaveClass("bulk-inspector", "panel-scroll");
     for (const panelId of ["bulk-header-panel", "bulk-group-panel", "bulk-tags-panel"]) {
-      expect(screen.getByTestId(panelId)).toHaveClass(
-        "rounded-[var(--radius-surface)]",
-        "border",
-        "bg-[var(--surface-raised)]",
-        "p-3",
-        "shadow-[var(--shadow-floating)]",
-        "backdrop-blur-xl"
-      );
+      expect(sidebar).toContainElement(screen.getByTestId(panelId));
     }
     expect(screen.getByText("Selected: 0")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select all" })).not.toBeInTheDocument();
@@ -95,8 +78,7 @@ describe("BulkActionsSidebar", () => {
       "panel-scroll",
       "max-h-36",
       "overflow-y-auto",
-      "px-0",
-      "py-2"
+      "p-2"
     );
     expect(screen.getByTestId("bulk-tag-list")).not.toHaveClass("p-1", "w-fit");
     expect(screen.getByTestId("bulk-tag-list")).toHaveAttribute("data-ui", "assigned-tag-list");
@@ -120,7 +102,7 @@ describe("BulkActionsSidebar", () => {
     render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
 
     expect(screen.getByTestId("bulk-action-panel")).toHaveClass(
-      "grid-rows-[auto_auto_fit-content(300px)_auto]"
+      "bulk-inspector"
     );
     expect(screen.getByTestId("bulk-group-order-panel")).toHaveClass(
       "max-h-[300px]",
@@ -133,8 +115,8 @@ describe("BulkActionsSidebar", () => {
       "overflow-y-auto"
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Multiple group assignments");
-    expect(screen.queryByText("1.jpg")).not.toBeInTheDocument();
-    expect(screen.queryByText("2.jpg")).not.toBeInTheDocument();
+    expect(screen.getByText("1.jpg")).toBeInTheDocument();
+    expect(screen.getByText("2.jpg")).toBeInTheDocument();
     expect(screen.getByTestId("bulk-group-thumbnail-1")).toHaveClass("h-16", "w-20");
     const firstTile = screen.getByTestId("bulk-group-tile-1");
     const firstHandle = screen.getByTestId("bulk-group-drag-handle-1");
@@ -199,7 +181,7 @@ describe("BulkActionsSidebar", () => {
     );
 
     expect(screen.getByTestId("bulk-action-panel")).toHaveClass(
-      "grid-rows-[auto_auto_minmax(0,1fr)]"
+      "bulk-inspector"
     );
     expect(screen.queryByTestId("bulk-group-order-panel")).not.toBeInTheDocument();
     expect(screen.getByTestId("bulk-tags-panel")).toHaveClass("min-h-0", "overflow-visible");
@@ -211,7 +193,8 @@ describe("BulkActionsSidebar", () => {
     const suggestions = await screen.findByRole("listbox", {
       name: "Bulk tagging suggestions"
     });
-    expect(suggestions).toHaveClass("top-[calc(100%+8px)]");
+    expect(suggestions).toHaveClass("fixed");
+    expect(screen.getByTestId("bulk-action-panel")).not.toContainElement(suggestions);
     expect(suggestions).not.toHaveClass("bottom-[calc(100%+8px)]");
     await userEvent.clear(input);
     await userEvent.type(input, "travel{Enter}");

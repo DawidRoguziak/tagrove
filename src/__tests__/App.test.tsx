@@ -445,11 +445,7 @@ describe("App", () => {
 
     const panel = await screen.findByTestId("bulk-action-panel");
     expect(panel).toBeInTheDocument();
-    expect(panel.parentElement).toHaveClass(
-      "min-h-[calc(100vh-4.5rem)]",
-      "max-w-[2440px]",
-      "grid-cols-[minmax(0,1fr)_clamp(28rem,33.6vw,33.6rem)]"
-    );
+    expect(panel.parentElement).toHaveClass("workspace-body", "workspace-body--bulk");
     expect(panel.closest("main")).not.toHaveClass("grid-rows-[auto_1fr]");
     expect(screen.getByText("Selected: 0")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select all" })).not.toBeInTheDocument();

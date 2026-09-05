@@ -106,16 +106,12 @@ export function BulkActionsSidebar({
 
   return (
     <aside
-      className={`sticky top-[4.75rem] z-20 mr-3 mt-3 grid max-h-[calc(100vh-5.5rem)] min-h-0 gap-3 self-start sm:mr-4 sm:mt-4 ${
-        hasOrderPanel
-          ? "grid-rows-[auto_auto_fit-content(300px)_auto]"
-          : "grid-rows-[auto_auto_minmax(0,1fr)]"
-      }`}
+      className="bulk-inspector panel-scroll"
       data-testid="bulk-action-panel"
       aria-label={t("bulk.panel.ariaLabel")}
     >
       <header
-        className="rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-floating)] backdrop-blur-xl"
+        className="bg-[var(--surface-solid)]"
         data-testid="bulk-header-panel"
       >
         <div className="grid gap-0.5" aria-live="polite">
@@ -127,7 +123,7 @@ export function BulkActionsSidebar({
       </header>
 
       <section
-        className="grid gap-3 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-floating)] backdrop-blur-xl"
+        className="grid gap-3 bg-[var(--surface-solid)]"
         data-testid="bulk-group-panel"
       >
         <div className="grid gap-0.5">
@@ -144,7 +140,7 @@ export function BulkActionsSidebar({
             onChange={(event) => controller.onGroupKeyDraftChange(event.target.value)}
             placeholder={t("bulk.groupModal.groupKeyPlaceholder")}
             aria-label={t("bulk.groupModal.groupKeyAria")}
-            className="h-10 w-full"
+            className="h-9 w-full"
             disabled={controlsDisabled || controller.groupApplying}
           />
           <UiIconButton
@@ -183,7 +179,7 @@ export function BulkActionsSidebar({
 
       {hasOrderPanel ? (
         <section
-          className="grid max-h-[300px] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 overflow-hidden rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-floating)] backdrop-blur-xl"
+          className="grid max-h-[300px] min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2 overflow-hidden bg-[var(--surface-solid)]"
           data-testid="bulk-group-order-panel"
         >
           <div className="grid gap-0.5">
@@ -204,7 +200,7 @@ export function BulkActionsSidebar({
               return (
                 <div
                   key={asset.id}
-                  className={`flex items-center gap-2 rounded-lg border border-base-content/12 bg-base-100/70 p-1.5 transition-[opacity,box-shadow] ${
+                  className={`flex items-center gap-2 rounded-[var(--radius-control)] border border-base-content/12 bg-base-100/70 p-1.5 transition-[opacity,box-shadow] ${
                     draggingAssetId === asset.id ? "opacity-60 ring-2 ring-primary/40" : ""
                   }`}
                   data-asset-id={asset.id}
@@ -224,13 +220,13 @@ export function BulkActionsSidebar({
                   }}
                 >
                   <span
-                    className="grid h-7 w-7 place-items-center rounded-full bg-primary/14 text-xs font-semibold text-primary"
+                    className="grid h-7 w-7 place-items-center rounded-[var(--radius-control)] bg-primary/14 text-xs font-semibold text-primary"
                     data-testid={`bulk-group-order-${asset.id}`}
                   >
                     {index + 1}
                   </span>
                   <div
-                    className="relative h-16 w-20 shrink-0 overflow-hidden rounded-md bg-base-200"
+                    className="relative h-16 w-20 shrink-0 overflow-hidden rounded-[var(--radius-control)] bg-base-200"
                     data-testid={`bulk-group-thumbnail-${asset.id}`}
                   >
                     <ThumbnailImage
@@ -245,10 +241,10 @@ export function BulkActionsSidebar({
                       </span>
                     ) : null}
                   </div>
-                  <span className="min-w-0 flex-1" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-xs text-base-content/75" title={asset.file_name}>{asset.file_name}</span>
                   <button
                     type="button"
-                    className={`grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-lg text-base-content/55 transition-colors ${
+                    className={`grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-[var(--radius-control)] text-base-content/55 transition-colors ${
                       controller.groupApplying
                         ? "cursor-not-allowed opacity-45"
                         : "cursor-grab hover:bg-base-content/8 hover:text-base-content active:cursor-grabbing"
@@ -283,7 +279,7 @@ export function BulkActionsSidebar({
       ) : null}
 
       <section
-        className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto_auto] gap-3 overflow-visible rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-3 shadow-[var(--shadow-floating)] backdrop-blur-xl"
+        className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto_auto] gap-3 overflow-visible bg-[var(--surface-solid)]"
         data-testid="bulk-tags-panel"
       >
         <div className="grid gap-0.5">
@@ -326,6 +322,7 @@ export function BulkActionsSidebar({
           ariaLabel={t("bulk.tagModal.addTag")}
           listboxAriaLabel={t("bulk.tagModal.suggestions")}
           inputClassName="w-full"
+          suggestionsStrategy="viewport"
           keepSuggestionsOpenOnPick
           autoSelectFirstSuggestion={false}
           disabled={controlsDisabled || controller.tagDetailsLoading || controller.tagDetailsFailed || controller.tagApplying}

@@ -1,6 +1,7 @@
 import { useCallback, memo, useSyncExternalStore, type MouseEvent } from "react";
 import { toMediaSrc } from "../../api";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../UI/ThumbnailImage";
+import { UiIcon } from "../UI/UiIcon";
 import { UiChip } from "../UI/UiChip";
 import type { AssetSummary } from "../../types";
 import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
@@ -25,7 +26,7 @@ const TilePreview = memo(function TilePreview({
       />
       {showRenderLoader ? (
         <div
-          className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_center,oklch(var(--b2)/0.2),oklch(var(--b1)/0.62))]"
+          className="absolute inset-0 grid place-items-center bg-base-100/60"
           aria-hidden="true"
           data-testid="tile-thumb-loader"
         >
@@ -89,11 +90,11 @@ export const GalleryTile = memo(function GalleryTile({
 
   return (
     <button
-      className={`absolute z-[1] overflow-hidden rounded-[var(--radius-surface)] border border-white/8 bg-base-300/95 p-0 ${
+      className={`absolute z-[1] overflow-hidden rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-base-300/95 p-0 ${
         isBulkSelected
-          ? "shadow-[0_0_0_3px_var(--color-warning),var(--shadow-tile-hover)]"
+          ? "shadow-[0_0_0_2px_var(--color-primary),var(--shadow-tile-hover)]"
           : isLightboxSelected
-            ? "shadow-[0_0_0_3px_oklch(var(--p)/0.72),var(--shadow-tile-hover)]"
+            ? "shadow-[0_0_0_2px_var(--color-primary),var(--shadow-tile-hover)]"
             : "shadow-[var(--shadow-tile)] hover:shadow-[var(--shadow-tile-hover)]"
       }`}
       style={{
@@ -114,13 +115,10 @@ export const GalleryTile = memo(function GalleryTile({
         showRenderLoader={effectiveRenderLoader}
       />
       {isGrouped ? <span className="sr-only">{groupedDescription}</span> : null}
-      {asset.kind === "video" || asset.kind === "gif" ? (
-        <span
-          className={`pointer-events-none absolute inset-0 rounded-[var(--radius-surface)] border-2 ${
-            asset.kind === "video" ? "border-accent" : "border-info"
-          }`}
-          aria-hidden="true"
-        />
+      {isBulkSelected ? (
+        <span className="pointer-events-none absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[var(--radius-control)] bg-primary text-primary-content" aria-hidden="true">
+          <UiIcon name="check-square" className="h-4 w-4" />
+        </span>
       ) : null}
       {asset.kind === "video" ? (
         <UiChip className="pointer-events-none absolute right-0 top-0 shadow-[var(--shadow-chip)]" tone="video">

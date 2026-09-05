@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "重复更改数据无效",
     "unknownAssetInChanges": "更改队列中存在未知资源：{{assetId}}",
     "duplicateGroupStillUnresolved": "组 \"{{fileName}}\"：排队的更改仍然留下重复文件名。请在此块中重命名或删除更多项目。"
+  },
+  "workspace": {
+    "search": "搜索",
+    "settingsNavigation": "设置分区",
+    "itemCount": "{{count}} 个项目"
   }
 }

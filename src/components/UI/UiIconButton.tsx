@@ -19,14 +19,10 @@ export function UiIconButton({
   ...props
 }: UiIconButtonProps) {
   const classes = [
-    "btn-circle h-10 w-10 min-h-10 shrink-0 p-0",
-    active
-      ? "bg-primary/16 text-primary ring-2 ring-primary/26"
-      : "bg-[var(--surface-raised)] text-base-content/72 shadow-[var(--shadow-control)] hover:text-base-content",
+    "h-9 w-9 min-h-9 shrink-0 p-0",
+    active && !danger ? "border-primary/40! bg-primary/12! text-primary!" : "",
     className
-  ]
-    .filter(Boolean)
-    .join(" ");
+  ].filter(Boolean).join(" ");
 
   return (
     <UiButton

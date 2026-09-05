@@ -109,8 +109,8 @@ export function LightboxToolbar({
       ref={sidebarRef}
       id="lightbox-sidebar"
       className={[
-        "grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-2 overflow-hidden border-l border-[var(--border-soft)] bg-[var(--surface-solid)] p-2",
-        "absolute inset-y-0 right-0 z-[8] shadow-[var(--shadow-modal)] transition-transform duration-200 motion-reduce:transition-none",
+        "grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden border-l border-[var(--border-soft)] bg-[var(--surface-solid)] p-3",
+        "absolute inset-y-0 right-0 z-[8] transition-transform duration-200 motion-reduce:transition-none",
         isNarrow ? "w-[min(22rem,100%)]" : "w-[clamp(18rem,22vw,22rem)]",
         sidebarVisible ? "translate-x-0" : "pointer-events-none translate-x-full"
       ].join(" ")}
@@ -118,7 +118,7 @@ export function LightboxToolbar({
       aria-label={t("lightbox.sidebarAria")}
       aria-hidden={!sidebarVisible}
     >
-      <header className="flex min-h-0 min-w-0 items-center justify-between gap-1">
+      <header className="flex min-h-0 min-w-0 items-center justify-between gap-2 border-b border-[var(--border-soft)] pb-3">
         <span className="min-w-0 truncate text-xs font-semibold text-base-content" title={selected.file_name}>
           {selected.file_name}
         </span>
@@ -148,7 +148,7 @@ export function LightboxToolbar({
       </header>
 
       <div
-        className="panel-scroll flex min-h-0 min-w-0 flex-col gap-2 overflow-x-hidden overflow-y-auto pr-0.5"
+        className="panel-scroll flex min-h-0 min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto pr-0.5"
         data-testid="lightbox-sidebar-upper"
       >
         {infoPanelOpen ? <LightboxInfoPanel selected={selected} /> : null}
@@ -186,8 +186,8 @@ export function LightboxToolbar({
         />
       </div>
 
-      <div className="panel-scroll grid max-h-[calc(100dvh-100px)] min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 overflow-y-auto">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(36px,1fr))] items-center gap-1" data-testid="lightbox-action-rail">
+      <div className={`grid max-h-[calc(100dvh-100px)] min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 ${deleteConfirmOpen ? "panel-scroll overflow-y-auto" : "overflow-visible"}`}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(36px,1fr))] items-center gap-1 border-t border-[var(--border-soft)] pt-3" data-testid="lightbox-action-rail">
           <UiIconButton
             icon="heart"
             iconClassName="h-4 w-4 shrink-0"

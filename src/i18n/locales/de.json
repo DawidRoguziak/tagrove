@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Ungültige Duplikatänderungsdaten",
     "unknownAssetInChanges": "Unbekanntes Asset in den vorgemerkten Änderungen: {{assetId}}",
     "duplicateGroupStillUnresolved": "Gruppe \"{{fileName}}\": Vorgemerkte Änderungen lassen weiterhin doppelte Dateinamen bestehen. Benennen Sie weitere Elemente um oder löschen Sie sie in diesem Block."
+  },
+  "workspace": {
+    "search": "Suchen",
+    "settingsNavigation": "Einstellungsbereiche",
+    "itemCount": "Elemente: {{count}}"
   }
 }

@@ -6,6 +6,16 @@ This page owns search syntax, tag discovery, bulk selection, and tag/favorite/gr
 
 Transport names, payload casing, and command validation are specified in the [IPC contract](../architecture/ipc-contract.md). Query sessions and the sparse gallery cache are described in [library query and gallery](library-query-and-gallery.md), while SQL filtering, normalization, revision bumps, and group ordering are described in [database](database.md). The single-asset editing surface is described in [lightbox](lightbox.md).
 
+## Workspace presentation
+
+Search text and its explicit Search action occupy the first header row. Media kind,
+favorites, tag-list browsing, the result count, bulk mode, and thumbnail sizing occupy the
+second. The draft/applied split and submission behavior are unchanged. Bulk selection uses
+a green outline and checkmark. Its 360px inspector scrolls on desktop and moves below the
+gallery under 1000px. Bulk suggestions use a viewport portal to escape inspector clipping.
+Assigned tags use muted green chips with explicit removal controls; tag-list include/exclude
+states retain their distinct accessible labels and keyboard shortcuts.
+
 ## Draft filters, applied filters, and refreshes
 
 `useAppSearchFilters` owns two versions of search state. `filterInput`, `mediaKind`, and `favoritesOnly` are the editable values shown by the top bar. Separate applied values feed `useLibraryBrowser`; typing alone only changes the draft input and clears any displayed validation error.
@@ -98,7 +108,7 @@ Favorite toggle is backend-first: it sends the inverse of the selected asset's c
 A media group consists of a nullable display key and nullable numeric order:
 
 - Single editing trims the key and maps blank to `null`. Blank order becomes `null`; a nonblank order is converted with `Number` and an invalid or non-finite value prevents the frontend save. Rust trims the key again and maps blank to `null`; a non-finite order arriving through another caller becomes `null`.
-- The bulk sidebar pre-fills a shared group key case-insensitively. Items from one group start in numeric group order; ungrouped or conflicting selections start in cache order, and conflicts leave the key blank with a warning. Ordering belongs to a media group, so the compact ordering list is shown only for multiple selected items with a nonblank group-key draft. The list uses a dedicated pointer drag handle and does not expose button or keyboard reordering. Apply with a key assigns one-based orders `1..N`; a single unchanged group preserves its current finite order. Blank Apply clears both key and order for every selected item.
+- The bulk sidebar pre-fills a shared group key case-insensitively. Items from one group start in numeric group order; ungrouped or conflicting selections start in cache order, and conflicts leave the key blank with a warning. Ordering belongs to a media group, so the compact ordering list is shown only for multiple selected items with a nonblank group-key draft. The list uses a dedicated pointer drag handle and supports ArrowUp/ArrowDown on its drag-handle buttons. Apply with a key assigns one-based orders `1..N`; a single unchanged group preserves its current finite order. Blank Apply clears both key and order for every selected item.
 - The bulk command skips missing assets, replaces both key and order for every existing target in one transaction, and bumps the revision only if a row changed. It returns processed/updated counts and the normalized key, but the frontend ignores that summary.
 
 Both single and bulk group actions await backend success before patching loaded objects. Bulk failure preserves the sidebar draft and displays an inline error; success keeps the sidebar and selection open with the saved state. Lightbox tag replacements are serialized per asset and expose saving/failure/Retry state; favorite and group controls still launch their promises without local pending/error state. Backend group filtering is an exact match on the trimmed lowercase key, while stored display spelling is retained. Media-group membership affects adjacency and global ordering as detailed in [database](database.md) and [library query and gallery](library-query-and-gallery.md).

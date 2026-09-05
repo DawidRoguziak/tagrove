@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Carga útil de cambios de duplicados no válida",
     "unknownAssetInChanges": "Recurso desconocido en los cambios en cola: {{assetId}}",
     "duplicateGroupStillUnresolved": "Grupo \"{{fileName}}\": los cambios en cola aún dejan nombres de archivo duplicados. Renombra o elimina más elementos en este bloque."
+  },
+  "workspace": {
+    "search": "Buscar",
+    "settingsNavigation": "Secciones de ajustes",
+    "itemCount": "Elementos: {{count}}"
   }
 }

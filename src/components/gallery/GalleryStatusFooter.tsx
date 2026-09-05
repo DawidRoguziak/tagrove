@@ -14,7 +14,7 @@ export function GalleryStatusFooter({
   if (isGeneratingThumbnails && hasMore) {
     return (
       <div
-      className="mx-auto mb-1 mt-3.5 w-fit rounded-full bg-primary px-3.5 py-2 text-xs text-primary-content shadow-[var(--shadow-floating)]"
+      className="mt-4 border-t border-[var(--border-soft)] px-5 py-3 text-xs text-primary"
       role="status"
       aria-live="polite"
     >
@@ -25,7 +25,7 @@ export function GalleryStatusFooter({
 
   if (!isGeneratingThumbnails && !hasMore) {
     return (
-      <div className="mx-auto mb-1 mt-3.5 w-fit rounded-full bg-base-300/85 px-3.5 py-2 text-xs text-base-content shadow-[var(--shadow-surface)]">
+      <div className="mt-4 border-t border-[var(--border-soft)] px-5 py-3 text-xs text-base-content/65">
         {noMoreLabel}
       </div>
     );

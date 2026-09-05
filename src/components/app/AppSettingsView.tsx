@@ -13,8 +13,8 @@ export function AppSettingsView({ onBack, ...settingsPanelProps }: AppSettingsVi
 
   return (
     <div className="grid min-h-full content-start pb-8">
-      <header className="sticky top-0 z-40 border-b border-[var(--border-soft)] bg-[var(--window-chrome-bg)] px-4 py-3 backdrop-blur-xl sm:px-6">
-        <div className="mx-auto flex w-full max-w-[1180px] items-center gap-4">
+      <header className="sticky top-0 z-40 border-b border-[var(--border-soft)] bg-[var(--window-chrome-bg)] px-4 py-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[1240px] items-center gap-4">
           <UiButton
             variant="ghost"
             onClick={onBack}
@@ -26,7 +26,7 @@ export function AppSettingsView({ onBack, ...settingsPanelProps }: AppSettingsVi
             {t("common.back")}
           </UiButton>
           <div className="min-w-0 border-l border-[var(--border-soft)] pl-4">
-            <h1 className="m-0 text-xl leading-tight sm:text-2xl">{t("settings.page.heading")}</h1>
+            <h1 className="m-0 text-xl leading-tight">{t("settings.page.heading")}</h1>
             <p className="m-0 mt-0.5 hidden text-xs text-base-content/60 sm:block">
               {t("settings.page.description")}
             </p>
@@ -34,7 +34,7 @@ export function AppSettingsView({ onBack, ...settingsPanelProps }: AppSettingsVi
         </div>
       </header>
 
-      <div className="pt-5 sm:pt-7">
+      <div className="pt-5">
         <SettingsPanel fullView {...settingsPanelProps} />
       </div>
     </div>

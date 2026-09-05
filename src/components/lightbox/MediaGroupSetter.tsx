@@ -63,7 +63,7 @@ export function MediaGroupSetter({
         className="h-8 min-w-0 w-full"
       />
 
-      <UiButton variant="primary" type="button" className="h-6! min-h-6! justify-center text-xs" onClick={onApply}>
+      <UiButton variant="primary" type="button" className="h-8! min-h-8! justify-center text-xs" onClick={onApply}>
         {t("common.apply")}
       </UiButton>
     </div>

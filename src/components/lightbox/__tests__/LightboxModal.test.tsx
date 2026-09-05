@@ -354,8 +354,7 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
 
     expect(screen.getByTestId("lightbox-tag-list")).toHaveClass(
       "min-h-[48px]",
-      "px-0",
-      "py-2",
+      "p-2",
       "overflow-auto"
     );
     expect(screen.getByTestId("lightbox-tag-list")).not.toHaveClass("p-1", "w-fit");
@@ -669,8 +668,9 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     expect(mediaGroup.compareDocumentPosition(tags) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(tags).toHaveClass("border-t");
     expect(tags).not.toHaveClass("mt-auto");
-    expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("h-6!", "min-h-6!");
+    expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("h-8!", "min-h-8!");
     expect(within(actionRail).getAllByRole("button")).toHaveLength(6);
+    expect(actionRail.parentElement).not.toHaveClass("overflow-y-auto");
     expect(upperSection).not.toContainElement(actionRail);
   });
 

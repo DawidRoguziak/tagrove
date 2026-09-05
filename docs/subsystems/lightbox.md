@@ -72,6 +72,18 @@ Media-group apply trims the key and converts an empty key to null. Empty order b
 
 Delete runs under the scan/thumbnail lock. An existing source is journaled and staged before one database/revision transaction; a missing source explicitly removes stale metadata. The frontend inspects `DeleteAssetSummary`: missing source and post-commit cleanup staging are announced separately, while a pre-commit filesystem rejection remains in the confirmation dialog and states that metadata was preserved.
 
+## Visual treatment
+
+The media frame and inspector use the shared compact studio tokens in both themes. The
+inspector separates its filename header, editing sections and pinned action rail with thin
+rules. Tags are muted green chips; paths and metadata use monospace. Apply controls are
+32px high. This styling preserves the collapse/drawer state, viewport limits, idle reveal,
+focus restoration and native-surface coordination described below.
+
+GTK playback controls remain dark over video in either application theme. Their buttons use
+4px corners and the same `#7CB87C` primary green for seek progress and focus. The contrast
+gradient, control bounds, native session logic and fullscreen behavior are unchanged.
+
 ## Toolbar, sidebar, confirmation, and clipboard
 
 On a wide viewport the sidebar occupies `clamp(18rem, 22vw, 22rem)` and the media uses the remaining width. It contains the action buttons (favorite, group copy, reset zoom, info, image fullscreen, delete, close), tagging/media-group editing, and an inline file-information section. Navigation remains keyboard-driven; there are no pointer navigation buttons. The sidebar keeps a pinned header and one-row action rail while the middle area scrolls.

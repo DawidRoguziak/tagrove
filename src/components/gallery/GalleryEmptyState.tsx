@@ -22,12 +22,12 @@ export function GalleryEmptyState({
 }: GalleryEmptyStateProps) {
   return (
     <div
-      className="mx-auto grid min-h-full max-w-[540px] place-content-center justify-items-center gap-3 p-7 text-center"
+      className="mx-auto grid min-h-[calc(100dvh-180px)] max-w-[540px] place-content-center justify-items-center gap-3 p-7 text-center"
       role="status"
       aria-live="polite"
     >
-      <div className="mb-1 grid h-16 w-16 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
-        <UiIcon name="info" className="h-8 w-8" />
+      <div className="mb-1 grid h-16 w-16 place-items-center rounded-[var(--radius-control)] bg-primary/10 text-primary ring-1 ring-primary/15">
+        <UiIcon name={hasScanRoots ? "search" : "folder"} className="h-8 w-8" />
       </div>
       {!hasScanRoots ? (
         <>

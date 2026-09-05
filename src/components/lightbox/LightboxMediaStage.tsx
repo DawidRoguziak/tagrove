@@ -97,7 +97,7 @@ export function LightboxMediaStage({
       className={`relative h-full min-h-0 min-w-0 w-full overflow-hidden [contain:paint] ${
         selected.kind === "video"
           ? "lightbox-media-stage--video"
-          : "bg-[radial-gradient(circle_at_center,oklch(var(--b2)/0.72),oklch(var(--b3)/0.98))]"
+          : "bg-[var(--surface-muted)]"
       }`}
       data-lightbox-media-stage={selected.kind}
       ref={(node) => {

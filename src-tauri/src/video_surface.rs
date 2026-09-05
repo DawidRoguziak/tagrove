@@ -77,8 +77,8 @@ const NATIVE_CONTROLS_CSS: &[u8] = br#"
   min-height: 34px;
   padding: 4px;
   border: 0;
-  border-radius: 17px;
-  color: #f4f5f0;
+  border-radius: 4px;
+  color: #edf0f2;
   background: transparent;
   box-shadow: none;
 }
@@ -88,9 +88,10 @@ const NATIVE_CONTROLS_CSS: &[u8] = br#"
 }
 .media-tagger-video-controls button:focus,
 .media-tagger-video-controls menubutton > button:focus {
-  box-shadow: inset 0 0 0 2px rgba(158, 226, 163, 0.92);
+  box-shadow: inset 0 0 0 2px #7cb87c;
 }
 .media-tagger-video-time {
+  font-family: monospace;
   color: rgba(244, 245, 240, 0.9);
   font-size: 12px;
 }
@@ -103,25 +104,25 @@ const NATIVE_CONTROLS_CSS: &[u8] = br#"
 .media-tagger-video-seek highlight {
   border: 0;
   border-radius: 2px;
-  background: #90d596;
+  background: #7cb87c;
 }
 .media-tagger-video-seek slider {
   min-width: 13px;
   min-height: 13px;
   margin: -5px;
   border: 0;
-  border-radius: 7px;
-  background: #f4f5f0;
+  border-radius: 2px;
+  background: #edf0f2;
   box-shadow: none;
 }
 .media-tagger-video-rate-popover {
   padding: 6px;
-  background: #17191b;
+  background: #1c1f22;
 }
 .media-tagger-video-rate-popover button {
   min-width: 72px;
   min-height: 30px;
-  color: #f4f5f0;
+  color: #edf0f2;
   background: transparent;
 }
 "#;

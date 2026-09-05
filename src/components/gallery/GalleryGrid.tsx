@@ -156,7 +156,7 @@ const GalleryGridContent = memo(function GalleryGridContent({
 
   return (
     <section
-      className={`mx-auto min-h-0 w-full max-w-[1920px] px-3 pt-3 sm:px-4 sm:pt-4 ${
+      className={`min-h-0 min-w-0 w-full px-3 pt-3 sm:px-5 sm:pt-5 ${
         selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""
       }`}
       ref={galleryRef}
@@ -194,7 +194,7 @@ const GalleryGridContent = memo(function GalleryGridContent({
               return (
                 <div
                   key={`group-backplate-${backplate.startIndex}`}
-                  className="pointer-events-none absolute z-0 rounded-[calc(var(--radius-surface)+4px)] bg-accent/30"
+                  className="pointer-events-none absolute z-0 rounded-[calc(var(--radius-surface)+4px)] bg-primary/16"
                   style={{
                     width:
                       tileCount * virtualGrid.tilePixelSize +

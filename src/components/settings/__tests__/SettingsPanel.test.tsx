@@ -145,6 +145,22 @@ describe("SettingsPanel", () => {
     expect(onCancelRemoveRootConfirm).toHaveBeenCalledTimes(1);
   });
 
+  it("navigates to mounted sections and focuses the destination without changing the URL", async () => {
+    const { container } = renderPanel({ fullView: true });
+    const appearance = container.querySelector<HTMLElement>("#settings-appearance");
+    if (!appearance) throw new Error("Missing appearance section");
+    const scroll = vi.fn();
+    appearance.scrollIntoView = scroll;
+    const previousHash = window.location.hash;
+    const navigation = screen.getByRole("navigation", { name: "Settings sections" });
+    await userEvent.click(within(navigation).getByRole("link", { name: "Appearance" }));
+    expect(scroll).toHaveBeenCalledWith({ block: "start", behavior: "instant" });
+    expect(appearance).toHaveFocus();
+    expect(window.location.hash).toBe(previousHash);
+    expect(within(navigation).getByRole("link", { name: "Appearance" })).toHaveAttribute("aria-current", "location");
+    expect(screen.getByRole("button", { name: "Choose folder" })).toBeInTheDocument();
+  });
+
   it("renders the canonical confirmation label in destructive dialogs", () => {
     renderPanel({
       pendingDuplicateDeleteConfirm: {

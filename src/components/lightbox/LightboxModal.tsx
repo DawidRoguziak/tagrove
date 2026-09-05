@@ -186,7 +186,7 @@ export function LightboxModal({
         "fixed inset-0 z-[55] grid place-items-center",
         videoFullscreen
           ? "bg-neutral p-0 backdrop-blur-none"
-          : `bg-neutral/62 backdrop-blur-sm ${isVideo ? "p-5" : "p-2 sm:p-5"}`
+          : `bg-neutral/62 ${isVideo ? "p-5" : "p-2 sm:p-5"}`
       ].join(" ")}
       onClick={() => {
         if (!isTopLayer) return;

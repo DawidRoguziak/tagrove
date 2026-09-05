@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Invalid duplicate changes payload",
     "unknownAssetInChanges": "Unknown asset in queued changes: {{assetId}}",
     "duplicateGroupStillUnresolved": "Group \"{{fileName}}\": queued changes still leave duplicate file names. Rename or delete more items in this block."
+  },
+  "workspace": {
+    "search": "Search",
+    "settingsNavigation": "Settings sections",
+    "itemCount": "{{count}} items"
   }
 }

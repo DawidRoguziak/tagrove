@@ -37,14 +37,14 @@ export function DuplicateGroupCard({
 
   return (
     <section
-      className={`grid gap-2 rounded-xl border p-3 ${
+      className={`grid gap-2 rounded-[var(--radius-control)] border p-3 ${
         isResolved ? "border-primary/40 bg-primary/10" : "border-base-content/20 bg-base-100/75"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
         <h4 className="m-0 text-sm">{group.file_name}</h4>
         {isResolved ? (
-          <span className="rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+          <span className="rounded-[var(--radius-control)] border border-primary/40 bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
             {t("settings.duplicates.readyBadge")}
           </span>
         ) : null}

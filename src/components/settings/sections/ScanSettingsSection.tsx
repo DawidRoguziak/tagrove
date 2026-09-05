@@ -58,7 +58,7 @@ export function ScanSettingsSection({
   return (
     <section
       ref={sectionRef}
-      className={`grid gap-5 rounded-[var(--radius-surface)] border bg-[var(--surface-raised)] p-5 shadow-[var(--shadow-surface)] transition-all duration-300 sm:p-6 ${
+      className={`grid gap-5 rounded-[var(--radius-surface)] border bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)] transition-colors duration-150 ${
         highlighted
           ? "border-primary/60 shadow-[0_0_0_3px_oklch(var(--p)/0.16),var(--shadow-surface)]"
           : "border-[var(--border-soft)]"
@@ -84,10 +84,10 @@ export function ScanSettingsSection({
           <ul className="m-0 grid list-none gap-2 p-0">
             {scanRoots.map((path) => (
               <li key={path} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-base-200/38 p-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
-                <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-primary">
+                <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-primary/10 text-primary">
                   <UiIcon name="folder" className="h-[18px] w-[18px]" />
                 </span>
-                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium text-base-content/82" title={path}>
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-mono text-base-content/82" title={path}>
                   {path}
                 </span>
                 <div className="col-span-2 flex flex-wrap items-center justify-end gap-2 sm:col-span-1">

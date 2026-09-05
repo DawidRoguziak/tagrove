@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "重複変更ペイロードが無効です",
     "unknownAssetInChanges": "キュー済み変更に不明なアセットがあります: {{assetId}}",
     "duplicateGroupStillUnresolved": "グループ \"{{fileName}}\": キュー済み変更を適用しても重複ファイル名が残ります。このブロックでさらにリネームまたは削除してください。"
+  },
+  "workspace": {
+    "search": "検索",
+    "settingsNavigation": "設定セクション",
+    "itemCount": "{{count}} 件"
   }
 }

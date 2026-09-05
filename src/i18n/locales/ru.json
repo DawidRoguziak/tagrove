@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Недопустимые данные изменений дубликатов",
     "unknownAssetInChanges": "Неизвестный ресурс в изменениях в очереди: {{assetId}}",
     "duplicateGroupStillUnresolved": "Группа \"{{fileName}}\": изменения в очереди по-прежнему оставляют дублирующиеся имена файлов. Переименуйте или удалите больше элементов в этом блоке."
+  },
+  "workspace": {
+    "search": "Найти",
+    "settingsNavigation": "Разделы настроек",
+    "itemCount": "Объекты: {{count}}"
   }
 }

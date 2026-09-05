@@ -27,9 +27,9 @@ export function TagListChipList({
         const tagMode = getTagMode(selections, tag);
         const stateLabel = getStateLabel(tag);
         const tagClasses = [
-          "inline-flex break-all items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/35",
+          "inline-flex break-all items-center rounded-[var(--radius-control)] border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/35",
           tagMode === "include"
-            ? "border-accent bg-accent text-accent-content hover:border-accent hover:bg-accent/90"
+            ? "border-primary/45 bg-primary/12 text-primary hover:bg-primary/20"
             : tagMode === "exclude"
               ? "border-error/45 bg-error/12 text-error hover:border-error/60 hover:bg-error/18"
               : "border-base-content/12 bg-base-100 text-base-content hover:border-base-content/24 hover:bg-base-100/80"

@@ -1,3 +1,4 @@
+import { SettingsNavigation } from "./SettingsNavigation";
 import { ClearLibraryConfirmDialog } from "./ClearLibraryConfirmDialog";
 import { DuplicateDeleteConfirmDialog } from "./DuplicateDeleteConfirmDialog";
 import { DuplicateResolverDialog } from "./DuplicateResolverDialog";
@@ -200,23 +201,19 @@ export function SettingsPanel({
 
   const outerClasses = fullView
     ? "min-h-0 px-4 pb-4 sm:px-6"
-    : "min-h-0 overflow-auto rounded-[var(--radius-panel)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-4 shadow-[var(--shadow-surface)] backdrop-blur-xl";
+    : "min-h-0 overflow-auto rounded-[var(--radius-panel)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-4 shadow-[var(--shadow-surface)]";
   const contentClasses = fullView
-    ? "settings-card mx-auto grid w-full max-w-[1180px] gap-4 sm:gap-5"
+    ? "settings-card settings-layout"
     : "settings-card grid w-full max-w-[900px] gap-4";
 
   return (
     <>
       <section className={outerClasses}>
         <div className={contentClasses}>
-          <AppearanceSection
-            theme={appearanceController.theme}
-            onThemeChange={appearanceController.onThemeChange}
-            language={appearanceController.language}
-            onLanguageChange={appearanceController.onLanguageChange}
-          />
-
-          <ScanSettingsSection
+          {fullView ? <SettingsNavigation /> : null}
+          <div className="grid min-w-0 content-start gap-5">
+            <div id="settings-scan" className="settings-section" tabIndex={-1}>
+              <ScanSettingsSection
             highlighted={highlightScanSection}
             scanRoots={scanController.scanRoots}
             isOperationLocked={scanController.isOperationLocked}
@@ -232,9 +229,17 @@ export function SettingsPanel({
             onRenderFailedThumbnails={scanController.onRenderFailedThumbnails}
             onCancelThumbnailRender={scanController.onCancelThumbnailRender}
           />
-
-          <div className="grid items-start gap-4 lg:grid-cols-2">
-            <ImportExportSection
+            </div>
+            <div id="settings-appearance" className="settings-section" tabIndex={-1}>
+              <AppearanceSection
+            theme={appearanceController.theme}
+            onThemeChange={appearanceController.onThemeChange}
+            language={appearanceController.language}
+            onLanguageChange={appearanceController.onLanguageChange}
+          />
+            </div>
+            <div id="settings-import-export" className="settings-section" tabIndex={-1}>
+              <ImportExportSection
               isOperationLocked={importExportController.isOperationLocked}
               operationState={importExportController.operationState}
               onExportCsv={importExportController.onExportCsv}
@@ -242,16 +247,17 @@ export function SettingsPanel({
               onExportDbBundle={importExportController.onExportDbBundle}
               onImportDbBundle={importExportController.onImportDbBundle}
             />
-
-            <DuplicatesSection
+            </div>
+            <div id="settings-duplicates" className="settings-section" tabIndex={-1}>
+              <DuplicatesSection
               isOperationLocked={duplicatesController.isOperationLocked}
               operationState={duplicatesController.operationState}
               duplicateGroups={duplicatesController.groups.length}
               duplicateAssets={duplicatesController.assetCount}
               onStart={duplicatesController.onStart}
             />
-
-            <div className="lg:col-span-2">
+            </div>
+            <div id="settings-danger" className="settings-section" tabIndex={-1}>
               <DangerZoneSection
                 isOperationLocked={dangerZoneController.isOperationLocked}
                 operationState={dangerZoneController.operationState}

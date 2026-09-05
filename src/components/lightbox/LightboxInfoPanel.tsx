@@ -13,10 +13,10 @@ export function LightboxInfoPanel({ selected }: LightboxInfoPanelProps) {
     <aside
       aria-label={t("lightbox.infoHeading")}
       data-testid="lightbox-info-panel"
-      className="grid gap-1.5 rounded-lg bg-base-200/45 p-2 text-xs text-base-content/82"
+      className="grid gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-[var(--surface-muted)] p-3 text-xs text-base-content/82"
     >
       <h3 className="m-0 text-xs">{t("lightbox.infoHeading")}</h3>
-      <div className="grid gap-1.5">
+      <div className="grid gap-2 font-mono text-[11px]">
         <span><strong className="font-semibold text-base-content">{t("lightbox.type")}:</strong> {selected.kind}</span>
         <span><strong className="font-semibold text-base-content">{t("lightbox.size")}:</strong> {selected.size_bytes === null ? "-" : formatBytes(selected.size_bytes)}</span>
         <span>

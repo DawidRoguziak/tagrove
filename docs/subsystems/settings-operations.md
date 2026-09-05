@@ -4,6 +4,15 @@ Implementation entry points: [settings composition](../../src/hooks/useSettingsA
 
 This page owns settings state, operation sequencing, progress presentation, confirmations, and cache resets. [IPC](../architecture/ipc-contract.md) owns transport shapes, [scanning](scanning-and-indexing.md) owns indexing, [thumbnails](thumbnails.md) owns rendering/cancellation, and [data safety](data-safety-and-portability.md) owns CSV/bundle validation and recovery.
 
+## Settings layout
+
+The full-page view keeps all operation sections mounted. A 200px navigation column links to
+scan settings, appearance, import/export, duplicates and the danger zone in that order. At
+widths below 1000px navigation wraps above the content. Selecting a link scrolls to and
+focuses the section; it does not start an operation, change the URL or persist a new setting.
+The first-folder route still highlights and scrolls to scanning. Shared controls, compact
+folder rows and dialogs follow the [frontend visual system](../frontend/architecture-and-ui-conventions.md#compact-studio-visual-system).
+
 ## Composition and state ownership
 
 `useAppShellController` constructs `useSettingsActions` even when the gallery is visible. The settings action state therefore has shell lifetime: it survives switching between the gallery and the lazy-loaded `AppSettingsView`, but not a complete app unmount or restart. On shell mount, scan roots are hydrated alongside known tags. `useSettingsView` independently owns whether the full-page settings view is open; Back and the shell's registered settings-layer Escape handler return to the gallery.

@@ -6,8 +6,8 @@ interface UiProgressBarProps {
 
 export function UiProgressBar({ value, max, label }: UiProgressBarProps) {
   return (
-    <div className="flex items-center gap-2">
-      <progress className="progress progress-primary h-2 w-[min(320px,70vw)]" value={value} max={max} />
+    <div className="flex w-full max-w-[420px] items-center gap-3">
+      <progress className="progress progress-primary h-1.5 min-w-0 flex-1 rounded-[2px]" aria-label={label} value={value} max={max} />
       {label && <span className="text-xs text-base-content">{label}</span>}
     </div>
   );

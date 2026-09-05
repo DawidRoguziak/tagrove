@@ -21,7 +21,7 @@ export function DuplicatesSection({
   const { t } = useTranslation();
 
   return (
-    <section className="grid min-h-full content-start gap-4 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-5 shadow-[var(--shadow-surface)] sm:p-6">
+    <section className="grid min-h-full content-start gap-4 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)]">
       <h3 className="m-0 text-lg">{t("settings.duplicates.heading")}</h3>
       <p className="m-0 text-sm leading-relaxed text-base-content/60">
         {t("settings.duplicates.description")}

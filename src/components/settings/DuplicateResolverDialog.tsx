@@ -149,7 +149,7 @@ export function DuplicateResolverDialog({
 
       <div ref={groupsScrollRef} className="overflow-auto pr-1">
         {!groups.length && !operationState.loading ? (
-          <div className="rounded-xl border border-base-content/20 bg-base-200/40 p-3 text-sm text-base-content/70">
+          <div className="rounded-[var(--radius-control)] border border-base-content/20 bg-base-200/40 p-3 text-sm text-base-content/70">
             {t("settings.duplicates.noGroups")}
           </div>
         ) : null}

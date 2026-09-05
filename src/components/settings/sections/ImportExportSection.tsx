@@ -23,7 +23,7 @@ export function ImportExportSection({
   const { t } = useTranslation();
 
   return (
-    <section className="grid min-h-full gap-4 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-5 shadow-[var(--shadow-surface)] sm:p-6">
+    <section className="grid min-h-full gap-4 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)]">
       <h3 className="m-0 text-lg">{t("settings.importExport.heading")}</h3>
       <div className="grid gap-2 sm:grid-cols-2">
         <UiButton onClick={onExportCsv} disabled={isOperationLocked}>

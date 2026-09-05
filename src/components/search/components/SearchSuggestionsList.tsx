@@ -87,7 +87,7 @@ export function SearchSuggestionsList({
     <div
       id={id}
       className={[
-        "grid gap-0.5 overflow-y-auto rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-1.5 shadow-[var(--shadow-popover)] backdrop-blur-xl",
+        "grid gap-0.5 overflow-y-auto rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-1.5 shadow-[var(--shadow-popover)]",
         strategy === "viewport"
           ? "fixed z-[70]"
           : `absolute left-0 right-0 z-10 max-h-[min(18rem,45vh)] ${

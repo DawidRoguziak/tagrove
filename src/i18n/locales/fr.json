@@ -429,5 +429,10 @@
     "duplicatePayloadInvalid": "Payload de modifications de doublons invalide",
     "unknownAssetInChanges": "Élément inconnu dans les modifications en file : {{assetId}}",
     "duplicateGroupStillUnresolved": "Groupe \"{{fileName}}\" : les modifications en file laissent encore des noms de fichiers en double. Renommez ou supprimez davantage d’éléments dans ce bloc."
+  },
+  "workspace": {
+    "search": "Rechercher",
+    "settingsNavigation": "Sections des paramètres",
+    "itemCount": "Éléments : {{count}}"
   }
 }

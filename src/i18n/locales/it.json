@@ -167,6 +167,7 @@
     "fullscreen": "Schermo intero (F)",
     "exitFullscreen": "Esci da schermo intero (F)",
     "videoControls": {
+      "controlError": "Impossibile modificare la riproduzione. Riprova.",
       "play": "Riproduci",
       "pause": "Pausa",
       "mute": "Disattiva audio",

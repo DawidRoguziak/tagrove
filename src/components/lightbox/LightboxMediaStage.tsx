@@ -114,6 +114,14 @@ export function LightboxMediaStage({
             {selected.kind === "video"
               ? t("lightbox.mediaError.video")
               : t("lightbox.mediaError.image")}
+            {selected.kind === "video" && (
+              <div className="mt-3">
+                <UiButton onClick={() => {
+                  activationRef.current = { mediaKey, generation: activationRef.current.generation + 1 };
+                  setFailedActivation(null);
+                }}>{t("gallery.retry")}</UiButton>
+              </div>
+            )}
           </div>
         </div>
       ) : !detailsLoaded ? (

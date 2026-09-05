@@ -134,11 +134,11 @@ Reusable primitives live in [`src/components/UI`](../../src/components/UI):
 - `UiModal` is the standard portal dialog primitive described below.
 - `browserAssistDisabledProps` is shared by exact-token/confirmation inputs where browser autocorrection would be harmful.
 
-[`src/styles.css`](../../src/styles.css) imports the Video.js 10 minimal skin and Tailwind CSS, disables DaisyUI's stock theme set, and declares the app's `light` and `dark` DaisyUI themes. Components combine Tailwind utility classes, DaisyUI component classes such as `btn`, `progress`, and `loading`, and app CSS variables.
+[`src/styles.css`](../../src/styles.css) imports Tailwind CSS, disables DaisyUI's stock theme set, and declares the app's `light` and `dark` DaisyUI themes. Components combine Tailwind utility classes, DaisyUI component classes such as `btn`, `progress`, and `loading`, and app CSS variables.
 
 Prefer semantic DaisyUI colors (`primary`, `base-*`, `error`, and similar) and the app tokens for surfaces, borders, radii, shadows, fields, and window chrome. Reuse `--surface-*`, `--border-*`, `--radius-*`, and `--shadow-*` rather than adding isolated literal values for the same role. Keep theme differences in the theme blocks, not conditional class lists in components. Pass `className` for layout or a deliberate contextual adjustment; shared visual behavior belongs in the primitive.
 
-Global styles establish full-height roots, typography, field treatment, visible keyboard focus for buttons, links, inputs, and selects, themed scrollbars, and Video.js skin variables. Preserve native elements where possible so keyboard and accessibility behavior come for free.
+Global styles establish full-height roots, typography, field treatment, visible keyboard focus for buttons, links, inputs, and selects, and themed scrollbars. Preserve native elements where possible so keyboard and accessibility behavior come for free.
 
 ## Compact studio visual system
 

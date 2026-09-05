@@ -167,6 +167,7 @@
     "fullscreen": "Fullscreen (F)",
     "exitFullscreen": "Exit fullscreen (F)",
     "videoControls": {
+      "controlError": "Could not update playback. Try again.",
       "play": "Play",
       "pause": "Pause",
       "mute": "Mute",

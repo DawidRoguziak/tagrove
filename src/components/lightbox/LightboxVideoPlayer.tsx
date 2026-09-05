@@ -1,11 +1,9 @@
-import { I18nProvider } from "@videojs/react/i18n";
-import { MinimalVideoSkin, VideoPlayer } from "@videojs/react/video";
 import type { CSSProperties, MutableRefObject } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { NativeVideoControlLabels, VideoBounds } from "./mpvVideoTypes";
-import type { MpvMediaAdapter } from "./MpvMediaAdapter";
-import { MpvMediaComponent } from "./MpvMediaComponent";
+import { useNativeVideoSession } from "./useNativeVideoSession";
+import { UiButton } from "../UI/UiButton";
 
 export interface LightboxVideoPlayerHandle {
   toggleFullscreen: () => Promise<void>;
@@ -38,10 +36,8 @@ export function LightboxVideoPlayer({
   onPointerActivity,
   onNativeBounds
 }: LightboxVideoPlayerProps) {
-  const { t, i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage || i18n.language;
-  const [adapter, setAdapter] = useState<MpvMediaAdapter | null>(null);
-  const [fullscreen, setFullscreen] = useState(false);
+  const { t } = useTranslation();
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const controlLabels = useMemo<NativeVideoControlLabels>(
     () => ({
       play: t("lightbox.videoControls.play"),
@@ -55,61 +51,54 @@ export function LightboxVideoPlayer({
     }),
     [t]
   );
-  const handleFullscreenChange = useCallback(
-    (nextFullscreen: boolean) => {
-      setFullscreen(nextFullscreen);
-      onFullscreenChange(nextFullscreen);
-    },
-    [onFullscreenChange]
-  );
-  const toggleFullscreen = useCallback(async () => {
-    if (!adapter) return;
-    if (fullscreen) {
-      await adapter.exitFullscreen();
-    } else {
-      await adapter.requestFullscreen();
-    }
-  }, [adapter, fullscreen]);
+  const { sessionId, fullscreen, snapshot, controlError, dismissControlError, toggleFullscreen } =
+    useNativeVideoSession({
+      assetId,
+      generation,
+      container,
+      controlLabels,
+      onLoadedMetadata,
+      onFullscreenChange,
+      onError,
+      onPointerActivity,
+      onNativeBounds
+    });
 
   useEffect(() => {
-    if (!adapter) return;
-    const handle: LightboxVideoPlayerHandle = {
-      toggleFullscreen
-    };
+    if (sessionId === null) return;
+    const handle: LightboxVideoPlayerHandle = { toggleFullscreen };
     playerRef.current = handle;
     return () => {
       if (playerRef.current === handle) playerRef.current = null;
     };
-  }, [adapter, playerRef, toggleFullscreen]);
-
-  const playerStyle = { aspectRatio } as CSSProperties;
+  }, [playerRef, sessionId, toggleFullscreen]);
 
   return (
-    <div className="h-full w-full max-h-full max-w-full" style={style}>
-      <VideoPlayer key={`${assetId}:${generation}`}>
-        <I18nProvider locale={locale}>
-          <MinimalVideoSkin
-            className="lightbox-video-player h-full w-full"
-            data-lightbox-video-player
-            data-native-video-active
-            data-native-fullscreen={fullscreen ? "" : undefined}
-            aria-label={title}
-            style={playerStyle}
-          >
-            <MpvMediaComponent
-              assetId={assetId}
-              generation={generation}
-              controlLabels={controlLabels}
-              onAdapter={setAdapter}
-              onLoadedMetadata={onLoadedMetadata}
-              onFullscreenChange={handleFullscreenChange}
-              onError={onError}
-              onPointerActivity={onPointerActivity}
-              onNativeBounds={onNativeBounds}
-            />
-          </MinimalVideoSkin>
-        </I18nProvider>
-      </VideoPlayer>
+    <div className="flex h-full w-full max-h-full max-w-full flex-col" style={style}>
+      {controlError && (
+        <div role="alert" className="flex shrink-0 items-center gap-2 bg-base-100 p-2 text-sm">
+          <span className="min-w-0 flex-1">{t("lightbox.videoControls.controlError")}</span>
+          <UiButton onClick={dismissControlError}>{t("common.close")}</UiButton>
+        </div>
+      )}
+      <div
+        ref={setContainer}
+        className="lightbox-video-player min-h-0 w-full flex-1"
+        data-lightbox-video-player
+        data-native-video-active={sessionId !== null ? "" : undefined}
+        data-native-session={sessionId ?? undefined}
+        data-native-fullscreen={fullscreen ? "" : undefined}
+        data-native-paused={snapshot?.paused}
+        data-native-seeking={snapshot?.seeking}
+        data-native-buffering={snapshot?.buffering}
+        data-native-time={snapshot?.current_time}
+        data-native-muted={snapshot?.muted}
+        data-native-volume={snapshot?.volume}
+        data-native-rate={snapshot?.rate}
+        tabIndex={0}
+        aria-label={title}
+        style={{ aspectRatio }}
+      />
     </div>
   );
 }

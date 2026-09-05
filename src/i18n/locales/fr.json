@@ -167,6 +167,7 @@
     "fullscreen": "Plein écran (F)",
     "exitFullscreen": "Quitter le plein écran (F)",
     "videoControls": {
+      "controlError": "Impossible de modifier la lecture. Réessayez.",
       "play": "Lecture",
       "pause": "Pause",
       "mute": "Couper le son",

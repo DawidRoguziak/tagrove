@@ -19,7 +19,10 @@ use std::{
 use tauri::Manager;
 
 use app::{instance_lock::InstanceLock, state::AppState};
-use commands::video::{close_video, control_video, open_video, set_video_bounds};
+use commands::video::{
+    begin_video_open, cancel_video_open, close_video, control_video, open_video, set_video_bounds,
+    set_video_control_labels,
+};
 use commands::{
     assets::{
         apply_duplicate_resolution_batch, delete_asset, find_duplicate_assets, get_asset_details,
@@ -151,6 +154,9 @@ pub fn run() {
             inspect_db_bundle,
             import_db_bundle,
             sync_window_theme,
+            begin_video_open,
+            cancel_video_open,
+            set_video_control_labels,
             open_video,
             set_video_bounds,
             control_video,

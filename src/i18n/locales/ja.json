@@ -167,6 +167,7 @@
     "fullscreen": "全画面表示 (F)",
     "exitFullscreen": "全画面表示を終了 (F)",
     "videoControls": {
+      "controlError": "再生設定を変更できませんでした。もう一度お試しください。",
       "play": "再生",
       "pause": "一時停止",
       "mute": "ミュート",

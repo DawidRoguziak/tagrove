@@ -31,6 +31,7 @@ struct VideoSurface {
     gl_area: gtk::GLArea,
     controls: NativeVideoControls,
     sessions: SurfaceSessions,
+    fullscreen: bool,
     _overlay: gtk::Overlay,
     _pointer_motion: gtk::EventControllerMotion,
     _css_provider: gtk::CssProvider,
@@ -54,6 +55,7 @@ struct NativeVideoControls {
     fullscreen_icon: gtk::Image,
     session_id: Rc<Cell<Option<u64>>>,
     labels: Rc<RefCell<VideoControlLabels>>,
+    scrubbing: Rc<Cell<bool>>,
 }
 
 const NATIVE_CONTROLS_HEIGHT: i32 = 68;
@@ -274,7 +276,7 @@ struct SurfaceSessions {
 
 impl SurfaceSessions {
     fn activate(&mut self, session_id: u64) -> bool {
-        if session_id < self.latest {
+        if session_id <= self.latest {
             return false;
         }
         self.latest = session_id;
@@ -336,6 +338,28 @@ impl NativeVideoControls {
         let (fullscreen_button, fullscreen_icon) = icon_button("view-fullscreen-symbolic");
         row.pack_start(&fullscreen_button, false, false, 0);
 
+        let scrubbing = Rc::new(Cell::new(false));
+        {
+            let scrubbing = Rc::clone(&scrubbing);
+            seek.connect_button_press_event(move |_, _| {
+                scrubbing.set(true);
+                glib::Propagation::Proceed
+            });
+        }
+        {
+            let scrubbing = Rc::clone(&scrubbing);
+            seek.connect_button_release_event(move |_, _| {
+                scrubbing.set(false);
+                glib::Propagation::Proceed
+            });
+        }
+        {
+            let scrubbing = Rc::clone(&scrubbing);
+            seek.connect_grab_broken_event(move |_, _| {
+                scrubbing.set(false);
+                glib::Propagation::Proceed
+            });
+        }
         let session_id = Rc::new(Cell::new(None));
         let labels = Rc::new(RefCell::new(default_control_labels()));
 
@@ -358,7 +382,7 @@ impl NativeVideoControls {
                     PlayerCommand::Pause
                 };
                 if let Err(error) = player.control(session_id, command) {
-                    eprintln!("native video play control failed: {error}");
+                    player.report_control_error(session_id, error);
                 }
             });
         }
@@ -378,7 +402,7 @@ impl NativeVideoControls {
                 if let Err(error) =
                     player.control(session_id, PlayerCommand::SetMuted(!snapshot.muted))
                 {
-                    eprintln!("native video mute control failed: {error}");
+                    player.report_control_error(session_id, error);
                 }
             });
         }
@@ -397,7 +421,7 @@ impl NativeVideoControls {
                 };
                 let time = value.clamp(0.0, 1.0) * snapshot.duration;
                 if let Err(error) = player.control(session_id, PlayerCommand::Seek(time)) {
-                    eprintln!("native video seek control failed: {error}");
+                    player.report_control_error(session_id, error);
                 }
                 glib::Propagation::Proceed
             });
@@ -410,7 +434,7 @@ impl NativeVideoControls {
             button.connect_clicked(move |_| {
                 if let Some(session_id) = session_id.get() {
                     if let Err(error) = player.control(session_id, PlayerCommand::SetRate(rate)) {
-                        eprintln!("native video rate control failed: {error}");
+                        player.report_control_error(session_id, error);
                     }
                 }
                 popover.popdown();
@@ -425,16 +449,10 @@ impl NativeVideoControls {
                 let Some(session_id) = session_id.get() else {
                     return;
                 };
-                let Some(snapshot) = player
-                    .playback_snapshot()
-                    .filter(|snapshot| snapshot.session_id == session_id)
-                else {
-                    return;
-                };
                 if let Err(error) =
-                    set_fullscreen(&window, &player, session_id, !snapshot.fullscreen)
+                    set_fullscreen(&window, &player, session_id, FullscreenAction::Toggle)
                 {
-                    eprintln!("native video fullscreen control failed: {error}");
+                    player.report_control_error(session_id, error);
                 }
             });
         }
@@ -460,8 +478,13 @@ impl NativeVideoControls {
                         None
                     };
                 if let Some(requested) = requested {
-                    if let Err(error) = set_fullscreen(&window, &player, session_id, requested) {
-                        eprintln!("native video keyboard fullscreen control failed: {error}");
+                    if let Err(error) = set_fullscreen(
+                        &window,
+                        &player,
+                        session_id,
+                        FullscreenAction::Set(requested),
+                    ) {
+                        player.report_control_error(session_id, error);
                     }
                     glib::Propagation::Stop
                 } else {
@@ -487,6 +510,7 @@ impl NativeVideoControls {
             fullscreen_icon,
             session_id,
             labels,
+            scrubbing,
         }
     }
 
@@ -494,6 +518,7 @@ impl NativeVideoControls {
         if self.session_id.get() != Some(session_id) {
             self.rate_popover.popdown();
         }
+        self.scrubbing.set(false);
         self.session_id.set(Some(session_id));
         self.root.show();
     }
@@ -547,7 +572,10 @@ impl NativeVideoControls {
         } else {
             0.0
         };
-        self.seek.set_value(progress);
+        self.seek.set_sensitive(snapshot.duration > 0.0);
+        if !self.scrubbing.get() {
+            self.seek.set_value(progress);
+        }
         self.rate_button.set_label(&format_rate(snapshot.rate));
         let fullscreen_icon = if snapshot.fullscreen {
             "view-restore-symbolic"
@@ -746,10 +774,19 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
     {
         let render_context = Rc::clone(&render_context);
         let logged_render_target = Cell::new(false);
+        let render_player = player.clone();
+        let render_session = Rc::clone(&controls.session_id);
+        let fail_render = move |area: &gtk::GLArea, message: String| {
+            eprintln!("{message}");
+            if let Some(session_id) = render_session.get() {
+                render_player.fail(session_id, message);
+                area.hide();
+            }
+        };
         gl_area.connect_render(move |area, _| {
             area.make_current();
             if let Some(error) = area.error() {
-                eprintln!("native video GL context failed: {error}");
+                fail_render(area, format!("native video GL context failed: {error}"));
                 return glib::Propagation::Stop;
             }
             area.attach_buffers();
@@ -762,7 +799,7 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
             let fbo = match current_draw_framebuffer() {
                 Ok(fbo) => fbo,
                 Err(error) => {
-                    eprintln!("native video framebuffer query failed: {error}");
+                    fail_render(area, format!("native video framebuffer query failed: {error}"));
                     return glib::Propagation::Stop;
                 }
             };
@@ -779,18 +816,17 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
                 logged_render_target.set(true);
             }
             if framebuffer_status != Ok(GL_FRAMEBUFFER_COMPLETE) {
+                fail_render(area, format!("native video framebuffer is incomplete: {framebuffer_status:?}"));
                 return glib::Propagation::Stop;
             }
             if let RenderContextState::Ready(context) = &*render_context.borrow() {
                 let update_flags = context.update();
                 if let Err(error) = context.render(fbo, width, height) {
-                    eprintln!("libmpv frame render failed: {error}");
+                    fail_render(area, format!("libmpv frame render failed: {error}"));
                 }
                 if let Ok(error) = current_gl_error() {
                     if error != GL_NO_ERROR {
-                        eprintln!(
-                            "native video OpenGL error after render: 0x{error:04x}, update_flags=0x{update_flags:x}"
-                        );
+                        fail_render(area, format!("native video OpenGL error after render: 0x{error:04x}, update_flags=0x{update_flags:x}"));
                     }
                 }
             }
@@ -813,9 +849,23 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
         glib::ControlFlow::Continue
     });
     let controls_player = player.clone();
-    let controls_sync = controls.clone();
+    let controls_window = window.clone();
     let controls_source = glib::timeout_add_local(Duration::from_millis(100), move || {
-        controls_sync.sync(&controls_player);
+        SURFACE.with(|surface| {
+            let mut surface = surface.borrow_mut();
+            if let Some(surface) = surface.as_mut() {
+                if let Some(id) = surface.sessions.active {
+                    if controls_player.require_current(id).is_err() {
+                        // A decoder or render failure can end a session before React unmounts.
+                        if let Err(error) = surface.hide(&controls_window, id) {
+                            eprintln!("native video cleanup failed: {error}");
+                        }
+                    } else {
+                        surface.controls.sync(&controls_player);
+                    }
+                }
+            }
+        });
         glib::ControlFlow::Continue
     });
 
@@ -825,6 +875,7 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
             gl_area,
             controls,
             sessions: SurfaceSessions::default(),
+            fullscreen: false,
             _overlay: overlay,
             _pointer_motion: pointer_motion,
             _css_provider: css_provider,
@@ -858,51 +909,106 @@ pub fn ensure_ready(window: &WebviewWindow) -> Result<(), String> {
     })
 }
 
+impl VideoSurface {
+    fn hide(&mut self, window: &WebviewWindow, session_id: u64) -> Result<(), String> {
+        if self.sessions.active != Some(session_id) {
+            return Ok(());
+        }
+        self.gl_area.hide();
+        self.controls.deactivate(session_id);
+        if self.fullscreen {
+            window
+                .set_fullscreen(false)
+                .map_err(|error| error.to_string())?;
+            self.fullscreen = false;
+        }
+        self.sessions.close(session_id);
+        Ok(())
+    }
+
+    fn position(&self, window: &WebviewWindow, bounds: VideoBounds) -> Result<(), String> {
+        let scale = window.scale_factor().map_err(|error| error.to_string())?;
+        let inner = window.inner_size().map_err(|error| error.to_string())?;
+        let max_width = f64::from(inner.width) / scale;
+        let max_height = f64::from(inner.height) / scale;
+        let x = bounds.x.min(max_width);
+        let y = bounds.y.min(max_height);
+        let width = bounds.width.min((max_width - x).max(0.0));
+        let height = bounds.height.min((max_height - y).max(0.0));
+        if width == 0.0 || height == 0.0 {
+            self.gl_area.hide();
+            self.controls.rate_popover.popdown();
+            self.controls.root.hide();
+            return Ok(());
+        }
+        self.fixed
+            .move_(&self.gl_area, x.round() as i32, y.round() as i32);
+        self.gl_area
+            .set_size_request(width.round() as i32, height.round() as i32);
+        let controls_bounds = native_controls_bounds(x, y, width, height);
+        self.controls.root.set_margin_start(controls_bounds.x);
+        self.controls.root.set_margin_top(controls_bounds.y);
+        self.controls
+            .root
+            .set_size_request(controls_bounds.width, controls_bounds.height);
+        self.controls.root.show();
+        self.gl_area.show();
+        self.gl_area.queue_render();
+        Ok(())
+    }
+}
+
+pub fn activate(
+    window: &WebviewWindow,
+    player: &VideoPlayerService,
+    session_id: u64,
+    bounds: VideoBounds,
+    labels: VideoControlLabels,
+) -> Result<(), String> {
+    let player = player.clone();
+    let target = window.clone();
+    run_on_main_thread_result(window, move || {
+        player.with_session(session_id, |_| {
+            SURFACE.with(|surface| {
+                let mut surface = surface.borrow_mut();
+                let surface = surface
+                    .as_mut()
+                    .ok_or("native video surface is unavailable")?;
+                if let Some(old) = surface.sessions.active {
+                    surface.hide(&target, old)?;
+                }
+                if !surface.sessions.activate(session_id) {
+                    return Err("stale video surface".into());
+                }
+                surface.controls.activate(session_id);
+                surface.controls.set_labels(labels);
+                surface.position(&target, bounds)
+            })
+        })
+    })
+}
+
 pub fn set_bounds(
     window: &WebviewWindow,
+    player: &VideoPlayerService,
     session_id: u64,
     bounds: VideoBounds,
 ) -> Result<(), String> {
-    let scale = window.scale_factor().map_err(|error| error.to_string())?;
-    let inner = window.inner_size().map_err(|error| error.to_string())?;
-    let max_width = f64::from(inner.width) / scale;
-    let max_height = f64::from(inner.height) / scale;
-    let x = bounds.x.min(max_width);
-    let y = bounds.y.min(max_height);
-    let width = bounds.width.min((max_width - x).max(0.0));
-    let height = bounds.height.min((max_height - y).max(0.0));
-
-    run_on_main_thread(window, move || {
-        SURFACE.with(|surface| {
-            let mut surface = surface.borrow_mut();
-            let Some(surface) = surface.as_mut() else {
-                return;
-            };
-            if !surface.sessions.activate(session_id) {
-                return;
-            }
-            if width == 0.0 || height == 0.0 {
-                surface.gl_area.hide();
-                surface.controls.root.hide();
-                return;
-            }
-            surface
-                .fixed
-                .move_(&surface.gl_area, x.round() as i32, y.round() as i32);
-            surface
-                .gl_area
-                .set_size_request(width.round() as i32, height.round() as i32);
-            let controls_bounds = native_controls_bounds(x, y, width, height);
-            surface.controls.root.set_margin_start(controls_bounds.x);
-            surface.controls.root.set_margin_top(controls_bounds.y);
-            surface
-                .controls
-                .root
-                .set_size_request(controls_bounds.width, controls_bounds.height);
-            surface.controls.activate(session_id);
-            surface.gl_area.show();
-            surface.gl_area.queue_render();
-        });
+    let player = player.clone();
+    let target = window.clone();
+    run_on_main_thread_result(window, move || {
+        player.with_session(session_id, |_| {
+            SURFACE.with(|surface| {
+                let surface = surface.borrow();
+                let surface = surface
+                    .as_ref()
+                    .ok_or("native video surface is unavailable")?;
+                if surface.sessions.active != Some(session_id) {
+                    return Err("stale video surface".into());
+                }
+                surface.position(&target, bounds)
+            })
+        })
     })
 }
 
@@ -919,58 +1025,78 @@ fn native_controls_bounds(x: f64, y: f64, width: f64, height: f64) -> NativeCont
 
 pub fn set_control_labels(
     window: &WebviewWindow,
+    player: &VideoPlayerService,
     session_id: u64,
     labels: VideoControlLabels,
 ) -> Result<(), String> {
-    run_on_main_thread(window, move || {
-        SURFACE.with(|surface| {
-            let surface = surface.borrow();
-            let Some(surface) = surface.as_ref() else {
-                return;
-            };
-            if surface.sessions.active == Some(session_id) {
+    let player = player.clone();
+    run_on_main_thread_result(window, move || {
+        player.with_session(session_id, |_| {
+            SURFACE.with(|surface| {
+                let surface = surface.borrow();
+                let surface = surface
+                    .as_ref()
+                    .ok_or("native video surface is unavailable")?;
+                if surface.sessions.active != Some(session_id) {
+                    return Err("stale video surface".into());
+                }
                 surface.controls.set_labels(labels);
-            }
-        });
+                Ok(())
+            })
+        })
     })
+}
+
+pub enum FullscreenAction {
+    Set(bool),
+    Toggle,
 }
 
 pub fn set_fullscreen(
     window: &WebviewWindow,
     player: &VideoPlayerService,
     session_id: u64,
-    fullscreen: bool,
+    action: FullscreenAction,
 ) -> Result<(), String> {
-    player.require_current(session_id)?;
-    window
-        .set_fullscreen(fullscreen)
-        .map_err(|error| error.to_string())?;
-    player.set_fullscreen_state(session_id, fullscreen)?;
-    player.send_fullscreen(session_id, fullscreen);
-    Ok(())
-}
-
-pub fn hide(window: &WebviewWindow, session_id: u64) -> Result<(), String> {
-    run_on_main_thread(window, move || {
-        SURFACE.with(|surface| {
-            let mut surface = surface.borrow_mut();
-            if let Some(surface) = surface.as_mut() {
-                if surface.sessions.close(session_id) {
-                    surface.gl_area.hide();
-                    surface.controls.deactivate(session_id);
+    let player = player.clone();
+    let target = window.clone();
+    run_on_main_thread_result(window, move || {
+        let fullscreen = player.with_session(session_id, |snapshot| {
+            let fullscreen = match action {
+                FullscreenAction::Set(value) => value,
+                FullscreenAction::Toggle => !snapshot.fullscreen,
+            };
+            SURFACE.with(|surface| {
+                let mut surface = surface.borrow_mut();
+                let surface = surface
+                    .as_mut()
+                    .ok_or("native video surface is unavailable")?;
+                if surface.sessions.active != Some(session_id) {
+                    return Err("stale video surface".into());
                 }
-            }
-        });
+                target
+                    .set_fullscreen(fullscreen)
+                    .map_err(|error| error.to_string())?;
+                surface.fullscreen = fullscreen;
+                snapshot.fullscreen = fullscreen;
+                Ok(fullscreen)
+            })
+        })?;
+        player.send_fullscreen(session_id, fullscreen);
+        Ok(())
     })
 }
 
-fn run_on_main_thread(
-    window: &WebviewWindow,
-    operation: impl FnOnce() + Send + 'static,
-) -> Result<(), String> {
+pub fn hide(window: &WebviewWindow, session_id: u64) -> Result<(), String> {
+    let target = window.clone();
     run_on_main_thread_result(window, move || {
-        operation();
-        Ok(())
+        SURFACE.with(|surface| {
+            if let Some(surface) = surface.borrow_mut().as_mut() {
+                surface.hide(&target, session_id)
+            } else {
+                Ok(())
+            }
+        })
     })
 }
 
@@ -1197,5 +1323,6 @@ mod tests {
         assert!(!sessions.close(1));
         assert!(sessions.close(2));
         assert!(!sessions.activate(1));
+        assert!(!sessions.activate(2));
     }
 }

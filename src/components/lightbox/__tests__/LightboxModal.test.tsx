@@ -5,6 +5,9 @@ import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
 
 const apiMocks = vi.hoisted(() => ({
+  beginVideoOpen: vi.fn(),
+  cancelVideoOpen: vi.fn(),
+  setVideoControlLabels: vi.fn(),
   openVideo: vi.fn(),
   setVideoBounds: vi.fn(),
   controlVideo: vi.fn(),
@@ -12,6 +15,9 @@ const apiMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../api", () => ({
+  beginVideoOpen: apiMocks.beginVideoOpen,
+  cancelVideoOpen: apiMocks.cancelVideoOpen,
+  setVideoControlLabels: apiMocks.setVideoControlLabels,
   openVideo: apiMocks.openVideo,
   setVideoBounds: apiMocks.setVideoBounds,
   controlVideo: apiMocks.controlVideo,
@@ -65,6 +71,9 @@ function stubMatchMedia(matches: boolean) {
 describe("LightboxModal", () => {
   beforeEach(() => {
     stubMatchMedia(false);
+    apiMocks.beginVideoOpen.mockReset().mockResolvedValue(1);
+    apiMocks.cancelVideoOpen.mockReset().mockResolvedValue(undefined);
+    apiMocks.setVideoControlLabels.mockReset().mockResolvedValue(undefined);
     apiMocks.openVideo.mockReset().mockResolvedValue(1);
     apiMocks.setVideoBounds.mockReset().mockResolvedValue(undefined);
     apiMocks.controlVideo.mockReset().mockResolvedValue(undefined);
@@ -241,6 +250,11 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     );
     expect(screen.queryByRole("button", { name: "Close preview" })).not.toBeInTheDocument();
     expect(document.querySelector("[data-native-video-active]")).not.toBeNull();
+    expect(apiMocks.openVideo).toHaveBeenCalledOnce();
+    expect(apiMocks.closeVideo).not.toHaveBeenCalled();
+    act(() => eventHandler?.({ session_id: activeSession, type: "fullscreen", fullscreen: false }));
+    expect(screen.getByRole("button", { name: "Close preview" })).toBeInTheDocument();
+    expect(apiMocks.openVideo).toHaveBeenCalledOnce();
   });
 
   it("shows a video error when native open fails", async () => {
@@ -261,6 +275,9 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not play video");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(document.querySelector("[data-native-video-active]")).not.toBeNull());
+    expect(apiMocks.openVideo).toHaveBeenCalledTimes(2);
   });
 
   it("shows a GIF error and resets it after navigation", () => {

@@ -1,4 +1,3 @@
-@import "@videojs/react/video/minimal-skin.css";
 @import "tailwindcss";
 
 @plugin "daisyui" { themes: false; }
@@ -213,9 +212,6 @@
 }
 
 .lightbox-video-player {
-  --media-accent-color: oklch(var(--p));
-  --media-border-radius: 0;
-  --media-scale-unit: 16px;
   border: 0;
   background: var(--lightbox-video-surface, #0b0b0b);
   max-height: 100%;
@@ -235,22 +231,11 @@
 
 .lightbox-video-player:fullscreen,
 .lightbox-video-player[data-native-fullscreen] {
-  --media-border-radius: 0;
   border: 0;
   height: 100%;
   max-height: none;
   max-width: none;
   width: 100%;
-}
-
-.lightbox-video-player[data-native-video-active] .media-controls {
-  display: none;
-}
-
-.lightbox-video-player .media-button--cast,
-.lightbox-video-player .media-button--pip,
-.lightbox-video-player .media-button--fullscreen {
-  display: none;
 }
 
 /* Opacity preserves keyboard discovery; idle controls never intercept the image. */

@@ -167,6 +167,7 @@
     "fullscreen": "Celá obrazovka (F)",
     "exitFullscreen": "Ukončit celou obrazovku (F)",
     "videoControls": {
+      "controlError": "Přehrávání se nepodařilo změnit. Zkuste to znovu.",
       "play": "Přehrát",
       "pause": "Pozastavit",
       "mute": "Ztlumit",

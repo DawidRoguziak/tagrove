@@ -167,6 +167,7 @@
     "fullscreen": "전체 화면 (F)",
     "exitFullscreen": "전체 화면 종료 (F)",
     "videoControls": {
+      "controlError": "재생 설정을 변경하지 못했습니다. 다시 시도하세요.",
       "play": "재생",
       "pause": "일시 정지",
       "mute": "음소거",

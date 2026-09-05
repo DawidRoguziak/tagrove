@@ -167,6 +167,7 @@
     "fullscreen": "Pantalla completa (F)",
     "exitFullscreen": "Salir de pantalla completa (F)",
     "videoControls": {
+      "controlError": "No se pudo modificar la reproducción. Inténtalo de nuevo.",
       "play": "Reproducir",
       "pause": "Pausa",
       "mute": "Silenciar",

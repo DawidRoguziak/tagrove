@@ -96,6 +96,8 @@ Fixture and isolation patterns:
 
 Cargo may execute independent tests concurrently. Never use a shared fixed database, app-data directory, scan root, output filename, or mutable process-global fixture. If a test truly changes process-wide state, serialize it explicitly or redesign it around injected state.
 
+The Rust player regression generates a temporary MP4 with ffmpeg and drives the actual libmpv worker using null audio/video output. It verifies seeking, looping, replacement, settings retention, corrupt-file errors, and retry recovery without claiming GTK or OpenGL coverage. A separate test supersedes a committed session before `loadfile` and checks retirement without cancelling the replacement request.
+
 ## Real desktop E2E
 
 Release production is documented in [setup and builds](setup-and-build.md#containerized-arch-linux-release). Its build does not run test suites.
@@ -163,7 +165,7 @@ Only then does it recursively remove the E2E directory with retries. An `EPERM` 
 
 ### Fixtures, selectors, and destructive workflows
 
-`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, uses `e2e/fixtures.js` to copy valid PNG icons or generate a small GIF and two MP4 files with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only those roots and artifacts. Video coverage checks authorized native opening, the full native-player footprint, hidden DOM controls, rapid source switching, absence of an HTML `<video>`, error fallback, and native-surface cleanup. WebDriver cannot inspect pixels or controls rendered by GTK above the WebView.
+`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, uses `e2e/fixtures.js` to copy valid PNG icons or generate a small GIF and two MP4 files with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only those roots and artifacts. Video coverage includes a native IPC scenario for paused seeking, fullscreen session continuity, retained preferences, autoplay on replacement, and stale closes. These checks use backend snapshot attributes, not GTK button clicks or video pixels. Other video coverage checks authorized native opening, the full native-player footprint, absence of a DOM control rail, rapid source switching, absence of an HTML `<video>`, error fallback, and native-surface cleanup. WebDriver cannot inspect pixels or controls rendered by GTK above the WebView.
 
 The workflow suite deliberately tests library clear, scan-root removal, backup restore, and permanent media deletion. Keep every deletable media fixture under a newly created temp root. Never change a destructive spec to index a personal directory, the repository root, or production app data. Do not weaken the identifier, target-directory, app-data-path, or live-title guards to make a failing run proceed.
 
@@ -265,7 +267,7 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 - Desktop selectors assume English, but the harness does not currently set the application language deterministically.
 - An `EPERM` during E2E app-data deletion leaves stale isolated data and does not fail fast.
 - The standalone `tauri:build:e2e` script can embed stale `dist/`; only the full desktop test command builds the frontend first.
-- Native video playback depends on libmpv, GTK, and OpenGL. WebDriver sees the hidden Video.js lifecycle DOM, but not decoded `GtkGLArea` pixels or the native GTK control overlay.
+- Native video playback depends on libmpv, GTK, and OpenGL. WebDriver sees the native session container and backend snapshot attributes, but not decoded `GtkGLArea` pixels or the native GTK control overlay.
 - Backend fixtures cover many filesystem semantics but do not constitute exhaustive testing on every supported filesystem or operating system.
 
 ## Troubleshooting

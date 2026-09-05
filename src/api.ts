@@ -70,9 +70,21 @@ export async function getAssetDetails(assetId: number): Promise<AssetDetails | n
   return await invoke<AssetDetails | null>("get_asset_details", { assetId });
 }
 
+export async function beginVideoOpen(): Promise<number> {
+  return await invoke<number>("begin_video_open");
+}
+
+export async function cancelVideoOpen(requestId: number): Promise<void> {
+  await invoke("cancel_video_open", { requestId });
+}
+
+export async function setVideoControlLabels(sessionId: number, controlLabels: NativeVideoControlLabels): Promise<void> {
+  await invoke("set_video_control_labels", { sessionId, controlLabels });
+}
+
 export async function openVideo(
   assetId: number,
-  generation: number,
+  requestId: number,
   bounds: VideoBounds,
   controlLabels: NativeVideoControlLabels,
   onEvent: (event: MpvVideoEvent) => void
@@ -81,7 +93,7 @@ export async function openVideo(
   channel.onmessage = onEvent;
   return await invoke<number>("open_video", {
     assetId,
-    generation,
+    requestId,
     bounds,
     controlLabels,
     onEvent: channel

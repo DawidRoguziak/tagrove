@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  beginVideoOpen,
+  cancelVideoOpen,
+  setVideoControlLabels,
   closeVideo,
   controlVideo,
   listAssets,
@@ -116,13 +119,13 @@ describe("api contract", () => {
     const channel = coreMocks.channels[0];
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(1, "open_video", {
       assetId: 4,
-      generation: 9,
+      requestId: 9,
       bounds,
       controlLabels,
       onEvent: channel
     });
-    channel?.onmessage?.({ session_id: 17, type: "playing" });
-    expect(onEvent).toHaveBeenCalledWith({ session_id: 17, type: "playing" });
+    channel?.onmessage?.({ session_id: 17, type: "loading" });
+    expect(onEvent).toHaveBeenCalledWith({ session_id: 17, type: "loading" });
 
     await setVideoBounds(17, bounds);
     await controlVideo(17, { type: "seek", time: 3.5 });
@@ -136,6 +139,13 @@ describe("api contract", () => {
       command: { type: "seek", time: 3.5 }
     });
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(4, "close_video", { sessionId: 17 });
+    coreMocks.invoke.mockResolvedValueOnce(21);
+    await expect(beginVideoOpen()).resolves.toBe(21);
+    await cancelVideoOpen(21);
+    await setVideoControlLabels(17, controlLabels);
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(5, "begin_video_open");
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(6, "cancel_video_open", { requestId: 21 });
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(7, "set_video_control_labels", { sessionId: 17, controlLabels });
   });
 
 });

@@ -1,6 +1,8 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
-use libmpv2::{events::Event as MpvEvent, Format, Mpv};
+use super::video_events::{NativeEvent, VideoEventClient};
+use libmpv2::Mpv;
 use serde::Serialize;
 use tauri::ipc::Channel;
 
@@ -21,61 +23,28 @@ pub enum VideoEventPayload {
         width: i64,
         height: i64,
     },
-    Playing,
-    Paused,
-    Waiting,
-    Time {
-        current_time: f64,
+    Snapshot {
+        state: PlaybackSnapshot,
     },
-    Volume {
-        volume: f64,
-        muted: bool,
-    },
-    Rate {
-        rate: f64,
-    },
-    Tracks,
     Fullscreen {
         fullscreen: bool,
     },
-    Ended,
     Error {
+        message: String,
+    },
+    ControlError {
         message: String,
     },
 }
 
-#[derive(Clone)]
-pub struct VideoPlayerService {
-    inner: Arc<Inner>,
-}
-
-struct Inner {
-    mpv: Result<&'static Mpv, String>,
-    operation: Mutex<()>,
-    state: Mutex<PlayerState>,
-}
-
-#[derive(Default)]
-struct PlayerState {
-    next_open_token: u64,
-    next_session_id: u64,
-    latest_open_token: u64,
-    active: Option<ActiveSession>,
-}
-
-struct ActiveSession {
-    session_id: u64,
-    _generation: u64,
-    events: Channel<VideoEvent>,
-    playback: PlaybackSnapshot,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct PlaybackSnapshot {
+#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
+pub struct PlaybackSnapshot {
     pub session_id: u64,
     pub duration: f64,
     pub current_time: f64,
     pub paused: bool,
+    pub seeking: bool,
+    pub buffering: bool,
     pub volume: f64,
     pub muted: bool,
     pub rate: f64,
@@ -89,6 +58,8 @@ impl PlaybackSnapshot {
             duration: 0.0,
             current_time: 0.0,
             paused: true,
+            seeking: false,
+            buffering: false,
             volume: 1.0,
             muted: false,
             rate: 1.0,
@@ -96,25 +67,77 @@ impl PlaybackSnapshot {
         }
     }
 
-    fn apply(&mut self, payload: &VideoEventPayload) {
-        match payload {
-            VideoEventPayload::Metadata { duration, .. } => self.duration = *duration,
-            VideoEventPayload::Playing => self.paused = false,
-            VideoEventPayload::Paused | VideoEventPayload::Ended => self.paused = true,
-            VideoEventPayload::Time { current_time } => self.current_time = *current_time,
-            VideoEventPayload::Volume { volume, muted } => {
-                self.volume = *volume;
-                self.muted = *muted;
-            }
-            VideoEventPayload::Rate { rate } => self.rate = *rate,
-            VideoEventPayload::Fullscreen { fullscreen } => self.fullscreen = *fullscreen,
-            VideoEventPayload::PointerActivity
-            | VideoEventPayload::Loading
-            | VideoEventPayload::Waiting
-            | VideoEventPayload::Tracks
-            | VideoEventPayload::Error { .. } => {}
-        }
+    fn refresh(&mut self, mpv: &Mpv) {
+        self.duration = mpv.get_property("duration").unwrap_or(0.0);
+        self.current_time = mpv.get_property("time-pos").unwrap_or(0.0);
+        self.paused = mpv.get_property("pause").unwrap_or(true);
+        self.seeking = mpv.get_property("seeking").unwrap_or(false);
+        self.buffering = mpv.get_property("paused-for-cache").unwrap_or(false);
+        self.volume = mpv.get_property::<f64>("volume").unwrap_or(100.0) / 100.0;
+        self.muted = mpv.get_property("mute").unwrap_or(false);
+        self.rate = mpv.get_property("speed").unwrap_or(1.0);
     }
+}
+
+struct ActiveSession {
+    request_id: u64,
+    events: Channel<VideoEvent>,
+    playback: PlaybackSnapshot,
+}
+
+#[derive(Default)]
+struct PlayerState {
+    next_request_id: u64,
+    pending: Option<u64>,
+    next_session_id: u64,
+    active: Option<ActiveSession>,
+}
+
+#[derive(Clone)]
+pub struct VideoPlayerService {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    // The GTK render context borrows this handle for the application lifetime.
+    mpv: Result<&'static Mpv, String>,
+    worker: mpsc::Sender<WorkerCommand>,
+    state: Mutex<PlayerState>,
+}
+
+enum WorkerCommand {
+    #[cfg(test)]
+    Shutdown(mpsc::SyncSender<()>),
+    Open {
+        request_id: u64,
+        path: String,
+        events: Channel<VideoEvent>,
+        reply: mpsc::SyncSender<Result<u64, String>>,
+    },
+    Control {
+        session_id: u64,
+        command: PlayerCommand,
+    },
+    Close {
+        session_id: u64,
+    },
+}
+
+pub enum PlayerCommand {
+    Play,
+    Pause,
+    Seek(f64),
+    SetVolume(f64),
+    SetMuted(bool),
+    SetRate(f64),
+    SelectAudioTrack(String),
+    SelectSubtitleTrack(String),
+}
+
+struct PlaybackWorker {
+    service: VideoPlayerService,
+    mpv: &'static Mpv,
+    session: Option<(u64, VideoEventClient)>,
 }
 
 impl VideoPlayerService {
@@ -129,30 +152,35 @@ impl VideoPlayerService {
         })
         .map(|mpv| &*Box::leak(Box::new(mpv)))
         .map_err(|error| format!("libmpv initialization failed: {error}"));
-        if let Err(error) = &mpv {
-            eprintln!("{error}");
-        }
+        Self::with_mpv(mpv)
+    }
 
+    fn with_mpv(mpv: Result<&'static Mpv, String>) -> Self {
+        let (tx, rx) = mpsc::channel();
         let service = Self {
             inner: Arc::new(Inner {
                 mpv,
-                operation: Mutex::new(()),
+                worker: tx,
                 state: Mutex::new(PlayerState::default()),
             }),
         };
-        service.start_event_thread();
-        service
-    }
-
-    #[cfg(test)]
-    fn unavailable(message: &str) -> Self {
-        Self {
-            inner: Arc::new(Inner {
-                mpv: Err(message.to_string()),
-                operation: Mutex::new(()),
-                state: Mutex::new(PlayerState::default()),
-            }),
+        if let Ok(mpv) = service.mpv() {
+            let worker_service = service.clone();
+            if let Err(error) = std::thread::Builder::new()
+                .name("libmpv-playback".into())
+                .spawn(move || {
+                    PlaybackWorker {
+                        service: worker_service,
+                        mpv,
+                        session: None,
+                    }
+                    .run(rx);
+                })
+            {
+                eprintln!("libmpv worker failed to start: {error}");
+            }
         }
+        service
     }
 
     pub fn mpv(&self) -> Result<&'static Mpv, String> {
@@ -160,249 +188,177 @@ impl VideoPlayerService {
     }
 
     pub fn begin_open(&self) -> u64 {
-        let _operation = self.operation();
         let mut state = self.state();
-        state.next_open_token = state.next_open_token.saturating_add(1);
-        state.latest_open_token = state.next_open_token;
-        state.next_open_token
+        state.next_request_id += 1;
+        state.pending = Some(state.next_request_id);
+        state.next_request_id
+    }
+
+    pub fn require_pending(&self, request_id: u64) -> Result<(), String> {
+        if self.state().pending == Some(request_id) {
+            Ok(())
+        } else {
+            Err("video open was cancelled or superseded".into())
+        }
+    }
+
+    // Cancellation also finds a session committed by the worker before open_video returned.
+    pub fn cancel_open(&self, request_id: u64) -> Option<u64> {
+        let session_id = {
+            let mut state = self.state();
+            if state.pending == Some(request_id) {
+                state.pending = None;
+            }
+            if state
+                .active
+                .as_ref()
+                .is_some_and(|active| active.request_id == request_id)
+            {
+                state.active.take().map(|active| active.playback.session_id)
+            } else {
+                None
+            }
+        };
+        if let Some(session_id) = session_id {
+            if let Err(error) = self.enqueue(WorkerCommand::Close { session_id }) {
+                eprintln!("{error}");
+            }
+        }
+        session_id
     }
 
     pub fn open(
         &self,
-        open_token: u64,
-        generation: u64,
-        path: &str,
+        request_id: u64,
+        path: String,
         events: Channel<VideoEvent>,
     ) -> Result<u64, String> {
-        let _operation = self.operation();
-        let mpv = self.mpv()?;
-        let session_id = {
-            let mut state = self.state();
-            if state.latest_open_token != open_token {
-                return Err("video open was superseded".to_string());
-            }
-            state.next_session_id = state.next_session_id.saturating_add(1);
-            let session_id = state.next_session_id;
-            state.active = Some(ActiveSession {
-                session_id,
-                _generation: generation,
-                events,
-                playback: PlaybackSnapshot::new(session_id),
-            });
-            session_id
-        };
-
-        self.send(session_id, VideoEventPayload::Loading);
-        if let Err(error) = mpv.command("loadfile", &[path, "replace"]) {
-            self.clear_if_current(session_id);
-            return Err(format!("libmpv could not open the video: {error}"));
-        }
-        Ok(session_id)
+        self.mpv()?;
+        self.require_pending(request_id)?;
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.enqueue(WorkerCommand::Open {
+            request_id,
+            path,
+            events,
+            reply: tx,
+        })?;
+        rx.recv().map_err(|_| "libmpv worker stopped".to_string())?
     }
 
+    // GTK callbacks enqueue commands; they never block the render thread on libmpv.
     pub fn control(&self, session_id: u64, command: PlayerCommand) -> Result<(), String> {
-        let _operation = self.operation();
         self.require_current(session_id)?;
-        let mpv = self.mpv()?;
-        match command {
-            PlayerCommand::Play => mpv.set_property("pause", false),
-            PlayerCommand::Pause => mpv.set_property("pause", true),
-            PlayerCommand::Seek(time) => mpv.set_property("time-pos", time),
-            PlayerCommand::SetVolume(volume) => mpv.set_property("volume", volume * 100.0),
-            PlayerCommand::SetMuted(muted) => mpv.set_property("mute", muted),
-            PlayerCommand::SetRate(rate) => mpv.set_property("speed", rate),
-            PlayerCommand::SelectAudioTrack(track) => mpv.set_property("aid", track),
-            PlayerCommand::SelectSubtitleTrack(track) => mpv.set_property("sid", track),
-        }
-        .map_err(|error| format!("libmpv control failed: {error}"))
+        self.enqueue(WorkerCommand::Control {
+            session_id,
+            command,
+        })
     }
 
     pub fn close(&self, session_id: u64) -> Result<(), String> {
-        let _operation = self.operation();
-        self.require_current(session_id)?;
-        let result = if let Ok(mpv) = self.mpv() {
-            mpv.command("stop", &[])
-                .map_err(|error| format!("libmpv close failed: {error}"))
+        if self.retire(session_id) {
+            self.enqueue(WorkerCommand::Close { session_id })
         } else {
             Ok(())
-        };
-        self.clear_if_current(session_id);
-        result
+        } // Closing a retired session is intentionally idempotent.
+    }
+
+    fn retire(&self, session_id: u64) -> bool {
+        let mut state = self.state();
+        if state
+            .active
+            .as_ref()
+            .is_none_or(|active| active.playback.session_id != session_id)
+        {
+            return false;
+        }
+        let active = state.active.take().expect("current session");
+        if state.pending == Some(active.request_id) {
+            state.pending = None;
+        }
+        true
     }
 
     pub fn require_current(&self, session_id: u64) -> Result<(), String> {
-        let state = self.state();
-        match &state.active {
-            Some(active) if active.session_id == session_id => Ok(()),
-            _ => Err("stale video session".to_string()),
-        }
+        self.with_session(session_id, |_| Ok(()))
     }
 
-    pub fn fullscreen_for(&self, session_id: u64) -> Result<bool, String> {
-        let state = self.state();
-        match &state.active {
-            Some(active) if active.session_id == session_id => Ok(active.playback.fullscreen),
-            _ => Err("stale video session".to_string()),
-        }
-    }
-
-    pub fn active_fullscreen(&self) -> bool {
-        self.state()
-            .active
-            .as_ref()
-            .is_some_and(|active| active.playback.fullscreen)
-    }
-
-    pub fn set_fullscreen_state(&self, session_id: u64, fullscreen: bool) -> Result<(), String> {
+    // GTK calls this *inside* its main-thread task. Check and side effect share one lock.
+    pub(crate) fn with_session<T>(
+        &self,
+        session_id: u64,
+        operation: impl FnOnce(&mut PlaybackSnapshot) -> Result<T, String>,
+    ) -> Result<T, String> {
         let mut state = self.state();
-        match &mut state.active {
-            Some(active) if active.session_id == session_id => {
-                active.playback.fullscreen = fullscreen;
-                Ok(())
-            }
-            _ => Err("stale video session".to_string()),
-        }
-    }
-
-    pub fn send_fullscreen(&self, session_id: u64, fullscreen: bool) {
-        self.send(session_id, VideoEventPayload::Fullscreen { fullscreen });
+        let active = state
+            .active
+            .as_mut()
+            .filter(|active| active.playback.session_id == session_id)
+            .ok_or_else(|| "stale video session".to_string())?;
+        operation(&mut active.playback)
     }
 
     pub(crate) fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
         self.state().active.as_ref().map(|active| active.playback)
     }
 
-    fn start_event_thread(&self) {
-        let Ok(mpv) = self.mpv() else {
-            return;
-        };
-        let Ok(event_client) = mpv.create_client(Some("media_tagger_events")) else {
-            return;
-        };
-        for (id, name, format) in [
-            (1, "time-pos", Format::Double),
-            (2, "pause", Format::Flag),
-            (3, "paused-for-cache", Format::Flag),
-            (4, "volume", Format::Double),
-            (5, "mute", Format::Flag),
-            (6, "speed", Format::Double),
-        ] {
-            let _ = event_client.observe_property(name, format, id);
-        }
-
-        let service = self.clone();
-        let _ = std::thread::Builder::new()
-            .name("libmpv-events".to_string())
-            .spawn(move || loop {
-                let Some(event) = event_client.wait_event(-1.0) else {
-                    continue;
-                };
-                match event {
-                    Ok(MpvEvent::Shutdown) => break,
-                    Ok(event) => service.handle_event(&event_client, event),
-                    Err(error) => {
-                        eprintln!("libmpv playback event failed: {error}");
-                        service.send_current(VideoEventPayload::Error {
-                            message: error.to_string(),
-                        });
-                    }
-                }
-            });
-    }
-
-    fn handle_event(&self, mpv: &Mpv, event: MpvEvent<'_>) {
-        use libmpv2::events::PropertyData;
-
-        match event {
-            MpvEvent::StartFile => self.send_current(VideoEventPayload::Loading),
-            MpvEvent::FileLoaded | MpvEvent::VideoReconfig => {
-                self.send_current(VideoEventPayload::Metadata {
-                    duration: mpv.get_property("duration").unwrap_or(0.0),
-                    width: mpv.get_property("width").unwrap_or(0),
-                    height: mpv.get_property("height").unwrap_or(0),
-                });
-                self.send_current(VideoEventPayload::Tracks);
-            }
-            MpvEvent::PlaybackRestart => self.send_current(VideoEventPayload::Playing),
-            MpvEvent::Seek => self.send_current(VideoEventPayload::Waiting),
-            MpvEvent::EndFile(reason) if reason == libmpv2::mpv_end_file_reason::Eof => {
-                self.send_current(VideoEventPayload::Ended)
-            }
-            MpvEvent::PropertyChange { name, change, .. } => match (name, change) {
-                ("time-pos", PropertyData::Double(current_time)) => {
-                    self.send_current(VideoEventPayload::Time { current_time })
-                }
-                ("pause", PropertyData::Flag(true)) => self.send_current(VideoEventPayload::Paused),
-                ("pause", PropertyData::Flag(false)) => {
-                    self.send_current(VideoEventPayload::Playing)
-                }
-                ("paused-for-cache", PropertyData::Flag(true)) => {
-                    self.send_current(VideoEventPayload::Waiting)
-                }
-                ("volume", PropertyData::Double(volume)) => {
-                    let muted = mpv.get_property("mute").unwrap_or(false);
-                    self.send_current(VideoEventPayload::Volume {
-                        volume: volume / 100.0,
-                        muted,
-                    });
-                }
-                ("mute", PropertyData::Flag(muted)) => {
-                    let volume = mpv.get_property::<f64>("volume").unwrap_or(100.0) / 100.0;
-                    self.send_current(VideoEventPayload::Volume { volume, muted });
-                }
-                ("speed", PropertyData::Double(rate)) => {
-                    self.send_current(VideoEventPayload::Rate { rate })
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
     pub(crate) fn pointer_activity(&self, session_id: u64) {
         self.send(session_id, VideoEventPayload::PointerActivity);
     }
 
-    fn send_current(&self, payload: VideoEventPayload) {
-        let mut state = self.state();
-        if let Some(active) = &mut state.active {
-            active.playback.apply(&payload);
-            let _ = active.events.send(VideoEvent {
-                session_id: active.session_id,
+    pub(crate) fn send_fullscreen(&self, session_id: u64, fullscreen: bool) {
+        self.send(session_id, VideoEventPayload::Fullscreen { fullscreen });
+    }
+
+    pub(crate) fn report_control_error(&self, session_id: u64, message: String) {
+        self.send(session_id, VideoEventPayload::ControlError { message });
+    }
+
+    pub(crate) fn fail(&self, session_id: u64, message: String) {
+        self.send(session_id, VideoEventPayload::Error { message });
+        let _ = self.close(session_id);
+    }
+
+    fn send(&self, session_id: u64, payload: VideoEventPayload) {
+        // Never call a channel while holding the state lock.
+        let events = self
+            .state()
+            .active
+            .as_ref()
+            .filter(|active| active.playback.session_id == session_id)
+            .map(|active| active.events.clone());
+        if let Some(events) = events {
+            let _ = events.send(VideoEvent {
+                session_id,
                 payload,
             });
         }
     }
 
-    fn send(&self, session_id: u64, payload: VideoEventPayload) {
-        let mut state = self.state();
-        if let Some(active) = &mut state.active {
-            if active.session_id == session_id {
-                active.playback.apply(&payload);
-                let _ = active.events.send(VideoEvent {
-                    session_id,
-                    payload,
-                });
-            }
+    fn publish_snapshot(&self, session_id: u64, mpv: &Mpv) {
+        let Some(mut snapshot) = self
+            .playback_snapshot()
+            .filter(|s| s.session_id == session_id)
+        else {
+            return;
+        };
+        // Property reads may wait for the core; never hold the lock used by GTK while reading.
+        snapshot.refresh(mpv);
+        let changed = self.with_session(session_id, |current| {
+            snapshot.fullscreen = current.fullscreen;
+            let changed = *current != snapshot;
+            *current = snapshot;
+            Ok(changed)
+        });
+        if changed == Ok(true) {
+            self.send(session_id, VideoEventPayload::Snapshot { state: snapshot });
         }
     }
 
-    fn clear_if_current(&self, session_id: u64) {
-        let mut state = self.state();
-        if state
-            .active
-            .as_ref()
-            .is_some_and(|active| active.session_id == session_id)
-        {
-            state.active = None;
-        }
-    }
-
-    fn operation(&self) -> MutexGuard<'_, ()> {
+    fn enqueue(&self, command: WorkerCommand) -> Result<(), String> {
         self.inner
-            .operation
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .worker
+            .send(command)
+            .map_err(|_| "libmpv worker is unavailable".into())
     }
 
     fn state(&self) -> MutexGuard<'_, PlayerState> {
@@ -419,119 +375,455 @@ impl Default for VideoPlayerService {
     }
 }
 
-pub enum PlayerCommand {
-    Play,
-    Pause,
-    Seek(f64),
-    SetVolume(f64),
-    SetMuted(bool),
-    SetRate(f64),
-    SelectAudioTrack(String),
-    SelectSubtitleTrack(String),
+impl PlaybackWorker {
+    fn run(&mut self, commands: mpsc::Receiver<WorkerCommand>) {
+        loop {
+            match commands.recv_timeout(Duration::from_millis(10)) {
+                #[cfg(test)]
+                Ok(WorkerCommand::Shutdown(done)) => {
+                    let _ = self.stop();
+                    let _ = done.send(());
+                    break;
+                }
+                Ok(WorkerCommand::Open {
+                    request_id,
+                    path,
+                    events,
+                    reply,
+                }) => {
+                    let result = self.open(request_id, &path, events);
+                    let _ = reply.send(result);
+                }
+                Ok(WorkerCommand::Control {
+                    session_id,
+                    command,
+                }) => {
+                    if self.service.require_current(session_id).is_ok() {
+                        if let Err(error) = self.control(command) {
+                            self.service.report_control_error(session_id, error);
+                        }
+                        self.service.publish_snapshot(session_id, self.mpv);
+                    }
+                }
+                Ok(WorkerCommand::Close { session_id }) => {
+                    if self
+                        .session
+                        .as_ref()
+                        .is_some_and(|(id, _)| *id == session_id)
+                    {
+                        if let Err(error) = self.stop() {
+                            eprintln!("libmpv stop failed: {error}");
+                        }
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+            self.drain_events();
+        }
+    }
+
+    fn stop(&mut self) -> Result<(), String> {
+        self.mpv
+            .command("stop", &[])
+            .map_err(|error| error.to_string())?;
+        // Stop completion is a boundary: old decoder events cannot enter the next client's queue.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !self
+            .mpv
+            .get_property::<bool>("idle-active")
+            .unwrap_or(false)
+        {
+            if Instant::now() >= deadline {
+                return Err("libmpv stop timed out".into());
+            }
+            if let Some((_, client)) = &self.session {
+                let _ = client.wait_event(0.01);
+            } else {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        if let Some((session_id, client)) = self.session.take() {
+            // Retire before attempting the next client: even client creation failure
+            // must not leave controls attached to the decoder we just stopped.
+            self.service.retire(session_id);
+            while client.wait_event(0.0).is_some() {}
+        }
+        Ok(())
+    }
+
+    fn open(
+        &mut self,
+        request_id: u64,
+        path: &str,
+        events: Channel<VideoEvent>,
+    ) -> Result<u64, String> {
+        self.service.require_pending(request_id)?;
+        self.stop()?;
+        self.service.require_pending(request_id)?;
+        let client = VideoEventClient::new(self.mpv)?;
+        let session_id = {
+            let mut state = self.service.state();
+            if state.pending != Some(request_id) {
+                return Err("video open was cancelled or superseded".into());
+            }
+            state.next_session_id += 1;
+            let session_id = state.next_session_id;
+            state.active = Some(ActiveSession {
+                request_id,
+                events,
+                playback: PlaybackSnapshot::new(session_id),
+            });
+            session_id
+        };
+        self.session = Some((session_id, client));
+        self.service.send(session_id, VideoEventPayload::Loading);
+        self.load_committed(request_id, session_id, path)?;
+        Ok(session_id)
+    }
+
+    fn load_committed(
+        &mut self,
+        request_id: u64,
+        session_id: u64,
+        path: &str,
+    ) -> Result<(), String> {
+        let result = {
+            // Cancellation cannot acknowledge success between this check and loadfile.
+            let state = self.service.state();
+            if state.pending != Some(request_id)
+                || state
+                    .active
+                    .as_ref()
+                    .is_none_or(|active| active.playback.session_id != session_id)
+            {
+                Err("video open was cancelled or superseded".to_string())
+            } else {
+                self.mpv
+                    .set_property("pause", false)
+                    .and_then(|()| self.mpv.command("loadfile", &[path, "replace"]))
+                    .map_err(|error| format!("libmpv could not open the video: {error}"))
+            }
+        };
+        if let Err(error) = result {
+            let _ = self.service.close(session_id);
+            self.stop()?;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn control(&self, command: PlayerCommand) -> Result<(), String> {
+        match command {
+            PlayerCommand::Play => self.mpv.set_property("pause", false),
+            PlayerCommand::Pause => self.mpv.set_property("pause", true),
+            PlayerCommand::Seek(time) => {
+                let duration = self.mpv.get_property::<f64>("duration").unwrap_or(0.0);
+                if duration <= 0.0 {
+                    return Err("video duration is unavailable".into());
+                }
+                self.mpv.set_property("time-pos", time.clamp(0.0, duration))
+            }
+            PlayerCommand::SetVolume(volume) => self.mpv.set_property("volume", volume * 100.0),
+            PlayerCommand::SetMuted(muted) => self.mpv.set_property("mute", muted),
+            PlayerCommand::SetRate(rate) => self.mpv.set_property("speed", rate),
+            PlayerCommand::SelectAudioTrack(track) => self.mpv.set_property("aid", track),
+            PlayerCommand::SelectSubtitleTrack(track) => self.mpv.set_property("sid", track),
+        }
+        .map_err(|error| format!("libmpv control failed: {error}"))
+    }
+
+    fn drain_events(&self) {
+        let Some((session_id, client)) = &self.session else {
+            return;
+        };
+        let mut snapshot_changed = false;
+        // Bound each turn so command processing remains responsive under frequent time updates.
+        for _ in 0..64 {
+            let Some(event) = client.wait_event(0.0) else {
+                break;
+            };
+            if self.service.require_current(*session_id).is_err() {
+                continue;
+            }
+            match event {
+                NativeEvent::Metadata => {
+                    self.service.send(
+                        *session_id,
+                        VideoEventPayload::Metadata {
+                            duration: self.mpv.get_property("duration").unwrap_or(0.0),
+                            width: self.mpv.get_property("width").unwrap_or(0),
+                            height: self.mpv.get_property("height").unwrap_or(0),
+                        },
+                    );
+                    snapshot_changed = true;
+                }
+                NativeEvent::StateChanged => snapshot_changed = true,
+                NativeEvent::Error(error) => self.service.fail(*session_id, error),
+                NativeEvent::Other => {}
+            }
+        }
+        if snapshot_changed {
+            self.service.publish_snapshot(*session_id, self.mpv);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn activate_test_session(service: &VideoPlayerService, session_id: u64) {
+    fn service() -> VideoPlayerService {
+        VideoPlayerService::with_mpv(Err("test player".into()))
+    }
+    fn activate(service: &VideoPlayerService, request_id: u64, session_id: u64) {
         service.state().active = Some(ActiveSession {
-            session_id,
-            _generation: 1,
+            request_id,
             events: Channel::new(|_| Ok(())),
             playback: PlaybackSnapshot::new(session_id),
         });
     }
 
     #[test]
-    fn pointer_activity_is_session_scoped_and_does_not_change_playback() {
-        let service = VideoPlayerService::unavailable("test player");
-        activate_test_session(&service, 7);
-        let messages = Arc::new(Mutex::new(Vec::new()));
-        let received = Arc::clone(&messages);
-        service.state().active.as_mut().unwrap().events = Channel::new(move |body| {
+    fn cancellation_covers_pending_and_committed_opens_without_touching_a_replacement() {
+        let service = service();
+        let first = service.begin_open();
+        assert_eq!(service.cancel_open(first), None);
+        assert!(service.require_pending(first).is_err());
+        let second = service.begin_open();
+        activate(&service, second, 7);
+        assert_eq!(service.cancel_open(first), None);
+        assert!(service.require_pending(second).is_ok());
+        assert_eq!(service.cancel_open(second), Some(7));
+        assert!(service.require_pending(second).is_err());
+    }
+
+    #[test]
+    fn stale_closes_and_surface_operations_do_not_change_the_current_session() {
+        let service = service();
+        activate(&service, 2, 7);
+        assert!(service.close(6).is_ok());
+        assert!(service
+            .with_session(6, |state| {
+                state.fullscreen = true;
+                Ok(())
+            })
+            .is_err());
+        assert!(!service.playback_snapshot().unwrap().fullscreen);
+    }
+
+    #[test]
+    fn snapshot_serialization_keeps_pause_seek_and_buffering_independent() {
+        let event = VideoEvent {
+            session_id: 7,
+            payload: VideoEventPayload::Snapshot {
+                state: PlaybackSnapshot {
+                    seeking: true,
+                    buffering: true,
+                    ..PlaybackSnapshot::new(7)
+                },
+            },
+        };
+        let value = serde_json::to_value(event).unwrap();
+        assert_eq!(value["type"], "snapshot");
+        assert_eq!(value["session_id"], 7);
+        assert_eq!(value["state"]["paused"], true);
+        assert_eq!(value["state"]["seeking"], true);
+        assert_eq!(value["state"]["buffering"], true);
+    }
+    #[test]
+    fn supersession_after_commit_retires_the_session_without_cancelling_the_new_request() {
+        let mpv = Box::leak(Box::new(
+            Mpv::with_initializer(|init| {
+                init.set_option("vo", "null")?;
+                init.set_option("ao", "null")?;
+                Ok(())
+            })
+            .unwrap(),
+        ));
+        let service = service();
+        let request = service.begin_open();
+        activate(&service, request, 7);
+        let client = VideoEventClient::new(mpv).unwrap();
+        let mut worker = PlaybackWorker {
+            service: service.clone(),
+            mpv,
+            session: Some((7, client)),
+        };
+        let replacement = service.begin_open();
+        assert!(worker
+            .load_committed(request, 7, "must-not-open.mp4")
+            .is_err());
+        assert!(service.playback_snapshot().is_none());
+        assert!(worker.session.is_none());
+        assert!(service.require_pending(replacement).is_ok());
+        assert!(mpv.get_property::<bool>("idle-active").unwrap());
+
+        activate(&service, replacement, 8);
+        worker.session = Some((8, VideoEventClient::new(mpv).unwrap()));
+        let next_request = service.begin_open();
+        worker.stop().unwrap();
+        // This invariant holds before the next fallible event-client allocation.
+        assert!(service.playback_snapshot().is_none());
+        assert!(service.require_current(8).is_err());
+        assert!(service.require_pending(next_request).is_ok());
+    }
+
+    #[test]
+    fn real_mpv_preserves_paused_seeks_and_preferences_across_replacement() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("clip.mp4");
+        let output = std::process::Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=160x90:rate=10",
+                "-t",
+                "3",
+                "-c:v",
+                "mpeg4",
+            ])
+            .arg(&path)
+            .output()
+            .expect("ffmpeg is required for native playback tests");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let mpv = Mpv::with_initializer(|init| {
+            init.set_option("vo", "null")?;
+            init.set_option("ao", "null")?;
+            init.set_option("loop-file", "inf")?;
+            Ok(())
+        })
+        .unwrap();
+        let service = VideoPlayerService::with_mpv(Ok(Box::leak(Box::new(mpv))));
+        struct StopWorker(VideoPlayerService);
+        impl Drop for StopWorker {
+            fn drop(&mut self) {
+                let (done, stopped) = mpsc::sync_channel(1);
+                if self.0.enqueue(WorkerCommand::Shutdown(done)).is_ok() {
+                    stopped
+                        .recv_timeout(Duration::from_secs(6))
+                        .expect("playback worker cleanup");
+                }
+            }
+        }
+        let _stop = StopWorker(service.clone());
+        let wait = |predicate: &dyn Fn(PlaybackSnapshot) -> bool| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Some(snapshot) = service.playback_snapshot() {
+                    if predicate(snapshot) {
+                        return snapshot;
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "playback did not reach expected state: {:?}",
+                    service.playback_snapshot()
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        let first_request = service.begin_open();
+        let first = service
+            .open(
+                first_request,
+                path.to_str().unwrap().into(),
+                Channel::new(|_| Ok(())),
+            )
+            .unwrap();
+        wait(&|s| s.duration > 2.0 && !s.paused && s.current_time > 0.0);
+        service.control(first, PlayerCommand::Pause).unwrap();
+        service
+            .control(first, PlayerCommand::SetMuted(true))
+            .unwrap();
+        service
+            .control(first, PlayerCommand::SetVolume(0.4))
+            .unwrap();
+        service.control(first, PlayerCommand::SetRate(1.5)).unwrap();
+        wait(&|s| s.paused && s.muted && s.volume == 0.4 && s.rate == 1.5);
+        service.control(first, PlayerCommand::Seek(1.0)).unwrap();
+        wait(&|s| s.paused && !s.seeking && s.current_time >= 0.9);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(service.playback_snapshot().unwrap().paused);
+
+        let second_request = service.begin_open();
+        let second = service
+            .open(
+                second_request,
+                path.to_str().unwrap().into(),
+                Channel::new(|_| Ok(())),
+            )
+            .unwrap();
+        assert_ne!(first, second);
+        let snapshot = wait(&|s| {
+            s.session_id == second && s.duration > 2.0 && !s.paused && s.current_time > 0.0
+        });
+        assert!(snapshot.current_time < 1.0);
+        assert!(snapshot.muted);
+        assert_eq!(snapshot.volume, 0.4);
+        assert_eq!(snapshot.rate, 1.5);
+        assert!(service.control(first, PlayerCommand::Pause).is_err());
+        service.close(first).unwrap();
+        assert_eq!(service.playback_snapshot().unwrap().session_id, second);
+        service.control(second, PlayerCommand::Seek(2.8)).unwrap();
+        wait(&|s| s.current_time > 2.5);
+        wait(&|s| s.current_time < 1.0 && !s.paused);
+        service.close(second).unwrap();
+        assert!(service.playback_snapshot().is_none());
+        let corrupt = temp.path().join("broken.mp4");
+        std::fs::write(&corrupt, b"invalid media bytes").unwrap();
+        let (error_tx, error_rx) = mpsc::channel();
+        let errors = Channel::new(move |body| {
             if let tauri::ipc::InvokeResponseBody::Json(json) = body {
-                received.lock().unwrap().push(json);
+                let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+                if value["type"] == "error" {
+                    let _ = error_tx.send(value);
+                }
             }
             Ok(())
         });
-        service.pointer_activity(6);
-        assert!(messages.lock().unwrap().is_empty());
-        service.pointer_activity(7);
-        let messages = messages.lock().unwrap();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&messages[0]).unwrap(),
-            serde_json::json!({ "session_id": 7, "type": "pointerActivity" })
-        );
-        let snapshot = service.playback_snapshot().unwrap();
-        assert!(snapshot.paused);
-        assert_eq!(snapshot.current_time, 0.0);
-    }
-
-    #[test]
-    fn rejects_stale_sessions_and_superseded_opens() {
-        let service = VideoPlayerService::unavailable("test player");
-        let first = service.begin_open();
-        let second = service.begin_open();
-        assert_ne!(first, second);
-        assert_eq!(
-            service.require_current(1),
-            Err("stale video session".into())
-        );
-    }
-
-    #[test]
-    fn tracks_fullscreen_only_for_the_active_session() {
-        let service = VideoPlayerService::unavailable("test player");
-        activate_test_session(&service, 7);
-
-        assert_eq!(service.fullscreen_for(7), Ok(false));
-        assert_eq!(service.set_fullscreen_state(7, true), Ok(()));
-        assert_eq!(service.fullscreen_for(7), Ok(true));
-        assert!(service.active_fullscreen());
-        assert_eq!(
-            service.set_fullscreen_state(8, false),
-            Err("stale video session".into())
-        );
-        assert_eq!(service.fullscreen_for(7), Ok(true));
-
-        service.clear_if_current(7);
-        assert!(!service.active_fullscreen());
-        assert_eq!(service.fullscreen_for(7), Err("stale video session".into()));
-    }
-
-    #[test]
-    fn keeps_a_native_control_snapshot_in_sync_with_player_events() {
-        let service = VideoPlayerService::unavailable("test player");
-        activate_test_session(&service, 7);
-
-        service.send(
-            7,
-            VideoEventPayload::Metadata {
-                duration: 42.0,
-                width: 1280,
-                height: 720,
-            },
-        );
-        service.send(7, VideoEventPayload::Playing);
-        service.send(7, VideoEventPayload::Time { current_time: 12.5 });
-        service.send(
-            7,
-            VideoEventPayload::Volume {
-                volume: 0.4,
-                muted: true,
-            },
-        );
-        service.send(7, VideoEventPayload::Rate { rate: 1.5 });
-
-        let snapshot = service.playback_snapshot().expect("active snapshot");
-        assert_eq!(snapshot.session_id, 7);
-        assert_eq!(snapshot.duration, 42.0);
-        assert_eq!(snapshot.current_time, 12.5);
-        assert!(!snapshot.paused);
-        assert_eq!(snapshot.volume, 0.4);
-        assert!(snapshot.muted);
-        assert_eq!(snapshot.rate, 1.5);
+        let broken_request = service.begin_open();
+        let broken_session = service
+            .open(broken_request, corrupt.to_str().unwrap().into(), errors)
+            .unwrap();
+        let error = error_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("decoder failure event");
+        assert_eq!(error["session_id"], broken_session);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while service.playback_snapshot().is_some() {
+            assert!(Instant::now() < deadline, "failed session was not retired");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::fs::copy(&path, &corrupt).unwrap();
+        let retry_request = service.begin_open();
+        let retry = service
+            .open(
+                retry_request,
+                corrupt.to_str().unwrap().into(),
+                Channel::new(|_| Ok(())),
+            )
+            .unwrap();
+        wait(&|s| s.session_id == retry && s.duration > 2.0 && !s.paused);
+        service.fail(broken_session, "late retired error".into());
+        assert_eq!(service.playback_snapshot().unwrap().session_id, retry);
+        service.close(retry).unwrap();
+        let cancelled = service.begin_open();
+        service.cancel_open(cancelled);
+        assert!(service
+            .open(
+                cancelled,
+                path.to_str().unwrap().into(),
+                Channel::new(|_| Ok(()))
+            )
+            .is_err());
     }
 }

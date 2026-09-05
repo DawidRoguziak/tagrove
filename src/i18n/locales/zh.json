@@ -167,6 +167,7 @@
     "fullscreen": "全屏 (F)",
     "exitFullscreen": "退出全屏 (F)",
     "videoControls": {
+      "controlError": "无法更改播放设置。请重试。",
       "play": "播放",
       "pause": "暂停",
       "mute": "静音",

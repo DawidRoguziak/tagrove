@@ -176,7 +176,7 @@ export function LightboxModal({
   const isVideo = selected?.kind === "video";
   const videoFullscreen = isVideo && mediaControls.isFullscreen;
   const imageFullscreen = !isVideo && mediaControls.isFullscreen;
-  const hideNativeVideoForSidebar = Boolean(isVideo && isNarrow && sidebarOccupied);
+  const hideNativeVideoForSidebar = Boolean(isVideo && !videoFullscreen && isNarrow && sidebarOccupied);
 
   if (!selected) return null;
 
@@ -231,39 +231,15 @@ export function LightboxModal({
           {t("lightbox.previewDialogDescription")}
         </span>
 
-        {videoFullscreen ? (
-          <LightboxMediaStage
-            selected={selected}
-            detailsLoading={tagDetailsLoading}
-            detailsFailed={assetDetailsFailed}
-            onRetryDetails={onRetryTagDetails}
-            mediaViewportRef={mediaControls.mediaViewportRef}
-            lightboxImageRef={mediaControls.lightboxImageRef}
-            lightboxVideoPlayerRef={mediaControls.lightboxVideoPlayerRef}
-            isZoomed={mediaControls.isZoomed}
-            mediaDisplaySize={mediaControls.mediaDisplaySize}
-            isDragging={mediaControls.isDragging}
-            isFullscreen={mediaControls.isFullscreen}
-            onImageLoad={mediaControls.handleImageLoad}
-            onVideoLoadedMetadata={mediaControls.handleVideoLoadedMetadata}
-            onVideoFullscreenChange={mediaControls.handleVideoFullscreenChange}
-            onPointerActivity={activity.reveal}
-            onNativeBounds={handleNativeBounds}
-            onImageClick={mediaControls.handleImageClick}
-            onImagePointerDown={mediaControls.handleImagePointerDown}
-            onImagePointerMove={mediaControls.handleImagePointerMove}
-            onImagePointerEnd={mediaControls.handleImagePointerEnd}
-          />
-        ) : (
           <div
             className={[
               "lightbox-layout relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)]",
-              !isNarrow && sidebarOccupied
+              videoFullscreen ? "grid-cols-[minmax(0,1fr)]" : !isNarrow && sidebarOccupied
                 ? "grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,22rem)]"
                 : isVideo ? "grid-cols-[minmax(0,1fr)_54px]" : "grid-cols-[minmax(0,1fr)]"
             ].join(" ")}
           >
-            {!sidebarOpen ? (
+            {!videoFullscreen && !sidebarOpen ? (
               <div className="pointer-events-none absolute right-[10px] top-[10px] z-[9]">
                 <UiIconButton
                   id={SIDEBAR_TRIGGER_BUTTON_ID}
@@ -332,7 +308,7 @@ export function LightboxModal({
               />
             </div>
 
-            {isNarrow && sidebarOpen ? (
+            {!videoFullscreen && isNarrow && sidebarOpen ? (
               <div
                 className="absolute inset-0 z-[7] bg-neutral/52 backdrop-blur-[1px]"
                 data-testid="lightbox-sidebar-scrim"
@@ -345,7 +321,7 @@ export function LightboxModal({
               />
             ) : null}
 
-            <LightboxToolbar
+            {!videoFullscreen && <LightboxToolbar
               selected={selected}
               mediaGroupKeyEditor={mediaGroupKeyEditor}
               mediaGroupOrderEditor={mediaGroupOrderEditor}
@@ -398,9 +374,8 @@ export function LightboxModal({
               onDeleteConfirmClose={handlers.handleCloseDeleteConfirm}
               onDeleteConfirmSubmit={handlers.handleConfirmDeleteMedia}
               t={t}
-            />
+            />}
           </div>
-        )}
       </div>
     </div>,
     document.body

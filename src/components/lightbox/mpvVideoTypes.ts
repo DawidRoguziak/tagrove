@@ -25,20 +25,28 @@ export type VideoControl =
   | { type: "setRate"; rate: number }
   | { type: "selectAudioTrack"; trackId: string }
   | { type: "selectSubtitleTrack"; trackId: string }
-  | { type: "setFullscreen"; fullscreen: boolean };
+  | { type: "setFullscreen"; fullscreen: boolean }
+  | { type: "toggleFullscreen" };
+
+export interface PlaybackSnapshot {
+  session_id: number;
+  duration: number;
+  current_time: number;
+  paused: boolean;
+  seeking: boolean;
+  buffering: boolean;
+  volume: number;
+  muted: boolean;
+  rate: number;
+  fullscreen: boolean;
+}
 
 export type MpvVideoEvent = { session_id: number } & (
   | { type: "pointerActivity" }
   | { type: "loading" }
   | { type: "metadata"; duration: number; width: number; height: number }
-  | { type: "playing" }
-  | { type: "paused" }
-  | { type: "waiting" }
-  | { type: "time"; current_time: number }
-  | { type: "volume"; volume: number; muted: boolean }
-  | { type: "rate"; rate: number }
-  | { type: "tracks" }
+  | { type: "snapshot"; state: PlaybackSnapshot }
   | { type: "fullscreen"; fullscreen: boolean }
-  | { type: "ended" }
   | { type: "error"; message: string }
+  | { type: "controlError"; message: string }
 );

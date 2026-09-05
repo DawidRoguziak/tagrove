@@ -689,6 +689,66 @@ describe("MediaTagger desktop workflows", () => {
     );
   });
 
+  it("keeps native playback state through paused seeking, fullscreen and replacement", async () => {
+    await resetLibraryState();
+    await seedLibraryWithPlayableMedia("native-state");
+    await ensureGalleryView();
+    await $(".filter-kind-select").selectByAttribute("value", "video");
+    await waitForTileAtIndex(1);
+    await $('button[data-asset-index="0"]').click();
+    const selector = "[data-native-video-active]";
+    const player = await $(selector);
+    await player.waitForExist({ timeout: 15000 });
+    const sessionId = Number(await player.getAttribute("data-native-session"));
+    const control = (command) => invokeTauriCommand("control_video", { sessionId, command });
+    const waitAttribute = (name, value) => browser.waitUntil(async () =>
+      (await $(selector).getAttribute(`data-native-${name}`)) === value,
+      { timeout: 10000, timeoutMsg: `Expected native ${name}=${value}` });
+    await browser.waitUntil(async () => Number(await player.getAttribute("data-native-time")) > 0,
+      { timeout: 15000, timeoutMsg: "Expected native playback to advance" });
+    await control({ type: "pause" });
+    await control({ type: "setMuted", muted: true });
+    await control({ type: "setVolume", volume: 0.4 });
+    await control({ type: "setRate", rate: 1.5 });
+    await waitAttribute("paused", "true");
+    await waitAttribute("muted", "true");
+    await waitAttribute("volume", "0.4");
+    await waitAttribute("rate", "1.5");
+    await control({ type: "seek", time: 3 });
+    await browser.waitUntil(async () => Number(await player.getAttribute("data-native-time")) >= 2.9,
+      { timeout: 10000 });
+    await waitAttribute("seeking", "false");
+    await waitAttribute("paused", "true");
+    await player.click();
+    await browser.keys("f");
+    await browser.waitUntil(async () => (await player.getAttribute("data-native-fullscreen")) !== null,
+      { timeout: 10000 });
+    if (Number(await player.getAttribute("data-native-session")) !== sessionId) throw new Error("Fullscreen replaced the session");
+    await waitAttribute("paused", "true");
+    await browser.keys("Escape");
+    await browser.waitUntil(async () => (await player.getAttribute("data-native-fullscreen")) === null,
+      { timeout: 10000 });
+    if (Number(await player.getAttribute("data-native-session")) !== sessionId) throw new Error("Exiting fullscreen replaced the session");
+    await player.click();
+    await browser.keys("f");
+    await browser.waitUntil(async () => (await player.getAttribute("data-native-fullscreen")) !== null, { timeout: 10000 });
+    await browser.execute(() => document.querySelector('[role="dialog"]').focus());
+    await browser.keys("ArrowRight");
+    await browser.waitUntil(async () => Number(await $(selector).getAttribute("data-native-session")) !== sessionId,
+      { timeout: 10000 });
+    await waitAttribute("paused", "false");
+    await browser.waitUntil(async () => (await $(selector).getAttribute("data-native-fullscreen")) === null, { timeout: 10000 });
+    await $('button[aria-label="Close preview"]').waitForDisplayed();
+    await waitAttribute("muted", "true");
+    await waitAttribute("volume", "0.4");
+    await waitAttribute("rate", "1.5");
+    // A delayed close from the retired activation must not stop its replacement.
+    await invokeTauriCommand("close_video", { sessionId });
+    await waitAttribute("paused", "false");
+    await browser.keys("Escape");
+    await $(selector).waitForExist({ reverse: true });
+  });
+
   it("loads generated GIF and continuously switches and loops longer MP4 sources", async () => {
     await resetLibraryState();
     const { gifPath, videoPaths } = await seedLibraryWithPlayableMedia("playback");
@@ -787,15 +847,14 @@ describe("MediaTagger desktop workflows", () => {
         const controls = currentPlayer?.querySelector(".media-controls");
         if (
           !(dialog instanceof HTMLElement) ||
-          !(currentPlayer instanceof HTMLElement) ||
-          !(controls instanceof HTMLElement)
+          !(currentPlayer instanceof HTMLElement)
         ) {
           throw new Error("Expected video lightbox geometry targets");
         }
         const dialogRect = dialog.getBoundingClientRect();
         const playerRect = currentPlayer.getBoundingClientRect();
         const playerStyle = getComputedStyle(currentPlayer);
-        const controlsStyle = getComputedStyle(controls);
+
         const aspectParts = playerStyle.aspectRatio.split("/").map(Number);
         const declaredAspect = aspectParts[0] / aspectParts[1];
         const renderedAspect = playerRect.width / playerRect.height;
@@ -812,7 +871,7 @@ describe("MediaTagger desktop workflows", () => {
             boxShadow: playerStyle.boxShadow,
             aspectDelta: Math.abs(declaredAspect - renderedAspect)
           },
-          domControlsDisplay: controlsStyle.display
+          domControlsPresent: controls !== null
         });
       })
     );
@@ -836,7 +895,7 @@ describe("MediaTagger desktop workflows", () => {
     }
     if (
       videoLightboxGeometry.player.aspectDelta > 0.02 ||
-      videoLightboxGeometry.domControlsDisplay !== "none"
+      videoLightboxGeometry.domControlsPresent
     ) {
       throw new Error(
         `Expected the full native player footprint without a separate DOM control rail: ${JSON.stringify(

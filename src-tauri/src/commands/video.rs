@@ -68,7 +68,11 @@ impl VideoBounds {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum VideoControl {
     Play,
     Pause,
@@ -79,6 +83,7 @@ pub enum VideoControl {
     SelectAudioTrack { track_id: String },
     SelectSubtitleTrack { track_id: String },
     SetFullscreen { fullscreen: bool },
+    ToggleFullscreen,
 }
 
 #[tauri::command]
@@ -86,7 +91,7 @@ pub enum VideoControl {
 #[allow(clippy::too_many_arguments)]
 pub async fn open_video(
     asset_id: i64,
-    generation: u64,
+    request_id: u64,
     bounds: VideoBounds,
     control_labels: VideoControlLabels,
     on_event: Channel<VideoEvent>,
@@ -99,7 +104,7 @@ pub async fn open_video(
     }
     let bounds = bounds.validate()?;
     let control_labels = control_labels.validate()?;
-    let open_token = player.begin_open();
+    player.require_pending(request_id)?;
     let db_path = app.db_path.clone();
     let path = tauri::async_runtime::spawn_blocking(move || {
         video_source_service::resolve_video_path(&db_path, asset_id)
@@ -112,20 +117,15 @@ pub async fn open_video(
         .context("video path is not valid UTF-8")
         .map_err(|error| error.to_string())?
         .to_string();
+    player.require_pending(request_id)?;
     crate::video_surface::ensure_ready(&window)?;
-    if player.active_fullscreen() {
-        window
-            .set_fullscreen(false)
-            .map_err(|error| error.to_string())?;
-    }
-    let session_id = player.open(open_token, generation, &source, on_event)?;
-    if let Err(error) = crate::video_surface::set_bounds(&window, session_id, bounds) {
-        let _ = player.close(session_id);
-        let _ = crate::video_surface::hide(&window, session_id);
-        return Err(error);
-    }
+    let worker = player.inner().clone();
+    let session_id =
+        tauri::async_runtime::spawn_blocking(move || worker.open(request_id, source, on_event))
+            .await
+            .map_err(|error| format!("video worker failed: {error}"))??;
     if let Err(error) =
-        crate::video_surface::set_control_labels(&window, session_id, control_labels)
+        crate::video_surface::activate(&window, &player, session_id, bounds, control_labels)
     {
         let _ = player.close(session_id);
         let _ = crate::video_surface::hide(&window, session_id);
@@ -142,7 +142,7 @@ pub fn set_video_bounds(
     player: State<'_, VideoPlayerService>,
 ) -> Result<(), String> {
     player.require_current(session_id)?;
-    crate::video_surface::set_bounds(&window, session_id, bounds.validate()?)
+    crate::video_surface::set_bounds(&window, &player, session_id, bounds.validate()?)
 }
 
 #[tauri::command]
@@ -172,7 +172,20 @@ pub fn control_video(
             PlayerCommand::SelectSubtitleTrack(track_id)
         }
         VideoControl::SetFullscreen { fullscreen } => {
-            return crate::video_surface::set_fullscreen(&window, &player, session_id, fullscreen);
+            return crate::video_surface::set_fullscreen(
+                &window,
+                &player,
+                session_id,
+                crate::video_surface::FullscreenAction::Set(fullscreen),
+            );
+        }
+        VideoControl::ToggleFullscreen => {
+            return crate::video_surface::set_fullscreen(
+                &window,
+                &player,
+                session_id,
+                crate::video_surface::FullscreenAction::Toggle,
+            );
         }
         _ => return Err("invalid video control value".to_string()),
     };
@@ -185,16 +198,44 @@ pub fn close_video(
     window: WebviewWindow,
     player: State<'_, VideoPlayerService>,
 ) -> Result<(), String> {
-    let exit_fullscreen_result = match player.fullscreen_for(session_id) {
-        Ok(true) => window
-            .set_fullscreen(false)
-            .map_err(|error| error.to_string()),
-        Ok(false) => Ok(()),
-        Err(error) => Err(error),
-    };
     let close_result = player.close(session_id);
     let hide_result = crate::video_surface::hide(&window, session_id);
-    exit_fullscreen_result.and(close_result).and(hide_result)
+    close_result.and(hide_result)
+}
+
+#[tauri::command]
+pub fn begin_video_open(player: State<'_, VideoPlayerService>) -> u64 {
+    player.begin_open()
+}
+
+#[tauri::command]
+pub fn cancel_video_open(
+    request_id: u64,
+    window: WebviewWindow,
+    player: State<'_, VideoPlayerService>,
+) -> Result<(), String> {
+    if let Some(session_id) = player.cancel_open(request_id) {
+        let close = player.close(session_id);
+        let hide = crate::video_surface::hide(&window, session_id);
+        close.and(hide)
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn set_video_control_labels(
+    session_id: u64,
+    control_labels: VideoControlLabels,
+    window: WebviewWindow,
+    player: State<'_, VideoPlayerService>,
+) -> Result<(), String> {
+    crate::video_surface::set_control_labels(
+        &window,
+        &player,
+        session_id,
+        control_labels.validate()?,
+    )
 }
 
 #[cfg(test)]
@@ -242,5 +283,18 @@ mod tests {
         let mut invalid = labels;
         invalid.seek = "\n".into();
         assert!(invalid.validate().is_err());
+    }
+    #[test]
+    fn parses_camel_case_track_control_fields() {
+        assert!(
+            matches!(serde_json::from_value::<VideoControl>(serde_json::json!({
+            "type": "selectAudioTrack", "trackId": "2"
+        })).unwrap(), VideoControl::SelectAudioTrack { track_id } if track_id == "2")
+        );
+        assert!(
+            matches!(serde_json::from_value::<VideoControl>(serde_json::json!({
+            "type": "selectSubtitleTrack", "trackId": "no"
+        })).unwrap(), VideoControl::SelectSubtitleTrack { track_id } if track_id == "no")
+        );
     }
 }

@@ -167,6 +167,7 @@
     "fullscreen": "Vollbild (F)",
     "exitFullscreen": "Vollbild verlassen (F)",
     "videoControls": {
+      "controlError": "Die Wiedergabe konnte nicht geändert werden. Versuche es erneut.",
       "play": "Wiedergabe",
       "pause": "Pause",
       "mute": "Stummschalten",

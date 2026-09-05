@@ -179,7 +179,7 @@ describe("useLightboxImageControls", () => {
     expect(toggleFullscreen).toHaveBeenCalledTimes(1);
   });
 
-  it("owns video F and fullscreen Escape while focus is inside Video.js", async () => {
+  it("owns video F and fullscreen Escape while focus is inside the native player", async () => {
     const toggleFullscreen = vi.fn(async () => {});
     const { result } = renderHook(() =>
       useLightboxImageControls({

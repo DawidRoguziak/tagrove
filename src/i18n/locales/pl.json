@@ -167,6 +167,7 @@
     "fullscreen": "Pelny ekran (F)",
     "exitFullscreen": "Wyjdz z pelnego ekranu (F)",
     "videoControls": {
+      "controlError": "Nie udało się zmienić odtwarzania. Spróbuj ponownie.",
       "play": "Odtworz",
       "pause": "Pauza",
       "mute": "Wycisz",

@@ -92,6 +92,8 @@ export function useAppShellController() {
   });
 
   const bulkSelection = useBulkSelectionController({
+    appliedFavoritesOnly: searchFilters.appliedFavoritesOnly,
+    onFavoritesChanged: selection.applyFavoriteChanges,
     assets: library.assets,
     queryEpoch: library.queryEpoch,
     getIdsRangeAsync: library.getIdsRangeAsync,

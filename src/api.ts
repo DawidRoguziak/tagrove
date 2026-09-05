@@ -3,6 +3,7 @@ import type {
   AssetDetails,
   AssetQueryPageResult,
   AssetPage,
+  BulkFavoriteSummary,
   BulkMediaGroupSummary,
   BulkTagMergeSummary,
   ClearLibrarySummary,
@@ -207,6 +208,10 @@ export async function mergeAssetTagsBulk(
   tags: string[]
 ): Promise<BulkTagMergeSummary> {
   return await invoke<BulkTagMergeSummary>("merge_asset_tags_bulk", { assetIds, tags });
+}
+
+export async function toggleAssetsFavoriteBulk(assetIds: number[]): Promise<BulkFavoriteSummary> {
+  return await invoke<BulkFavoriteSummary>("toggle_assets_favorite_bulk", { assetIds });
 }
 
 export async function setAssetFavorite(assetId: number, isFavorite: boolean): Promise<void> {

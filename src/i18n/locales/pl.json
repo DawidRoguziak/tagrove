@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "Sterowanie oknem",
+    "minimize": "Minimalizuj okno",
+    "maximize": "Maksymalizuj okno",
+    "restore": "Przywróć okno",
+    "close": "Zamknij okno"
+  },
   "common": {
     "back": "Wstecz",
     "cancel": "Anuluj",
@@ -89,6 +96,11 @@
     "retry": "Ponów"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "Przełącz ulubione dla zaznaczonych elementów",
+      "remove": "Usuń zaznaczone elementy z ulubionych",
+      "failed": "Nie udało się zaktualizować ulubionych. Spróbuj ponownie."
+    },
     "panel": {
       "selectedItems": "Zaznaczono: {{count}}",
       "addTag": "Dodaj tag",

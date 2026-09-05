@@ -60,6 +60,10 @@ export interface AppGalleryMediaController {
 }
 
 export interface BulkSelectionController {
+  favoriteApplying: boolean;
+  favoriteFailed: boolean;
+  allSelectedFavorites: boolean;
+  onToggleFavorite: () => Promise<void>;
   selectionModeEnabled: boolean;
   selectedAssetIds: Set<number>;
   selectedAssets: AssetSummary[];

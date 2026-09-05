@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "Ovládání okna",
+    "minimize": "Minimalizovat okno",
+    "maximize": "Maximalizovat okno",
+    "restore": "Obnovit okno",
+    "close": "Zavřít okno"
+  },
   "common": {
     "back": "Zpět",
     "cancel": "Zrušit",
@@ -89,6 +96,11 @@
     "retry": "Znovu"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "Přepnout oblíbené u vybraných položek",
+      "remove": "Odebrat vybrané položky z oblíbených",
+      "failed": "Oblíbené se nepodařilo aktualizovat. Zkuste to znovu."
+    },
     "panel": {
       "selectedItems": "Vybráno: {{count}}",
       "addTag": "Přidat tag",

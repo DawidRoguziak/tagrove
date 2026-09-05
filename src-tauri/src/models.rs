@@ -255,6 +255,13 @@ pub struct BulkTagMergeSummary {
 }
 
 #[derive(Debug, Serialize)]
+pub struct BulkFavoriteSummary {
+    pub processed_asset_ids: Vec<i64>,
+    pub is_favorite: bool,
+    pub revision: i64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct BulkMediaGroupSummary {
     pub processed_assets: usize,
     pub updated_assets: usize,

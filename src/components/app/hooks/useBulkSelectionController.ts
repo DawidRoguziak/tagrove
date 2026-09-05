@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { getAssetDetails, setAssetTags } from "../../../api";
+import { getAssetDetails, setAssetTags, toggleAssetsFavoriteBulk } from "../../../api";
 import type { AssetDetails, AssetSummary } from "../../../types";
 import { applyBulkMediaGroupAction } from "../../bulk/grouping/services/applyBulkMediaGroupAction";
 import {
@@ -68,6 +68,8 @@ interface UseBulkSelectionControllerOptions {
   refreshKnownTags: () => Promise<string[]>;
   assetTagState?: AssetTagStateController;
   appliedFilterTags?: string[];
+  appliedFavoritesOnly?: boolean;
+  onFavoritesChanged?: (assetIds: ReadonlySet<number>, isFavorite: boolean) => void;
 }
 
 function normalizedGroupIdentity(value: string | null): string | null {
@@ -86,12 +88,17 @@ export function useBulkSelectionController({
   refresh,
   refreshKnownTags,
   assetTagState: sharedAssetTagState,
+  appliedFavoritesOnly = false,
+  onFavoritesChanged,
   appliedFilterTags = []
 }: UseBulkSelectionControllerOptions) {
   const localAssetTagState = useAssetTagState();
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
   const [selectionModeEnabled, setSelectionModeEnabled] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<number>>(new Set());
+  const [favoriteApplying, setFavoriteApplying] = useState(false);
+  const [favoriteFailedSelection, setFavoriteFailedSelection] = useState<Set<number> | null>(null);
+  const favoriteOperationRef = useRef(false);
   const [groupKeyDraft, setGroupKeyDraft] = useState("");
   const [orderedAssetIds, setOrderedAssetIds] = useState<number[]>([]);
   const [hasConflictingGroups, setHasConflictingGroups] = useState(false);
@@ -334,6 +341,61 @@ export function useBulkSelectionController({
     if (selectionModeEnabled) rangeRequestRef.current += 1;
     setSelectionModeEnabled((previous) => !previous);
   }, [selectionModeEnabled]);
+
+  const onToggleFavorite = useCallback(async () => {
+    if (selectedAssetIds.size === 0 || favoriteOperationRef.current) return;
+    const capturedIds = selectedAssetIds;
+    const tokens: AssetTagMutationToken[] = [];
+    for (const assetId of capturedIds) {
+      const token = assetTagState.beginMutation(assetId);
+      if (!token) {
+        for (const acquired of tokens) assetTagState.settleMutation(acquired);
+        setFavoriteFailedSelection(capturedIds);
+        return;
+      }
+      tokens.push(token);
+    }
+    favoriteOperationRef.current = true;
+    setFavoriteApplying(true);
+    setFavoriteFailedSelection(null);
+    try {
+      const result = await toggleAssetsFavoriteBulk([...capturedIds]);
+      const processedIds = new Set(result.processed_asset_ids);
+      const acceptedIds = new Set<number>();
+      const missingIds = new Set<number>();
+      for (const token of tokens) {
+        if (!assetTagState.settleMutation(token)) continue;
+        if (processedIds.has(token.assetId)) acceptedIds.add(token.assetId);
+        else missingIds.add(token.assetId);
+      }
+      tokens.length = 0;
+      if (acceptedIds.size > 0) {
+        setAssets((previous) => previous.map((asset) => acceptedIds.has(asset.id)
+          ? { ...asset, is_favorite: result.is_favorite } : asset));
+        for (const assetId of acceptedIds) {
+          const cached = getCachedDetail(detailsCacheRef.current, assetId, assetTagState.epoch);
+          if (cached) putCachedDetail(detailsCacheRef.current, DETAILS_CACHE_LIMIT,
+            { ...cached, is_favorite: result.is_favorite }, assetTagState.epoch);
+        }
+        onFavoritesChanged?.(acceptedIds, result.is_favorite);
+      }
+      if (missingIds.size > 0) {
+        setSelectedAssetIds((previous) => new Set([...previous].filter((id) => !missingIds.has(id))));
+      }
+      if (missingIds.size > 0 || (acceptedIds.size > 0 && appliedFavoritesOnly)) {
+        void refresh().catch(() => {});
+      }
+    } catch {
+      // An identity reset makes this result irrelevant to the current library.
+      if (tokens.some((token) => assetTagState.captureGeneration(token.assetId).epoch === token.epoch)) {
+        setFavoriteFailedSelection(capturedIds);
+      }
+    } finally {
+      for (const token of tokens) assetTagState.settleMutation(token);
+      favoriteOperationRef.current = false;
+      setFavoriteApplying(false);
+    }
+  }, [appliedFavoritesOnly, assetTagState, onFavoritesChanged, refresh, selectedAssetIds, setAssets]);
 
   const onApplyGroup = useCallback(async () => {
     if (!selectedAssets.length || groupOperationRef.current) return;
@@ -595,6 +657,11 @@ export function useBulkSelectionController({
 
   return {
     selectionModeEnabled,
+    favoriteApplying,
+    favoriteFailed: favoriteFailedSelection === selectedAssetIds,
+    allSelectedFavorites: selectedAssetIds.size > 0 && selectedAssets.length === selectedAssetIds.size
+      && selectedAssets.every((asset) => asset.is_favorite),
+    onToggleFavorite,
     selectedAssetIds,
     selectedAssets,
     knownTags,

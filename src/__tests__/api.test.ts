@@ -7,7 +7,8 @@ import {
   openVideo,
   setAssetTags,
   setVideoBounds,
-  toMediaSrc
+  toMediaSrc,
+  toggleAssetsFavoriteBulk
 } from "../api";
 
 const coreMocks = vi.hoisted(() => ({
@@ -29,6 +30,13 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("api contract", () => {
+  it("sends bulk favorite IDs and returns the canonical toggle result", async () => {
+    const summary = { processed_asset_ids: [1, 2], is_favorite: true, revision: 3 };
+    coreMocks.invoke.mockResolvedValueOnce(summary);
+    await expect(toggleAssetsFavoriteBulk([1, 2])).resolves.toEqual(summary);
+    expect(coreMocks.invoke).toHaveBeenCalledWith("toggle_assets_favorite_bulk", { assetIds: [1, 2] });
+  });
+
   beforeEach(() => {
     coreMocks.invoke.mockReset();
     coreMocks.convertFileSrc.mockClear();

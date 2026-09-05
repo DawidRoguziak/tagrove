@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "Controles de ventana",
+    "minimize": "Minimizar ventana",
+    "maximize": "Maximizar ventana",
+    "restore": "Restaurar ventana",
+    "close": "Cerrar ventana"
+  },
   "common": {
     "back": "Atrás",
     "cancel": "Cancelar",
@@ -89,6 +96,11 @@
     "retry": "Reintentar"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "Alternar favoritos de los elementos seleccionados",
+      "remove": "Quitar los elementos seleccionados de favoritos",
+      "failed": "No se pudieron actualizar los favoritos. Inténtalo de nuevo."
+    },
     "panel": {
       "selectedItems": "Seleccionados: {{count}}",
       "addTag": "Añadir etiqueta",

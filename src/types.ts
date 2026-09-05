@@ -174,6 +174,12 @@ export interface BulkTagMergeSummary {
   revision: number;
 }
 
+export interface BulkFavoriteSummary {
+  processed_asset_ids: number[];
+  is_favorite: boolean;
+  revision: number;
+}
+
 export interface BulkMediaGroupSummary {
   processed_assets: number;
   updated_assets: number;

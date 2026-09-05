@@ -111,7 +111,7 @@ export function BulkActionsSidebar({
       aria-label={t("bulk.panel.ariaLabel")}
     >
       <header
-        className="bg-[var(--surface-solid)]"
+        className="flex flex-wrap items-center justify-between gap-2 bg-[var(--surface-solid)]"
         data-testid="bulk-header-panel"
       >
         <div className="grid gap-0.5" aria-live="polite">
@@ -120,6 +120,23 @@ export function BulkActionsSidebar({
             {t("bulk.panel.selectedItems", { count: controller.selectedAssetIds.size })}
           </span>
         </div>
+        <UiIconButton
+          icon="heart"
+          iconClassName="h-4 w-4 shrink-0"
+          className="h-8! w-8! min-h-8!"
+          active={controller.allSelectedFavorites}
+          aria-pressed={controller.allSelectedFavorites}
+          aria-label={t(controller.allSelectedFavorites ? "bulk.favorite.remove" : "bulk.favorite.toggle")}
+          title={t(controller.allSelectedFavorites ? "bulk.favorite.remove" : "bulk.favorite.toggle")}
+          aria-busy={controller.favoriteApplying}
+          disabled={controller.selectedAssetIds.size === 0 || controller.favoriteApplying}
+          onClick={() => void controller.onToggleFavorite()}
+        />
+        {controller.favoriteFailed ? (
+          <UiAlert className="w-full" tone="error" title={t("bulk.panel.saveFailedTitle")}>
+            {t("bulk.favorite.failed")}
+          </UiAlert>
+        ) : null}
       </header>
 
       <section

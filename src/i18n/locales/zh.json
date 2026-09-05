@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "窗口控制",
+    "minimize": "最小化窗口",
+    "maximize": "最大化窗口",
+    "restore": "还原窗口",
+    "close": "关闭窗口"
+  },
   "common": {
     "back": "返回",
     "cancel": "取消",
@@ -89,6 +96,11 @@
     "retry": "重试"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "切换所选项目的收藏状态",
+      "remove": "从收藏中移除所选项目",
+      "failed": "无法更新收藏。请重试。"
+    },
     "panel": {
       "selectedItems": "已选择: {{count}}",
       "addTag": "添加标签",

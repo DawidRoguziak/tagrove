@@ -2142,6 +2142,47 @@ pub fn set_asset_favorite_with_revision(
     })
 }
 
+pub fn toggle_assets_favorite_bulk(
+    conn: &mut Connection,
+    asset_ids: &[i64],
+) -> anyhow::Result<crate::models::BulkFavoriteSummary> {
+    retry_immediate_transaction(conn, |tx| {
+        let mut processed_asset_ids = Vec::new();
+        let mut all_favorites = true;
+        let mut seen = std::collections::HashSet::new();
+        let mut query = tx.prepare_cached("SELECT is_favorite FROM assets WHERE id = ?1")?;
+        for &asset_id in asset_ids {
+            if asset_id <= 0 || !seen.insert(asset_id) {
+                continue;
+            }
+            if let Some(favorite) = query
+                .query_row([asset_id], |row| row.get::<_, bool>(0))
+                .optional()?
+            {
+                processed_asset_ids.push(asset_id);
+                all_favorites &= favorite;
+            }
+        }
+        let is_favorite = !all_favorites;
+        let revision = if processed_asset_ids.is_empty() {
+            current_library_revision(tx)?
+        } else {
+            let mut update = tx.prepare_cached(
+                "UPDATE assets SET is_favorite = ?1 WHERE id = ?2 AND is_favorite != ?1",
+            )?;
+            for &asset_id in &processed_asset_ids {
+                update.execute(params![is_favorite, asset_id])?;
+            }
+            bump_library_revision_in_tx(tx)?
+        };
+        Ok(crate::models::BulkFavoriteSummary {
+            processed_asset_ids,
+            is_favorite,
+            revision,
+        })
+    })
+}
+
 pub fn set_asset_media_group(
     conn: &Connection,
     asset_id: i64,
@@ -4910,6 +4951,107 @@ mod tests {
             try_list_ordered_asset_ids_with_meta(&conn, &[], &[], None, false, None, || false)
                 .expect("completed build");
         assert_eq!(completed.as_deref(), Some(&[1_i64, 2_i64, 3_i64][..]));
+    }
+
+    #[test]
+    fn bulk_favorite_toggle_handles_mixed_selection_missing_ids_and_revision() {
+        let mut conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_asset(&conn, "/tmp/a.png", "image", 1);
+        insert_asset(&conn, "/tmp/b.png", "image", 2);
+        insert_asset(&conn, "/tmp/c.png", "image", 3);
+        set_asset_favorite(&conn, 2, true).expect("favorite");
+        let revision = current_library_revision(&conn).expect("revision");
+        let result = super::toggle_assets_favorite_bulk(&mut conn, &[1, 2, 2, 999, 0, -1])
+            .expect("toggle mixed");
+        assert_eq!(result.processed_asset_ids, vec![1, 2]);
+        assert!(result.is_favorite);
+        assert_eq!(result.revision, revision + 1);
+        assert!(
+            super::get_asset_details(&conn, 1)
+                .unwrap()
+                .unwrap()
+                .summary
+                .is_favorite
+        );
+        assert!(
+            super::get_asset_details(&conn, 2)
+                .unwrap()
+                .unwrap()
+                .summary
+                .is_favorite
+        );
+        assert!(
+            !super::get_asset_details(&conn, 3)
+                .unwrap()
+                .unwrap()
+                .summary
+                .is_favorite
+        );
+        let serialized = serde_json::to_value(&result).expect("serialize IPC result");
+        assert_eq!(
+            serialized,
+            serde_json::json!({
+                "processed_asset_ids": [1, 2], "is_favorite": true, "revision": revision + 1
+            })
+        );
+        let result =
+            super::toggle_assets_favorite_bulk(&mut conn, &[1, 2, 999]).expect("toggle all");
+        assert!(!result.is_favorite);
+        assert_eq!(result.revision, revision + 2);
+        assert!(
+            !super::get_asset_details(&conn, 1)
+                .unwrap()
+                .unwrap()
+                .summary
+                .is_favorite
+        );
+        assert!(
+            !super::get_asset_details(&conn, 2)
+                .unwrap()
+                .unwrap()
+                .summary
+                .is_favorite
+        );
+        let result = super::toggle_assets_favorite_bulk(&mut conn, &[1]).expect("toggle single");
+        assert!(result.is_favorite);
+        assert_eq!(result.revision, revision + 3);
+        for ids in [&[][..], &[999][..]] {
+            let result = super::toggle_assets_favorite_bulk(&mut conn, ids).expect("empty");
+            assert!(result.processed_asset_ids.is_empty());
+            assert_eq!(result.revision, revision + 3);
+        }
+    }
+
+    #[test]
+    fn bulk_favorite_toggle_rolls_back_rows_and_revision_on_failure() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut conn = super::open_connection(&dir.path().join("media.db")).expect("db");
+        init_schema(&conn).expect("schema");
+        insert_asset(&conn, "/tmp/a.png", "image", 1);
+        insert_asset(&conn, "/tmp/b.png", "image", 2);
+        let revision = current_library_revision(&conn).expect("revision");
+        conn.execute_batch(
+            "CREATE TRIGGER reject_second_favorite BEFORE UPDATE OF is_favorite ON assets
+            WHEN NEW.id = 2 BEGIN SELECT RAISE(ABORT, 'test failure'); END;",
+        )
+        .expect("trigger");
+        assert!(super::toggle_assets_favorite_bulk(&mut conn, &[1, 2]).is_err());
+        assert!(
+            !super::get_asset_details(&conn, 1)
+                .unwrap()
+                .unwrap()
+                .summary
+                .is_favorite
+        );
+        assert!(
+            !super::get_asset_details(&conn, 2)
+                .unwrap()
+                .unwrap()
+                .summary
+                .is_favorite
+        );
+        assert_eq!(current_library_revision(&conn).unwrap(), revision);
     }
 
     #[test]

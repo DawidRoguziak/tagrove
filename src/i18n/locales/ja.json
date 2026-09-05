@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "ウィンドウ操作",
+    "minimize": "ウィンドウを最小化",
+    "maximize": "ウィンドウを最大化",
+    "restore": "ウィンドウを元のサイズに戻す",
+    "close": "ウィンドウを閉じる"
+  },
   "common": {
     "back": "戻る",
     "cancel": "キャンセル",
@@ -89,6 +96,11 @@
     "retry": "再試行"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "選択した項目のお気に入りを切り替える",
+      "remove": "選択した項目をお気に入りから削除",
+      "failed": "お気に入りを更新できませんでした。もう一度お試しください。"
+    },
     "panel": {
       "selectedItems": "選択中: {{count}}",
       "addTag": "タグを追加",

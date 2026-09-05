@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "창 제어",
+    "minimize": "창 최소화",
+    "maximize": "창 최대화",
+    "restore": "창 복원",
+    "close": "창 닫기"
+  },
   "common": {
     "back": "뒤로",
     "cancel": "취소",
@@ -89,6 +96,11 @@
     "retry": "다시 시도"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "선택한 항목의 즐겨찾기 전환",
+      "remove": "선택한 항목을 즐겨찾기에서 제거",
+      "failed": "즐겨찾기를 업데이트하지 못했습니다. 다시 시도하세요."
+    },
     "panel": {
       "selectedItems": "선택됨: {{count}}",
       "addTag": "태그 추가",

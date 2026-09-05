@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "Controlli della finestra",
+    "minimize": "Riduci a icona",
+    "maximize": "Ingrandisci finestra",
+    "restore": "Ripristina finestra",
+    "close": "Chiudi finestra"
+  },
   "common": {
     "back": "Indietro",
     "cancel": "Annulla",
@@ -89,6 +96,11 @@
     "retry": "Riprova"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "Attiva o disattiva i preferiti per gli elementi selezionati",
+      "remove": "Rimuovi gli elementi selezionati dai preferiti",
+      "failed": "Impossibile aggiornare i preferiti. Riprova."
+    },
     "panel": {
       "selectedItems": "Selezionati: {{count}}",
       "addTag": "Aggiungi tag",

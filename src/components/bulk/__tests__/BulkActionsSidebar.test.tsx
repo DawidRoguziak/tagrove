@@ -27,6 +27,10 @@ function createController(
   override: Partial<BulkSelectionController> = {}
 ): BulkSelectionController {
   return {
+    favoriteApplying: false,
+    favoriteFailed: false,
+    allSelectedFavorites: false,
+    onToggleFavorite: vi.fn(async () => {}),
     selectionModeEnabled: true,
     selectedAssetIds: new Set(),
     selectedAssets: [],
@@ -57,6 +61,26 @@ function createController(
 
 describe("BulkActionsSidebar", () => {
   afterEach(cleanup);
+
+  it("renders the lightbox-style heart and exposes pending and failure states", async () => {
+    const onToggleFavorite = vi.fn(async () => {});
+    const { rerender } = render(<BulkActionsSidebar controller={createController()}
+      thumbs={{}} renderingThumbnailIds={{}} />);
+    expect(screen.getByRole("button", { name: "Toggle favorites for selected items" })).toBeDisabled();
+    const controller = createController({ selectedAssetIds: new Set([1]), onToggleFavorite });
+    rerender(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    const heart = screen.getByRole("button", { name: "Toggle favorites for selected items" });
+    expect(heart).toBeEnabled(); // Selected IDs need not have loaded gallery rows.
+    await userEvent.click(heart);
+    expect(onToggleFavorite).toHaveBeenCalledOnce();
+    rerender(<BulkActionsSidebar controller={{ ...controller, allSelectedFavorites: true, favoriteApplying: true }}
+      thumbs={{}} renderingThumbnailIds={{}} />);
+    expect(screen.getByRole("button", { name: "Remove selected items from favorites" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove selected items from favorites" })).toHaveAttribute("aria-pressed", "true");
+    rerender(<BulkActionsSidebar controller={{ ...controller, favoriteFailed: true }}
+      thumbs={{}} renderingThumbnailIds={{}} />);
+    expect(screen.getByText("Could not update favorites. Try again.")).toBeVisible();
+  });
 
   it("renders as a scrollable inspector with disabled editors for an empty selection", () => {
     render(

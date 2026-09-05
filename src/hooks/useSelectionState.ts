@@ -107,6 +107,7 @@ export function useSelectionState({
   const navigationRequestRef = useRef(0);
   const selectedIndexRef = useRef<number | null>(null);
   const navigationTargetIndexRef = useRef<number | null>(null);
+  const favoriteChangeRevisionRef = useRef(0);
   const detailsCacheRef = useRef<Map<number, CachedDetail>>(new Map());
   const tagMutationsRef = useRef<Map<number, TagMutationState>>(new Map());
   const observedTagEpochRef = useRef(assetTagState.epoch);
@@ -437,14 +438,29 @@ export function useSelectionState({
     }
   }, [assetTagState, getCachedDetails, putCachedDetails, refresh, selected, setAssets]);
 
+  const applyFavoriteChanges = useCallback((assetIds: ReadonlySet<number>, isFavorite: boolean) => {
+    favoriteChangeRevisionRef.current += 1;
+    for (const assetId of assetIds) {
+      const cached = getCachedDetails(assetId);
+      if (cached) putCachedDetails({ ...cached, is_favorite: isFavorite });
+    }
+    const current = selectedRef.current;
+    if (current && assetIds.has(current.id)) {
+      selectedRef.current = { ...current, is_favorite: isFavorite };
+      setSelectedState((previous) => previous && assetIds.has(previous.id)
+        ? { ...previous, is_favorite: isFavorite } : previous);
+    }
+  }, [getCachedDetails, putCachedDetails]);
+
   const prefetchAdjacentDetails = useCallback((index: number) => {
     if (assetCount <= 1) return;
     for (const adjacentIndex of [(index - 1 + assetCount) % assetCount, (index + 1) % assetCount]) {
       void getAssetAtAsync(adjacentIndex).then((adjacent) => {
         if (!adjacent || getCachedDetails(adjacent.id)) return;
         const generation = assetTagState.captureGeneration(adjacent.id);
+        const favoriteRevision = favoriteChangeRevisionRef.current;
         void getAssetDetails(adjacent.id).then((adjacentDetails) => {
-          if (!adjacentDetails) return;
+          if (!adjacentDetails || favoriteRevision !== favoriteChangeRevisionRef.current) return;
           const accepted = assetTagState.publishDetails(adjacent.id, adjacentDetails.tags, generation);
           const authoritative = assetTagState.get(adjacent.id);
           if (!accepted && !authoritative) return;
@@ -504,6 +520,7 @@ export function useSelectionState({
     setTagDetailsFailed(false);
     setAssetDetailsFailed(false);
     const detailGeneration = assetTagState.captureGeneration(summary.id);
+    const favoriteRevision = favoriteChangeRevisionRef.current;
     void getAssetDetails(summary.id).then((details) => {
       if (selectionRequestRef.current !== requestId) return;
       if (!details) {
@@ -519,7 +536,13 @@ export function useSelectionState({
         return;
       }
       const canonical = authoritativeDetails?.tags ?? details.tags;
-      const merged = { ...details, tags: canonical };
+      const current = selectedRef.current;
+      const favoriteChanged = favoriteRevision !== favoriteChangeRevisionRef.current && current?.id === details.id;
+      const merged = {
+        ...details,
+        is_favorite: favoriteChanged ? current.is_favorite : details.is_favorite,
+        tags: canonical
+      };
       putCachedDetails(merged);
       setSelectedState(merged);
       setTagDetailsFailed(false);
@@ -628,6 +651,7 @@ export function useSelectionState({
     selectAsset,
     saveMediaGroup,
     toggleSelectedFavorite,
+    applyFavoriteChanges,
     handleSelectPrevious,
     handleSelectNext,
     deleteSelectedAsset
@@ -635,6 +659,6 @@ export function useSelectionState({
     deleteSelectedAsset, handleSelectNext, handleSelectPrevious, mediaGroupKeyEditor,
     mediaGroupOrderEditor, retryTagDetails, retryTags, saveMediaGroup, saveTags, selectAsset, selected,
     assetDetailsFailed, tagDetailsFailed, tagDetailsLoading, tagEditor, tagFailed, tagSaving,
-    toggleSelectedFavorite
+    toggleSelectedFavorite, applyFavoriteChanges
   ]);
 }

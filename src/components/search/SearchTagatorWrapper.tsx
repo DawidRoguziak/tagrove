@@ -84,9 +84,9 @@ export function SearchTagatorWrapper({
 
   return (
     <>
-      <div className="workspace-search">
+      <div data-tauri-drag-region="deep" className="workspace-search window-drag-surface">
         {identity}
-        <div className="workspace-search-field flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--surface-muted)] px-2 focus-within:border-primary">
+        <div data-tauri-drag-region="false" className="workspace-search-field flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--surface-muted)] px-2 focus-within:border-primary">
           <UiIcon name="search" className="h-4 w-4 shrink-0 text-base-content/60" />
           <div className="min-w-0 flex-1"><SearchTagator
             inputRef={searchInputRef}

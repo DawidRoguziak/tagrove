@@ -145,6 +145,7 @@ The following mutation families bump the revision:
 | --- | --- |
 | Replace one asset's tags | In the same transaction when canonical tags changed or persisted tag invariants were repaired; missing IDs reject. A fully canonical no-op does not bump. |
 | Bulk tag merge | In the same transaction, only when at least one existing asset changed; missing IDs are skipped and reported through canonical results. |
+| Bulk favorite toggle | Reads all existing submitted IDs and writes one common target value in the same IMMEDIATE transaction. Bumps once for a nonempty processed set; duplicate/nonpositive IDs and missing rows do not produce extra updates or bumps. |
 | Set one favorite | In the same IMMEDIATE transaction as the update, including a no-op or missing ID. |
 | Set one media group | In the same IMMEDIATE transaction as the update, including a no-op or missing ID. |
 | Bulk media-group set | Only when at least one existing row changed, inside the same transaction as the updates. |

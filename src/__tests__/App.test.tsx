@@ -100,6 +100,7 @@ const apiMocks = vi.hoisted(() => {
     scanFolder: vi.fn(),
     rescanAllRoots: vi.fn(),
     setAssetFavorite: vi.fn(),
+    toggleAssetsFavoriteBulk: vi.fn(),
     setAssetTags: vi.fn(),
     toMediaSrc: vi.fn((path: string) => `media://${path}`)
   };

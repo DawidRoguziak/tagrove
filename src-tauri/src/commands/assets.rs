@@ -238,6 +238,21 @@ pub fn merge_asset_tags_bulk(
 }
 
 #[tauri::command]
+pub async fn toggle_assets_favorite_bulk(
+    asset_ids: Vec<i64>,
+    state: State<'_, AppState>,
+) -> Result<crate::models::BulkFavoriteSummary, String> {
+    let db_path = state.db_path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut conn = db::open_connection(&db_path)?;
+        db::toggle_assets_favorite_bulk(&mut conn, &asset_ids).map_err(crate::error::AppError::from)
+    })
+    .await
+    .map_err(|e| format!("bulk favorite worker failed: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn set_asset_favorite(
     asset_id: i64,
     is_favorite: bool,

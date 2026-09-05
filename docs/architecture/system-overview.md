@@ -109,6 +109,11 @@ The effective Tauri identifier determines `app.path().app_data_dir()`, so it is 
 | Development | `bun run tauri:dev`, merging `tauri.conf.dev.json` over the base | `Image Viewer 3000 Dev` | `com.example.mediatagger.dev` | Separate app-data profile. Debug startup refuses the production identifier, making use of the dev or E2E overlay mandatory for a debug application. |
 | Desktop E2E | `bun run test:e2e:tauri`, merging `tauri.conf.e2e.json` | `Image Viewer 3000 E2E` | `com.example.mediatagger.e2e` | Separate app data and `src-tauri/target-e2e`. The runner validates the identifier, title, and target path, clears only the exact E2E app-data directory, builds the frontend separately, then makes an unbundled debug Tauri build. |
 
+All three window configurations set `decorations: false`. Profile overlays repeat this
+setting because their `windows` arrays replace the base array. Native window titles remain
+unchanged for task switchers and the E2E identity guard. The existing frontend headers own
+window controls and drag regions; see [frontend window controls](../frontend/architecture-and-ui-conventions.md#compact-studio-visual-system).
+
 These profiles may run at the same time because their identifiers resolve to different data directories and lock files. Isolation relies on always selecting the intended config overlay. The debug guard protects production from an accidentally unoverlaid debug build, but it does not validate arbitrary non-production identifiers. The E2E runner adds stronger path/title checks before its destructive cleanup and again verifies the live window title before tests.
 
 ### `instance.lock`
@@ -145,7 +150,7 @@ libmpv performs interactive playback; ffmpeg and ffprobe perform indexing and th
 
 Current configuration is permissive and should be treated as current state, not a recommended end state:
 
-- `capabilities/default.json` applies to the `main` window and grants `core:default` plus `dialog:default` (open, save, and message dialogs). Application commands are those explicitly registered in `lib.rs`.
+- `capabilities/default.json` applies to the `main` window and grants `core:default`, `dialog:default` (open, save, and message dialogs), and the window permissions for minimize, toggle-maximize, close, drag and resize-drag. Application commands are those explicitly registered in `lib.rs`.
 - The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `['**']`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails use this path. Video sources are authorized by asset ID and opened only by libmpv.
 - `app.security.csp` is `null`, so the configuration does not install a Content Security Policy.
 - Linux bundling is disabled; the release artifact is a native x86-64 executable built against the system media and graphics stack. Other platforms and ARM are not configured.

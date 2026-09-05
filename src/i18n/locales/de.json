@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "Fenstersteuerung",
+    "minimize": "Fenster minimieren",
+    "maximize": "Fenster maximieren",
+    "restore": "Fenster wiederherstellen",
+    "close": "Fenster schließen"
+  },
   "common": {
     "back": "Zurück",
     "cancel": "Abbrechen",
@@ -89,6 +96,11 @@
     "retry": "Wiederholen"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "Favoriten für ausgewählte Elemente umschalten",
+      "remove": "Ausgewählte Elemente aus Favoriten entfernen",
+      "failed": "Favoriten konnten nicht aktualisiert werden. Versuche es erneut."
+    },
     "panel": {
       "selectedItems": "Ausgewählt: {{count}}",
       "addTag": "Tag hinzufügen",

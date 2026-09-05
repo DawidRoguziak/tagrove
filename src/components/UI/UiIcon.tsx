@@ -9,6 +9,9 @@ export type UiIconName =
   | "info"
   | "copy"
   | "reset"
+  | "window-minimize"
+  | "window-maximize"
+  | "window-restore"
   | "fullscreen"
   | "close"
   | "heart"
@@ -112,6 +115,18 @@ const ICONS = {
         <path d="M20 4v5h-5" />
       </>
     )
+  },
+  "window-minimize": {
+    viewBox: "0 0 24 24",
+    content: <path d="M5 12h14" />
+  },
+  "window-maximize": {
+    viewBox: "0 0 24 24",
+    content: <rect x="5" y="5" width="14" height="14" rx="1" />
+  },
+  "window-restore": {
+    viewBox: "0 0 24 24",
+    content: <><path d="M9 8V4h11v11h-4" /><rect x="4" y="9" width="11" height="11" rx="1" /></>
   },
   fullscreen: {
     viewBox: "0 0 24 24",

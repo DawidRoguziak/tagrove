@@ -25,6 +25,7 @@ use commands::{
         apply_duplicate_resolution_batch, delete_asset, find_duplicate_assets, get_asset_details,
         get_asset_query_page, list_assets, list_tags, merge_asset_tags_bulk, set_asset_favorite,
         set_asset_media_group, set_asset_tags, set_assets_media_group_bulk, start_asset_query,
+        toggle_assets_favorite_bulk,
     },
     import_export::{
         clear_library_data, export_db_bundle, export_tags_csv, import_db_bundle, import_tags_csv,
@@ -137,6 +138,7 @@ pub fn run() {
             set_asset_tags,
             merge_asset_tags_bulk,
             set_asset_favorite,
+            toggle_assets_favorite_bulk,
             set_asset_media_group,
             set_assets_media_group_bulk,
             delete_asset,

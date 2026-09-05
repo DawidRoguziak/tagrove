@@ -1,4 +1,11 @@
 {
+  "window": {
+    "controls": "Window controls",
+    "minimize": "Minimize window",
+    "maximize": "Maximize window",
+    "restore": "Restore window",
+    "close": "Close window"
+  },
   "common": {
     "back": "Back",
     "cancel": "Cancel",
@@ -89,6 +96,11 @@
     "retry": "Retry"
   },
   "bulk": {
+    "favorite": {
+      "toggle": "Toggle favorites for selected items",
+      "remove": "Remove selected items from favorites",
+      "failed": "Could not update favorites. Try again."
+    },
     "panel": {
       "selectedItems": "Selected: {{count}}",
       "addTag": "Add tag",

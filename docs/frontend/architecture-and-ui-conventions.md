@@ -155,6 +155,20 @@ The gallery scroll viewport fills the remaining height, so its scrollbar starts 
 width with square tiles and its existing measured 10px gaps. Bulk selection uses a green
 outline plus a checkmark; media-kind badges remain readable over arbitrary thumbnails.
 
+Desktop windows omit native decorations. `WindowControls` adds localized minimize,
+maximize/restore and close buttons to the gallery and settings headers. Only the first gallery header
+row and the settings header use Tauri's `data-tauri-drag-region="deep"`: background, gaps,
+identity, headings and other non-interactive text can move the window. Native buttons,
+selects, labels and interactive roles are excluded by Tauri. The whole search field and window-control
+group explicitly set the attribute to `false`. The second gallery toolbar row does not drag
+the window. Drag areas use the default cursor without changing control cursors.
+Double-clicking a draggable area maximizes/restores the window. No separate move handle is
+needed, and descendants retain pointer events so inputs and action icons stay interactive.
+Invisible edge/corner handles support native resizing and disappear while maximized or fullscreen.
+The controls are omitted in browser previews. Window actions use Tauri's window API; resize
+listeners are removed on view changes, including delayed registration under Strict Mode.
+Modal overlays keep their existing dismissal controls and keyboard behavior.
+
 Bulk editing occupies a 360px inspector at window widths of at least 1000px, and follows
 the gallery below that width. The inspector sticks to the gallery viewport's top and scrolls independently on desktop, with its maximum height supplied by the surrounding CSS size container. Its tag
 suggestions use the existing viewport portal so inspector overflow cannot clip them.

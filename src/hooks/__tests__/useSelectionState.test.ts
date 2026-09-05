@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetDetails, AssetSummary, SelectedAsset } from "../../types";
@@ -78,6 +79,60 @@ vi.mock("../../components/lightbox/services/deleteLightboxAssetAction", () => ({
 }));
 
 describe("useSelectionState", () => {
+  it("does not let an older details response undo a bulk favorite change", async () => {
+    const asset = createAsset({ id: 1, tags: ["cat"] });
+    const details = deferred<AssetDetails>();
+    apiMocks.getAssetDetails.mockReturnValueOnce(details.promise);
+    const { result } = renderHook(() => {
+      const [assets, setAssets] = useState<AssetSummary[]>([asset]);
+      const assetTagState = useAssetTagState();
+      const selection = useSelectionState({
+        assets, setAssets, assetTagState, appliedFavoritesOnly: false,
+        refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []), assetCount: 1
+      });
+      return { ...selection, setAssets, assetTagState };
+    });
+    act(() => result.current.setSelected(asset));
+    const token = result.current.assetTagState.beginMutation(1);
+    expect(token).not.toBeNull();
+    act(() => {
+      if (token) result.current.assetTagState.settleMutation(token);
+      result.current.setAssets([{ ...asset, is_favorite: true }]);
+      result.current.applyFavoriteChanges(new Set([1]), true);
+    });
+    await act(async () => {
+      details.resolve(createDetails(asset, ["cat"]));
+      await details.promise;
+    });
+    expect(result.current.selected?.is_favorite).toBe(true);
+    expect(result.current.assetDetailsFailed).toBe(false);
+  });
+
+  it("keeps bulk favorite changes in the lightbox details cache after reopening", async () => {
+    const asset = createAsset({ id: 1 });
+    apiMocks.getAssetDetails.mockResolvedValue(createDetails(asset, []));
+    const { result } = renderHook(() => {
+      const [assets, setAssets] = useState<AssetSummary[]>([asset]);
+      const selection = useSelectionState({
+        assets, setAssets, appliedFavoritesOnly: false,
+        refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []), assetCount: 1
+      });
+      return { ...selection, setAssets };
+    });
+    act(() => result.current.setSelected(asset));
+    await waitFor(() => expect(result.current.assetDetailsFailed).toBe(false));
+    await waitFor(() => expect(result.current.tagDetailsLoading).toBe(false));
+    act(() => {
+      result.current.setAssets([{ ...asset, is_favorite: true }]);
+      result.current.applyFavoriteChanges(new Set([1]), true);
+    });
+    expect(result.current.selected?.is_favorite).toBe(true);
+    act(() => result.current.setSelected(null));
+    act(() => result.current.setSelected({ ...asset, is_favorite: true }));
+    expect(result.current.selected?.is_favorite).toBe(true);
+    expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(1);
+  });
+
   const setAssets = vi.fn();
   const refresh = vi.fn(async () => {});
   const refreshKnownTags = vi.fn(async () => ["tag"]);

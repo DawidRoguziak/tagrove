@@ -1,3 +1,4 @@
+import { WindowControls } from "../app/WindowControls";
 import type { ReactNode } from "react";
 import { UiIcon } from "../UI/UiIcon";
 import { UiIconButton } from "../UI/UiIconButton";
@@ -42,8 +43,8 @@ export function TopBar({
     <header className="workspace-header">
       <SearchTagatorWrapper
         identity={<div className="workspace-identity"><UiIcon name="group" className="h-6 w-6 text-primary" /><span>MediaTagger</span></div>}
-        headerAction={<UiIconButton id="open-settings-button" icon="settings" onClick={onOpenSettingsView}
-          aria-label={t("topBar.openSettings")} title={t("topBar.openSettings")} />}
+        headerAction={<div className="flex items-center gap-3"><UiIconButton id="open-settings-button" icon="settings" onClick={onOpenSettingsView}
+          aria-label={t("topBar.openSettings")} title={t("topBar.openSettings")} /><WindowControls /></div>}
         toolbarContent={toolbarContent}
         filterInput={filterInput}
         onFilterChange={onFilterChange}

@@ -203,6 +203,10 @@ export function useAppShellController() {
     searchFilters.appliedFavoritesOnly
   ]);
 
+  const onLoadRetry = useCallback(() => {
+    void library.retryLoad().catch(() => {});
+  }, [library.retryLoad]);
+
   return {
     appScrollRef,
     settingsViewOpen,
@@ -245,9 +249,7 @@ export function useAppShellController() {
         hasScanRoots: settingsActions.scan.scanRoots.length > 0,
         onAddFirstFolder,
         loadError: library.loadError,
-        onLoadRetry: () => {
-          void library.retryLoad().catch(() => {});
-        },
+        onLoadRetry,
         pageFailureEpoch: library.pageFailureEpoch
       },
       bulkSelection,

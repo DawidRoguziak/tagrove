@@ -5,7 +5,6 @@ import {
   mergeThumbnailUpdates,
   QUEUE_PROCESS_DELAY_MS,
   removeRenderingAssetIds,
-  takeThumbnailBatch,
   THUMBNAIL_BATCH_SIZE,
   UI_FLUSH_DELAY_MS
 } from "./services/thumbnailQueueService";
@@ -28,6 +27,9 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
   const pendingRenderedDoneRef = useRef<Set<number>>(new Set());
 
   const queuedIdsRef = useRef<Set<number>>(new Set());
+  const galleryVisibleRef = useRef<Set<number>>(new Set());
+  const galleryPrefetchRef = useRef<Set<number>>(new Set());
+  const mountedRef = useRef(true);
   const inFlightIdsRef = useRef<Set<number>>(new Set());
   const processRunningRef = useRef(false);
 
@@ -45,7 +47,12 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
   }, [thumbnailStore, thumbs]);
 
   const updateQueueState = useCallback(() => {
-    const pendingCount = queuedIdsRef.current.size + inFlightIdsRef.current.size;
+    const pendingCount = new Set([
+      ...queuedIdsRef.current,
+      ...galleryVisibleRef.current,
+      ...galleryPrefetchRef.current,
+      ...inFlightIdsRef.current
+    ]).size;
     setPendingPageSize(pendingCount);
     setIsGeneratingPage(pendingCount > 0);
   }, []);
@@ -61,12 +68,13 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
     pendingThumbUpdatesRef.current = {};
     pendingRenderedDoneRef.current = new Set();
 
+    thumbnailStore.complete(pendingThumbUpdates, finishedRenderingIds);
     if (Object.keys(pendingThumbUpdates).length > 0) {
+      thumbsRef.current = mergeThumbnailUpdates(thumbsRef.current, pendingThumbUpdates);
       setThumbs((prev) => mergeThumbnailUpdates(prev, pendingThumbUpdates));
     }
 
     if (finishedRenderingIds.size > 0) {
-      thumbnailStore.markRendering(finishedRenderingIds, false);
       setRenderingAssetIds((prev) => removeRenderingAssetIds(prev, finishedRenderingIds));
     }
   }, [setThumbs, thumbnailStore]);
@@ -100,9 +108,28 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
     processRunningRef.current = true;
 
     try {
-      while (queuedIdsRef.current.size > 0) {
+      while (
+        mountedRef.current &&
+        (queuedIdsRef.current.size > 0 ||
+          galleryVisibleRef.current.size > 0 ||
+          galleryPrefetchRef.current.size > 0)
+      ) {
         const generation = generationRef.current;
-        const batch = takeThumbnailBatch(queuedIdsRef.current, THUMBNAIL_BATCH_SIZE);
+        const visible: number[] = [];
+        const prefetch: number[] = [];
+        const take = (source: Set<number>, destination: number[]) => {
+          for (const id of source) {
+            if (visible.length + prefetch.length >= THUMBNAIL_BATCH_SIZE) break;
+            queuedIdsRef.current.delete(id);
+            galleryVisibleRef.current.delete(id);
+            galleryPrefetchRef.current.delete(id);
+            if (!thumbsRef.current[id] && !failedRef.current.has(id)) destination.push(id);
+          }
+        };
+        take(galleryVisibleRef.current, visible);
+        take(queuedIdsRef.current, visible);
+        take(galleryPrefetchRef.current, prefetch);
+        const batch = [...visible, ...prefetch];
         if (!batch.length) {
           break;
         }
@@ -130,7 +157,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
         thumbnailStore.markRendering(batch, true);
 
         try {
-          await ensureThumbnailsStream(generation, batch, [], (message) => {
+          await ensureThumbnailsStream(generation, visible, prefetch, (message) => {
             if (generation !== generationRef.current) return;
             if (message.event === "ready") {
               pendingThumbUpdatesRef.current[message.data.asset_id] = message.data.thumb_path;
@@ -154,23 +181,37 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
 
           scheduleQueuedFlush();
         } finally {
-          for (const assetId of batch) {
-            inFlightIdsRef.current.delete(assetId);
-          }
+          if (generation === generationRef.current && mountedRef.current) {
+            for (const assetId of batch) {
+              pendingRenderedDoneRef.current.add(assetId);
+              inFlightIdsRef.current.delete(assetId);
+            }
 
-          updateQueueState();
-          flushQueuedUpdates();
+            updateQueueState();
+            flushQueuedUpdates();
+          }
         }
       }
     } finally {
       processRunningRef.current = false;
-      updateQueueState();
-
-      if (queuedIdsRef.current.size > 0) {
-        scheduleQueueProcessing();
+      if (mountedRef.current) {
+        updateQueueState();
+        if (
+          queuedIdsRef.current.size > 0 ||
+          galleryVisibleRef.current.size > 0 ||
+          galleryPrefetchRef.current.size > 0
+        ) {
+          scheduleQueueProcessing();
+        }
       }
     }
-  }, [flushQueuedUpdates, scheduleQueueProcessing, scheduleQueuedFlush, thumbnailStore, updateQueueState]);
+  }, [
+    flushQueuedUpdates,
+    scheduleQueueProcessing,
+    scheduleQueuedFlush,
+    thumbnailStore,
+    updateQueueState
+  ]);
 
   useEffect(() => {
     processQueueRef.current = () => {
@@ -179,7 +220,13 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
   }, [processQueuedBatches]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      generationRef.current += 1;
+      queuedIdsRef.current.clear();
+      galleryVisibleRef.current.clear();
+      galleryPrefetchRef.current.clear();
       if (uiFlushTimerRef.current !== null) {
         globalThis.clearTimeout(uiFlushTimerRef.current);
         uiFlushTimerRef.current = null;
@@ -235,6 +282,25 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
     [scheduleQueueProcessing, updateQueueState]
   );
 
+  const setGalleryThumbnailDemand = useCallback(
+    (visibleIds: number[], prefetchIds: number[]) => {
+      const needsThumbnail = (id: number) =>
+        id > 0 &&
+        !thumbsRef.current[id] &&
+        !pendingThumbUpdatesRef.current[id] &&
+        !failedRef.current.has(id) &&
+        !inFlightIdsRef.current.has(id);
+      galleryVisibleRef.current = new Set(visibleIds.filter(needsThumbnail));
+      galleryPrefetchRef.current = new Set(
+        prefetchIds.filter((id) => !galleryVisibleRef.current.has(id) && needsThumbnail(id))
+      );
+      updateQueueState();
+      if (galleryVisibleRef.current.size || galleryPrefetchRef.current.size)
+        scheduleQueueProcessing();
+    },
+    [scheduleQueueProcessing, updateQueueState]
+  );
+
   const resetThumbnailQueue = useCallback(() => {
     if (uiFlushTimerRef.current !== null) {
       globalThis.clearTimeout(uiFlushTimerRef.current);
@@ -252,6 +318,8 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
     pendingThumbUpdatesRef.current = {};
     pendingRenderedDoneRef.current = new Set();
     queuedIdsRef.current.clear();
+    galleryVisibleRef.current.clear();
+    galleryPrefetchRef.current.clear();
     inFlightIdsRef.current.clear();
 
     setIsGeneratingPage(false);
@@ -262,6 +330,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
 
   return {
     queueThumbnailsByIds,
+    setGalleryThumbnailDemand,
     resetThumbnailQueue,
     isGeneratingPage,
     pendingPageSize,

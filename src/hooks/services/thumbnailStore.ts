@@ -3,6 +3,7 @@ type Listener = () => void;
 export class ThumbnailStore {
   private paths = new Map<number, string>();
   private rendering = new Set<number>();
+  private nextVersion = 0;
   private versions = new Map<number, number>();
   private listeners = new Map<number, Set<Listener>>();
 
@@ -12,7 +13,10 @@ export class ThumbnailStore {
     this.listeners.set(assetId, listeners);
     return () => {
       listeners.delete(listener);
-      if (listeners.size === 0) this.listeners.delete(assetId);
+      if (listeners.size === 0) {
+        this.listeners.delete(assetId);
+        this.releaseVersion(assetId);
+      }
     };
   };
 
@@ -47,6 +51,27 @@ export class ThumbnailStore {
     }
   }
 
+  complete(paths: Record<number, string>, finishedIds: Iterable<number>) {
+    const changed = new Set<number>();
+    for (const [idText, path] of Object.entries(paths)) {
+      const id = Number(idText);
+      if (this.paths.get(id) !== path) {
+        this.paths.set(id, path);
+        changed.add(id);
+      }
+    }
+    for (const id of finishedIds) {
+      if (this.rendering.delete(id)) changed.add(id);
+    }
+    for (const id of changed) this.bump(id);
+  }
+
+  private releaseVersion(assetId: number) {
+    if (!this.paths.has(assetId) && !this.rendering.has(assetId) && !this.listeners.has(assetId)) {
+      this.versions.delete(assetId);
+    }
+  }
+
   clear() {
     const changed = new Set([...this.paths.keys(), ...this.rendering]);
     this.paths.clear();
@@ -55,7 +80,8 @@ export class ThumbnailStore {
   }
 
   private bump(assetId: number) {
-    this.versions.set(assetId, (this.versions.get(assetId) ?? 0) + 1);
+    this.versions.set(assetId, ++this.nextVersion);
     for (const listener of this.listeners.get(assetId) ?? []) listener();
+    this.releaseVersion(assetId);
   }
 }

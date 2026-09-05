@@ -73,6 +73,12 @@ export function useLibraryAssets({
   const generationRef = useRef(0);
   const inFlightPagesRef = useRef<Map<number, Promise<AssetSummary[] | undefined>>>(new Map());
   const inFlightCountRef = useRef(0);
+  const activePagesRef = useRef(new Set<number>());
+  const accessOrderRef = useRef<number[]>([]);
+  const touchPage = useCallback((pageOffset: number) => {
+    accessOrderRef.current = [pageOffset, ...accessOrderRef.current.filter((offset) => offset !== pageOffset)]
+      .slice(0, MAX_CACHED_PAGES);
+  }, []);
 
   const beginLoading = useCallback(() => {
     inFlightCountRef.current += 1;
@@ -86,6 +92,7 @@ export function useLibraryAssets({
   // Summaries are stored verbatim: no path/size/tags fabrication happens here.
   const mergePage = useCallback(
     (pageOffset: number, summaries: AssetSummary[], replace: boolean) => {
+      touchPage(pageOffset);
       setCache((previous) => {
         const pages = replace ? new Map<number, number[]>() : new Map(previous.pages);
         const assetsById = replace ? new Map<number, AssetSummary>() : new Map(previous.assetsById);
@@ -95,9 +102,12 @@ export function useLibraryAssets({
           assetsById.set(summary.id, summary);
         }
 
-        const lru = [pageOffset, ...(replace ? [] : previous.lru.filter((item) => item !== pageOffset))];
+        const lru = [...new Set([...accessOrderRef.current, pageOffset, ...(replace ? [] : previous.lru)])]
+          .filter((offset) => pages.has(offset));
         while (lru.length > MAX_CACHED_PAGES) {
-          const evictedOffset = lru.pop();
+          let candidate = lru.length - 1;
+          while (candidate >= 0 && activePagesRef.current.has(lru[candidate])) candidate--;
+          const [evictedOffset] = lru.splice(candidate < 0 ? lru.length - 1 : candidate, 1);
           if (evictedOffset === undefined) break;
           const evictedIds = pages.get(evictedOffset) ?? [];
           pages.delete(evictedOffset);
@@ -114,7 +124,7 @@ export function useLibraryAssets({
       });
       setOffset((current) => Math.max(current, pageOffset + summaries.length));
     },
-    [setThumbs]
+    [setThumbs, touchPage]
   );
 
   const refresh = useCallback(async () => {
@@ -122,6 +132,8 @@ export function useLibraryAssets({
     generationRef.current = generation;
     sessionIdRef.current = null;
     inFlightPagesRef.current.clear();
+    activePagesRef.current.clear();
+    accessOrderRef.current = [];
     resetThumbnailQueue();
     beginLoading();
     const perfMark = `asset-query-${generation}`;
@@ -178,6 +190,7 @@ export function useLibraryAssets({
     async (pageOffset: number) => {
       const sessionId = sessionIdRef.current;
       if (sessionId === null || pageOffset < 0 || pageOffset >= total) return undefined;
+      touchPage(pageOffset);
       if (cache.pages.has(pageOffset)) {
         return (cache.pages.get(pageOffset) ?? [])
           .map((assetId) => cache.assetsById.get(assetId))
@@ -217,14 +230,18 @@ export function useLibraryAssets({
       })();
       inFlightPagesRef.current.set(pageOffset, request);
       return request;
-    }, [beginLoading, cache.pages, endLoading, mergePage, pageSize, refresh, total]
+    }, [beginLoading, cache.pages, cache.assetsById, endLoading, mergePage, pageSize, refresh, total, touchPage]
   );
 
   const ensureRange = useCallback(
     (startIndex: number, endIndex: number) => {
-      if (total === 0) return;
+      activePagesRef.current = new Set();
+      if (total === 0 || endIndex < startIndex) return;
       const firstOffset = Math.floor(Math.max(0, startIndex) / pageSize) * pageSize;
       const lastOffset = Math.floor(Math.min(total - 1, Math.max(startIndex, endIndex)) / pageSize) * pageSize;
+      for (let pageOffset = firstOffset; pageOffset <= lastOffset; pageOffset += pageSize) {
+        if (activePagesRef.current.size < MAX_CACHED_PAGES) activePagesRef.current.add(pageOffset);
+      }
       for (let pageOffset = firstOffset; pageOffset <= lastOffset; pageOffset += pageSize) {
         void loadPage(pageOffset).catch(() => {});
       }
@@ -248,13 +265,16 @@ export function useLibraryAssets({
 
   const getAssetAtAsync = useCallback(
     async (index: number) => {
-      const existing = getAssetAt(index);
-      if (existing) return existing;
       const pageOffset = Math.floor(index / pageSize) * pageSize;
+      const existing = getAssetAt(index);
+      if (existing) {
+        touchPage(pageOffset);
+        return existing;
+      }
       const page = await loadPage(pageOffset);
       return page?.[index - pageOffset];
     },
-    [getAssetAt, loadPage, pageSize]
+    [getAssetAt, loadPage, pageSize, touchPage]
   );
 
   /** Ordered snapshot IDs for a global index range; loads only the pages that

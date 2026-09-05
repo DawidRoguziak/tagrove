@@ -297,4 +297,31 @@ describe("useLibraryAssets", () => {
     // The late response belongs to the previous generation and must not merge.
     expect(result.current.getAssetAt(PAGE_SIZE)?.id).not.toBe(8);
   });
+  it("retains recently accessed and active pages while evicting beyond twelve pages", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 40));
+    apiMocks.getAssetQueryPage.mockImplementation(async (_session, offset) => ({
+      ...readyStart([createSummary(offset + 1), createSummary(offset + 2)], 40), offset
+    }));
+    const { result } = await renderAssets();
+    await act(async () => { await result.current.refresh(); });
+    for (let offset = 2; offset < 24; offset += 2) {
+      await act(async () => { await result.current.getAssetAtAsync(offset); });
+    }
+    expect(result.current.assets).toHaveLength(24);
+    // Explicit access promotes the first page; render-time lookup does not.
+    await act(async () => { await result.current.getAssetAtAsync(0); });
+    await act(async () => { await result.current.getAssetAtAsync(24); });
+    expect(result.current.getAssetAt(0)?.id).toBe(1);
+    expect(result.current.getAssetAt(2)).toBeUndefined();
+    act(() => result.current.ensureRange(0, 1));
+    for (let offset = 4; offset < 40; offset += 2) {
+      await act(async () => { await result.current.getAssetAtAsync(offset); });
+      expect(result.current.assets.length).toBeLessThanOrEqual(24);
+    }
+    expect(result.current.getAssetAt(0)?.id).toBe(1);
+    await act(async () => { await result.current.getAssetAtAsync(2); });
+    expect(result.current.getAssetAt(2)?.id).toBe(3);
+    expect(result.current.assets).toHaveLength(24);
+  });
+
 });

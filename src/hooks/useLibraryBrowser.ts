@@ -1,3 +1,4 @@
+import type { GalleryRange } from "../components/gallery/hooks/useGalleryVirtualGrid";
 import { useCallback, useMemo, useState } from "react";
 import type { SearchMediaKind } from "../components/app/types";
 import type { SearchMetaFilter } from "../types";
@@ -26,6 +27,7 @@ export function useLibraryBrowser({
   const [thumbs, setThumbs] = useState<Record<number, string>>({});
   const {
     queueThumbnailsByIds,
+    setGalleryThumbnailDemand,
     resetThumbnailQueue,
     isGeneratingPage,
     pendingPageSize,
@@ -62,22 +64,18 @@ export function useLibraryBrowser({
   }, [assetsState.refresh, knownTagsState.refreshKnownTags]);
 
   const handleVirtualRangeChange = useCallback(
-    (startIndex: number, endIndex: number) => {
+    ({ startIndex, endIndex, visibleStartIndex, visibleEndIndex }: GalleryRange) => {
       assetsState.ensureRange(startIndex, endIndex);
-      const from = Math.max(0, startIndex);
-      const to = Math.min(assetsState.total - 1, endIndex);
-      if (from > to) {
-        return;
-      }
-
-      const ids: number[] = [];
-      for (let index = from; index <= to; index += 1) {
+      const visible: number[] = [];
+      const prefetch: number[] = [];
+      for (let index = Math.max(0, startIndex); index <= Math.min(assetsState.total - 1, endIndex); index++) {
         const asset = assetsState.getAssetAt(index);
-        if (asset) ids.push(asset.id);
+        if (!asset) continue;
+        (index >= visibleStartIndex && index <= visibleEndIndex ? visible : prefetch).push(asset.id);
       }
-      queueThumbnailsByIds(ids);
+      setGalleryThumbnailDemand(visible, prefetch);
     },
-    [assetsState.ensureRange, assetsState.getAssetAt, assetsState.total, queueThumbnailsByIds]
+    [assetsState.ensureRange, assetsState.getAssetAt, assetsState.total, setGalleryThumbnailDemand]
   );
 
   return useMemo(

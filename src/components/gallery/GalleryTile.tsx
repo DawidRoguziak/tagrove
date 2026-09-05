@@ -1,4 +1,4 @@
-import { memo, useSyncExternalStore, type MouseEvent } from "react";
+import { useCallback, memo, useSyncExternalStore, type MouseEvent } from "react";
 import { toMediaSrc } from "../../api";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../UI/ThumbnailImage";
 import { UiChip } from "../UI/UiChip";
@@ -8,24 +8,13 @@ import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
 const TilePreview = memo(function TilePreview({
   asset,
   thumbPath,
-  shouldAnimateGif,
   showRenderLoader
 }: {
   asset: AssetSummary;
   thumbPath?: string;
-  shouldAnimateGif: boolean;
   showRenderLoader: boolean;
 }) {
-  const src =
-    asset.kind === "gif"
-      ? shouldAnimateGif
-        ? toMediaSrc(asset.preview_path ?? asset.file_name)
-        : thumbPath
-          ? toMediaSrc(thumbPath)
-          : TRANSPARENT_THUMBNAIL_SRC
-      : thumbPath
-        ? toMediaSrc(thumbPath)
-        : TRANSPARENT_THUMBNAIL_SRC;
+  const src = thumbPath ? toMediaSrc(thumbPath) : TRANSPARENT_THUMBNAIL_SRC;
 
   return (
     <>
@@ -48,7 +37,6 @@ const TilePreview = memo(function TilePreview({
 });
 
 interface GalleryTileProps {
-  itemKey: string | number | bigint;
   itemIndex: number;
   itemLane: number;
   itemStart: number;
@@ -56,7 +44,6 @@ interface GalleryTileProps {
   tileGap: number;
   asset: AssetSummary;
   thumbPath?: string;
-  shouldAnimateGif: boolean;
   showRenderLoader: boolean;
   isBulkSelected: boolean;
   isLightboxSelected: boolean;
@@ -70,7 +57,6 @@ interface GalleryTileProps {
 }
 
 export const GalleryTile = memo(function GalleryTile({
-  itemKey,
   itemIndex,
   itemLane,
   itemStart,
@@ -78,7 +64,6 @@ export const GalleryTile = memo(function GalleryTile({
   tileGap,
   asset,
   thumbPath,
-  shouldAnimateGif,
   showRenderLoader,
   isBulkSelected,
   isLightboxSelected,
@@ -91,13 +76,12 @@ export const GalleryTile = memo(function GalleryTile({
   onClick
 }: GalleryTileProps) {
   const isGrouped = Boolean(asset.media_group_key?.trim());
-  useSyncExternalStore(
-    thumbnailStore
-      ? (listener) => thumbnailStore.subscribe(asset.id, listener)
-      : () => () => {},
-    () => thumbnailStore?.getVersion(asset.id) ?? 0,
-    () => 0
-  );
+  const subscribe = useCallback((listener: () => void) =>
+    thumbnailStore ? thumbnailStore.subscribe(asset.id, listener) : () => {},
+    [thumbnailStore, asset.id]);
+  const getSnapshot = useCallback(() => thumbnailStore?.getVersion(asset.id) ?? 0,
+    [thumbnailStore, asset.id]);
+  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const effectiveThumbPath = thumbnailStore?.getPath(asset.id) ?? thumbPath;
   const effectiveRenderLoader = thumbnailStore
     ? thumbnailStore.isRendering(asset.id) && !effectiveThumbPath
@@ -105,7 +89,6 @@ export const GalleryTile = memo(function GalleryTile({
 
   return (
     <button
-      key={itemKey}
       className={`absolute z-[1] overflow-hidden rounded-[var(--radius-surface)] border border-white/8 bg-base-300/95 p-0 ${
         isBulkSelected
           ? "shadow-[0_0_0_3px_var(--color-warning),var(--shadow-tile-hover)]"
@@ -128,7 +111,6 @@ export const GalleryTile = memo(function GalleryTile({
       <TilePreview
         asset={asset}
         thumbPath={effectiveThumbPath}
-        shouldAnimateGif={shouldAnimateGif}
         showRenderLoader={effectiveRenderLoader}
       />
       {isGrouped ? <span className="sr-only">{groupedDescription}</span> : null}

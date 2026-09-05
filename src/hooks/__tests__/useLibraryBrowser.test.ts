@@ -52,6 +52,7 @@ function ready(items: AssetSummary[], total: number, offset = 0) {
 
 const queueMocks = vi.hoisted(() => ({
   queueThumbnailsByIds: vi.fn(),
+  setGalleryThumbnailDemand: vi.fn(),
   resetThumbnailQueue: vi.fn()
 }));
 
@@ -66,6 +67,7 @@ vi.mock("../../api", async () => {
 vi.mock("../useThumbnailQueue", () => ({
   useThumbnailQueue: vi.fn(() => ({
     queueThumbnailsByIds: queueMocks.queueThumbnailsByIds,
+    setGalleryThumbnailDemand: queueMocks.setGalleryThumbnailDemand,
     resetThumbnailQueue: queueMocks.resetThumbnailQueue,
     isGeneratingPage: false,
     pendingPageSize: 0,
@@ -79,6 +81,7 @@ describe("useLibraryBrowser", () => {
     apiMocks.getAssetQueryPage.mockReset();
     apiMocks.listTags.mockReset();
     queueMocks.queueThumbnailsByIds.mockReset();
+    queueMocks.setGalleryThumbnailDemand.mockReset();
     queueMocks.resetThumbnailQueue.mockReset();
   });
 
@@ -273,16 +276,16 @@ describe("useLibraryBrowser", () => {
     });
 
     act(() => {
-      result.current.handleVirtualRangeChange(-5, 50);
+      result.current.handleVirtualRangeChange({ startIndex: -5, endIndex: 50, visibleStartIndex: 1, visibleEndIndex: 1 });
     });
 
-    expect(queueMocks.queueThumbnailsByIds).toHaveBeenCalledWith([11, 12, 13]);
+    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenCalledWith([12], [11, 13]);
 
     act(() => {
-      result.current.handleVirtualRangeChange(3, 1);
+      result.current.handleVirtualRangeChange({ startIndex: 3, endIndex: 1, visibleStartIndex: 3, visibleEndIndex: 1 });
     });
 
-    expect(queueMocks.queueThumbnailsByIds).toHaveBeenCalledTimes(1);
+    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
   });
 
   it("clears assets, tags and thumbs on library reset", async () => {

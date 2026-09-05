@@ -44,9 +44,9 @@ The cache in `useLibraryAssets` has three coordinated structures:
 
 - `pages: Map<pageOffset, assetId[]>` records which IDs occupy each loaded page;
 - `assetsById: Map<assetId, AssetSummary>` stores the summaries verbatim; and
-- `lru: pageOffset[]` records page merge recency, newest first.
+- `lru: pageOffset[]` records the eviction order from the last merge; a bounded access-order ref records subsequent explicit reads.
 
-A merge replaces or adds the page, upserts its assets, moves that page offset to the front, and evicts from the back until exactly no more than 12 pages remain. Eviction deletes the page and its asset objects and the thumbnail-map cleanup effect removes thumbnails for IDs no longer present. A cache hit does not currently promote the page, so the policy is merge-recency rather than true read-recency.
+A merge replaces or adds the page, upserts its assets, and evicts the least recently accessed unprotected page until no more than 12 pages remain. Range access and async page/asset reads promote pages through a bounded ref without setting React state. Render-time `getAssetAt` stays read-only. The latest gallery range protects up to 12 intersecting pages; if an oversized range needs more, the exact cache bound still wins. Eviction deletes the page and its asset objects and the thumbnail-map cleanup effect removes thumbnails for IDs no longer present.
 
 `total` is the session's global match count and is the virtualizer count. By contrast, the returned `assets` array is only `Array.from(assetsById.values())`: it contains cached assets, is not padded to `total`, and must not be indexed as the global result list. `offset` is the greatest merged page end observed and is retained mainly for the reach-end loader.
 
@@ -61,7 +61,7 @@ Only one request per page offset is started at a time. A ref-backed Promise map 
 
 ## Summary rows and the details boundary
 
-Sessions materialize `AssetSummary`, which carries display/order metadata and thumbnail/group fields but no byte size or tags. `preview_path` is populated for GIF/video summaries. Gallery GIFs use it; the lightbox waits for complete details before presenting any media.
+Sessions materialize `AssetSummary`, which carries display/order metadata and thumbnail/group fields but no byte size or tags. `preview_path` is populated for GIF/video summaries. Gallery tiles do not load original GIFs; the lightbox waits for complete details before presenting any media.
 
 The page cache stores `AssetSummary` objects verbatim: nothing fabricates a path, byte size, or tag list, so a cache entry can never masquerade as a complete record. Gallery tiles read only summary fields (`file_name`, `preview_path`, thumbnail state, kind, media-group fields).
 
@@ -69,11 +69,13 @@ Selecting a tile opens the lightbox with a `SelectedAsset` view built from the s
 
 ## Virtual range loading and thumbnail prefetch
 
-`GalleryGrid` gives TanStack Virtual the global `assetCount`, the sparse `getAssetAt`, and stable asset IDs when loaded; unloaded slots temporarily use `pending-{index}` keys. The grid derives its column count from measured width, uses a 10-pixel gap, and overscans by at least 12 items or four rows' worth of columns.
+`useGalleryVirtualGrid` gives TanStack Virtual the row count, `ceil(assetCount / columnCount)`, with one lane and a module-stable row-index key function. Each mounted row expands to its global asset indices. Layout keys are independent of loaded pages; React tile keys remain asset IDs and unloaded slots use `pending-{index}`. Scroll events, thumbnail updates, and page arrivals reuse existing row measurements instead of rebuilding a layout for every asset.
 
-Whenever the virtual range changes, `useLibraryBrowser` asks `ensureRange` to load every aligned page intersecting the range. It then queues thumbnails only for assets already present in that range. Merging a page changes the indexed accessor, resets the virtual range's deduplication marker, and allows the range callback to run again so the newly loaded IDs can enter the thumbnail queue. Thumbnail scheduling, streaming, and its independent generation guard are documented in [thumbnails](thumbnails.md).
+The grid measures its content width and its origin inside the actual scroll container. Tiles remain square with a 10-pixel gap and four rows of overscan on either side. Changes to tile size or column count invalidate row measurements and keep the previous first visible asset in view. The scroll container, gallery, and grid have resize observation; listeners are removed on unmount.
 
-`useGalleryVirtualGrid` also has a near-end callback threshold of two rows. In the production controller `hasMore` is currently always `false`, because sparse range loading spans the known global count; consequently the near-end callback and `handleReachEnd` are not the primary production loading mechanism.
+The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex }`, with inclusive indices. `useLibraryBrowser` loads pages intersecting the overscan range and replaces gallery thumbnail demand with visible and prefetch IDs from currently loaded summaries. Page arrivals and page failure epochs rerun the callback even when the index range stays the same. Empty ranges clear gallery thumbnail demand. Bulk and duplicate preview requests remain additive and independent of this replaceable demand.
+
+Near-end loading retains its two-row threshold for other consumers. Production uses `hasMore: false` and sparse loading across the known total. Thumbnail progress renders outside the memoized grid content, so progress-counter changes alone do not invalidate its layout.
 
 ## Gallery presentation states
 
@@ -81,7 +83,7 @@ Whenever the virtual range changes, `useLibraryBrowser` asks `ensureRange` to lo
 - If a virtual slot's page is not cached, the grid renders a square pulsing placeholder. Once the summary arrives, the slot becomes an interactive tile.
 - Images and videos use a thumbnail when available; otherwise they use a transparent one-pixel placeholder. A preview load error also falls back to that placeholder. The per-tile spinner appears only while the thumbnail store reports that the asset is rendering and no thumbnail path is ready.
 - Mounted virtual tiles load their previews eagerly. TanStack Virtual already bounds the mounted range, and native image lazy loading is avoided because WebKitGTK can fail to schedule absolutely positioned, translated virtual items.
-- GIFs use their summary `preview_path` for animation only while scrolling is idle, the tile intersects the measured viewport, and at most ten GIFs are visible. Otherwise they use a thumbnail or the placeholder. Video and GIF chips and colored borders identify those kinds.
+- GIFs always use a static JPEG thumbnail or the placeholder, including while idle, scrolling, and after a preview error. Gallery tiles never request original GIF sources. Opening a GIF in the lightbox retains animation. Video and GIF chips and colored borders identify those kinds.
 - A nonblank media-group key marks the tile as grouped. Backplates join consecutive loaded virtual entries only when they share the exact key, are adjacent lanes, and sit on the same row; a group that crosses a row or unloaded gap is drawn as separate pieces.
 - The status footer reports thumbnail generation only when `hasMore` is true, and reports “no more items” when thumbnail generation is idle and `hasMore` is false. It does not represent asset-page loading. Production therefore normally treats the known session total as the end boundary.
 
@@ -110,7 +112,7 @@ An invoke or database error rejects the corresponding promise and records a gall
 ## Known limitations
 
 - Backend supersession, TTL, and the four-session LRU are process-wide. Another window or independent caller can supersede an uncached start or evict this window's session.
-- The frontend cache's LRU list is updated only when a page merges, not when it is read. `assets` and bulk-selection operations cover loaded pages only, and `getAssetIndex` cannot locate an unloaded asset.
+- `assets` and bulk-selection operations cover loaded pages only, and `getAssetIndex` cannot locate an unloaded asset. The 12-page bound takes precedence if an unusually large requested viewport intersects more than 12 pages.
 - The detail caches in `useSelectionState` and `useBulkSelectionController` are bounded LRU maps (256 entries) stamped with the tag-state identity epoch and cleared whenever a new query session starts. Reselecting an asset after a restore, identity reset, or session restart re-reads details instead of trusting stale path/size/tags. Ordinary favorite/group mutations still rely on the authoritative-tag overlay and local patches rather than a per-revision invalidation.
 - Refresh does not cancel in-flight backend page work; the generation guard only discards late responses after they finish. A `superseded` result is not retried automatically.
 - Tag-edit invalidation checks applied include/exclude tags but does not check the `tags:N` exact-count meta-filter. A count-filter view can therefore retain stale membership until explicit refresh or stale-page recovery.
@@ -127,7 +129,7 @@ An invoke or database error rejects the corresponding promise and records a gall
 5. Treat `total` and cached `assets` as different quantities. Use global-index accessors for virtualized navigation and selection; do not index the loaded-assets array as though it were the session snapshot.
 6. Keep `AssetSummary` lean. If a gallery feature needs full path, size, or tags, either justify adding that cost to every summary or cross the `AssetDetails` boundary and define cache invalidation for the added data.
 7. Preserve generation checks, per-offset request de-duplication, loading-counter balance, stale recovery, and thumbnail-queue reset. Add explicit cancellation or error state before relying on either behavior in the UI.
-8. Test virtual holes, cache eviction and reload, resize/overscan ranges, placeholder-to-tile transitions, thumbnail prefetch after a page merge, zero-result loading, group backplates, and GIF animation at 10 and 11 visible GIFs.
+8. Test virtual holes, cache eviction and reload, resize/overscan ranges, placeholder-to-tile transitions, thumbnail prefetch after a page merge, zero-result loading, group backplates, and static GIF previews with missing, ready, and failed thumbnails.
 9. Add backend tests for equal-key reuse, supersession, revision mismatch, missing/expired/evicted sessions, LRU promotion, TTL, page clamps, and cross-session isolation. Use a controllable clock or cache constructor rather than sleeping for the TTL.
 10. Run Rust formatting and the relevant backend query/database tests, then run the focused React hook, gallery, selection, search-filter, lightbox, and thumbnail tests. For cache or virtualizer changes, also exercise a library larger than 12 pages and scroll backward into evicted ranges.
 
@@ -138,6 +140,12 @@ An invoke or database error rejects the corresponding promise and records a gall
 - `src/hooks/__tests__/useLibraryAssets.test.tsx` covers first-page replacement, superseded-start retention, start/page failure error state with retry recovery, stale-triggered restarts, page-failure epoch signaling, and late-generation response rejection.
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
 - `src/hooks/__tests__/useLibraryBrowser.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, shared in-flight indexed page lookup, virtual-range thumbnail IDs, and clear-library reset.
-- `src/components/gallery/__tests__/GalleryGrid.test.tsx` covers virtual-range reporting, reach-end triggering, thumbnail status/spinners, selection interactions, and the 10-GIF animation threshold.
+- `src/components/gallery/__tests__/GalleryGrid.test.tsx` covers virtual-range reporting, reach-end triggering, thumbnail status/spinners, selection interactions, static GIF previews, and isolation of thumbnail/progress updates from grid rendering.
 - `src/hooks/__tests__/useSelectionState.test.ts` covers detail/mutation races, identity-reset ID reuse, deletion tombstones, query-session cache invalidation, rapid navigation, and query-position recomputation. See [lightbox tests](lightbox.md#tests) for remaining navigation/prefetch scenarios.
 - `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.
+
+### Gallery performance verification
+
+`src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` runs the installed TanStack virtualizer with 10,000 numeric slots and asserts that scrolling and page/status updates do not rebuild row measurements. It also checks external-scroll offsets, partial rows, and resize anchoring. Queue/store tests cover latest-viewport priority, additive consumers, reset/unmount races, atomic tile updates, and version cleanup; page-cache tests cross the 12-page bound and reload evicted pages.
+
+The opt-in desktop spec uses 2,048 copied PNGs, 12 GIFs, and two videos in a temporary root. It follows the same route with cold and warm thumbnails, visits more than 12 pages, returns to evicted ranges, bounds mounted tiles, and compares decoded pixels from native-display captures of lightbox GIF frames. Run with `MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js` in the isolated desktop environment described in [testing](../development/testing.md). For headless Linux, use `env -u WAYLAND_DISPLAY GDK_BACKEND=x11 MEDIATAGGER_GALLERY_PERF=1 xvfb-run -a -s '-screen 0 1920x1080x24' bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js`. The pixel check requires ImageMagick `import` and `magick`. It writes samples to `artifacts/gallery-performance/`. Timings include WebDriver overhead and are observations, not portable frame-rate thresholds. Million-file desktop behavior requires manual validation; no million-file dataset is generated.

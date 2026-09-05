@@ -1,3 +1,4 @@
+import type { GalleryRange } from "../gallery/hooks/useGalleryVirtualGrid";
 import type { RefObject } from "react";
 import type { AssetSummary } from "../../types";
 import type { SearchFilterValidationError } from "../../utils/media";
@@ -47,7 +48,7 @@ export interface AppGalleryMediaController {
   thumbnailStore: ThumbnailStore;
   scrollContainerRef: RefObject<HTMLElement | null>;
   onReachEnd: () => void;
-  onVirtualRangeChange: (startIndex: number, endIndex: number) => void;
+  onVirtualRangeChange: (range: GalleryRange) => void;
   onCtrlWheelZoom: (deltaY: number) => void;
   onTileSizeChange: (nextSize: number) => void;
   onSelect: (asset: AssetSummary) => void;

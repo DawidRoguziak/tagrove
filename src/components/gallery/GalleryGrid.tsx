@@ -5,7 +5,7 @@ import { GalleryEmptyState } from "./GalleryEmptyState";
 import { GalleryStatusFooter } from "./GalleryStatusFooter";
 import { GalleryTile } from "./GalleryTile";
 import { useGalleryGridHandlers } from "./hooks/useGalleryGridHandlers";
-import { useGalleryVirtualGrid } from "./hooks/useGalleryVirtualGrid";
+import { useGalleryVirtualGrid, type GalleryRange } from "./hooks/useGalleryVirtualGrid";
 import { useTranslation } from "react-i18next";
 import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
 
@@ -49,7 +49,7 @@ interface GalleryGridProps {
   thumbnailStore?: ThumbnailStore;
   scrollContainerRef?: RefObject<HTMLElement | null>;
   onReachEnd: () => void;
-  onVirtualRangeChange?: (startIndex: number, endIndex: number) => void;
+  onVirtualRangeChange?: (range: GalleryRange) => void;
   onCtrlWheelZoom?: (deltaY: number) => void;
   onSelect: (asset: AssetSummary) => void;
   hasScanRoots?: boolean;
@@ -62,7 +62,7 @@ interface GalleryGridProps {
   pageFailureEpoch?: number;
 }
 
-export const GalleryGrid = memo(function GalleryGrid({
+const GalleryGridContent = memo(function GalleryGridContent({
   assets,
   assetCount,
   getAssetAt,
@@ -71,8 +71,6 @@ export const GalleryGrid = memo(function GalleryGrid({
   tileSize,
   hasMore,
   isLoading,
-  isGeneratingThumbnails,
-  pendingThumbnailCount,
   renderingThumbnailIds,
   thumbnailStore,
   scrollContainerRef,
@@ -88,7 +86,7 @@ export const GalleryGrid = memo(function GalleryGrid({
   loadError = null,
   onLoadRetry,
   pageFailureEpoch = 0
-}: GalleryGridProps) {
+}: Omit<GalleryGridProps, "isGeneratingThumbnails" | "pendingThumbnailCount">) {
   const resolvedAssetCount = assetCount ?? assets.length;
   const resolvedGetAssetAt = getAssetAt ?? ((index: number) => assets[index]);
   const { t } = useTranslation();
@@ -96,6 +94,7 @@ export const GalleryGrid = memo(function GalleryGrid({
   const videoChipLabel = t("gallery.videoChip");
   const gifChipLabel = t("gallery.gifChip");
   const galleryRef = useRef<HTMLDivElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   const handlers = useGalleryGridHandlers({
     assets,
@@ -113,6 +112,7 @@ export const GalleryGrid = memo(function GalleryGrid({
     hasMore,
     isLoading,
     galleryRef,
+    gridRef,
     scrollContainerRef,
     onReachEnd,
     onVirtualRangeChange,
@@ -121,12 +121,7 @@ export const GalleryGrid = memo(function GalleryGrid({
   const virtualEntries = virtualGrid.virtualItems.map((item) => ({
     asset: resolvedGetAssetAt(item.index),
     item,
-    itemLane:
-      typeof item.lane === "number"
-        ? item.lane
-        : virtualGrid.columnCount > 0
-          ? item.index % virtualGrid.columnCount
-          : 0
+    itemLane: item.lane
   }));
   const groupBackplates: GalleryGroupBackplate[] = [];
 
@@ -161,7 +156,7 @@ export const GalleryGrid = memo(function GalleryGrid({
 
   return (
     <section
-      className={`mx-auto min-h-0 w-full max-w-[1920px] p-3 sm:p-4 ${
+      className={`mx-auto min-h-0 w-full max-w-[1920px] px-3 pt-3 sm:px-4 sm:pt-4 ${
         selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""
       }`}
       ref={galleryRef}
@@ -193,8 +188,7 @@ export const GalleryGrid = memo(function GalleryGrid({
           noResultsDescription={t("gallery.noResultsDescription")}
         />
       ) : (
-        <>
-          <div style={{ height: virtualGrid.itemVirtualizer.getTotalSize(), position: "relative" }}>
+          <div ref={gridRef} style={{ height: virtualGrid.totalSize, position: "relative" }}>
             {groupBackplates.map((backplate) => {
               const tileCount = backplate.endLane - backplate.startLane + 1;
               return (
@@ -217,7 +211,7 @@ export const GalleryGrid = memo(function GalleryGrid({
               if (!asset) {
                 return (
                   <div
-                    key={item.key}
+                    key={`pending-${item.index}`}
                     className="absolute z-[1] animate-pulse rounded-[var(--radius-surface)] bg-base-300/70"
                     style={{
                       width: virtualGrid.tilePixelSize,
@@ -235,8 +229,7 @@ export const GalleryGrid = memo(function GalleryGrid({
 
               return (
                 <GalleryTile
-                  key={item.key}
-                  itemKey={item.key}
+                  key={asset.id}
                   itemIndex={item.index}
                   itemLane={itemLane}
                   itemStart={item.start}
@@ -244,7 +237,6 @@ export const GalleryGrid = memo(function GalleryGrid({
                   tileGap={virtualGrid.tileGap}
                   asset={asset}
                   thumbPath={thumbs[asset.id]}
-                  shouldAnimateGif={virtualGrid.shouldAnimateGif(asset, item.index)}
                   showRenderLoader={showRenderLoader}
                   isBulkSelected={isBulkSelected}
                   isLightboxSelected={isLightboxSelected}
@@ -259,16 +251,26 @@ export const GalleryGrid = memo(function GalleryGrid({
               );
             })}
           </div>
-          <GalleryStatusFooter
-            isGeneratingThumbnails={isGeneratingThumbnails}
-            hasMore={hasMore}
-            generatingLabel={t("gallery.generatingThumbnails", { count: pendingThumbnailCount })}
-            noMoreLabel={t("gallery.noMoreItems")}
-          />
-        </>
       )}
     </section>
   );
 });
 
-GalleryGrid.displayName = "GalleryGrid";
+export const GalleryGrid = memo(function GalleryGrid({
+  isGeneratingThumbnails, pendingThumbnailCount, ...contentProps
+}: GalleryGridProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="min-w-0 pb-3 sm:pb-4">
+      <GalleryGridContent {...contentProps} />
+      {(contentProps.assetCount ?? contentProps.assets.length) > 0 ? (
+        <GalleryStatusFooter
+          isGeneratingThumbnails={isGeneratingThumbnails}
+          hasMore={contentProps.hasMore}
+          generatingLabel={t("gallery.generatingThumbnails", { count: pendingThumbnailCount })}
+          noMoreLabel={t("gallery.noMoreItems")}
+        />
+      ) : null}
+    </div>
+  );
+});

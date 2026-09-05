@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetSummary } from "../../../types";
 import { GalleryGrid } from "../GalleryGrid";
+import { ThumbnailStore } from "../../../hooks/services/thumbnailStore";
 
 vi.mock("../../../api", () => ({
   toMediaSrc: (path: string) => `media://${path}`
@@ -12,7 +13,10 @@ let virtualItems: Array<{ key: number; index: number; start: number; lane?: numb
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     getVirtualItems: () => virtualItems,
-    getTotalSize: () => 800
+    getTotalSize: () => 800,
+    measure: () => {},
+    scrollToOffset: () => {},
+    range: { startIndex: 3, endIndex: 9 }
   })
 }));
 
@@ -122,7 +126,8 @@ describe("GalleryGrid", () => {
     });
 
     onReachEnd.mockClear();
-
+    const grid = gallery.querySelector("div[style]");
+    Object.defineProperty(grid, "clientWidth", { value: 1400, configurable: true });
     await act(async () => {
       resizeObservers[0]?.trigger(1400, 900);
     });
@@ -274,7 +279,7 @@ describe("GalleryGrid", () => {
     );
   });
 
-  it("animates gifs when visible gif count is within threshold", () => {
+  it("uses static thumbnails even with only a few GIFs", () => {
     const gifAssets = createGifAssets(10);
     const thumbs = createGifThumbs(gifAssets);
     virtualItems = gifAssets.map((_, index) => ({ key: index, index, start: -1, end: 1 }));
@@ -295,10 +300,10 @@ describe("GalleryGrid", () => {
       />
     );
 
-    expect(getByAltText("C:/media/gif-1.gif")).toHaveAttribute("src", "media://C:/media/gif-1.gif");
+    expect(getByAltText("C:/media/gif-1.gif")).toHaveAttribute("src", "media://C:/thumbs/gif-1.jpg");
   });
 
-  it("does not animate gifs when visible gif count is above threshold", () => {
+  it("uses static thumbnails for a GIF-heavy gallery", () => {
     const gifAssets = createGifAssets(11);
     const thumbs = createGifThumbs(gifAssets);
     virtualItems = gifAssets.map((_, index) => ({ key: index, index, start: -1, end: 1 }));
@@ -398,7 +403,7 @@ describe("GalleryGrid", () => {
     );
 
     await waitFor(() => {
-      expect(onVirtualRangeChange).toHaveBeenCalledWith(3, 9);
+      expect(onVirtualRangeChange).toHaveBeenCalledWith({ startIndex: 3, endIndex: 9, visibleStartIndex: 3, visibleEndIndex: 9 });
     });
   });
 
@@ -604,4 +609,28 @@ describe("GalleryGrid", () => {
       viaDrag: true
     });
   });
+  it("updates thumbnail tiles and progress without rerendering the grid content", () => {
+    virtualItems = [{ key: 0, index: 0, start: 0 }];
+    const store = new ThumbnailStore();
+    const getAssetAt = vi.fn(() => sampleGifAsset);
+    const props = {
+      assets: [sampleGifAsset], selectedId: null, thumbs: {}, tileSize: 188,
+      hasMore: true, isLoading: false, isGeneratingThumbnails: false,
+      pendingThumbnailCount: 0, renderingThumbnailIds: {}, thumbnailStore: store,
+      onReachEnd: vi.fn(), onSelect: vi.fn(), getAssetAt
+    };
+    const { rerender, getByAltText, queryByTestId } = render(<GalleryGrid {...props} />);
+    expect(getByAltText("C:/media/a.gif")).toHaveAttribute("src", transparentThumbnailSrc);
+    getAssetAt.mockClear();
+    rerender(<GalleryGrid {...props} isGeneratingThumbnails pendingThumbnailCount={12} />);
+    act(() => store.markRendering([sampleGifAsset.id], true));
+    expect(queryByTestId("tile-thumb-loader")).toBeInTheDocument();
+    act(() => store.complete({ [sampleGifAsset.id]: "gif.jpg" }, [sampleGifAsset.id]));
+    expect(getByAltText("C:/media/a.gif")).toHaveAttribute("src", "media://gif.jpg");
+    expect(queryByTestId("tile-thumb-loader")).not.toBeInTheDocument();
+    expect(getAssetAt).not.toHaveBeenCalled();
+    fireEvent.error(getByAltText("C:/media/a.gif"));
+    expect(getByAltText("C:/media/a.gif")).toHaveAttribute("src", transparentThumbnailSrc);
+  });
+
 });

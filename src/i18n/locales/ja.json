@@ -172,6 +172,7 @@
       "pause": "一時停止",
       "mute": "ミュート",
       "unmute": "ミュート解除",
+      "volume": "音量",
       "seek": "シーク",
       "playbackRate": "再生速度"
     },

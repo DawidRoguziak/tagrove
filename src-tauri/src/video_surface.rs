@@ -47,6 +47,8 @@ struct NativeVideoControls {
     play_icon: gtk::Image,
     mute_button: gtk::Button,
     mute_icon: gtk::Image,
+    volume: gtk::Scale,
+    adjusting_volume: Rc<Cell<bool>>,
     time_label: gtk::Label,
     seek: gtk::Scale,
     rate_button: gtk::MenuButton,
@@ -310,6 +312,15 @@ impl NativeVideoControls {
         let (mute_button, mute_icon) = icon_button("audio-volume-high-symbolic");
         row.pack_start(&mute_button, false, false, 0);
 
+        let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
+        volume.set_draw_value(false);
+        volume.set_value(100.0);
+        volume.set_size_request(80, -1);
+        volume.set_increments(1.0, 10.0);
+        volume.style_context().add_class("media-tagger-video-seek");
+        row.pack_start(&volume, false, false, 0);
+        let adjusting_volume = track_slider_drag(&volume);
+
         let time_label = gtk::Label::new(Some("0:00 / 0:00"));
         time_label
             .style_context()
@@ -338,28 +349,7 @@ impl NativeVideoControls {
         let (fullscreen_button, fullscreen_icon) = icon_button("view-fullscreen-symbolic");
         row.pack_start(&fullscreen_button, false, false, 0);
 
-        let scrubbing = Rc::new(Cell::new(false));
-        {
-            let scrubbing = Rc::clone(&scrubbing);
-            seek.connect_button_press_event(move |_, _| {
-                scrubbing.set(true);
-                glib::Propagation::Proceed
-            });
-        }
-        {
-            let scrubbing = Rc::clone(&scrubbing);
-            seek.connect_button_release_event(move |_, _| {
-                scrubbing.set(false);
-                glib::Propagation::Proceed
-            });
-        }
-        {
-            let scrubbing = Rc::clone(&scrubbing);
-            seek.connect_grab_broken_event(move |_, _| {
-                scrubbing.set(false);
-                glib::Propagation::Proceed
-            });
-        }
+        let scrubbing = track_slider_drag(&seek);
         let session_id = Rc::new(Cell::new(None));
         let labels = Rc::new(RefCell::new(default_control_labels()));
 
@@ -399,11 +389,39 @@ impl NativeVideoControls {
                 else {
                     return;
                 };
-                if let Err(error) =
+                let result = if snapshot.volume <= 0.0 {
+                    player
+                        .control(session_id, PlayerCommand::SetVolume(1.0))
+                        .and_then(|()| player.control(session_id, PlayerCommand::SetMuted(false)))
+                } else {
                     player.control(session_id, PlayerCommand::SetMuted(!snapshot.muted))
-                {
+                };
+                if let Err(error) = result {
                     player.report_control_error(session_id, error);
                 }
+            });
+        }
+        {
+            let player = player.clone();
+            let session_id = Rc::clone(&session_id);
+            // change-value is user input only; snapshot set_value must not send commands.
+            volume.connect_change_value(move |_, _, value| {
+                let Some(session_id) = session_id.get() else {
+                    return glib::Propagation::Proceed;
+                };
+                let volume = value.clamp(0.0, 100.0) / 100.0;
+                let result = player.control(session_id, PlayerCommand::SetVolume(volume));
+                let result = result.and_then(|()| {
+                    if volume > 0.0 {
+                        player.control(session_id, PlayerCommand::SetMuted(false))
+                    } else {
+                        Ok(())
+                    }
+                });
+                if let Err(error) = result {
+                    player.report_control_error(session_id, error);
+                }
+                glib::Propagation::Proceed
             });
         }
         {
@@ -502,6 +520,8 @@ impl NativeVideoControls {
             play_icon,
             mute_button,
             mute_icon,
+            volume,
+            adjusting_volume,
             time_label,
             seek,
             rate_button,
@@ -519,6 +539,7 @@ impl NativeVideoControls {
             self.rate_popover.popdown();
         }
         self.scrubbing.set(false);
+        self.adjusting_volume.set(false);
         self.session_id.set(Some(session_id));
         self.root.show();
     }
@@ -562,6 +583,9 @@ impl NativeVideoControls {
         };
         self.mute_icon
             .set_from_icon_name(Some(mute_icon), gtk::IconSize::Button);
+        if !self.adjusting_volume.get() {
+            self.volume.set_value(snapshot.volume * 100.0);
+        }
         self.time_label.set_text(&format!(
             "{} / {}",
             format_time(snapshot.current_time),
@@ -599,6 +623,15 @@ impl NativeVideoControls {
             .set_tooltip_text(Some(if paused { &labels.play } else { &labels.pause }));
         self.mute_button
             .set_tooltip_text(Some(if muted { &labels.unmute } else { &labels.mute }));
+        self.volume.set_tooltip_text(Some(&format!(
+            "{}: {:.0}%",
+            labels.volume,
+            self.volume.value()
+        )));
+        if let Some(accessible) = self.volume.accessible() {
+            use gtk::atk::prelude::AtkObjectExt;
+            accessible.set_name(&labels.volume);
+        }
         self.seek.set_tooltip_text(Some(&labels.seek));
         self.rate_button
             .set_tooltip_text(Some(&labels.playback_rate));
@@ -608,6 +641,26 @@ impl NativeVideoControls {
             &labels.fullscreen
         }));
     }
+}
+
+fn track_slider_drag(scale: &gtk::Scale) -> Rc<Cell<bool>> {
+    let dragging = Rc::new(Cell::new(false));
+    let state = Rc::clone(&dragging);
+    scale.connect_button_press_event(move |_, _| {
+        state.set(true);
+        glib::Propagation::Proceed
+    });
+    let state = Rc::clone(&dragging);
+    scale.connect_button_release_event(move |_, _| {
+        state.set(false);
+        glib::Propagation::Proceed
+    });
+    let state = Rc::clone(&dragging);
+    scale.connect_grab_broken_event(move |_, _| {
+        state.set(false);
+        glib::Propagation::Proceed
+    });
+    dragging
 }
 
 fn icon_button(icon_name: &str) -> (gtk::Button, gtk::Image) {
@@ -624,6 +677,7 @@ fn default_control_labels() -> VideoControlLabels {
         pause: "Pause".to_string(),
         mute: "Mute".to_string(),
         unmute: "Unmute".to_string(),
+        volume: "Volume".to_string(),
         seek: "Seek".to_string(),
         playback_rate: "Playback speed".to_string(),
         fullscreen: "Fullscreen".to_string(),

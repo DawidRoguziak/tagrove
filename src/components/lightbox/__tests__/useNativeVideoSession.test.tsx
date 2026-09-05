@@ -18,6 +18,7 @@ const labels: NativeVideoControlLabels = {
   pause: "Pause",
   mute: "Mute",
   unmute: "Unmute",
+  volume: "Volume",
   seek: "Seek",
   playbackRate: "Speed",
   fullscreen: "Fullscreen",

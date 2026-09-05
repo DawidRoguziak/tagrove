@@ -172,6 +172,7 @@
       "pause": "일시 정지",
       "mute": "음소거",
       "unmute": "음소거 해제",
+      "volume": "음량",
       "seek": "탐색",
       "playbackRate": "재생 속도"
     },

@@ -172,6 +172,7 @@
       "pause": "暂停",
       "mute": "静音",
       "unmute": "取消静音",
+      "volume": "音量",
       "seek": "跳转",
       "playbackRate": "播放速度"
     },

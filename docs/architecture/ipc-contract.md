@@ -51,6 +51,8 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 
 `AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. Gallery GIF previews use it. The lightbox waits for complete details before rendering media; video opens by asset ID, not by a frontend path.
 
+`controlLabels` includes localized `play`, `pause`, `mute`, `unmute`, `volume`, `seek`, `playbackRate`, `fullscreen`, and `exitFullscreen` strings. Each label must contain 1–120 visible characters after trimming.
+
 `MpvVideoEvent` is `{ session_id, type, ... }`. Variants are `pointerActivity`, `loading`, `metadata` (`duration`, `width`, `height`), `snapshot` (`state`), `fullscreen`, `error` (`message`), and `controlError` (`message`). Snapshot state carries `session_id`, `duration`, `current_time`, `paused`, `seeking`, `buffering`, `volume`, `muted`, `rate`, and `fullscreen`. The worker reads libmpv properties rather than inferring playing state from seek completion. Each playback session has its own event client; the old decoder is stopped before the next client is created. The frontend accepts events only for the returned session, retaining bounded early events while open is pending. `pointerActivity` reports throttled GTK motion. Native bounds callbacks are delivered only after successful placement on the GTK thread, so opening a sidebar can wait until the surface is clear.
 
 `kind` is typed as `MediaKind` (`image | gif | video`) in TypeScript, while the serialized Rust model stores it as an unrestricted `String`; correctness currently comes from indexing/database invariants rather than serde validation on output.

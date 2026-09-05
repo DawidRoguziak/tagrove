@@ -108,6 +108,7 @@ describe("api contract", () => {
       pause: "Pause",
       mute: "Mute",
       unmute: "Unmute",
+      volume: "Volume",
       seek: "Seek",
       playbackRate: "Playback speed",
       fullscreen: "Fullscreen",

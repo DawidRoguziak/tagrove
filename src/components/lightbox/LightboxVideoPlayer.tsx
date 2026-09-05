@@ -44,6 +44,7 @@ export function LightboxVideoPlayer({
       pause: t("lightbox.videoControls.pause"),
       mute: t("lightbox.videoControls.mute"),
       unmute: t("lightbox.videoControls.unmute"),
+      volume: t("lightbox.videoControls.volume"),
       seek: t("lightbox.videoControls.seek"),
       playbackRate: t("lightbox.videoControls.playbackRate"),
       fullscreen: t("lightbox.fullscreen"),

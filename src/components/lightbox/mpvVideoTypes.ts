@@ -10,6 +10,7 @@ export interface NativeVideoControlLabels {
   pause: string;
   mute: string;
   unmute: string;
+  volume: string;
   seek: string;
   playbackRate: string;
   fullscreen: string;

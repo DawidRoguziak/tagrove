@@ -172,6 +172,7 @@
       "pause": "Pausa",
       "mute": "Disattiva audio",
       "unmute": "Attiva audio",
+      "volume": "Volume",
       "seek": "Scorri",
       "playbackRate": "Velocità di riproduzione"
     },

@@ -56,8 +56,9 @@ function AppContent() {
 
   return (
     <main
-      ref={controller.appScrollRef}
-      className="gallery-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto"
+      className={controller.settingsViewOpen
+        ? "gallery-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto"
+        : "flex h-full min-h-0 flex-col overflow-hidden"}
     >
       {controller.settingsViewOpen ? (
         <SettingsViewLayer onBack={controller.settingsView.onBack}>

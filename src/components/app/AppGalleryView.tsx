@@ -62,63 +62,67 @@ export function AppGalleryView({
         onOpenSettingsView={onOpenSettingsView}
       />
 
-      <div
-        className={`workspace-body ${bulkSelection.selectionModeEnabled ? "workspace-body--bulk" : ""}`}
-      >
-        <GalleryGrid
-          assets={media.assets}
-          assetCount={media.assetCount}
-          getAssetAt={media.getAssetAt}
-          selectedId={media.selectedId}
-          thumbs={EMPTY_THUMBS}
-          tileSize={media.tileSize}
-          hasMore={media.hasMore}
-          isLoading={media.isLoading}
-          isGeneratingThumbnails={media.isGeneratingThumbnails}
-          pendingThumbnailCount={media.pendingThumbnailCount}
-          renderingThumbnailIds={EMPTY_RENDERING_IDS}
-          thumbnailStore={media.thumbnailStore}
-          scrollContainerRef={media.scrollContainerRef}
-          onReachEnd={media.onReachEnd}
-          onVirtualRangeChange={media.onVirtualRangeChange}
-          onCtrlWheelZoom={media.onCtrlWheelZoom}
-          onSelect={media.onSelect}
-          hasScanRoots={media.hasScanRoots}
-          onAddFirstFolder={media.onAddFirstFolder}
-          selectionModeEnabled={bulkSelection.selectionModeEnabled}
-          selectedAssetIds={bulkSelection.selectedAssetIds}
-          onBulkSelectionInteraction={bulkSelection.onBulkSelectionInteraction}
-          loadError={media.loadError}
-          onLoadRetry={media.onLoadRetry}
-          pageFailureEpoch={media.pageFailureEpoch}
-        />
-
-        {bulkSelection.selectionModeEnabled ? (
-          <LazyErrorBoundary
-            resetKey={bulkSelection.selectionModeEnabled}
-            fallback={
-              <aside className="m-4 grid content-start gap-3" aria-label={t("bulk.panel.ariaLabel")}>
-                <UiAlert tone="error" title={t("lazyLoad.bulkFailed")}>
-                  {t("lazyLoad.retryDescription")}
-                </UiAlert>
-                <div className="flex gap-2">
-                  <UiButton onClick={() => window.location.reload()}>{t("gallery.retry")}</UiButton>
-                  <UiButton variant="ghost" onClick={bulkSelection.onToggleSelectionMode}>
-                    {t("controls.disableBulkActions")}
-                  </UiButton>
-                </div>
-              </aside>
-            }
+      <div className="workspace-viewport">
+        <section ref={media.scrollContainerRef} className="gallery-scroll h-full overflow-x-hidden overflow-y-auto">
+          <div
+            className={`workspace-body ${bulkSelection.selectionModeEnabled ? "workspace-body--bulk" : ""}`}
           >
-            <Suspense fallback={<p className="p-4" role="status">{t("common.loading")}</p>}>
-              <BulkActionsSidebar
-                controller={bulkSelection}
-                thumbs={media.thumbs}
-                renderingThumbnailIds={media.renderingThumbnailIds}
-              />
-            </Suspense>
-          </LazyErrorBoundary>
-        ) : null}
+            <GalleryGrid
+              assets={media.assets}
+              assetCount={media.assetCount}
+              getAssetAt={media.getAssetAt}
+              selectedId={media.selectedId}
+              thumbs={EMPTY_THUMBS}
+              tileSize={media.tileSize}
+              hasMore={media.hasMore}
+              isLoading={media.isLoading}
+              isGeneratingThumbnails={media.isGeneratingThumbnails}
+              pendingThumbnailCount={media.pendingThumbnailCount}
+              renderingThumbnailIds={EMPTY_RENDERING_IDS}
+              thumbnailStore={media.thumbnailStore}
+              scrollContainerRef={media.scrollContainerRef}
+              onReachEnd={media.onReachEnd}
+              onVirtualRangeChange={media.onVirtualRangeChange}
+              onCtrlWheelZoom={media.onCtrlWheelZoom}
+              onSelect={media.onSelect}
+              hasScanRoots={media.hasScanRoots}
+              onAddFirstFolder={media.onAddFirstFolder}
+              selectionModeEnabled={bulkSelection.selectionModeEnabled}
+              selectedAssetIds={bulkSelection.selectedAssetIds}
+              onBulkSelectionInteraction={bulkSelection.onBulkSelectionInteraction}
+              loadError={media.loadError}
+              onLoadRetry={media.onLoadRetry}
+              pageFailureEpoch={media.pageFailureEpoch}
+            />
+
+            {bulkSelection.selectionModeEnabled ? (
+              <LazyErrorBoundary
+                resetKey={bulkSelection.selectionModeEnabled}
+                fallback={
+                  <aside className="m-4 grid content-start gap-3" aria-label={t("bulk.panel.ariaLabel")}>
+                    <UiAlert tone="error" title={t("lazyLoad.bulkFailed")}>
+                      {t("lazyLoad.retryDescription")}
+                    </UiAlert>
+                    <div className="flex gap-2">
+                      <UiButton onClick={() => window.location.reload()}>{t("gallery.retry")}</UiButton>
+                      <UiButton variant="ghost" onClick={bulkSelection.onToggleSelectionMode}>
+                        {t("controls.disableBulkActions")}
+                      </UiButton>
+                    </div>
+                  </aside>
+                }
+              >
+                <Suspense fallback={<p className="p-4" role="status">{t("common.loading")}</p>}>
+                  <BulkActionsSidebar
+                    controller={bulkSelection}
+                    thumbs={media.thumbs}
+                    renderingThumbnailIds={media.renderingThumbnailIds}
+                  />
+                </Suspense>
+              </LazyErrorBoundary>
+            ) : null}
+          </div>
+        </section>
       </div>
 
 

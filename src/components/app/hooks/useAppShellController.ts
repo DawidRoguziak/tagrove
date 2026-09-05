@@ -208,7 +208,6 @@ export function useAppShellController() {
   }, [library.retryLoad]);
 
   return {
-    appScrollRef,
     settingsViewOpen,
     galleryView: {
       search: {

@@ -46,7 +46,7 @@ export interface AppGalleryMediaController {
   pendingThumbnailCount: number;
   renderingThumbnailIds: Record<number, true>;
   thumbnailStore: ThumbnailStore;
-  scrollContainerRef: RefObject<HTMLElement | null>;
+  scrollContainerRef: RefObject<HTMLElement>;
   onReachEnd: () => void;
   onVirtualRangeChange: (range: GalleryRange) => void;
   onCtrlWheelZoom: (deltaY: number) => void;

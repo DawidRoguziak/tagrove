@@ -57,7 +57,7 @@ The gallery and settings are mutually exclusive children of the same `<main>` el
 
 - shell-owned hooks continue running and their state survives the switch;
 - view-local DOM state, virtualization measurements, and component-local state do not survive unmounting;
-- the same scroll element remains mounted, but the code does not explicitly save and restore a distinct scroll position for each view;
+- Settings scrolls inside the shared `<main>`, while the gallery mounts its own scroll element below the header; gallery scroll position resets when that element remounts, and neither view explicitly saves its position;
 - settings actions are constructed even while the gallery is visible, because they belong to the shell;
 - opening settings unmounts the gallery-owned bulk sidebar while its shell-owned selection state remains available;
 - the scan-root list and known tags are hydrated on shell mount, and applied search filters drive library refreshes from shell effects.
@@ -150,12 +150,13 @@ System sans fonts serve prose and controls; paths and technical metadata use mon
 
 `TopBar` composes the identity, search field and Settings action in one header row. A second
 row contains media kind, favorites, tag browsing, the result count, bulk-mode toggle and
-thumbnail sizing. Both rows belong to one sticky header. The gallery uses the available
+thumbnail sizing. Both rows belong to a full-width, non-scrolling header with natural height.
+The gallery scroll viewport fills the remaining height, so its scrollbar starts below both rows even when they wrap. The gallery uses the available
 width with square tiles and its existing measured 10px gaps. Bulk selection uses a green
 outline plus a checkmark; media-kind badges remain readable over arbitrary thumbnails.
 
 Bulk editing occupies a 360px inspector at window widths of at least 1000px, and follows
-the gallery below that width. The inspector scrolls independently on desktop. Its tag
+the gallery below that width. The inspector sticks to the gallery viewport's top and scrolls independently on desktop, with its maximum height supplied by the surrounding CSS size container. Its tag
 suggestions use the existing viewport portal so inspector overflow cannot clip them.
 
 Full-page settings uses 200px navigation beside mounted sections at widths of at least

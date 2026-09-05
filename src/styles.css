@@ -171,13 +171,14 @@
 }
 @supports not (scrollbar-gutter: stable) { .gallery-scroll { overflow-y: scroll; } }
 
-/* The header and tools form one measured sticky block above the contact sheet. */
-.workspace-header { position: sticky; top: 0; z-index: 40; background: var(--window-chrome-bg); border-bottom: 1px solid var(--border-strong); }
+/* The header keeps its natural height; only the remaining workspace scrolls. */
+.workspace-header { position: relative; flex-shrink: 0; z-index: 40; background: var(--window-chrome-bg); border-bottom: 1px solid var(--border-strong); }
+.workspace-viewport { flex: 1; min-height: 0; container-type: size; }
 .workspace-search { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 12px 20px; }
 .workspace-identity { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 650; letter-spacing: -0.04em; }
 .workspace-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 6px 20px; border-top: 1px solid var(--border-soft); }
 .workspace-sizing { margin-left: auto; display: flex; align-items: center; gap: 16px; }
-.workspace-body { display: grid; min-height: calc(100dvh - 113px); grid-template-columns: minmax(0, 1fr); }
+.workspace-body { display: grid; min-height: 100%; grid-template-columns: minmax(0, 1fr); }
 .bulk-inspector { align-self: start; min-width: 0; background: var(--surface-solid); border-top: 1px solid var(--border-strong); }
 .bulk-inspector > header { position: sticky; top: 0; z-index: 2; padding: 16px; border-bottom: 1px solid var(--border-strong); }
 .bulk-inspector > section { padding: 16px; border-bottom: 1px solid var(--border-soft); }
@@ -189,7 +190,7 @@
 .settings-section { scroll-margin-top: 96px; min-width: 0; }
 @media (min-width: 1000px) {
   .workspace-body--bulk { grid-template-columns: minmax(0, 1fr) 360px; }
-  .bulk-inspector { position: sticky; top: 114px; max-height: calc(100dvh - 114px); overflow-y: auto; border-top: 0; border-left: 1px solid var(--border-strong); }
+  .bulk-inspector { position: sticky; top: 0; max-height: 100cqh; overflow-y: auto; border-top: 0; border-left: 1px solid var(--border-strong); }
   .settings-layout { grid-template-columns: 200px minmax(0, 1fr); }
   .settings-nav { position: sticky; top: 96px; display: grid; align-self: start; }
 }

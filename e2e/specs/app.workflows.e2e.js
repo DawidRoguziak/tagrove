@@ -1,13 +1,8 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const iconsRoot = path.resolve(__dirname, "..", "..", "src-tauri", "icons");
-const execFileAsync = promisify(execFile);
+import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 
 const tempMediaRoots = [];
 const tempArtifacts = [];
@@ -147,20 +142,7 @@ async function createTempMediaRoot(prefix, fileCount) {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), `media-tagger-e2e-${prefix}-`));
   tempMediaRoots.push(rootDir);
 
-  const sourceEntries = await fs.readdir(iconsRoot);
-  const pngSources = sourceEntries
-    .filter((entry) => entry.toLowerCase().endsWith(".png"))
-    .map((entry) => path.join(iconsRoot, entry));
-
-  if (!pngSources.length) {
-    throw new Error("Cannot seed temp media root: no PNG source files found.");
-  }
-
-  for (let index = 0; index < fileCount; index += 1) {
-    const sourcePath = pngSources[index % pngSources.length];
-    const targetPath = path.join(rootDir, `${prefix}-${index + 1}.png`);
-    await fs.copyFile(sourcePath, targetPath);
-  }
+  await copyPngFixtures(rootDir, prefix, fileCount);
 
   return rootDir;
 }
@@ -176,53 +158,7 @@ async function seedLibraryWithTempRoot(prefix, fileCount) {
 async function seedLibraryWithPlayableMedia(prefix) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), `media-tagger-e2e-${prefix}-`));
   tempMediaRoots.push(root);
-  const gifPath = path.join(root, `${prefix}.gif`);
-  const videoPaths = [
-    path.join(root, `${prefix}-1.mp4`),
-    path.join(root, `${prefix}-2.mp4`)
-  ];
-  const ffmpeg = process.env.FFMPEG_PATH ?? "ffmpeg";
-
-  await execFileAsync(ffmpeg, [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    "testsrc=size=96x64:rate=8",
-    "-t",
-    "1",
-    "-y",
-    gifPath
-  ]);
-  for (const [index, videoPath] of videoPaths.entries()) {
-    await execFileAsync(ffmpeg, [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-f",
-      "lavfi",
-      "-i",
-      "testsrc2=size=160x90:rate=24",
-      "-f",
-      "lavfi",
-      "-i",
-      `sine=frequency=${440 + index * 220}:sample_rate=48000`,
-      "-t",
-      "8",
-      "-c:v",
-      "mpeg4",
-      "-q:v",
-      "5",
-      "-c:a",
-      "aac",
-      "-shortest",
-      ...(index === 1 ? ["-movflags", "+faststart"] : []),
-      "-y",
-      videoPath
-    ]);
-  }
+  const { gifPath, videoPaths } = await createPlayableFixtures(root, prefix);
 
   await invokeTauriCommand("add_scan_root", { path: root });
   await invokeTauriCommand("rescan_all_roots");

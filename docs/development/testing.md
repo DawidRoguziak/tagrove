@@ -27,6 +27,8 @@ Run commands from the repository root.
 | `bun run test:backend:integration` | Runs only the locked `backend_integration` Rust integration-test binary. |
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
+| `bun run app:control` | Keeps an isolated desktop E2E session open on a private Xvfb display for UI interaction, screenshots, and console inspection; see persistent desktop control below. |
+| `bun run test:app-control` | Runs Node tests for controller input validation, local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Requires Linux local sockets and ffmpeg. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
 | `bun run typecheck` | Runs no-emit checks for application code and Vite/Vitest configuration. |
 | `bun run lint` | Runs Biome lint across its configured source, E2E, and script includes. |
@@ -161,13 +163,65 @@ Only then does it recursively remove the E2E directory with retries. An `EPERM` 
 
 ### Fixtures, selectors, and destructive workflows
 
-`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, copies valid PNG icons or generates a small GIF and two MP4 files with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only those roots and artifacts. Video coverage checks authorized native opening, the full native-player footprint, hidden DOM controls, rapid source switching, absence of an HTML `<video>`, error fallback, and native-surface cleanup. WebDriver cannot inspect pixels or controls rendered by GTK above the WebView.
+`app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, uses `e2e/fixtures.js` to copy valid PNG icons or generate a small GIF and two MP4 files with ffmpeg, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only those roots and artifacts. Video coverage checks authorized native opening, the full native-player footprint, hidden DOM controls, rapid source switching, absence of an HTML `<video>`, error fallback, and native-surface cleanup. WebDriver cannot inspect pixels or controls rendered by GTK above the WebView.
 
 The workflow suite deliberately tests library clear, scan-root removal, backup restore, and permanent media deletion. Keep every deletable media fixture under a newly created temp root. Never change a destructive spec to index a personal directory, the repository root, or production app data. Do not weaken the identifier, target-directory, app-data-path, or live-title guards to make a failing run proceed.
 
 Desktop selectors currently mix stable IDs/classes/data attributes, `aria-label` values, visible English text selectors such as `button=Apply`, and a small number of XPath expressions. Prefer stable accessible roles/names or explicit test IDs when text is not itself the behavior. If visible copy or accessibility labels change, update the associated E2E selectors in the same change.
 
 The desktop harness does not force English. A fresh app chooses a stored language first and otherwise follows `navigator.language`, while the current specs assert English labels. Because pre-run cleanup removes the isolated profile, a manually persisted selection is not a durable fix; run with a browser environment that reports English or update the harness so language setup is deterministic. Vitest does force English through `src/test/setup.ts`; that does not affect the desktop process.
+
+### Persistent desktop control
+
+`e2e/control.js` reuses the E2E build configuration and shared media fixtures without running
+the Mocha suite. The [MediaTagger verification skill](../../.cursor/skills/verify-mediatagger/SKILL.md)
+contains the complete launch, doctor, interaction, evidence, and cleanup workflow, with
+recipes for gallery/search, settings, and lightbox.
+
+```sh
+bun run app:control start
+```
+
+Keep `start` running in its terminal or tool exec session. Wait for the `READY` line, then use
+its session ID in separate commands. `bun run app:control help` documents the arguments.
+The available commands are `doctor`, `inspect`, `click`, `fill`, `keys`, `scroll`, `screenshot`,
+`logs`, `refresh`, `diagnose`, and `stop`. Interaction commands check the live E2E title,
+resolved app-data path, scan roots, and owned display/driver processes before acting.
+
+In addition to normal desktop prerequisites, this controller needs Xvfb, xauth, and
+ImageMagick's `import`. It creates an authenticated private display with TCP disabled and
+uses local driver ports 4446/4447 plus a private Unix socket. Sandbox environments must allow
+these local sockets and native processes. An occupied port is refused; the controller does
+not attach to another instance. A checkout lock refuses a second controller. Do not run
+ordinary desktop E2E or another frontend/E2E build concurrently with it, because build
+outputs are shared.
+
+Each session gets fresh XDG data/config/cache directories below a new temporary root. It
+builds fresh frontend assets and the existing `.e2e` executable, copies four PNGs, generates
+the shared GIF/two MP4 fixtures, and seeds only that temporary media directory. It sets
+English in this isolated WebView before reloading. Existing dev/release profiles and the
+ordinary E2E runner's cleanup behavior are unchanged.
+
+Evidence is retained under ignored `artifacts/app-control/<session>/`: PNG screenshots,
+`actions.jsonl`, `console.jsonl`, `process.log`, and `session.json`. `logs` returns the latest
+24,000 characters from each log. Frontend console collection attaches after connection,
+preserves original console behavior, and records reload gaps or buffer overflow. It does
+not capture the earliest frontend startup messages or worker consoles. Driver and inherited
+application stdout/stderr are recorded from launch. `diagnose` emits known test messages;
+it does not prove application error handling.
+
+Screenshots capture the private display, including GTK overlays. Gallery/image screenshots
+were visually verified. On the verification host, the native MP4 picture was black or
+corrupt on Xvfb, including with software GL; decoded video pixels remain unverified.
+WebDriver selectors cannot control native GTK playback buttons or native file dialogs.
+Do not change playback code or weaken isolation to work around these limitations.
+
+`stop` and handled signals close the WebDriver session and owned process groups before
+removing the marked temporary root. Stop is repeatable, and evidence survives. Failed
+startup uses the same cleanup. If owned processes cannot be stopped, temporary data stays
+in place. SIGKILL/host crashes can leave a lock and temporary state; inspect recorded
+process identities before manual recovery, never kill by process name or automatically
+remove a lock merely because a connection failed.
 
 ## Choosing the test level
 

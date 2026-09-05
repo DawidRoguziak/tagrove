@@ -43,4 +43,5 @@ Select the documentation relevant to the current task from the table below and r
 | Destructive filesystem/database operations, duplicate identity, CSV semantics, backup archive format, restore staging, rollback, and recovery limits | `docs/subsystems/data-safety-and-portability.md` |
 | Local setup, Bun and Cargo dependencies, Vite and TypeScript configuration, development profiles, builds, packaging, and diagnostics | `docs/development/setup-and-build.md` |
 | Vitest, Rust unit and integration, backend workflow, and desktop E2E test layers, commands, fixtures, isolation, and troubleshooting | `docs/development/testing.md` |
+| Persistent agent desktop control, private E2E display, clicks/typing, screenshots, console logs, and cleanup | `.cursor/skills/verify-mediatagger/SKILL.md` |
 | Supported languages, runtime selection, locale key and placeholder invariants, adding translations, generator limitations, and validation | `docs/development/localization.md` |

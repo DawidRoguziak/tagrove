@@ -28,6 +28,8 @@
     "test:backend:integration": "cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration --locked",
     "test:backend:e2e": "cargo test --manifest-path src-tauri/Cargo.toml --test backend_e2e --locked",
     "test:all": "bun run quality && bun run test && bun run test:backend && bun run test:e2e:tauri",
+    "app:control": "node ./e2e/control.js",
+    "test:app-control": "node --test ./e2e/control-support.test.js",
     "test:e2e:tauri": "wdio run ./e2e/wdio.conf.js",
     "tauri:dev": "tauri dev --config src-tauri/tauri.conf.dev.json",
     "tauri:build:release": "tauri build -- --locked",

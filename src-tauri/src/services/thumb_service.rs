@@ -987,7 +987,23 @@ pub fn clear_all_thumbnails(
     // completing after this point are dropped instead of written back.
     state.thumbnail_generation.fetch_add(1, Ordering::SeqCst);
     let conn = permit.connection()?;
-    let thumbs = db::clear_all_thumbnail_paths(&conn)?;
+    db::clear_all_thumbnail_paths(&conn)?;
+    // Rescans and pruning can release a reference before its old cache file is
+    // removed. Sweep the owned directory, without following directory symlinks.
+    let mut thumbs = Vec::new();
+    let mut directories = Vec::new();
+    for entry in walkdir::WalkDir::new(&state.thumbs_dir)
+        .follow_links(false)
+        .contents_first(true)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if entry.file_type().is_file() {
+            thumbs.push(entry.path().to_string_lossy().into_owned());
+        } else if entry.file_type().is_dir() && entry.depth() > 0 {
+            directories.push(entry.into_path());
+        }
+    }
     let total = thumbs.len();
     let _ = emit_progress(
         app,
@@ -998,6 +1014,10 @@ pub fn clear_all_thumbnails(
     );
     let removed =
         delete_thumbnail_files_with_progress(app, &state.thumbs_dir, thumbs, total, "thumbs-clear");
+    for directory in directories {
+        // Only empty directories are removed; failed file cleanup remains retryable.
+        let _ = fs::remove_dir(directory);
+    }
     Ok(removed)
 }
 

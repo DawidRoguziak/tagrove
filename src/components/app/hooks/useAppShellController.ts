@@ -80,6 +80,8 @@ export function useAppShellController() {
     queryEpoch: library.queryEpoch,
     getAssetAtAsync: library.getAssetAtAsync,
     getAssetIndex: library.getAssetIndex,
+    getAssetPosition: library.getAssetPosition,
+    queryPending: library.queryPending,
     appliedFilter: searchFilters.appliedDescriptor
   });
 
@@ -273,6 +275,8 @@ export function useAppShellController() {
       tagDetailsLoading: selection.tagDetailsLoading,
       tagDetailsFailed: selection.tagDetailsFailed,
       assetDetailsFailed: selection.assetDetailsFailed,
+      navigationStatus: selection.navigationStatus,
+      onRetryNavigation: selection.retryNavigation,
       onRetryTagDetails: selection.retryTagDetails,
       mediaGroupKeyEditor: selection.mediaGroupKeyEditor,
       mediaGroupOrderEditor: selection.mediaGroupOrderEditor,

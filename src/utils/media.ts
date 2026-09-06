@@ -1,3 +1,4 @@
+import { readTagToken } from "./searchTokens";
 import type { AssetSummary, SearchMetaFilter } from "../types";
 
 export interface ParsedFilterTags {
@@ -17,30 +18,6 @@ export interface ParsedSearchFilter {
   exclude: string[];
   metaFilter: SearchMetaFilter | null;
   validationError: SearchFilterValidationError | null;
-}
-
-function parseStandardFilterTokens(tokens: string[]): ParsedFilterTags {
-  const include = new Set<string>();
-  const exclude = new Set<string>();
-
-  for (const rawItem of tokens) {
-    const item = rawItem.trim().toLowerCase();
-    if (!item) {
-      continue;
-    }
-
-    if (item.startsWith("-") && item.length > 1) {
-      exclude.add(item.slice(1));
-      continue;
-    }
-
-    include.add(item);
-  }
-
-  return {
-    include: Array.from(include),
-    exclude: Array.from(exclude)
-  };
 }
 
 function createTagFilter(include: string[] = [], exclude: string[] = []): ParsedSearchFilter {
@@ -103,11 +80,12 @@ export function parseSearchFilter(input: string): ParsedSearchFilter {
     };
   }
 
-  if (/(^|\s)gn:/i.test(trimmed)) {
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  const parsedTokens = tokens.map(readTagToken);
+  if (tokens.some((token, index) => !parsedTokens[index].quoted && /^gn:/i.test(token))) {
     return createValidationError("metaTagRequiresSolo");
   }
 
-  const tokens = trimmed.split(/\s+/).filter(Boolean);
   const hasNoTagsTokens = tokens.filter((token) => /^tags(?::.*)?$/i.test(token));
 
   if (hasNoTagsTokens.length > 0) {
@@ -147,12 +125,14 @@ export function parseSearchFilter(input: string): ParsedSearchFilter {
     };
   }
 
-  if (tokens.some((token) => !isValidTag(token.startsWith("-") && token.length > 1 ? token.slice(1) : token))) {
+  if (parsedTokens.some((token) => !token.complete || !isValidTag(token.value))) {
     return createValidationError("tagInvalidCharacters");
   }
 
-  const parsedTags = parseStandardFilterTokens(tokens);
-  return createTagFilter(parsedTags.include, parsedTags.exclude);
+  return createTagFilter(
+    [...new Set(parsedTokens.filter(token => !token.negative).map(token => token.value))],
+    [...new Set(parsedTokens.filter(token => token.negative).map(token => token.value))]
+  );
 }
 
 export function parseFilterTags(input: string): ParsedFilterTags {

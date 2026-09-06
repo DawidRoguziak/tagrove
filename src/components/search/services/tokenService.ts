@@ -1,7 +1,8 @@
+import { readTagToken } from "../../../utils/searchTokens";
 import type { ActiveToken } from "../types";
 
 export function normalizeTagToken(token: string): string {
-  return token.trim().toLowerCase().replace(/^-/, "");
+  return readTagToken(token.trim()).value;
 }
 
 export function readActiveToken(input: string, caret: number): ActiveToken | null {
@@ -22,13 +23,13 @@ export function readActiveToken(input: string, caret: number): ActiveToken | nul
     return null;
   }
 
-  const negative = rawToken.startsWith("-");
+  const { negative, quoted } = readTagToken(rawToken);
   const query = normalizeTagToken(rawToken);
-  if (!query) {
+  if (!query || rawToken === "-") {
     return null;
   }
 
-  return { start, end, query, negative };
+  return { start, end, query, negative, ...(quoted ? { literal: true } : {}) };
 }
 
 export function collectUsedTags(value: string, excludedTags: string[]): Set<string> {
@@ -38,7 +39,7 @@ export function collectUsedTags(value: string, excludedTags: string[]): Set<stri
     .filter(Boolean);
 
   const excludedTokens = excludedTags
-    .map((token) => normalizeTagToken(token))
+    .map((token) => token.trim().toLowerCase())
     .filter(Boolean);
 
   return new Set([...valueTokens, ...excludedTokens]);

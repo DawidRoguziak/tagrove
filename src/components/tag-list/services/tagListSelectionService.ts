@@ -1,3 +1,4 @@
+import { serializeTagToken } from "../../../utils/searchTokens";
 import type { TagListPage } from "../../../types";
 
 export type TagSelectionMode = "include" | "exclude";
@@ -134,9 +135,9 @@ export function putTagInMode(
 }
 
 export function buildFilterInput(selections: TagSelections): string {
-  const includeTokens = sortTagsCaseInsensitive(Object.values(selections.included));
+  const includeTokens = sortTagsCaseInsensitive(Object.values(selections.included)).map(tag => serializeTagToken(tag));
   const excludeTokens = sortTagsCaseInsensitive(Object.values(selections.excluded)).map(
-    (tag) => `-${tag}`
+    (tag) => serializeTagToken(tag, true)
   );
 
   return [...includeTokens, ...excludeTokens].join(" ");

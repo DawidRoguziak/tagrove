@@ -3,6 +3,7 @@ export interface ActiveToken {
   end: number;
   query: string;
   negative: boolean;
+  literal?: boolean;
 }
 
 export interface TagSuggestion {

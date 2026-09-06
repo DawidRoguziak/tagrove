@@ -269,3 +269,8 @@ export interface ScanProgress {
   total: number;
   message: string;
 }
+
+export type AssetQueryPositionResult =
+  | { status: "resolved"; index: number }
+  | { status: "missing" }
+  | { status: "stale" };

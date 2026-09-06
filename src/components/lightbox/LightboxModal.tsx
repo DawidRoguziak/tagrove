@@ -29,6 +29,8 @@ interface LightboxModalProps {
   tagDetailsLoading?: boolean;
   tagDetailsFailed?: boolean;
   assetDetailsFailed?: boolean;
+  navigationStatus?: "ready" | "resolving" | "missing" | "failed";
+  onRetryNavigation?: () => void;
   onRetryTagDetails?: () => void;
   mediaGroupKeyEditor?: string;
   mediaGroupOrderEditor?: string;
@@ -59,6 +61,8 @@ export function LightboxModal({
   tagDetailsLoading = false,
   tagDetailsFailed = false,
   assetDetailsFailed = false,
+  navigationStatus = "ready",
+  onRetryNavigation,
   onRetryTagDetails = () => {},
   mediaGroupKeyEditor = "",
   mediaGroupOrderEditor = "",
@@ -288,6 +292,17 @@ export function LightboxModal({
                     >
                       {t("lightbox.mediaGroupSaveFailed")}
                     </UiAlert>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {navigationStatus !== "ready" ? (
+                <div className="absolute bottom-3 left-3 z-[6] rounded-lg bg-base-100 p-3 shadow-lg" role="status" data-navigation-status={navigationStatus}>
+                  {t(`lightbox.navigation.${navigationStatus}`)}
+                  {navigationStatus === "failed" ? (
+                    <button type="button" className="btn btn-sm ml-3" onClick={onRetryNavigation}>
+                      {t("gallery.retry")}
+                    </button>
                   ) : null}
                 </div>
               ) : null}

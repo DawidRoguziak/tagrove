@@ -37,7 +37,7 @@ export function useSuggestions(
   useEffect(() => {
     let current = true;
     const { token, used, excludedTags } = latest.current;
-    if (!eligible || !token || !token.query.trim() || /^(gn|tags)(:.*)?$/i.test(token.query))
+    if (!eligible || !token || !token.query.trim() || (!token.literal && !token.negative && /^(gn|tags)(:.*)?$/i.test(token.query)))
       return;
     setFailed(false);
     void client

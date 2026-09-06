@@ -158,6 +158,11 @@
     }
   },
   "lightbox": {
+    "navigation": {
+      "resolving": "Finding this photo in the results…",
+      "missing": "This photo is no longer in the results. Close the preview to browse.",
+      "failed": "Could not restore navigation. Retry to continue browsing."
+    },
     "favorite": {
       "add": "Add to favorites",
       "remove": "Remove from favorites",

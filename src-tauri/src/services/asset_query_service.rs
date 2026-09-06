@@ -10,7 +10,7 @@ use std::{
 use crate::{
     db::{self, AssetMetaFilter},
     error::AppResult,
-    models::{AssetQueryPageResult, StartAssetQueryResult},
+    models::{AssetQueryPageResult, AssetQueryPositionResult, StartAssetQueryResult},
     services::db_pool::OperationPermit,
 };
 
@@ -210,6 +210,27 @@ impl AssetQueryManager {
         })
     }
 
+    pub fn position(
+        &self,
+        permit: &OperationPermit,
+        session_id: u64,
+        asset_id: i64,
+    ) -> AppResult<AssetQueryPositionResult> {
+        let conn = permit.connection()?;
+        let revision = db::current_library_revision(&conn)?;
+        let Some(session) = self.session_by_id(session_id) else {
+            return Ok(AssetQueryPositionResult::Stale);
+        };
+        if session.revision != revision {
+            self.remove_session(session_id);
+            return Ok(AssetQueryPositionResult::Stale);
+        }
+        Ok(match session.asset_ids.iter().position(|id| *id == asset_id) {
+            Some(index) => AssetQueryPositionResult::Resolved { index },
+            None => AssetQueryPositionResult::Missing,
+        })
+    }
+
     fn cached_session(&self, key: &str) -> Option<QuerySession> {
         let mut cache = self.cache.lock().ok()?;
         prune(&mut cache);
@@ -405,6 +426,56 @@ mod tests {
             panic!("expected ready result for cache hit");
         };
         assert_eq!(reused_session_id, session_id);
+    }
+
+    #[test]
+    fn position_uses_full_order_and_distinguishes_missing_from_stale() {
+        let target = test_db(400);
+        let manager = AssetQueryManager::new();
+        let request = manager.begin_request(1);
+        let StartAssetQueryResult::Ready {
+            session_id, items, ..
+        } = start(&manager, &target.path, &filters(&[]), request, 1)
+        else {
+            panic!("ready");
+        };
+        assert_eq!(items.len(), 10);
+        let permit = target.runtime.admit().unwrap();
+        assert_eq!(
+            manager.position(&permit, session_id, 201).unwrap(),
+            AssetQueryPositionResult::Resolved { index: 200 }
+        );
+        assert_eq!(
+            manager.position(&permit, session_id, 401).unwrap(),
+            AssetQueryPositionResult::Missing
+        );
+        let conn = permit.connection().unwrap();
+        db::bump_library_revision(&conn).unwrap();
+        assert_eq!(
+            manager.position(&permit, session_id, 201).unwrap(),
+            AssetQueryPositionResult::Stale
+        );
+        assert!(manager.session_by_id(session_id).is_none());
+        assert_eq!(
+            manager.position(&permit, u64::MAX, 201).unwrap(),
+            AssetQueryPositionResult::Stale
+        );
+        for (result, json) in [
+            (
+                AssetQueryPositionResult::Resolved { index: 200 },
+                serde_json::json!({"status":"resolved","index":200}),
+            ),
+            (
+                AssetQueryPositionResult::Missing,
+                serde_json::json!({"status":"missing"}),
+            ),
+            (
+                AssetQueryPositionResult::Stale,
+                serde_json::json!({"status":"stale"}),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(result).unwrap(), json);
+        }
     }
 
     #[test]

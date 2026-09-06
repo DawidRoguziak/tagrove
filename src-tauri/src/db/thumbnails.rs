@@ -191,21 +191,13 @@ pub(super) fn cleanup_stale_thumbnail_failures(conn: &Connection) -> anyhow::Res
     Ok(())
 }
 
-pub fn clear_all_thumbnail_paths(conn: &Connection) -> anyhow::Result<Vec<String>> {
-    let mut thumbs = Vec::new();
-    let mut stmt =
-        conn.prepare("SELECT DISTINCT thumb_path FROM assets WHERE thumb_path IS NOT NULL")?;
-    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-    for row in rows {
-        thumbs.push(row?);
-    }
-
+pub fn clear_all_thumbnail_paths(conn: &Connection) -> anyhow::Result<()> {
     conn.execute(
         "UPDATE assets SET thumb_path = NULL WHERE thumb_path IS NOT NULL",
         [],
     )?;
     conn.execute("DELETE FROM thumbnail_failures", [])?;
-    Ok(thumbs)
+    Ok(())
 }
 
 pub fn get_asset_for_thumbnail(

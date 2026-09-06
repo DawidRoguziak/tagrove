@@ -36,6 +36,7 @@ function createTagListPage(items: string[] = [], total: number = items.length) {
 const apiMocks = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
+  getAssetQueryPosition: vi.fn(),
   listTags: vi.fn()
 }));
 
@@ -78,13 +79,50 @@ vi.mock("../useThumbnailQueue", () => ({
 }));
 
 describe("useLibraryBrowser", () => {
+  it("does not automatically retry a failed query when resolving selection", async () => {
+    apiMocks.startAssetQuery.mockRejectedValue(new Error("busy"));
+    const { result } = renderHook(() => useLibraryBrowser({ pageSize: 128, filterInclude: [], filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: false }));
+    await act(async () => { await expect(result.current.refresh()).rejects.toThrow("busy"); });
+    await expect(result.current.getAssetPosition(201)).rejects.toThrow("Asset query is unavailable");
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getAssetQueryPosition).not.toHaveBeenCalled();
+    expect(result.current.queryPending).toBe(false);
+  });
+
   beforeEach(() => {
     apiMocks.startAssetQuery.mockReset();
     apiMocks.getAssetQueryPage.mockReset();
+    apiMocks.getAssetQueryPosition.mockReset();
     apiMocks.listTags.mockReset();
     queueMocks.queueThumbnailsByIds.mockReset();
     queueMocks.setGalleryThumbnailDemand.mockReset();
     queueMocks.resetThumbnailQueue.mockReset();
+  });
+
+  it("looks up uncached positions and refreshes stale sessions without loading every page", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(ready([createAsset(1)], 400));
+    apiMocks.getAssetQueryPosition.mockResolvedValueOnce({ status: "resolved", index: 200 }).mockResolvedValueOnce({ status: "missing" }).mockResolvedValueOnce({ status: "stale" });
+    const { result } = renderHook(() => useLibraryBrowser({ pageSize: 128, filterInclude: [], filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: false }));
+    await act(async () => result.current.refresh());
+    await expect(result.current.getAssetPosition(201)).resolves.toEqual({ status: "resolved", index: 200 });
+    expect(apiMocks.getAssetQueryPosition).toHaveBeenCalledWith(1, 201);
+    await expect(result.current.getAssetPosition(401)).resolves.toEqual({ status: "missing" });
+    await act(async () => { expect(await result.current.getAssetPosition(201)).toEqual({ status: "stale" }); });
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
+    expect(apiMocks.getAssetQueryPage).not.toHaveBeenCalled();
+    expect(result.current.assets).toHaveLength(1);
+  });
+
+  it("discards a late position reply after a refresh starts", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(ready([createAsset(1)], 400));
+    const reply = deferred<{ status: "resolved"; index: number }>();
+    apiMocks.getAssetQueryPosition.mockReturnValue(reply.promise);
+    const { result } = renderHook(() => useLibraryBrowser({ pageSize: 128, filterInclude: [], filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: false }));
+    await act(async () => result.current.refresh());
+    const position = result.current.getAssetPosition(201);
+    await act(async () => result.current.refresh());
+    reply.resolve({ status: "resolved", index: 200 });
+    await expect(position).resolves.toEqual({ status: "stale" });
   });
 
   it("loads first page with replace mode and resets thumbnail queue", async () => {

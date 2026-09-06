@@ -158,6 +158,11 @@
     }
   },
   "lightbox": {
+    "navigation": {
+      "resolving": "Foto wird in den Ergebnissen gesucht…",
+      "missing": "Dieses Foto ist nicht mehr in den Ergebnissen. Schließen Sie die Vorschau, um weiterzusuchen.",
+      "failed": "Die Navigation konnte nicht wiederhergestellt werden. Versuchen Sie es erneut."
+    },
     "favorite": {
       "add": "Zu Favoriten hinzufügen",
       "remove": "Aus Favoriten entfernen",

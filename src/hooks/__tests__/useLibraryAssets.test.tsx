@@ -185,7 +185,7 @@ describe("useLibraryAssets", () => {
     expect(stored?.preview_path).toBeNull();
   });
 
-  it("bumps queryEpoch only when a new session becomes current", async () => {
+  it("invalidates queryEpoch when refresh starts even if the backend supersedes it", async () => {
     apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], 1, 7));
     const { result } = await renderAssets();
     expect(result.current.queryEpoch).toBe(0);
@@ -200,7 +200,9 @@ describe("useLibraryAssets", () => {
     await act(async () => {
       await result.current.refresh();
     });
-    expect(result.current.queryEpoch).toBe(afterFirst);
+    expect(result.current.queryEpoch).toBe(afterFirst + 1);
+    expect(result.current.queryPending).toBe(false);
+    expect(result.current.getAssetIndex(1)).toBeNull();
   });
 
   it("resolves ordered snapshot IDs across unloaded pages via getIdsRangeAsync", async () => {

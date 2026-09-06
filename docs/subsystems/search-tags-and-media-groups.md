@@ -38,7 +38,11 @@ The parser trims the complete input first. Matching of reserved words is case-in
 
 `tags:`, signed values, decimal values, and non-digits produce `hasNoTagsInvalidCount`. A blank `gN:` value produces `groupNameMissingValue`. A `tags`/`tags:...` token mixed with another whitespace token, or a `gN:` token that occurs after another token, produces `metaTagRequiresSolo`. Because the anchored group rule consumes the remainder, `gN:Trip 2026` is one valid group-name filter rather than a mixed expression.
 
-There is no quoting or escaping grammar. A lone `-` is a normal included token, and the same normalized tag may be present on both the include and exclude sides. Unrecognized strings such as `tagsfoo`, `-tags`, or `gnn:value` are normal tag tokens.
+Double quotes mark a literal tag: `"tags"`, `"tags:3"`, `"gn:trip"`, and `"-holiday"` include those stored names instead of invoking an operator. A minus outside the quotes excludes the literal, for example `-"-holiday"`. Within quotes, `\"` means a literal quote and `\\` means a literal backslash. Quotes must enclose the entire tag; unfinished quotes, unsupported escapes, empty names, and the usual invalid tag characters reject submission. Whitespace inside quotes does not create a valid tag. Unquoted operators keep their existing meaning; quotes embedded in an unquoted tag remain ordinary characters.
+
+Tag-list Apply and search suggestion insertion share `serializeTagToken`, which quotes names beginning with `-`, reserved-looking names, and names containing quotes or backslashes. Parsed literal names feed the same normalized query descriptor and IPC arrays as ordinary tags; resubmitting the displayed text preserves membership. Stored tags are unchanged.
+
+A lone `-` is a normal included token, and the same normalized tag may be present on both the include and exclude sides. Unrecognized strings such as `tagsfoo`, `-tags`, or `gnn:value` are normal tag tokens.
 
 The frontend sends only applied parsed values. The Rust query boundary normalizes tag arrays again, accepts only `image`, `gif`, and `video`, rejects negative exact counts and blank group names, and forwards the normalized filters to the session query. The complete SQL membership and group-ordering rules are in [database](database.md).
 
@@ -46,7 +50,7 @@ The frontend sends only applied parsed values. The Rust query boundary normalize
 
 `SearchTagator` discovers the active token around the current caret, scanning left and right to whitespace boundaries. The active query is trimmed, lowercased, and stripped of one leading `-`; replacement covers the entire token even when the caret is in its middle, and preserves the negative prefix. Caret position is restored immediately after the inserted tag.
 
-A lazy shell-owned `SuggestionProvider` shares one worker between tag editors. The worker owns Fuse indexing and searching, using match ranges, sorting, threshold `0.35`, and minimum match length one. It considers at most 20 eligible matches and displays at most eight. Hard exclusions are removed before that limit; tags already used in the query are omitted unless they equal the active query. Metatag tokens suppress suggestions.
+A lazy shell-owned `SuggestionProvider` shares one worker between tag editors. The worker owns Fuse indexing and searching, using match ranges, sorting, threshold `0.35`, and minimum match length one. It considers at most 20 eligible matches and displays at most eight. Hard exclusions are removed before that limit; tags already used in the query are omitted unless they equal the active query. Unquoted positive metatag tokens suppress suggestions. Quoted literals and negative tag tokens remain eligible, and suggestion replacement escapes the complete literal while retaining an exclusion prefix. Used-tag comparisons decode search syntax but treat vocabulary and hard-exclusion entries as stored names.
 
 Only focused, enabled inputs with an eligible token request suggestions. Vocabulary versions and request IDs reject obsolete results. One search runs at a time and pending searches coalesce per editor. Worker failure leaves ordinary text submission available and displays an explicit suggestion Retry. The shell disposes the worker on unmount. Filtering assigned lightbox tags uses worker exclusions and does not copy or reindex the vocabulary on thumbnail updates.
 

@@ -7,7 +7,7 @@ use crate::{
     app::{locks::with_scan_and_thumb_lock, state::AppState},
     db::{self, list_assets_with_meta as db_list_assets_with_meta, AssetMetaFilter},
     models::{
-        AssetDetails, AssetPage, AssetQueryPageResult, AssetSummary, BulkMediaGroupSummary,
+        AssetDetails, AssetPage, AssetQueryPageResult, AssetQueryPositionResult, AssetSummary, BulkMediaGroupSummary,
         BulkTagMergeSummary, DeleteAssetSummary, DuplicateResolutionBatchInput,
         DuplicateResolutionBatchSummary, DuplicateScanSummary, RenameAssetSummary,
         SetAssetTagsSummary, StartAssetQueryResult, TagListPage,
@@ -77,6 +77,23 @@ pub async fn get_asset_query_page(
     })
     .await
     .map_err(|e| format!("asset page worker failed: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_asset_query_position(
+    session_id: u64,
+    asset_id: i64,
+    state: State<'_, AppState>,
+) -> Result<AssetQueryPositionResult, String> {
+    let database = state.database.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        database
+            .queries
+            .position(&database.admit()?, session_id, asset_id)
+    })
+    .await
+    .map_err(|e| format!("asset position worker failed: {e}"))?
     .map_err(|e| e.to_string())
 }
 

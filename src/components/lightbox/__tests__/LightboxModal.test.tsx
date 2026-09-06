@@ -69,6 +69,24 @@ function stubMatchMedia(matches: boolean) {
 }
 
 describe("LightboxModal", () => {
+  it("shows navigation recovery states and delegates Retry", async () => {
+    const onRetryNavigation = vi.fn();
+    const props = {
+      selected: selectedAsset, tagEditor: [], knownTags: [],
+      onTagEditorChange: vi.fn(), onSaveTags: vi.fn(), onNavigatePrevious: vi.fn(),
+      onNavigateNext: vi.fn(), onToggleFavorite: vi.fn(), onClose: vi.fn(), onRetryNavigation
+    };
+    const { rerender } = render(<LightboxModal {...props} navigationStatus="resolving" />);
+    expect(screen.getByRole("status")).toHaveTextContent("Finding this photo in the results");
+    rerender(<LightboxModal {...props} navigationStatus="failed" />);
+    await userEvent.click(screen.getByRole("button", { name: /^Retry$/ }));
+    expect(onRetryNavigation).toHaveBeenCalledTimes(1);
+    rerender(<LightboxModal {...props} navigationStatus="missing" />);
+    expect(screen.getByRole("status")).toHaveTextContent("This photo is no longer in the results");
+    rerender(<LightboxModal {...props} navigationStatus="ready" />);
+    expect(screen.queryByText("Finding this photo in the results…")).not.toBeInTheDocument();
+  });
+
   beforeEach(() => {
     stubMatchMedia(false);
     apiMocks.beginVideoOpen.mockReset().mockResolvedValue(1);

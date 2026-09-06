@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { getAssetQueryPage, startAssetQuery } from "../api";
+import { getAssetQueryPage, getAssetQueryPosition, startAssetQuery } from "../api";
 import type { SearchMediaKind } from "../components/app/types";
-import type { AssetSummary, SearchMetaFilter } from "../types";
+import type { AssetQueryPositionResult, AssetSummary, SearchMetaFilter } from "../types";
 import { mapThumbs } from "../utils/media";
 
 const MAX_CACHED_PAGES = 12;
@@ -37,6 +37,8 @@ interface UseLibraryAssetsResult {
   retryLoad: () => Promise<void>;
   pageFailureEpoch: number;
   queryEpoch: number;
+  queryPending: boolean;
+  getAssetPosition: (assetId: number) => Promise<AssetQueryPositionResult>;
   refresh: () => Promise<void>;
   reset: () => void;
   handleReachEnd: () => void;
@@ -69,6 +71,7 @@ export function useLibraryAssets({
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pageFailureEpoch, setPageFailureEpoch] = useState(0);
+  const [queryPending, setQueryPending] = useState(false);
   const [queryEpoch, setQueryEpoch] = useState(0);
   const sessionIdRef = useRef<number | null>(null);
   const generationRef = useRef(0);
@@ -96,6 +99,7 @@ export function useLibraryAssets({
     setTotal(0);
     setOffset(0);
     setLoading(false);
+    setQueryPending(false);
     setLoadError(null);
     setQueryEpoch(epoch => epoch + 1);
   }, [invalidateReads]);
@@ -149,6 +153,8 @@ export function useLibraryAssets({
 
   const refresh = useCallback(async () => {
     invalidateReads();
+    setQueryPending(true);
+    setQueryEpoch(epoch => epoch + 1);
     const generation = generationRef.current;
     sessionIdRef.current = null;
     inFlightPagesRef.current.clear();
@@ -186,7 +192,10 @@ export function useLibraryAssets({
         performance.mark(`${perfMark}-end`);
         performance.measure("asset-query-refresh", `${perfMark}-start`, `${perfMark}-end`);
       }
-      if (generation === generationRef.current) endLoading();
+      if (generation === generationRef.current) {
+        setQueryPending(false);
+        endLoading();
+      }
     }
   }, [
     invalidateReads,
@@ -250,6 +259,16 @@ export function useLibraryAssets({
       return request;
     }, [beginLoading, cache.pages, cache.assetsById, endLoading, mergePage, pageSize, refresh, total, touchPage]
   );
+
+  const getAssetPosition = useCallback(async (assetId: number): Promise<AssetQueryPositionResult> => {
+    const generation = generationRef.current;
+    const sessionId = sessionIdRef.current;
+    if (sessionId === null) throw new Error("Asset query is unavailable");
+    const result = await getAssetQueryPosition(sessionId, assetId);
+    if (generation !== generationRef.current) return { status: "stale" };
+    if (result.status === "stale") await refresh();
+    return result;
+  }, [refresh]);
 
   const retryLoad = useCallback(async () => {
     if (sessionIdRef.current === null) {
@@ -340,6 +359,7 @@ export function useLibraryAssets({
 
   const getAssetIndex = useCallback(
     (assetId: number) => {
+      if (sessionIdRef.current === null) return null;
       for (const [pageOffset, ids] of cache.pages) {
         const localIndex = ids.indexOf(assetId);
         if (localIndex >= 0) return pageOffset + localIndex;
@@ -393,6 +413,8 @@ export function useLibraryAssets({
     retryLoad,
     pageFailureEpoch,
     queryEpoch,
+    queryPending,
+    getAssetPosition,
     refresh,
     reset,
     handleReachEnd,

@@ -1,7 +1,6 @@
 import type Fuse from "fuse.js";
 import type { FuseResult, FuseResultMatch } from "fuse.js";
 import type { ActiveToken, TagSuggestion } from "../types";
-import { normalizeTagToken } from "./tokenService";
 
 const DEFAULT_SEARCH_LIMIT = 20;
 const DEFAULT_SUGGESTION_LIMIT = 8;
@@ -78,8 +77,8 @@ export function buildTagSuggestions({
     return [];
   }
 
-  const query = normalizeTagToken(activeToken.query);
-  if (isMetaFilterToken(query)) {
+  const query = activeToken.query.trim().toLowerCase();
+  if (!activeToken.literal && !activeToken.negative && isMetaFilterToken(query)) {
     return [];
   }
 
@@ -89,7 +88,7 @@ export function buildTagSuggestions({
   let considered = 0;
   for (const result of fuse.search(query, { limit: searchLimit + excludedTags.size })) {
     const suggestionValue = result.item;
-    const normalizedValue = normalizeTagToken(suggestionValue);
+    const normalizedValue = suggestionValue.trim().toLowerCase();
     if (excludedTags.has(normalizedValue)) continue;
     if (considered++ >= searchLimit) break;
 

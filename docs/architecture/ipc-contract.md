@@ -66,6 +66,7 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 | --- | --- | --- | --- |
 | `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, registers the request in arrival order before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The backend registration token alone orders requests; frontend `generation` rejects late results locally. |
 | `getAssetQueryPage` / `get_asset_query_page` | `sessionId: number`, `offset: number`, `limit: number` (default 128) | `AssetQueryPageResult` (`ready` or `stale`) | Returns summaries from the frozen session order. Limit is clamped to 1–256 and offset past the end is clamped to the total. |
+| `getAssetQueryPosition` / `get_asset_query_position` | `sessionId: number`, `assetId: number` | `AssetQueryPositionResult` | Returns `{ status: "resolved", index }`, `{ status: "missing" }`, or `{ status: "stale" }`. The index is zero-based in the full ordered snapshot; missing differs from expired, evicted, cleared, or revision-stale sessions. No page or ID vector is transferred. |
 | `getAssetSummariesByIds` / `get_asset_summaries_by_ids` | `assetIds: number[]` | `AssetSummary[]` | At most 256 IDs; larger requests reject. Reuses the database summary lookup, preserves requested ID order, and omits missing records. Selection hydration runs at most four batches concurrently. |
 | `getAssetDetails` / `get_asset_details` | `assetId: number` | `AssetDetails \| null` | Returns the full path, size, and tags in addition to summary fields; unknown IDs return `null`. |
 | `beginVideoOpen` / `begin_video_open` | none | `requestId: number` | Reserves a monotonically increasing open request and supersedes previous pending work. |
@@ -128,7 +129,7 @@ Root normalization trims whitespace and removes trailing `/` except for the file
 | `renderAllThumbnails` / `render_all_thumbnails` | none | `ThumbnailRenderSummary` | Starts one process-wide bulk run; a concurrent bulk run rejects. Previously recorded failures are counted as `skipped_failed`. |
 | `renderFailedThumbnails` / `render_failed_thumbnails` | none | `ThumbnailRenderSummary` | Same bulk-run guard, but retries only recorded failures and does not skip them. |
 | `cancelRenderAllThumbnails` / `cancel_render_all_thumbnails` | none | `boolean` | Returns `true` and sets the cancellation flag only while either bulk mode is running; already completed ready results are retained. |
-| `clearAllThumbnails` / `clear_all_thumbnails` | none | `number` | Clears database thumbnail paths, exclusively blocks thumbnail readers, best-effort deletes files, emits progress, and returns the number of files actually removed. |
+| `clearAllThumbnails` / `clear_all_thumbnails` | none | `number` | Clears database thumbnail paths and failure markers, exclusively blocks thumbnail readers, best-effort deletes referenced and obsolete files below the owned thumbnail directory, emits progress, and returns the number of files actually removed. |
 
 The channel is created in `src/api.ts`; `onEvent` is not JSON data. Its serialized messages are:
 
@@ -179,7 +180,7 @@ A successful `start_asset_query` returns:
 Sessions bind an ordered asset-ID snapshot to normalized filters and a library revision. See [the query manager lifecycle](../subsystems/library-query-and-gallery.md#backend-session-and-page-contract) for snapshot construction, cancellation, reuse, and cache limits.
 
 - `superseded` is a successful start result, not an invoke error. A request whose backend registration token is no longer latest returns it, including on the cache-hit path. `useLibraryAssets` also compares its local generation and ignores an obsolete response.
-- `stale` is a successful page result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older library revision. A revision mismatch also removes that session. `useLibraryAssets` responds by starting a fresh query.
+- `stale` is a successful page or position result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older library revision. A revision mismatch also removes that session. `useLibraryAssets` responds by starting a fresh query.
 - `ready` pages preserve the session order and report the effective (possibly end-clamped) offset. Query-visible mutations and scans bump the library revision in their mutation transaction, so later pages from older sessions become stale.
 
 Because supersession and the cache are process-wide, requests from another window or independent caller can supersede or evict this window's work. Pooled database connections are acquired with a five-second bounded wait; exhaustion rejects the command with a text `database pool is busy` failure instead of blocking forever.

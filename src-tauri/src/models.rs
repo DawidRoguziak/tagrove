@@ -74,6 +74,14 @@ pub enum AssetQueryPageResult {
     Stale,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum AssetQueryPositionResult {
+    Resolved { index: usize },
+    Missing,
+    Stale,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "event", content = "data", rename_all = "camelCase")]
 pub enum ThumbnailStreamEvent {

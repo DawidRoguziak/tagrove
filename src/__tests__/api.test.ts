@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getAssetSummariesByIds,
+  getAssetQueryPosition,
   setAssetsMediaGroupBulk,
   beginVideoOpen,
   listScanRoots,
@@ -38,6 +39,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("api contract", () => {
+  it.each([{ status: "resolved", index: 201 }, { status: "missing" }, { status: "stale" }])("looks up query position through IPC: %j", async response => {
+    coreMocks.invoke.mockResolvedValueOnce(response);
+    await expect(getAssetQueryPosition(7, 202)).resolves.toEqual(response);
+    expect(coreMocks.invoke).toHaveBeenCalledWith("get_asset_query_position", { sessionId: 7, assetId: 202 });
+  });
   it("uses the scan root preference and startup command contracts", async () => {
     const roots = [{ path: "/media", auto_scan_on_startup: true }];
     coreMocks.invoke.mockResolvedValueOnce(roots);

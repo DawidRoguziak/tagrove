@@ -318,3 +318,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --test backend_runtime -- --igno
 ```
 
 The fixtures contain 1,000 and 10,000 metadata rows and no media collection. The output distinguishes Rust ID-vector capacity from additional peak SQLite allocation and checks indexed filename lookup plus seven-row thumbnail pages. See [the verification record](backend-refactor-verification.md) for measured results and desktop limitations.
+
+## Review fix regressions
+
+`e2e/specs/review-fixes.e2e.js` uses disposable media to verify navigation after a group-order save beyond the first 128-item page, literal tag include/exclude and autocomplete, and thumbnail clearing after a changed-file rescan. It saves screenshots and the clear/regeneration result under `artifacts/app-review/2026-09-06/fix-verification/`. Run it with the isolated desktop harness:
+
+```sh
+bun run test:e2e:tauri -- --spec ./e2e/specs/review-fixes.e2e.js
+```
+
+Lower-layer regressions are `queryRefreshNavigation.test.tsx`, `literalTagSearch.test.ts`, the library hook/API tests, the query-position service test, and `src-tauri/tests/thumbnail_clear.rs`. The Rust file-backed test also checks nested obsolete files, skipped symlinks, exclusive-reader coordination, failure-marker removal, source preservation, and actual image regeneration.

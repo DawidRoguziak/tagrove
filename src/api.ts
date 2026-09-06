@@ -3,6 +3,7 @@ import type {
   AssetDetails,
   AssetSummary,
   AssetQueryPageResult,
+  AssetQueryPositionResult,
   AssetPage,
   BulkFavoriteSummary,
   BulkMediaGroupSummary,
@@ -300,4 +301,8 @@ export async function syncNativeWindowTheme(theme: "light" | "dark"): Promise<vo
 
 export async function getAssetSummariesByIds(assetIds: number[]): Promise<AssetSummary[]> {
   return await invoke<AssetSummary[]>("get_asset_summaries_by_ids", { assetIds });
+}
+
+export async function getAssetQueryPosition(sessionId: number, assetId: number): Promise<AssetQueryPositionResult> {
+  return await invoke<AssetQueryPositionResult>("get_asset_query_position", { sessionId, assetId });
 }

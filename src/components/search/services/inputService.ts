@@ -1,3 +1,4 @@
+import { serializeTagToken } from "../../../utils/searchTokens";
 import type { ActiveToken } from "../types";
 
 interface AppliedSuggestion {
@@ -10,7 +11,7 @@ export function applySuggestionToValue(
   activeToken: ActiveToken,
   tag: string
 ): AppliedSuggestion {
-  const insertedTag = `${activeToken.negative ? "-" : ""}${tag}`;
+  const insertedTag = serializeTagToken(tag, activeToken.negative);
   const nextValue = value.slice(0, activeToken.start) + insertedTag + value.slice(activeToken.end);
   const nextCaret = activeToken.start + insertedTag.length;
 

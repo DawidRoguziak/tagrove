@@ -12,12 +12,12 @@ The top bar has editable filter state and separate applied filter state. A valid
 
 Production uses a page size of 128. `useLibraryAssets.refresh`:
 
-1. increments its local generation;
+1. increments its local generation and query epoch, marks the query pending, and invalidates navigation positions;
 2. clears the active session reference and in-flight offset set;
 3. resets the thumbnail queue and enters loading state;
 4. calls `startAssetQuery` with the applied filters, generation, and page size;
 5. accepts only a `ready` response for the still-current local generation; and
-6. replaces the frontend page cache with the returned page at offset zero.
+6. advances the query epoch again and replaces the frontend page cache with the returned page at offset zero.
 
 The local generation rejects late frontend responses. The backend also registers each start before scheduling blocking work and returns `superseded` when a newer start owns the process-wide request. Input normalization belongs to [IPC validation](../architecture/ipc-contract.md#boundary-validation-and-normalization-summary), SQL membership to [database filters](database.md#filter-semantics), and user syntax to [search grammar](search-tags-and-media-groups.md#search-grammar-and-filter-semantics).
 
@@ -38,7 +38,7 @@ The [IPC query states](../architecture/ipc-contract.md#query-session-states) def
 
 The initial page size and later page limit are clamped by Rust to 1–256. Page offsets use unsigned transport values; an offset past the snapshot end is clamped to `total`. Summary lookup runs in chunks of 500 IDs and reconstructs the snapshot order after SQLite returns rows. The registered legacy `list_assets` command is not the production gallery path; it returns full `Asset` rows, clamps its limit to 1–500, and does not provide a stable session.
 
-Query start, page reads, and detail reads run as blocking work outside the async runtime. Command failures reject with a string as described in the [IPC contract](../architecture/ipc-contract.md).
+Query start, page reads, position lookups, and detail reads run as blocking work outside the async runtime. Command failures reject with a string as described in the [IPC contract](../architecture/ipc-contract.md).
 
 ## Frontend sparse page cache
 
@@ -56,7 +56,8 @@ Global-index access goes through these methods:
 
 - `getAssetAt(index)` computes the aligned page offset, finds the ID at the local page position, and returns the cached asset or `undefined` for a hole.
 - `getAssetAtAsync(index)` returns a cached asset or loads the aligned page, then returns that local position. Concurrent lookups for the same missing page await the same in-flight Promise and receive the same page result. Page-load failures reject; an unavailable position can resolve as `undefined`.
-- `getAssetIndex(assetId)` scans cached page ID arrays and returns the snapshot index only if that asset's page is loaded; otherwise it returns `null`.
+- `getAssetIndex(assetId)` scans cached page ID arrays and returns the snapshot index only if that asset's page is loaded and a session is active; otherwise it returns `null`.
+- `getAssetPosition(assetId)` uses the backend session's ordered ID vector to return `resolved` with an index, `missing` for an absent ID, or `stale` for an unavailable session. It neither loads pages nor transfers the ID vector. A stale backend response starts a refresh; a response from a superseded local generation is discarded. An unavailable current query rejects, leaving explicit retry to the caller.
 - `getIdsRangeAsync(from, to)` loads every intersecting page and returns the inclusive global ID range. It rejects the whole request when a page is stale, cancelled, failed, or lacks any expected position; callers never receive a silently truncated range.
 
 Only one request per page offset is started at a time. A ref-backed Promise map deduplicates callers, while a separate in-flight counter keeps `loading` true until all tracked query/page requests finish. Refresh clears the Promise map; an older request's `finally` removes its entry only if that exact Promise is still registered, so it cannot erase a newer-generation request for the same offset. A page response is discarded when its captured local generation is obsolete. The active session ID is captured before the request; no page is requested without a session or outside the current `total`. The frontend trusts a backend `ready` page's returned session and revision rather than comparing them again, because the backend page command is keyed by the supplied session ID.

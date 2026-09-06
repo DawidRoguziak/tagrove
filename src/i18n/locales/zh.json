@@ -158,6 +158,11 @@
     }
   },
   "lightbox": {
+    "navigation": {
+      "resolving": "正在结果中查找这张照片…",
+      "missing": "这张照片已不在结果中。请关闭预览以继续浏览。",
+      "failed": "无法恢复导航。请重试以继续浏览。"
+    },
     "favorite": {
       "add": "添加到收藏",
       "remove": "从收藏中移除",

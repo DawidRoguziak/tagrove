@@ -16,7 +16,7 @@ import type {
   AssetTagMutationToken,
   AssetTagStateController
 } from "../components/app/hooks/useAssetTagState";
-import type { AssetDetails, AssetSummary, SelectedAsset } from "../types";
+import type { AssetDetails, AssetQueryPositionResult, AssetSummary, SelectedAsset } from "../types";
 import { getAssetDetails } from "../api";
 import { normalizeTags } from "../utils/media";
 import { useTranslation } from "react-i18next";
@@ -30,6 +30,8 @@ interface UseSelectionStateArgs {
   assetTagState?: AssetTagStateController;
   assetCount?: number;
   queryEpoch?: number;
+  queryPending?: boolean;
+  getAssetPosition?: (assetId: number) => Promise<AssetQueryPositionResult>;
   getAssetAtAsync?: (index: number) => Promise<AssetSummary | undefined>;
   getAssetIndex?: (assetId: number) => number | null;
   appliedFilter?: FilterDescriptor;
@@ -95,6 +97,8 @@ export function useSelectionState({
   assetTagState: sharedAssetTagState,
   assetCount = assets.length,
   queryEpoch = 0,
+  queryPending = false,
+  getAssetPosition,
   getAssetAtAsync = async (index) => assets[index],
   getAssetIndex = (assetId) => {
     const index = assets.findIndex((asset) => asset.id === assetId);
@@ -106,12 +110,24 @@ export function useSelectionState({
   const { t } = useTranslation();
   const localAssetTagState = useAssetTagState();
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
+  const [navigationStatus, setNavigationStatus] = useState<"ready" | "resolving" | "missing" | "failed">("ready");
+  const [positionRetry, setPositionRetry] = useState(0);
+  const positionReadersRef = useRef({ getAssetIndex, getAssetPosition });
+  positionReadersRef.current = { getAssetIndex, getAssetPosition };
   const [selected, setSelectedState] = useState<SelectedAsset | null>(null);
   const syncedSummaryRef = useRef<AssetSummary | null>(null);
   const selectedRef = useRef<SelectedAsset | null>(null);
   selectedRef.current = selected;
   const selectionRequestRef = useRef(0);
   const navigationRequestRef = useRef(0);
+  const retryNavigation = useCallback(() => {
+    const request = selectionRequestRef.current;
+    void refresh().then(() => {
+      if (request === selectionRequestRef.current) setPositionRetry(value => value + 1);
+    }).catch(() => {
+      if (request === selectionRequestRef.current) setNavigationStatus("failed");
+    });
+  }, [refresh]);
   const selectedIndexRef = useRef<number | null>(null);
   const navigationTargetIndexRef = useRef<number | null>(null);
   const favoriteChangeRevisionRef = useRef(0);
@@ -178,21 +194,48 @@ export function useSelectionState({
 
   }, [assetTagState.epoch]);
 
-  // A new query session reorders the result list: recompute the lightbox
-  // position from the fresh snapshot, or invalidate it when the selected
-  // record is not resolvable (it fell out of the active filters).
+  // Position belongs to a query snapshot, independently of which pages are cached.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selection and explicit retry restart the position request.
   useEffect(() => {
-    if (observedQueryEpochRef.current === queryEpoch) return;
+    const changedQuery = observedQueryEpochRef.current !== queryEpoch;
     observedQueryEpochRef.current = queryEpoch;
-    // A new session invalidates cached details: rows may have changed on disk
-    // between sessions even when IDs are reused.
-    detailsCacheRef.current.clear();
+    if (changedQuery) detailsCacheRef.current.clear();
+    navigationRequestRef.current++;
     const current = selectedRef.current;
     if (!current) return;
-    const index = getAssetIndex(current.id);
+    const { getAssetIndex, getAssetPosition } = positionReadersRef.current;
+    const index = queryPending ? null : changedQuery
+      ? getAssetIndex(current.id)
+      : selectedIndexRef.current ?? getAssetIndex(current.id);
     selectedIndexRef.current = index;
     navigationTargetIndexRef.current = index;
-  }, [getAssetIndex, queryEpoch]);
+    if (index !== null) {
+      setNavigationStatus("ready");
+      return;
+    }
+    setNavigationStatus("resolving");
+    if (queryPending) return;
+    if (!getAssetPosition) {
+      setNavigationStatus("missing");
+      return;
+    }
+    let active = true;
+    const selectionRequest = selectionRequestRef.current;
+    const isCurrent = () => active && selectionRequest === selectionRequestRef.current && selectedRef.current?.id === current.id;
+    void getAssetPosition(current.id).then(result => {
+      if (!isCurrent()) return;
+      if (result.status === "resolved") {
+        selectedIndexRef.current = result.index;
+        navigationTargetIndexRef.current = result.index;
+        setNavigationStatus("ready");
+      } else {
+        setNavigationStatus(result.status === "missing" ? "missing" : "failed");
+      }
+    }).catch(() => {
+      if (isCurrent()) setNavigationStatus("failed");
+    });
+    return () => { active = false; };
+  }, [queryEpoch, queryPending, selectedId, positionRetry]);
 
   const syncVisibleTagMutationState = useCallback((assetId: number) => {
     if (selectedRef.current?.id !== assetId) return;
@@ -381,7 +424,7 @@ export function useSelectionState({
     if (selectedId === undefined) return;
     const latest = assets.find((asset) => asset.id === selectedId);
     if (!latest) {
-      if (assets.length === 0) setSelectedState(null);
+      if (!getAssetPosition && assets.length === 0) setSelectedState(null);
       return;
     }
 
@@ -407,7 +450,7 @@ export function useSelectionState({
         next.media_group_order === current.media_group_order && sameTags(next.tags, current.tags);
       return unchanged ? current : next;
     });
-  }, [assetTagState, assets, selectedId]);
+  }, [assetTagState, assets, getAssetPosition, selectedId]);
 
   const { toggleSelectedFavorite, saveMediaGroup, favoritePending, groupPending, favoriteFailed, groupFailed } = useSelectionMetadataActions({
     selected, assetTagState, appliedFavoritesOnly, setAssets, setSelectedState, refresh, getCachedDetails, putCachedDetails
@@ -449,6 +492,9 @@ export function useSelectionState({
 
   const selectAsset = useCallback((summary: AssetSummary | null, knownIndex?: number) => {
     navigationRequestRef.current += 1;
+    setNavigationStatus("ready");
+    setPositionRetry(value => value + 1);
+    if (!summary) selectedRef.current = null;
     const requestId = selectionRequestRef.current + 1;
     selectionRequestRef.current = requestId;
     if (!summary) {
@@ -592,6 +638,8 @@ export function useSelectionState({
 
   return useMemo(() => ({
     selected,
+    navigationStatus,
+    retryNavigation,
     setSelected: selectAsset,
     tagEditor,
     setTagEditor,
@@ -615,7 +663,7 @@ export function useSelectionState({
     handleSelectNext,
     deleteSelectedAsset
   }), [
-    deleteSelectedAsset, handleSelectNext, handleSelectPrevious, mediaGroupKeyEditor,
+    navigationStatus, retryNavigation, deleteSelectedAsset, handleSelectNext, handleSelectPrevious, mediaGroupKeyEditor,
     mediaGroupOrderEditor, retryTagDetails, retryTags, saveMediaGroup, saveTags, selectAsset, selected,
     assetDetailsFailed, tagDetailsFailed, tagDetailsLoading, tagEditor, tagFailed, tagSaving,
     toggleSelectedFavorite, favoritePending, groupPending, favoriteFailed, groupFailed, applyFavoriteChanges, setMediaGroupKeyEditor, setMediaGroupOrderEditor

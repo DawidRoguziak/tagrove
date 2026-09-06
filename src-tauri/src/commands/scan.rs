@@ -5,7 +5,7 @@ use tauri::{Manager, State};
 use crate::{
     app::{locks::with_scan_and_thumb_lock, locks::with_scan_lock, state::AppState},
     db,
-    models::{RemoveRootSummary, ScanSummary},
+    models::{RemoveRootSummary, ScanRoot, ScanSummary},
     services::{scan_service, thumb_service},
     utils::paths::normalize_root_path,
 };
@@ -31,10 +31,10 @@ pub async fn scan_folder(path: String, app: tauri::AppHandle) -> Result<ScanSumm
 }
 
 #[tauri::command]
-pub fn list_scan_roots(state: State<AppState>) -> Result<Vec<String>, String> {
+pub fn list_scan_roots(state: State<AppState>) -> Result<Vec<ScanRoot>, String> {
     (|| {
         let conn = db::open_connection(&state.db_path)?;
-        let roots = db::list_scan_roots(&conn)?;
+        let roots = db::list_scan_root_settings(&conn)?;
         Ok(scan_service::sort_scan_roots_by_created_desc(roots))
     })()
     .map_err(|e: crate::error::AppError| e.to_string())
@@ -89,6 +89,35 @@ pub async fn rescan_all_roots(app: tauri::AppHandle) -> Result<ScanSummary, Stri
     })
     .await
     .map_err(|e| format!("rescan worker failed: {e}"))?
+}
+
+#[tauri::command]
+pub fn set_scan_root_auto_scan(
+    path: String,
+    enabled: bool,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let conn = db::open_connection(&state.db_path).map_err(|e| e.to_string())?;
+    db::set_scan_root_auto_scan(&conn, &normalize_root_path(&path), enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn scan_startup_roots(app: tauri::AppHandle) -> Result<Option<ScanSummary>, String> {
+    let roots = app
+        .state::<crate::app::state::StartupScanState>()
+        .take_roots()?;
+    if roots.is_empty() {
+        return Ok(None);
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_scan_lock(&state, || scan_service::scan_roots(&roots, &state, &app))
+            .map(Some)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("startup scan worker failed: {e}"))?
 }
 
 #[cfg(test)]
@@ -191,7 +220,8 @@ mod tests {
 
         let roots = list_scan_roots(as_state(&state)).expect("list roots");
         assert_eq!(roots.len(), 1);
-        assert_eq!(roots[0], scan_root.to_string_lossy().to_string());
+        assert_eq!(roots[0].path, scan_root.to_string_lossy().to_string());
+        assert!(!roots[0].auto_scan_on_startup);
     }
 
     #[test]

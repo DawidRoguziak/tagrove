@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "Beim App-Start scannen",
+      "autoScanLabel": "Beim App-Start scannen: {{path}}",
+      "startupPending": "Startordner werden gescannt…",
+      "savingAutoScan": "Scaneinstellung wird gespeichert…",
+      "saveAutoScanError": "Scaneinstellung konnte nicht gespeichert werden",
+      "autoScanSaved": "Gespeichert. Gilt ab dem nächsten App-Start.",
       "heading": "Scan-Einstellungen",
-      "description": "Wählen Sie einen Ordner aus, um ihn zur Scanliste hinzuzufügen, und führen Sie dann einen manuellen Rescan für alle Ordner aus.",
+      "description": "Füge Ordner hinzu, scanne sie manuell oder aktiviere das Scannen beim App-Start.",
       "chooseFolder": "Ordner auswählen",
       "attachedPaths": "Verbundene Scanpfade",
       "noPaths": "Keine Scanpfade",

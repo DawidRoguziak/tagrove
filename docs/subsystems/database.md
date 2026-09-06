@@ -6,7 +6,7 @@ This page owns SQLite schema, migrations, derived fields, SQL filters/order, and
 
 ## Database location and connection policy
 
-The application stores `media.db` directly in the effective Tauri profile's app-data directory. Development, E2E, and release identifiers therefore use separate databases. Startup acquires that profile's `instance.lock` before opening the database, creates the app-data and thumbnail directories, calls `open_connection`, and runs `init_schema`. Initialization rejects a nonzero foreign `application_id` and a future `user_version`; after success it records MediaTagger's `application_id` (`0x4d544147`) and schema version (`1`). The path is retained in `AppState`; commands normally open their own connection to it.
+The application stores `media.db` directly in the effective Tauri profile's app-data directory. Development, E2E, and release identifiers therefore use separate databases. Startup acquires that profile's `instance.lock` before opening the database, creates the app-data and thumbnail directories, calls `open_connection`, and runs `init_schema`. Initialization rejects a nonzero foreign `application_id` and a future `user_version`; after success it records MediaTagger's `application_id` (`0x4d544147`) and schema version (`2`). The path is retained in `AppState`; commands normally open their own connection to it.
 
 Every connection created through `db::open_connection` applies:
 
@@ -52,13 +52,17 @@ The remaining tables are:
 | --- | --- |
 | `tags` | `id INTEGER PRIMARY KEY AUTOINCREMENT`; `name TEXT NOT NULL UNIQUE COLLATE NOCASE`. Case-insensitive uniqueness prevents two tag rows that differ only by case. |
 | `asset_tags` | Composite primary key `(asset_id, tag_id)`. Both columns are required foreign keys; deleting an asset or tag cascades to the mapping row. This is the many-to-many asset/tag relationship. |
-| `scan_roots` | `path TEXT PRIMARY KEY`. It contains only the normalized root string; no creation timestamp is stored. |
+| `scan_roots` | `path TEXT PRIMARY KEY` plus `auto_scan_on_startup INTEGER NOT NULL DEFAULT 0 CHECK(auto_scan_on_startup IN (0, 1))`. No creation timestamp is stored. |
 | `asset_scan_roots` | Composite primary key `(asset_id, root_path)` plus required `last_seen_generation`. Both foreign keys cascade, so deletion of either the asset or root removes the mapping. One asset can remain owned by another overlapping root. |
 | `thumbnail_failures` | One row per `asset_id`, with required `failure_count`, optional `last_error`, required `last_failed_at`, and required `asset_modified_at`. It deliberately has no declared foreign key; database helpers remove orphaned and source-version-stale rows. |
 | `library_metadata` | Integer values keyed by text. Current reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `3`). It has no foreign-key relationships. SQLite `application_id` and `user_version` separately identify the application and complete schema generation; neither replaces these runtime/backfill rows. |
 | `pending_file_operations` | Durable source-file recovery journal keyed by `(operation_id, asset_id)`, storing action, original/staging/final paths, and a `committed` flag set in the same transaction as asset mutation/revision. It deliberately survives asset deletion and is reconciled at startup. |
 
 Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_roots`. Deleting a `scan_roots` row automatically removes its root mappings. Tags are not deleted by cascade when their final asset mapping disappears; asset/tag mutation and asset-removal helpers explicitly call orphan-tag cleanup. Thumbnail failures likewise require explicit cleanup because they are not foreign-keyed.
+
+Schema version 2 adds the startup-scan preference to `scan_roots`. Initialization adds the column to older schemas with false for all existing roots and preserves values on repeated initialization. Preference writes neither scan nor bump the library revision. Root insertion uses conflict-do-nothing, preserving the existing flag; removing and adding a root again restores the false default.
+
+Backup validation distinguishes current version 2, identified version 1, and the existing unmarked legacy format. Version 1 retains all previous structure/data checks and migrates only after staging validation. Version 2 additionally validates the preference's declared integer type, required column, and boolean values. New bundles preserve the flag, including root remapping; old bundles migrate to false.
 
 ## Indexes
 

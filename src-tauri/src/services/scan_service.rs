@@ -27,11 +27,13 @@ const SCAN_DB_BATCH_SIZE: usize = 512;
 const SCAN_RESULT_QUEUE_CAPACITY: usize =
     SCAN_QUEUE_CAPACITY + SCAN_DB_BATCH_SIZE + MAX_SCAN_WORKERS;
 
-pub fn sort_scan_roots_by_created_desc(roots: Vec<String>) -> Vec<String> {
+pub fn sort_scan_roots_by_created_desc(
+    roots: Vec<crate::models::ScanRoot>,
+) -> Vec<crate::models::ScanRoot> {
     let mut roots_with_created_at = roots
         .into_iter()
         .map(|path| {
-            let created_at = std::fs::metadata(&path)
+            let created_at = std::fs::metadata(&path.path)
                 .and_then(|metadata| metadata.created())
                 .ok();
             (path, created_at)
@@ -41,10 +43,12 @@ pub fn sort_scan_roots_by_created_desc(roots: Vec<String>) -> Vec<String> {
     roots_with_created_at.sort_by(
         |(left_path, left_created), (right_path, right_created)| match (left_created, right_created)
         {
-            (Some(left), Some(right)) => right.cmp(left).then_with(|| left_path.cmp(right_path)),
+            (Some(left), Some(right)) => right
+                .cmp(left)
+                .then_with(|| left_path.path.cmp(&right_path.path)),
             (Some(_), None) => std::cmp::Ordering::Less,
             (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => left_path.cmp(right_path),
+            (None, None) => left_path.path.cmp(&right_path.path),
         },
     );
 

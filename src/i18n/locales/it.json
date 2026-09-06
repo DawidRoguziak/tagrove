@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "Scansiona all’avvio dell’app",
+      "autoScanLabel": "Scansiona all’avvio dell’app: {{path}}",
+      "startupPending": "Scansione delle cartelle all’avvio…",
+      "savingAutoScan": "Salvataggio della preferenza di scansione…",
+      "saveAutoScanError": "Impossibile salvare la preferenza di scansione",
+      "autoScanSaved": "Salvato. Si applica al prossimo avvio dell’app.",
       "heading": "Impostazioni scansione",
-      "description": "Scegli una cartella da aggiungere alla lista di scansione, quindi esegui una nuova scansione manuale.",
+      "description": "Aggiungi cartelle, scansionale manualmente o attiva la scansione all’avvio dell’app.",
       "chooseFolder": "Scegli cartella",
       "attachedPaths": "Percorsi di scansione collegati",
       "noPaths": "Nessun percorso di scansione",

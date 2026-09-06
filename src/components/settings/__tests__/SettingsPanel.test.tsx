@@ -11,7 +11,7 @@ function renderPanel(overrides: Partial<ComponentProps<typeof SettingsPanel>> = 
     onThemeChange: vi.fn(),
     language: "en",
     onLanguageChange: vi.fn(),
-    scanRoots: ["C:/media"],
+    scanRoots: [{ path: "C:/media", auto_scan_on_startup: false }],
     isOperationLocked: false,
     thumbnailBulkRunning: false,
     cancelThumbnailRunning: false,

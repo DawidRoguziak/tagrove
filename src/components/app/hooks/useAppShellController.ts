@@ -187,6 +187,7 @@ export function useAppShellController() {
   }, [highlightScanSection, settingsViewOpen]);
 
   useEffect(() => {
+    void settingsActions.scan.scanOnStartup();
     void Promise.all([
       library.hydrateKnownTags(),
       settingsActions.scan.refreshScanRoots().catch(() => [])

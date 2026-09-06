@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   beginVideoOpen,
+  listScanRoots,
+  setScanRootAutoScan,
+  scanStartupRoots,
   cancelVideoOpen,
   setVideoControlLabels,
   closeVideo,
@@ -33,6 +36,17 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("api contract", () => {
+  it("uses the scan root preference and startup command contracts", async () => {
+    const roots = [{ path: "/media", auto_scan_on_startup: true }];
+    coreMocks.invoke.mockResolvedValueOnce(roots);
+    await expect(listScanRoots()).resolves.toEqual(roots);
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("list_scan_roots");
+    await setScanRootAutoScan("/media", true);
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("set_scan_root_auto_scan", { path: "/media", enabled: true });
+    coreMocks.invoke.mockResolvedValueOnce(null);
+    await expect(scanStartupRoots()).resolves.toBeNull();
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("scan_startup_roots");
+  });
   it("sends bulk favorite IDs and returns the canonical toggle result", async () => {
     const summary = { processed_asset_ids: [1, 2], is_favorite: true, revision: 3 };
     coreMocks.invoke.mockResolvedValueOnce(summary);

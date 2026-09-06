@@ -7,7 +7,8 @@ import { useTranslation } from "react-i18next";
 
 interface ScanSettingsSectionProps {
   highlighted?: boolean;
-  scanRoots: string[];
+  scanRoots: ScanSettingsController["scanRoots"];
+  onSetAutoScan: (path: string, enabled: boolean) => void;
   isOperationLocked: boolean;
   thumbnailBulkRunning: boolean;
   cancelThumbnailRunning: boolean;
@@ -31,6 +32,7 @@ export function ScanSettingsSection({
   operationState,
   videoToolStatus,
   onPickFolder,
+  onSetAutoScan,
   onRescanRoot,
   onRemoveRoot,
   onRescanAll,
@@ -82,7 +84,7 @@ export function ScanSettingsSection({
         <h3 className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-base-content/55">{t("settings.scan.attachedPaths")}</h3>
         {scanRoots.length ? (
           <ul className="m-0 grid list-none gap-2 p-0">
-            {scanRoots.map((path) => (
+            {scanRoots.map(({ path, auto_scan_on_startup }) => (
               <li key={path} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-base-200/38 p-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                 <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-primary/10 text-primary">
                   <UiIcon name="folder" className="h-[18px] w-[18px]" />
@@ -91,6 +93,17 @@ export function ScanSettingsSection({
                   {path}
                 </span>
                 <div className="col-span-2 flex flex-wrap items-center justify-end gap-2 sm:col-span-1">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={auto_scan_on_startup}
+                      disabled={isOperationLocked}
+                      aria-label={t("settings.scan.autoScanLabel", { path })}
+                      onChange={(event) => onSetAutoScan(path, event.target.checked)}
+                    />
+                    {t("settings.scan.autoScan")}
+                  </label>
                   <UiButton variant="ghost" onClick={() => onRescanRoot(path)} disabled={isOperationLocked}>
                     {t("settings.scan.rescan")}
                   </UiButton>

@@ -296,3 +296,13 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 - Run the focused test while iterating, then the complete affected layer.
 - Run `bun run test:all` when the change crosses frontend, backend, and desktop workflow boundaries and the Linux desktop prerequisites are available.
 - For packaging/resource changes, supplement automated tests with an installed-package smoke test.
+
+## Startup scan regression
+
+`e2e/specs/startup-scan.e2e.js` creates two disposable media folders, enables one through the Settings checkbox, and uses fresh WebDriver sessions to launch new app processes. It proves selected-folder scanning, persistence, no automatic scan after toggling/Settings navigation/frontend reload, next-launch discovery, disabling on a later launch, and manual Rescan all including unchecked folders. Run it with the normal isolated desktop harness:
+
+```sh
+bun run test:e2e:tauri -- --spec ./e2e/specs/startup-scan.e2e.js
+```
+
+The focused frontend regression is `useStartupScan.test.tsx`; Rust tests cover launch-snapshot contention, schema migration, preference persistence, and old/new backup compatibility with root remapping.

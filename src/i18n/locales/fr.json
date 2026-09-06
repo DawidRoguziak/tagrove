@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "Analyser au démarrage de l’application",
+      "autoScanLabel": "Analyser au démarrage de l’application : {{path}}",
+      "startupPending": "Analyse des dossiers au démarrage…",
+      "savingAutoScan": "Enregistrement du paramètre d’analyse…",
+      "saveAutoScanError": "Impossible d’enregistrer le paramètre d’analyse",
+      "autoScanSaved": "Enregistré. S’applique au prochain démarrage de l’application.",
       "heading": "Paramètres d’analyse",
-      "description": "Choisissez un dossier à ajouter à la liste d’analyse, puis lancez un rescannage manuel pour tous les dossiers.",
+      "description": "Ajoutez des dossiers, analysez-les manuellement ou activez l’analyse au démarrage de l’application.",
       "chooseFolder": "Choisir un dossier",
       "attachedPaths": "Chemins d’analyse attachés",
       "noPaths": "Aucun chemin d’analyse",

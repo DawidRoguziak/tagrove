@@ -84,7 +84,7 @@ See [search, tags, and media groups](search-tags-and-media-groups.md) for tag no
 
 ## Database bundle format
 
-The bundle is a deflated ZIP with no media payload. Current exports use format version `2`; their manifest identifies `io.github.mediatagger.bundle`, records database schema version `1`, source platform, exact scan roots, and the source thumbnail directory. Import requires those identity fields for every version-2 manifest and rejects future versions, foreign application IDs, unsupported schema versions, and manifest roots that differ from the staged database. Recognized entries are:
+The bundle is a deflated ZIP with no media payload. Current exports use format version `2`; their manifest identifies `io.github.mediatagger.bundle`, records database schema version `2`, source platform, exact scan roots, and the source thumbnail directory. Import requires those identity fields for every version-2 manifest and rejects future versions, foreign application IDs, unsupported schema versions, manifest/database schema-version mismatches, and manifest roots that differ from the staged database. Recognized entries are:
 
 ```text
 media.db                  required
@@ -95,6 +95,8 @@ thumbs/<relative path>    zero or more files, recursively copied
 ```
 
 Export first enters process-wide database maintenance, invalidates/drains the query pool, and takes `scan_lock` followed by the exclusive thumbnail lock. It rejects a database with pending local file operations, creates one standalone `media.db` through SQLite Backup API, then writes the manifest, that snapshot, and regular files found below the thumbnail directory. Current exports never include WAL or SHM, so `copied_files` is `1`; import continues to accept validated legacy sidecars. `copied_thumbnails` counts thumbnail files. Source media is never included.
+
+Schema version 1 bundles remain accepted under their original structure/data checks and migrate to version 2 only in staging. Their roots default to startup scanning disabled. Version 2 backups preserve each root’s startup-scan preference, including when root paths are remapped. Restoring preferences does not start an automatic scan in the current process.
 
 Compatibility is deliberately limited. Format version `1` manifests from earlier MediaTagger exports and archives without a manifest are legacy inputs only. They are accepted only when the database has either current MediaTagger SQLite markers or zero application/schema markers plus the known legacy core tables, columns, declared types, metadata rows, valid stored scalar types, valid integrity/foreign keys, and no pending local file operations. Legacy input gets migrated only inside staging. A manifestless archive does not gain format-v2 guarantees and future/foreign nonzero SQLite markers are never treated as legacy.
 

@@ -97,6 +97,8 @@ Startup failure in any setup step prevents the windowed application from enterin
 - the shared `ThumbnailScheduler`; and
 - atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and track the highest observed thumbnail request id.
 
+`StartupScanState` is separately managed by Tauri. It captures enabled scan roots after database initialization and recovery and atomically consumes them when shell initialization invokes the startup-scan command. Its empty state survives frontend reloads; preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline.
+
 The `InstanceLock` and `VideoPlayerService` are separately managed by Tauri so their lifetimes match the application. The player service owns one process-wide libmpv handle, one active session, a dedicated playback worker, and monotonically increasing request/session IDs. The worker owns libmpv commands and per-session event clients; GTK only enqueues playback commands. `services/video_events.rs` checks native client creation and copies event information before the next poll invalidates it. Pending reservations can be cancelled before source resolution completes. It rejects stale controls and superseded opens, while retired-session closes are idempotent. The query manager, its connection-pool registry, and the database maintenance gate are process-wide `OnceLock` singletons rather than `AppState` fields. Every application-created live-database connection owns a maintenance lease for its full lifetime.
 
 ## Profiles, identifiers, and data isolation

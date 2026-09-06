@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "应用启动时扫描",
+      "autoScanLabel": "应用启动时扫描：{{path}}",
+      "startupPending": "正在扫描启动文件夹…",
+      "savingAutoScan": "正在保存启动扫描设置…",
+      "saveAutoScanError": "无法保存启动扫描设置",
+      "autoScanSaved": "已保存。将在下次启动应用时生效。",
       "heading": "扫描设置",
-      "description": "选择一个文件夹并将其添加到扫描列表，然后手动重新扫描所有文件夹。",
+      "description": "添加文件夹，手动扫描或启用应用启动时扫描。",
       "chooseFolder": "选择文件夹",
       "attachedPaths": "已附加的扫描路径",
       "noPaths": "没有扫描路径",

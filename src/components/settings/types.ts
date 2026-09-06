@@ -1,4 +1,4 @@
-import type { ScanProgress, VideoToolStatus } from "../../types";
+import type { ScanProgress, ScanRoot, VideoToolStatus } from "../../types";
 import type { DuplicateGroup } from "../../types";
 import type { AppLanguage, AppTheme } from "../app/types";
 
@@ -34,15 +34,17 @@ export interface SettingsAppearanceController {
 }
 
 export interface ScanSettingsController {
-  scanRoots: string[];
+  scanRoots: ScanRoot[];
   isOperationLocked: boolean;
   thumbnailBulkRunning: boolean;
   cancelThumbnailRunning: boolean;
   operationState: SectionOperationState;
   videoToolStatus?: VideoToolStatus | null;
   removeRootConfirmPath: string | null;
-  refreshScanRoots: () => Promise<string[]>;
+  refreshScanRoots: () => Promise<ScanRoot[]>;
   onPickFolder: () => Promise<void>;
+  onSetAutoScan: (path: string, enabled: boolean) => Promise<void>;
+  scanOnStartup: () => Promise<void>;
   onRescanRoot: (path: string) => Promise<void>;
   onRequestRemoveRoot: (path: string) => void;
   onRescanAll: () => Promise<void>;

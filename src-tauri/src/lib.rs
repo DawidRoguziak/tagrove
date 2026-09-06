@@ -34,7 +34,10 @@ use commands::{
         clear_library_data, export_db_bundle, export_tags_csv, import_db_bundle, import_tags_csv,
         inspect_db_bundle,
     },
-    scan::{add_scan_root, list_scan_roots, remove_scan_root, rescan_all_roots, scan_folder},
+    scan::{
+        add_scan_root, list_scan_roots, remove_scan_root, rescan_all_roots, scan_folder,
+        scan_startup_roots, set_scan_root_auto_scan,
+    },
     thumbs::{
         cancel_render_all_thumbnails, clear_all_thumbnails, ensure_thumbnails,
         get_video_tool_status, render_all_thumbnails, render_failed_thumbnails,
@@ -75,6 +78,7 @@ pub fn run() {
             let conn = db::open_connection(&db_path)?;
             db::init_schema(&conn)?;
             asset_mutation_service::recover_pending_file_operations(&conn)?;
+            app.manage(app::state::StartupScanState::new(db::list_scan_root_settings(&conn)?));
 
             let resource_dir = app
                 .path()
@@ -123,6 +127,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             scan_folder,
+            set_scan_root_auto_scan,
+            scan_startup_roots,
             list_scan_roots,
             add_scan_root,
             remove_scan_root,

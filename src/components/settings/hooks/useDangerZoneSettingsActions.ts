@@ -1,3 +1,4 @@
+import type { ScanRoot } from "../../../types";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { clearLibraryData } from "../../../api";
@@ -8,7 +9,7 @@ import type { useSettingsOperationRunner } from "./useSettingsOperationRunner";
 interface UseDangerZoneSettingsActionsOptions {
   runner: ReturnType<typeof useSettingsOperationRunner>;
   refreshLibrary: () => Promise<void>;
-  refreshScanRoots: () => Promise<string[]>;
+  refreshScanRoots: () => Promise<ScanRoot[]>;
   onLibraryCleared: () => void;
   runWithTagMutationBarrier: <T>(operation: () => Promise<T>) => Promise<T>;
 }

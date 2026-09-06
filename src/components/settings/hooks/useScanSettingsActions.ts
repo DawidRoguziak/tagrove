@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import {
   addScanRoot,
+  setScanRootAutoScan,
+  scanStartupRoots,
   cancelRenderAllThumbnails,
   listScanRoots,
   removeScanRoot,
@@ -17,7 +19,7 @@ import {
   isScanProgressPhase,
   isThumbnailProgressPhase
 } from "../services/progressService";
-import type { ScanSummary } from "../../../types";
+import type { ScanRoot, ScanSummary } from "../../../types";
 import type { ScanSettingsController } from "../types";
 import type { useSettingsOperationRunner } from "./useSettingsOperationRunner";
 
@@ -95,7 +97,7 @@ export function useScanSettingsActions({
   onRootRemoved
 }: UseScanSettingsActionsOptions): ScanSettingsController {
   const { t } = useTranslation();
-  const [scanRoots, setScanRoots] = useState<string[]>([]);
+  const [scanRoots, setScanRoots] = useState<ScanRoot[]>([]);
   const [thumbnailBulkRunning, setThumbnailBulkRunning] = useState(false);
   const [cancelThumbnailRunning, setCancelThumbnailRunning] = useState(false);
   const [removeRootConfirmPath, setRemoveRootConfirmPath] = useState<string | null>(null);
@@ -112,6 +114,53 @@ export function useScanSettingsActions({
     setScanRoots(roots);
     return roots;
   }, []);
+
+  const startupRequested = useRef(false);
+  const scanOnStartup = useCallback(async () => {
+    if (startupRequested.current) return;
+    startupRequested.current = true;
+    await runner.runExclusiveOperation(
+      {
+        section: "scan",
+        pendingMessage: t("settings.scan.startupPending"),
+        errorPrefix: t("settings.actions.errorPrefix.rescan"),
+        progressPhaseMatcher: isScanProgressPhase
+      },
+      async () => {
+        let summary: ScanSummary | null;
+        try {
+          summary = await scanStartupRoots();
+        } catch (error) {
+          await Promise.allSettled([refreshLibrary(), refreshScanRoots()]);
+          throw error;
+        }
+        if (summary) {
+          await refreshLibrary();
+          await refreshScanRoots();
+          runner.setSectionMessage("scan", formatScanSummary(t, summary));
+        } else {
+          runner.setSectionMessage("scan", "");
+        }
+      }
+    );
+  }, [refreshLibrary, refreshScanRoots, runner, t]);
+
+  const onSetAutoScan = useCallback(async (path: string, enabled: boolean) => {
+    await runner.runExclusiveOperation(
+      {
+        section: "scan",
+        pendingMessage: t("settings.scan.savingAutoScan"),
+        errorPrefix: t("settings.scan.saveAutoScanError"),
+        setGlobalLoading: false
+      },
+      async () => {
+        await setScanRootAutoScan(path, enabled);
+        setScanRoots((roots) => roots.map((root) => root.path === path
+          ? { ...root, auto_scan_on_startup: enabled } : root));
+        runner.setSectionMessage("scan", t("settings.scan.autoScanSaved"));
+      }
+    );
+  }, [runner, t]);
 
   const onPickFolder = useCallback(async () => {
     await runner.runExclusiveOperation(
@@ -136,14 +185,14 @@ export function useScanSettingsActions({
         }
 
         const previousRoots = await listScanRoots();
-        const previousRootSet = new Set(previousRoots);
+        const previousRootSet = new Set(previousRoots.map((root) => root.path));
 
         for (const path of selection) {
           await addScanRoot(path);
         }
 
         const nextRoots = await refreshScanRoots();
-        const addedPaths = nextRoots.filter((path) => !previousRootSet.has(path));
+        const addedPaths = nextRoots.map((root) => root.path).filter((path) => !previousRootSet.has(path));
         const skippedCount = Math.max(selection.length - addedPaths.length, 0);
 
         runner.setSectionMessage(
@@ -314,6 +363,8 @@ export function useScanSettingsActions({
   return useMemo(
     () => ({
       scanRoots,
+      scanOnStartup,
+      onSetAutoScan,
       isOperationLocked: runner.isOperationLocked,
       thumbnailBulkRunning,
       cancelThumbnailRunning,
@@ -347,6 +398,8 @@ export function useScanSettingsActions({
       runner.isOperationLocked,
       runner.scanOperationState,
       scanRoots,
+      scanOnStartup,
+      onSetAutoScan,
       thumbnailBulkRunning,
       videoToolStatus
     ]

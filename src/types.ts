@@ -1,3 +1,8 @@
+export interface ScanRoot {
+  path: string;
+  auto_scan_on_startup: boolean;
+}
+
 export type MediaKind = "image" | "gif" | "video";
 
 export type SearchMetaFilter =

@@ -140,9 +140,9 @@ describe("useSettingsActions", () => {
 
   it("refreshes scan roots and adds a root from picker selection", async () => {
     apiMocks.listScanRoots
-      .mockResolvedValueOnce(["C:/library"])
-      .mockResolvedValueOnce(["C:/library"])
-      .mockResolvedValueOnce(["C:/library", "C:/media"]);
+      .mockResolvedValueOnce([{ path: "C:/library", auto_scan_on_startup: false }])
+      .mockResolvedValueOnce([{ path: "C:/library", auto_scan_on_startup: false }])
+      .mockResolvedValueOnce([{ path: "C:/library", auto_scan_on_startup: false }, { path: "C:/media", auto_scan_on_startup: false }]);
     vi.mocked(open).mockResolvedValueOnce("C:/media");
 
     const { result } = renderHook(() =>
@@ -159,7 +159,7 @@ describe("useSettingsActions", () => {
       await result.current.refreshScanRoots();
     });
 
-    expect(result.current.scanRoots).toEqual(["C:/library"]);
+    expect(result.current.scanRoots).toEqual([{ path: "C:/library", auto_scan_on_startup: false }]);
 
     await act(async () => {
       await result.current.pickFolder();
@@ -450,7 +450,7 @@ describe("useSettingsActions", () => {
   it("handles folder picker add and cancellation", async () => {
     apiMocks.listScanRoots
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(["C:/media"]);
+      .mockResolvedValueOnce([{ path: "C:/media", auto_scan_on_startup: false }]);
     vi.mocked(open).mockResolvedValueOnce("C:/media").mockResolvedValueOnce(null);
 
     const { result } = renderHook(() =>

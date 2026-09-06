@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "Escanear al iniciar la aplicación",
+      "autoScanLabel": "Escanear al iniciar la aplicación: {{path}}",
+      "startupPending": "Escaneando carpetas al iniciar…",
+      "savingAutoScan": "Guardando la preferencia de escaneo…",
+      "saveAutoScanError": "No se pudo guardar la preferencia de escaneo",
+      "autoScanSaved": "Guardado. Se aplicará al próximo inicio de la aplicación.",
       "heading": "Ajustes de escaneo",
-      "description": "Elige una carpeta para adjuntarla a la lista de escaneo y luego ejecuta un reescaneo manual de todas las carpetas.",
+      "description": "Añade carpetas, escanéalas manualmente o activa el escaneo al iniciar la aplicación.",
       "chooseFolder": "Elegir carpeta",
       "attachedPaths": "Rutas de escaneo adjuntas",
       "noPaths": "Sin rutas de escaneo",

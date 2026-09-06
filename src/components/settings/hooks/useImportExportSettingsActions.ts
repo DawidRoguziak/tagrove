@@ -1,3 +1,4 @@
+import type { ScanRoot } from "../../../types";
 import { useCallback, useMemo, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -29,7 +30,7 @@ function buildExportFileName(prefix: string, extension: string): string {
 interface UseImportExportSettingsActionsOptions {
   runner: ReturnType<typeof useSettingsOperationRunner>;
   refreshLibrary: () => Promise<void>;
-  refreshScanRoots: () => Promise<string[]>;
+  refreshScanRoots: () => Promise<ScanRoot[]>;
   onImportDbRestored: () => void;
   onTagCacheInvalidated: () => void;
   runWithTagMutationBarrier: <T>(operation: () => Promise<T>) => Promise<T>;

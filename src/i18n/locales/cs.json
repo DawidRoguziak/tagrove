@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "Skenovat při spuštění aplikace",
+      "autoScanLabel": "Skenovat při spuštění aplikace: {{path}}",
+      "startupPending": "Skenování složek při spuštění…",
+      "savingAutoScan": "Ukládání nastavení skenování…",
+      "saveAutoScanError": "Nastavení skenování se nepodařilo uložit",
+      "autoScanSaved": "Uloženo. Projeví se při příštím spuštění aplikace.",
       "heading": "Nastavení skenování",
-      "description": "Vyberte složku, přidejte ji do seznamu skenování a poté spusťte ruční skenování všech složek.",
+      "description": "Přidejte složky, skenujte je ručně nebo zapněte skenování při spuštění aplikace.",
       "chooseFolder": "Vybrat složku",
       "attachedPaths": "Připojené cesty ke skenování",
       "noPaths": "Žádné cesty ke skenování",

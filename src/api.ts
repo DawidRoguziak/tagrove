@@ -19,6 +19,7 @@ import type {
   DuplicateScanSummary,
   RemoveRootSummary,
   ScanSummary,
+  ScanRoot,
   SearchMetaFilter,
   SetAssetTagsSummary,
   StartAssetQueryResult,
@@ -116,8 +117,16 @@ export async function scanFolder(path: string): Promise<ScanSummary> {
   return await invoke<ScanSummary>("scan_folder", { path });
 }
 
-export async function listScanRoots(): Promise<string[]> {
-  return await invoke<string[]>("list_scan_roots");
+export async function listScanRoots(): Promise<ScanRoot[]> {
+  return await invoke<ScanRoot[]>("list_scan_roots");
+}
+
+export async function setScanRootAutoScan(path: string, enabled: boolean): Promise<void> {
+  return await invoke<void>("set_scan_root_auto_scan", { path, enabled });
+}
+
+export async function scanStartupRoots(): Promise<ScanSummary | null> {
+  return await invoke<ScanSummary | null>("scan_startup_roots");
 }
 
 export async function addScanRoot(path: string): Promise<void> {

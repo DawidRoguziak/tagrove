@@ -31,6 +31,7 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `TagListPage` / `TagListPage` | `items: string[]`, `total` |
 | `StartAssetQueryResult` / `StartAssetQueryResult` | `ready` has `session_id`, `revision`, `total`, `offset`, `items: AssetSummary[]`; `superseded` has only `status` |
 | `AssetQueryPageResult` / `AssetQueryPageResult` | `ready` has the same fields as query-start `ready`; `stale` has only `status` |
+| `ScanRoot` / `ScanRoot` | `path: string`, `auto_scan_on_startup: boolean` |
 | `ScanSummary` / `ScanSummary` | `completion: "complete" \| "partial"`, `indexed`, `removed`, `failed` |
 | `RemoveRootSummary` / `RemoveRootSummary` | `removed_assets`, `removed_thumbnails` |
 | `DeleteAssetSummary` / `DeleteAssetSummary` | `removed_assets`, `removed_thumbnails`, `source_status: "deleted" \| "missing" \| "cleanup_pending"`, `revision`, `recovery_path?` |
@@ -104,10 +105,14 @@ The single-item favorite and group setters do not validate that an ID affected a
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `scanFolder` / `scan_folder` | `path: string` | `ScanSummary` | Normalizes and validates an existing directory, persists it as a root, then scans it. Runs blocking work off the async runtime and emits scan progress. |
-| `listScanRoots` / `list_scan_roots` | none | `string[]` | Sorts roots by available filesystem creation time, newest first; ties and missing-time entries sort lexicographically. This is not database insertion order. |
+| `listScanRoots` / `list_scan_roots` | none | `ScanRoot[]` | Sorts roots by available filesystem creation time, newest first; ties and missing-time entries sort lexicographically. This is not database insertion order. |
 | `addScanRoot` / `add_scan_root` | `path: string` | `void` | Normalizes and validates an existing directory before persisting it; it does not scan. |
 | `removeScanRoot` / `remove_scan_root` | `path: string` | `RemoveRootSummary` | Normalizes the path, removes the root and globally orphaned assets, conditionally bumps revision when assets were removed, and best-effort deletes their recorded thumbnails. |
 | `rescanAllRoots` / `rescan_all_roots` | none | `ScanSummary` | Scans all stored roots; no roots yields a complete, zero-count summary and a `scan-empty` event. Runs blocking work off the async runtime. |
+
+`setScanRootAutoScan` / `set_scan_root_auto_scan` accepts `{ path: string, enabled: boolean }` and returns void. It updates only an existing root's saved preference, including unavailable folders; an unknown root rejects. It does not scan or change the library revision.
+
+`scanStartupRoots` / `scan_startup_roots` accepts no arguments and returns `ScanSummary | null`. It consumes the enabled-root snapshot captured by the backend at launch exactly once per process, even on failure. It runs through the existing scan lock, blocking pool, and progress events. Null means no pending roots, including repeated calls after a frontend reload. The frontend registers its listener before invoking this command.
 
 Root normalization trims whitespace and removes trailing `/` except for the filesystem root `/`. It does not convert slash direction or canonicalize paths. `ScanSummary` always contains `completion`, `indexed`, `removed`, and `failed`; partial discovery/indexing failures produce `completion: "partial"` and preserve stale rows for the incomplete root.
 

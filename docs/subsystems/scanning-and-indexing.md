@@ -18,6 +18,14 @@ The registered commands manage roots and start scans:
 
 Removing an unknown root still runs global orphan cleanup. With no orphaned assets it removes no assets and leaves the revision unchanged. `RemoveRootSummary.removed_assets` counts committed asset deletions; `removed_thumbnails` counts successful file removals below the configured thumbnail root.
 
+## Startup scanning
+
+Each root has a persisted `auto_scan_on_startup` boolean, initially false. Adding the same root or manually scanning it preserves this preference. `list_scan_roots` returns `{ path, auto_scan_on_startup }` records in the existing display order. `set_scan_root_auto_scan(path, enabled)` changes an existing root's preference without scanning or bumping the library revision; it permits disabling an unavailable folder and rejects unregistered paths.
+
+After database migration and recovery, Tauri snapshots enabled paths into managed `StartupScanState`. Shell initialization subscribes to scan progress and invokes `scan_startup_roots`. That command atomically consumes the snapshot, then uses the blocking pool and scan lock to run the normal incremental pipeline. An empty or previously consumed snapshot returns null without entering the pipeline. Failure also consumes the snapshot; a new process is required for another automatic attempt. Missing folders retain the existing skip/partial semantics.
+
+Checkbox changes, folder additions, Settings navigation, focus, frontend reloads, and backup restores do not create another snapshot. Manual scans remain independent and Rescan all includes unchecked roots. A root includes its recursively discovered subdirectories, so overlapping configured roots retain normal discovery and ownership semantics.
+
 ## Path identity and discovery
 
 `normalize_root_path` trims surrounding whitespace and removes trailing `/` except for the filesystem root `/`. The command validates the resulting `PathBuf` with `exists()` and `is_dir()`.

@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "앱 시작 시 스캔",
+      "autoScanLabel": "앱 시작 시 스캔: {{path}}",
+      "startupPending": "시작 폴더 스캔 중…",
+      "savingAutoScan": "시작 스캔 설정 저장 중…",
+      "saveAutoScanError": "시작 스캔 설정을 저장하지 못했습니다",
+      "autoScanSaved": "저장되었습니다. 다음 앱 시작 시 적용됩니다.",
       "heading": "스캔 설정",
-      "description": "폴더를 선택해 스캔 목록에 추가한 뒤, 모든 폴더에 대해 수동 재스캔을 실행하세요.",
+      "description": "폴더를 추가하고 수동으로 스캔하거나 앱 시작 시 스캔을 활성화하세요.",
       "chooseFolder": "폴더 선택",
       "attachedPaths": "연결된 스캔 경로",
       "noPaths": "스캔 경로 없음",

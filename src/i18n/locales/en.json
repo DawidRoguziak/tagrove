@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "Scan on app startup",
+      "autoScanLabel": "Scan on app startup: {{path}}",
+      "startupPending": "Scanning startup folders…",
+      "savingAutoScan": "Saving startup scan preference…",
+      "saveAutoScanError": "Could not save startup scan preference",
+      "autoScanSaved": "Saved. Applies on the next app launch.",
       "heading": "Scan settings",
-      "description": "Choose a folder to attach it to the scan list, then run manual rescan for all folders.",
+      "description": "Add folders, scan them manually, or enable scanning on app startup.",
       "chooseFolder": "Choose folder",
       "attachedPaths": "Attached scan paths",
       "noPaths": "No scan paths",

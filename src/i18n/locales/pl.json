@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "Skanuj przy uruchomieniu aplikacji",
+      "autoScanLabel": "Skanuj przy uruchomieniu aplikacji: {{path}}",
+      "startupPending": "Skanowanie folderów przy uruchomieniu…",
+      "savingAutoScan": "Zapisywanie ustawienia skanowania…",
+      "saveAutoScanError": "Nie udało się zapisać ustawienia skanowania",
+      "autoScanSaved": "Zapisano. Zmiana zadziała przy następnym uruchomieniu aplikacji.",
       "heading": "Ustawienia skanowania",
-      "description": "Wybierz folder, dodaj go do listy skanowania i uruchom reczny ponowny skan.",
+      "description": "Dodaj foldery, skanuj je ręcznie lub włącz skanowanie przy uruchomieniu aplikacji.",
       "chooseFolder": "Wybierz folder",
       "attachedPaths": "Podlaczone sciezki skanowania",
       "noPaths": "Brak sciezek skanowania",

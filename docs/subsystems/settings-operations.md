@@ -101,6 +101,10 @@ Per-root rescan calls `scanFolder(path)`; Rescan all is disabled when the fronte
 
 `useScanSettingsActions` reads `getVideoToolStatus` once on mount. Pending status is null; a rejected check becomes both tools unavailable. The section warns when ffmpeg or ffprobe is unavailable. This does not measure libmpv playback capability and does not automatically recheck after installing tools.
 
+Each folder row includes a localized, accessible **Scan on app startup** checkbox. Its saved value is false for existing and newly added roots. Saving uses the shared runner with `setGlobalLoading: false`, updates the row after backend success, and keeps the previous value on error. The checkbox is disabled while a settings operation holds the lock. Enabling it takes effect at the next app launch.
+
+The shell invokes `scanOnStartup` at mount, independently of whether Settings is open. A hook ref prevents StrictMode replay from dispatching twice; the backend process owns the authoritative once-only snapshot. The startup action uses the scan progress matcher and ordinary loading/summary behavior. A null response clears its pending message without refreshing the library. A scan result refreshes assets, tags, and roots; rejection attempts both refreshes before reporting the error because scan batches may already have committed. No automatic retry runs during that process.
+
 ## Thumbnail bulk actions and cancellation
 
 Render all and Retry failed share the scan section and thumbnail progress matcher. Each sets `thumbnailBulkRunning` inside the runner action and clears it in an inner `finally`, so the Stop button exists only while the API call is outstanding. Their final summaries report generated, failed, skipped-failed, processed/total, and whether processing was cancelled.
@@ -158,6 +162,8 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | --- | --- |
 | Add selected scan roots | Reload and replace `scanRoots`; derive the added/skipped summary from the pre-add and post-add lists. No asset/tag refresh or thumbnail reset. |
 | Remove confirmed scan root | Reset thumbnail queue; reload `scanRoots`; refresh assets/query pages and known tags. The pending root was already cleared before the API call. The thumbnail path map is not cleared. |
+| Save startup-scan preference | Update the saved root flag locally. No library refresh or scan. |
+| Startup scan | For a scan result, refresh assets/tags, then roots. On rejection, attempt both refreshes; null requires neither. |
 | Rescan one root | Refresh assets/query pages and known tags; then reload `scanRoots`. No explicit thumbnail reset. |
 | Rescan all roots | Refresh assets/query pages and known tags; then reload `scanRoots`. No explicit thumbnail reset. |
 | Render all thumbnails | Refresh assets/query pages and known tags; publish the thumbnail summary. The inner `finally` clears `thumbnailBulkRunning`. No scan-root refresh or explicit thumbnail reset. |

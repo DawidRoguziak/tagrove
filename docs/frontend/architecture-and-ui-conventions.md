@@ -60,7 +60,7 @@ The gallery and settings are mutually exclusive children of the same `<main>` el
 - Settings scrolls inside the shared `<main>`, while the gallery mounts its own scroll element below the header; gallery scroll position resets when that element remounts, and neither view explicitly saves its position;
 - settings actions are constructed even while the gallery is visible, because they belong to the shell;
 - opening settings unmounts the gallery-owned bulk sidebar while its shell-owned selection state remains available;
-- the scan-root list and known tags are hydrated on shell mount, and applied search filters drive library refreshes from shell effects.
+- the scan-root list and known tags are hydrated on shell mount, which also invokes the process-guarded startup scan through the settings runner; applied search filters drive library refreshes from shell effects.
 
 Settings closes through Back or the layer registered by `SettingsViewLayer` in `App.tsx`. `useSettingsView` owns only the open boolean and callbacks. A normal settings open starts without a highlighted scan section; the empty-library "add first folder" route opens the same view with the scan section highlighted. Closing the view clears that transient highlight.
 

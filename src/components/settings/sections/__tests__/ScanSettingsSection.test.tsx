@@ -13,6 +13,7 @@ describe("ScanSettingsSection", () => {
   });
 
   it("renders roots and triggers all scan actions", async () => {
+    const onSetAutoScan = vi.fn();
     const onPickFolder = vi.fn();
     const onRescanRoot = vi.fn();
     const onRemoveRoot = vi.fn();
@@ -23,11 +24,12 @@ describe("ScanSettingsSection", () => {
 
     render(
       <ScanSettingsSection
-        scanRoots={["C:/media", "C:/video"]}
+        scanRoots={[{ path: "C:/media", auto_scan_on_startup: false }, { path: "C:/video", auto_scan_on_startup: false }]}
         isOperationLocked={false}
         thumbnailBulkRunning
         cancelThumbnailRunning={false}
         operationState={createSectionOperationState("scan")}
+        onSetAutoScan={onSetAutoScan}
         onPickFolder={onPickFolder}
         onRescanRoot={onRescanRoot}
         onRemoveRoot={onRemoveRoot}
@@ -38,6 +40,11 @@ describe("ScanSettingsSection", () => {
       />
     );
 
+    const checkbox = screen.getByRole("checkbox", { name: "Scan on app startup: C:/media" });
+    expect(checkbox).not.toBeChecked();
+    await userEvent.click(checkbox);
+    expect(onSetAutoScan).toHaveBeenCalledWith("C:/media", true);
+    expect(onRescanRoot).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Choose folder" }));
     await userEvent.click(screen.getByRole("button", { name: "Rescan all" }));
     await userEvent.click(screen.getAllByRole("button", { name: "Rescan" })[0]);
@@ -64,6 +71,7 @@ describe("ScanSettingsSection", () => {
         thumbnailBulkRunning={false}
         cancelThumbnailRunning={false}
         operationState={createSectionOperationState("scan")}
+        onSetAutoScan={vi.fn()}
         onPickFolder={() => {}}
         onRescanRoot={() => {}}
         onRemoveRoot={() => {}}
@@ -98,6 +106,7 @@ describe("ScanSettingsSection", () => {
         thumbnailBulkRunning={false}
         cancelThumbnailRunning={false}
         operationState={createSectionOperationState("scan")}
+        onSetAutoScan={vi.fn()}
         onPickFolder={() => {}}
         onRescanRoot={() => {}}
         onRemoveRoot={() => {}}

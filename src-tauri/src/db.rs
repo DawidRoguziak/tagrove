@@ -48,11 +48,12 @@ pub struct CsvImportRecord {
 }
 
 pub const APPLICATION_ID: i64 = 0x4d54_4147;
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackupSchemaCompatibility {
     Current,
+    Version1,
     Legacy,
 }
 
@@ -357,7 +358,8 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         );
 
         CREATE TABLE IF NOT EXISTS scan_roots (
-          path TEXT PRIMARY KEY
+          path TEXT PRIMARY KEY,
+          auto_scan_on_startup INTEGER NOT NULL DEFAULT 0 CHECK(auto_scan_on_startup IN (0, 1))
         );
 
         CREATE TABLE IF NOT EXISTS thumbnail_failures (
@@ -411,6 +413,15 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         ",
     )?;
     ensure_assets_is_favorite_column(conn)?;
+    if !conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('scan_roots') WHERE name = 'auto_scan_on_startup')",
+        [], |row| row.get::<_, bool>(0),
+    )? {
+        conn.execute(
+            "ALTER TABLE scan_roots ADD COLUMN auto_scan_on_startup INTEGER NOT NULL DEFAULT 0 CHECK(auto_scan_on_startup IN (0, 1))",
+            [],
+        )?;
+    }
     ensure_assets_media_group_key_column(conn)?;
     ensure_assets_media_group_order_column(conn)?;
     ensure_assets_file_name_column(conn)?;
@@ -506,11 +517,11 @@ pub fn validate_backup_database(
             schema_version <= SCHEMA_VERSION,
             "database schema version {schema_version} is newer than supported version {SCHEMA_VERSION}"
         );
-        anyhow::ensure!(
-            schema_version == SCHEMA_VERSION,
-            "unsupported MediaTagger schema version {schema_version}"
-        );
-        BackupSchemaCompatibility::Current
+        match schema_version {
+            SCHEMA_VERSION => BackupSchemaCompatibility::Current,
+            1 => BackupSchemaCompatibility::Version1,
+            _ => anyhow::bail!("unsupported MediaTagger schema version {schema_version}"),
+        }
     } else if application_id == 0 && schema_version == 0 && allow_legacy {
         BackupSchemaCompatibility::Legacy
     } else if application_id == 0 {
@@ -519,6 +530,18 @@ pub fn validate_backup_database(
         anyhow::bail!("database belongs to another application");
     };
 
+    if compatibility == BackupSchemaCompatibility::Current {
+        validate_table_columns(conn, "scan_roots", &["auto_scan_on_startup"])?;
+        validate_column_constraints(conn, "scan_roots", "auto_scan_on_startup", true, 0)?;
+        let invalid: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM scan_roots WHERE typeof(auto_scan_on_startup) <> 'integer' OR auto_scan_on_startup NOT IN (0, 1)",
+            [], |row| row.get(0),
+        )?;
+        anyhow::ensure!(
+            invalid == 0,
+            "backup contains invalid startup scan preferences"
+        );
+    }
     validate_backup_schema(conn, compatibility)?;
     validate_backup_data(conn, compatibility)?;
     Ok(compatibility)
@@ -559,7 +582,7 @@ fn validate_backup_schema(
     }
     validate_backup_constraints(conn, compatibility)?;
 
-    if compatibility == BackupSchemaCompatibility::Current {
+    if compatibility != BackupSchemaCompatibility::Legacy {
         validate_table_columns(
             conn,
             "assets",
@@ -642,7 +665,7 @@ fn validate_backup_constraints(
             "backup table {table} is missing a required cascading foreign key"
         );
     }
-    if compatibility == BackupSchemaCompatibility::Current {
+    if compatibility != BackupSchemaCompatibility::Legacy {
         for (table, column, not_null, primary_key_position) in [
             ("assets", "file_name", true, 0),
             ("assets", "is_favorite", true, 0),
@@ -917,7 +940,7 @@ fn validate_backup_data(
         "backup has incompatible MediaTagger metadata"
     );
 
-    if compatibility == BackupSchemaCompatibility::Current {
+    if compatibility != BackupSchemaCompatibility::Legacy {
         let invalid_current_assets = conn.query_row(
             "SELECT COUNT(*) FROM assets
              WHERE typeof(file_name) <> 'text' OR trim(file_name) = ''
@@ -1309,6 +1332,29 @@ pub fn delete_stale_assets_by_prefix(
         params![prefix, like_pattern, scan_started_at],
     )?;
     Ok(affected)
+}
+
+pub fn list_scan_root_settings(conn: &Connection) -> anyhow::Result<Vec<crate::models::ScanRoot>> {
+    let mut stmt =
+        conn.prepare("SELECT path, auto_scan_on_startup FROM scan_roots ORDER BY path ASC")?;
+    let roots = stmt
+        .query_map([], |row| {
+            Ok(crate::models::ScanRoot {
+                path: row.get(0)?,
+                auto_scan_on_startup: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(roots)
+}
+
+pub fn set_scan_root_auto_scan(conn: &Connection, path: &str, enabled: bool) -> anyhow::Result<()> {
+    let changed = conn.execute(
+        "UPDATE scan_roots SET auto_scan_on_startup = ?2 WHERE path = ?1",
+        params![path, enabled],
+    )?;
+    anyhow::ensure!(changed == 1, "Scan folder is not registered");
+    Ok(())
 }
 
 pub fn list_scan_roots(conn: &Connection) -> anyhow::Result<Vec<String>> {
@@ -4180,6 +4226,57 @@ mod tests {
             .expect("performance version"),
             3
         );
+    }
+
+    #[test]
+    fn startup_preference_migrates_and_survives_reopen_and_duplicate_add() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("media.db");
+        {
+            let conn = super::open_connection(&path).unwrap();
+            super::init_schema(&conn).unwrap();
+            super::add_scan_root(&conn, "/media").unwrap();
+            conn.execute_batch(
+                "ALTER TABLE scan_roots DROP COLUMN auto_scan_on_startup; PRAGMA user_version = 1;",
+            )
+            .unwrap();
+            assert_eq!(
+                super::validate_backup_database(&conn, false).unwrap(),
+                super::BackupSchemaCompatibility::Version1
+            );
+            super::init_schema(&conn).unwrap();
+            assert!(!super::list_scan_root_settings(&conn).unwrap()[0].auto_scan_on_startup);
+            let revision = super::current_library_revision(&conn).unwrap();
+            super::set_scan_root_auto_scan(&conn, "/media", true).unwrap();
+            super::add_scan_root(&conn, "/media").unwrap();
+            assert_eq!(revision, super::current_library_revision(&conn).unwrap());
+            assert!(super::set_scan_root_auto_scan(&conn, "/missing", true).is_err());
+        }
+        let conn = super::open_connection(&path).unwrap();
+        super::init_schema(&conn).unwrap();
+        assert!(super::list_scan_root_settings(&conn).unwrap()[0].auto_scan_on_startup);
+        assert_eq!(
+            super::validate_backup_database(&conn, false).unwrap(),
+            super::BackupSchemaCompatibility::Current
+        );
+        super::remove_scan_root(&conn, "/media").unwrap();
+        super::add_scan_root(&conn, "/media").unwrap();
+        assert!(!super::list_scan_root_settings(&conn).unwrap()[0].auto_scan_on_startup);
+    }
+
+    #[test]
+    fn backup_validation_rejects_invalid_startup_preferences() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        super::init_schema(&conn).unwrap();
+        super::add_scan_root(&conn, "/media").unwrap();
+        conn.execute_batch(
+            "PRAGMA ignore_check_constraints = ON; UPDATE scan_roots SET auto_scan_on_startup = 2;",
+        )
+        .unwrap();
+        assert!(super::validate_backup_database(&conn, false)
+            .unwrap_err()
+            .to_string()
+            .contains("startup scan preferences"));
     }
 
     #[test]

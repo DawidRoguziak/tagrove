@@ -48,6 +48,7 @@ export interface SettingsPanelProps {
   pendingDuplicateDeleteConfirm?: DuplicatesSettingsController["pendingDuplicateDeleteConfirm"];
   pendingImportDbSourcePath?: ImportExportSettingsController["pendingImportDbSourcePath"];
   onPickFolder?: ScanSettingsController["onPickFolder"];
+  onSetAutoScan?: ScanSettingsController["onSetAutoScan"];
   onRescanRoot?: ScanSettingsController["onRescanRoot"];
   onRemoveRoot?: ScanSettingsController["onRequestRemoveRoot"];
   onRescanAll?: ScanSettingsController["onRescanAll"];
@@ -104,6 +105,7 @@ export function SettingsPanel({
   pendingDuplicateDeleteConfirm = null,
   pendingImportDbSourcePath = null,
   onPickFolder,
+  onSetAutoScan,
   onRescanRoot,
   onRemoveRoot,
   onRescanAll,
@@ -146,6 +148,8 @@ export function SettingsPanel({
       operationState: scanOperationState ?? { loading: false, message: "", progress: null },
       removeRootConfirmPath,
       refreshScanRoots: async () => scanRoots ?? [],
+      scanOnStartup: async () => {},
+      onSetAutoScan: onSetAutoScan ?? (async () => {}),
       onPickFolder: onPickFolder ?? (async () => {}),
       onRescanRoot: onRescanRoot ?? (async () => {}),
       onRequestRemoveRoot: onRemoveRoot ?? (() => {}),
@@ -216,6 +220,7 @@ export function SettingsPanel({
               <ScanSettingsSection
             highlighted={highlightScanSection}
             scanRoots={scanController.scanRoots}
+            onSetAutoScan={scanController.onSetAutoScan}
             isOperationLocked={scanController.isOperationLocked}
             thumbnailBulkRunning={scanController.thumbnailBulkRunning}
             cancelThumbnailRunning={scanController.cancelThumbnailRunning}

@@ -91,6 +91,8 @@ const apiMocks = vi.hoisted(() => {
     ensureThumbnailsStream: vi.fn(),
     listAssets: vi.fn(),
     listScanRoots: vi.fn(),
+    scanStartupRoots: vi.fn(),
+    setScanRootAutoScan: vi.fn(),
     listTags: vi.fn(),
     mergeAssetTagsBulk: vi.fn(),
     setAssetsMediaGroupBulk: vi.fn(),
@@ -206,6 +208,7 @@ describe("App", () => {
       media_group_key: null
     });
     apiMocks.listScanRoots.mockResolvedValue([]);
+    apiMocks.scanStartupRoots.mockResolvedValue(null);
     apiMocks.cancelRenderAllThumbnails.mockResolvedValue(true);
     apiMocks.scanFolder.mockResolvedValue({ indexed: 0, removed: 0, failed: 0 });
     apiMocks.removeScanRoot.mockResolvedValue({ removed_assets: 0, removed_thumbnails: 0 });
@@ -391,7 +394,7 @@ describe("App", () => {
   });
 
   it("shows gallery empty state when no assets are returned", async () => {
-    apiMocks.listScanRoots.mockResolvedValue(["C:/media"]);
+    apiMocks.listScanRoots.mockResolvedValue([{ path: "C:/media", auto_scan_on_startup: false }]);
 
     render(<App />);
 
@@ -868,7 +871,7 @@ describe("App", () => {
   });
 
   it("waits for in-app confirmation before removing scan path", async () => {
-    apiMocks.listScanRoots.mockResolvedValue(["C:/media"]);
+    apiMocks.listScanRoots.mockResolvedValue([{ path: "C:/media", auto_scan_on_startup: false }]);
     apiMocks.removeScanRoot.mockResolvedValueOnce({ removed_assets: 2, removed_thumbnails: 3 });
 
     render(<App />);

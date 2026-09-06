@@ -1,3 +1,9 @@
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ScanRoot {
+    pub path: String,
+    pub auto_scan_on_startup: bool,
+}
+
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]

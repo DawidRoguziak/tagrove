@@ -231,7 +231,7 @@ pub fn inspect_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbB
         db::validate_backup_database(&conn, allow_legacy)?;
         let roots = db::list_scan_roots(&conn)?;
         if let Some(manifest) = &validated.manifest {
-            validate_manifest_roots(manifest, &roots)?;
+            validate_manifest_database(manifest, &conn)?;
         }
         let requires_mapping =
             cfg!(not(windows)) && roots.iter().any(|root| is_windows_absolute(root));
@@ -312,7 +312,7 @@ pub fn import_db_bundle(
             let conn = db::open_connection_read_only_untracked(&staging_db)?;
             db::validate_backup_database(&conn, allow_legacy)?;
             if let Some(manifest) = &validated.manifest {
-                validate_manifest_roots(manifest, &db::list_scan_roots(&conn)?)?;
+                validate_manifest_database(manifest, &conn)?;
             }
         }
         {
@@ -685,14 +685,20 @@ fn rewrite_staged_paths(
         rewritten.push((asset.id, next_path, file_name, next_thumb, rewritten_roots));
     }
 
+    let root_settings = db::list_scan_root_settings(&conn)?;
     let tx = conn.unchecked_transaction()?;
     if !mappings.is_empty() {
         tx.execute("DELETE FROM asset_scan_roots", [])?;
         tx.execute("DELETE FROM scan_roots", [])?;
         for mapping in &mappings {
             tx.execute(
-                "INSERT INTO scan_roots(path) VALUES (?1)",
-                rusqlite::params![mapping.target_root],
+                "INSERT INTO scan_roots(path, auto_scan_on_startup) VALUES (?1, ?2)",
+                rusqlite::params![
+                    mapping.target_root,
+                    root_settings
+                        .iter()
+                        .any(|root| root.path == mapping.source_root && root.auto_scan_on_startup)
+                ],
             )?;
         }
     }
@@ -1019,7 +1025,10 @@ fn validate_manifest(manifest: &BundleManifest) -> AppResult<()> {
             if manifest.application_id.as_deref() != Some(BUNDLE_APPLICATION_ID) {
                 return Err("Backup manifest belongs to another application".into());
             }
-            if manifest.schema_version != Some(db::SCHEMA_VERSION as u32) {
+            if !manifest
+                .schema_version
+                .is_some_and(|version| (1..=db::SCHEMA_VERSION as u32).contains(&version))
+            {
                 return Err("Backup manifest has an unsupported database schema version".into());
             }
         }
@@ -1050,9 +1059,18 @@ fn validate_manifest(manifest: &BundleManifest) -> AppResult<()> {
     Ok(())
 }
 
-fn validate_manifest_roots(manifest: &BundleManifest, database_roots: &[String]) -> AppResult<()> {
+fn validate_manifest_database(
+    manifest: &BundleManifest,
+    conn: &rusqlite::Connection,
+) -> AppResult<()> {
+    if let Some(expected) = manifest.schema_version {
+        let actual: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if expected != actual {
+            return Err("Backup manifest schema version does not match the database".into());
+        }
+    }
     let mut manifest_roots = manifest.roots.clone();
-    let mut database_roots = database_roots.to_vec();
+    let mut database_roots = db::list_scan_roots(conn)?;
     manifest_roots.sort();
     database_roots.sort();
     if manifest_roots != database_roots {
@@ -1412,6 +1430,59 @@ mod tests {
     }
 
     #[test]
+    fn imports_version_one_bundle_with_startup_scanning_disabled() {
+        let tmp = tempdir().unwrap();
+        let source_db = tmp.path().join("source.db");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&root).unwrap();
+        {
+            let conn = db::open_connection(&source_db).unwrap();
+            db::init_schema(&conn).unwrap();
+            db::add_scan_root(&conn, &root.to_string_lossy()).unwrap();
+            conn.execute_batch("ALTER TABLE scan_roots DROP COLUMN auto_scan_on_startup; PRAGMA user_version = 1; PRAGMA wal_checkpoint(TRUNCATE);").unwrap();
+        }
+        let archive = tmp.path().join("old.zip");
+        let mut zip = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+        zip.start_file("media.db", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&fs::read(&source_db).unwrap()).unwrap();
+        zip.start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(
+            serde_json::to_string(&serde_json::json!({
+                "format_version": 2, "application_id": super::BUNDLE_APPLICATION_ID,
+                "schema_version": 1, "source_platform": "linux", "roots": [root.to_string_lossy()],
+                "source_thumbs_dir": tmp.path().join("old-thumbs").to_string_lossy()
+            }))
+            .unwrap()
+            .as_bytes(),
+        )
+        .unwrap();
+        zip.finish().unwrap();
+        let profile = tmp.path().join("profile");
+        let thumbs = profile.join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let target_db = profile.join("media.db");
+        let conn = db::open_connection(&target_db).unwrap();
+        db::init_schema(&conn).unwrap();
+        drop(conn);
+        let state = create_test_state(&target_db, &thumbs);
+        import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            vec![],
+            &as_state(&state),
+        )
+        .unwrap();
+        let conn = db::open_connection(&target_db).unwrap();
+        assert!(!db::list_scan_root_settings(&conn).unwrap()[0].auto_scan_on_startup);
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            db::SCHEMA_VERSION
+        );
+    }
+
+    #[test]
     fn import_db_bundle_restores_database_and_thumbnails() {
         let tmp = tempdir().expect("tempdir");
         let source_db_path = tmp.path().join("source.db");
@@ -1499,6 +1570,7 @@ mod tests {
             let conn = db::open_connection(&source_db).expect("open source db");
             db::init_schema(&conn).expect("init source schema");
             db::add_scan_root(&conn, source_root).expect("add source root");
+            db::set_scan_root_auto_scan(&conn, source_root, true).expect("enable startup scan");
             let asset = NewAsset {
                 path: format!(r"{source_root}\album\photo.jpg"),
                 kind: "image".to_string(),
@@ -1570,6 +1642,7 @@ mod tests {
             asset.path,
             target_root.join("album/photo.jpg").to_string_lossy()
         );
+        assert!(db::list_scan_root_settings(&conn).unwrap()[0].auto_scan_on_startup);
         assert_eq!(asset.tags, vec!["travel".to_string()]);
         assert!(asset.is_favorite);
         assert_eq!(asset.media_group_key.as_deref(), Some("album"));

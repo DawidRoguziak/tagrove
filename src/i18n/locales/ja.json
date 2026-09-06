@@ -267,8 +267,14 @@
       }
     },
     "scan": {
+      "autoScan": "アプリ起動時にスキャン",
+      "autoScanLabel": "アプリ起動時にスキャン: {{path}}",
+      "startupPending": "起動時のフォルダーをスキャン中…",
+      "savingAutoScan": "起動時のスキャン設定を保存中…",
+      "saveAutoScanError": "起動時のスキャン設定を保存できませんでした",
+      "autoScanSaved": "保存しました。次回のアプリ起動時に適用されます。",
       "heading": "スキャン設定",
-      "description": "フォルダーを選んでスキャンリストに追加し、その後すべてのフォルダーを手動で再スキャンします。",
+      "description": "フォルダーを追加し、手動でスキャンするか、アプリ起動時のスキャンを有効にします。",
       "chooseFolder": "フォルダーを選択",
       "attachedPaths": "接続されたスキャンパス",
       "noPaths": "スキャンパスがありません",

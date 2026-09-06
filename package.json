@@ -1,6 +1,7 @@
 {
-  "name": "media-tagger",
+  "name": "tagrove",
   "private": true,
+  "description": "Tagrove browses and tags large image and media collections.",
   "version": "0.1.1",
   "type": "module",
   "packageManager": "bun@1.4.0",
@@ -8,6 +9,8 @@
     "node": ">=20.19 <21 || >=22.12"
   },
   "scripts": {
+    "icons:generate": "tauri icon public/tagrove.svg --output src-tauri/icons --png 16 --png 32 --png 64 --png 128 --png 256 --png 512",
+    "test:linux-install": "node --test scripts/reinstall-linux-user.test.mjs",
     "dev": "vite",
     "build": "bun run typecheck && vite build",
     "typecheck": "tsc --noEmit --project tsconfig.json --pretty false && tsc --noEmit --project tsconfig.node.json --pretty false",

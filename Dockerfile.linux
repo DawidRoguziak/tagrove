@@ -68,7 +68,8 @@ RUN bun run tauri:build:linux \
 FROM scratch AS staged-artifacts
 
 COPY --from=release /workspace/src-tauri/target/release/media_tagger /out/media_tagger
-COPY --from=release /workspace/src-tauri/icons/image_viewer_3000_512x512.png /out/image-viewer-3000.png
+COPY --from=release /workspace/src-tauri/icons/512x512.png /out/tagrove.png
+COPY --from=release /workspace/src-tauri/linux/com.example.mediatagger.desktop /out/com.example.mediatagger.desktop
 
 FROM release AS manifest
 RUN set -e; { \

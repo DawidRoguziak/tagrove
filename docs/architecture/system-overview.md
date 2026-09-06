@@ -107,20 +107,20 @@ The effective Tauri identifier determines `app.path().app_data_dir()`, so it is 
 
 | Profile | How it is selected | Product/window name | Identifier | Isolation behavior |
 | --- | --- | --- | --- | --- |
-| Release | `bun run tauri:build:release` / base `tauri.conf.json` | `Image Viewer 3000` | `com.example.mediatagger` | Production app-data profile and normal `src-tauri/target` build output. |
-| Development | `bun run tauri:dev`, merging `tauri.conf.dev.json` over the base | `Image Viewer 3000 Dev` | `com.example.mediatagger.dev` | Separate app-data profile. Debug startup refuses the production identifier, making use of the dev or E2E overlay mandatory for a debug application. |
-| Desktop E2E | `bun run test:e2e:tauri`, merging `tauri.conf.e2e.json` | `Image Viewer 3000 E2E` | `com.example.mediatagger.e2e` | Separate app data and `src-tauri/target-e2e`. The runner validates the identifier, title, and target path, clears only the exact E2E app-data directory, builds the frontend separately, then makes an unbundled debug Tauri build. |
+| Release | `bun run tauri:build:release` / base `tauri.conf.json` | `Tagrove` | `com.example.mediatagger` | Production app-data profile and normal `src-tauri/target` build output. |
+| Development | `bun run tauri:dev`, merging `tauri.conf.dev.json` over the base | `Tagrove Dev` | `com.example.mediatagger.dev` | Separate app-data profile. Debug startup refuses the production identifier, making use of the dev or E2E overlay mandatory for a debug application. |
+| Desktop E2E | `bun run test:e2e:tauri`, merging `tauri.conf.e2e.json` | `Tagrove E2E` | `com.example.mediatagger.e2e` | Separate app data and `src-tauri/target-e2e`. The runner validates the identifier, title, and target path, clears only the exact E2E app-data directory, builds the frontend separately, then makes an unbundled debug Tauri build. |
 
 All three window configurations set `decorations: false`. Profile overlays repeat this
-setting because their `windows` arrays replace the base array. Native window titles remain
-unchanged for task switchers and the E2E identity guard. The existing frontend headers own
+setting because their `windows` arrays replace the base array. Native window titles use the
+profile names above for task switchers and the E2E identity guard. The frontend headers own
 window controls and drag regions; see [frontend window controls](../frontend/architecture-and-ui-conventions.md#compact-studio-visual-system).
 
 These profiles may run at the same time because their identifiers resolve to different data directories and lock files. Isolation relies on always selecting the intended config overlay. The debug guard protects production from an accidentally unoverlaid debug build, but it does not validate arbitrary non-production identifiers. The E2E runner adds stronger path/title checks before its destructive cleanup and again verifies the live window title before tests.
 
 ### `instance.lock`
 
-On startup, `InstanceLock::acquire` opens or creates `<app-data>/instance.lock` and requests a non-blocking exclusive OS file lock. Contention fails startup with a message that another MediaTagger instance is using the profile. The open handle is retained by Tauri and explicitly unlocked on drop.
+On startup, `InstanceLock::acquire` opens or creates `<app-data>/instance.lock` and requests a non-blocking exclusive OS file lock. Contention fails startup with a message that another Tagrove instance is using the profile. The open handle is retained by Tauri and explicitly unlocked on drop.
 
 This guarantee is per identifier/profile, not machine-wide. The lock file itself may remain after a clean exit; ownership is represented by the OS lock, not file existence. The lock is acquired before `media.db` is opened, preventing two application processes from normally sharing one profile, but it does not protect against external tools editing that directory.
 
@@ -161,7 +161,9 @@ Security-sensitive changes should review capabilities, CSP, asset scope, dialog 
 
 ## Naming state
 
-The user-facing product name is **Image Viewer 3000**, with `Dev` and `E2E` suffixes for isolated profiles. Repository guidance, the npm package (`media-tagger`), Rust crate/binary (`media_tagger`), identifiers, E2E suite labels, performance variables, and lock-contention text retain the internal **MediaTagger** name. `index.html` uses the same product name as Tauri.
+The user-facing product name is **Tagrove**, with `Dev` and `E2E` suffixes for isolated profiles. The frontend header, HTML metadata, npm package, native window titles, and Linux launcher use Tagrove. The Woven T mark comes from `public/tagrove.svg`; `bun run icons:generate` creates the checked-in native PNG sizes. The Linux launcher uses `Name=Tagrove`, `Icon=tagrove`, and `Exec=media_tagger`.
+
+The Rust crate/binary (`media_tagger`), Tauri identifiers, SQLite identity and backup format markers, local-storage keys, and performance variables retain their existing internal names. Older repository guidance and E2E suite labels still refer to MediaTagger.
 
 This split is deliberate. Changing the Tauri identifier changes the app-data directory and can make an existing library appear empty unless data is migrated. Renaming the Rust binary also affects the E2E executable path. A future internal rename is a migration, not a cosmetic search-and-replace.
 

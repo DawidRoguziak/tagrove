@@ -1,6 +1,5 @@
 import { WindowControls } from "../app/WindowControls";
 import type { ReactNode } from "react";
-import { UiIcon } from "../UI/UiIcon";
 import { UiIconButton } from "../UI/UiIconButton";
 import { SearchTagatorWrapper } from "../search/SearchTagatorWrapper";
 import { useTranslation } from "react-i18next";
@@ -42,7 +41,7 @@ export function TopBar({
   return (
     <header className="workspace-header">
       <SearchTagatorWrapper
-        identity={<div className="workspace-identity"><UiIcon name="group" className="h-6 w-6 text-primary" /><span>MediaTagger</span></div>}
+        identity={<div className="workspace-identity"><img src="/tagrove.svg" alt="Tagrove" width={32} height={32} className="shrink-0" draggable={false} /><span aria-hidden="true">Tagrove</span></div>}
         headerAction={<div className="flex items-center gap-3"><UiIconButton id="open-settings-button" icon="settings" onClick={onOpenSettingsView}
           aria-label={t("topBar.openSettings")} title={t("topBar.openSettings")} /><WindowControls /></div>}
         toolbarContent={toolbarContent}

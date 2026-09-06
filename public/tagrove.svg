@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Tagrove</title>
+  <path fill="#2D5A2D" d="M20 12h37a5 5 0 0 1 5 5v19H52a9 9 0 0 0-9 9v7H20a5 5 0 0 1-5-5V17a5 5 0 0 1 5-5Z"/>
+  <path fill="#7CB87C" d="M71 8h32l10 10v29a5 5 0 0 1-5 5H85v-7a9 9 0 0 0-9-9H66V13a5 5 0 0 1 5-5Z"/>
+  <rect fill="#7CB87C" x="47" y="40" width="34" height="78" rx="6"/>
+</svg>

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tagrove
+GenericName=Media tagger
+Comment=Browse and tag images, videos and GIFs
+Exec=media_tagger
+Icon=tagrove
+Terminal=false
+Categories=Graphics;Photography;
+Keywords=images;photos;videos;tags;gallery;
+StartupNotify=true
+StartupWMClass=media_tagger

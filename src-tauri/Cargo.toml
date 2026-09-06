@@ -1,5 +1,6 @@
 [package]
 name = "media_tagger"
+description = "Tagrove browses and tags large image and media collections."
 version = "0.1.1"
 edition = "2021"
 rust-version = "1.98"

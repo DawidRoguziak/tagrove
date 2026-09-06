@@ -43,21 +43,25 @@ docker cp "$container_id:/out/." "$temporary_output_dir"
 
 mapfile -t binaries < <(find "$temporary_output_dir" -maxdepth 1 -type f -name media_tagger)
 mapfile -t manifests < <(find "$temporary_output_dir" -maxdepth 1 -type f -name build-manifest.txt)
-mapfile -t icons < <(find "$temporary_output_dir" -maxdepth 1 -type f -name image-viewer-3000.png)
+mapfile -t icons < <(find "$temporary_output_dir" -maxdepth 1 -type f -name tagrove.png)
+mapfile -t launchers < <(find "$temporary_output_dir" -maxdepth 1 -type f -name com.example.mediatagger.desktop)
 mapfile -t exported_files < <(find "$temporary_output_dir" -maxdepth 1 -type f)
-if [[ ${#binaries[@]} -ne 1 || ${#manifests[@]} -ne 1 || ${#icons[@]} -ne 1 || ${#exported_files[@]} -ne 3 ]]; then
-  echo "Expected one media_tagger binary, one icon, and one build manifest" >&2
+if [[ ${#binaries[@]} -ne 1 || ${#manifests[@]} -ne 1 || ${#icons[@]} -ne 1 || ${#launchers[@]} -ne 1 || ${#exported_files[@]} -ne 4 ]]; then
+  echo "Expected one media_tagger binary, one Tagrove icon, one desktop launcher, and one build manifest" >&2
   exit 1
 fi
 file "${binaries[0]}" | grep -q 'ELF 64-bit.*x86-64'
 file "${icons[0]}" | grep -q 'PNG image data, 512 x 512'
 [[ -x "${binaries[0]}" && -s "${manifests[0]}" && -s "${icons[0]}" ]]
+grep -qx 'Name=Tagrove' "${launchers[0]}"
+grep -qx 'Icon=tagrove' "${launchers[0]}"
+grep -qx 'Exec=media_tagger' "${launchers[0]}"
 for required_key in gtk webkitgtk mpv egl gl glx; do
   grep -q "^${required_key}=" "${manifests[0]}"
 done
 (
   cd "$temporary_output_dir"
-  sha256sum media_tagger image-viewer-3000.png build-manifest.txt > SHA256SUMS
+  sha256sum media_tagger tagrove.png com.example.mediatagger.desktop build-manifest.txt > SHA256SUMS
   sha256sum --check SHA256SUMS
 )
 

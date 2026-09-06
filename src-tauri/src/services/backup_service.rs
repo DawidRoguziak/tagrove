@@ -287,7 +287,7 @@ pub fn import_db_bundle(
         || restore_journal_path(app_data_dir).exists()
     {
         return Err(
-            "Restore recovery artifacts already exist; restart MediaTagger to recover them before importing again"
+            "Restore recovery artifacts already exist; restart Tagrove to recover them before importing again"
                 .into(),
         );
     }

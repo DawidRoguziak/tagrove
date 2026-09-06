@@ -1,5 +1,5 @@
 {
-  "productName": "Image Viewer 3000 E2E",
+  "productName": "Tagrove E2E",
   "identifier": "com.example.mediatagger.e2e",
   "build": {
     "beforeBuildCommand": ""
@@ -7,7 +7,7 @@
   "app": {
     "windows": [
       {
-        "title": "Image Viewer 3000 E2E",
+        "title": "Tagrove E2E",
         "width": 1440,
         "height": 900,
         "minWidth": 320,

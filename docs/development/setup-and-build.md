@@ -32,7 +32,7 @@ Run the build directly so the host does not need Bun or Node.js:
 ./scripts/build-linux-docker.sh
 ```
 
-The script builds the native release executable without running Vitest, Rust tests, or desktop E2E. It copies only `/out/.` into a temporary host directory, validates exactly one x86-64 ELF binary, one 512x512 PNG icon, and the build manifest, rejects missing shared libraries reported by `ldd`, verifies generated checksums, and only then replaces `artifacts/linux/`. The output contains `media_tagger`, `image-viewer-3000.png`, `SHA256SUMS`, and `build-manifest.txt` with toolchain and package versions.
+The script builds the native release executable without running Vitest, Rust tests, or desktop E2E. It copies only `/out/.` into a temporary host directory, validates exactly one x86-64 ELF binary, one 512x512 PNG icon, one desktop launcher with matching name/icon/executable metadata, and the build manifest, rejects missing shared libraries reported by `ldd`, verifies generated checksums, and only then replaces `artifacts/linux/`. The output contains `media_tagger`, `tagrove.png`, `com.example.mediatagger.desktop`, `SHA256SUMS`, and `build-manifest.txt` with toolchain and package versions.
 
 If Bun is already available on the host, `bun run build:linux:docker` is an equivalent convenience command. Both forms use the ordinary `docker build`/`docker create`/`docker cp` interface and do not require Buildx.
 
@@ -46,11 +46,19 @@ Build the artifact on CachyOS/Arch x86-64:
 
 `bun run release:linux:user` is an equivalent wrapper. The script only invokes `scripts/build-linux-docker.sh`. It does not run tests, install files, launch the application, inspect or copy the production database, or modify anything under `~/.local/` or `/usr/local/`.
 
-The resulting files are written to `artifacts/linux/`: `media_tagger`, `image-viewer-3000.png`, `build-manifest.txt`, and `SHA256SUMS`. Installation is separate from building; the local reinstall helper is described below.
+The resulting files are written to `artifacts/linux/`: `media_tagger`, `tagrove.png`, `com.example.mediatagger.desktop`, `build-manifest.txt`, and `SHA256SUMS`. Installation is separate from building; the local reinstall helper is described below.
 
-### Local executable replacement
+### Local installation
 
-[`scripts/reinstall-linux-user.sh`](../../scripts/reinstall-linux-user.sh) is a machine-specific helper. It changes to `/path/to/tagrove`, refuses replacement while `pgrep -x media_tagger` finds a process, verifies the existing artifact checksums, and installs the executable through a temporary sibling followed by rename to `$HOME/.local/bin/media_tagger`. It expects that directory to exist and does not install the icon, create a launcher, rebuild, or launch the app. The old executable is overwritten without keeping a backup. Inspect the hard-coded checkout before using it on another machine.
+[`scripts/reinstall-linux-user.sh`](../../scripts/reinstall-linux-user.sh) reads `artifacts/linux/` relative to its checkout. It refuses replacement while `pgrep -x media_tagger` finds a process and verifies artifact checksums before writing installed files. It installs the executable through a temporary sibling followed by rename, then copies the Woven T icon and Tagrove launcher. It refreshes desktop/icon caches when the corresponding tools and icon-theme index are available.
+
+The default prefix is `$HOME/.local`. The executable goes in `bin/media_tagger`, the icon in `share/icons/hicolor/512x512/apps/tagrove.png`, and the launcher in `share/applications/com.example.mediatagger.desktop`. Its `StartupWMClass=media_tagger` matches the native X11 window class. Pass a different prefix as the first argument for a custom or temporary installation. Its `bin` directory must be on `PATH` for the launcher's `Exec=media_tagger` to resolve. The script creates missing directories, replaces existing files without backups, and does not rebuild or launch the app. Application data remains under the existing Tauri identifier.
+
+`bun run test:linux-install` exercises installation and replacement under temporary prefixes, verifies the icon and launcher metadata, and checks checksum failure and running-process refusal.
+
+### Branding assets
+
+[`public/tagrove.svg`](../../public/tagrove.svg) is the Woven T master used by the header and HTML favicon. It recreates the selected proposal with flat `#2D5A2D` and `#7CB87C` fills and transparent gaps. Run `bun run icons:generate` after editing it to regenerate the 16, 32, 64, 128, 256, and 512px RGBA PNGs under `src-tauri/icons/`. Tauri embeds the configured native icons, and Docker exports the 512px icon as `tagrove.png`. The launcher source is [`src-tauri/linux/com.example.mediatagger.desktop`](../../src-tauri/linux/com.example.mediatagger.desktop). Linux is the supported packaging target; ICO and ICNS assets are not generated.
 
 ## Install dependencies
 
@@ -82,6 +90,7 @@ Build and development entry points are listed below. [Testing and quality comman
 | --- | --- |
 | `bun run dev` | Starts only the Vite development server. It does not compile or launch the Rust/Tauri application. |
 | `bun run build` | Runs both no-emit TypeScript checks, including Vite/Vitest configuration, then `vite build`. |
+| `bun run icons:generate` | Rasterizes the Woven T SVG master into the checked-in native PNG icon sizes using the local Tauri CLI. |
 | `bun run preview` | Serves an existing Vite production build for browser inspection. It does not build first and does not launch Tauri. |
 | `bun run tauri:dev` | Runs `tauri dev --config src-tauri/tauri.conf.dev.json`. This is the canonical desktop development command and selects the isolated development identifier and title. Tauri starts `bun run dev` through `beforeDevCommand`. |
 | `bun run tauri:build:release` | Runs `tauri build` for the supported Linux target. The Docker release command below is preferred for artifact production. |
@@ -107,7 +116,7 @@ Use:
 bun run tauri:dev
 ```
 
-The base Tauri configuration expects the development URL `http://localhost:1420`; the strict Vite port ensures that URL cannot drift. The development overlay changes the product/window title to `Image Viewer 3000 Dev` and the identifier to `com.example.mediatagger.dev`.
+The base Tauri configuration expects the development URL `http://localhost:1420`; the strict Vite port ensures that URL cannot drift. The development overlay changes the product/window title to `Tagrove Dev` and the identifier to `com.example.mediatagger.dev`.
 
 Do not use an unqualified debug Tauri launch with the base configuration. In debug builds, `src-tauri/src/lib.rs` refuses startup when the effective identifier is the production identifier `com.example.mediatagger`. This protects production app data from a common configuration mistake. The guard requires the dev or E2E overlay, but it only rejects that one production identifier; it does not prove that every other identifier is safe.
 
@@ -212,7 +221,7 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 1. Confirm `docker version` can reach the daemon as the current user.
 2. Run `./scripts/release-linux-user.sh`.
-3. Confirm `artifacts/linux/` contains `media_tagger`, `image-viewer-3000.png`, `build-manifest.txt`, and `SHA256SUMS`, then run `(cd artifacts/linux && sha256sum --check SHA256SUMS)`.
+3. Confirm `artifacts/linux/` contains `media_tagger`, `tagrove.png`, `com.example.mediatagger.desktop`, `build-manifest.txt`, and `SHA256SUMS`, then run `(cd artifacts/linux && sha256sum --check SHA256SUMS)`.
 4. Install or launch the artifact manually when needed. The release script does not do either.
 
 ## Troubleshooting

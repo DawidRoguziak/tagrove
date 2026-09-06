@@ -42,7 +42,7 @@ a worktree. Do not attach to a normal dev or production instance.
 bun run app:control doctor "$control_session"
 ```
 
-Require the exact title `Image Viewer 3000 E2E`, app data below the run's temporary root,
+Require the exact title `Tagrove E2E`, app data below the run's temporary root,
 only the seeded media scan root, live owned display/driver processes, and a responsive UI.
 Run this first when anything looks wrong. Interaction commands repeat these checks.
 Read `session.json` and `process.log` in the artifact directory if startup fails.

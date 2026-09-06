@@ -10,7 +10,7 @@ export const projectRoot = path.resolve(e2eDir, "..");
 export const e2eTargetDir = path.resolve(projectRoot, "src-tauri", "target-e2e");
 export const e2eBinaryPath = path.resolve(e2eTargetDir, "debug", "media_tagger");
 export const e2eAppIdentifier = "com.example.mediatagger.e2e";
-export const e2eWindowTitle = "Image Viewer 3000 E2E";
+export const e2eWindowTitle = "Tagrove E2E";
 export const productionAppIdentifier = "com.example.mediatagger";
 
 export function validateE2eBuildConfiguration() {

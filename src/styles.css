@@ -182,7 +182,7 @@
 .workspace-header { position: relative; flex-shrink: 0; z-index: 40; background: var(--window-chrome-bg); border-bottom: 1px solid var(--border-strong); }
 .workspace-viewport { flex: 1; min-height: 0; container-type: size; }
 .workspace-search { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 12px 20px; }
-.workspace-identity { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 650; letter-spacing: -0.04em; }
+.workspace-identity { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
 .workspace-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 6px 20px; border-top: 1px solid var(--border-soft); }
 .workspace-sizing { margin-left: auto; display: flex; align-items: center; gap: 16px; }
 .workspace-body { display: grid; min-height: 100%; grid-template-columns: minmax(0, 1fr); }

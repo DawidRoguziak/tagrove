@@ -30,6 +30,7 @@ Run commands from the repository root.
 | `bun run app:control` | Keeps an isolated desktop E2E session open on a private Xvfb display for UI interaction, screenshots, and console inspection; see persistent desktop control below. |
 | `bun run test:app-control` | Runs Node tests for controller input validation, local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Requires Linux local sockets and ffmpeg. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
+| `bun run test:linux-install` | Installs fixture release files into a temporary prefix, checks the executable/icon/launcher, and verifies checksum and running-process guards. |
 | `bun run typecheck` | Runs no-emit checks for application code and Vite/Vitest configuration. |
 | `bun run lint` | Runs Biome lint across its configured source, E2E, and script includes. |
 | `bun run format:check` | Checks formatting in `scripts`, `vite.config.ts`, and `vitest.config.ts`; it does not format application source or Markdown. |
@@ -137,7 +138,7 @@ The exact E2E identity is:
 | Property | Required value |
 | --- | --- |
 | Tauri identifier | `com.example.mediatagger.e2e` |
-| Product/window title | `Image Viewer 3000 E2E` |
+| Product/window title | `Tagrove E2E` |
 | Cargo target directory | `src-tauri/target-e2e` |
 | Executable | `src-tauri/target-e2e/debug/media_tagger` |
 | Build kind | Debug, unbundled (`--debug --no-bundle`) |
@@ -151,7 +152,7 @@ Tauri derives the E2E app-data directory from `${XDG_DATA_HOME:-~/.local/share}/
 The build helper refuses to build unless all of these conditions hold:
 
 - the overlay identifier is exactly `com.example.mediatagger.e2e` and ends in `.e2e`;
-- the configured window list contains the exact title `Image Viewer 3000 E2E`;
+- the configured window list contains the exact title `Tagrove E2E`;
 - the resolved target directory is not `src-tauri/target` and ends in `target-e2e`.
 
 The pre-run app-data cleanup resolves both paths and refuses recursive deletion unless:

@@ -215,12 +215,12 @@ pub fn validate_backup_database(
             SCHEMA_VERSION => BackupSchemaCompatibility::Current,
             1 => BackupSchemaCompatibility::Version1,
             2 => BackupSchemaCompatibility::Version2,
-            _ => anyhow::bail!("unsupported MediaTagger schema version {schema_version}"),
+            _ => anyhow::bail!("unsupported Tagrove schema version {schema_version}"),
         }
     } else if application_id == 0 && schema_version == 0 && allow_legacy {
         BackupSchemaCompatibility::Legacy
     } else if application_id == 0 {
-        anyhow::bail!("database has no MediaTagger application identity");
+        anyhow::bail!("database has no Tagrove application identity");
     } else {
         anyhow::bail!("database belongs to another application");
     };
@@ -652,7 +652,7 @@ pub(super) fn validate_backup_data(
     )?;
     anyhow::ensure!(
         metadata_rows == 2,
-        "backup has incompatible MediaTagger metadata"
+        "backup has incompatible Tagrove metadata"
     );
 
     if compatibility != BackupSchemaCompatibility::Legacy {

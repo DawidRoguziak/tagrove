@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
       "groupNameMissingValue": "gN requires a group value after the colon.",
       "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
-    }
+    },
+    "suggestionsRetry": "Suggerimenti non disponibili. Riprova"
   },
   "gallery": {
     "noFoldersTitle": "Nessuna cartella collegata",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "La modifica dei tag non è stata salvata. Riprova.",
       "tagLoadFailedTitle": "Impossibile caricare i tag",
       "tagLoadFailed": "Non è stato possibile caricare l’elenco completo dei tag. La modifica resta disabilitata.",
-      "retryTagDetails": "Riprova a caricare i tag"
+      "retryTagDetails": "Riprova a caricare i tag",
+      "metadataFailed": "Impossibile caricare gli elementi selezionati. Alcuni potrebbero non esistere più.",
+      "partialResult": "Aggiornati {{processed}} di {{requested}} elementi selezionati."
     },
     "tagModal": {
       "ariaLabel": "Aggiunta tag in blocco",

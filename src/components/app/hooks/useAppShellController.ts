@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_TILE_SIZE,
   TILE_SIZE_MAX,
@@ -69,14 +69,6 @@ export function useAppShellController() {
     onQueueDuplicateThumbnailsByIds: library.queueThumbnailsByIds
   });
 
-  const appliedFilterTags = useMemo(
-    () => [
-      ...searchFilters.appliedParsedFilter.include,
-      ...searchFilters.appliedParsedFilter.exclude
-    ],
-    [searchFilters.appliedParsedFilter.include, searchFilters.appliedParsedFilter.exclude]
-  );
-
   const selection = useSelectionState({
     assets: library.assets,
     setAssets: library.setAssets,
@@ -88,7 +80,7 @@ export function useAppShellController() {
     queryEpoch: library.queryEpoch,
     getAssetAtAsync: library.getAssetAtAsync,
     getAssetIndex: library.getAssetIndex,
-    appliedFilterTags
+    appliedFilter: searchFilters.appliedDescriptor
   });
 
   const bulkSelection = useBulkSelectionController({
@@ -104,7 +96,7 @@ export function useAppShellController() {
     refresh: library.refresh,
     refreshKnownTags: library.refreshKnownTags,
     assetTagState,
-    appliedFilterTags
+    appliedFilter: searchFilters.appliedDescriptor
   });
 
   const onSearchSubmit = useCallback(() => {
@@ -186,24 +178,23 @@ export function useAppShellController() {
     }
   }, [highlightScanSection, settingsViewOpen]);
 
+  // Startup runs once per shell lifetime; callbacks are captured for that lifecycle.
+  const startup = useRef({ hydrate: library.hydrateKnownTags, scan: settingsActions.scan.scanOnStartup, roots: settingsActions.scan.refreshScanRoots });
   useEffect(() => {
-    void settingsActions.scan.scanOnStartup();
+    void startup.current.scan();
     void Promise.all([
-      library.hydrateKnownTags(),
-      settingsActions.scan.refreshScanRoots().catch(() => [])
+      startup.current.hydrate(),
+      startup.current.roots().catch(() => [])
     ]).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const refreshRef = useRef(library.refresh);
+  refreshRef.current = library.refresh;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: normalized query identity triggers refresh using the current callback; replay must restart cancelled reads.
   useEffect(() => {
-    void library.refresh().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void refreshRef.current().catch(() => {});
   }, [
-    searchFilters.appliedParsedFilter.include.join("|"),
-    searchFilters.appliedParsedFilter.exclude.join("|"),
-    searchFilters.appliedMetaFilterKey,
-    searchFilters.appliedMediaKind,
-    searchFilters.appliedFavoritesOnly
+    searchFilters.appliedQueryKey
   ]);
 
   const onLoadRetry = useCallback(() => {
@@ -292,6 +283,10 @@ export function useAppShellController() {
       onNavigatePrevious: selection.handleSelectPrevious,
       onNavigateNext: selection.handleSelectNext,
       onToggleFavorite: selection.toggleSelectedFavorite,
+      favoritePending: selection.favoritePending,
+      groupPending: selection.groupPending,
+      favoriteFailed: selection.favoriteFailed,
+      groupFailed: selection.groupFailed,
       onDeleteMedia: selection.deleteSelectedAsset,
       onClose: () => selection.setSelected(null)
     }

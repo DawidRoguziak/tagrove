@@ -1,3 +1,4 @@
+import { parseSearchFilter } from "../../../utils/media";
 import type { SearchFilters } from "../types";
 import type { SearchMetaFilter } from "../../../types";
 
@@ -23,4 +24,30 @@ export function buildMetaFilterKey(metaFilter: SearchMetaFilter | null | undefin
   return metaFilter.type === "hasNoTags"
     ? `hasNoTags:${metaFilter.tagCount}`
     : `groupName:${metaFilter.groupName.trim().toLowerCase()}`;
+}
+
+export interface FilterDescriptor {
+  include: string[];
+  exclude: string[];
+  metaFilter: SearchMetaFilter | null;
+  mediaKind: SearchFilters["mediaKind"];
+  favoritesOnly: boolean;
+}
+
+export function buildFilterDescriptor(filters: SearchFilters): FilterDescriptor {
+  const parsed = parseSearchFilter(filters.filterInput);
+  const normalize = (tags: string[]) => [...new Set(tags.map(tag => tag.trim().toLowerCase()))].sort();
+  return {
+    include: normalize(parsed.include),
+    exclude: normalize(parsed.exclude),
+    metaFilter: parsed.metaFilter?.type === "groupName"
+      ? { ...parsed.metaFilter, groupName: parsed.metaFilter.groupName.trim().toLowerCase() }
+      : parsed.metaFilter,
+    mediaKind: filters.mediaKind,
+    favoritesOnly: filters.favoritesOnly
+  };
+}
+
+export function serializeFilterDescriptor(descriptor: FilterDescriptor): string {
+  return JSON.stringify(descriptor);
 }

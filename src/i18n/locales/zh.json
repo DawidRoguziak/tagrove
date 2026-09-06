@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
       "groupNameMissingValue": "gN requires a group value after the colon.",
       "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
-    }
+    },
+    "suggestionsRetry": "建议不可用。重试"
   },
   "gallery": {
     "noFoldersTitle": "未添加任何文件夹",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "标签更改未保存，请重试。",
       "tagLoadFailedTitle": "无法加载标签",
       "tagLoadFailed": "无法加载完整标签列表。编辑功能仍处于禁用状态。",
-      "retryTagDetails": "重试加载标签"
+      "retryTagDetails": "重试加载标签",
+      "metadataFailed": "无法加载所选项目。部分项目可能已不存在。",
+      "partialResult": "已更新 {{requested}} 个所选项目中的 {{processed}} 个。"
     },
     "tagModal": {
       "ariaLabel": "批量添加标签",

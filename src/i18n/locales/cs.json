@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
       "groupNameMissingValue": "gN requires a group value after the colon.",
       "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
-    }
+    },
+    "suggestionsRetry": "Návrhy nejsou dostupné. Zkusit znovu"
   },
   "gallery": {
     "noFoldersTitle": "Nejsou připojené žádné složky",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "Změna tagů nebyla uložena. Zkuste to znovu.",
       "tagLoadFailedTitle": "Tagy se nepodařilo načíst",
       "tagLoadFailed": "Úplný seznam tagů se nepodařilo načíst. Úpravy zůstávají zakázané.",
-      "retryTagDetails": "Znovu načíst tagy"
+      "retryTagDetails": "Znovu načíst tagy",
+      "metadataFailed": "Vybrané položky nelze načíst. Některé již nemusí existovat.",
+      "partialResult": "Aktualizováno {{processed}} z {{requested}} vybraných položek."
     },
     "tagModal": {
       "ariaLabel": "Hromadné přidání tagů",

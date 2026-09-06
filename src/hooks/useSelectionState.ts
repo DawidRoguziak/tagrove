@@ -1,15 +1,18 @@
+import { useSelectionNavigation } from "./useSelectionNavigation";
+import { useMediaGroupDraft } from "./useMediaGroupDraft";
+import type { FilterDescriptor } from "../components/app/services/filterService";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { deleteLightboxAssetAction } from "../components/lightbox/services/deleteLightboxAssetAction";
-import { saveLightboxMediaGroupAction } from "../components/lightbox/services/saveLightboxMediaGroupAction";
+import { useSelectionMetadataActions } from "./useSelectionMetadataActions";
 import { saveLightboxTagsAction } from "../components/lightbox/services/saveLightboxTagsAction";
-import { toggleLightboxFavoriteAction } from "../components/lightbox/services/toggleLightboxFavoriteAction";
 import {
   collectChangedTags,
   tagMutationTouchesFilters
 } from "../components/app/services/libraryInvalidationService";
 import { useAssetTagState } from "../components/app/hooks/useAssetTagState";
 import type {
+  AssetTagGenerationToken,
   AssetTagMutationToken,
   AssetTagStateController
 } from "../components/app/hooks/useAssetTagState";
@@ -29,6 +32,7 @@ interface UseSelectionStateArgs {
   queryEpoch?: number;
   getAssetAtAsync?: (index: number) => Promise<AssetSummary | undefined>;
   getAssetIndex?: (assetId: number) => number | null;
+  appliedFilter?: FilterDescriptor;
   appliedFilterTags?: string[];
 }
 
@@ -41,6 +45,7 @@ interface TagMutationState {
 }
 
 interface CachedDetail {
+  generation: AssetTagGenerationToken;
   details: AssetDetails;
   epoch: number;
 }
@@ -95,12 +100,14 @@ export function useSelectionState({
     const index = assets.findIndex((asset) => asset.id === assetId);
     return index >= 0 ? index : null;
   },
+  appliedFilter,
   appliedFilterTags = []
 }: UseSelectionStateArgs) {
   const { t } = useTranslation();
   const localAssetTagState = useAssetTagState();
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
   const [selected, setSelectedState] = useState<SelectedAsset | null>(null);
+  const syncedSummaryRef = useRef<AssetSummary | null>(null);
   const selectedRef = useRef<SelectedAsset | null>(null);
   selectedRef.current = selected;
   const selectionRequestRef = useRef(0);
@@ -119,13 +126,20 @@ export function useSelectionState({
   const [tagDetailsLoading, setTagDetailsLoading] = useState(false);
   const [tagDetailsFailed, setTagDetailsFailed] = useState(false);
   const [assetDetailsFailed, setAssetDetailsFailed] = useState(false);
-  const [mediaGroupKeyEditor, setMediaGroupKeyEditor] = useState("");
-  const [mediaGroupOrderEditor, setMediaGroupOrderEditor] = useState("");
+  const { mediaGroupKeyEditor, setMediaGroupKeyEditor, mediaGroupOrderEditor, setMediaGroupOrderEditor } = useMediaGroupDraft(selected);
+  const selectedId = selected?.id;
+  useEffect(() => selectedId === undefined ? undefined : assetTagState.pin(selectedId), [assetTagState.pin, selectedId]);
+  useEffect(() => () => { selectionRequestRef.current++; navigationRequestRef.current++; }, []);
+  useEffect(() => () => {
+    if (selectedId === undefined) return;
+    const mutation = tagMutationsRef.current.get(selectedId);
+    if (mutation && !mutation.inFlight && !mutation.desired && !mutation.failed) tagMutationsRef.current.delete(selectedId);
+  }, [selectedId]);
 
   const getCachedDetails = useCallback((assetId: number): AssetDetails | null => {
     const entry = detailsCacheRef.current.get(assetId);
     if (!entry) return null;
-    if (entry.epoch !== assetTagState.epoch) {
+    if (entry.epoch !== assetTagState.epoch || !assetTagState.isCurrent(entry.generation)) {
       detailsCacheRef.current.delete(assetId);
       return null;
     }
@@ -136,7 +150,7 @@ export function useSelectionState({
 
   const putCachedDetails = useCallback((details: AssetDetails) => {
     detailsCacheRef.current.delete(details.id);
-    detailsCacheRef.current.set(details.id, { details, epoch: assetTagState.epoch });
+    detailsCacheRef.current.set(details.id, { details, epoch: assetTagState.epoch, generation: assetTagState.captureGeneration(details.id) });
     while (detailsCacheRef.current.size > DETAILS_CACHE_LIMIT) {
       const oldest = detailsCacheRef.current.keys().next();
       if (oldest.done) break;
@@ -161,8 +175,7 @@ export function useSelectionState({
     setTagDetailsLoading(false);
     setTagDetailsFailed(false);
     setAssetDetailsFailed(false);
-    setMediaGroupKeyEditor("");
-    setMediaGroupOrderEditor("");
+
   }, [assetTagState.epoch]);
 
   // A new query session reorders the result list: recompute the lightbox
@@ -253,7 +266,7 @@ export function useSelectionState({
         if (
           tagMutationTouchesFilters(
             collectChangedTags(confirmedTags, result?.tags ?? requestedTags),
-            appliedFilterTags
+            appliedFilter ?? appliedFilterTags
           )
         ) {
           void refresh().catch(() => {});
@@ -273,10 +286,11 @@ export function useSelectionState({
         current.inFlight = false;
         syncVisibleTagMutationState(assetId);
         if (!current.failed && current.desired) drainTagMutation(assetId);
+        else if (!current.failed && selectedRef.current?.id !== assetId) tagMutationsRef.current.delete(assetId);
       });
   }, [
-    appliedFilterTags, assetTagState, assets, getCachedDetails, putCachedDetails, refresh,
-    refreshKnownTags, setSelectedState, syncVisibleTagMutationState
+    appliedFilter, appliedFilterTags, assetTagState, assets, getCachedDetails, putCachedDetails, refresh,
+    refreshKnownTags, syncVisibleTagMutationState
   ]);
 
   const saveTags = useCallback((nextTags?: string[]) => {
@@ -320,8 +334,7 @@ export function useSelectionState({
       setTagDetailsLoading(false);
       setTagDetailsFailed(false);
       setAssetDetailsFailed(false);
-      setMediaGroupKeyEditor("");
-      setMediaGroupOrderEditor("");
+
       return;
     }
 
@@ -330,10 +343,7 @@ export function useSelectionState({
     setTagEditor(mutation?.desired ?? authoritative?.tags ?? []);
     setTagSaving(Boolean(mutation?.inFlight));
     setTagFailed(Boolean(mutation?.failed));
-    setMediaGroupKeyEditor(selected.media_group_key ?? "");
-    setMediaGroupOrderEditor(
-      selected.media_group_order === null ? "" : String(selected.media_group_order)
-    );
+
   }, [assetTagState, selected]);
 
   useEffect(() => {
@@ -361,20 +371,22 @@ export function useSelectionState({
         ? { ...previous, tags: authoritative.tags }
         : previous
     );
-  }, [assetTagState.revision, assetTagState, getCachedDetails, putCachedDetails]);
+  }, [assetTagState, getCachedDetails, putCachedDetails]);
 
   useEffect(() => {
     if (skipAssetSyncForEpochRef.current === assetTagState.epoch) {
       skipAssetSyncForEpochRef.current = null;
       return;
     }
-    if (!selected) return;
-    const latest = assets.find((asset) => asset.id === selected.id);
+    if (selectedId === undefined) return;
+    const latest = assets.find((asset) => asset.id === selectedId);
     if (!latest) {
       if (assets.length === 0) setSelectedState(null);
       return;
     }
 
+    if (syncedSummaryRef.current === latest) return;
+    syncedSummaryRef.current = latest;
     setSelectedState((current) => {
       if (!current) return summaryToView(latest, []);
       const mutation = tagMutationsRef.current.get(current.id);
@@ -395,48 +407,11 @@ export function useSelectionState({
         next.media_group_order === current.media_group_order && sameTags(next.tags, current.tags);
       return unchanged ? current : next;
     });
-  }, [assetTagState, assets, selected?.id]);
+  }, [assetTagState, assets, selectedId]);
 
-  const toggleSelectedFavorite = useCallback(async () => {
-    if (!selected) return;
-    const mutationToken = assetTagState.beginMutation(selected.id);
-    if (!mutationToken) return;
-    try {
-      await toggleLightboxFavoriteAction({
-        selected,
-        appliedFavoritesOnly,
-        setAssets,
-        setSelected: setSelectedState,
-        refresh
-      });
-      const cached = getCachedDetails(selected.id);
-      if (cached) putCachedDetails({ ...cached, is_favorite: !selected.is_favorite });
-    } finally {
-      assetTagState.settleMutation(mutationToken);
-    }
-  }, [appliedFavoritesOnly, assetTagState, getCachedDetails, putCachedDetails, refresh, selected, setAssets]);
-
-  const saveMediaGroup = useCallback(async (next: { key: string | null; order: number | null }) => {
-    if (!selected) return;
-    const mutationToken = assetTagState.beginMutation(selected.id);
-    if (!mutationToken) return;
-    try {
-      await saveLightboxMediaGroupAction({ selected, setAssets, setSelected: setSelectedState }, next);
-      const cached = getCachedDetails(selected.id);
-      if (cached) {
-        putCachedDetails({
-          ...cached,
-          media_group_key: next.key,
-          media_group_order: next.order
-        });
-      }
-      // Media-group changes always affect grouping/ordering, so start a new
-      // session instead of relying on the local patch.
-      void refresh().catch(() => {});
-    } finally {
-      assetTagState.settleMutation(mutationToken);
-    }
-  }, [assetTagState, getCachedDetails, putCachedDetails, refresh, selected, setAssets]);
+  const { toggleSelectedFavorite, saveMediaGroup, favoritePending, groupPending, favoriteFailed, groupFailed } = useSelectionMetadataActions({
+    selected, assetTagState, appliedFavoritesOnly, setAssets, setSelectedState, refresh, getCachedDetails, putCachedDetails
+  });
 
   const applyFavoriteChanges = useCallback((assetIds: ReadonlySet<number>, isFavorite: boolean) => {
     favoriteChangeRevisionRef.current += 1;
@@ -454,16 +429,17 @@ export function useSelectionState({
 
   const prefetchAdjacentDetails = useCallback((index: number) => {
     if (assetCount <= 1) return;
+    const queryIdentity = observedQueryEpochRef.current;
     for (const adjacentIndex of [(index - 1 + assetCount) % assetCount, (index + 1) % assetCount]) {
       void getAssetAtAsync(adjacentIndex).then((adjacent) => {
-        if (!adjacent || getCachedDetails(adjacent.id)) return;
+        if (queryIdentity !== observedQueryEpochRef.current || !adjacent || getCachedDetails(adjacent.id)) return;
         const generation = assetTagState.captureGeneration(adjacent.id);
         const favoriteRevision = favoriteChangeRevisionRef.current;
         void getAssetDetails(adjacent.id).then((adjacentDetails) => {
-          if (!adjacentDetails || favoriteRevision !== favoriteChangeRevisionRef.current) return;
+          if (queryIdentity !== observedQueryEpochRef.current || !adjacentDetails || favoriteRevision !== favoriteChangeRevisionRef.current) return;
           const accepted = assetTagState.publishDetails(adjacent.id, adjacentDetails.tags, generation);
           const authoritative = assetTagState.get(adjacent.id);
-          if (!accepted && !authoritative) return;
+          if (!accepted) return;
           const canonical = authoritative?.tags ?? adjacentDetails.tags;
           putCachedDetails({ ...adjacentDetails, tags: canonical });
         }).catch(() => {});
@@ -481,6 +457,7 @@ export function useSelectionState({
       setSelectedState(null);
       return;
     }
+    syncedSummaryRef.current = summary;
     const selectedIndex = knownIndex ?? getAssetIndex(summary.id);
     selectedIndexRef.current = selectedIndex;
     navigationTargetIndexRef.current = selectedIndex;
@@ -519,9 +496,19 @@ export function useSelectionState({
     setTagDetailsLoading(!authoritative);
     setTagDetailsFailed(false);
     setAssetDetailsFailed(false);
-    const detailGeneration = assetTagState.captureGeneration(summary.id);
+    let detailGeneration = assetTagState.captureGeneration(summary.id);
     const favoriteRevision = favoriteChangeRevisionRef.current;
-    void getAssetDetails(summary.id).then((details) => {
+    const readCurrentDetails = async () => {
+      let details = await getAssetDetails(summary.id);
+      while (selectionRequestRef.current === requestId && !assetTagState.isCurrent(detailGeneration)) {
+        await assetTagState.waitForIdle();
+        if (selectionRequestRef.current !== requestId) return null;
+        detailGeneration = assetTagState.captureGeneration(summary.id);
+        details = await getAssetDetails(summary.id);
+      }
+      return details;
+    };
+    void readCurrentDetails().then((details) => {
       if (selectionRequestRef.current !== requestId) return;
       if (!details) {
         setAssetDetailsFailed(true);
@@ -530,7 +517,7 @@ export function useSelectionState({
       }
       const accepted = assetTagState.publishDetails(details.id, details.tags, detailGeneration);
       const authoritativeDetails = assetTagState.get(details.id);
-      if (!accepted && !authoritativeDetails) {
+      if (!accepted) {
         setAssetDetailsFailed(true);
         setTagDetailsFailed(true);
         return;
@@ -567,36 +554,8 @@ export function useSelectionState({
     selectAsset(current, selectedIndexRef.current ?? undefined);
   }, [assetDetailsFailed, selectAsset, tagDetailsFailed]);
 
-  const navigateBy = useCallback((step: -1 | 1) => {
-    const currentIndex = navigationTargetIndexRef.current ?? selectedIndexRef.current;
-    if (currentIndex === null || assetCount === 0) return;
-    const targetIndex = (currentIndex + step + assetCount) % assetCount;
-    navigationTargetIndexRef.current = targetIndex;
-    const requestId = navigationRequestRef.current + 1;
-    navigationRequestRef.current = requestId;
-    void getAssetAtAsync(targetIndex).then((asset) => {
-      if (navigationRequestRef.current !== requestId) return;
-      // An unavailable record rolls the target back so the following key
-      // press retries from the same position instead of skipping ahead.
-      if (!asset) {
-        navigationTargetIndexRef.current = currentIndex;
-        return;
-      }
-      selectAsset(asset, targetIndex);
-    }).catch(() => {
-      if (navigationRequestRef.current === requestId) {
-        navigationTargetIndexRef.current = currentIndex;
-      }
-    });
-  }, [assetCount, getAssetAtAsync, selectAsset]);
-
-  const handleSelectPrevious = useCallback(() => {
-    navigateBy(-1);
-  }, [navigateBy]);
-
-  const handleSelectNext = useCallback(() => {
-    navigateBy(1);
-  }, [navigateBy]);
+  const { handleSelectPrevious, handleSelectNext } = useSelectionNavigation({ assetCount,
+    getAssetAtAsync, selectAsset, selectedIndexRef, navigationTargetIndexRef, navigationRequestRef });
 
   const deleteSelectedAsset = useCallback(async () => {
     const deletionIdentity = selected ? assetTagState.captureGeneration(selected.id) : null;
@@ -650,7 +609,7 @@ export function useSelectionState({
     setMediaGroupOrderEditor,
     selectAsset,
     saveMediaGroup,
-    toggleSelectedFavorite,
+    toggleSelectedFavorite, favoritePending, groupPending, favoriteFailed, groupFailed,
     applyFavoriteChanges,
     handleSelectPrevious,
     handleSelectNext,
@@ -659,6 +618,6 @@ export function useSelectionState({
     deleteSelectedAsset, handleSelectNext, handleSelectPrevious, mediaGroupKeyEditor,
     mediaGroupOrderEditor, retryTagDetails, retryTags, saveMediaGroup, saveTags, selectAsset, selected,
     assetDetailsFailed, tagDetailsFailed, tagDetailsLoading, tagEditor, tagFailed, tagSaving,
-    toggleSelectedFavorite, applyFavoriteChanges
+    toggleSelectedFavorite, favoritePending, groupPending, favoriteFailed, groupFailed, applyFavoriteChanges, setMediaGroupKeyEditor, setMediaGroupOrderEditor
   ]);
 }

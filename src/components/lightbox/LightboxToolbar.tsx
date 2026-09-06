@@ -40,6 +40,8 @@ interface LightboxToolbarProps {
   infoPanelOpen: boolean;
   onToggleInfo: () => void;
   onCloseSidebar: (restoreFocus: boolean) => void;
+  favoritePending?: boolean;
+  groupPending?: boolean;
   onToggleFavorite: () => void;
   onCopyMediaGroup: () => void;
   onResetZoom: () => void;
@@ -85,6 +87,8 @@ export function LightboxToolbar({
   infoPanelOpen,
   onToggleInfo,
   onCloseSidebar,
+  favoritePending = false,
+  groupPending = false,
   onToggleFavorite,
   onCopyMediaGroup,
   onResetZoom,
@@ -165,6 +169,7 @@ export function LightboxToolbar({
             onGroupKeyChange={onMediaGroupKeyChange}
             onGroupOrderChange={onMediaGroupOrderChange}
             onApply={onApplyMediaGroup}
+            pending={groupPending}
           />
         </section>
 
@@ -196,6 +201,8 @@ export function LightboxToolbar({
             aria-label={selected.is_favorite ? t("lightbox.favorite.remove") : t("lightbox.favorite.add")}
             title={selected.is_favorite ? t("lightbox.favorite.on") : t("lightbox.favorite.off")}
             onClick={onToggleFavorite}
+            disabled={favoritePending}
+            aria-busy={favoritePending}
           />
           <UiIconButton
             icon={groupCopyConfirmed ? "check-square" : "copy"}

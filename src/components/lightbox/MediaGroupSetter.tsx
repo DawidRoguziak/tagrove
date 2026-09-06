@@ -4,6 +4,7 @@ import { browserAssistDisabledProps } from "../UI/inputBehavior";
 import { useTranslation } from "react-i18next";
 
 interface MediaGroupSetterProps {
+  pending?: boolean;
   groupKey: string;
   groupOrder: string;
   onGroupKeyChange: (value: string) => void;
@@ -20,6 +21,7 @@ function generateUuid(): string {
 }
 
 export function MediaGroupSetter({
+  pending = false,
   groupKey,
   groupOrder,
   onGroupKeyChange,
@@ -63,7 +65,7 @@ export function MediaGroupSetter({
         className="h-8 min-w-0 w-full"
       />
 
-      <UiButton variant="primary" type="button" className="h-8! min-h-8! justify-center text-xs" onClick={onApply}>
+      <UiButton variant="primary" type="button" className="h-8! min-h-8! justify-center text-xs" onClick={onApply} disabled={pending} aria-busy={pending}>
         {t("common.apply")}
       </UiButton>
     </div>

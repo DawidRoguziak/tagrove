@@ -186,6 +186,7 @@ export interface BulkFavoriteSummary {
 }
 
 export interface BulkMediaGroupSummary {
+  processed_asset_ids: number[];
   processed_assets: number;
   updated_assets: number;
   media_group_key: string | null;

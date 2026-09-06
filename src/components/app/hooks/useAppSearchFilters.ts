@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
 import type { SearchFilters, SearchMediaKind } from "../types";
 import {
-  areSearchFiltersEqual,
+  buildFilterDescriptor,
+  serializeFilterDescriptor,
   buildMetaFilterKey,
   DEFAULT_SEARCH_FILTERS
 } from "../services/filterService";
@@ -19,6 +20,8 @@ interface UseAppSearchFiltersResult {
   appliedFavoritesOnly: boolean;
   appliedParsedFilter: ParsedSearchFilter;
   appliedMetaFilterKey: string;
+  appliedDescriptor: ReturnType<typeof buildFilterDescriptor>;
+  appliedQueryKey: string;
   filterValidationError: SearchFilterValidationError | null;
   setMediaKind: (value: SearchMediaKind) => void;
   setFavoritesOnly: (value: boolean) => void;
@@ -79,117 +82,47 @@ export function useAppSearchFilters(): UseAppSearchFiltersResult {
     setFilterValidationError(null);
   }, []);
 
-  const applyMediaKindAndSubmit = useCallback(
-    async (value: SearchMediaKind, refresh?: () => Promise<void> | void) => {
-      setMediaKind(value);
-      const nextFilters: SearchFilters = {
-        filterInput,
-        mediaKind: value,
-        favoritesOnly
-      };
+  const appliedDescriptor = useMemo(() => buildFilterDescriptor(appliedFilters), [appliedFilters]);
+  const appliedQueryKey = serializeFilterDescriptor(appliedDescriptor);
 
-      if (areSearchFiltersEqual(nextFilters, appliedFilters)) {
-        await refresh?.();
-        return;
-      }
+  const commit = useCallback(async (next: SearchFilters, refresh?: () => Promise<void> | void) => {
+    const parsed = parseSearchFilter(next.filterInput);
+    setFilterValidationError(parsed.validationError);
+    if (parsed.validationError) return;
+    if (serializeFilterDescriptor(buildFilterDescriptor(next)) === appliedQueryKey) {
+      await refresh?.();
+      return;
+    }
+    setAppliedFilterInput(next.filterInput);
+    setAppliedMediaKind(next.mediaKind);
+    setAppliedFavoritesOnly(next.favoritesOnly);
+  }, [appliedQueryKey]);
 
-      setAppliedFilterInput(filterInput);
-      setAppliedMediaKind(value);
-      setAppliedFavoritesOnly(favoritesOnly);
-    },
-    [appliedFilters, favoritesOnly, filterInput]
-  );
+  const applyMediaKindAndSubmit = useCallback(async (value: SearchMediaKind, refresh?: () => Promise<void> | void) => {
+    setMediaKind(value);
+    await commit({ ...currentFilters, mediaKind: value }, refresh);
+  }, [commit, currentFilters]);
 
-  const applyFavoritesOnlyAndSubmit = useCallback(
-    async (value: boolean, refresh?: () => Promise<void> | void) => {
-      setFavoritesOnly(value);
-      const nextFilters: SearchFilters = {
-        filterInput,
-        mediaKind,
-        favoritesOnly: value
-      };
+  const applyFavoritesOnlyAndSubmit = useCallback(async (value: boolean, refresh?: () => Promise<void> | void) => {
+    setFavoritesOnly(value);
+    await commit({ ...currentFilters, favoritesOnly: value }, refresh);
+  }, [commit, currentFilters]);
 
-      if (areSearchFiltersEqual(nextFilters, appliedFilters)) {
-        await refresh?.();
-        return;
-      }
+  const handleSearchSubmit = useCallback(async (refresh?: () => Promise<void> | void) => {
+    await commit(currentFilters, refresh);
+  }, [commit, currentFilters]);
 
-      setAppliedFilterInput(filterInput);
-      setAppliedMediaKind(mediaKind);
-      setAppliedFavoritesOnly(value);
-    },
-    [appliedFilters, filterInput, mediaKind]
-  );
+  const applyFilterInputAndSubmit = useCallback(async (nextFilterInput: string, refresh?: () => Promise<void> | void) => {
+    setFilterInput(nextFilterInput);
+    await commit({ ...currentFilters, filterInput: nextFilterInput }, refresh);
+  }, [commit, currentFilters]);
 
-  const handleSearchSubmit = useCallback(
-    async (refresh?: () => Promise<void> | void) => {
-      const nextParsedFilter = parseSearchFilter(filterInput);
-      if (nextParsedFilter.validationError) {
-        setFilterValidationError(nextParsedFilter.validationError);
-        return;
-      }
-
-      setFilterValidationError(null);
-
-      if (areSearchFiltersEqual(currentFilters, appliedFilters)) {
-        await refresh?.();
-        return;
-      }
-
-      setAppliedFilterInput(filterInput);
-      setAppliedMediaKind(mediaKind);
-      setAppliedFavoritesOnly(favoritesOnly);
-    },
-    [appliedFilters, currentFilters, favoritesOnly, filterInput, mediaKind]
-  );
-
-  const applyFilterInputAndSubmit = useCallback(
-    async (nextFilterInput: string, refresh?: () => Promise<void> | void) => {
-      const nextParsedFilter = parseSearchFilter(nextFilterInput);
-      if (nextParsedFilter.validationError) {
-        setFilterValidationError(nextParsedFilter.validationError);
-        return;
-      }
-
-      setFilterValidationError(null);
-      setFilterInput(nextFilterInput);
-
-      const nextFilters: SearchFilters = {
-        filterInput: nextFilterInput,
-        mediaKind,
-        favoritesOnly
-      };
-
-      if (areSearchFiltersEqual(nextFilters, appliedFilters)) {
-        await refresh?.();
-        return;
-      }
-
-      setAppliedFilterInput(nextFilterInput);
-      setAppliedMediaKind(mediaKind);
-      setAppliedFavoritesOnly(favoritesOnly);
-    },
-    [appliedFilters, favoritesOnly, mediaKind]
-  );
-
-  const handleClearSearch = useCallback(
-    async (refresh?: () => Promise<void> | void) => {
-      setFilterInput(DEFAULT_SEARCH_FILTERS.filterInput);
-      setMediaKind(DEFAULT_SEARCH_FILTERS.mediaKind);
-      setFavoritesOnly(DEFAULT_SEARCH_FILTERS.favoritesOnly);
-      setFilterValidationError(null);
-
-      if (areSearchFiltersEqual(appliedFilters, DEFAULT_SEARCH_FILTERS)) {
-        await refresh?.();
-        return;
-      }
-
-      setAppliedFilterInput(DEFAULT_SEARCH_FILTERS.filterInput);
-      setAppliedMediaKind(DEFAULT_SEARCH_FILTERS.mediaKind);
-      setAppliedFavoritesOnly(DEFAULT_SEARCH_FILTERS.favoritesOnly);
-    },
-    [appliedFilters]
-  );
+  const handleClearSearch = useCallback(async (refresh?: () => Promise<void> | void) => {
+    setFilterInput(DEFAULT_SEARCH_FILTERS.filterInput);
+    setMediaKind(DEFAULT_SEARCH_FILTERS.mediaKind);
+    setFavoritesOnly(DEFAULT_SEARCH_FILTERS.favoritesOnly);
+    await commit(DEFAULT_SEARCH_FILTERS, refresh);
+  }, [commit]);
 
   return {
     filterInput,
@@ -199,6 +132,8 @@ export function useAppSearchFilters(): UseAppSearchFiltersResult {
     appliedFavoritesOnly,
     appliedParsedFilter,
     appliedMetaFilterKey,
+    appliedDescriptor,
+    appliedQueryKey,
     filterValidationError,
     setMediaKind,
     setFavoritesOnly,

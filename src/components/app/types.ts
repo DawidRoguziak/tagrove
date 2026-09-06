@@ -60,6 +60,11 @@ export interface AppGalleryMediaController {
 }
 
 export interface BulkSelectionController {
+  metadataLoading?: boolean;
+  metadataFailed?: boolean;
+  onRetryMetadata?: () => void;
+  queueThumbnailsByIds?: (ids: number[]) => void;
+  partialResult?: { processed: number; requested: number } | null;
   favoriteApplying: boolean;
   favoriteFailed: boolean;
   allSelectedFavorites: boolean;

@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
       "groupNameMissingValue": "gN requires a group value after the colon.",
       "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
-    }
+    },
+    "suggestionsRetry": "Suggestions indisponibles. Réessayer"
   },
   "gallery": {
     "noFoldersTitle": "Aucun dossier attaché",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "La modification des tags n’a pas été enregistrée. Réessayez.",
       "tagLoadFailedTitle": "Impossible de charger les tags",
       "tagLoadFailed": "La liste complète des tags n’a pas pu être chargée. La modification reste désactivée.",
-      "retryTagDetails": "Réessayer le chargement"
+      "retryTagDetails": "Réessayer le chargement",
+      "metadataFailed": "Impossible de charger les éléments sélectionnés. Certains peuvent ne plus exister.",
+      "partialResult": "{{processed}} éléments sélectionnés mis à jour sur {{requested}}."
     },
     "tagModal": {
       "ariaLabel": "Ajout de tags en masse",

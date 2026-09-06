@@ -38,6 +38,7 @@ interface UseLibraryAssetsResult {
   pageFailureEpoch: number;
   queryEpoch: number;
   refresh: () => Promise<void>;
+  reset: () => void;
   handleReachEnd: () => void;
   ensureRange: (startIndex: number, endIndex: number) => void;
   getAssetAt: (index: number) => AssetSummary | undefined;
@@ -72,6 +73,7 @@ export function useLibraryAssets({
   const sessionIdRef = useRef<number | null>(null);
   const generationRef = useRef(0);
   const inFlightPagesRef = useRef<Map<number, Promise<AssetSummary[] | undefined>>>(new Map());
+  const failedPagesRef = useRef(new Map<number, Error>());
   const inFlightCountRef = useRef(0);
   const activePagesRef = useRef(new Set<number>());
   const accessOrderRef = useRef<number[]>([]);
@@ -79,6 +81,24 @@ export function useLibraryAssets({
     accessOrderRef.current = [pageOffset, ...accessOrderRef.current.filter((offset) => offset !== pageOffset)]
       .slice(0, MAX_CACHED_PAGES);
   }, []);
+
+  const invalidateReads = useCallback(() => {
+    generationRef.current += 1;
+    sessionIdRef.current = null;
+    inFlightPagesRef.current.clear();
+    failedPagesRef.current.clear();
+    inFlightCountRef.current = 0;
+  }, []);
+  useEffect(() => invalidateReads, [invalidateReads]);
+  const reset = useCallback(() => {
+    invalidateReads();
+    setCache(EMPTY_CACHE);
+    setTotal(0);
+    setOffset(0);
+    setLoading(false);
+    setLoadError(null);
+    setQueryEpoch(epoch => epoch + 1);
+  }, [invalidateReads]);
 
   const beginLoading = useCallback(() => {
     inFlightCountRef.current += 1;
@@ -128,8 +148,8 @@ export function useLibraryAssets({
   );
 
   const refresh = useCallback(async () => {
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
+    invalidateReads();
+    const generation = generationRef.current;
     sessionIdRef.current = null;
     inFlightPagesRef.current.clear();
     activePagesRef.current.clear();
@@ -166,9 +186,10 @@ export function useLibraryAssets({
         performance.mark(`${perfMark}-end`);
         performance.measure("asset-query-refresh", `${perfMark}-start`, `${perfMark}-end`);
       }
-      endLoading();
+      if (generation === generationRef.current) endLoading();
     }
   }, [
+    invalidateReads,
     appliedFavoritesOnly,
     appliedMediaKind,
     beginLoading,
@@ -181,11 +202,6 @@ export function useLibraryAssets({
     resetThumbnailQueue
   ]);
 
-  const retryLoad = useCallback(async () => {
-    setLoadError(null);
-    await refresh();
-  }, [refresh]);
-
   const loadPage = useCallback(
     async (pageOffset: number) => {
       const sessionId = sessionIdRef.current;
@@ -196,6 +212,8 @@ export function useLibraryAssets({
           .map((assetId) => cache.assetsById.get(assetId))
           .filter((summary): summary is AssetSummary => Boolean(summary));
       }
+      const failure = failedPagesRef.current.get(pageOffset);
+      if (failure) throw failure;
       const inFlight = inFlightPagesRef.current.get(pageOffset);
       if (inFlight) return inFlight;
 
@@ -210,13 +228,13 @@ export function useLibraryAssets({
             await refresh();
             return undefined;
           }
-          setLoadError(null);
+          if (failedPagesRef.current.size === 0) setLoadError(null);
           mergePage(result.offset, result.items, false);
           return result.items;
         } catch (error) {
-          // The failed page stays a retryable hole; the range dedup marker is
-          // released through pageFailureEpoch so the virtual range re-requests.
+          // Demand must not retry this hole until the user explicitly retries.
           if (generation === generationRef.current) {
+            failedPagesRef.current.set(pageOffset, error instanceof Error ? error : new Error(String(error)));
             setLoadError(error instanceof Error ? error.message : String(error));
             setPageFailureEpoch((epoch) => epoch + 1);
           }
@@ -225,13 +243,24 @@ export function useLibraryAssets({
           if (inFlightPagesRef.current.get(pageOffset) === request) {
             inFlightPagesRef.current.delete(pageOffset);
           }
-          endLoading();
+          if (generation === generationRef.current) endLoading();
         }
       })();
       inFlightPagesRef.current.set(pageOffset, request);
       return request;
     }, [beginLoading, cache.pages, cache.assetsById, endLoading, mergePage, pageSize, refresh, total, touchPage]
   );
+
+  const retryLoad = useCallback(async () => {
+    if (sessionIdRef.current === null) {
+      await refresh();
+      return;
+    }
+    const offsets = [...failedPagesRef.current.keys()].filter(offset => activePagesRef.current.has(offset));
+    for (const offset of offsets) failedPagesRef.current.delete(offset);
+    if (failedPagesRef.current.size === 0) setLoadError(null);
+    await Promise.all(offsets.map(offset => loadPage(offset)));
+  }, [loadPage, refresh]);
 
   const ensureRange = useCallback(
     (startIndex: number, endIndex: number) => {
@@ -282,6 +311,8 @@ export function useLibraryAssets({
    * leave their state untouched instead of applying a partial range. */
   const getIdsRangeAsync = useCallback(
     async (startIndex: number, endIndex: number) => {
+      const generation = generationRef.current;
+      const sessionId = sessionIdRef.current;
       const from = Math.max(0, Math.min(startIndex, endIndex));
       const to = Math.min(total - 1, Math.max(startIndex, endIndex));
       if (from > to) return [];
@@ -292,6 +323,7 @@ export function useLibraryAssets({
         pageOffset += pageSize
       ) {
         const page = await loadPage(pageOffset);
+        if (generation !== generationRef.current || sessionId !== sessionIdRef.current) throw new Error("Asset ID range was cancelled");
         if (!page) throw new Error("Asset ID range was cancelled");
         const firstLocal = Math.max(0, from - pageOffset);
         const lastLocal = Math.min(pageSize - 1, to - pageOffset);
@@ -362,6 +394,7 @@ export function useLibraryAssets({
     pageFailureEpoch,
     queryEpoch,
     refresh,
+    reset,
     handleReachEnd,
     ensureRange,
     getAssetAt,

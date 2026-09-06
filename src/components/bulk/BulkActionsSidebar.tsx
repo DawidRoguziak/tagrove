@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { toMediaSrc } from "../../api";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { BulkSelectionController } from "../app/types";
 import { SearchTagator } from "../search/SearchTagator";
 import { AssignedTagList } from "../UI/AssignedTagList";
-import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../UI/ThumbnailImage";
+import { ThumbnailSubscription } from "../UI/ThumbnailSubscription";
 import { UiAlert } from "../UI/UiAlert";
 import { UiButton } from "../UI/UiButton";
 import { UiIcon } from "../UI/UiIcon";
@@ -38,7 +38,7 @@ export function BulkActionsSidebar({
   const tagFocusFrameRef = useRef<number | null>(null);
   const draggingAssetIdRef = useRef<number | null>(null);
   const lastDragTargetAssetIdRef = useRef<number | null>(null);
-  const selectionKey = controller.selectedAssets.map((asset) => asset.id).join(",");
+  const selectionKey = [...controller.selectedAssetIds].join(",");
   const orderedAssets = useMemo(() => {
     const selectedById = new Map(controller.selectedAssets.map((asset) => [asset.id, asset]));
     return controller.orderedAssetIds
@@ -47,10 +47,25 @@ export function BulkActionsSidebar({
   }, [controller.orderedAssetIds, controller.selectedAssets]);
   const displayedTags =
     controller.tagMode === "single" ? controller.singleAssetTags : controller.appliedBulkTags;
-  const controlsDisabled = controller.selectedAssets.length === 0;
+  const controlsDisabled = controller.selectedAssetIds.size === 0;
   const normalizedGroupKey = normalizeGroupKey(controller.groupKeyDraft);
   const hasOrderPanel = Boolean(normalizedGroupKey) && orderedAssets.length > 1;
 
+  const orderScrollRef = useRef<HTMLDivElement | null>(null);
+  const orderVirtualizer = useVirtualizer({ count: hasOrderPanel ? orderedAssets.length : 0,
+    getItemKey: index => orderedAssets[index]?.id ?? index,
+    getScrollElement: () => orderScrollRef.current, estimateSize: () => 86, overscan: 3,
+    initialRect: { width: 320, height: 240 } });
+  const rows = orderVirtualizer.getVirtualItems();
+  const firstRow = rows[0]?.index ?? 0;
+  const lastRow = rows.at(-1)?.index ?? -1;
+  useEffect(() => {
+    if (hasOrderPanel) controller.queueThumbnailsByIds?.(orderedAssets.slice(firstRow, lastRow + 1).map(asset => asset.id));
+  }, [controller.queueThumbnailsByIds, orderedAssets, hasOrderPanel, firstRow, lastRow]);
+  const selectionKeyRef = useRef(selectionKey);
+  selectionKeyRef.current = selectionKey;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selected ID identity resets the editor draft.
   useEffect(() => {
     setTagDraft("");
     setDraggingAssetId(null);
@@ -88,7 +103,9 @@ export function BulkActionsSidebar({
   const addTagAndRestoreFocus = (tag: string) => {
     const attemptedTag = normalizeBulkTag(tag);
     setTagDraft(attemptedTag);
+    const capturedSelection = selectionKey;
     void controller.onAddTag(attemptedTag).then((saved) => {
+      if (selectionKeyRef.current !== capturedSelection) return;
       if (saved) setTagDraft("");
       if (tagFocusFrameRef.current !== null) {
         cancelAnimationFrame(tagFocusFrameRef.current);
@@ -178,11 +195,14 @@ export function BulkActionsSidebar({
             {t("bulk.panel.groupSaveFailed")}
           </UiAlert>
         ) : null}
+        {controller.metadataLoading ? <p role="status">{t("common.loading")}</p> : null}
+        {controller.metadataFailed ? <UiAlert tone="error" title={t("bulk.panel.metadataFailed")}><UiButton onClick={controller.onRetryMetadata}>{t("gallery.retry")}</UiButton></UiAlert> : null}
+        {controller.partialResult && controller.partialResult.processed < controller.partialResult.requested ? <p role="status">{t("bulk.panel.partialResult", controller.partialResult)}</p> : null}
         <UiButton
           variant={normalizedGroupKey ? "primary" : "danger"}
           className="w-full justify-center"
           onClick={() => void controller.onApplyGroup().catch(() => {})}
-          disabled={controlsDisabled || controller.groupApplying}
+          disabled={controlsDisabled || controller.groupApplying || controller.metadataLoading || controller.metadataFailed}
         >
           {controller.groupApplying
             ? t("bulk.groupModal.applyInProgress")
@@ -206,17 +226,20 @@ export function BulkActionsSidebar({
             </p>
           </div>
           <div
-            className="panel-scroll grid min-h-0 gap-2 overflow-y-auto overscroll-contain"
+            ref={orderScrollRef}
+            style={{ height: Math.min(240, orderedAssets.length * 86) }}
+            className="panel-scroll relative min-h-0 overflow-y-auto overscroll-contain"
             data-testid="bulk-group-order-list"
             role="list"
           >
-            {orderedAssets.map((asset, index) => {
-              const thumbPath = thumbs[asset.id];
-              const src = thumbPath ? toMediaSrc(thumbPath) : TRANSPARENT_THUMBNAIL_SRC;
-              const isRendering = Boolean(renderingThumbnailIds[asset.id]) && !thumbPath;
+            <div style={{ height: orderVirtualizer.getTotalSize(), position: "relative" }}>
+            {rows.map(row => {
+              const index = row.index;
+              const asset = orderedAssets[index]!;
               return (
                 <div
                   key={asset.id}
+                  style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 78, transform: `translateY(${row.start}px)` }}
                   className={`flex items-center gap-2 rounded-[var(--radius-control)] border border-base-content/12 bg-base-100/70 p-1.5 transition-[opacity,box-shadow] ${
                     draggingAssetId === asset.id ? "opacity-60 ring-2 ring-primary/40" : ""
                   }`}
@@ -246,17 +269,7 @@ export function BulkActionsSidebar({
                     className="relative h-16 w-20 shrink-0 overflow-hidden rounded-[var(--radius-control)] bg-base-200"
                     data-testid={`bulk-group-thumbnail-${asset.id}`}
                   >
-                    <ThumbnailImage
-                      src={src}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      draggable={false}
-                    />
-                    {isRendering ? (
-                      <span className="absolute inset-0 grid place-items-center bg-base-100/55" aria-hidden="true">
-                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-base-content/25 border-t-primary" />
-                      </span>
-                    ) : null}
+                    <ThumbnailSubscription id={asset.id} path={thumbs[asset.id]} rendering={Boolean(renderingThumbnailIds[asset.id])} />
                   </div>
                   <span className="min-w-0 flex-1 truncate text-xs text-base-content/75" title={asset.file_name}>{asset.file_name}</span>
                   <button
@@ -291,6 +304,7 @@ export function BulkActionsSidebar({
                 </div>
               );
             })}
+            </div>
           </div>
         </section>
       ) : null}

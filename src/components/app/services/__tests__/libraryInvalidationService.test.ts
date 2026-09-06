@@ -1,3 +1,4 @@
+import { buildFilterDescriptor } from "../filterService";
 import { describe, expect, it } from "vitest";
 import {
   bulkTagMutationRequiresRefresh,
@@ -48,4 +49,12 @@ describe("bulkTagMutationRequiresRefresh", () => {
     expect(bulkTagMutationRequiresRefresh(0, ["travel"])).toBe(false);
     expect(bulkTagMutationRequiresRefresh(3, [])).toBe(false);
   });
+});
+
+it.each(["tags", "tags:2"])("invalidates exact-count filter %s after tags change", filterInput => {
+  const descriptor = buildFilterDescriptor({ filterInput, mediaKind: "all", favoritesOnly: false });
+  expect(tagMutationTouchesFilters(["cat"], descriptor)).toBe(true);
+  expect(bulkTagMutationRequiresRefresh(1, descriptor)).toBe(true);
+  expect(tagMutationTouchesFilters([], descriptor)).toBe(false);
+  expect(bulkTagMutationRequiresRefresh(0, descriptor)).toBe(false);
 });

@@ -1,3 +1,4 @@
+import { useThumbnailSubscription } from "../UI/ThumbnailSubscription";
 import type { ChangeEvent, MouseEvent } from "react";
 import { UiButton } from "../UI/UiButton";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../UI/ThumbnailImage";
@@ -26,8 +27,8 @@ export function DuplicateAssetCard({
   asset,
   renameValue,
   staged,
-  thumbPath,
-  isRendering,
+  thumbPath: fallbackPath,
+  isRendering: fallbackRendering,
   isOperationLocked,
   t,
   onRenameValueChange,
@@ -36,6 +37,8 @@ export function DuplicateAssetCard({
   onToggleDeleteClick,
   onClearActionClick
 }: DuplicateAssetCardProps) {
+  const { path: thumbPath, rendering } = useThumbnailSubscription(asset.id, fallbackPath, fallbackRendering);
+  const isRendering = rendering && !thumbPath;
   const currentName = getFileNameFromPath(asset.path);
   const previewSrc = thumbPath ? toMediaSrc(thumbPath) : TRANSPARENT_THUMBNAIL_SRC;
 

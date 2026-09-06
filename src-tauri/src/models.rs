@@ -269,6 +269,7 @@ pub struct BulkFavoriteSummary {
 
 #[derive(Debug, Serialize)]
 pub struct BulkMediaGroupSummary {
+    pub processed_asset_ids: Vec<i64>,
     pub processed_assets: usize,
     pub updated_assets: usize,
     pub media_group_key: Option<String>,

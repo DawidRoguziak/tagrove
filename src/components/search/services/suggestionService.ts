@@ -9,6 +9,7 @@ const DEFAULT_SUGGESTION_LIMIT = 8;
 interface BuildTagSuggestionsParams {
   activeToken: ActiveToken | null;
   usedTags: Set<string>;
+  excludedTags?: Set<string>;
   fuse: TagSearchIndex;
   searchLimit?: number;
   suggestionLimit?: number;
@@ -68,6 +69,7 @@ export function createTagFuse(knownTags: string[], FuseClass?: typeof Fuse): Tag
 export function buildTagSuggestions({
   activeToken,
   usedTags,
+  excludedTags = new Set(),
   fuse,
   searchLimit = DEFAULT_SEARCH_LIMIT,
   suggestionLimit = DEFAULT_SUGGESTION_LIMIT
@@ -84,9 +86,12 @@ export function buildTagSuggestions({
   const seenValues = new Set<string>();
   const suggestions: TagSuggestion[] = [];
 
-  for (const result of fuse.search(query, { limit: searchLimit })) {
+  let considered = 0;
+  for (const result of fuse.search(query, { limit: searchLimit + excludedTags.size })) {
     const suggestionValue = result.item;
     const normalizedValue = normalizeTagToken(suggestionValue);
+    if (excludedTags.has(normalizedValue)) continue;
+    if (considered++ >= searchLimit) break;
 
     if (usedTags.has(normalizedValue) && normalizedValue !== query) {
       continue;

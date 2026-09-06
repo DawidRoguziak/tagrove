@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
       "groupNameMissingValue": "gN requires a group value after the colon.",
       "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
-    }
+    },
+    "suggestionsRetry": "Подсказки недоступны. Повторить"
   },
   "gallery": {
     "noFoldersTitle": "Папки не подключены",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "Изменение тегов не сохранено. Повторите попытку.",
       "tagLoadFailedTitle": "Не удалось загрузить теги",
       "tagLoadFailed": "Не удалось загрузить полный список тегов. Редактирование отключено.",
-      "retryTagDetails": "Повторить загрузку тегов"
+      "retryTagDetails": "Повторить загрузку тегов",
+      "metadataFailed": "Не удалось загрузить выбранные элементы. Некоторые из них могут больше не существовать.",
+      "partialResult": "Обновлено {{processed}} из {{requested}} выбранных элементов."
     },
     "tagModal": {
       "ariaLabel": "Массовое добавление тегов",

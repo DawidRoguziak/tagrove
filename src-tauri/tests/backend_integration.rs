@@ -242,7 +242,7 @@ fn set_assets_media_group_bulk_overwrites_existing_values() {
     )
     .expect("set bulk group");
 
-    assert_eq!(processed, 2);
+    assert_eq!(processed, vec![2, 1]);
     assert_eq!(updated, 2);
 
     let page = db::list_assets(&conn, 0, 100, &[], &[], None, false).expect("list assets");

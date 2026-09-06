@@ -37,11 +37,10 @@ function createAsset(id: number): AssetSummary {
 describe("applyBulkMediaGroupAction", () => {
   beforeEach(() => {
     apiMocks.setAssetsMediaGroupBulk.mockReset();
-    apiMocks.setAssetsMediaGroupBulk.mockResolvedValue({
-      processed_assets: 0,
-      updated_assets: 0,
-      media_group_key: null
-    });
+    apiMocks.setAssetsMediaGroupBulk.mockImplementation(async (updates: { assetId: number }[], key: string | null) => ({
+      processed_assets: updates.length, updated_assets: updates.length,
+      processed_asset_ids: updates.map(update => update.assetId), media_group_key: key
+    }));
   });
 
   it("builds normalized payload", () => {
@@ -105,4 +104,14 @@ describe("applyBulkMediaGroupAction", () => {
     );
     expect(assets.every((asset) => asset.media_group_key === null && asset.media_group_order === null)).toBe(true);
   });
+  it("patches only acknowledged group IDs", async () => {
+    let assets = [createAsset(1), createAsset(2), createAsset(3)];
+    apiMocks.setAssetsMediaGroupBulk.mockResolvedValueOnce({ processed_asset_ids: [3, 1], processed_assets: 2, updated_assets: 2, media_group_key: "trip" });
+    const result = await applyBulkMediaGroupAction({ assetIdsInOrder: [3, 2, 1], groupKey: "trip",
+      setAssets: update => { assets = update(assets); } });
+    expect(result?.processed_asset_ids).toEqual([3, 1]);
+    expect(assets.map(asset => asset.media_group_order)).toEqual([3, null, 1]);
+    expect(assets[1]?.media_group_key).toBeNull();
+  });
+
 });

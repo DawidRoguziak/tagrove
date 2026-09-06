@@ -1,3 +1,4 @@
+import type { FilterDescriptor } from "./filterService";
 function normalizeTag(tag: string): string {
   return tag.trim().toLowerCase();
 }
@@ -17,7 +18,9 @@ export function collectChangedTags(previous: string[], next: string[]): string[]
   return changed;
 }
 
-export function tagMutationTouchesFilters(changedTags: string[], appliedFilterTags: string[]): boolean {
+export function tagMutationTouchesFilters(changedTags: string[], filter: FilterDescriptor | string[]): boolean {
+  const appliedFilterTags = Array.isArray(filter) ? filter : [...filter.include, ...filter.exclude];
+  if (!Array.isArray(filter) && filter.metaFilter?.type === "hasNoTags") return changedTags.length > 0;
   if (changedTags.length === 0 || appliedFilterTags.length === 0) return false;
   const applied = new Set(appliedFilterTags.map(normalizeTag));
   return changedTags.some((tag) => applied.has(normalizeTag(tag)));
@@ -27,6 +30,6 @@ export function favoriteMutationRequiresRefresh(appliedFavoritesOnly: boolean, n
   return appliedFavoritesOnly && !nextFavorite;
 }
 
-export function bulkTagMutationRequiresRefresh(updatedAssets: number, appliedFilterTags: string[]): boolean {
-  return updatedAssets > 0 && appliedFilterTags.length > 0;
+export function bulkTagMutationRequiresRefresh(updatedAssets: number, filter: FilterDescriptor | string[]): boolean {
+  return updatedAssets > 0 && (Array.isArray(filter) ? filter.length > 0 : filter.include.length > 0 || filter.exclude.length > 0 || filter.metaFilter?.type === "hasNoTags");
 }

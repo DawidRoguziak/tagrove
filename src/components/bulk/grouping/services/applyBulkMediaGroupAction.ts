@@ -1,5 +1,5 @@
 import { setAssetsMediaGroupBulk } from "../../../../api";
-import type { AssetSummary } from "../../../../types";
+import type { AssetSummary, BulkMediaGroupSummary } from "../../../../types";
 import {
   applyBulkMediaGroupToAssets,
   type BulkMediaGroupAssignment
@@ -56,15 +56,17 @@ export async function applyBulkMediaGroupAction({
   groupKey,
   preservedSingleOrder = null,
   setAssets
-}: ApplyBulkMediaGroupActionArgs): Promise<void> {
+}: ApplyBulkMediaGroupActionArgs): Promise<BulkMediaGroupSummary | undefined> {
   const payload = buildApplyBulkMediaGroupPayload(assetIdsInOrder, groupKey, preservedSingleOrder);
   if (!payload) {
     return;
   }
 
-  await setAssetsMediaGroupBulk(payload.assignments, payload.normalizedGroupKey);
+  const result = await setAssetsMediaGroupBulk(payload.assignments, payload.normalizedGroupKey);
+  const processed = new Set(result.processed_asset_ids);
 
   setAssets((previous) =>
-    applyBulkMediaGroupToAssets(previous, payload.normalizedGroupKey, payload.assignments)
+    applyBulkMediaGroupToAssets(previous, payload.normalizedGroupKey, payload.assignments.filter(item => processed.has(item.assetId)))
   );
+  return result;
 }

@@ -474,8 +474,8 @@ describe("useBulkSelectionController", () => {
     // Eviction: only one summary remains available for rendering.
     rerender({ assets: [createAsset(3)] });
     expect(result.current.selectedAssetIds).toEqual(new Set([1, 3]));
-    // Renderable selection is the intersection with loaded summaries.
-    expect(result.current.selectedAssets.map((asset) => asset.id)).toEqual([3]);
+    // Selection metadata survives eviction.
+    expect(result.current.selectedAssets.map((asset) => asset.id)).toEqual([1, 3]);
   });
 
   it("degrades a Shift press without a valid anchor to a plain selection after a new query epoch", async () => {
@@ -496,5 +496,20 @@ describe("useBulkSelectionController", () => {
     });
     expect(getIdsRangeAsync).not.toHaveBeenCalled();
     expect([...result.current.selectedAssetIds]).toEqual([9]);
+  });
+  it("tags every selected ID after eviction and a filter change without resetting drafts", async () => {
+    const assets = [createAsset(1), createAsset(2), createAsset(3)];
+    const { result, rerender } = renderHook(({ assets, queryEpoch }) => useBulkSelectionController({ ...options(assets), queryEpoch }),
+      { initialProps: { assets, queryEpoch: 1 } });
+    act(() => result.current.onToggleSelectionMode());
+    select(result, 1, 0); select(result, 2, 1, true); select(result, 3, 2, true);
+    act(() => result.current.onGroupKeyDraftChange("unsaved"));
+    rerender({ assets: [createAsset(3)], queryEpoch: 2 });
+    expect(result.current.groupKeyDraft).toBe("unsaved");
+    actionMocks.applyBulkTagsAction.mockResolvedValue({ processed_assets: 2, updated_assets: 2,
+      results: [{ asset_id: 1, tags: ["new"] }, { asset_id: 3, tags: ["new"] }] });
+    await act(() => result.current.onAddTag("new"));
+    expect(actionMocks.applyBulkTagsAction).toHaveBeenCalledWith(expect.objectContaining({ assetIds: [1, 2, 3] }));
+    expect(result.current.partialResult).toEqual({ processed: 2, requested: 3 });
   });
 });

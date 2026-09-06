@@ -150,4 +150,24 @@ describe("useAssetTagState", () => {
     expect(result.current.publishDetails(11, ["also deleted"], readAfterDeletion)).toBe(false);
     expect(result.current.get(11)).toBeNull();
   });
+  it("bounds inactive records, pins editors and mutations, and rejects tokens after eviction", () => {
+    const { result } = renderHook(() => useAssetTagState());
+    const release = result.current.pin(1);
+    const pinned = result.current.captureGeneration(1);
+    const stale = result.current.captureGeneration(2);
+    let mutation!: NonNullable<ReturnType<typeof result.current.beginMutation>>;
+    act(() => {
+      result.current.publishDetails(1, ["pinned"], pinned);
+      result.current.publishDetails(2, ["old"], stale);
+      mutation = result.current.beginMutation(3)!;
+      for (let id = 4; id < 519; id++) result.current.publishDetails(id, ["cached"], result.current.captureGeneration(id));
+    });
+    expect(result.current.get(1)?.tags).toEqual(["pinned"]);
+    expect(result.current.get(2)).toBeNull();
+    expect(result.current.publishDetails(2, ["stale"], stale)).toBe(false);
+    act(() => { expect(result.current.settleMutation(mutation, ["saved"])).toBe(true); release(); });
+    const retained = Array.from({ length: 518 }, (_, index) => result.current.get(index + 1)).filter(Boolean);
+    expect(retained.length).toBeLessThanOrEqual(512);
+    expect(result.current.get(3)?.tags).toEqual(["saved"]);
+  });
 });

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getAssetSummariesByIds,
+  setAssetsMediaGroupBulk,
   beginVideoOpen,
   listScanRoots,
   setScanRootAutoScan,
@@ -163,4 +165,12 @@ describe("api contract", () => {
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(7, "set_video_control_labels", { sessionId: 17, controlLabels });
   });
 
+  it("uses the selection summary and processed group ID contracts", async () => {
+    coreMocks.invoke.mockResolvedValueOnce([]);
+    await expect(getAssetSummariesByIds([3, 1, 999])).resolves.toEqual([]);
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("get_asset_summaries_by_ids", { assetIds: [3, 1, 999] });
+    const result = { processed_assets: 1, processed_asset_ids: [3], updated_assets: 1, media_group_key: "trip" };
+    coreMocks.invoke.mockResolvedValueOnce(result);
+    await expect(setAssetsMediaGroupBulk([{ assetId: 3, mediaGroupOrder: 1 }], "trip")).resolves.toEqual(result);
+  });
 });

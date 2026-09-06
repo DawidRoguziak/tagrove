@@ -67,6 +67,7 @@ export function LightboxTagPanel({
           value={tagDraft}
           onValueChange={onTagDraftChange}
           knownTags={knownTags}
+          excludedTags={selectedTags}
           onSuggestionPick={onAddTag}
           onSubmit={() => onAddTag(tagDraft)}
           placeholder={t("lightbox.tagInputPlaceholder")}

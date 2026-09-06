@@ -1,3 +1,4 @@
+import { ThumbnailStore } from "../services/thumbnailStore";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetSummary } from "../../types";
@@ -71,6 +72,7 @@ vi.mock("../useThumbnailQueue", () => ({
     resetThumbnailQueue: queueMocks.resetThumbnailQueue,
     isGeneratingPage: false,
     pendingPageSize: 0,
+    thumbnailStore: new ThumbnailStore(),
     renderingAssetIds: {}
   }))
 }));
@@ -115,7 +117,7 @@ describe("useLibraryBrowser", () => {
     });
     expect(result.current.assets.map((asset) => asset.id)).toEqual([1, 2]);
     expect(result.current.total).toBe(5);
-    expect(result.current.thumbs).toEqual({ 1: "thumb-1.jpg" });
+    expect(result.current.thumbnailStore.getPath(1)).toBe("thumb-1.jpg");
     expect(result.current.loading).toBe(false);
     expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
   });
@@ -314,7 +316,7 @@ describe("useLibraryBrowser", () => {
     });
     expect(result.current.assets).toHaveLength(1);
     expect(result.current.knownTags).toEqual(["cat", "travel"]);
-    expect(result.current.thumbs).toEqual({ 1: "thumb-1.jpg" });
+    expect(result.current.thumbnailStore.getPath(1)).toBe("thumb-1.jpg");
 
     act(() => {
       result.current.handleLibraryCleared();
@@ -323,7 +325,7 @@ describe("useLibraryBrowser", () => {
     expect(result.current.assets).toEqual([]);
     expect(result.current.total).toBe(0);
     expect(result.current.knownTags).toEqual([]);
-    expect(result.current.thumbs).toEqual({});
+    expect(result.current.thumbnailStore.getPath(1)).toBeUndefined();
     expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(2);
   });
 });

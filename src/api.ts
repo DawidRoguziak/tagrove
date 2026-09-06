@@ -1,6 +1,7 @@
 import { Channel, invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type {
   AssetDetails,
+  AssetSummary,
   AssetQueryPageResult,
   AssetPage,
   BulkFavoriteSummary,
@@ -295,4 +296,8 @@ export function toMediaSrc(path: string): string {
 }
 export async function syncNativeWindowTheme(theme: "light" | "dark"): Promise<void> {
   await invoke("sync_window_theme", { theme });
+}
+
+export async function getAssetSummariesByIds(assetIds: number[]): Promise<AssetSummary[]> {
+  return await invoke<AssetSummary[]>("get_asset_summaries_by_ids", { assetIds });
 }

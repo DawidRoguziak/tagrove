@@ -170,6 +170,8 @@ The following multi-statement database operations use a SQLite transaction: lega
 
 Single SQL statements are atomic individually. Tag replacement, bulk tag merge, single favorite/group setters, bulk media-group updates, and CSV import apply their conditional revision bump in the same transaction as the mutation (IMMEDIATE with bounded busy retry where writers contend). CSV parsing and validation complete before that transaction starts. Scan indexing bumps inside each batch transaction so an interrupted scan still invalidates sessions for everything it committed. Filesystem deletion, rename, thumbnail cleanup, bundle movement, and CSV parsing are outside SQLite transactions.
 
+Bulk group transactions collect processed IDs in requested order from the rows read inside the transaction, including unchanged rows. The response carries those IDs so the frontend never infers successful writes from cached selection summaries. Selection summary reads reuse `list_asset_summaries_by_ids`; they require no migration or collection-wide materialization.
+
 ## Known limitations
 
 - Schema initialization is not wrapped in one encompassing transaction. A failure can leave some tables, columns, indexes, or backfills applied while `performance_schema_version` still has its earlier value. Re-running initialization is intended to continue, but the version rows do not prove that every structural statement committed as one unit.

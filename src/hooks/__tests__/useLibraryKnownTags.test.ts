@@ -41,9 +41,22 @@ describe("useLibraryKnownTags", () => {
     const { result } = renderHook(() => useLibraryKnownTags());
     let oldPromise!: Promise<string[]>;
     act(() => { oldPromise = result.current.refreshKnownTags(); });
-    await act(() => result.current.refreshKnownTags());
+    let newer!: Promise<string[]>;
+    act(() => { newer = result.current.refreshKnownTags(); });
+    expect(newer).toBe(oldPromise);
     old.resolve({ items: ["old"], total: 1 });
     await act(() => oldPromise);
     await waitFor(() => expect(result.current.knownTags).toEqual(["new"]));
   });
+  it("does not repopulate known tags when reset interrupts pagination", async () => {
+    const page = deferred<{ items: string[]; total: number }>();
+    apiMocks.listTags.mockReturnValueOnce(page.promise);
+    const { result } = renderHook(() => useLibraryKnownTags());
+    let refresh!: Promise<string[]>;
+    act(() => { refresh = result.current.refreshKnownTags(); result.current.setKnownTags([]); });
+    await act(async () => { page.resolve({ items: ["old"], total: 400 }); await refresh; });
+    expect(result.current.knownTags).toEqual([]);
+    expect(apiMocks.listTags).toHaveBeenCalledOnce();
+  });
+
 });

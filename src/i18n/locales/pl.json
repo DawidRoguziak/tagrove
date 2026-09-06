@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tagi nie moga zawierac bialych znakow, przecinkow, srednikow ani znakow sterujacych.",
       "groupNameMissingValue": "gN wymaga nazwy grupy po dwukropku.",
       "hasNoTagsInvalidCount": "tags akceptuje tylko nieujemna liczbe calkowita."
-    }
+    },
+    "suggestionsRetry": "Podpowiedzi niedostępne. Ponów"
   },
   "gallery": {
     "noFoldersTitle": "Brak podlaczonych folderow",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "Zmiana tagów nie została zapisana. Spróbuj ponownie.",
       "tagLoadFailedTitle": "Nie udało się wczytać tagów",
       "tagLoadFailed": "Nie udało się wczytać pełnej listy tagów. Edycja pozostaje wyłączona.",
-      "retryTagDetails": "Ponów wczytywanie tagów"
+      "retryTagDetails": "Ponów wczytywanie tagów",
+      "metadataFailed": "Nie udało się wczytać wybranych elementów. Niektóre mogą już nie istnieć.",
+      "partialResult": "Zaktualizowano {{processed}} z {{requested}} wybranych elementów."
     },
     "tagModal": {
       "ariaLabel": "Hurtowe dodawanie tagow",

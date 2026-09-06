@@ -27,6 +27,9 @@ interface AssetClock {
 }
 
 export interface AssetTagStateController {
+  pin: (assetId: number) => () => void;
+  isCurrent: (token: AssetTagGenerationToken) => boolean;
+  waitForIdle: () => Promise<void>;
   revision: number;
   epoch: number;
   get: (assetId: number) => AuthoritativeAssetTags | null;
@@ -43,10 +46,14 @@ function sameTags(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((tag, index) => tag === right[index]);
 }
 
+let nextGeneration = 0;
+
 /** Shell-owned source of complete, canonical tag lists shared by every tag editor. */
 export function useAssetTagState(): AssetTagStateController {
   const entriesRef = useRef(new Map<number, StoredAssetTags>());
   const clocksRef = useRef(new Map<number, AssetClock>());
+  const pinsRef = useRef(new Map<number, number>());
+  const inactiveRef = useRef(new Map<number, true>());
   const epochRef = useRef(0);
   const activeMutationTokensRef = useRef(new Set<string>());
   const activeMutationDrainWaitersRef = useRef(new Set<() => void>());
@@ -56,17 +63,57 @@ export function useAssetTagState(): AssetTagStateController {
   const [epoch, setEpoch] = useState(0);
   const [revision, setRevision] = useState(0);
 
+  const prune = useCallback(() => {
+    while (inactiveRef.current.size > 512) {
+      const id = inactiveRef.current.keys().next().value!;
+      inactiveRef.current.delete(id);
+      clocksRef.current.delete(id);
+      entriesRef.current.delete(id);
+    }
+  }, []);
+  const pin = useCallback((id: number) => {
+    inactiveRef.current.delete(id);
+    pinsRef.current.set(id, (pinsRef.current.get(id) ?? 0) + 1);
+    return () => {
+      const count = pinsRef.current.get(id) ?? 0;
+      if (count <= 1) {
+        pinsRef.current.delete(id);
+        const clock = clocksRef.current.get(id);
+        if (clock && clock.activeMutation === null) inactiveRef.current.set(id, true);
+      }
+      else pinsRef.current.set(id, count - 1);
+      prune();
+    };
+  }, [prune]);
+  const isCurrent = useCallback((token: AssetTagGenerationToken) => {
+    const clock = clocksRef.current.get(token.assetId);
+    return !disposedRef.current && token.epoch === epochRef.current && clock?.generation === token.generation
+      && clock.activeMutation === null && !clock.deleted;
+  }, []);
+  const waitForIdle = useCallback(async () => {
+    if (activeMutationTokensRef.current.size > 0) {
+      await new Promise<void>(resolve => activeMutationDrainWaitersRef.current.add(resolve));
+    }
+  }, []);
+
   const getClock = useCallback((assetId: number): AssetClock => {
     let clock = clocksRef.current.get(assetId);
     if (!clock) {
-      clock = { generation: 0, activeMutation: null, deleted: false };
+      clock = { generation: ++nextGeneration, activeMutation: null, deleted: false };
       clocksRef.current.set(assetId, clock);
     }
+    inactiveRef.current.delete(assetId);
+    if (!pinsRef.current.has(assetId) && clock.activeMutation === null) inactiveRef.current.set(assetId, true);
+    prune();
     return clock;
-  }, []);
+  }, [prune]);
 
   const get = useCallback((assetId: number): AuthoritativeAssetTags | null => {
     const entry = entriesRef.current.get(assetId);
+    if (entry && inactiveRef.current.has(assetId)) {
+      inactiveRef.current.delete(assetId);
+      inactiveRef.current.set(assetId, true);
+    }
     return entry ? { known: true, tags: entry.tags, generation: entry.generation } : null;
   }, []);
 
@@ -79,6 +126,7 @@ export function useAssetTagState(): AssetTagStateController {
     (assetId: number, rawTags: string[], token: AssetTagGenerationToken): boolean => {
       const clock = getClock(assetId);
       if (
+        disposedRef.current ||
         token.assetId !== assetId ||
         token.epoch !== epochRef.current ||
         token.generation !== clock.generation ||
@@ -111,8 +159,9 @@ export function useAssetTagState(): AssetTagStateController {
     if (disposedRef.current || barrierRequestCountRef.current > 0) return null;
     const clock = getClock(assetId);
     if (clock.activeMutation !== null || clock.deleted) return null;
-    clock.generation += 1;
+    clock.generation = ++nextGeneration;
     clock.activeMutation = clock.generation;
+    inactiveRef.current.delete(assetId);
     const token = { assetId, epoch: epochRef.current, generation: clock.generation };
     activeMutationTokensRef.current.add(`${token.epoch}:${token.assetId}:${token.generation}`);
     return token;
@@ -125,13 +174,13 @@ export function useAssetTagState(): AssetTagStateController {
     const clock = getClock(token.assetId);
     if (clock.activeMutation !== token.generation || clock.generation !== token.generation) return false;
     if (clock.deleted) {
-      clock.generation += 1;
+      clock.generation = ++nextGeneration;
       clock.activeMutation = null;
       return false;
     }
 
     // Advancing again invalidates detail reads that started while the mutation was pending.
-    clock.generation += 1;
+    clock.generation = ++nextGeneration;
     clock.activeMutation = null;
     const previous = entriesRef.current.get(token.assetId);
     if (rawTags !== undefined) {
@@ -141,8 +190,11 @@ export function useAssetTagState(): AssetTagStateController {
     } else if (previous) {
       entriesRef.current.set(token.assetId, { ...previous, generation: clock.generation });
     }
+    setRevision(value => value + 1);
+    if (!pinsRef.current.has(token.assetId)) inactiveRef.current.set(token.assetId, true);
+    prune();
     return true;
-  }, [getClock, releaseActiveMutation]);
+  }, [getClock, prune, releaseActiveMutation]);
 
   const runWithMutationBarrier = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
     barrierRequestCountRef.current += 1;
@@ -171,7 +223,7 @@ export function useAssetTagState(): AssetTagStateController {
   const remove = useCallback((assetId: number, identityToken?: AssetTagGenerationToken): boolean => {
     if (identityToken && identityToken.epoch !== epochRef.current) return false;
     const clock = getClock(assetId);
-    clock.generation += 1;
+    clock.generation = ++nextGeneration;
     clock.activeMutation = null;
     clock.deleted = true;
     entriesRef.current.delete(assetId);
@@ -184,6 +236,7 @@ export function useAssetTagState(): AssetTagStateController {
     epochRef.current += 1;
     entriesRef.current.clear();
     clocksRef.current.clear();
+    inactiveRef.current.clear();
     setEpoch(epochRef.current);
     setRevision((value) => value + 1);
   }, []);
@@ -201,6 +254,7 @@ export function useAssetTagState(): AssetTagStateController {
 
   return useMemo(
     () => ({
+      pin, isCurrent, waitForIdle,
       revision,
       epoch,
       get,
@@ -213,6 +267,7 @@ export function useAssetTagState(): AssetTagStateController {
       reset
     }),
     [
+      pin, isCurrent, waitForIdle,
       beginMutation,
       captureGeneration,
       epoch,

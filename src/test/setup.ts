@@ -1,3 +1,4 @@
+import { SuggestionWorker } from "./SuggestionWorker";
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
@@ -54,3 +55,5 @@ if (!window.cancelAnimationFrame) {
 
 const { default: i18n } = await import("../i18n");
 void i18n.changeLanguage("en");
+
+vi.stubGlobal("Worker", SuggestionWorker);

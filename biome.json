@@ -41,5 +41,37 @@
       "quoteStyle": "double",
       "trailingCommas": "none"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "src/components/app/hooks/useAppSearchFilters.ts",
+        "src/components/app/hooks/useAppShellController.ts",
+        "src/components/app/hooks/useAssetTagState.ts",
+        "src/components/app/hooks/useBulkSelectionController.ts",
+        "src/components/app/hooks/useSelectedSummaries.ts",
+        "src/components/bulk/BulkActionsSidebar.tsx",
+        "src/components/lightbox/useLightboxTagging.ts",
+        "src/components/search/SearchTagator.tsx",
+        "src/components/search/worker/SuggestionProvider.tsx",
+        "src/hooks/services/thumbnailStore.ts",
+        "src/hooks/useLibraryAssets.ts",
+        "src/hooks/useLibraryBrowser.ts",
+        "src/hooks/useLibraryKnownTags.ts",
+        "src/hooks/useLibraryLifecycle.ts",
+        "src/hooks/useMediaGroupDraft.ts",
+        "src/hooks/useSelectionMetadataActions.ts",
+        "src/hooks/useSelectionNavigation.ts",
+        "src/hooks/useSelectionState.ts",
+        "src/hooks/useThumbnailQueue.ts"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useExhaustiveDependencies": "error"
+          }
+        }
+      }
+    }
+  ]
 }

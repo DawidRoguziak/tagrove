@@ -11,15 +11,14 @@ import {
 import { ThumbnailStore } from "./services/thumbnailStore";
 
 interface UseThumbnailQueueArgs {
-  thumbs: Record<number, string>;
-  setThumbs: Dispatch<SetStateAction<Record<number, string>>>;
+  thumbs?: Record<number, string>;
+  setThumbs?: Dispatch<SetStateAction<Record<number, string>>>;
 }
 
-export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) {
+export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs = {}) {
   const thumbnailStoreRef = useRef<ThumbnailStore | null>(null);
   if (!thumbnailStoreRef.current) thumbnailStoreRef.current = new ThumbnailStore();
   const thumbnailStore = thumbnailStoreRef.current;
-  const thumbsRef = useRef<Record<number, string>>({});
   const failedRef = useRef<Set<number>>(new Set());
   const generationRef = useRef(0);
 
@@ -42,8 +41,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
   const [renderingAssetIds, setRenderingAssetIds] = useState<Record<number, true>>({});
 
   useEffect(() => {
-    thumbsRef.current = thumbs;
-    thumbnailStore.sync(thumbs);
+    if (thumbs) thumbnailStore.sync(thumbs);
   }, [thumbnailStore, thumbs]);
 
   const updateQueueState = useCallback(() => {
@@ -70,11 +68,10 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
 
     thumbnailStore.complete(pendingThumbUpdates, finishedRenderingIds);
     if (Object.keys(pendingThumbUpdates).length > 0) {
-      thumbsRef.current = mergeThumbnailUpdates(thumbsRef.current, pendingThumbUpdates);
-      setThumbs((prev) => mergeThumbnailUpdates(prev, pendingThumbUpdates));
+      setThumbs?.((prev) => mergeThumbnailUpdates(prev, pendingThumbUpdates));
     }
 
-    if (finishedRenderingIds.size > 0) {
+    if (setThumbs && finishedRenderingIds.size > 0) {
       setRenderingAssetIds((prev) => removeRenderingAssetIds(prev, finishedRenderingIds));
     }
   }, [setThumbs, thumbnailStore]);
@@ -123,7 +120,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
             queuedIdsRef.current.delete(id);
             galleryVisibleRef.current.delete(id);
             galleryPrefetchRef.current.delete(id);
-            if (!thumbsRef.current[id] && !failedRef.current.has(id)) destination.push(id);
+            if (!thumbnailStore.getPath(id) && !failedRef.current.has(id)) destination.push(id);
           }
         };
         take(galleryVisibleRef.current, visible);
@@ -139,7 +136,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
         }
 
         updateQueueState();
-        setRenderingAssetIds((prev) => {
+        if (setThumbs) setRenderingAssetIds((prev) => {
           const next = { ...prev };
           let changed = false;
 
@@ -206,6 +203,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
       }
     }
   }, [
+    setThumbs,
     flushQueuedUpdates,
     scheduleQueueProcessing,
     scheduleQueuedFlush,
@@ -252,7 +250,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
           continue;
         }
 
-        if (thumbsRef.current[assetId]) {
+        if (thumbnailStore.getPath(assetId)) {
           continue;
         }
 
@@ -279,14 +277,14 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
       updateQueueState();
       scheduleQueueProcessing();
     },
-    [scheduleQueueProcessing, updateQueueState]
+    [scheduleQueueProcessing, updateQueueState, thumbnailStore]
   );
 
   const setGalleryThumbnailDemand = useCallback(
     (visibleIds: number[], prefetchIds: number[]) => {
       const needsThumbnail = (id: number) =>
         id > 0 &&
-        !thumbsRef.current[id] &&
+        !thumbnailStore.getPath(id) &&
         !pendingThumbUpdatesRef.current[id] &&
         !failedRef.current.has(id) &&
         !inFlightIdsRef.current.has(id);
@@ -298,7 +296,7 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs) 
       if (galleryVisibleRef.current.size || galleryPrefetchRef.current.size)
         scheduleQueueProcessing();
     },
-    [scheduleQueueProcessing, updateQueueState]
+    [scheduleQueueProcessing, updateQueueState, thumbnailStore]
   );
 
   const resetThumbnailQueue = useCallback(() => {

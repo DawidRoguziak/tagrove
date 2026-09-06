@@ -145,8 +145,8 @@ describe("useLibraryAssets", () => {
       items: [createSummary(3), createSummary(4)]
     });
     await act(async () => {
-      const asset = await result.current.getAssetAtAsync(PAGE_SIZE);
-      expect(asset?.id).toBe(3);
+      result.current.ensureRange(PAGE_SIZE, PAGE_SIZE + 1);
+      await result.current.retryLoad();
     });
     expect(result.current.loadError).toBeNull();
     expect(apiMocks.getAssetQueryPage).toHaveBeenNthCalledWith(2, 5, PAGE_SIZE, PAGE_SIZE);
@@ -324,4 +324,36 @@ describe("useLibraryAssets", () => {
     expect(result.current.assets).toHaveLength(24);
   });
 
+  it("does not retry failed demanded pages until Retry, even across repeated renders", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
+    apiMocks.getAssetQueryPage.mockRejectedValue(new Error("offline"));
+    const { result, rerender } = await renderAssets();
+    await act(() => result.current.refresh());
+    for (let i = 0; i < 6; i++) {
+      await act(async () => result.current.ensureRange(2, 3));
+      rerender();
+    }
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
+    await act(async () => { await expect(result.current.retryLoad()).rejects.toThrow("offline"); });
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(2);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledOnce();
+  });
+
+  it.each(["refresh", "reset", "unmount"] as const)("rejects an entire range interrupted by %s", async action => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
+    let resolve!: (page: object) => void;
+    apiMocks.getAssetQueryPage.mockReturnValue(new Promise(done => { resolve = done; }));
+    const { result, unmount } = await renderAssets();
+    await act(() => result.current.refresh());
+    let range!: Promise<number[]>;
+    await act(async () => { range = result.current.getIdsRangeAsync(0, 5); await Promise.resolve(); });
+    const rejection = expect(range).rejects.toThrow("cancelled");
+    await act(async () => {
+      if (action === "unmount") unmount();
+      else await result.current[action]();
+      resolve({ ...readyStart([createSummary(3), createSummary(4)], 6), offset: 2 });
+      await rejection;
+    });
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledOnce();
+  });
 });

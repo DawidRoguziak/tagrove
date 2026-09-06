@@ -1,3 +1,5 @@
+import { useSelectedSummaries } from "./useSelectedSummaries";
+import type { FilterDescriptor } from "../services/filterService";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { getAssetDetails, setAssetTags, toggleAssetsFavoriteBulk } from "../../../api";
@@ -67,6 +69,7 @@ interface UseBulkSelectionControllerOptions {
   refresh: () => Promise<void>;
   refreshKnownTags: () => Promise<string[]>;
   assetTagState?: AssetTagStateController;
+  appliedFilter?: FilterDescriptor;
   appliedFilterTags?: string[];
   appliedFavoritesOnly?: boolean;
   onFavoritesChanged?: (assetIds: ReadonlySet<number>, isFavorite: boolean) => void;
@@ -90,6 +93,7 @@ export function useBulkSelectionController({
   assetTagState: sharedAssetTagState,
   appliedFavoritesOnly = false,
   onFavoritesChanged,
+  appliedFilter,
   appliedFilterTags = []
 }: UseBulkSelectionControllerOptions) {
   const localAssetTagState = useAssetTagState();
@@ -146,11 +150,15 @@ export function useBulkSelectionController({
     setGroupFailed(false);
   }, [assetTagState.epoch]);
 
-  const selectedAssets = useMemo(() => {
-    if (!selectedAssetIds.size) return [];
-    return assets.filter((asset) => selectedAssetIds.has(asset.id));
-  }, [assets, selectedAssetIds]);
-  const selectionKey = selectedAssets.map((asset) => asset.id).join(",");
+  const metadata = useSelectedSummaries(selectedAssetIds, assets, assetTagState.epoch);
+  const selectedAssets = metadata.selected;
+  const selectionIds = useMemo(() => [...selectedAssetIds], [selectedAssetIds]);
+  const selectionKey = selectionIds.join(",");
+  const groupInitializedRef = useRef("");
+  const groupDirtyRef = useRef(false);
+  const [partialResult, setPartialResult] = useState<{ processed: number; requested: number } | null>(null);
+  const singleId = selectionIds.length === 1 ? selectionIds[0] : undefined;
+  useEffect(() => singleId === undefined ? undefined : assetTagState.pin(singleId), [assetTagState.pin, singleId]);
   const selectionKeyRef = useRef(selectionKey);
   selectionKeyRef.current = selectionKey;
 
@@ -175,16 +183,29 @@ export function useBulkSelectionController({
 
 
   useEffect(() => {
-    const derived = deriveBulkGroupSelectionState(selectedAssets);
-    setGroupKeyDraft(derived.groupKey);
-    setOrderedAssetIds(derived.orderedAssetIds);
-    setHasConflictingGroups(derived.hasConflictingGroups);
+    groupInitializedRef.current = "";
+    groupDirtyRef.current = false;
+    setGroupKeyDraft("");
+    setOrderedAssetIds(selectionIds);
+    setHasConflictingGroups(false);
     setGroupFailed(false);
     setTagSaveFailed(false);
     setTagDetailsFailed(false);
     setAppliedBulkTags([]);
-  }, [selectionKey]);
+    setPartialResult(null);
+  }, [selectionIds]);
 
+  useEffect(() => {
+    if (!metadata.ready || groupInitializedRef.current === selectionKey) return;
+    groupInitializedRef.current = selectionKey;
+    const derived = deriveBulkGroupSelectionState(selectedAssets);
+    if (!groupDirtyRef.current) setGroupKeyDraft(derived.groupKey);
+    setOrderedAssetIds(derived.orderedAssetIds);
+    setHasConflictingGroups(derived.hasConflictingGroups);
+  }, [metadata.ready, selectedAssets, selectionKey]);
+
+  // Retry is an explicit user request to repeat this read.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tagDetailsRetry deliberately repeats hydration without changing selection.
   useEffect(() => {
     if (skipDetailsForEpochRef.current === assetTagState.epoch) {
       skipDetailsForEpochRef.current = null;
@@ -192,14 +213,14 @@ export function useBulkSelectionController({
     }
     const requestId = detailsRequestRef.current + 1;
     detailsRequestRef.current = requestId;
-    if (!selectionModeEnabled || settingsViewOpen || selectedAssets.length !== 1) {
+    if (!selectionModeEnabled || settingsViewOpen || selectionIds.length !== 1) {
       setSingleAssetTags([]);
       setTagDetailsLoading(false);
       setTagDetailsFailed(false);
       return;
     }
 
-    const asset = selectedAssets[0]!;
+    const asset = { id: selectionIds[0]! };
     const authoritative = assetTagState.get(asset.id);
     if (authoritative) {
       setSingleAssetTags(authoritative.tags);
@@ -259,22 +280,16 @@ export function useBulkSelectionController({
           setTagDetailsLoading(false);
         }
       });
-  }, [assetTagState, selectionKey, selectionModeEnabled, settingsViewOpen, tagDetailsRetry]);
+  }, [assetTagState, selectionIds, selectionModeEnabled, settingsViewOpen, tagDetailsRetry]);
 
   useEffect(() => {
-    if (selectedAssets.length !== 1) return;
-    const authoritative = assetTagState.get(selectedAssets[0]!.id);
+    if (selectionIds.length !== 1) return;
+    const authoritative = assetTagState.get(selectionIds[0]!);
     if (!authoritative) return;
     setSingleAssetTags(authoritative.tags);
     setTagDetailsLoading(false);
     setTagDetailsFailed(false);
-  }, [assetTagState.revision, selectionKey]);
-
-  useEffect(() => {
-    if (selectionModeEnabled && selectedAssets.length > 1) {
-      queueThumbnailsByIds(selectedAssets.map((asset) => asset.id));
-    }
-  }, [queueThumbnailsByIds, selectedAssets, selectionModeEnabled]);
+  }, [assetTagState, selectionIds]);
 
   const onBulkSelectionInteraction = useCallback(
     (interaction: BulkSelectionInteraction) => {
@@ -345,6 +360,7 @@ export function useBulkSelectionController({
   const onToggleFavorite = useCallback(async () => {
     if (selectedAssetIds.size === 0 || favoriteOperationRef.current) return;
     const capturedIds = selectedAssetIds;
+    const capturedSelectionKey = selectionKey;
     const tokens: AssetTagMutationToken[] = [];
     for (const assetId of capturedIds) {
       const token = assetTagState.beginMutation(assetId);
@@ -369,6 +385,8 @@ export function useBulkSelectionController({
         else missingIds.add(token.assetId);
       }
       tokens.length = 0;
+      if (selectionKeyRef.current === capturedSelectionKey) setPartialResult({ processed: acceptedIds.size, requested: capturedIds.size });
+      metadata.patch(asset => acceptedIds.has(asset.id) ? { ...asset, is_favorite: result.is_favorite } : asset);
       if (acceptedIds.size > 0) {
         setAssets((previous) => previous.map((asset) => acceptedIds.has(asset.id)
           ? { ...asset, is_favorite: result.is_favorite } : asset));
@@ -395,11 +413,11 @@ export function useBulkSelectionController({
       favoriteOperationRef.current = false;
       setFavoriteApplying(false);
     }
-  }, [appliedFavoritesOnly, assetTagState, onFavoritesChanged, refresh, selectedAssetIds, setAssets]);
+  }, [appliedFavoritesOnly, assetTagState, onFavoritesChanged, refresh, selectedAssetIds, selectionKey, setAssets, metadata.patch]);
 
   const onApplyGroup = useCallback(async () => {
-    if (!selectedAssets.length || groupOperationRef.current) return;
-    const selectedIdSet = new Set(selectedAssets.map((asset) => asset.id));
+    if (!selectedAssetIds.size || !metadata.ready || groupOperationRef.current) return;
+    const selectedIdSet = selectedAssetIds;
     const capturedOrderedIds = orderedAssetIds.filter((id) => selectedIdSet.has(id));
     const capturedSelectionKey = selectionKey;
     const normalizedDraft = normalizeGroupKey(groupKeyDraft);
@@ -424,15 +442,20 @@ export function useBulkSelectionController({
     setGroupApplying(true);
     setGroupFailed(false);
     try {
-      await applyBulkMediaGroupAction({
+      const result = await applyBulkMediaGroupAction({
         assetIdsInOrder: capturedOrderedIds,
         groupKey: normalizedDraft,
         preservedSingleOrder: preservesExistingGroup ? singleAsset?.media_group_order : null,
         setAssets
       });
 
+      const processed = new Set(result?.processed_asset_ids ?? []);
+      if (selectionKeyRef.current === capturedSelectionKey) setPartialResult({ processed: processed.size, requested: capturedOrderedIds.length });
       const normalizedKey = normalizedDraft || null;
+      const orderById = new Map(capturedOrderedIds.map((id, index) => [id, normalizedKey ? preservesExistingGroup ? singleAsset?.media_group_order ?? 1 : index + 1 : null]));
+      metadata.patch(asset => processed.has(asset.id) ? { ...asset, media_group_key: normalizedKey, media_group_order: orderById.get(asset.id) ?? null } : asset);
       capturedOrderedIds.forEach((assetId, index) => {
+        if (!processed.has(assetId)) return;
         const cached = getCachedDetail(detailsCacheRef.current, assetId, assetTagState.epoch);
         if (!cached) return;
         const order = normalizedKey
@@ -466,23 +489,23 @@ export function useBulkSelectionController({
       groupOperationRef.current = false;
       setGroupApplying(false);
     }
-  }, [assetTagState, groupKeyDraft, orderedAssetIds, refresh, selectedAssets, selectionKey, setAssets]);
+  }, [assetTagState, groupKeyDraft, orderedAssetIds, refresh, selectedAssets, selectionKey, setAssets, metadata.patch, metadata.ready, selectedAssetIds]);
 
   const onAddTag = useCallback(
     async (rawTag: string): Promise<boolean> => {
       const tag = normalizeBulkTag(rawTag);
-      if (!tag || !selectedAssets.length || tagOperationRef.current) return false;
-      if (selectedAssets.length === 1 && !assetTagState.get(selectedAssets[0]!.id)) return false;
+      if (!tag || !selectionIds.length || tagOperationRef.current) return false;
+      if (selectionIds.length === 1 && !assetTagState.get(selectionIds[0]!)) return false;
       const capturedSelectionKey = selectionKey;
-      const capturedAssets = [...selectedAssets];
+      const capturedIds = [...selectionIds];
       const operationGeneration = tagOperationGenerationRef.current + 1;
       tagOperationGenerationRef.current = operationGeneration;
       tagOperationRef.current = true;
       setTagApplying(true);
       setTagSaveFailed(false);
 
-      if (capturedAssets.length === 1) {
-        const assetId = capturedAssets[0]!.id;
+      if (capturedIds.length === 1) {
+        const assetId = capturedIds[0]!;
         const baseTags = assetTagState.get(assetId)?.tags;
         if (!baseTags) return false;
         const nextTags = mergeTagLists(baseTags, [tag]);
@@ -514,7 +537,7 @@ export function useBulkSelectionController({
           }
           if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
           void refreshKnownTags().catch(() => []);
-          if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilterTags)) {
+          if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilter ?? appliedFilterTags)) {
             void refresh().catch(() => {});
           }
           return true;
@@ -530,7 +553,7 @@ export function useBulkSelectionController({
         }
       }
 
-      const assetIds = capturedAssets.map((asset) => asset.id);
+      const assetIds = capturedIds;
       const mutationTokens = new Map<number, NonNullable<ReturnType<typeof assetTagState.beginMutation>>>();
       for (const assetId of assetIds) {
         const token = assetTagState.beginMutation(assetId);
@@ -550,6 +573,10 @@ export function useBulkSelectionController({
       try {
         const result = await applyBulkTagsAction({ assetIds, tags: [tag], refreshKnownTags });
         if (!result || result.processed_assets === 0) {
+          if (selectionKeyRef.current === capturedSelectionKey) {
+            setPartialResult({ processed: 0, requested: assetIds.length });
+            setTagSaveFailed(true);
+          }
           for (const token of mutationTokens.values()) assetTagState.settleMutation(token);
           void refresh().catch(() => {});
           return false;
@@ -575,12 +602,13 @@ export function useBulkSelectionController({
         for (const [assetId, token] of mutationTokens) {
           if (!returnedIds.has(assetId)) assetTagState.settleMutation(token);
         }
+        if (selectionKeyRef.current === capturedSelectionKey) setPartialResult({ processed: acceptedResults, requested: assetIds.length });
         if (acceptedResults === 0) return false;
         if (selectionKeyRef.current === capturedSelectionKey) {
           setAppliedBulkTags((previous) => mergeTagLists(previous, [tag]));
         }
         if (result.processed_assets !== assetIds.length) void refresh().catch(() => {});
-        else if (bulkTagMutationRequiresRefresh(result.updated_assets, appliedFilterTags)) {
+        else if (bulkTagMutationRequiresRefresh(result.updated_assets, appliedFilter ?? appliedFilterTags)) {
           void refresh().catch(() => {});
         }
         return true;
@@ -595,14 +623,14 @@ export function useBulkSelectionController({
         }
       }
     },
-    [appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectedAssets, selectionKey, setAssets]
+    [appliedFilter, appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
   );
 
   const onRemoveTag = useCallback(
     async (tag: string) => {
-      if (selectedAssets.length !== 1 || tagOperationRef.current) return;
+      if (selectionIds.length !== 1 || tagOperationRef.current) return;
       const capturedSelectionKey = selectionKey;
-      const assetId = selectedAssets[0]!.id;
+      const assetId = selectionIds[0]!;
       const baseTags = assetTagState.get(assetId)?.tags;
       if (!baseTags) return;
       const nextTags = baseTags.filter((item) => item !== tag);
@@ -634,7 +662,7 @@ export function useBulkSelectionController({
         }
         if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
         void refreshKnownTags().catch(() => []);
-        if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilterTags)) {
+        if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilter ?? appliedFilterTags)) {
           void refresh().catch(() => {});
         }
       } catch {
@@ -647,13 +675,13 @@ export function useBulkSelectionController({
         }
       }
     },
-    [appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectedAssets, selectionKey, setAssets]
+    [appliedFilter, appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
   );
 
   const onRetryTagDetails = useCallback(() => {
-    if (selectedAssets.length !== 1 || tagDetailsLoading) return;
+    if (selectionIds.length !== 1 || tagDetailsLoading) return;
     setTagDetailsRetry((value) => value + 1);
-  }, [selectedAssets.length, tagDetailsLoading]);
+  }, [selectionIds.length, tagDetailsLoading]);
 
   return {
     selectionModeEnabled,
@@ -664,13 +692,18 @@ export function useBulkSelectionController({
     onToggleFavorite,
     selectedAssetIds,
     selectedAssets,
+    metadataLoading: !metadata.ready && !metadata.failed,
+    metadataFailed: metadata.failed,
+    onRetryMetadata: metadata.retry,
+    queueThumbnailsByIds,
+    partialResult,
     knownTags,
     groupKeyDraft,
     orderedAssetIds,
     hasConflictingGroups,
     groupApplying,
     groupFailed,
-    tagMode: selectedAssets.length === 0 ? "none" as const : selectedAssets.length === 1 ? "single" as const : "multiple" as const,
+    tagMode: selectionIds.length === 0 ? "none" as const : selectionIds.length === 1 ? "single" as const : "multiple" as const,
     singleAssetTags,
     appliedBulkTags,
     tagDetailsLoading,
@@ -679,7 +712,7 @@ export function useBulkSelectionController({
     tagSaveFailed,
     onToggleSelectionMode,
     onBulkSelectionInteraction,
-    onGroupKeyDraftChange: setGroupKeyDraft,
+    onGroupKeyDraftChange: (value: string) => { groupDirtyRef.current = true; setGroupKeyDraft(value); },
     onReorderGroupAsset: (draggedAssetId: number, targetAssetId: number) =>
       setOrderedAssetIds((previous) => reorderAssetIdsByDrop(previous, draggedAssetId, targetAssetId)),
     onApplyGroup,

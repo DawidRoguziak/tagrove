@@ -1,6 +1,7 @@
 type Listener = () => void;
 
 export class ThumbnailStore {
+  private retained: Set<number> | null = null;
   private paths = new Map<number, string>();
   private rendering = new Set<number>();
   private nextVersion = 0;
@@ -15,6 +16,7 @@ export class ThumbnailStore {
       listeners.delete(listener);
       if (listeners.size === 0) {
         this.listeners.delete(assetId);
+        if (this.retained && !this.retained.has(assetId)) this.paths.delete(assetId);
         this.releaseVersion(assetId);
       }
     };
@@ -23,6 +25,13 @@ export class ThumbnailStore {
   getVersion = (assetId: number) => this.versions.get(assetId) ?? 0;
   getPath = (assetId: number) => this.paths.get(assetId);
   isRendering = (assetId: number) => this.rendering.has(assetId);
+
+  retain(ids: Iterable<number>) {
+    this.retained = new Set(ids);
+    for (const id of this.paths.keys()) {
+      if (!this.retained.has(id) && !this.listeners.has(id)) { this.paths.delete(id); this.bump(id); }
+    }
+  }
 
   sync(paths: Record<number, string>) {
     const incomingIds = new Set(Object.keys(paths).map(Number));
@@ -55,6 +64,7 @@ export class ThumbnailStore {
     const changed = new Set<number>();
     for (const [idText, path] of Object.entries(paths)) {
       const id = Number(idText);
+      if (this.retained && !this.retained.has(id) && !this.listeners.has(id)) continue;
       if (this.paths.get(id) !== path) {
         this.paths.set(id, path);
         changed.add(id);

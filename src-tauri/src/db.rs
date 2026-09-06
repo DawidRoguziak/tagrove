@@ -2271,13 +2271,13 @@ pub fn set_assets_media_group_bulk(
     conn: &mut Connection,
     updates: &[(i64, Option<f64>)],
     media_group_key: Option<&str>,
-) -> anyhow::Result<(usize, usize)> {
+) -> anyhow::Result<(Vec<i64>, usize)> {
     if updates.is_empty() {
-        return Ok((0, 0));
+        return Ok((Vec::new(), 0));
     }
 
     retry_immediate_transaction(conn, |tx| {
-        let mut processed_assets = 0usize;
+        let mut processed_assets = Vec::new();
         let mut updated_assets = 0usize;
 
         let mut get_current_stmt =
@@ -2305,7 +2305,7 @@ pub fn set_assets_media_group_bulk(
                 continue;
             };
 
-            processed_assets += 1;
+            processed_assets.push(*asset_id);
             if current_key.as_deref() == media_group_key && current_order == *media_group_order {
                 continue;
             }
@@ -3721,7 +3721,7 @@ mod tests {
         insert_asset(&conn, "/media/clip.mp4", "video", 20);
         insert_asset(&conn, "/media/animation.gif", "gif", 10);
 
-        let summaries = list_asset_summaries_by_ids(&conn, &[2, 3, 1]).expect("summaries");
+        let summaries = list_asset_summaries_by_ids(&conn, &[2, 999, 3, 1]).expect("summaries");
 
         assert_eq!(
             summaries.iter().map(|item| item.id).collect::<Vec<_>>(),
@@ -4654,7 +4654,7 @@ mod tests {
         )
         .expect("bulk set");
 
-        assert_eq!(processed, 2);
+        assert_eq!(processed, vec![2, 1]);
         assert_eq!(updated, 2);
 
         let page = list_assets(&conn, 0, 10, &[], &[], None, false).expect("list");
@@ -4696,7 +4696,7 @@ mod tests {
             set_assets_media_group_bulk(&mut conn, &[(1, None), (2, None)], None)
                 .expect("clear bulk groups");
 
-        assert_eq!(processed, 2);
+        assert_eq!(processed, vec![1, 2]);
         assert_eq!(updated, 2);
         assert_eq!(
             get_asset_media_group(&conn, 1).expect("first group"),
@@ -5186,7 +5186,7 @@ mod tests {
         let (processed, updated) =
             set_assets_media_group_bulk(&mut conn, &[(999, Some(1.0))], Some("trip"))
                 .expect("bulk with only missing ids");
-        assert_eq!((processed, updated), (0, 0));
+        assert_eq!((processed, updated), (vec![], 0));
         assert_eq!(
             current_library_revision(&conn).expect("noop revision"),
             baseline
@@ -5195,7 +5195,7 @@ mod tests {
         let (processed, updated) =
             set_assets_media_group_bulk(&mut conn, &[(1, Some(1.0)), (2, Some(2.0))], Some("trip"))
                 .expect("bulk change");
-        assert_eq!((processed, updated), (2, 2));
+        assert_eq!((processed, updated), (vec![1, 2], 2));
         assert_eq!(
             current_library_revision(&conn).expect("bumped revision"),
             baseline + 1

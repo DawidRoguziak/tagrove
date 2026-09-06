@@ -69,7 +69,7 @@ describe("bulk favorites", () => {
     const { result, select, refresh } = setup([asset(1, true), asset(2, true)], true);
     select(1); select(2);
     act(() => result.current.setAssets([]));
-    expect(result.current.bulk.allSelectedFavorites).toBe(false);
+    expect(result.current.bulk.allSelectedFavorites).toBe(true);
     api.toggleAssetsFavoriteBulk.mockResolvedValue({ processed_asset_ids: [1, 2], is_favorite: false, revision: 2 });
     await act(() => result.current.bulk.onToggleFavorite());
     expect(api.toggleAssetsFavoriteBulk).toHaveBeenCalledWith([1, 2]);

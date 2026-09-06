@@ -105,7 +105,7 @@ fn backend_end_to_end_csv_merge_and_library_clear_workflow() {
         Some("trip-2026"),
     )
     .expect("set groups in bulk");
-    assert_eq!(processed_groups, 2);
+    assert_eq!(processed_groups.len(), 2);
     assert_eq!(updated_groups, 2);
 
     let grouped =

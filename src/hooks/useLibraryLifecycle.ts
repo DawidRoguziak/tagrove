@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { AssetSummary } from "../types";
 
 interface UseLibraryLifecycleOptions {
+  resetQuery?: () => void;
   resetThumbnailQueue: () => void;
   setThumbs: Dispatch<SetStateAction<Record<number, string>>>;
   setAssets: Dispatch<SetStateAction<AssetSummary[]>>;
@@ -12,6 +13,7 @@ interface UseLibraryLifecycleOptions {
 }
 
 export function useLibraryLifecycle({
+  resetQuery,
   resetThumbnailQueue,
   setThumbs,
   setAssets,
@@ -24,18 +26,20 @@ export function useLibraryLifecycle({
   }, [resetThumbnailQueue]);
 
   const handleImportDbRestored = useCallback(() => {
+    resetQuery?.();
     resetThumbnailQueue();
     setThumbs({});
-  }, [resetThumbnailQueue, setThumbs]);
+  }, [resetQuery, resetThumbnailQueue, setThumbs]);
 
   const handleLibraryCleared = useCallback(() => {
+    resetQuery?.();
     resetThumbnailQueue();
     setThumbs({});
     setAssets([]);
     setTotal(0);
     setOffset(0);
     setKnownTags([]);
-  }, [resetThumbnailQueue, setAssets, setKnownTags, setOffset, setThumbs, setTotal]);
+  }, [resetQuery, resetThumbnailQueue, setAssets, setKnownTags, setOffset, setThumbs, setTotal]);
 
   return {
     handleRootRemoved,

@@ -82,7 +82,7 @@ describe("useSelectionState", () => {
   it("does not let an older details response undo a bulk favorite change", async () => {
     const asset = createAsset({ id: 1, tags: ["cat"] });
     const details = deferred<AssetDetails>();
-    apiMocks.getAssetDetails.mockReturnValueOnce(details.promise);
+    apiMocks.getAssetDetails.mockReturnValueOnce(details.promise).mockResolvedValueOnce(createDetails({ ...asset, is_favorite: true }, ["cat"]));
     const { result } = renderHook(() => {
       const [assets, setAssets] = useState<AssetSummary[]>([asset]);
       const assetTagState = useAssetTagState();
@@ -764,5 +764,45 @@ describe("useSelectionState", () => {
     rerender({ queryEpoch: 2 });
     act(() => result.current.setSelected(asset));
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2));
+  });
+  it("preserves dirty group fields across unrelated tag publications and detail arrival", async () => {
+    const asset = createAsset({ id: 1 });
+    const pending = deferred<AssetDetails>();
+    apiMocks.getAssetDetails.mockReturnValueOnce(pending.promise);
+    const { result } = renderHook(() => {
+      const coordinator = useAssetTagState();
+      return { coordinator, selection: useSelectionState({ assets: [asset], setAssets: vi.fn(),
+        appliedFavoritesOnly: false, refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []),
+        assetTagState: coordinator, assetCount: 1 }) };
+    });
+    act(() => result.current.selection.selectAsset(asset));
+    act(() => result.current.selection.setMediaGroupKeyEditor("unsaved"));
+    act(() => result.current.coordinator.publishDetails(2, ["other"], result.current.coordinator.captureGeneration(2)));
+    await act(async () => { pending.resolve(createDetails({ ...asset, media_group_key: "canonical", media_group_order: 7 }, [])); });
+    expect(result.current.selection.mediaGroupKeyEditor).toBe("unsaved");
+    expect(result.current.selection.mediaGroupOrderEditor).toBe("7");
+  });
+
+  it("rejects complete details started before a favorite save and refetches", async () => {
+    const asset = createAsset({ id: 1, tags: ["cat"] });
+    const stale = deferred<AssetDetails>();
+    const fresh = deferred<AssetDetails>();
+    apiMocks.getAssetDetails.mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise);
+    serviceMocks.toggleLightboxFavoriteAction.mockImplementation(async ({ setSelected, setAssets }) => {
+      setSelected((current: SelectedAsset) => ({ ...current, is_favorite: true }));
+      setAssets((items: AssetSummary[]) => items.map(item => ({ ...item, is_favorite: true })));
+    });
+    const { result } = renderHook(() => {
+      const [assets, setAssets] = useState<AssetSummary[]>([asset]);
+      return useSelectionState({ assets, setAssets, appliedFavoritesOnly: false, assetCount: 1,
+        refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []) });
+    });
+    act(() => result.current.selectAsset(asset));
+    await act(() => result.current.toggleSelectedFavorite());
+    await act(async () => { stale.resolve(createDetails(asset, ["cat"])); });
+    expect(result.current.selected?.is_favorite).toBe(true);
+    expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2);
+    await act(async () => { fresh.resolve(createDetails({ ...asset, is_favorite: true }, ["cat"])); });
+    expect(result.current.selected?.is_favorite).toBe(true);
   });
 });

@@ -38,6 +38,10 @@ interface LightboxModalProps {
   knownTags: string[];
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
+  favoriteFailed?: boolean;
+  groupFailed?: boolean;
+  favoritePending?: boolean;
+  groupPending?: boolean;
   onToggleFavorite: () => void | Promise<void>;
   onDeleteMedia?: () => void | Promise<void>;
   onClose: () => void;
@@ -64,6 +68,10 @@ export function LightboxModal({
   knownTags,
   onNavigatePrevious,
   onNavigateNext,
+  favoriteFailed: externalFavoriteFailed = false,
+  groupFailed = false,
+  favoritePending = false,
+  groupPending = false,
   onToggleFavorite,
   onDeleteMedia = () => {},
   onClose,
@@ -261,9 +269,9 @@ export function LightboxModal({
                 hideNativeVideoForSidebar ? "hidden" : ""
               ].join(" ")}
             >
-              {favoriteFailed || handlers.mediaGroupFailed ? (
+              {favoriteFailed || externalFavoriteFailed || handlers.mediaGroupFailed || groupFailed ? (
                 <div className="absolute left-3 top-3 z-[5] grid max-w-[min(28rem,calc(100%-6rem))] gap-2">
-                  {favoriteFailed ? (
+                  {favoriteFailed || externalFavoriteFailed ? (
                     <UiAlert
                       tone="error"
                       title={t("lightbox.saveFailedTitle")}
@@ -272,7 +280,7 @@ export function LightboxModal({
                       {t("lightbox.favoriteSaveFailed")}
                     </UiAlert>
                   ) : null}
-                  {handlers.mediaGroupFailed ? (
+                  {handlers.mediaGroupFailed || groupFailed ? (
                     <UiAlert
                       tone="error"
                       title={t("lightbox.saveFailedTitle")}
@@ -352,6 +360,8 @@ export function LightboxModal({
               infoPanelOpen={handlers.infoPanelOpen}
               onToggleInfo={handlers.handleToggleInfoPanel}
               onCloseSidebar={closeSidebar}
+              favoritePending={favoritePending}
+              groupPending={groupPending}
               onToggleFavorite={() => {
                 const requestedAssetId = selectedId;
                 setFavoriteFailed(false);

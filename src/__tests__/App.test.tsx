@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -202,11 +203,10 @@ describe("App", () => {
       revision: 2
     }));
     apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({ asset_id: assetId, changed: true, tags, revision: 2 }));
-    apiMocks.setAssetsMediaGroupBulk.mockResolvedValue({
-      processed_assets: 0,
-      updated_assets: 0,
-      media_group_key: null
-    });
+    apiMocks.setAssetsMediaGroupBulk.mockImplementation(async (updates: { assetId: number }[], key: string | null) => ({
+      processed_assets: updates.length, updated_assets: updates.length,
+      processed_asset_ids: updates.map(update => update.assetId), media_group_key: key
+    }));
     apiMocks.listScanRoots.mockResolvedValue([]);
     apiMocks.scanStartupRoots.mockResolvedValue(null);
     apiMocks.cancelRenderAllThumbnails.mockResolvedValue(true);
@@ -524,10 +524,12 @@ describe("App", () => {
     virtualizerState.renderItems = true;
     const asset = createAsset(1, "C:/media/a.jpg");
     apiMocks.listAssets.mockResolvedValue({ items: [asset], total: 1 });
-    apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: ["cat"] });
-    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({
-      asset_id: assetId, changed: true, tags, revision: 2
-    }));
+    let persistedTags = ["cat"];
+    apiMocks.getAssetDetails.mockImplementation(async () => ({ ...asset, tags: persistedTags }));
+    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => {
+      persistedTags = tags;
+      return { asset_id: assetId, changed: true, tags, revision: 2 };
+    });
 
     render(<App />);
     await screen.findByText("No more items to load");
@@ -633,6 +635,7 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument());
     expect(apiMocks.setAssetTags).toHaveBeenCalledTimes(1);
 
+    apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: ["cat", "dog"] });
     await act(async () => {
       pendingBulkSave.resolve({
         asset_id: 1, changed: true, tags: ["cat", "dog"], revision: 2
@@ -1095,6 +1098,13 @@ describe("App", () => {
       expect(window.localStorage.getItem("media-tagger.theme")).toBe("light");
     });
   });
+  it("loads the query after StrictMode replays mount effects", async () => {
+    apiMocks.listAssets.mockResolvedValue({ items: [createAsset(1, "C:/media/replay.jpg")], total: 1 });
+    render(<StrictMode><App /></StrictMode>);
+    await screen.findByText("1 items");
+    expect(apiMocks.startAssetQuery.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
 });
 
 

@@ -5,6 +5,13 @@ import type { AssetSummary } from "../../../types";
 import type { BulkSelectionController } from "../../app/types";
 import { BulkActionsSidebar } from "../BulkActionsSidebar";
 
+vi.mock("@tanstack/react-virtual", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-virtual")>("@tanstack/react-virtual");
+  return { ...actual, useVirtualizer: (options: Parameters<typeof actual.useVirtualizer>[0]) => actual.useVirtualizer({
+    ...options, observeElementRect: (_instance, callback) => { callback({ width: 320, height: 240 }); return () => {}; }
+  }) };
+});
+
 function createAsset(id: number, override: Partial<AssetSummary> = {}): AssetSummary {
   return {
     id,

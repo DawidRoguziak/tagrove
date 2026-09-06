@@ -7,10 +7,10 @@ use crate::{
     app::{locks::with_scan_and_thumb_lock, state::AppState},
     db::{self, list_assets_with_meta as db_list_assets_with_meta, AssetMetaFilter},
     models::{
-        AssetDetails, AssetPage, AssetQueryPageResult, BulkMediaGroupSummary, BulkTagMergeSummary,
-        DeleteAssetSummary, DuplicateResolutionBatchInput, DuplicateResolutionBatchSummary,
-        DuplicateScanSummary, RenameAssetSummary, SetAssetTagsSummary, StartAssetQueryResult,
-        TagListPage,
+        AssetDetails, AssetPage, AssetQueryPageResult, AssetSummary, BulkMediaGroupSummary,
+        BulkTagMergeSummary, DeleteAssetSummary, DuplicateResolutionBatchInput,
+        DuplicateResolutionBatchSummary, DuplicateScanSummary, RenameAssetSummary,
+        SetAssetTagsSummary, StartAssetQueryResult, TagListPage,
     },
     services::{asset_mutation_service, asset_query_service, db_pool, progress::emit_progress},
     utils::tags::normalize_and_validate_tags,
@@ -70,6 +70,29 @@ pub async fn get_asset_query_page(
     .await
     .map_err(|e| format!("asset page worker failed: {e}"))?
     .map_err(|e| e.to_string())
+}
+
+fn validate_summary_batch(asset_ids: &[i64]) -> Result<(), String> {
+    if asset_ids.len() > 256 {
+        return Err("At most 256 asset IDs are allowed".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_asset_summaries_by_ids(
+    asset_ids: Vec<i64>,
+    state: State<'_, AppState>,
+) -> Result<Vec<AssetSummary>, String> {
+    validate_summary_batch(&asset_ids)?;
+    let db_path = state.db_path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db_pool::connection(&db_path)?;
+        db::list_asset_summaries_by_ids(&conn, &asset_ids).map_err(Into::into)
+    })
+    .await
+    .map_err(|e| format!("asset summaries worker failed: {e}"))?
+    .map_err(|e: crate::error::AppError| e.to_string())
 }
 
 #[tauri::command]
@@ -326,14 +349,15 @@ pub fn set_assets_media_group_bulk(
             })
             .collect::<Vec<_>>();
 
-        let (processed_assets, updated_assets) = db::set_assets_media_group_bulk(
+        let (processed_asset_ids, updated_assets) = db::set_assets_media_group_bulk(
             &mut conn,
             &normalized_updates,
             normalized_key.as_deref(),
         )?;
 
         Ok(BulkMediaGroupSummary {
-            processed_assets,
+            processed_assets: processed_asset_ids.len(),
+            processed_asset_ids,
             updated_assets,
             media_group_key: normalized_key,
         })
@@ -454,6 +478,22 @@ fn normalize_new_file_name(raw: &str) -> Result<String, crate::error::AppError> 
 #[cfg(test)]
 mod tests {
     use super::normalize_new_file_name;
+
+    #[test]
+    fn selection_summary_batch_limit_and_group_response_contract() {
+        assert!(super::validate_summary_batch(&[]).is_ok());
+        assert!(super::validate_summary_batch(&[1; 256]).is_ok());
+        assert!(super::validate_summary_batch(&[1; 257]).is_err());
+        let response = crate::models::BulkMediaGroupSummary {
+            processed_asset_ids: vec![3, 1],
+            processed_assets: 2,
+            updated_assets: 1,
+            media_group_key: Some("trip".into()),
+        };
+        let json = serde_json::to_value(response).expect("serialize");
+        assert_eq!(json["processed_asset_ids"], serde_json::json!([3, 1]));
+        assert_eq!(json["processed_assets"], 2);
+    }
 
     #[test]
     fn normalize_new_file_name_trims_valid_input() {

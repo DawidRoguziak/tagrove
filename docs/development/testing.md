@@ -182,7 +182,7 @@ lightbox deletion cancellation, settings navigation, duplicates and confirmation
 It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the stacked bulk layout at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
 the private X11 display into a fresh timestamped `artifacts/ui-redesign/` subdirectory per run.
 The normal workflow suite covers narrow lightbox and native media behavior; the separate
-`MEDIATAGGER_GALLERY_PERF=1` suite exercises 2,048 images and cache eviction.
+`MEDIATAGGER_GALLERY_PERF=1` suite exercises 2,048 images and cache eviction. It also checks selection summary IPC and full-selection metadata writes after eviction and filter changes. See [frontend refactor verification](frontend-refactor-verification.md) for the measured run and retention bounds.
 
 Run the opt-in spec through the existing harness on a private X11 display with temporary
 XDG data/config/cache directories. Preserve all profile and cleanup guards. Example after

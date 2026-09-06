@@ -30,13 +30,11 @@ export function useLightboxTagging({
   const [tagDraft, setTagDraft] = useState("");
   const tagEditingDisabled = tagDetailsLoading || tagDetailsFailed;
 
-  const selectedTags = normalizeTags(tagEditor);
+  const selectedTags = useMemo(() => normalizeTags(tagEditor), [tagEditor]);
   const selectedTagSet = useMemo(() => new Set(selectedTags), [selectedTags]);
-  const availableKnownTags = useMemo(
-    () => knownTags.filter((tag) => !selectedTagSet.has(tag.toLowerCase())),
-    [knownTags, selectedTagSet]
-  );
+  const availableKnownTags = knownTags;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selected identity resets only the local input draft.
   useEffect(() => {
     setTagDraft("");
   }, [selectedId]);

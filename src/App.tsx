@@ -1,3 +1,5 @@
+import { ThumbnailContext } from "./components/UI/ThumbnailSubscription";
+import { SuggestionProvider } from "./components/search/worker/SuggestionProvider";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { AppGalleryView } from "./components/app/AppGalleryView";
 import { useAppShellController } from "./components/app/hooks/useAppShellController";
@@ -55,7 +57,7 @@ function AppContent() {
   }, []);
 
   return (
-    <main
+    <ThumbnailContext.Provider value={controller.galleryView.media.thumbnailStore ?? null}><main
       className={controller.settingsViewOpen
         ? "gallery-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto"
         : "flex h-full min-h-0 flex-col overflow-hidden"}
@@ -130,14 +132,14 @@ function AppContent() {
           ) : null}
         </Suspense>
       </LazyErrorBoundary>
-    </main>
+    </main></ThumbnailContext.Provider>
   );
 }
 
 export default function App() {
   return (
     <UiLayerProvider>
-      <AppContent />
+      <SuggestionProvider><AppContent /></SuggestionProvider>
     </UiLayerProvider>
   );
 }

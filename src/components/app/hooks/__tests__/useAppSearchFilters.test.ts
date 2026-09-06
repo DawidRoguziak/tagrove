@@ -126,10 +126,33 @@ describe("useAppSearchFilters", () => {
       await result.current.applyFilterInputAndSubmit("gN:", refresh);
     });
 
-    expect(result.current.filterInput).toBe("cat");
+    expect(result.current.filterInput).toBe("gN:");
     expect(result.current.appliedParsedFilter.include).toEqual(["cat"]);
     expect(result.current.appliedParsedFilter.metaFilter).toBeNull();
     expect(result.current.filterValidationError).toBe("groupNameMissingValue");
     expect(refresh).not.toHaveBeenCalled();
+  });
+  it("validates toolbar controls without replacing the applied query", async () => {
+    const { result } = renderHook(() => useAppSearchFilters());
+    await act(() => result.current.applyFilterInputAndSubmit("cat"));
+    const previous = result.current.appliedQueryKey;
+    act(() => result.current.handleFilterChange("cat tags:2"));
+    const refresh = vi.fn();
+    await act(() => result.current.applyMediaKindAndSubmit("video", refresh));
+    await act(() => result.current.applyFavoritesOnlyAndSubmit(true, refresh));
+    expect(result.current.appliedQueryKey).toBe(previous);
+    expect(result.current.filterValidationError).not.toBeNull();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes pipe-containing tags and refreshes normalized unchanged queries", async () => {
+    const { result } = renderHook(() => useAppSearchFilters());
+    await act(() => result.current.applyFilterInputAndSubmit("a|b c"));
+    const first = result.current.appliedQueryKey;
+    await act(() => result.current.applyFilterInputAndSubmit("a b|c"));
+    expect(result.current.appliedQueryKey).not.toBe(first);
+    const refresh = vi.fn();
+    await act(() => result.current.applyFilterInputAndSubmit("B|C A", refresh));
+    expect(refresh).toHaveBeenCalledOnce();
   });
 });

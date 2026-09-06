@@ -1,11 +1,14 @@
 import type { GalleryRange } from "../components/gallery/hooks/useGalleryVirtualGrid";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SearchMediaKind } from "../components/app/types";
 import type { SearchMetaFilter } from "../types";
 import { useLibraryAssets } from "./useLibraryAssets";
 import { useLibraryKnownTags } from "./useLibraryKnownTags";
 import { useLibraryLifecycle } from "./useLibraryLifecycle";
 import { useThumbnailQueue } from "./useThumbnailQueue";
+
+const EMPTY_THUMBS: Record<number, string> = {};
+const ignoreThumbnailMirror = () => {};
 
 interface UseLibraryBrowserArgs {
   pageSize: number;
@@ -24,7 +27,8 @@ export function useLibraryBrowser({
   appliedMediaKind,
   appliedFavoritesOnly
 }: UseLibraryBrowserArgs) {
-  const [thumbs, setThumbs] = useState<Record<number, string>>({});
+  const [operationLoading, setOperationLoading] = useState(false);
+
   const {
     queueThumbnailsByIds,
     setGalleryThumbnailDemand,
@@ -33,10 +37,7 @@ export function useLibraryBrowser({
     pendingPageSize,
     renderingAssetIds,
     thumbnailStore
-  } = useThumbnailQueue({
-    thumbs,
-    setThumbs
-  });
+  } = useThumbnailQueue();
 
   const assetsState = useLibraryAssets({
     pageSize,
@@ -45,18 +46,26 @@ export function useLibraryBrowser({
     metaFilter,
     appliedMediaKind,
     appliedFavoritesOnly,
-    setThumbs,
+    setThumbs: ignoreThumbnailMirror,
     resetThumbnailQueue
   });
+
+  useEffect(() => {
+    thumbnailStore.retain(assetsState.assets.map(asset => asset.id));
+    const paths: Record<number, string> = {};
+    for (const asset of assetsState.assets) if (asset.thumb_path) paths[asset.id] = asset.thumb_path;
+    thumbnailStore.complete(paths, []);
+  }, [assetsState.assets, thumbnailStore]);
 
   const knownTagsState = useLibraryKnownTags();
   const lifecycle = useLibraryLifecycle({
     resetThumbnailQueue,
-    setThumbs,
+    setThumbs: ignoreThumbnailMirror,
     setAssets: assetsState.setAssets,
     setTotal: assetsState.setTotal,
     setOffset: assetsState.setOffset,
-    setKnownTags: knownTagsState.setKnownTags
+    setKnownTags: knownTagsState.setKnownTags,
+    resetQuery: assetsState.reset
   });
 
   const refreshLibrary = useCallback(async () => {
@@ -86,10 +95,11 @@ export function useLibraryBrowser({
       getAssetAtAsync: assetsState.getAssetAtAsync,
       getAssetIndex: assetsState.getAssetIndex,
       setAssets: assetsState.setAssets,
-      setLoading: assetsState.setLoading,
-      thumbs,
+      setLoading: setOperationLoading,
+      thumbs: EMPTY_THUMBS,
       total: assetsState.total,
       loading: assetsState.loading,
+      operationLoading,
       knownTags: knownTagsState.knownTags,
       refresh: assetsState.refresh,
       refreshKnownTags: knownTagsState.refreshKnownTags,
@@ -120,7 +130,8 @@ export function useLibraryBrowser({
       assetsState.loading,
       assetsState.refresh,
       assetsState.setAssets,
-      assetsState.setLoading,
+      operationLoading,
+      assetsState.getIdsRangeAsync,
       assetsState.total,
       handleVirtualRangeChange,
       isGeneratingPage,
@@ -139,7 +150,6 @@ export function useLibraryBrowser({
       refreshLibrary,
       renderingAssetIds,
       thumbnailStore,
-      thumbs
     ]
   );
 }

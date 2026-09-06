@@ -75,7 +75,18 @@ gallerySuite("gallery scrolling performance", function () {
     await invoke("rescan_all_roots");
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();
-    await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
+    try {
+      await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
+    } catch (error) {
+      const output = path.resolve("artifacts/gallery-performance");
+      await fs.mkdir(output, { recursive: true });
+      await browser.saveScreenshot(path.join(output, "startup-failure.png"));
+      await fs.writeFile(path.join(output, "startup-failure.json"), JSON.stringify(await browser.execute(() => ({
+        text: document.body.innerText, html: document.querySelector("#root")?.innerHTML,
+        width: innerWidth, height: innerHeight
+      })), null, 2));
+      throw error;
+    }
   });
 
   after(async () => {
@@ -178,4 +189,46 @@ gallerySuite("gallery scrolling performance", function () {
     assert.equal(advanced, true, "The opened GIF should advance frames on the private display");
     await browser.keys("Escape");
   });
+  it("edits the full selection after eviction and filters, and verifies selection IPC", async () => {
+    await $('button[aria-label="Clear all search filters"]').click();
+    await $('button[data-asset-index="2"]').waitForExist({ timeout: 20000 });
+    const ids = await browser.execute(() => [0, 1, 2].map(index => Number(document.querySelector(`button[data-asset-index="${index}"]`).dataset.assetId)));
+    const summaries = await invoke("get_asset_summaries_by_ids", { assetIds: [ids[2], 999999, ids[0]] });
+    assert.deepEqual(summaries.map(item => item.id), [ids[2], ids[0]]);
+    await assert.rejects(() => invoke("get_asset_summaries_by_ids", { assetIds: Array(257).fill(ids[0]) }), /256/);
+
+    await $('button[aria-label="Enable bulk actions"]').click();
+    // Dispatch the same modifier-click events consumed by gallery tiles.
+    await browser.execute(selected => {
+      selected.forEach((id, index) => document.querySelector(`button[data-asset-id="${id}"]`)
+        .dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: index > 0 })));
+    }, ids);
+    await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes("Selected: 3"));
+    await $('#bulk-group-key-input').setValue("selection-proof");
+    for (let index = 128; index < 2048; index += 128) {
+      await scrollToAsset(index);
+      await $(`button[data-asset-index="${index}"]`).waitForExist({ timeout: 20000 });
+    }
+    assert.equal(await $('#bulk-group-key-input').getValue(), "selection-proof");
+    await $('.filter-input').setValue("absent-selection-proof");
+    await $('button=Search').click();
+    await browser.waitUntil(async () => (await $('body').getText()).includes("No results"));
+    assert.equal(await $('#bulk-group-key-input').getValue(), "selection-proof");
+    await $('#bulk-tag-draft-input').setValue("bulk-proof");
+    await browser.keys("Enter");
+    await browser.waitUntil(async () => {
+      const details = await Promise.all(ids.map(assetId => invoke("get_asset_details", { assetId })));
+      return details.every(item => item.tags.includes("bulk-proof"));
+    });
+    await $('button=Apply group').click();
+    await browser.waitUntil(async () => {
+      const items = await invoke("get_asset_summaries_by_ids", { assetIds: ids });
+      return items.length === 3 && items.every((item, index) => item.media_group_key === "selection-proof" && item.media_group_order === index + 1);
+    });
+    await $('[data-testid="bulk-header-panel"] button[aria-pressed]').click();
+    await browser.waitUntil(async () => (await invoke("get_asset_summaries_by_ids", { assetIds: ids })).every(item => item.is_favorite));
+    await browser.saveScreenshot(path.resolve("artifacts/gallery-performance/selection.png"));
+    await $('button[aria-label="Disable bulk actions"]').click();
+  });
+
 });

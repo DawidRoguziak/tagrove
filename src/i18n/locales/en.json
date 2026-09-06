@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
       "groupNameMissingValue": "gN requires a group value after the colon.",
       "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
-    }
+    },
+    "suggestionsRetry": "Suggestions unavailable. Retry"
   },
   "gallery": {
     "noFoldersTitle": "No folders attached",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "The tag change was not saved. Try again.",
       "tagLoadFailedTitle": "Could not load tags",
       "tagLoadFailed": "The complete tag list could not be loaded. Editing remains disabled.",
-      "retryTagDetails": "Retry loading tags"
+      "retryTagDetails": "Retry loading tags",
+      "metadataFailed": "Could not load selected items. Some items may no longer exist.",
+      "partialResult": "Updated {{processed}} of {{requested}} selected items."
     },
     "tagModal": {
       "ariaLabel": "Bulk add tags",

@@ -2,11 +2,11 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import type { MutableRefObject, RefObject } from "react";
 import { SearchSuggestionsList } from "./components/SearchSuggestionsList";
 import { useSearchTagatorHandlers } from "./hooks/useSearchTagatorHandlers";
-import { buildTagSuggestions, createTagFuse } from "./services/suggestionService";
+import { useSuggestions } from "./worker/SuggestionProvider";
 import { collectUsedTags, readActiveToken } from "./services/tokenService";
 import { browserAssistDisabledProps } from "../UI/inputBehavior";
 import { useTranslation } from "react-i18next";
-import type Fuse from "fuse.js";
+
 
 interface SearchTagatorProps {
   value: string;
@@ -57,7 +57,7 @@ export function SearchTagator({
   const [activeSuggestionIdx, setActiveSuggestionIdx] = useState(defaultActiveSuggestionIdx);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
-  const [FuseClass, setFuseClass] = useState<typeof Fuse | null>(null);
+
   const generatedId = useId();
   const resolvedInputId = inputId ?? `${generatedId}-input`;
   const listboxId = `${generatedId}-listbox`;
@@ -65,26 +65,8 @@ export function SearchTagator({
   const activeToken = useMemo(() => readActiveToken(value, caretPosition), [value, caretPosition]);
 
   const usedTags = useMemo(() => collectUsedTags(value, excludedTags), [excludedTags, value]);
-  useEffect(() => {
-    if (!inputFocused || FuseClass) return;
-    let active = true;
-    void import("fuse.js")
-      .then((module) => {
-        if (active) setFuseClass(() => module.default);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [FuseClass, inputFocused]);
-
-  const fuse = useMemo(
-    () => createTagFuse(knownTags, FuseClass ?? undefined),
-    [FuseClass, knownTags]
-  );
-  const suggestions = useMemo(
-    () => buildTagSuggestions({ activeToken, usedTags, fuse }),
-    [activeToken, fuse, usedTags]
+  const { suggestions, failed: suggestionsFailed, retry: retrySuggestions } = useSuggestions(
+    knownTags, activeToken, usedTags, inputFocused && suggestionsOpen && !disabled, excludedTags
   );
   const previousSuggestionsRef = useRef(suggestions);
   const inputNodeRef = useRef<HTMLInputElement | null>(null);
@@ -116,7 +98,7 @@ export function SearchTagator({
 
       return Math.min(prev, suggestions.length - 1);
     });
-  }, [autoSelectFirstSuggestion, defaultActiveSuggestionIdx, suggestions.length]);
+  }, [autoSelectFirstSuggestion, defaultActiveSuggestionIdx, suggestions]);
 
   const handlers = useSearchTagatorHandlers({
     value,
@@ -168,6 +150,7 @@ export function SearchTagator({
         placeholder={placeholder ?? t("search.placeholder")}
       />
 
+      {suggestionsFailed && inputFocused ? <button type="button" onClick={retrySuggestions}>{t("search.suggestionsRetry")}</button> : null}
       {popupOpen ? (
         <SearchSuggestionsList
           id={listboxId}

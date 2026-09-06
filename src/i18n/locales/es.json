@@ -79,7 +79,8 @@
       "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
       "groupNameMissingValue": "gN requires a group value after the colon.",
       "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
-    }
+    },
+    "suggestionsRetry": "Sugerencias no disponibles. Reintentar"
   },
   "gallery": {
     "noFoldersTitle": "No hay carpetas adjuntas",
@@ -127,7 +128,9 @@
       "tagSaveFailed": "El cambio de etiquetas no se guardó. Inténtalo de nuevo.",
       "tagLoadFailedTitle": "No se pudieron cargar las etiquetas",
       "tagLoadFailed": "No se pudo cargar la lista completa de etiquetas. La edición permanece desactivada.",
-      "retryTagDetails": "Reintentar la carga"
+      "retryTagDetails": "Reintentar la carga",
+      "metadataFailed": "No se pudieron cargar los elementos seleccionados. Puede que algunos ya no existan.",
+      "partialResult": "Se actualizaron {{processed}} de {{requested}} elementos seleccionados."
     },
     "tagModal": {
       "ariaLabel": "Añadir etiquetas en lote",

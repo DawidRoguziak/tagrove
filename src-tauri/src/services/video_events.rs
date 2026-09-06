@@ -2,7 +2,10 @@
 //!
 //! libmpv2 6's create_client uses unchecked NonNull construction. The native API
 //! explicitly permits a null result, so handle creation and events are checked here.
-use std::{ffi::CStr, ptr::NonNull};
+use std::{
+    ffi::{CStr, CString},
+    ptr::NonNull,
+};
 
 use libmpv2::Mpv;
 use libmpv2_sys as sys;
@@ -38,6 +41,24 @@ impl VideoEventClient {
             }
         }
         Ok(client)
+    }
+
+    /// libmpv copies command arguments before returning. Completion arrives on this client.
+    pub(super) fn command_async(&self, id: u64, args: &[&str]) -> Result<(), String> {
+        let strings = args
+            .iter()
+            .map(|arg| CString::new(*arg))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "libmpv command contains a NUL byte".to_string())?;
+        let mut pointers = strings.iter().map(|arg| arg.as_ptr()).collect::<Vec<_>>();
+        pointers.push(std::ptr::null());
+        // SAFETY: the client and null-terminated argument array remain live through this call.
+        let result = unsafe { sys::mpv_command_async(self.0.as_ptr(), id, pointers.as_mut_ptr()) };
+        if result < 0 {
+            Err(error_message(result))
+        } else {
+            Ok(())
+        }
     }
 
     pub(super) fn wait_event(&self, timeout: f64) -> Option<NativeEvent> {

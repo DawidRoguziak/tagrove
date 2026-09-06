@@ -64,7 +64,7 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, registers the request in arrival order before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The frontend `generation` participates in supersession together with the backend registration token. |
+| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, registers the request in arrival order before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The backend registration token alone orders requests; frontend `generation` rejects late results locally. |
 | `getAssetQueryPage` / `get_asset_query_page` | `sessionId: number`, `offset: number`, `limit: number` (default 128) | `AssetQueryPageResult` (`ready` or `stale`) | Returns summaries from the frozen session order. Limit is clamped to 1–256 and offset past the end is clamped to the total. |
 | `getAssetSummariesByIds` / `get_asset_summaries_by_ids` | `assetIds: number[]` | `AssetSummary[]` | At most 256 IDs; larger requests reject. Reuses the database summary lookup, preserves requested ID order, and omits missing records. Selection hydration runs at most four batches concurrently. |
 | `getAssetDetails` / `get_asset_details` | `assetId: number` | `AssetDetails \| null` | Returns the full path, size, and tags in addition to summary fields; unknown IDs return `null`. |
@@ -123,7 +123,7 @@ Root normalization trims whitespace and removes trailing `/` except for the file
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `ensureThumbnailsStream` / `ensure_thumbnails` | `requestId`, `visibleIds`, `prefetchIds`, `onEvent: Channel<ThumbnailStreamEvent>` | `void` after processing | Filters IDs to positive unique values, takes at most 64 visible and then 64 additional prefetch IDs, prioritizes visible work, streams results, and persists paths/failures. A request whose `requestId` is lower than the highest previously observed id is rejected immediately with no channel events; the frontend sends its queue generation, so abandoned generations do no backend work. |
+| `ensureThumbnailsStream` / `ensure_thumbnails` | `requestId`, `visibleIds`, `prefetchIds`, `onEvent: Channel<ThumbnailStreamEvent>` | `void` after processing | Filters IDs to positive unique values, takes at most 64 visible and then 64 additional prefetch IDs, prioritizes visible work, streams results, and persists paths/failures. `requestId` is a hook-local generation echoed through frontend closure ownership, not a global backend admission value. A frontend reload can restart its sequence. |
 | `getVideoToolStatus` / `get_video_tool_status` | none | `VideoToolStatus` | Runs bounded executable availability checks on the blocking pool, without a workflow lock. Reports separate ffmpeg/ffprobe booleans; it does not test libmpv playback or decoding a particular file. |
 | `renderAllThumbnails` / `render_all_thumbnails` | none | `ThumbnailRenderSummary` | Starts one process-wide bulk run; a concurrent bulk run rejects. Previously recorded failures are counted as `skipped_failed`. |
 | `renderFailedThumbnails` / `render_failed_thumbnails` | none | `ThumbnailRenderSummary` | Same bulk-run guard, but retries only recorded failures and does not skip them. |
@@ -136,17 +136,18 @@ The channel is created in `src/api.ts`; `onEvent` is not JSON data. Its serializ
 type ThumbnailStreamEvent =
   | { event: "ready"; data: { asset_id: number; thumb_path: string } }
   | { event: "failed"; data: { asset_id: number } }
-  | { event: "done"; data: { ready: number; failed: number } };
+  | { event: "stale"; data: { asset_id: number } }
+  | { event: "done"; data: { ready: number; failed: number; stale: number } };
 ```
 
-`ready` is sent as each existing or newly generated thumbnail becomes available. After processing, failures are sent and one `done` summary is sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter both as the `requestId` (the backend rejects stale ids without doing work) and to ignore late messages after reset.
+`ready` is sent only after the version-checked database update accepts the existing or generated thumbnail. Rejected versions produce `stale`, remain retryable, and are excluded from ready/failure counts. Batch results include stale IDs and render summaries include a stale count. After processing, failures/stale IDs and one `done` summary are sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter as the `requestId` and to ignore late messages after reset.
 
 ## Import, export, and destructive data operations
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `exportTagsCsv` / `export_tags_csv` | `path: string` | `CsvExportSummary` | Trims and rejects an empty or protected target, creates parent directories, and atomically publishes `file_name,tags,favorite,media_group_key,media_group_order` through a synced sibling temporary file. |
-| `importTagsCsv` / `import_tags_csv` | `path: string` | `CsvImportSummary` | Opens a regular file, rejects more than 64 MiB while reading at most one byte past that limit, and requires exactly one of each standard header. It parses and validates the whole document, matches assets by the shared Unicode-lowercase basename key, merges normalized tags, updates favorite/group fields, and conditionally bumps revision in the same all-or-nothing transaction. |
+| `importTagsCsv` / `import_tags_csv` | `path: string` | `CsvImportSummary` | Opens a regular file, rejects more than 4 GiB while reading at most one byte past that limit, and requires exactly one of each standard header. It parses and validates records into disk-backed staging, then matches assets by the shared Unicode-lowercase basename key, merges normalized tags, updates favorite/group fields, and conditionally bumps revision in the same all-or-nothing transaction. |
 | `exportDbBundle` / `export_db_bundle` | `path: string` | `DbBundleExportSummary` | Trims and rejects an empty or colliding target, creates a ZIP from one SQLite Backup API snapshot plus thumbnail files, syncs a unique temporary archive, and atomically publishes it. Current exports contain no WAL/SHM entry. |
 | `inspectDbBundle` / `inspect_db_bundle` | `path: string` | `DbBundleInspection` | Validates archive limits, manifest compatibility, SQLite integrity/schema, and manifest/database roots without writing the candidate database; reports roots requiring Windows-to-Linux mapping. |
 | `importDbBundle` / `import_db_bundle` | `path: string`, `rootMappings: { sourceRoot, targetRoot }[]` | `DbBundleImportSummary` | Repeats full archive/database validation, migrates only accepted legacy staging, validates/rewrites every media and thumbnail path, then performs a maintenance-gated journaled replacement. Linux rejects Windows roots without complete mappings and detects mapped path collisions. |
@@ -177,7 +178,7 @@ A successful `start_asset_query` returns:
 
 Sessions bind an ordered asset-ID snapshot to normalized filters and a library revision. See [the query manager lifecycle](../subsystems/library-query-and-gallery.md#backend-session-and-page-contract) for snapshot construction, cancellation, reuse, and cache limits.
 
-- `superseded` is a successful start result, not an invoke error. A request whose registration token or client generation is no longer process-wide latest returns it — including on the cheap cache-hit path — so an obsolete request never observes a `ready` result. `useLibraryAssets` also compares its local generation and ignores an obsolete response.
+- `superseded` is a successful start result, not an invoke error. A request whose backend registration token is no longer latest returns it, including on the cache-hit path. `useLibraryAssets` also compares its local generation and ignores an obsolete response.
 - `stale` is a successful page result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older library revision. A revision mismatch also removes that session. `useLibraryAssets` responds by starting a fresh query.
 - `ready` pages preserve the session order and report the effective (possibly end-clamped) offset. Query-visible mutations and scans bump the library revision in their mutation transaction, so later pages from older sessions become stale.
 
@@ -229,7 +230,7 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 ## Known limitations
 
 - Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check.
-- `requestId` on `ensure_thumbnails` rejects only lower ids than the highest observed; it is not a cancellation token. In-flight scheduler jobs of a superseded generation still run to completion, and another window or independent caller can still supersede this window's request.
+- `requestId` on `ensure_thumbnails` is hook-local and does not cancel scheduler jobs. Jobs can finish after a frontend reset or receiver disconnect; local generation checks discard late messages.
 - `list_assets` remains registered because desktop E2E uses it for direct workflow assertions; production gallery code uses query sessions.
 - IPC errors are text only. Consumers cannot reliably distinguish validation, not-found, busy, filesystem, database, worker, or platform failures except by message text.
 - Numeric Rust IDs/counters are exposed as JavaScript `number` without an explicit safe-integer guard.

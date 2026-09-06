@@ -9,6 +9,7 @@ use std::{
 use crate::services::thumb_scheduler::ThumbnailScheduler;
 
 pub struct AppState {
+    pub database: std::sync::Arc<crate::services::db_pool::DatabaseRuntime>,
     pub db_path: PathBuf,
     pub thumbs_dir: PathBuf,
     pub ffmpeg_path: PathBuf,
@@ -21,9 +22,6 @@ pub struct AppState {
     /// workflows bump it so results rendered before the reset are dropped
     /// instead of being written back to SQLite.
     pub thumbnail_generation: AtomicU64,
-    /// Highest frontend request id seen by the streaming endpoint. Older
-    /// request ids belong to abandoned generations and are rejected.
-    pub thumbnail_latest_request_id: AtomicU64,
 }
 
 /// The launch snapshot is consumed even if scanning fails; only a new process retries.

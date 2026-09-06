@@ -80,7 +80,7 @@ Startup failure in any setup step prevents the windowed application from enterin
 | `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
 | `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, native video playback, scan orchestration, thumbnail workflows, backup/restore, and progress emission. |
 | `video_surface.rs` | GTK overlay/GLArea placement and libmpv OpenGL rendering. |
-| `db.rs` | Schema initialization and SQLite queries/transactions. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
+| `db.rs` and `db/*` | Shared types plus separate connection, schema, query, mutation, scan-membership, and thumbnail SQL modules. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
 | `indexer.rs` | Supported-file discovery, fingerprints, and media metadata extraction. |
 | `thumbs.rs` | Image/video thumbnail creation and video duration probing. |
 | `models.rs` | Backend serializable data models. |
@@ -95,11 +95,11 @@ Startup failure in any setup step prevents the windowed application from enterin
 - the resolved `ffmpeg_path` (also copied into the scheduler);
 - `scan_lock` and `thumb_lock`;
 - the shared `ThumbnailScheduler`; and
-- atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and track the highest observed thumbnail request id.
+- atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and preserve cancellation without database or workflow locks.
 
 `StartupScanState` is separately managed by Tauri. It captures enabled scan roots after database initialization and recovery and atomically consumes them when shell initialization invokes the startup-scan command. Its empty state survives frontend reloads; preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline.
 
-The `InstanceLock` and `VideoPlayerService` are separately managed by Tauri so their lifetimes match the application. The player service owns one process-wide libmpv handle, one active session, a dedicated playback worker, and monotonically increasing request/session IDs. The worker owns libmpv commands and per-session event clients; GTK only enqueues playback commands. `services/video_events.rs` checks native client creation and copies event information before the next poll invalidates it. Pending reservations can be cancelled before source resolution completes. It rejects stale controls and superseded opens, while retired-session closes are idempotent. The query manager, its connection-pool registry, and the database maintenance gate are process-wide `OnceLock` singletons rather than `AppState` fields. Every application-created live-database connection owns a maintenance lease for its full lifetime.
+The `InstanceLock` and `VideoPlayerService` are separately managed by Tauri so their lifetimes match the application. The player service owns one process-wide libmpv handle, one active session, a dedicated playback worker, and monotonically increasing request/session IDs. The worker owns libmpv commands and per-session event clients; GTK only enqueues playback commands. `services/video_events.rs` checks native client creation and copies event information before the next poll invalidates it. Pending reservations can be cancelled before source resolution completes. It rejects stale controls and superseded opens, while retired-session closes are idempotent. `AppState.database` owns admission, the connection pool, and query state. One operation permit follows its connections and child workers. Idle connections retain no admission.
 
 ## Profiles, identifiers, and data isolation
 
@@ -126,13 +126,13 @@ This guarantee is per identifier/profile, not machine-wide. The lock file itself
 
 ## In-process locking policy
 
-The profile lock sits outside the runtime lock hierarchy. Inside one process, the maintenance gate is the outermost lock. Ordinary database connections and workflow helpers take a shared lease; bundle export/restore close the gate, invalidate and drain the query pool, then acquire lower locks in the fixed order `maintenance`, `scan_lock`, exclusive `thumb_lock`.
+The profile lock sits outside the runtime lock hierarchy. Inside one process, the maintenance gate is the outermost lock. Ordinary commands acquire one shared operation permit; bundle export/restore close admission, drain operations and workers, close the idle pool, clear query state, then acquire lower locks in the fixed order `maintenance`, `scan_lock`, exclusive `thumb_lock`.
 
 Command-level workflow locks have the following matrix:
 
 | Lock | Operations | What it excludes |
 | --- | --- | --- |
-| Database maintenance gate | Every SQLite connection; exclusive ownership for DB bundle export/restore | Exclusive ownership blocks new SQLite users and waits for all direct and pooled connections to close. |
+| Database maintenance gate | Every SQLite connection; exclusive ownership for DB bundle export/restore | Exclusive ownership blocks new operations and drains admitted operations, including connections and workers. |
 | `scan_lock: Mutex<()>` | `scan_folder`, `rescan_all_roots` | Another scan and every combined destructive operation. |
 | Shared `thumb_lock` read guard | Render all/failed thumbnails, cancel bulk render, ensure one/page/streamed thumbnails | A destructive thumbnail write guard; multiple thumbnail readers may coexist. The bulk-render atomic separately rejects a second bulk render. |
 | Exclusive `thumb_lock` write guard | `clear_all_thumbnails` | All thumbnail render/ensure readers and combined destructive operations. |
@@ -140,7 +140,7 @@ Command-level workflow locks have the following matrix:
 | Maintenance gate, then `scan_lock`, then exclusive `thumb_lock` | Export a DB bundle, import a DB bundle | All SQLite users, scans, thumbnail work, and every other combined operation. |
 | No workflow lock | Queries/details/tag and favorite/group writes, duplicate lookup, CSV import/export, scan-root list/add, and window-theme sync | Only SQLite/filesystem primitives and any operation-local synchronization apply. |
 
-Whenever both ordinary workflow locks are needed, `with_scan_and_thumb_lock` acquires a database lease, `scan_lock`, and then the thumbnail write lock. Maintenance uses `with_database_maintenance`, which closes the database gate and drains connections before taking `scan_lock` and the thumbnail write lock. Preserve these orders; acquiring lower locks before entering maintenance can deadlock. `ThumbnailScheduler`, the query cache, and the query connection pool have their own internal synchronization and are not substitutes for these workflow locks.
+Whenever both ordinary workflow locks are needed, `with_scan_and_thumb_lock` acquires one operation permit, `scan_lock`, and then the thumbnail write lock. Maintenance uses `with_database_maintenance`, which closes admission, drains admitted operations, closes idle connections, and clears query sessions before taking `scan_lock` and the thumbnail write lock. Preserve these orders; acquiring lower locks before entering maintenance can deadlock. `ThumbnailScheduler`, the query cache, and the database connection pool have their own internal synchronization and are not substitutes for these workflow locks.
 
 The React settings runner also suppresses concurrent settings operations in one mounted frontend, but that is a user-interface convenience, not a backend safety boundary. Direct IPC callers can still invoke commands concurrently.
 
@@ -173,7 +173,7 @@ This split is deliberate. Changing the Tauri identifier changes the app-data dir
 - `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
 - Several command handlers contain filesystem/DB orchestration instead of being strictly thin adapters.
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.
-- Query supersession and thumbnail request IDs are process-wide. Another window or independent caller can supersede this window's work; frontend generations separately reject late responses. See [IPC limits](ipc-contract.md#known-limitations).
+- Query supersession is shared by the application runtime. Another window or independent caller can supersede this window's query; frontend generations separately reject late responses. Thumbnail request generations belong to individual hooks and are not compared globally. See [IPC limits](ipc-contract.md#known-limitations).
 - Many progress emissions deliberately ignore delivery errors; completion of the underlying operation does not guarantee that every progress update reached the WebView.
 - Packaging supports Linux x86-64 only, depends on the documented system media/graphics libraries, and the production identifier still uses the example domain.
 

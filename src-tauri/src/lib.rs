@@ -77,6 +77,7 @@ pub fn run() {
             let db_path = app_data_dir.join("media.db");
             let conn = db::open_connection(&db_path)?;
             db::init_schema(&conn)?;
+            conn.pragma_update(None, "synchronous", "FULL")?;
             asset_mutation_service::recover_pending_file_operations(&conn)?;
             app.manage(app::state::StartupScanState::new(db::list_scan_root_settings(&conn)?));
 
@@ -111,6 +112,7 @@ pub fn run() {
             }
 
             app.manage(AppState {
+                database: crate::services::db_pool::DatabaseRuntime::new(db_path.clone()),
                 db_path,
                 thumbs_dir,
                 ffmpeg_path,
@@ -120,7 +122,6 @@ pub fn run() {
                 thumbnail_render_all_running: AtomicBool::new(false),
                 thumbnail_render_all_cancel_requested: AtomicBool::new(false),
                 thumbnail_generation: AtomicU64::new(0),
-                thumbnail_latest_request_id: AtomicU64::new(0),
             });
 
             Ok(())

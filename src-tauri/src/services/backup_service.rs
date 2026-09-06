@@ -1,28 +1,25 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs,
     io::{Read, Write},
     path::{Component, Path, PathBuf},
     time::Duration,
 };
 
-use tauri::State;
-
 use crate::{
     app::state::AppState,
     db,
     error::AppResult,
     models::{DbBundleExportSummary, DbBundleImportSummary, DbBundleInspection, DbRootMapping},
-    services::{asset_query_service, db_pool},
     utils::text::canonical_key,
 };
 
 const BUNDLE_APPLICATION_ID: &str = "io.github.mediatagger.bundle";
 const BUNDLE_FORMAT_VERSION: u32 = 2;
-const MAX_ARCHIVE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
-const MAX_ARCHIVE_ENTRIES: usize = 250_000;
-const MAX_ENTRY_BYTES: u64 = 8 * 1024 * 1024 * 1024;
-const MAX_EXPANDED_BYTES: u64 = 32 * 1024 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = 2_000_000;
+const MAX_ENTRY_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+const MAX_EXPANDED_BYTES: u64 = 256 * 1024 * 1024 * 1024;
 const MAX_COMPRESSION_RATIO: u64 = 1_000;
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
@@ -64,8 +61,12 @@ struct RestoreJournal {
     previous_thumbs_existed: bool,
 }
 
-pub fn export_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbBundleExportSummary> {
-    let conn = db::open_connection_untracked(&state.db_path)?;
+pub fn export_db_bundle(
+    path: String,
+    state: &AppState,
+    maintenance: &crate::services::db_pool::MaintenancePermit,
+) -> AppResult<DbBundleExportSummary> {
+    let conn = maintenance.connection()?;
     db::ensure_no_pending_file_operations(&conn)?;
     let target_file = validate_export_target(path.trim(), state, &conn)?;
     let manifest = BundleManifest {
@@ -130,6 +131,13 @@ pub fn export_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbBu
 
         let archive = zip.finish()?;
         archive.sync_all()?;
+        if archive.metadata()?.len() > MAX_ARCHIVE_BYTES {
+            return Err("Backup archive exceeds the size limit".into());
+        }
+        drop(archive);
+        validate_archive(&mut zip::ZipArchive::new(fs::File::open(
+            &temporary_target,
+        )?)?)?;
         publish_archive(&temporary_target, &target_file)?;
         sync_parent_directory(&target_file)?;
         Ok(DbBundleExportSummary {
@@ -147,7 +155,7 @@ pub fn export_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbBu
 
 fn validate_export_target(
     raw_path: &str,
-    state: &State<AppState>,
+    state: &AppState,
     conn: &rusqlite::Connection,
 ) -> AppResult<PathBuf> {
     let requested = PathBuf::from(raw_path);
@@ -203,7 +211,7 @@ fn create_database_snapshot(source: &rusqlite::Connection, target: &Path) -> App
     Ok(())
 }
 
-pub fn inspect_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbBundleInspection> {
+pub fn inspect_db_bundle(path: String, state: &AppState) -> AppResult<DbBundleInspection> {
     let source_file = validate_bundle_source(&path)?;
     let file = fs::File::open(&source_file)?;
     let mut archive = zip::ZipArchive::new(file)?;
@@ -259,7 +267,8 @@ pub fn inspect_db_bundle(path: String, state: &State<AppState>) -> AppResult<DbB
 pub fn import_db_bundle(
     path: String,
     root_mappings: Vec<DbRootMapping>,
-    state: &State<AppState>,
+    state: &AppState,
+    maintenance: &crate::services::db_pool::MaintenancePermit,
 ) -> AppResult<DbBundleImportSummary> {
     let source_file = validate_bundle_source(&path)?;
 
@@ -349,7 +358,7 @@ pub fn import_db_bundle(
     let previous_db_existed = state.db_path.exists();
     let previous_thumbs_existed = state.thumbs_dir.exists();
     if state.db_path.exists() {
-        let current = db::open_connection_untracked(&state.db_path)?;
+        let current = maintenance.connection()?;
         current.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
     }
     remove_database_sidecars(&state.db_path)?;
@@ -375,7 +384,7 @@ pub fn import_db_bundle(
         rename_durable(&staging_thumbs, &state.thumbs_dir)?;
         sync_parent_directory(&state.thumbs_dir)?;
 
-        let conn = db::open_connection_untracked(&state.db_path)?;
+        let conn = maintenance.connection()?;
         db::init_schema(&conn)?;
         db::validate_backup_database(&conn, false)?;
         db::bump_library_revision(&conn)?;
@@ -400,8 +409,7 @@ pub fn import_db_bundle(
     }
 
     recover_interrupted_restore(app_data_dir)?;
-    db_pool::invalidate(&state.db_path);
-    asset_query_service::manager().clear();
+    state.database.queries.clear();
 
     Ok(DbBundleImportSummary {
         restored_files,
@@ -578,10 +586,9 @@ fn rewrite_staged_paths(
     mappings.sort_by_key(|mapping| std::cmp::Reverse(mapping.source_root.len()));
     validate_root_mappings(&roots, &mappings)?;
 
-    let assets = db::list_backup_asset_paths(&conn)?;
-    let asset_root_mappings = db::list_backup_asset_root_mappings(&conn)?;
-    let mut thumb_candidates: HashMap<String, PathBuf> = HashMap::new();
-    let mut legacy_thumb_candidates: HashMap<String, Vec<PathBuf>> = HashMap::new();
+    conn.pragma_update(None, "temp_store", "FILE")?;
+    conn.execute_batch("CREATE TEMP TABLE rewritten_assets (id INTEGER PRIMARY KEY, path TEXT NOT NULL, file_name TEXT NOT NULL, thumb_path TEXT, roots TEXT NOT NULL, collision_key TEXT NOT NULL UNIQUE, canonical_path BLOB UNIQUE)")?;
+    conn.execute_batch("CREATE TEMP TABLE imported_thumbnails (relative TEXT PRIMARY KEY, path TEXT NOT NULL, basename TEXT); CREATE INDEX imported_thumbnail_basename ON imported_thumbnails(basename)")?;
     if staging_thumbs.exists() {
         for entry in walkdir::WalkDir::new(staging_thumbs) {
             let entry = entry.map_err(|error| error.to_string())?;
@@ -591,98 +598,122 @@ fn rewrite_staged_paths(
                     .strip_prefix(staging_thumbs)
                     .map_err(|error| error.to_string())?;
                 let key = normalized_relative_path(relative)?;
-                if thumb_candidates
-                    .insert(key, entry.path().to_path_buf())
-                    .is_some()
-                {
-                    return Err("Backup contains duplicate thumbnail destinations".into());
-                }
-                if let Some(name) = entry.file_name().to_str() {
-                    legacy_thumb_candidates
-                        .entry(name.to_string())
-                        .or_default()
-                        .push(entry.path().to_path_buf());
-                }
+                conn.execute(
+                    "INSERT INTO imported_thumbnails VALUES (?1, ?2, ?3)",
+                    rusqlite::params![
+                        key,
+                        entry.path().to_string_lossy(),
+                        entry.file_name().to_str()
+                    ],
+                )
+                .map_err(|error| {
+                    format!("Duplicate thumbnail destination or staging error: {error}")
+                })?;
             }
         }
     }
-    let mut targets = HashSet::new();
-    let mut canonical_targets = HashSet::new();
-    let mut rewritten = Vec::new();
-    for asset in assets {
-        validate_stored_path(&asset.path)?;
-        let assigned_roots = roots
-            .iter()
-            .filter(|root| {
-                path_is_within_root(&asset.path, root)
-                    && asset_root_mappings.iter().any(|(asset_id, mapped_root)| {
-                        *asset_id == asset.id && mapped_root == *root
-                    })
-            })
-            .collect::<Vec<_>>();
-        if assigned_roots.is_empty() {
-            return Err(format!(
-                "Asset path is outside its declared root mappings: {}",
-                asset.path
-            )
-            .into());
-        }
-        let next_path = if mappings.is_empty() {
-            asset.path.clone()
-        } else {
-            mapped_path(&asset.path, &mappings)
-                .ok_or_else(|| format!("Asset path has no root mapping: {}", asset.path))?
+    let mut after = 0;
+    loop {
+        let assets = {
+            let mut stmt = conn.prepare(
+                "SELECT id, path, thumb_path FROM assets WHERE id > ?1 ORDER BY id LIMIT 512",
+            )?;
+            let rows = stmt.query_map([after], |row| {
+                Ok(db::BackupAssetPath {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    thumb_path: row.get(2)?,
+                })
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
         };
-        validate_stored_path(&next_path)?;
-        let mut rewritten_roots = Vec::with_capacity(assigned_roots.len());
-        for assigned_root in assigned_roots {
-            let target_root = if mappings.is_empty() {
-                assigned_root.as_str()
-            } else {
-                mappings
-                    .iter()
-                    .find(|mapping| path_strings_equal(&mapping.source_root, assigned_root))
-                    .map(|mapping| mapping.target_root.as_str())
-                    .ok_or_else(|| {
-                        format!("Missing target mapping for scan root: {assigned_root}")
-                    })?
-            };
-            if !path_is_within_root(&next_path, target_root) {
-                return Err(format!("Mapped asset path escapes scan root: {next_path}").into());
+        if assets.is_empty() {
+            break;
+        }
+        after = assets.last().expect("nonempty page").id;
+        for asset in assets {
+            validate_stored_path(&asset.path)?;
+            let assigned_roots = db::assigned_asset_roots(&conn, asset.id)?
+                .into_iter()
+                .map(|(_, root)| root)
+                .filter(|root| path_is_within_root(&asset.path, root))
+                .collect::<Vec<_>>();
+            if assigned_roots.is_empty() {
+                return Err(format!(
+                    "Asset path is outside its declared root mappings: {}",
+                    asset.path
+                )
+                .into());
             }
-            validate_existing_path_within_root(&next_path, target_root)?;
-            rewritten_roots.push(target_root.to_string());
+            let next_path = if mappings.is_empty() {
+                asset.path.clone()
+            } else {
+                mapped_path(&asset.path, &mappings)
+                    .ok_or_else(|| format!("Asset path has no root mapping: {}", asset.path))?
+            };
+            validate_stored_path(&next_path)?;
+            let mut rewritten_roots = Vec::with_capacity(assigned_roots.len());
+            for assigned_root in assigned_roots {
+                let target_root = if mappings.is_empty() {
+                    assigned_root.as_str()
+                } else {
+                    mappings
+                        .iter()
+                        .find(|mapping| path_strings_equal(&mapping.source_root, &assigned_root))
+                        .map(|mapping| mapping.target_root.as_str())
+                        .ok_or_else(|| {
+                            format!("Missing target mapping for scan root: {assigned_root}")
+                        })?
+                };
+                if !path_is_within_root(&next_path, target_root) {
+                    return Err(format!("Mapped asset path escapes scan root: {next_path}").into());
+                }
+                validate_existing_path_within_root(&next_path, target_root)?;
+                rewritten_roots.push(target_root.to_string());
+            }
+            let target_key = if cfg!(any(windows, target_os = "macos")) {
+                next_path.to_lowercase()
+            } else {
+                next_path.clone()
+            };
+            let canonical = if Path::new(&next_path).exists() {
+                Some(
+                    Path::new(&next_path)
+                        .canonicalize()?
+                        .as_os_str()
+                        .as_encoded_bytes()
+                        .to_vec(),
+                )
+            } else {
+                None
+            };
+            let file_name = next_path
+                .rsplit(['\\', '/'])
+                .next()
+                .unwrap_or("")
+                .to_string();
+            let next_thumb = match asset.thumb_path.as_deref() {
+                Some(value) => {
+                    resolve_imported_thumbnail(value, manifest, staging_thumbs, live_thumbs, &conn)?
+                }
+                None => None,
+            };
+            conn.execute(
+                "INSERT INTO rewritten_assets VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    asset.id,
+                    next_path,
+                    file_name,
+                    next_thumb,
+                    serde_json::to_string(&rewritten_roots).map_err(|e| e.to_string())?,
+                    target_key,
+                    canonical
+                ],
+            )
+            .map_err(|error| {
+                format!("Path mapping collision or staging error for {next_path}: {error}")
+            })?;
         }
-        let target_key = if cfg!(any(windows, target_os = "macos")) {
-            next_path.to_lowercase()
-        } else {
-            next_path.clone()
-        };
-        if !targets.insert(target_key) {
-            return Err(format!("Path mapping collision: {next_path}").into());
-        }
-        if Path::new(&next_path).exists()
-            && !canonical_targets.insert(Path::new(&next_path).canonicalize()?)
-        {
-            return Err(format!("Canonical path mapping collision: {next_path}").into());
-        }
-        let file_name = next_path
-            .rsplit(['\\', '/'])
-            .next()
-            .unwrap_or("")
-            .to_string();
-        let next_thumb = match asset.thumb_path.as_deref() {
-            Some(value) => resolve_imported_thumbnail(
-                value,
-                manifest,
-                staging_thumbs,
-                live_thumbs,
-                &thumb_candidates,
-                &legacy_thumb_candidates,
-            )?,
-            None => None,
-        };
-        rewritten.push((asset.id, next_path, file_name, next_thumb, rewritten_roots));
     }
 
     let root_settings = db::list_scan_root_settings(&conn)?;
@@ -702,7 +733,17 @@ fn rewrite_staged_paths(
             )?;
         }
     }
-    for (id, path, file_name, thumb_path, root_paths) in rewritten {
+    let mut rewritten = tx.prepare(
+        "SELECT id, path, file_name, thumb_path, roots FROM rewritten_assets ORDER BY id",
+    )?;
+    let mut rows = rewritten.query([])?;
+    while let Some(row) = rows.next()? {
+        let id: i64 = row.get(0)?;
+        let path: String = row.get(1)?;
+        let file_name: String = row.get(2)?;
+        let thumb_path: Option<String> = row.get(3)?;
+        let root_paths: Vec<String> =
+            serde_json::from_str(&row.get::<_, String>(4)?).map_err(|e| e.to_string())?;
         tx.execute(
             "UPDATE assets SET path=?1, file_name=?2, file_name_key=?3, thumb_path=?4 WHERE id=?5",
             rusqlite::params![path, file_name, canonical_key(&file_name), thumb_path, id],
@@ -728,6 +769,8 @@ fn rewrite_staged_paths(
             return Err("Path rewrite left assets without scan-root mappings".into());
         }
     }
+    drop(rows);
+    drop(rewritten);
     tx.execute("DELETE FROM thumbnail_failures", [])?;
     tx.commit()?;
     Ok(())
@@ -896,37 +939,59 @@ fn resolve_imported_thumbnail(
     manifest: Option<&BundleManifest>,
     staging_thumbs: &Path,
     live_thumbs: &Path,
-    candidates: &HashMap<String, PathBuf>,
-    legacy_candidates: &HashMap<String, Vec<PathBuf>>,
+    conn: &rusqlite::Connection,
 ) -> AppResult<Option<String>> {
-    let candidate = if let Some(manifest) = manifest.filter(|value| value.format_version >= 2) {
+    use rusqlite::OptionalExtension;
+    let candidate: String = if let Some(manifest) =
+        manifest.filter(|value| value.format_version >= 2)
+    {
         let relative = stored_relative_path(old_thumb, &manifest.source_thumbs_dir)
             .ok_or("Format-v2 thumbnail path is outside the declared source thumbnail directory")?;
-        candidates
-            .get(&relative)
-            .ok_or("Format-v2 thumbnail reference has no matching archive entry")?
+        conn.query_row(
+            "SELECT path FROM imported_thumbnails WHERE relative = ?1",
+            [relative],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or("Format-v2 thumbnail reference has no matching archive entry")?
     } else {
         let Some(name) = old_thumb.rsplit(['\\', '/']).next() else {
             return Ok(None);
         };
-        let Some(matches) = legacy_candidates.get(name) else {
-            return Ok(None);
-        };
-        if matches.len() != 1 {
+        let mut stmt =
+            conn.prepare("SELECT path FROM imported_thumbnails WHERE basename = ?1 LIMIT 2")?;
+        let candidates = stmt
+            .query_map([name], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        if candidates.len() != 1 {
             return Ok(None);
         }
-        &matches[0]
+        candidates.into_iter().next().expect("one candidate")
     };
-    let relative = candidate
+    let relative = Path::new(&candidate)
         .strip_prefix(staging_thumbs)
         .map_err(|error| error.to_string())?;
     Ok(Some(
-        live_thumbs.join(relative).to_string_lossy().to_string(),
+        live_thumbs.join(relative).to_string_lossy().into_owned(),
     ))
 }
 
 fn validate_archive(archive: &mut zip::ZipArchive<fs::File>) -> AppResult<ValidatedArchive> {
-    if archive.len() > MAX_ARCHIVE_ENTRIES {
+    validate_archive_with_limits(
+        archive,
+        MAX_ARCHIVE_ENTRIES,
+        MAX_ENTRY_BYTES,
+        MAX_EXPANDED_BYTES,
+    )
+}
+
+fn validate_archive_with_limits(
+    archive: &mut zip::ZipArchive<fs::File>,
+    max_entries: usize,
+    max_entry_bytes: u64,
+    max_expanded_bytes: u64,
+) -> AppResult<ValidatedArchive> {
+    if archive.len() > max_entries {
         return Err("Backup archive contains too many entries".into());
     }
     let mut expanded_bytes = 0u64;
@@ -938,13 +1003,13 @@ fn validate_archive(archive: &mut zip::ZipArchive<fs::File>) -> AppResult<Valida
         let mut entry = archive.by_index(index)?;
         let safe_path = sanitize_zip_entry_path(entry.name())?;
         let size = entry.size();
-        if size > MAX_ENTRY_BYTES {
+        if size > max_entry_bytes {
             return Err(format!("Backup entry exceeds the size limit: {}", entry.name()).into());
         }
         expanded_bytes = expanded_bytes
             .checked_add(size)
             .ok_or("Backup expanded size overflow")?;
-        if expanded_bytes > MAX_EXPANDED_BYTES {
+        if expanded_bytes > max_expanded_bytes {
             return Err("Backup archive exceeds the expanded size limit".into());
         }
         let compressed = entry.compressed_size();
@@ -1203,6 +1268,8 @@ fn add_file_to_zip(
 ) -> AppResult<()> {
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
+        // The importer permits entries above ZIP32's 4 GiB boundary.
+        .large_file(true)
         .unix_permissions(0o644);
 
     zip.start_file(entry_name, options)?;
@@ -1270,6 +1337,7 @@ mod tests {
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
         AppState {
+            database: crate::services::db_pool::DatabaseRuntime::new(db_path.to_path_buf()),
             db_path: db_path.to_path_buf(),
             thumbs_dir: thumbs_dir.to_path_buf(),
             ffmpeg_path: PathBuf::from("ffmpeg"),
@@ -1279,12 +1347,7 @@ mod tests {
             thumbnail_render_all_running: AtomicBool::new(false),
             thumbnail_render_all_cancel_requested: AtomicBool::new(false),
             thumbnail_generation: std::sync::atomic::AtomicU64::new(0),
-            thumbnail_latest_request_id: std::sync::atomic::AtomicU64::new(0),
         }
-    }
-
-    fn as_state<'a>(state: &'a AppState) -> tauri::State<'a, AppState> {
-        unsafe { std::mem::transmute::<&'a AppState, tauri::State<'a, AppState>>(state) }
     }
 
     fn new_asset(path: &Path, modified_at: i64) -> NewAsset {
@@ -1360,11 +1423,15 @@ mod tests {
         fs::write(&thumb_file, b"thumb").expect("write thumb file");
 
         let state = create_test_state(&db_path, &thumbs_dir);
-        let state_ref = as_state(&state);
+        let state_ref = &state;
         let archive_path = tmp.path().join("backup.zip");
 
-        let summary = export_db_bundle(archive_path.to_string_lossy().to_string(), &state_ref)
-            .expect("export bundle");
+        let summary = export_db_bundle(
+            archive_path.to_string_lossy().to_string(),
+            state_ref,
+            &state.database.maintenance().unwrap(),
+        )
+        .expect("export bundle");
 
         assert_eq!(summary.copied_files, 1);
         assert_eq!(summary.copied_thumbnails, 1);
@@ -1411,11 +1478,12 @@ mod tests {
         }
 
         let state = create_test_state(&db_path, &thumbs_dir);
-        let state_ref = as_state(&state);
+        let state_ref = &state;
         let error = import_db_bundle(
             archive_path.to_string_lossy().to_string(),
             Vec::new(),
-            &state_ref,
+            state_ref,
+            &state.database.maintenance().unwrap(),
         )
         .expect_err("must fail without media.db");
 
@@ -1470,7 +1538,8 @@ mod tests {
         import_db_bundle(
             archive.to_string_lossy().into_owned(),
             vec![],
-            &as_state(&state),
+            &state,
+            &state.database.maintenance().unwrap(),
         )
         .unwrap();
         let conn = db::open_connection(&target_db).unwrap();
@@ -1537,11 +1606,12 @@ mod tests {
         drop(conn);
 
         let state = create_test_state(&target_db_path, &target_thumbs_dir);
-        let state_ref = as_state(&state);
+        let state_ref = &state;
         let summary = import_db_bundle(
             archive_path.to_string_lossy().to_string(),
             Vec::new(),
-            &state_ref,
+            state_ref,
+            &state.database.maintenance().unwrap(),
         )
         .expect("import bundle");
 
@@ -1629,7 +1699,8 @@ mod tests {
         import_db_bundle(
             archive_path.to_string_lossy().to_string(),
             vec![mapping],
-            &as_state(&state),
+            &state,
+            &state.database.maintenance().unwrap(),
         )
         .expect("import mapped bundle");
 
@@ -1664,5 +1735,95 @@ mod tests {
             fs::read(target_thumbs.join("legacy.jpg")).expect("restored thumb"),
             b"legacy-thumbnail"
         );
+    }
+    #[test]
+    fn exported_files_use_zip64_and_roundtrip_through_the_import_reader() {
+        use std::io::Read;
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("media.db");
+        fs::write(&source, b"small ZIP64 fixture").unwrap();
+        let path = dir.path().join("bundle.zip");
+        let mut writer = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        super::add_file_to_zip(&mut writer, &source, "media.db").unwrap();
+        writer.finish().unwrap();
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(&bytes[..4], b"PK\x03\x04");
+        // Local-header ZIP32 sizes are sentinels; the actual sizes live in ZIP64 extras.
+        assert_eq!(&bytes[18..26], &[0xff; 8]);
+        let mut archive = zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+        super::validate_archive(&mut archive).unwrap();
+        let mut restored = Vec::new();
+        archive
+            .by_name("media.db")
+            .unwrap()
+            .read_to_end(&mut restored)
+            .unwrap();
+        assert_eq!(restored, b"small ZIP64 fixture");
+    }
+
+    #[test]
+    fn archive_limits_share_the_export_import_validator() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bundle.zip");
+        let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        zip.start_file("media.db", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"database").unwrap();
+        zip.finish().unwrap();
+        for (entries, entry_bytes, expanded) in [(0, 100, 100), (10, 1, 100), (10, 100, 1)] {
+            let mut archive = zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+            assert!(super::validate_archive_with_limits(
+                &mut archive,
+                entries,
+                entry_bytes,
+                expanded
+            )
+            .is_err());
+        }
+        assert!(super::validate_archive(
+            &mut zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap()
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn interrupted_restore_recovery_selects_the_generation_at_the_commit_boundary() {
+        for phase in [
+            super::RestorePhase::Swapping,
+            super::RestorePhase::Committed,
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            fs::write(root.join("media.db"), b"new database").unwrap();
+            fs::write(root.join("media.db.restore-previous"), b"old database").unwrap();
+            fs::create_dir(root.join("thumbs")).unwrap();
+            fs::write(root.join("thumbs/new.jpg"), b"new").unwrap();
+            fs::create_dir(root.join("thumbs.restore-previous")).unwrap();
+            fs::write(root.join("thumbs.restore-previous/old.jpg"), b"old").unwrap();
+            super::write_restore_journal(
+                root,
+                &super::RestoreJournal {
+                    phase,
+                    previous_db_existed: true,
+                    previous_thumbs_existed: true,
+                },
+            )
+            .unwrap();
+            super::recover_interrupted_restore(root).unwrap();
+            let committed = phase == super::RestorePhase::Committed;
+            assert_eq!(
+                fs::read(root.join("media.db")).unwrap(),
+                if committed {
+                    b"new database"
+                } else {
+                    b"old database"
+                }
+            );
+            assert_eq!(root.join("thumbs/new.jpg").exists(), committed);
+            assert_eq!(root.join("thumbs/old.jpg").exists(), !committed);
+            assert!(!super::restore_journal_path(root).exists());
+            super::recover_interrupted_restore(root).unwrap();
+        }
     }
 }

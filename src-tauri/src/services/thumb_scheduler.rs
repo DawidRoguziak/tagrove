@@ -25,6 +25,7 @@ pub enum ThumbnailPriority {
 
 #[derive(Debug, Clone)]
 pub struct ThumbnailTask {
+    pub operation: Option<crate::services::db_pool::OperationPermit>,
     pub asset_id: i64,
     pub source_path: PathBuf,
     pub target_path: PathBuf,
@@ -376,6 +377,7 @@ mod tests {
     fn task(asset_id: i64, target: &str) -> ThumbnailTask {
         let source = format!("C:/tmp/source-{asset_id}.jpg");
         ThumbnailTask {
+            operation: None,
             asset_id,
             source_path: source.clone().into(),
             target_path: target.into(),

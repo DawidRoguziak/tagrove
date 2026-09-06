@@ -206,7 +206,9 @@ fn apply_file_mutation_batch(
             .staging_path
             .as_ref()
             .context("rename has no staging path")?;
-        if let Err(error) = rename_no_replace(staging_path, Path::new(new_path)) {
+        let moved = rename_no_replace(staging_path, Path::new(new_path));
+        prepared[index].finalized = moved.as_ref().map_or_else(|error| error.moved, |_| true);
+        if let Err(error) = moved {
             let mut rollback_failures = rollback_files(&mut prepared);
             clear_restored_journal(conn, &operation_id, &mut prepared, &mut rollback_failures);
             return rollback_summary(
@@ -379,8 +381,6 @@ fn validate_and_prepare(
             | DuplicateResolutionChangeInput::Delete { asset_id, .. } => *asset_id,
         })
         .collect::<HashSet<_>>();
-    let database_paths = db::list_asset_paths(conn)?;
-    let asset_root_mappings = db::list_backup_asset_root_mappings(conn)?;
 
     for change in &input.changes {
         let (asset_id, expected_path, expected_record_version) = match change {
@@ -418,7 +418,7 @@ fn validate_and_prepare(
             validate_source_within_assigned_root(
                 asset.id,
                 Path::new(&asset.path),
-                &asset_root_mappings,
+                &db::assigned_asset_roots(conn, asset.id)?,
             )?;
         }
         let action = match change {
@@ -442,9 +442,12 @@ fn validate_and_prepare(
                 if source_paths.contains(&target_key) {
                     anyhow::bail!("rename targets cannot be another source in the same batch");
                 }
-                if database_paths.iter().any(|row| {
-                    !changed_ids.contains(&row.id) && row.path.eq_ignore_ascii_case(&new_path)
-                }) {
+                if db::asset_paths_for_name(conn, &normalized.to_lowercase())?
+                    .iter()
+                    .any(|row| {
+                        !changed_ids.contains(&row.id) && row.path.eq_ignore_ascii_case(&new_path)
+                    })
+                {
                     anyhow::bail!("target path is already indexed: {new_path}");
                 }
                 match fs::symlink_metadata(&new_path) {
@@ -501,49 +504,35 @@ fn validate_final_duplicate_names(
         .values()
         .filter_map(Clone::clone)
         .collect::<HashSet<_>>();
+    let mut touched_keys = renamed_keys.clone();
     if enforce_duplicate_resolution {
-        for group in db::list_duplicate_groups(conn)? {
-            if !group
-                .assets
-                .iter()
-                .any(|asset| changes.contains_key(&asset.id))
-            {
-                continue;
-            }
-            let mut names = HashSet::new();
-            for asset in group.assets {
-                let name = match changes.get(&asset.id) {
-                    Some(None) => continue,
-                    Some(Some(name)) => name.clone(),
-                    None => Path::new(&asset.path)
-                        .file_name()
-                        .and_then(OsStr::to_str)
-                        .unwrap_or("")
-                        .to_lowercase(),
-                };
-                if !names.insert(name) {
-                    anyhow::bail!("duplicate group remains unresolved after the batch");
-                }
-            }
+        for change in &input.changes {
+            let path = match change {
+                DuplicateResolutionChangeInput::Rename { expected_path, .. }
+                | DuplicateResolutionChangeInput::Delete { expected_path, .. } => expected_path,
+            };
+            touched_keys.insert(
+                Path::new(path)
+                    .file_name()
+                    .and_then(OsStr::to_str)
+                    .unwrap_or("")
+                    .to_lowercase(),
+            );
         }
     }
-    let mut renamed_key_counts = HashMap::<String, usize>::new();
-    for asset in db::list_asset_paths(conn)? {
-        let final_name = match changes.get(&asset.id) {
-            Some(None) => continue,
-            Some(Some(name)) => name.clone(),
-            None => Path::new(&asset.path)
-                .file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or("")
-                .to_lowercase(),
-        };
-        if renamed_keys.contains(&final_name) {
-            *renamed_key_counts.entry(final_name).or_default() += 1;
+    for key in touched_keys {
+        let existing = db::asset_paths_for_name(conn, &key)?;
+        let remaining = existing
+            .iter()
+            .filter(|asset| !changes.contains_key(&asset.id))
+            .count();
+        let renamed = changes
+            .values()
+            .filter(|name| name.as_ref() == Some(&key))
+            .count();
+        if remaining + renamed > 1 {
+            anyhow::bail!("duplicate resolution would leave or create another duplicate file name");
         }
-    }
-    if renamed_key_counts.values().any(|count| *count > 1) {
-        anyhow::bail!("duplicate resolution would create another duplicate file name");
     }
     Ok(())
 }
@@ -583,11 +572,16 @@ fn rollback_files(prepared: &mut [PreparedMutation]) -> HashSet<i64> {
             _ => staging_path,
         };
         match fs::symlink_metadata(current) {
-            Ok(_) if rename_no_replace(current, Path::new(&item.asset.path)).is_err() => {
-                failures.insert(item.asset.id);
-                item.rollback_path = Some(current.to_path_buf());
+            Ok(_) => {
+                if let Err(error) = rename_no_replace(current, Path::new(&item.asset.path)) {
+                    failures.insert(item.asset.id);
+                    item.rollback_path = Some(if error.moved {
+                        PathBuf::from(&item.asset.path)
+                    } else {
+                        current.to_path_buf()
+                    });
+                }
             }
-            Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(_) => {
                 failures.insert(item.asset.id);
@@ -849,11 +843,26 @@ fn platform_rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
     }
 }
 
-fn rename_no_replace(source: &Path, target: &Path) -> io::Result<()> {
-    platform_rename_no_replace(source, target)?;
-    sync_parent_directory(source)?;
+#[derive(Debug)]
+struct MoveError {
+    moved: bool,
+    error: io::Error,
+}
+impl std::fmt::Display for MoveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.error.fmt(f)
+    }
+}
+impl std::error::Error for MoveError {}
+
+fn rename_no_replace(source: &Path, target: &Path) -> Result<(), MoveError> {
+    platform_rename_no_replace(source, target).map_err(|error| MoveError {
+        moved: false,
+        error,
+    })?;
+    sync_parent_directory(source).map_err(|error| MoveError { moved: true, error })?;
     if source.parent() != target.parent() {
-        sync_parent_directory(target)?;
+        sync_parent_directory(target).map_err(|error| MoveError { moved: true, error })?;
     }
     Ok(())
 }
@@ -868,6 +877,16 @@ fn remove_file_and_sync_parent(path: &Path) -> io::Result<()> {
 
 #[cfg(unix)]
 fn sync_parent_directory(path: &Path) -> io::Result<()> {
+    #[cfg(test)]
+    if SYNC_FAILURE_AFTER.with(|remaining| {
+        let count = remaining.get();
+        if count > 0 {
+            remaining.set(count - 1);
+        }
+        count == 1
+    }) {
+        return Err(io::Error::other("injected directory sync failure"));
+    }
     fs::File::open(
         path.parent()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?,
@@ -879,6 +898,9 @@ fn sync_parent_directory(path: &Path) -> io::Result<()> {
 fn sync_parent_directory(_path: &Path) -> io::Result<()> {
     Ok(())
 }
+
+#[cfg(test)]
+thread_local! { static SYNC_FAILURE_AFTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
 
 #[cfg(test)]
 mod tests {
@@ -960,5 +982,47 @@ mod tests {
             .to_string()
             .contains("escapes the source's scan roots"));
         assert!(outside.join("staged.jpg").exists());
+    }
+    #[test]
+    fn staging_and_final_move_sync_failures_restore_source_and_metadata() {
+        for fail_after in [1, 2] {
+            let dir = tempdir().unwrap();
+            let source = dir.path().join("source.jpg");
+            fs::write(&source, b"source").unwrap();
+            let conn = db::open_connection(&dir.path().join("media.db")).unwrap();
+            conn.pragma_update(None, "synchronous", "FULL").unwrap();
+            db::init_schema(&conn).unwrap();
+            db::add_scan_root(&conn, dir.path().to_str().unwrap()).unwrap();
+            db::upsert_scanned_asset(
+                &conn,
+                &NewAsset {
+                    path: source.to_string_lossy().into(),
+                    kind: "image".into(),
+                    size_bytes: 6,
+                    modified_at: 1,
+                    width: None,
+                    height: None,
+                    duration_ms: None,
+                    thumb_path: None,
+                },
+                1,
+                dir.path().to_str().unwrap(),
+                1,
+            )
+            .unwrap();
+            super::SYNC_FAILURE_AFTER.with(|remaining| remaining.set(fail_after));
+            assert!(
+                super::rename_asset(&conn, &dir.path().join("thumbs"), 1, "target.jpg".into())
+                    .is_err()
+            );
+            assert_eq!(fs::read(&source).unwrap(), b"source");
+            assert!(!dir.path().join("target.jpg").exists());
+            assert_eq!(
+                db::get_file_mutation_asset(&conn, 1).unwrap().unwrap().path,
+                source.to_string_lossy()
+            );
+            assert!(db::list_pending_file_operations(&conn).unwrap().is_empty());
+            super::recover_pending_file_operations(&conn).unwrap();
+        }
     }
 }

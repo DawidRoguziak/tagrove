@@ -23,14 +23,16 @@ The local generation rejects late frontend responses. The backend also registers
 
 ## Backend session and page contract
 
-`AssetQueryManager` registers each start in arrival order before blocking work is scheduled; the registration token plus the client generation define the process-wide latest request. It reads the current library revision, builds the ordered ID list, and materializes the first page inside one deferred read transaction, so a ready response reflects a single SQLite snapshot. On a cache miss it asks SQLite for the complete ordered list of matching asset IDs, checking a cooperative cancellation flag periodically so a superseded request aborts mid-build instead of finishing wasted work. That frozen ID vector, rather than full rows, is the session snapshot. The ordering keeps matching media-group members adjacent, orders group buckets by their newest matching member, and then applies group order, modification time, and ID tie-breakers.
+`AssetQueryManager` registers each start in arrival order before blocking work is scheduled; one authoritative registration token defines the runtime's latest request. It reads the current library revision, builds the ordered ID list, and materializes the first page inside one deferred read transaction, so a ready response reflects a single SQLite snapshot. On a cache miss it asks SQLite for the complete ordered list of matching asset IDs, using a SQLite progress callback during execution and sorting as well as row-loop checks so a superseded request stops work. That frozen ID vector, rather than full rows, is the session snapshot. The ordering keeps matching media-group members adjacent, orders group buckets by their newest matching member, and then applies group order, modification time, and ID tie-breakers.
 
-The process-wide cache has these bounds:
+The application-owned cache has these bounds:
 
-- at most four sessions;
+- at most four sessions and 64 MiB of retained ID-vector capacity;
 - expiry after five minutes without cache access;
 - most-recently-accessed promotion for lookup by key or session ID; and
 - reuse of an equal normalized-filter/revision key, including reuse of its session ID.
+
+A separate cache epoch changes on clear. Insertion checks both the request token and epoch under the cache mutex, preventing an in-flight build from repopulating a cleared cache. SQLite progress callbacks are removed before connection reuse. The retained-ID budget excludes transient SQLite allocations and vectors still held by in-flight readers; the [backend measurements](../development/backend-refactor-verification.md) report these separately.
 
 The [IPC query states](../architecture/ipc-contract.md#query-session-states) define `ready`, `superseded`, and `stale`. The frontend stores or merges a current `ready` page, ignores a `superseded` start while retaining the old cache, and starts a new query for a `stale` page.
 
@@ -95,7 +97,7 @@ The database revision is the authoritative invalidation epoch. Scans and query-v
 | --- | --- |
 | Applied filters change | The controller effect calls asset `refresh`; resubmitting identical applied filters calls it directly. A ready first page replaces the old cache. |
 | Scan/rescan, scan-root removal, CSV import, duplicate rename/delete | The settings workflow calls `refreshLibrary`, which refreshes assets and known tags together. Root removal first resets the thumbnail queue. |
-| Database restore | The backend closes the maintenance gate, clears the process-wide query manager, drains/invalidates the old database pool, and clears again after successful installation. The frontend invalidates tag/details identity state inside its mutation barrier, resets the thumbnail queue and map, refreshes roots, then refreshes assets and known tags. |
+| Database restore | The backend closes admission, drains admitted operations, closes idle pooled connections, and clears query sessions before replacement. The frontend invalidates tag/details identity state inside its mutation barrier, resets the thumbnail queue and map, refreshes roots, then refreshes assets and known tags. |
 | Clear library | After backend success, the frontend immediately resets the thumbnail queue, thumbnails, cached assets, total, offset, and known tags. It does not need to query the now-empty library. |
 | Lightbox delete | Removes the loaded object and selection locally, refreshes known tags, then starts a fresh asset query. |
 | Bulk favorite toggle | Uses all selected IDs, patches loaded summaries and both detail caches, and refreshes after either toggle direction in a favorites-only query or after missing IDs. Existing selected IDs survive the refresh. |

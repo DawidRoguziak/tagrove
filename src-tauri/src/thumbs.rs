@@ -381,7 +381,9 @@ fn run_command_status_with_timeout(
     timeout: Duration,
 ) -> anyhow::Result<ExitStatus> {
     let mut child = command.spawn()?;
-    match wait_for_exit_with_timeout(&mut child, timeout)? {
+    match wait_for_exit_with_timeout(&mut child, timeout)
+        .inspect_err(|_| terminate_child(&mut child))?
+    {
         Some(status) => Ok(status),
         None => {
             terminate_child(&mut child);
@@ -398,16 +400,50 @@ fn run_command_output_with_timeout(
     timeout: Duration,
 ) -> anyhow::Result<Output> {
     let mut child = command.spawn()?;
-    match wait_for_exit_with_timeout(&mut child, timeout)? {
-        Some(_) => child.wait_with_output().map_err(Into::into),
-        None => {
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    thread::scope(|scope| {
+        let stdout_reader = scope.spawn(move || drain_diagnostics(stdout));
+        let stderr_reader = scope.spawn(move || drain_diagnostics(stderr));
+        let status = wait_for_exit_with_timeout(&mut child, timeout);
+        if !matches!(status, Ok(Some(_))) {
             terminate_child(&mut child);
-            Err(anyhow::anyhow!(
+        }
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| anyhow::anyhow!("stdout reader panicked"))??;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| anyhow::anyhow!("stderr reader panicked"))??;
+        let status = status?.ok_or_else(|| {
+            anyhow::anyhow!(
                 "video tool execution timed out after {}ms",
                 timeout.as_millis()
-            ))
+            )
+        })?;
+        Ok(Output {
+            status,
+            stdout,
+            stderr,
+        })
+    })
+}
+
+fn drain_diagnostics(reader: Option<impl std::io::Read>) -> std::io::Result<Vec<u8>> {
+    const MAX_DIAGNOSTICS: usize = 64 * 1024;
+    let mut retained = Vec::new();
+    if let Some(mut reader) = reader {
+        let mut buffer = [0; 8192];
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            let keep = count.min(MAX_DIAGNOSTICS - retained.len());
+            retained.extend_from_slice(&buffer[..keep]);
         }
     }
+    Ok(retained)
 }
 
 fn wait_for_exit_with_timeout(
@@ -578,5 +614,35 @@ mod tests {
         assert!(probe_video_duration_ms(ffmpeg, &video).is_some());
         create_video_thumb(ffmpeg, &video, &thumb, 0.1).expect("render video thumbnail");
         assert!(thumb.is_file());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn drains_both_pipes_beyond_capacity_and_caps_retained_output() {
+        let mut command = std::process::Command::new("sh");
+        command
+            .args([
+                "-c",
+                "head -c 262144 /dev/zero; head -c 262144 /dev/zero >&2",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let output =
+            super::run_command_output_with_timeout(&mut command, std::time::Duration::from_secs(3))
+                .unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout.len(), 65536);
+        assert_eq!(output.stderr.len(), 65536);
+        let mut command = std::process::Command::new("sh");
+        command
+            .args(["-c", "while :; do :; done"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let started = std::time::Instant::now();
+        assert!(super::run_command_output_with_timeout(
+            &mut command,
+            std::time::Duration::from_millis(30)
+        )
+        .is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 }

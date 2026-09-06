@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tauri::{Manager, State};
+use tauri::Manager;
 
 use crate::{
     app::{locks::with_scan_and_thumb_lock, locks::with_scan_lock, state::AppState},
@@ -14,15 +14,15 @@ use crate::{
 pub async fn scan_folder(path: String, app: tauri::AppHandle) -> Result<ScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_scan_lock(&state, || {
+        with_scan_lock(&state, |permit| {
             let normalized = normalize_root_path(&path);
             let root = PathBuf::from(&normalized);
             if !root.exists() || !root.is_dir() {
                 return Err("Folder path does not exist or is not a directory".into());
             }
-            let conn = db::open_connection(&state.db_path)?;
+            let conn = permit.connection()?;
             db::add_scan_root(&conn, &normalized)?;
-            scan_service::scan_roots(&[normalized], &state, &app)
+            scan_service::scan_roots(&[normalized], &state, permit, &app)
         })
         .map_err(|e| e.to_string())
     })
@@ -31,9 +31,19 @@ pub async fn scan_folder(path: String, app: tauri::AppHandle) -> Result<ScanSumm
 }
 
 #[tauri::command]
-pub fn list_scan_roots(state: State<AppState>) -> Result<Vec<ScanRoot>, String> {
+pub async fn list_scan_roots(app: tauri::AppHandle) -> Result<Vec<ScanRoot>, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        list_scan_roots_service(&state)
+    })
+    .await
+    .map_err(|e| format!("list_scan_roots worker failed: {e}"))?
+}
+
+fn list_scan_roots_service(state: &AppState) -> Result<Vec<ScanRoot>, String> {
     (|| {
-        let conn = db::open_connection(&state.db_path)?;
+        let conn = state.database.admit()?.connection()?;
         let roots = db::list_scan_root_settings(&conn)?;
         Ok(scan_service::sort_scan_roots_by_created_desc(roots))
     })()
@@ -41,7 +51,17 @@ pub fn list_scan_roots(state: State<AppState>) -> Result<Vec<ScanRoot>, String> 
 }
 
 #[tauri::command]
-pub fn add_scan_root(path: String, state: State<AppState>) -> Result<(), String> {
+pub async fn add_scan_root(path: String, app: tauri::AppHandle) -> Result<(), String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        add_scan_root_service(path, &state)
+    })
+    .await
+    .map_err(|e| format!("add_scan_root worker failed: {e}"))?
+}
+
+fn add_scan_root_service(path: String, state: &AppState) -> Result<(), String> {
     (|| {
         let normalized = normalize_root_path(&path);
         let root = PathBuf::from(&normalized);
@@ -49,7 +69,7 @@ pub fn add_scan_root(path: String, state: State<AppState>) -> Result<(), String>
             return Err("Folder path does not exist or is not a directory".into());
         }
 
-        let conn = db::open_connection(&state.db_path)?;
+        let conn = state.database.admit()?.connection()?;
         db::add_scan_root(&conn, &normalized)?;
         Ok(())
     })()
@@ -57,10 +77,23 @@ pub fn add_scan_root(path: String, state: State<AppState>) -> Result<(), String>
 }
 
 #[tauri::command]
-pub fn remove_scan_root(path: String, state: State<AppState>) -> Result<RemoveRootSummary, String> {
-    with_scan_and_thumb_lock(&state, || {
+pub async fn remove_scan_root(
+    path: String,
+    app: tauri::AppHandle,
+) -> Result<RemoveRootSummary, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        remove_scan_root_service(path, &state)
+    })
+    .await
+    .map_err(|e| format!("remove_scan_root worker failed: {e}"))?
+}
+
+fn remove_scan_root_service(path: String, state: &AppState) -> Result<RemoveRootSummary, String> {
+    with_scan_and_thumb_lock(state, |permit| {
         let normalized = normalize_root_path(&path);
-        let conn = db::open_connection(&state.db_path)?;
+        let conn = permit.connection()?;
 
         // The revision bump is committed atomically with the removal inside
         // remove_scan_root_and_orphan_assets.
@@ -80,10 +113,10 @@ pub fn remove_scan_root(path: String, state: State<AppState>) -> Result<RemoveRo
 pub async fn rescan_all_roots(app: tauri::AppHandle) -> Result<ScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_scan_lock(&state, || {
-            let conn = db::open_connection(&state.db_path)?;
+        with_scan_lock(&state, |permit| {
+            let conn = permit.connection()?;
             let roots = db::list_scan_roots(&conn)?;
-            scan_service::scan_roots(&roots, &state, &app)
+            scan_service::scan_roots(&roots, &state, permit, &app)
         })
         .map_err(|e| e.to_string())
     })
@@ -92,12 +125,30 @@ pub async fn rescan_all_roots(app: tauri::AppHandle) -> Result<ScanSummary, Stri
 }
 
 #[tauri::command]
-pub fn set_scan_root_auto_scan(
+pub async fn set_scan_root_auto_scan(
     path: String,
     enabled: bool,
-    state: State<AppState>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let conn = db::open_connection(&state.db_path).map_err(|e| e.to_string())?;
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        set_scan_root_auto_scan_service(path, enabled, &state)
+    })
+    .await
+    .map_err(|e| format!("set_scan_root_auto_scan worker failed: {e}"))?
+}
+
+fn set_scan_root_auto_scan_service(
+    path: String,
+    enabled: bool,
+    state: &AppState,
+) -> Result<(), String> {
+    let conn = state
+        .database
+        .admit()
+        .and_then(|permit| permit.connection())
+        .map_err(|e| e.to_string())?;
     db::set_scan_root_auto_scan(&conn, &normalize_root_path(&path), enabled)
         .map_err(|e| e.to_string())
 }
@@ -112,9 +163,11 @@ pub async fn scan_startup_roots(app: tauri::AppHandle) -> Result<Option<ScanSumm
     }
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_scan_lock(&state, || scan_service::scan_roots(&roots, &state, &app))
-            .map(Some)
-            .map_err(|e| e.to_string())
+        with_scan_lock(&state, |permit| {
+            scan_service::scan_roots(&roots, &state, permit, &app)
+        })
+        .map(Some)
+        .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("startup scan worker failed: {e}"))?
@@ -134,10 +187,11 @@ mod tests {
         app::state::AppState, db, models::NewAsset, services::thumb_scheduler::ThumbnailScheduler,
     };
 
-    use super::{add_scan_root, list_scan_roots, remove_scan_root};
+    use super::{add_scan_root_service, list_scan_roots_service, remove_scan_root_service};
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
         AppState {
+            database: crate::services::db_pool::DatabaseRuntime::new(db_path.to_path_buf()),
             db_path: db_path.to_path_buf(),
             thumbs_dir: thumbs_dir.to_path_buf(),
             ffmpeg_path: PathBuf::from("ffmpeg"),
@@ -147,12 +201,7 @@ mod tests {
             thumbnail_render_all_running: AtomicBool::new(false),
             thumbnail_render_all_cancel_requested: AtomicBool::new(false),
             thumbnail_generation: std::sync::atomic::AtomicU64::new(0),
-            thumbnail_latest_request_id: std::sync::atomic::AtomicU64::new(0),
         }
-    }
-
-    fn as_state<'a>(state: &'a AppState) -> tauri::State<'a, AppState> {
-        unsafe { std::mem::transmute::<&'a AppState, tauri::State<'a, AppState>>(state) }
     }
 
     fn new_asset(path: &Path, modified_at: i64, thumb_path: Option<&Path>) -> NewAsset {
@@ -185,13 +234,13 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        let error = add_scan_root(invalid_path, as_state(&state)).expect_err("must fail");
+        let error = add_scan_root_service(invalid_path, &state).expect_err("must fail");
         assert!(
             error.contains("does not exist") || error.contains("not a directory"),
             "unexpected error: {error}"
         );
 
-        let roots = list_scan_roots(as_state(&state)).expect("list roots");
+        let roots = list_scan_roots_service(&state).expect("list roots");
         assert!(roots.is_empty());
     }
 
@@ -208,17 +257,17 @@ mod tests {
         let scan_root = tmp.path().join("library");
         fs::create_dir_all(&scan_root).expect("create scan root");
         let state = create_test_state(&db_path, &thumbs_dir);
-        add_scan_root(
+        add_scan_root_service(
             format!(
                 "  {}{}",
                 scan_root.to_string_lossy(),
                 std::path::MAIN_SEPARATOR
             ),
-            as_state(&state),
+            &state,
         )
         .expect("add valid root");
 
-        let roots = list_scan_roots(as_state(&state)).expect("list roots");
+        let roots = list_scan_roots_service(&state).expect("list roots");
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].path, scan_root.to_string_lossy().to_string());
         assert!(!roots[0].auto_scan_on_startup);
@@ -248,14 +297,14 @@ mod tests {
             .expect("upsert asset");
 
         let state = create_test_state(&db_path, &thumbs_dir);
-        let summary = remove_scan_root(scan_root.to_string_lossy().to_string(), as_state(&state))
+        let summary = remove_scan_root_service(scan_root.to_string_lossy().to_string(), &state)
             .expect("remove root");
 
         assert_eq!(summary.removed_assets, 1);
         assert_eq!(summary.removed_thumbnails, 1);
         assert!(!thumb_file.exists());
 
-        let roots = list_scan_roots(as_state(&state)).expect("list roots");
+        let roots = list_scan_roots_service(&state).expect("list roots");
         assert!(roots.is_empty());
 
         let conn = db::open_connection(&db_path).expect("reopen db");

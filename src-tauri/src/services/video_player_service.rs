@@ -378,7 +378,14 @@ impl Default for VideoPlayerService {
 impl PlaybackWorker {
     fn run(&mut self, commands: mpsc::Receiver<WorkerCommand>) {
         loop {
-            match commands.recv_timeout(Duration::from_millis(10)) {
+            let command = if self.session.is_none() {
+                commands
+                    .recv()
+                    .map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+            } else {
+                commands.recv_timeout(Duration::from_millis(10))
+            };
+            match command {
                 #[cfg(test)]
                 Ok(WorkerCommand::Shutdown(done)) => {
                     let _ = self.stop();
@@ -499,9 +506,13 @@ impl PlaybackWorker {
             {
                 Err("video open was cancelled or superseded".to_string())
             } else {
-                self.mpv
-                    .set_property("pause", false)
-                    .and_then(|()| self.mpv.command("loadfile", &[path, "replace"]))
+                let (_, client) = self
+                    .session
+                    .as_ref()
+                    .ok_or("video event client is unavailable")?;
+                client
+                    .command_async(1, &["set", "pause", "no"])
+                    .and_then(|()| client.command_async(2, &["loadfile", path, "replace"]))
                     .map_err(|error| format!("libmpv could not open the video: {error}"))
             }
         };

@@ -1,13 +1,8 @@
 use std::sync::{PoisonError, RwLockReadGuard, RwLockWriteGuard};
 
-use tauri::State;
+use crate::services::db_pool::{MaintenancePermit, OperationPermit};
 
-use crate::{
-    app::state::AppState,
-    db,
-    error::AppResult,
-    services::{asset_query_service, db_pool},
-};
+use crate::{app::state::AppState, error::AppResult};
 
 // Lock guards recover from poisoning instead of failing forever: once a
 // panicked holder poisoned a mutex, every later command would otherwise be
@@ -36,52 +31,48 @@ fn recover_thumb_write<'a>(
 }
 
 pub fn with_scan_lock<T>(
-    state: &State<AppState>,
-    action: impl FnOnce() -> AppResult<T>,
+    state: &AppState,
+    action: impl FnOnce(&OperationPermit) -> AppResult<T>,
 ) -> AppResult<T> {
-    let _database_guard = db::database_access_guard()?;
+    let permit = state.database.admit()?;
     let _guard = recover_scan_mutex(state.scan_lock.lock())?;
-    action()
+    action(&permit)
 }
 
 pub fn with_thumb_lock<T>(
-    state: &State<AppState>,
-    action: impl FnOnce() -> AppResult<T>,
+    state: &AppState,
+    action: impl FnOnce(&OperationPermit) -> AppResult<T>,
 ) -> AppResult<T> {
-    let _database_guard = db::database_access_guard()?;
+    let permit = state.database.admit()?;
     let _guard = recover_thumb_write(state.thumb_lock.write())?;
-    action()
+    action(&permit)
 }
 
 pub fn with_thumb_read_lock<T>(
-    state: &State<AppState>,
-    action: impl FnOnce() -> AppResult<T>,
+    state: &AppState,
+    action: impl FnOnce(&OperationPermit) -> AppResult<T>,
 ) -> AppResult<T> {
-    let _database_guard = db::database_access_guard()?;
+    let permit = state.database.admit()?;
     let _guard = recover_thumb_read(state.thumb_lock.read())?;
-    action()
+    action(&permit)
 }
 
 pub fn with_scan_and_thumb_lock<T>(
-    state: &State<AppState>,
-    action: impl FnOnce() -> AppResult<T>,
+    state: &AppState,
+    action: impl FnOnce(&OperationPermit) -> AppResult<T>,
 ) -> AppResult<T> {
-    let _database_guard = db::database_access_guard()?;
+    let permit = state.database.admit()?;
     let _scan_guard = recover_scan_mutex(state.scan_lock.lock())?;
     let _thumb_guard = recover_thumb_write(state.thumb_lock.write())?;
-    action()
+    action(&permit)
 }
 
 pub fn with_database_maintenance<T>(
-    state: &State<AppState>,
-    action: impl FnOnce() -> AppResult<T>,
+    state: &AppState,
+    action: impl FnOnce(&MaintenancePermit) -> AppResult<T>,
 ) -> AppResult<T> {
-    let maintenance_guard = db::begin_database_maintenance()?;
-    db_pool::invalidate(&state.db_path);
-    asset_query_service::manager().clear();
-    maintenance_guard.wait_for_connections()?;
-
+    let permit = state.database.maintenance()?;
     let _scan_guard = recover_scan_mutex(state.scan_lock.lock())?;
     let _thumb_guard = recover_thumb_write(state.thumb_lock.write())?;
-    action()
+    action(&permit)
 }

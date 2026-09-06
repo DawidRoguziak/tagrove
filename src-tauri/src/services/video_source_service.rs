@@ -4,13 +4,12 @@ use anyhow::Context;
 
 use crate::db;
 
-pub fn resolve_video_path(db_path: &Path, asset_id: i64) -> anyhow::Result<PathBuf> {
+pub fn resolve_video_path(conn: &rusqlite::Connection, asset_id: i64) -> anyhow::Result<PathBuf> {
     if asset_id <= 0 {
         anyhow::bail!("asset id must be positive");
     }
 
-    let conn = db::open_connection_read_only(db_path)?;
-    let asset = db::get_video_asset_source(&conn, asset_id)?
+    let asset = db::get_video_asset_source(conn, asset_id)?
         .with_context(|| format!("asset {asset_id} not found"))?;
     if asset.kind != "video" {
         anyhow::bail!("asset {asset_id} is not a video");
@@ -90,14 +89,15 @@ mod tests {
         drop(conn);
 
         assert_eq!(
-            resolve_video_path(&db_path, 1).expect("authorized source"),
+            resolve_video_path(&db::open_connection_read_only(&db_path).unwrap(), 1)
+                .expect("authorized source"),
             video.canonicalize().expect("canonical source")
         );
-        assert!(resolve_video_path(&db_path, 0).is_err());
-        assert!(resolve_video_path(&db_path, 99).is_err());
-        assert!(resolve_video_path(&db_path, 2).is_err());
-        assert!(resolve_video_path(&db_path, 3).is_err());
-        assert!(resolve_video_path(&db_path, 4).is_err());
+        assert!(resolve_video_path(&db::open_connection_read_only(&db_path).unwrap(), 0).is_err());
+        assert!(resolve_video_path(&db::open_connection_read_only(&db_path).unwrap(), 99).is_err());
+        assert!(resolve_video_path(&db::open_connection_read_only(&db_path).unwrap(), 2).is_err());
+        assert!(resolve_video_path(&db::open_connection_read_only(&db_path).unwrap(), 3).is_err());
+        assert!(resolve_video_path(&db::open_connection_read_only(&db_path).unwrap(), 4).is_err());
     }
 
     #[cfg(unix)]
@@ -120,6 +120,6 @@ mod tests {
         seed_asset(&conn, 1, &link, "video", Some(&root));
         drop(conn);
 
-        assert!(resolve_video_path(&db_path, 1).is_err());
+        assert!(resolve_video_path(&db::open_connection_read_only(&db_path).unwrap(), 1).is_err());
     }
 }

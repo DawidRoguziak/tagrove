@@ -306,3 +306,15 @@ bun run test:e2e:tauri -- --spec ./e2e/specs/startup-scan.e2e.js
 ```
 
 The focused frontend regression is `useStartupScan.test.tsx`; Rust tests cover launch-snapshot contention, schema migration, preference persistence, and old/new backup compatibility with root remapping.
+
+## Backend runtime regressions
+
+`backend_runtime.rs` exercises precise fingerprint/version coupling, version-2 failure migration, dedicated FULL-synchronous connections, and a real 514-file scan across batching and overlapping roots. Unit tests cover maintenance admission/draining, pool callback cleanup, query cache budget/epoch, stale thumbnail stream publication and frontend reload, directory-sync failures after successful moves, disk-staged CSV row order/clears, and bounded subprocess diagnostics/timeouts.
+
+Run the opt-in metadata measurements alone so SQLite's process-wide allocator counters are attributable:
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml --test backend_runtime -- --ignored --nocapture --test-threads=1
+```
+
+The fixtures contain 1,000 and 10,000 metadata rows and no media collection. The output distinguishes Rust ID-vector capacity from additional peak SQLite allocation and checks indexed filename lookup plus seven-row thumbnail pages. See [the verification record](backend-refactor-verification.md) for measured results and desktop limitations.

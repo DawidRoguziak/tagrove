@@ -12,7 +12,7 @@ use crate::{
         DuplicateResolutionBatchSummary, DuplicateScanSummary, RenameAssetSummary,
         SetAssetTagsSummary, StartAssetQueryResult, TagListPage,
     },
-    services::{asset_mutation_service, asset_query_service, db_pool, progress::emit_progress},
+    services::{asset_mutation_service, asset_query_service, progress::emit_progress},
     utils::tags::normalize_and_validate_tags,
 };
 
@@ -43,13 +43,19 @@ pub async fn start_asset_query(
     page_size: usize,
     state: State<'_, AppState>,
 ) -> Result<StartAssetQueryResult, String> {
-    let db_path = state.db_path.clone();
+    let database = state.database.clone();
     let filters = normalize_query_filters(tags_and, tags_not, kind, favorites_only, meta_filter)?;
     // Register arrival order before scheduling blocking work so a slower
     // scheduler cannot invert supersession between two requests.
-    let request_id = asset_query_service::manager().begin_request(generation);
+    let request_id = database.queries.begin_request(generation);
     tauri::async_runtime::spawn_blocking(move || {
-        asset_query_service::manager().start(&db_path, filters, page_size, request_id, generation)
+        database.queries.start(
+            &database.admit()?,
+            filters,
+            page_size,
+            request_id,
+            generation,
+        )
     })
     .await
     .map_err(|e| format!("asset query worker failed: {e}"))?
@@ -63,9 +69,11 @@ pub async fn get_asset_query_page(
     limit: usize,
     state: State<'_, AppState>,
 ) -> Result<AssetQueryPageResult, String> {
-    let db_path = state.db_path.clone();
+    let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        asset_query_service::manager().page(&db_path, session_id, offset, limit)
+        database
+            .queries
+            .page(&database.admit()?, session_id, offset, limit)
     })
     .await
     .map_err(|e| format!("asset page worker failed: {e}"))?
@@ -85,9 +93,9 @@ pub async fn get_asset_summaries_by_ids(
     state: State<'_, AppState>,
 ) -> Result<Vec<AssetSummary>, String> {
     validate_summary_batch(&asset_ids)?;
-    let db_path = state.db_path.clone();
+    let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = db_pool::connection(&db_path)?;
+        let conn = database.admit()?.connection()?;
         db::list_asset_summaries_by_ids(&conn, &asset_ids).map_err(Into::into)
     })
     .await
@@ -100,9 +108,9 @@ pub async fn get_asset_details(
     asset_id: i64,
     state: State<'_, AppState>,
 ) -> Result<Option<AssetDetails>, String> {
-    let db_path = state.db_path.clone();
+    let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let conn = db_pool::connection(&db_path)?;
+        let conn = database.admit()?.connection()?;
         db::get_asset_details(&conn, asset_id).map_err(Into::into)
     })
     .await
@@ -148,7 +156,7 @@ fn normalize_query_filters(
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn list_assets(
+pub async fn list_assets(
     offset: i64,
     limit: i64,
     tags_and: Vec<String>,
@@ -156,10 +164,39 @@ pub fn list_assets(
     kind: Option<String>,
     favorites_only: bool,
     meta_filter: Option<AssetMetaFilterInput>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<AssetPage, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        list_assets_service(
+            offset,
+            limit,
+            tags_and,
+            tags_not,
+            kind,
+            favorites_only,
+            meta_filter,
+            &state,
+        )
+    })
+    .await
+    .map_err(|e| format!("list_assets worker failed: {e}"))?
+}
+
+#[allow(clippy::too_many_arguments)]
+fn list_assets_service(
+    offset: i64,
+    limit: i64,
+    tags_and: Vec<String>,
+    tags_not: Vec<String>,
+    kind: Option<String>,
+    favorites_only: bool,
+    meta_filter: Option<AssetMetaFilterInput>,
+    state: &AppState,
 ) -> Result<AssetPage, String> {
     (|| {
-        let conn = db::open_connection(&state.db_path)?;
+        let conn = state.database.admit()?.connection()?;
         let normalized_tags = normalize_and_validate_tags(tags_and)?;
         let normalized_tags_not = normalize_and_validate_tags(tags_not)?;
         let normalized_kind = kind.and_then(|value| {
@@ -204,13 +241,27 @@ pub fn list_assets(
 }
 
 #[tauri::command]
-pub fn set_asset_tags(
+pub async fn set_asset_tags(
     asset_id: i64,
     tags: Vec<String>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<SetAssetTagsSummary, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        set_asset_tags_service(asset_id, tags, &state)
+    })
+    .await
+    .map_err(|e| format!("set_asset_tags worker failed: {e}"))?
+}
+
+fn set_asset_tags_service(
+    asset_id: i64,
+    tags: Vec<String>,
+    state: &AppState,
 ) -> Result<SetAssetTagsSummary, String> {
     (|| {
-        let mut conn = db::open_connection(&state.db_path)?;
+        let mut conn = state.database.admit()?.connection()?;
         let tags = normalize_and_validate_tags(tags)?;
         db::set_asset_tags_with_revision(&mut conn, asset_id, &tags).map_err(Into::into)
     })()
@@ -218,13 +269,27 @@ pub fn set_asset_tags(
 }
 
 #[tauri::command]
-pub fn merge_asset_tags_bulk(
+pub async fn merge_asset_tags_bulk(
     asset_ids: Vec<i64>,
     tags: Vec<String>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<BulkTagMergeSummary, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        merge_asset_tags_bulk_service(asset_ids, tags, &state)
+    })
+    .await
+    .map_err(|e| format!("merge_asset_tags_bulk worker failed: {e}"))?
+}
+
+fn merge_asset_tags_bulk_service(
+    asset_ids: Vec<i64>,
+    tags: Vec<String>,
+    state: &AppState,
 ) -> Result<BulkTagMergeSummary, String> {
     (|| {
-        let mut conn = db::open_connection(&state.db_path)?;
+        let mut conn = state.database.admit()?.connection()?;
         let mut seen = HashSet::new();
         let normalized_asset_ids = asset_ids
             .into_iter()
@@ -265,9 +330,9 @@ pub async fn toggle_assets_favorite_bulk(
     asset_ids: Vec<i64>,
     state: State<'_, AppState>,
 ) -> Result<crate::models::BulkFavoriteSummary, String> {
-    let db_path = state.db_path.clone();
+    let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut conn = db::open_connection(&db_path)?;
+        let mut conn = database.admit()?.connection()?;
         db::toggle_assets_favorite_bulk(&mut conn, &asset_ids).map_err(crate::error::AppError::from)
     })
     .await
@@ -276,13 +341,27 @@ pub async fn toggle_assets_favorite_bulk(
 }
 
 #[tauri::command]
-pub fn set_asset_favorite(
+pub async fn set_asset_favorite(
     asset_id: i64,
     is_favorite: bool,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        set_asset_favorite_service(asset_id, is_favorite, &state)
+    })
+    .await
+    .map_err(|e| format!("set_asset_favorite worker failed: {e}"))?
+}
+
+fn set_asset_favorite_service(
+    asset_id: i64,
+    is_favorite: bool,
+    state: &AppState,
 ) -> Result<(), String> {
     (|| {
-        let mut conn = db::open_connection(&state.db_path)?;
+        let mut conn = state.database.admit()?.connection()?;
         db::set_asset_favorite_with_revision(&mut conn, asset_id, is_favorite)?;
         Ok(())
     })()
@@ -290,14 +369,29 @@ pub fn set_asset_favorite(
 }
 
 #[tauri::command]
-pub fn set_asset_media_group(
+pub async fn set_asset_media_group(
     asset_id: i64,
     media_group_key: Option<String>,
     media_group_order: Option<f64>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        set_asset_media_group_service(asset_id, media_group_key, media_group_order, &state)
+    })
+    .await
+    .map_err(|e| format!("set_asset_media_group worker failed: {e}"))?
+}
+
+fn set_asset_media_group_service(
+    asset_id: i64,
+    media_group_key: Option<String>,
+    media_group_order: Option<f64>,
+    state: &AppState,
 ) -> Result<(), String> {
     (|| {
-        let mut conn = db::open_connection(&state.db_path)?;
+        let mut conn = state.database.admit()?.connection()?;
         let normalized_key = media_group_key
             .as_deref()
             .map(str::trim)
@@ -323,13 +417,27 @@ pub struct BulkMediaGroupUpdateInput {
 }
 
 #[tauri::command]
-pub fn set_assets_media_group_bulk(
+pub async fn set_assets_media_group_bulk(
     updates: Vec<BulkMediaGroupUpdateInput>,
     media_group_key: Option<String>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<BulkMediaGroupSummary, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        set_assets_media_group_bulk_service(updates, media_group_key, &state)
+    })
+    .await
+    .map_err(|e| format!("set_assets_media_group_bulk worker failed: {e}"))?
+}
+
+fn set_assets_media_group_bulk_service(
+    updates: Vec<BulkMediaGroupUpdateInput>,
+    media_group_key: Option<String>,
+    state: &AppState,
 ) -> Result<BulkMediaGroupSummary, String> {
     (|| {
-        let mut conn = db::open_connection(&state.db_path)?;
+        let mut conn = state.database.admit()?.connection()?;
         let normalized_key = media_group_key
             .as_deref()
             .map(str::trim)
@@ -366,23 +474,51 @@ pub fn set_assets_media_group_bulk(
 }
 
 #[tauri::command]
-pub fn list_tags(
+pub async fn list_tags(
     query: String,
     offset: i64,
     limit: i64,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+) -> Result<TagListPage, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        list_tags_service(query, offset, limit, &state)
+    })
+    .await
+    .map_err(|e| format!("list_tags worker failed: {e}"))?
+}
+
+fn list_tags_service(
+    query: String,
+    offset: i64,
+    limit: i64,
+    state: &AppState,
 ) -> Result<TagListPage, String> {
     (|| {
-        let conn = db::open_connection(&state.db_path)?;
+        let conn = state.database.admit()?.connection()?;
         db::list_tags_page(&conn, &query, offset, limit).map_err(Into::into)
     })()
     .map_err(|e: crate::error::AppError| e.to_string())
 }
 
 #[tauri::command]
-pub fn delete_asset(asset_id: i64, state: State<AppState>) -> Result<DeleteAssetSummary, String> {
-    with_scan_and_thumb_lock(&state, || {
-        let conn = db::open_connection(&state.db_path)?;
+pub async fn delete_asset(
+    asset_id: i64,
+    app: tauri::AppHandle,
+) -> Result<DeleteAssetSummary, String> {
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        delete_asset_service(asset_id, &state)
+    })
+    .await
+    .map_err(|e| format!("delete_asset worker failed: {e}"))?
+}
+
+fn delete_asset_service(asset_id: i64, state: &AppState) -> Result<DeleteAssetSummary, String> {
+    with_scan_and_thumb_lock(state, |permit| {
+        let conn = permit.durable_connection()?;
         Ok(asset_mutation_service::delete_asset(
             &conn,
             &state.thumbs_dir,
@@ -397,7 +533,7 @@ pub async fn find_duplicate_assets(app: tauri::AppHandle) -> Result<DuplicateSca
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
         (|| {
-            let conn = db::open_connection(&state.db_path)?;
+            let conn = state.database.admit()?.connection()?;
             let groups = db::list_duplicate_groups(&conn)?;
             let revision = db::current_library_revision(&conn)?;
             let total = groups.len();
@@ -437,13 +573,27 @@ pub async fn find_duplicate_assets(app: tauri::AppHandle) -> Result<DuplicateSca
 }
 
 #[tauri::command]
-pub fn rename_asset_file(
+pub async fn rename_asset_file(
     asset_id: i64,
     new_file_name: String,
-    state: State<AppState>,
+    app: tauri::AppHandle,
 ) -> Result<RenameAssetSummary, String> {
-    with_scan_and_thumb_lock(&state, || {
-        let conn = db::open_connection(&state.db_path)?;
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        rename_asset_file_service(asset_id, new_file_name, &state)
+    })
+    .await
+    .map_err(|e| format!("rename_asset_file worker failed: {e}"))?
+}
+
+fn rename_asset_file_service(
+    asset_id: i64,
+    new_file_name: String,
+    state: &AppState,
+) -> Result<RenameAssetSummary, String> {
+    with_scan_and_thumb_lock(state, |permit| {
+        let conn = permit.durable_connection()?;
         Ok(asset_mutation_service::rename_asset(
             &conn,
             &state.thumbs_dir,
@@ -455,12 +605,25 @@ pub fn rename_asset_file(
 }
 
 #[tauri::command]
-pub fn apply_duplicate_resolution_batch(
+pub async fn apply_duplicate_resolution_batch(
     input: DuplicateResolutionBatchInput,
-    state: State<AppState>,
+    app: tauri::AppHandle,
 ) -> Result<DuplicateResolutionBatchSummary, String> {
-    with_scan_and_thumb_lock(&state, || {
-        let conn = db::open_connection(&state.db_path)?;
+    let app_state = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app_state.state::<AppState>();
+        apply_duplicate_resolution_batch_service(input, &state)
+    })
+    .await
+    .map_err(|e| format!("apply_duplicate_resolution_batch worker failed: {e}"))?
+}
+
+fn apply_duplicate_resolution_batch_service(
+    input: DuplicateResolutionBatchInput,
+    state: &AppState,
+) -> Result<DuplicateResolutionBatchSummary, String> {
+    with_scan_and_thumb_lock(state, |permit| {
+        let conn = permit.durable_connection()?;
         Ok(asset_mutation_service::apply_duplicate_resolution_batch(
             &conn,
             &state.thumbs_dir,

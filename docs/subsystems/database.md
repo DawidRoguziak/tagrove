@@ -6,23 +6,13 @@ This page owns SQLite schema, migrations, derived fields, SQL filters/order, and
 
 ## Database location and connection policy
 
-The application stores `media.db` directly in the effective Tauri profile's app-data directory. Development, E2E, and release identifiers therefore use separate databases. Startup acquires that profile's `instance.lock` before opening the database, creates the app-data and thumbnail directories, calls `open_connection`, and runs `init_schema`. Initialization rejects a nonzero foreign `application_id` and a future `user_version`; after success it records MediaTagger's `application_id` (`0x4d544147`) and schema version (`2`). The path is retained in `AppState`; commands normally open their own connection to it.
+Each Tauri profile owns its `media.db`. `AppState.database` owns a `DatabaseRuntime` with admission, a pool of at most four ordinary connections, and query sessions. An operation enters admission once. Its cloneable `OperationPermit` stays with its connections and child workers; an idle pooled connection owns no permit. Pool acquisition has a five-second timeout. Dropping a checkout removes its SQLite progress callback before returning an autocommit connection to the pool.
 
-Every connection created through `db::open_connection` applies:
+Maintenance closes admission, waits for admitted operations and their workers to finish, closes idle connections, clears query sessions, then takes the scan mutex and exclusive thumbnail lock. Already admitted work can open connections while maintenance is waiting. New work waits outside the workflow locks. Bundle services require a maintenance permit for live database access. Startup and isolated staging/fixtures use untracked connections.
 
-| Setting | Current value and effect |
-| --- | --- |
-| `journal_mode` | `WAL`; committed pages may be in `media.db-wal`, with `media.db-shm` coordinating WAL readers. Both sidecars are live database state, not disposable cache files. |
-| `synchronous` | `NORMAL`; WAL commits trade the strongest power-loss durability for lower sync overhead. |
-| `foreign_keys` | `ON` on every application-created connection, enabling the declared cascades. |
-| `temp_store` | `MEMORY`. |
-| `cache_size` | `-65536`, approximately 64 MiB per connection because a negative value is in KiB. |
-| `mmap_size` | `268435456` bytes (256 MiB requested). |
-| Busy timeout | Five seconds. A lock still held after that becomes an operation error. |
+Ordinary connections use WAL, `synchronous=NORMAL`, foreign keys, `temp_store=MEMORY`, a 64 MiB page-cache target, a 256 MiB mmap limit, and a five-second SQLite busy timeout. File-mutation journals and source-mutation commits use separate `synchronous=FULL` connections that never enter the idle pool. Startup recovery also uses FULL. This durability choice follows [SQLite's synchronous documentation](https://www.sqlite.org/pragma.html#pragma_synchronous). Restore path staging selects `temp_store=FILE`; CSV staging uses a separate automatically deleted disk database with a 2 MiB page-cache target.
 
-`init_schema` finishes with `PRAGMA optimize`; a non-empty scan also runs it after its revision bump. Every normal read/write or read-only connection owns a process-wide maintenance lease. Bundle export closes that gate and uses SQLite Backup API to create one standalone `media.db` snapshot; it does not archive WAL or SHM. Bundle inspection and restore validate the extracted database as described in [data safety and portability](data-safety-and-portability.md). Restore checkpoints staging after migration and again after path rewriting, checkpoints the current database, and removes sidecars only after their pages are durable in the corresponding main file.
-
-Gallery query sessions use the process-wide pool in `services/db_pool.rs`. A registry maps an exact `PathBuf` to a pool with at most four connections. Checkout reuses an idle connection, opens a configured connection while below the cap, or waits on a condition variable until one is returned. Dropping `PooledConnection` returns it to a live pool. Invalidation marks the removed pool closed, drops all idle connections, wakes waiters, and drops rather than recycles later returns; maintenance then waits for all checked-out leases to drain. Other commands and services call the same lease-owning `open_connection` boundary directly, including video-path resolution.
+`db.rs` exposes the shared row types and compatibility API. SQL lives in `db/connections.rs`, `schema.rs`, `queries.rs`, `mutations.rs`, `scan_membership.rs`, and `thumbnails.rs`. Services coordinate these SQL functions with explicit runtime permits and progress sinks. Tauri commands schedule blocking SQL and filesystem work on `spawn_blocking`.
 
 ## Schema
 
@@ -34,7 +24,7 @@ Gallery query sessions use the process-wide pool in `services/db_pool.rs`. A reg
 | `path` | Required and globally unique. Source media remains outside app data. |
 | `file_name` | Required for a newly created schema, default `''`; basename derived from `path`. |
 | `kind` | Required media kind (`image`, `gif`, or `video` in normal indexed data). |
-| `size_bytes`, `modified_at` | Required source metadata. `modified_at` is also the thumbnail-version value used by failure records and thumbnail preservation. |
+| `size_bytes`, `modified_at` | Required source metadata. Thumbnail identity also includes source size and precise mtime; failure eligibility uses `record_version`. |
 | `width`, `height`, `duration_ms` | Optional extracted media metadata. |
 | `thumb_path` | Optional path to a generated thumbnail. |
 | `is_favorite` | Required integer boolean, default `0`. |
@@ -54,7 +44,7 @@ The remaining tables are:
 | `asset_tags` | Composite primary key `(asset_id, tag_id)`. Both columns are required foreign keys; deleting an asset or tag cascades to the mapping row. This is the many-to-many asset/tag relationship. |
 | `scan_roots` | `path TEXT PRIMARY KEY` plus `auto_scan_on_startup INTEGER NOT NULL DEFAULT 0 CHECK(auto_scan_on_startup IN (0, 1))`. No creation timestamp is stored. |
 | `asset_scan_roots` | Composite primary key `(asset_id, root_path)` plus required `last_seen_generation`. Both foreign keys cascade, so deletion of either the asset or root removes the mapping. One asset can remain owned by another overlapping root. |
-| `thumbnail_failures` | One row per `asset_id`, with required `failure_count`, optional `last_error`, required `last_failed_at`, and required `asset_modified_at`. It deliberately has no declared foreign key; database helpers remove orphaned and source-version-stale rows. |
+| `thumbnail_failures` | One row per `asset_id`, with required `failure_count`, optional `last_error`, required `last_failed_at`, required `asset_modified_at`, and required `source_record_version`. It deliberately has no declared foreign key; database helpers remove orphaned and source-version-stale rows. |
 | `library_metadata` | Integer values keyed by text. Current reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `3`). It has no foreign-key relationships. SQLite `application_id` and `user_version` separately identify the application and complete schema generation; neither replaces these runtime/backfill rows. |
 | `pending_file_operations` | Durable source-file recovery journal keyed by `(operation_id, asset_id)`, storing action, original/staging/final paths, and a `committed` flag set in the same transaction as asset mutation/revision. It deliberately survives asset deletion and is reconciled at startup. |
 
@@ -62,7 +52,7 @@ Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_root
 
 Schema version 2 adds the startup-scan preference to `scan_roots`. Initialization adds the column to older schemas with false for all existing roots and preserves values on repeated initialization. Preference writes neither scan nor bump the library revision. Root insertion uses conflict-do-nothing, preserving the existing flag; removing and adding a root again restores the false default.
 
-Backup validation distinguishes current version 2, identified version 1, and the existing unmarked legacy format. Version 1 retains all previous structure/data checks and migrates only after staging validation. Version 2 additionally validates the preference's declared integer type, required column, and boolean values. New bundles preserve the flag, including root remapping; old bundles migrate to false.
+Schema version 3 adds `thumbnail_failures.source_record_version`. Migration discards legacy failure markers because their precise source version cannot be established; assets and metadata remain intact. Backup validation accepts current version 3, identified versions 1 and 2, and the existing unmarked legacy format. Version 1 retains all previous structure/data checks and migrates only after staging validation. Versions 2 and 3 additionally validate the preference's declared integer type, required column, and boolean values. New bundles preserve the flag, including root remapping; old bundles migrate to false.
 
 ## Indexes
 
@@ -106,7 +96,7 @@ Application-mediated writes maintain these invariants:
 - `media_group_key` preserves trimmed display spelling. Its normalized lookup key is `lower(trim(media_group_key))`, or null for a blank/missing key. Single and bulk setters update both fields.
 - Tag boundaries trim, Unicode-lowercase, remove empty values, and deduplicate in first-seen order. Whitespace, comma, semicolon, and control characters are invalid inside one tag. Replacement validates the asset, repairs mappings/counts and legacy spelling, cleans orphan tags, and conditionally bumps revision in one IMMEDIATE transaction with bounded busy retry.
 - `tag_count` is the number of assigned normalized tags. Query count filters read it directly; startup backfills repair older data from the mappings.
-- `upsert_scanned_asset` clears a thumbnail reference when the precise fingerprint changes, including same-second edits. Thumbnail failures still compare seconds-based `asset_modified_at`. See [thumbnail identity and limits](thumbnails.md#source-versions-cache-and-target-identity).
+- `upsert_scanned_asset` clears a thumbnail reference when the precise fingerprint changes, including same-second edits. The same write increments `record_version`; thumbnail failures compare that source record version. See [thumbnail identity and limits](thumbnails.md#source-versions-cache-and-target-identity).
 
 Root-prefix SQL escapes `%`, `_`, and `^` before using `LIKE ... ESCAPE '^'`. On Unix, discovery skips non-UTF-8 paths rather than storing a lossy identity.
 
@@ -183,7 +173,7 @@ Bulk group transactions collect processed IDs in requested order from the rows r
 - The query-start snapshot covers revision, ordered IDs, and the first page, but the read transaction is deferred: a write that commits between registration and the first read can still be included, which is safe. A mutation committing after the snapshot becomes visible only through the later `stale` page transition.
 - The legacy delete-by-prefix helper combines cleanup statements without a surrounding transaction. Clear-library and journaled single/batch asset mutations use their own transactions.
 - Database transactions cannot make filesystem workflows atomic. Safe file mutations stage on each source filesystem and use a durable journal plus rollback/recovery outcomes; final staged-delete and thumbnail cleanup remain post-commit work. Bundle restore separately uses its own staging and rollback attempts.
-- The query pool bounds checkout at five seconds per acquisition attempt and reports a busy failure when exhausted; a caller that repeatedly retries can still wait indefinitely in aggregate. Maintenance invalidation wakes old-pool waiters and waits for checked-out connections to return, so a stalled database caller can correspondingly stall maintenance without a timeout.
+- The pool bounds checkout at five seconds per acquisition attempt and reports a busy failure when exhausted. Maintenance closes admission, lets admitted operations and their children finish, then closes idle connections and clears sessions. A stalled admitted operation can stall maintenance without a timeout.
 
 ## Safe schema-change checklist
 
@@ -206,4 +196,4 @@ Bulk group transactions collect processed IDs in requested order from the rows r
 - `src-tauri/tests/backend_e2e.rs` covers the database-level CSV merge/group/library-clear workflow across multiple helpers.
 - Command/service tests in `commands/scan.rs`, `services/scan_service.rs`, `services/csv_service.rs`, and `services/backup_service.rs` cover root persistence/removal, safe scan cleanup, CSV parsing and atomic publication, standalone bundle snapshots, legacy sidecar import, restore validation, and restored database/thumbnail contents.
 
-These tests validate many data primitives, but they do not substitute for the missing migration matrix or deliberate rollback/fault-injection tests listed under Known limitations. `services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, registration-order and generation supersession, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot start results; `db.rs` covers cooperative ID-build cancellation plus favorite/group/bulk-group same-transaction revision bumps. The connection pool's busy timeout itself is not yet directly unit-tested.
+Version-2 backup migration, directory-sync failures, transaction rollback, and simulated interrupted restore have focused regressions. They do not cover every historical schema or actual power loss. `services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, registration-order supersession and frontend generation restarts, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot start results; `db.rs` covers cooperative ID-build cancellation plus favorite/group/bulk-group same-transaction revision bumps. The connection pool's busy timeout itself is not yet directly unit-tested.

@@ -1,9 +1,8 @@
 use std::{
     collections::VecDeque,
-    path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex, OnceLock,
+        Arc, Mutex,
     },
     time::{Duration, Instant},
 };
@@ -12,10 +11,11 @@ use crate::{
     db::{self, AssetMetaFilter},
     error::AppResult,
     models::{AssetQueryPageResult, StartAssetQueryResult},
-    services::db_pool,
+    services::db_pool::OperationPermit,
 };
 
 const MAX_SESSIONS: usize = 4;
+const MAX_RETAINED_ID_BYTES: usize = 64 * 1024 * 1024;
 const SESSION_TTL: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Debug, Clone)]
@@ -39,48 +39,68 @@ struct QuerySession {
 #[derive(Default)]
 struct QueryCache {
     sessions: VecDeque<QuerySession>,
+    epoch: u64,
 }
 
 pub struct AssetQueryManager {
     next_session_id: AtomicU64,
-    latest_request: AtomicU64,
-    latest_generation: AtomicU64,
+    latest_request: Arc<AtomicU64>,
     cache: Mutex<QueryCache>,
+    max_id_bytes: usize,
 }
 
 impl AssetQueryManager {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             next_session_id: AtomicU64::new(1),
-            latest_request: AtomicU64::new(0),
-            latest_generation: AtomicU64::new(0),
+            latest_request: Arc::new(AtomicU64::new(0)),
             cache: Mutex::new(QueryCache::default()),
+            max_id_bytes: MAX_RETAINED_ID_BYTES,
         }
     }
 
     /// Registers a query request in arrival order before any blocking work is
     /// scheduled. The returned token identifies this request; a later
     /// registration supersedes it.
-    pub fn begin_request(&self, generation: u64) -> u64 {
-        let request_id = self.latest_request.fetch_add(1, Ordering::SeqCst) + 1;
-        self.latest_generation.store(generation, Ordering::SeqCst);
-        request_id
+    pub fn begin_request(&self, _generation: u64) -> u64 {
+        self.latest_request.fetch_add(1, Ordering::SeqCst) + 1
     }
 
-    fn is_superseded(&self, request_id: u64, generation: u64) -> bool {
+    fn is_superseded(&self, request_id: u64, _generation: u64) -> bool {
         self.latest_request.load(Ordering::SeqCst) != request_id
-            || self.latest_generation.load(Ordering::SeqCst) != generation
     }
 
     pub fn start(
         &self,
-        db_path: &Path,
+        permit: &OperationPermit,
         filters: AssetQueryFilters,
         page_size: usize,
         request_id: u64,
         generation: u64,
     ) -> AppResult<StartAssetQueryResult> {
-        let conn = db_pool::connection(db_path)?;
+        let result = self.start_inner(permit, filters, page_size, request_id, generation);
+        if self.is_superseded(request_id, generation) {
+            Ok(StartAssetQueryResult::Superseded)
+        } else {
+            result
+        }
+    }
+
+    fn start_inner(
+        &self,
+        permit: &OperationPermit,
+        filters: AssetQueryFilters,
+        page_size: usize,
+        request_id: u64,
+        generation: u64,
+    ) -> AppResult<StartAssetQueryResult> {
+        let epoch = self.cache.lock().unwrap_or_else(|e| e.into_inner()).epoch;
+        let conn = permit.connection()?;
+        let latest = self.latest_request.clone();
+        conn.progress_handler(
+            1000,
+            Some(move || latest.load(Ordering::SeqCst) != request_id),
+        );
         // One deferred read transaction gives revision, ordered IDs, and the
         // first page a single consistent SQLite snapshot.
         let tx = conn.unchecked_transaction()?;
@@ -109,7 +129,7 @@ impl AssetQueryManager {
 
         let cancel_check = || self.is_superseded(request_id, generation);
         let started = Instant::now();
-        let Some(asset_ids) = db::try_list_ordered_asset_ids_with_meta(
+        let ids_result = db::try_list_ordered_asset_ids_with_meta(
             &tx,
             &filters.tags_and,
             &filters.tags_not,
@@ -117,8 +137,11 @@ impl AssetQueryManager {
             filters.favorites_only,
             filters.meta_filter.as_ref(),
             cancel_check,
-        )?
-        else {
+        );
+        if self.is_superseded(request_id, generation) {
+            return Ok(StartAssetQueryResult::Superseded);
+        }
+        let Some(asset_ids) = ids_result? else {
             perf_log("asset-query-cancelled", started, 0);
             return Ok(StartAssetQueryResult::Superseded);
         };
@@ -142,7 +165,9 @@ impl AssetQueryManager {
         let total = session.asset_ids.len();
         let session_id = session.id;
         drop(tx);
-        self.insert_session(session);
+        if !self.insert_session(session, request_id, epoch) {
+            return Ok(StartAssetQueryResult::Superseded);
+        }
 
         Ok(StartAssetQueryResult::Ready {
             session_id,
@@ -155,12 +180,12 @@ impl AssetQueryManager {
 
     pub fn page(
         &self,
-        db_path: &Path,
+        permit: &OperationPermit,
         session_id: u64,
         offset: usize,
         limit: usize,
     ) -> AppResult<AssetQueryPageResult> {
-        let conn = db_pool::connection(db_path)?;
+        let conn = permit.connection()?;
         let tx = conn.unchecked_transaction()?;
         let revision = db::current_library_revision(&tx)?;
         let Some(session) = self.session_by_id(session_id) else {
@@ -208,15 +233,32 @@ impl AssetQueryManager {
         Some(session)
     }
 
-    fn insert_session(&self, session: QuerySession) {
+    fn insert_session(&self, session: QuerySession, request_id: u64, epoch: u64) -> bool {
         if let Ok(mut cache) = self.cache.lock() {
+            if cache.epoch != epoch || self.latest_request.load(Ordering::SeqCst) != request_id {
+                return false;
+            }
+            if session.asset_ids.capacity() * std::mem::size_of::<i64>() > self.max_id_bytes {
+                return false;
+            }
             prune(&mut cache);
             cache
                 .sessions
                 .retain(|existing| existing.key != session.key);
             cache.sessions.push_front(session);
             cache.sessions.truncate(MAX_SESSIONS);
+            while cache
+                .sessions
+                .iter()
+                .map(|s| s.asset_ids.capacity() * std::mem::size_of::<i64>())
+                .sum::<usize>()
+                > self.max_id_bytes
+            {
+                cache.sessions.pop_back();
+            }
+            return true;
         }
+        false
     }
 
     fn remove_session(&self, id: u64) {
@@ -228,6 +270,7 @@ impl AssetQueryManager {
     pub fn clear(&self) {
         self.latest_request.fetch_add(1, Ordering::SeqCst);
         if let Ok(mut cache) = self.cache.lock() {
+            cache.epoch += 1;
             cache.sessions.clear();
         }
     }
@@ -260,9 +303,10 @@ fn perf_log(name: &str, started: Instant, items: usize) {
     }
 }
 
-pub fn manager() -> &'static AssetQueryManager {
-    static MANAGER: OnceLock<AssetQueryManager> = OnceLock::new();
-    MANAGER.get_or_init(AssetQueryManager::new)
+impl Default for AssetQueryManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +321,7 @@ mod tests {
     struct TestDb {
         _dir: tempfile::TempDir,
         path: PathBuf,
+        runtime: Arc<crate::services::db_pool::DatabaseRuntime>,
     }
 
     fn test_db(asset_count: i64) -> TestDb {
@@ -299,7 +344,11 @@ mod tests {
             db::upsert_scanned_asset(&conn, &asset, 1, "/library", 1).expect("insert asset");
         }
         drop(conn);
-        TestDb { _dir: dir, path }
+        TestDb {
+            _dir: dir,
+            runtime: crate::services::db_pool::DatabaseRuntime::new(path.clone()),
+            path,
+        }
     }
 
     fn filters(tags_and: &[&str]) -> AssetQueryFilters {
@@ -320,7 +369,15 @@ mod tests {
         generation: u64,
     ) -> StartAssetQueryResult {
         manager
-            .start(path, query_filters.clone(), 10, request_id, generation)
+            .start(
+                &crate::services::db_pool::DatabaseRuntime::new(path.to_path_buf())
+                    .admit()
+                    .unwrap(),
+                query_filters.clone(),
+                10,
+                request_id,
+                generation,
+            )
             .expect("start")
     }
 
@@ -395,7 +452,7 @@ mod tests {
         };
 
         let page = manager
-            .page(&target.path, session_id, 0, 10)
+            .page(&target.runtime.admit().unwrap(), session_id, 0, 10)
             .expect("page before bump");
         assert!(matches!(page, AssetQueryPageResult::Ready { .. }));
 
@@ -405,12 +462,12 @@ mod tests {
         drop(conn);
 
         let stale = manager
-            .page(&target.path, session_id, 0, 10)
+            .page(&target.runtime.admit().unwrap(), session_id, 0, 10)
             .expect("stale page");
         assert_eq!(stale, AssetQueryPageResult::Stale);
 
         let again = manager
-            .page(&target.path, session_id, 0, 10)
+            .page(&target.runtime.admit().unwrap(), session_id, 0, 10)
             .expect("again");
         assert_eq!(again, AssetQueryPageResult::Stale);
     }
@@ -440,7 +497,7 @@ mod tests {
 
         let evicted = manager
             .page(
-                &target.path,
+                &target.runtime.admit().unwrap(),
                 first_session_id.expect("first session"),
                 0,
                 10,
@@ -468,7 +525,7 @@ mod tests {
         }
 
         let expired = manager
-            .page(&target.path, session_id, 0, 10)
+            .page(&target.runtime.admit().unwrap(), session_id, 0, 10)
             .expect("expired page");
         assert_eq!(expired, AssetQueryPageResult::Stale);
     }
@@ -486,7 +543,7 @@ mod tests {
         manager.clear();
 
         let stale = manager
-            .page(&target.path, session_id, 0, 10)
+            .page(&target.runtime.admit().unwrap(), session_id, 0, 10)
             .expect("cleared page");
         assert_eq!(stale, AssetQueryPageResult::Stale);
 
@@ -527,7 +584,7 @@ mod tests {
         assert_eq!(items.len(), 3);
         assert_eq!(
             manager
-                .page(&target.path, session_id, 3, 10)
+                .page(&target.runtime.admit().unwrap(), session_id, 3, 10)
                 .expect("end clamp"),
             AssetQueryPageResult::Ready {
                 session_id,
@@ -540,7 +597,23 @@ mod tests {
     }
 
     #[test]
-    fn service_manager_singleton_is_process_wide() {
-        assert!(std::ptr::eq(manager(), manager()));
+    fn cache_budget_and_epoch_are_checked_at_insertion() {
+        let mut manager = AssetQueryManager::new();
+        manager.max_id_bytes = 16;
+        let request = manager.begin_request(1);
+        let session = |id| QuerySession {
+            id,
+            revision: 1,
+            key: id.to_string(),
+            asset_ids: Arc::new(vec![1, 2]),
+            last_accessed: Instant::now(),
+        };
+        assert!(manager.insert_session(session(1), request, 0));
+        assert!(manager.insert_session(session(2), request, 0));
+        assert!(manager.session_by_id(1).is_none());
+        manager.clear();
+        let fresh = manager.begin_request(1);
+        assert!(!manager.insert_session(session(3), fresh, 0));
+        assert!(manager.insert_session(session(4), fresh, 1));
     }
 }

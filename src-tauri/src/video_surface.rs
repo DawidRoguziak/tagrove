@@ -36,8 +36,9 @@ struct VideoSurface {
     _pointer_motion: gtk::EventControllerMotion,
     _css_provider: gtk::CssProvider,
     render_context: Rc<RefCell<RenderContextState>>,
-    _render_source: glib::SourceId,
-    _controls_source: glib::SourceId,
+    _render_source: glib::JoinHandle<()>,
+    _controls_source: glib::JoinHandle<()>,
+    controls_wakeup: async_channel::Sender<()>,
 }
 
 #[derive(Clone)]
@@ -896,31 +897,44 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
         });
     }
     let render_area = gl_area.clone();
-    let render_source = glib::timeout_add_local(Duration::from_millis(8), move || {
-        if render_rx.try_recv().is_ok() {
+    let render_source = glib::MainContext::default().spawn_local(async move {
+        while render_rx.recv().await.is_ok() {
             render_area.queue_render();
         }
-        glib::ControlFlow::Continue
     });
     let controls_player = player.clone();
     let controls_window = window.clone();
-    let controls_source = glib::timeout_add_local(Duration::from_millis(100), move || {
-        SURFACE.with(|surface| {
-            let mut surface = surface.borrow_mut();
-            if let Some(surface) = surface.as_mut() {
-                if let Some(id) = surface.sessions.active {
-                    if controls_player.require_current(id).is_err() {
-                        // A decoder or render failure can end a session before React unmounts.
-                        if let Err(error) = surface.hide(&controls_window, id) {
-                            eprintln!("native video cleanup failed: {error}");
+    let (controls_wakeup, controls_rx) = async_channel::bounded(1);
+    let controls_source = glib::MainContext::default().spawn_local(async move {
+        loop {
+            let active = SURFACE.with(|surface| {
+                surface
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|surface| surface.sessions.active.is_some())
+            });
+            if active {
+                glib::timeout_future(Duration::from_millis(100)).await;
+            } else if controls_rx.recv().await.is_err() {
+                break;
+            }
+
+            SURFACE.with(|surface| {
+                let mut surface = surface.borrow_mut();
+                if let Some(surface) = surface.as_mut() {
+                    if let Some(id) = surface.sessions.active {
+                        if controls_player.require_current(id).is_err() {
+                            // A decoder or render failure can end a session before React unmounts.
+                            if let Err(error) = surface.hide(&controls_window, id) {
+                                eprintln!("native video cleanup failed: {error}");
+                            }
+                        } else {
+                            surface.controls.sync(&controls_player);
                         }
-                    } else {
-                        surface.controls.sync(&controls_player);
                     }
                 }
-            }
-        });
-        glib::ControlFlow::Continue
+            });
+        }
     });
 
     SURFACE.with(|surface| {
@@ -936,6 +950,7 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
             render_context,
             _render_source: render_source,
             _controls_source: controls_source,
+            controls_wakeup,
         });
     });
     Ok(())
@@ -1035,6 +1050,7 @@ pub fn activate(
                     return Err("stale video surface".into());
                 }
                 surface.controls.activate(session_id);
+                let _ = surface.controls_wakeup.try_send(());
                 surface.controls.set_labels(labels);
                 surface.position(&target, bounds)
             })

@@ -78,8 +78,17 @@ pub enum AssetQueryPageResult {
 #[serde(tag = "event", content = "data", rename_all = "camelCase")]
 pub enum ThumbnailStreamEvent {
     Ready(ThumbnailBatchItem),
-    Failed { asset_id: i64 },
-    Done { ready: usize, failed: usize },
+    Failed {
+        asset_id: i64,
+    },
+    Stale {
+        asset_id: i64,
+    },
+    Done {
+        ready: usize,
+        failed: usize,
+        stale: usize,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -277,6 +286,7 @@ pub struct BulkMediaGroupSummary {
 
 #[derive(Debug, Serialize)]
 pub struct ThumbnailRenderSummary {
+    pub stale: usize,
     pub generated: usize,
     pub failed: usize,
     pub skipped_failed: usize,
@@ -293,6 +303,7 @@ pub struct ThumbnailBatchItem {
 
 #[derive(Debug, Serialize)]
 pub struct ThumbnailBatchResult {
+    pub stale: Vec<i64>,
     pub ready: Vec<ThumbnailBatchItem>,
     pub failed: Vec<i64>,
 }
@@ -381,4 +392,5 @@ pub struct ThumbnailAsset {
     pub thumb_path: Option<String>,
     pub size_bytes: i64,
     pub fingerprint_mtime_ns: i64,
+    pub record_version: i64,
 }

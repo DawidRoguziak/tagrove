@@ -12,6 +12,7 @@ describe("progressService", () => {
   it("formats thumbnail summary for completed render", () => {
     const message = formatThumbnailSummary("All thumbnails", {
       generated: 8,
+      stale: 0,
       failed: 1,
       skipped_failed: 2,
       processed: 11,
@@ -27,6 +28,7 @@ describe("progressService", () => {
   it("formats thumbnail summary for cancelled render", () => {
     const message = formatThumbnailSummary("Retry failed", {
       generated: 3,
+      stale: 0,
       failed: 0,
       skipped_failed: 5,
       processed: 8,

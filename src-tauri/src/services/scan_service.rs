@@ -5,8 +5,6 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use tauri::State;
-
 use crate::{
     app::state::AppState,
     db,
@@ -58,10 +56,11 @@ pub fn sort_scan_roots_by_created_desc(
         .collect()
 }
 
-pub fn scan_roots<R: tauri::Runtime>(
+pub fn scan_roots(
     roots: &[String],
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
 ) -> AppResult<ScanSummary> {
     if roots.is_empty() {
         let _ = emit_progress(
@@ -79,7 +78,7 @@ pub fn scan_roots<R: tauri::Runtime>(
     let mut removed = 0usize;
     let mut failed = 0usize;
     let mut completion = ScanCompletion::Complete;
-    let conn = db::open_connection(&state.db_path)?;
+    let conn = permit.connection()?;
 
     for (root_idx, root_str) in roots.iter().enumerate() {
         let root = PathBuf::from(root_str);
@@ -109,26 +108,30 @@ pub fn scan_roots<R: tauri::Runtime>(
             let receiver = Arc::clone(&shared_task_receiver);
             let sender = result_sender.clone();
             let ffmpeg_path = state.ffmpeg_path.clone();
+            let operation = permit.clone();
             worker_handles.push(
                 thread::Builder::new()
                     .name(format!("scan-worker-{worker_idx}"))
-                    .spawn(move || loop {
-                        let task = match receiver.lock() {
-                            Ok(receiver) => receiver.recv(),
-                            Err(_) => return,
-                        };
-                        let (path, kind, fingerprint) = match task {
-                            Ok(task) => task,
-                            Err(_) => break,
-                        };
-                        let result = indexer::scan_one_with_fingerprint(
-                            path,
-                            kind,
-                            ffmpeg_path.as_path(),
-                            fingerprint,
-                        );
-                        if sender.send(result).is_err() {
-                            break;
+                    .spawn(move || {
+                        let _operation = operation;
+                        loop {
+                            let task = match receiver.lock() {
+                                Ok(receiver) => receiver.recv(),
+                                Err(_) => return,
+                            };
+                            let (path, kind, fingerprint) = match task {
+                                Ok(task) => task,
+                                Err(_) => break,
+                            };
+                            let result = indexer::scan_one_with_fingerprint(
+                                path,
+                                kind,
+                                ffmpeg_path.as_path(),
+                                fingerprint,
+                            );
+                            if sender.send(result).is_err() {
+                                break;
+                            }
                         }
                     })?,
             );

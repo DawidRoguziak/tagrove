@@ -51,7 +51,7 @@ describe("useThumbnailQueue", () => {
       _visibleIds: number[],
       _prefetchIds: number[],
       onEvent: (event: ThumbnailStreamEvent) => void
-    ) => onEvent({ event: "done", data: { ready: 0, failed: 0 } }));
+    ) => onEvent({ event: "done", data: { ready: 0, failed: 0, stale: 0 } }));
   });
 
   afterEach(() => {
@@ -62,7 +62,7 @@ describe("useThumbnailQueue", () => {
     apiMocks.ensureThumbnailsStream.mockImplementationOnce(async (_requestId, _visible, _prefetch, onEvent) => {
       onEvent({ event: "failed", data: { asset_id: 2 } });
       onEvent({ event: "ready", data: { asset_id: 3, thumb_path: "thumb-3.jpg" } });
-      onEvent({ event: "done", data: { ready: 1, failed: 1 } });
+      onEvent({ event: "done", data: { ready: 1, failed: 1, stale: 0 } });
     });
 
     const { result } = createQueueHarness({ 1: "thumb-1.jpg" });
@@ -262,6 +262,20 @@ describe("useThumbnailQueue", () => {
     pending.resolve();
     await flushTimers();
     expect(apiMocks.ensureThumbnailsStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows stale source results to be requested again", async () => {
+    apiMocks.ensureThumbnailsStream.mockImplementationOnce(async (_generation, _visible, _prefetch, send) => {
+      send({ event: "stale", data: { asset_id: 7 } });
+      send({ event: "done", data: { ready: 0, failed: 0, stale: 1 } });
+    });
+    const { result } = createQueueHarness();
+    act(() => result.current.queueThumbnailsByIds([7]));
+    await flushTimers(500);
+    expect(result.current.thumbs[7]).toBeUndefined();
+    act(() => result.current.queueThumbnailsByIds([7]));
+    await flushTimers(500);
+    expect(apiMocks.ensureThumbnailsStream).toHaveBeenCalledTimes(2);
   });
 
 });

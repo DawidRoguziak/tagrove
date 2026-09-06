@@ -214,6 +214,7 @@ describe("App", () => {
     apiMocks.removeScanRoot.mockResolvedValue({ removed_assets: 0, removed_thumbnails: 0 });
     apiMocks.renderAllThumbnails.mockResolvedValue({
       generated: 0,
+      stale: 0,
       failed: 0,
       skipped_failed: 0,
       processed: 0,
@@ -222,6 +223,7 @@ describe("App", () => {
     });
     apiMocks.renderFailedThumbnails.mockResolvedValue({
       generated: 0,
+      stale: 0,
       failed: 0,
       skipped_failed: 0,
       processed: 0,
@@ -901,6 +903,7 @@ describe("App", () => {
   it("allows stopping active thumbnail bulk render and retrying failed thumbnails", async () => {
     const pending = deferred<{
       generated: number;
+        stale: number;
       failed: number;
       skipped_failed: number;
       processed: number;
@@ -924,6 +927,7 @@ describe("App", () => {
 
     pending.resolve({
       generated: 3,
+      stale: 0,
       failed: 1,
       skipped_failed: 2,
       processed: 8,
@@ -944,6 +948,7 @@ describe("App", () => {
   it("shows section loader for scan actions", async () => {
     const pending = deferred<{
       generated: number;
+        stale: number;
       failed: number;
       skipped_failed: number;
       processed: number;
@@ -964,6 +969,7 @@ describe("App", () => {
 
     pending.resolve({
       generated: 1,
+      stale: 0,
       failed: 0,
       skipped_failed: 0,
       processed: 1,
@@ -1039,6 +1045,7 @@ describe("App", () => {
   it("blocks other settings actions while async scan operation is running", async () => {
     const pending = deferred<{
       generated: number;
+        stale: number;
       failed: number;
       skipped_failed: number;
       processed: number;
@@ -1067,6 +1074,7 @@ describe("App", () => {
 
     pending.resolve({
       generated: 1,
+      stale: 0,
       failed: 0,
       skipped_failed: 0,
       processed: 1,

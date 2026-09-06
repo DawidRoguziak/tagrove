@@ -23,12 +23,26 @@ const CSV_HEADERS: [&str; 5] = [
     "media_group_key",
     "media_group_order",
 ];
-const MAX_CSV_FILE_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_CSV_RECORDS: usize = 100_000;
+const MAX_CSV_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const MAX_CSV_RECORDS: usize = 2_000_000;
 const MAX_CSV_FIELD_BYTES: usize = 1024 * 1024;
 
-pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary> {
-    let conn = db::open_connection(db_path)?;
+pub fn export_tags_csv(
+    path: &str,
+    db_path: &Path,
+    permit: &crate::services::db_pool::OperationPermit,
+) -> AppResult<CsvExportSummary> {
+    export_tags_csv_with_limits(path, db_path, permit, MAX_CSV_FILE_BYTES, MAX_CSV_RECORDS)
+}
+
+fn export_tags_csv_with_limits(
+    path: &str,
+    db_path: &Path,
+    permit: &crate::services::db_pool::OperationPermit,
+    max_bytes: u64,
+    max_records: usize,
+) -> AppResult<CsvExportSummary> {
+    let conn = permit.connection()?;
     let target = validate_export_target(path, db_path, &conn)?;
     let target_name = target
         .file_name()
@@ -69,11 +83,21 @@ pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary
                     .unwrap_or_default(),
             ])?;
             rows += 1;
+            anyhow::ensure!(rows <= max_records, "CSV record limit exceeded");
             Ok(())
         })?;
         writer.flush()?;
         let file = writer.into_inner().map_err(|error| error.into_error())?;
         file.sync_all()?;
+        if file.metadata()?.len() > max_bytes {
+            return Err("CSV byte limit exceeded".into());
+        }
+        parse_csv_to_sink(
+            LimitedReader::new(fs::File::open(&temporary)?, max_bytes),
+            max_records,
+            MAX_CSV_FIELD_BYTES,
+            |_| Ok(()),
+        )?;
         publish_file(&temporary, &target)?;
         sync_parent_directory(&target)?;
         Ok(CsvExportSummary { rows })
@@ -85,7 +109,10 @@ pub fn export_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvExportSummary
     result
 }
 
-pub fn import_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvImportSummary> {
+pub fn import_tags_csv(
+    path: &str,
+    permit: &crate::services::db_pool::OperationPermit,
+) -> AppResult<CsvImportSummary> {
     let source = PathBuf::from(path.trim());
     let file = fs::File::open(&source)?;
     let metadata = file.metadata()?;
@@ -93,12 +120,67 @@ pub fn import_tags_csv(path: &str, db_path: &Path) -> AppResult<CsvImportSummary
         return Err("CSV import path does not exist or is not a file".into());
     }
     validate_csv_file_size(metadata.len())?;
-    let document = read_with_byte_limit(file, MAX_CSV_FILE_BYTES)?;
-    let records = parse_csv_document(document.as_slice())?;
-    let mut conn = db::open_connection(db_path)?;
-    db::import_csv_records(&mut conn, &records).map_err(Into::into)
+    // SQLite's empty filename creates an automatically deleted disk database.
+    let mut staging = rusqlite::Connection::open("")?;
+    staging.pragma_update(None, "cache_size", -2048)?;
+    staging
+        .execute_batch("CREATE TABLE records (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)")?;
+    let tx = staging.transaction()?;
+    parse_csv_to_sink(
+        LimitedReader::new(file, MAX_CSV_FILE_BYTES),
+        MAX_CSV_RECORDS,
+        MAX_CSV_FIELD_BYTES,
+        |record| {
+            tx.execute(
+                "INSERT INTO records(payload) VALUES (?1)",
+                [serde_json::to_string(&record).map_err(|e| e.to_string())?],
+            )?;
+            Ok(())
+        },
+    )?;
+    tx.commit()?;
+    let mut conn = permit.connection()?;
+    db::import_csv_record_batches(&mut conn, |offset| {
+        let mut stmt =
+            staging.prepare("SELECT payload FROM records WHERE id > ?1 ORDER BY id LIMIT 512")?;
+        let rows = stmt.query_map([offset as i64], |row| row.get::<_, String>(0))?;
+        rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+    })
+    .map_err(Into::into)
 }
 
+struct LimitedReader<R> {
+    reader: R,
+    remaining: u64,
+}
+impl<R> LimitedReader<R> {
+    fn new(reader: R, remaining: u64) -> Self {
+        Self { reader, remaining }
+    }
+}
+impl<R: Read> Read for LimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        if self.remaining == 0 {
+            let mut probe = [0];
+            return if self.reader.read(&mut probe)? == 0 {
+                Ok(0)
+            } else {
+                Err(std::io::Error::other("CSV byte limit exceeded"))
+            };
+        }
+        let length = buf
+            .len()
+            .min(self.remaining.min(usize::MAX as u64) as usize);
+        let count = self.reader.read(&mut buf[..length])?;
+        self.remaining -= count as u64;
+        Ok(count)
+    }
+}
+
+#[cfg(test)]
 fn read_with_byte_limit(reader: impl Read, max_bytes: u64) -> AppResult<Vec<u8>> {
     let mut document = Vec::new();
     reader.take(max_bytes + 1).read_to_end(&mut document)?;
@@ -108,15 +190,31 @@ fn read_with_byte_limit(reader: impl Read, max_bytes: u64) -> AppResult<Vec<u8>>
     Ok(document)
 }
 
+#[cfg(test)]
 fn parse_csv_document(reader: impl Read) -> AppResult<Vec<CsvImportRecord>> {
     parse_csv_document_with_limits(reader, MAX_CSV_RECORDS, MAX_CSV_FIELD_BYTES)
 }
 
+#[cfg(test)]
 fn parse_csv_document_with_limits(
     reader: impl Read,
     max_records: usize,
     max_field_bytes: usize,
 ) -> AppResult<Vec<CsvImportRecord>> {
+    let mut parsed = Vec::new();
+    parse_csv_to_sink(reader, max_records, max_field_bytes, |record| {
+        parsed.push(record);
+        Ok(())
+    })?;
+    Ok(parsed)
+}
+
+fn parse_csv_to_sink(
+    reader: impl Read,
+    max_records: usize,
+    max_field_bytes: usize,
+    mut consume: impl FnMut(CsvImportRecord) -> AppResult<()>,
+) -> AppResult<()> {
     let mut reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
         .from_reader(reader);
@@ -141,7 +239,6 @@ fn parse_csv_document_with_limits(
     }
     let indices = indices.map(Option::unwrap);
 
-    let mut parsed = Vec::new();
     for (row_index, record) in reader.records().enumerate() {
         if row_index >= max_records {
             return Err(format!("CSV exceeds the limit of {max_records} records").into());
@@ -153,7 +250,7 @@ fn parse_csv_document_with_limits(
         let favorite = parse_favorite(value(2), row_index + 2)?;
         let media_group_order = parse_group_order(value(4), row_index + 2)?;
         let media_group_key = value(3);
-        parsed.push(CsvImportRecord {
+        consume(CsvImportRecord {
             file_name_key: canonical_key(value(0)),
             tags: normalize_and_validate_tags(parse_csv_tags(value(1)))?,
             favorite,
@@ -163,9 +260,9 @@ fn parse_csv_document_with_limits(
                 Some(media_group_key.to_string())
             }),
             media_group_order: Some(media_group_order),
-        });
+        })?;
     }
-    Ok(parsed)
+    Ok(())
 }
 
 fn validate_csv_file_size(size: u64) -> AppResult<()> {
@@ -402,7 +499,14 @@ mod tests {
         let target = exports.join("tags.csv");
         fs::write(&target, "keep me").unwrap();
 
-        assert!(export_tags_csv(target.to_str().unwrap(), &db_path).is_err());
+        assert!(export_tags_csv(
+            target.to_str().unwrap(),
+            &db_path,
+            &crate::services::db_pool::DatabaseRuntime::new(db_path.clone())
+                .admit()
+                .unwrap()
+        )
+        .is_err());
         assert_eq!(fs::read_to_string(target).unwrap(), "keep me");
         let temporary_count = fs::read_dir(exports)
             .unwrap()
@@ -454,5 +558,64 @@ mod tests {
         assert!(parse_csv_document_with_limits(Cursor::new(at_limit), 1, 32).is_ok());
         let over_limit = format!("{HEADERS}a.jpg,cat,1,{},\n", "x".repeat(33));
         assert!(parse_csv_document_with_limits(Cursor::new(over_limit), 1, 32).is_err());
+    }
+    #[test]
+    fn staged_import_keeps_record_order_and_explicit_group_clears_across_batches() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("media.db");
+        let input = dir.path().join("input.csv");
+        let runtime = crate::services::db_pool::DatabaseRuntime::new(path);
+        let permit = runtime.admit().unwrap();
+        {
+            let conn = permit.connection().unwrap();
+            db::init_schema(&conn).unwrap();
+            db::upsert_asset(&conn, &asset("/one/a.jpg")).unwrap();
+        }
+        let mut document =
+            String::from("file_name,tags,favorite,media_group_key,media_group_order\n");
+        for _ in 0..513 {
+            document.push_str("a.jpg,retained,true,group,2\n");
+        }
+        document.push_str("a.jpg,,false,,\n");
+        std::fs::write(&input, document).unwrap();
+        let before = db::current_library_revision(&permit.connection().unwrap()).unwrap();
+        let summary = super::import_tags_csv(input.to_str().unwrap(), &permit).unwrap();
+        assert_eq!(summary.rows_read, 514);
+        let conn = permit.connection().unwrap();
+        assert_eq!(db::get_asset_media_group(&conn, 1).unwrap(), (None, None));
+        assert!(!db::get_asset_favorite(&conn, 1).unwrap());
+        assert_eq!(db::list_asset_tags(&conn, 1).unwrap(), ["retained"]);
+        assert_eq!(db::current_library_revision(&conn).unwrap(), before + 1);
+        std::fs::write(&input, "file_name,tags,favorite,media_group_key,media_group_order\na.jpg,new,true,group,2\na.jpg,,invalid,,\n").unwrap();
+        assert!(super::import_tags_csv(input.to_str().unwrap(), &permit).is_err());
+        assert_eq!(db::list_asset_tags(&conn, 1).unwrap(), ["retained"]);
+    }
+
+    #[test]
+    fn export_limit_failure_preserves_existing_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("profile");
+        std::fs::create_dir(&data).unwrap();
+        let path = data.join("media.db");
+        let output = dir.path().join("export.csv");
+        let runtime = crate::services::db_pool::DatabaseRuntime::new(path.clone());
+        let permit = runtime.admit().unwrap();
+        {
+            let conn = permit.connection().unwrap();
+            db::init_schema(&conn).unwrap();
+            db::upsert_asset(&conn, &asset("/media/a.jpg")).unwrap();
+        }
+        std::fs::write(&output, b"previous export").unwrap();
+        for (bytes, records) in [(1, 10), (1024, 0)] {
+            assert!(super::export_tags_csv_with_limits(
+                output.to_str().unwrap(),
+                &path,
+                &permit,
+                bytes,
+                records
+            )
+            .is_err());
+            assert_eq!(std::fs::read(&output).unwrap(), b"previous export");
+        }
     }
 }

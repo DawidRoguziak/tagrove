@@ -107,9 +107,11 @@ pub async fn open_video(
     let bounds = bounds.validate()?;
     let control_labels = control_labels.validate()?;
     player.require_pending(request_id)?;
-    let db_path = app.db_path.clone();
+    let database = app.database.clone();
     let path = tauri::async_runtime::spawn_blocking(move || {
-        video_source_service::resolve_video_path(&db_path, asset_id)
+        let conn = database.admit()?.connection()?;
+        video_source_service::resolve_video_path(&conn, asset_id)
+            .map_err(crate::error::AppError::from)
     })
     .await
     .map_err(|error| format!("video source worker failed: {error}"))?

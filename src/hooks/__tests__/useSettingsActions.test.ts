@@ -83,6 +83,7 @@ describe("useSettingsActions", () => {
     apiMocks.rescanAllRoots.mockResolvedValue({ indexed: 0, removed: 0, failed: 0 });
     apiMocks.renderAllThumbnails.mockResolvedValue({
       generated: 0,
+      stale: 0,
       failed: 0,
       skipped_failed: 0,
       processed: 0,
@@ -91,6 +92,7 @@ describe("useSettingsActions", () => {
     });
     apiMocks.renderFailedThumbnails.mockResolvedValue({
       generated: 0,
+      stale: 0,
       failed: 0,
       skipped_failed: 0,
       processed: 0,
@@ -242,6 +244,7 @@ describe("useSettingsActions", () => {
   it("blocks other operations while exclusive operation is running", async () => {
     const pending = deferred<{
       generated: number;
+        stale: number;
       failed: number;
       skipped_failed: number;
       processed: number;
@@ -277,6 +280,7 @@ describe("useSettingsActions", () => {
 
     pending.resolve({
       generated: 3,
+      stale: 0,
       failed: 1,
       skipped_failed: 2,
       processed: 6,

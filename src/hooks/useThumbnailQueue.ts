@@ -160,6 +160,9 @@ export function useThumbnailQueue({ thumbs, setThumbs }: UseThumbnailQueueArgs =
               pendingThumbUpdatesRef.current[message.data.asset_id] = message.data.thumb_path;
               pendingRenderedDoneRef.current.add(message.data.asset_id);
               scheduleQueuedFlush();
+            } else if (message.event === "stale") {
+              pendingRenderedDoneRef.current.add(message.data.asset_id);
+              scheduleQueuedFlush();
             } else if (message.event === "failed") {
               failedRef.current.add(message.data.asset_id);
               pendingRenderedDoneRef.current.add(message.data.asset_id);

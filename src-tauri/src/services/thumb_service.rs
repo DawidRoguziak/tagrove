@@ -9,8 +9,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tauri::{ipc::Channel, Emitter, State};
-
 use crate::{
     app::state::AppState,
     db,
@@ -47,12 +45,12 @@ enum BulkRenderMode {
 
 struct PendingRenderTask {
     asset_path: String,
-    modified_at: i64,
+    record_version: i64,
     version: crate::thumbs::SourceVersion,
 }
 
 struct PendingPageTask {
-    modified_at: i64,
+    record_version: i64,
     version: crate::thumbs::SourceVersion,
 }
 
@@ -64,21 +62,23 @@ fn source_version_for(asset: &crate::models::ThumbnailAsset) -> crate::thumbs::S
     )
 }
 
-pub fn render_all_thumbnails<R: tauri::Runtime>(
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+pub fn render_all_thumbnails(
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
 ) -> AppResult<ThumbnailRenderSummary> {
-    render_bulk_thumbnails(state, app, BulkRenderMode::All)
+    render_bulk_thumbnails(state, permit, app, BulkRenderMode::All)
 }
 
-pub fn render_failed_thumbnails<R: tauri::Runtime>(
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+pub fn render_failed_thumbnails(
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
 ) -> AppResult<ThumbnailRenderSummary> {
-    render_bulk_thumbnails(state, app, BulkRenderMode::FailedOnly)
+    render_bulk_thumbnails(state, permit, app, BulkRenderMode::FailedOnly)
 }
 
-pub fn cancel_render_all_thumbnails(state: &State<AppState>) -> AppResult<bool> {
+pub fn cancel_render_all_thumbnails(state: &AppState) -> AppResult<bool> {
     let running = state.thumbnail_render_all_running.load(Ordering::SeqCst);
     if running {
         state
@@ -88,9 +88,10 @@ pub fn cancel_render_all_thumbnails(state: &State<AppState>) -> AppResult<bool> 
     Ok(running)
 }
 
-fn render_bulk_thumbnails<R: tauri::Runtime>(
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+fn render_bulk_thumbnails(
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
     mode: BulkRenderMode,
 ) -> AppResult<ThumbnailRenderSummary> {
     if state
@@ -105,7 +106,7 @@ fn render_bulk_thumbnails<R: tauri::Runtime>(
         .thumbnail_render_all_cancel_requested
         .store(false, Ordering::SeqCst);
 
-    let result = render_bulk_thumbnails_inner(state, app, mode);
+    let result = render_bulk_thumbnails_inner(state, permit, app, mode);
 
     state
         .thumbnail_render_all_running
@@ -117,24 +118,15 @@ fn render_bulk_thumbnails<R: tauri::Runtime>(
     result
 }
 
-fn render_bulk_thumbnails_inner<R: tauri::Runtime>(
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+fn render_bulk_thumbnails_inner(
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
     mode: BulkRenderMode,
 ) -> AppResult<ThumbnailRenderSummary> {
-    let conn = db::open_connection(&state.db_path)?;
-    let assets = match mode {
-        BulkRenderMode::All => db::list_assets_for_thumbnail_render(&conn)?,
-        BulkRenderMode::FailedOnly => db::list_failed_assets_for_thumbnail_render(&conn)?,
-    };
-    let skip_failed_ids = match mode {
-        BulkRenderMode::All => db::list_failed_thumbnail_asset_ids(&conn)?
-            .into_iter()
-            .collect::<HashSet<_>>(),
-        BulkRenderMode::FailedOnly => HashSet::new(),
-    };
-    let total = assets.len();
-
+    let (ceiling, total): (i64, usize) = permit.connection()?.query_row(
+        "SELECT COALESCE(MAX(a.id), 0), COUNT(*) FROM assets a WHERE ?1 = 0 OR EXISTS (SELECT 1 FROM thumbnail_failures tf WHERE tf.asset_id = a.id AND tf.source_record_version = a.record_version)",
+        [matches!(mode, BulkRenderMode::FailedOnly)], |row| Ok((row.get(0)?, row.get(1)?)))?;
     let _ = emit_progress(
         app,
         mode.start_phase(),
@@ -153,168 +145,203 @@ fn render_bulk_thumbnails_inner<R: tauri::Runtime>(
     let (completion_tx, completion_rx) = mpsc::channel::<ThumbnailTaskResult>();
     let generation = state.thumbnail_generation.load(Ordering::SeqCst);
 
-    for asset in assets {
-        if state
-            .thumbnail_render_all_cancel_requested
-            .load(Ordering::SeqCst)
-        {
-            cancelled = true;
+    let mut stale = 0usize;
+    let mut after = 0;
+    loop {
+        let candidates = db::thumbnail_candidates_page(
+            &*permit.connection()?,
+            after,
+            ceiling,
+            512,
+            matches!(mode, BulkRenderMode::FailedOnly),
+        )?;
+        if candidates.is_empty() {
             break;
         }
-
-        let source_path = PathBuf::from(&asset.path);
-        let version = source_version_for(&asset);
-        let target = thumbs::thumb_target(&state.thumbs_dir, &version);
-
-        if !source_path.exists() {
-            failed += 1;
-            processed += 1;
-            updates.push((asset.id, None, version));
-            let _ = db::record_thumbnail_failure(
-                &conn,
-                asset.id,
-                asset.modified_at,
-                Some("source file not found"),
-            );
-            if let Some(existing) = asset.thumb_path {
-                let _ = remove_thumbnail_file(&state.thumbs_dir, Path::new(&existing));
-            }
-            emit_render_progress(app, mode.progress_phase(), processed, total);
-            continue;
-        }
-
-        if target.exists() {
-            generated += 1;
-            processed += 1;
-            updates.push((
-                asset.id,
-                Some(target.to_string_lossy().to_string()),
-                version,
-            ));
-            let _ = db::clear_thumbnail_failure(&conn, asset.id);
-            emit_render_progress(app, mode.progress_phase(), processed, total);
-            continue;
-        }
-
-        if matches!(mode, BulkRenderMode::All) && skip_failed_ids.contains(&asset.id) {
-            skipped_failed += 1;
-            processed += 1;
-            emit_render_progress(app, mode.progress_phase(), processed, total);
-            continue;
-        }
-
-        state.thumb_scheduler.enqueue_with_sender(
-            ThumbnailTask {
-                asset_id: asset.id,
-                source_path,
-                target_path: target,
-                kind: asset.kind,
-                duration_ms: asset.duration_ms,
-                source_version: version.clone(),
-            },
-            ThumbnailPriority::Low,
-            completion_tx.clone(),
-        )?;
-
-        pending.insert(
-            asset.id,
-            PendingRenderTask {
-                asset_path: asset.path,
-                modified_at: asset.modified_at,
-                version,
-            },
-        );
-
-        while pending.len() >= BULK_IN_FLIGHT_LIMIT {
-            let Some(result) = wait_next_render_result(
-                &completion_rx,
-                &state.thumbnail_render_all_cancel_requested,
-            )?
-            else {
+        after = candidates.last().expect("nonempty page").0.id;
+        for (asset, previously_failed) in candidates {
+            if state
+                .thumbnail_render_all_cancel_requested
+                .load(Ordering::SeqCst)
+            {
                 cancelled = true;
                 break;
-            };
+            }
 
-            let Some(task) = pending.remove(&result.asset_id) else {
+            let source_path = PathBuf::from(&asset.path);
+            let version = source_version_for(&asset);
+            let target = thumbs::thumb_target(&state.thumbs_dir, &version);
+
+            if !source_path.exists() {
+                failed += 1;
+                processed += 1;
+                updates.push((asset.id, None, version));
+                let _ = db::record_thumbnail_failure_if_version_matches(
+                    &*permit.connection()?,
+                    asset.id,
+                    asset.record_version,
+                    Some("source file not found"),
+                );
+                if let Some(existing) = asset.thumb_path {
+                    let _ = remove_thumbnail_file(&state.thumbs_dir, Path::new(&existing));
+                }
+                emit_render_progress(app, mode.progress_phase(), processed, total);
                 continue;
-            };
+            }
 
-            process_bulk_result(
-                &conn,
+            if target.exists() {
+                generated += 1;
+                processed += 1;
+                updates.push((
+                    asset.id,
+                    Some(target.to_string_lossy().to_string()),
+                    version,
+                ));
+                let _ = db::clear_thumbnail_failure_if_version_matches(
+                    &*permit.connection()?,
+                    asset.id,
+                    asset.record_version,
+                );
+                emit_render_progress(app, mode.progress_phase(), processed, total);
+                continue;
+            }
+
+            if matches!(mode, BulkRenderMode::All) && previously_failed {
+                skipped_failed += 1;
+                processed += 1;
+                emit_render_progress(app, mode.progress_phase(), processed, total);
+                continue;
+            }
+
+            state.thumb_scheduler.enqueue_with_sender(
+                ThumbnailTask {
+                    operation: Some(permit.clone()),
+                    asset_id: asset.id,
+                    source_path,
+                    target_path: target,
+                    kind: asset.kind,
+                    duration_ms: asset.duration_ms,
+                    source_version: version.clone(),
+                },
+                ThumbnailPriority::Low,
+                completion_tx.clone(),
+            )?;
+
+            pending.insert(
+                asset.id,
+                PendingRenderTask {
+                    asset_path: asset.path,
+                    record_version: asset.record_version,
+                    version,
+                },
+            );
+
+            while pending.len() >= BULK_IN_FLIGHT_LIMIT {
+                let Some(result) = wait_next_render_result(
+                    &completion_rx,
+                    &state.thumbnail_render_all_cancel_requested,
+                )?
+                else {
+                    cancelled = true;
+                    break;
+                };
+
+                let Some(task) = pending.remove(&result.asset_id) else {
+                    continue;
+                };
+
+                process_bulk_result(
+                    &*permit.connection()?,
+                    app,
+                    mode,
+                    total,
+                    &mut processed,
+                    &mut generated,
+                    &mut failed,
+                    &mut updates,
+                    task,
+                    result,
+                );
+            }
+
+            if cancelled {
+                break;
+            }
+        }
+
+        if cancelled {
+            drain_ready_render_results(
+                &*permit.connection()?,
                 app,
                 mode,
                 total,
+                &completion_rx,
+                &mut pending,
                 &mut processed,
                 &mut generated,
                 &mut failed,
                 &mut updates,
-                task,
-                result,
             );
+        } else {
+            while !pending.is_empty() {
+                let Some(result) = wait_next_render_result(
+                    &completion_rx,
+                    &state.thumbnail_render_all_cancel_requested,
+                )?
+                else {
+                    cancelled = true;
+                    break;
+                };
+
+                let Some(task) = pending.remove(&result.asset_id) else {
+                    continue;
+                };
+
+                process_bulk_result(
+                    &*permit.connection()?,
+                    app,
+                    mode,
+                    total,
+                    &mut processed,
+                    &mut generated,
+                    &mut failed,
+                    &mut updates,
+                    task,
+                    result,
+                );
+            }
         }
 
+        // A cleared-thumbnail workflow (generation bump) between enqueue and
+        // commit invalidates every collected result: publishing them would
+        // resurrect references the user explicitly removed.
+        let stale_ids = publish_thumbnail_updates(
+            &*permit.connection()?,
+            &updates,
+            state.thumbnail_generation.load(Ordering::SeqCst),
+            generation,
+        )?;
+
+        // Results whose compare-and-set lost against a re-index (or that were
+        // dropped by a generation reset) must not leave stale-version targets on
+        // disk. Best-effort removal; orphans are handled by explicit cleanup.
+        remove_dropped_thumbnail_files(&updates, &stale_ids);
+        for id in &stale_ids {
+            if updates
+                .iter()
+                .any(|(asset_id, path, _)| asset_id == id && path.is_some())
+            {
+                generated -= 1;
+            } else {
+                failed -= 1;
+            }
+        }
+        stale += stale_ids.len();
+        updates.clear();
         if cancelled {
             break;
         }
     }
-
-    if cancelled {
-        drain_ready_render_results(
-            &conn,
-            app,
-            mode,
-            total,
-            &completion_rx,
-            &mut pending,
-            &mut processed,
-            &mut generated,
-            &mut failed,
-            &mut updates,
-        );
-    } else {
-        while !pending.is_empty() {
-            let Some(result) = wait_next_render_result(
-                &completion_rx,
-                &state.thumbnail_render_all_cancel_requested,
-            )?
-            else {
-                cancelled = true;
-                break;
-            };
-
-            let Some(task) = pending.remove(&result.asset_id) else {
-                continue;
-            };
-
-            process_bulk_result(
-                &conn,
-                app,
-                mode,
-                total,
-                &mut processed,
-                &mut generated,
-                &mut failed,
-                &mut updates,
-                task,
-                result,
-            );
-        }
-    }
-
-    // A cleared-thumbnail workflow (generation bump) between enqueue and
-    // commit invalidates every collected result: publishing them would
-    // resurrect references the user explicitly removed.
-    let stale_ids = publish_thumbnail_updates(
-        &conn,
-        &updates,
-        state.thumbnail_generation.load(Ordering::SeqCst),
-        generation,
-    )?;
-
-    // Results whose compare-and-set lost against a re-index (or that were
-    // dropped by a generation reset) must not leave stale-version targets on
-    // disk. Best-effort removal; orphans are handled by explicit cleanup.
-    remove_dropped_thumbnail_files(&updates, &stale_ids);
 
     let _ = emit_progress(
         app,
@@ -335,6 +362,7 @@ fn render_bulk_thumbnails_inner<R: tauri::Runtime>(
     );
 
     Ok(ThumbnailRenderSummary {
+        stale,
         generated,
         failed,
         skipped_failed,
@@ -347,7 +375,7 @@ fn render_bulk_thumbnails_inner<R: tauri::Runtime>(
 #[allow(clippy::too_many_arguments)]
 fn process_bulk_result(
     conn: &rusqlite::Connection,
-    app: &tauri::AppHandle<impl tauri::Runtime>,
+    app: &impl crate::services::progress::ProgressSink,
     mode: BulkRenderMode,
     total: usize,
     processed: &mut usize,
@@ -361,14 +389,18 @@ fn process_bulk_result(
     if let Some(path) = result.thumb_path {
         *generated += 1;
         updates.push((result.asset_id, Some(path), task.version));
-        let _ = db::clear_thumbnail_failure(conn, result.asset_id);
+        let _ = db::clear_thumbnail_failure_if_version_matches(
+            conn,
+            result.asset_id,
+            task.record_version,
+        );
     } else {
         *failed += 1;
         updates.push((result.asset_id, None, task.version));
-        let _ = db::record_thumbnail_failure(
+        let _ = db::record_thumbnail_failure_if_version_matches(
             conn,
             result.asset_id,
-            task.modified_at,
+            task.record_version,
             Some("thumbnail generation failed"),
         );
         let _ = emit_progress(
@@ -427,7 +459,7 @@ fn wait_next_render_result_with_stall(
 #[allow(clippy::too_many_arguments)]
 fn drain_ready_render_results(
     conn: &rusqlite::Connection,
-    app: &tauri::AppHandle<impl tauri::Runtime>,
+    app: &impl crate::services::progress::ProgressSink,
     mode: BulkRenderMode,
     total: usize,
     completion_receiver: &Receiver<ThumbnailTaskResult>,
@@ -447,16 +479,32 @@ fn drain_ready_render_results(
     }
 }
 
-pub fn ensure_asset_thumbnail(asset_id: i64, state: &State<AppState>) -> AppResult<Option<String>> {
-    let conn = db::open_connection(&state.db_path)?;
-    let Some(asset) = db::get_asset_for_thumbnail(&conn, asset_id)? else {
+pub fn ensure_asset_thumbnail(
+    asset_id: i64,
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+) -> AppResult<Option<String>> {
+    let Some(asset) = db::get_asset_for_thumbnail(&*permit.connection()?, asset_id)? else {
         return Ok(None);
     };
 
     if let Some(existing) = asset.thumb_path.clone() {
         let existing_path = PathBuf::from(&existing);
         if existing_path.exists() {
-            let _ = db::clear_thumbnail_failure(&conn, asset.id);
+            let outcome = db::update_asset_thumbnail_path_if_version_matches(
+                &*permit.connection()?,
+                asset.id,
+                Some(&existing),
+                &source_version_for(&asset),
+            )?;
+            if outcome == db::ThumbnailCasOutcome::VersionMismatch {
+                return Ok(None);
+            }
+            let _ = db::clear_thumbnail_failure_if_version_matches(
+                &*permit.connection()?,
+                asset.id,
+                asset.record_version,
+            );
             return Ok(Some(existing));
         }
     }
@@ -464,12 +512,16 @@ pub fn ensure_asset_thumbnail(asset_id: i64, state: &State<AppState>) -> AppResu
     let source_path = PathBuf::from(&asset.path);
     let version = source_version_for(&asset);
     if !source_path.exists() {
-        let _ =
-            db::update_asset_thumbnail_path_if_version_matches(&conn, asset.id, None, &version)?;
-        let _ = db::record_thumbnail_failure(
-            &conn,
+        let _ = db::update_asset_thumbnail_path_if_version_matches(
+            &*permit.connection()?,
             asset.id,
-            asset.modified_at,
+            None,
+            &version,
+        )?;
+        let _ = db::record_thumbnail_failure_if_version_matches(
+            &*permit.connection()?,
+            asset.id,
+            asset.record_version,
             Some("source file not found"),
         );
         if let Some(existing) = asset.thumb_path {
@@ -481,18 +533,23 @@ pub fn ensure_asset_thumbnail(asset_id: i64, state: &State<AppState>) -> AppResu
     let target = thumbs::thumb_target(&state.thumbs_dir, &version);
     if target.exists() {
         let target_str = target.to_string_lossy().to_string();
-        db::update_asset_thumbnail_path_if_version_matches(
-            &conn,
+        let outcome = db::update_asset_thumbnail_path_if_version_matches(
+            &*permit.connection()?,
             asset.id,
             Some(&target_str),
             &version,
         )?;
-        let _ = db::clear_thumbnail_failure(&conn, asset.id);
-        return Ok(Some(target_str));
+        let _ = db::clear_thumbnail_failure_if_version_matches(
+            &*permit.connection()?,
+            asset.id,
+            asset.record_version,
+        );
+        return Ok((outcome == db::ThumbnailCasOutcome::Applied).then_some(target_str));
     }
 
     let receiver = state.thumb_scheduler.enqueue(
         ThumbnailTask {
+            operation: Some(permit.clone()),
             asset_id: asset.id,
             source_path,
             target_path: target,
@@ -526,13 +583,17 @@ pub fn ensure_asset_thumbnail(asset_id: i64, state: &State<AppState>) -> AppResu
 
     if let Some(path) = result.thumb_path {
         match db::update_asset_thumbnail_path_if_version_matches(
-            &conn,
+            &*permit.connection()?,
             asset.id,
             Some(&path),
             &version,
         )? {
             db::ThumbnailCasOutcome::Applied => {
-                let _ = db::clear_thumbnail_failure(&conn, asset.id);
+                let _ = db::clear_thumbnail_failure_if_version_matches(
+                    &*permit.connection()?,
+                    asset.id,
+                    asset.record_version,
+                );
                 Ok(Some(path))
             }
             db::ThumbnailCasOutcome::VersionMismatch => {
@@ -543,56 +604,43 @@ pub fn ensure_asset_thumbnail(asset_id: i64, state: &State<AppState>) -> AppResu
             }
         }
     } else {
-        let _ =
-            db::update_asset_thumbnail_path_if_version_matches(&conn, asset.id, None, &version)?;
-        let _ = db::record_thumbnail_failure(
-            &conn,
+        let _ = db::update_asset_thumbnail_path_if_version_matches(
+            &*permit.connection()?,
             asset.id,
-            asset.modified_at,
+            None,
+            &version,
+        )?;
+        let _ = db::record_thumbnail_failure_if_version_matches(
+            &*permit.connection()?,
+            asset.id,
+            asset.record_version,
             Some("thumbnail generation failed"),
         );
         Ok(None)
     }
 }
 
-pub fn ensure_page_thumbnails<R: tauri::Runtime>(
+pub fn ensure_page_thumbnails(
     asset_ids: Vec<i64>,
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
 ) -> AppResult<ThumbnailBatchResult> {
     let high_priority = asset_ids.iter().copied().collect::<HashSet<_>>();
-    ensure_page_thumbnails_with_sink(asset_ids, &high_priority, state, app, |item| {
-        let _ = app.emit("thumbnail-ready", item);
+    ensure_page_thumbnails_with_sink(asset_ids, &high_priority, state, permit, app, |item| {
+        let _ = app.thumbnail_ready(item);
     })
 }
 
-pub fn ensure_thumbnails_stream<R: tauri::Runtime>(
-    request_id: u64,
+pub fn ensure_thumbnails_stream(
+    _request_id: u64,
     visible_ids: Vec<i64>,
     prefetch_ids: Vec<i64>,
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
-    channel: Channel<ThumbnailStreamEvent>,
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
+    mut send: impl FnMut(ThumbnailStreamEvent),
 ) -> AppResult<()> {
-    // The frontend sends its queue generation as the request id. A lower id
-    // belongs to a reset/abandoned generation; reject it instead of rendering
-    // work nobody will consume anymore.
-    let mut latest = state.thumbnail_latest_request_id.load(Ordering::SeqCst);
-    while request_id > latest {
-        match state.thumbnail_latest_request_id.compare_exchange(
-            latest,
-            request_id,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        ) {
-            Ok(_) => break,
-            Err(current) => latest = current,
-        }
-    }
-    if request_id != 0 && request_id < state.thumbnail_latest_request_id.load(Ordering::SeqCst) {
-        return Ok(());
-    }
-
     let mut seen = HashSet::new();
     let visible = visible_ids
         .into_iter()
@@ -607,30 +655,37 @@ pub fn ensure_thumbnails_stream<R: tauri::Runtime>(
             .filter(|id| *id > 0 && seen.insert(*id))
             .take(64),
     );
-    let result = ensure_page_thumbnails_with_sink(ids, &high_priority, state, app, |item| {
-        let _ = channel.send(ThumbnailStreamEvent::Ready(item.clone()));
-    })?;
+    let result =
+        ensure_page_thumbnails_with_sink(ids, &high_priority, state, permit, app, |item| {
+            send(ThumbnailStreamEvent::Ready(item.clone()));
+        })?;
     for asset_id in &result.failed {
-        let _ = channel.send(ThumbnailStreamEvent::Failed {
+        send(ThumbnailStreamEvent::Failed {
             asset_id: *asset_id,
         });
     }
-    let _ = channel.send(ThumbnailStreamEvent::Done {
+    for asset_id in &result.stale {
+        send(ThumbnailStreamEvent::Stale {
+            asset_id: *asset_id,
+        });
+    }
+    send(ThumbnailStreamEvent::Done {
+        stale: result.stale.len(),
         ready: result.ready.len(),
         failed: result.failed.len(),
     });
     Ok(())
 }
 
-fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
+fn ensure_page_thumbnails_with_sink(
     asset_ids: Vec<i64>,
     high_priority: &HashSet<i64>,
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
     mut on_ready: impl FnMut(&ThumbnailBatchItem),
 ) -> AppResult<ThumbnailBatchResult> {
     let started = std::time::Instant::now();
-    let conn = db::open_connection(&state.db_path)?;
     let mut seen = HashSet::new();
     let ids = asset_ids
         .into_iter()
@@ -650,14 +705,34 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
     let mut processed = 0usize;
     let mut ready = Vec::new();
     let mut failed = Vec::new();
+    let mut stale_ready = Vec::new();
     let mut updates = Vec::<(i64, Option<String>, crate::thumbs::SourceVersion)>::new();
     let mut pending = HashMap::<i64, PendingPageTask>::new();
     let (completion_tx, completion_rx) = mpsc::channel::<ThumbnailTaskResult>();
     let generation = state.thumbnail_generation.load(Ordering::SeqCst);
-    let mut assets_by_id = db::get_assets_for_thumbnails_by_ids(&conn, &ids)?
+    let mut assets_by_id = db::get_assets_for_thumbnails_by_ids(&*permit.connection()?, &ids)?
         .into_iter()
         .map(|asset| (asset.id, asset))
         .collect::<HashMap<_, _>>();
+
+    let mut publish_ready =
+        |item: ThumbnailBatchItem, version: crate::thumbs::SourceVersion| -> AppResult<()> {
+            let updates = [(item.asset_id, Some(item.thumb_path.clone()), version)];
+            let rejected = publish_thumbnail_updates(
+                &*permit.connection()?,
+                &updates,
+                state.thumbnail_generation.load(Ordering::SeqCst),
+                generation,
+            )?;
+            if rejected.is_empty() {
+                on_ready(&item);
+                ready.push(item);
+            } else {
+                remove_dropped_thumbnail_files(&updates, &rejected);
+                stale_ready.push(item.asset_id);
+            }
+            Ok(())
+        };
 
     for asset_id in ids {
         let Some(asset) = assets_by_id.remove(&asset_id) else {
@@ -672,11 +747,14 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
             if existing_path.exists() {
                 let item = ThumbnailBatchItem {
                     asset_id: asset.id,
-                    thumb_path: existing,
+                    thumb_path: existing.clone(),
                 };
-                on_ready(&item);
-                ready.push(item);
-                let _ = db::clear_thumbnail_failure(&conn, asset.id);
+                publish_ready(item, source_version_for(&asset))?;
+                let _ = db::clear_thumbnail_failure_if_version_matches(
+                    &*permit.connection()?,
+                    asset.id,
+                    asset.record_version,
+                );
                 processed += 1;
                 emit_page_progress(app, processed, total);
                 continue;
@@ -688,10 +766,10 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
         if !source_path.exists() {
             failed.push(asset.id);
             updates.push((asset.id, None, version));
-            let _ = db::record_thumbnail_failure(
-                &conn,
+            let _ = db::record_thumbnail_failure_if_version_matches(
+                &*permit.connection()?,
                 asset.id,
-                asset.modified_at,
+                asset.record_version,
                 Some("source file not found"),
             );
             processed += 1;
@@ -706,10 +784,12 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
                 asset_id: asset.id,
                 thumb_path: target_str.clone(),
             };
-            on_ready(&item);
-            ready.push(item);
-            updates.push((asset.id, Some(target_str), version));
-            let _ = db::clear_thumbnail_failure(&conn, asset.id);
+            publish_ready(item, version)?;
+            let _ = db::clear_thumbnail_failure_if_version_matches(
+                &*permit.connection()?,
+                asset.id,
+                asset.record_version,
+            );
             processed += 1;
             emit_page_progress(app, processed, total);
             continue;
@@ -717,6 +797,7 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
 
         state.thumb_scheduler.enqueue_with_sender(
             ThumbnailTask {
+                operation: Some(permit.clone()),
                 asset_id: asset.id,
                 source_path,
                 target_path: target,
@@ -735,7 +816,7 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
         pending.insert(
             asset.id,
             PendingPageTask {
-                modified_at: asset.modified_at,
+                record_version: asset.record_version,
                 version,
             },
         );
@@ -758,17 +839,19 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
                         asset_id: result.asset_id,
                         thumb_path: path.clone(),
                     };
-                    on_ready(&item);
-                    ready.push(item);
-                    updates.push((result.asset_id, Some(path), task.version));
-                    let _ = db::clear_thumbnail_failure(&conn, result.asset_id);
+                    publish_ready(item, task.version)?;
+                    let _ = db::clear_thumbnail_failure_if_version_matches(
+                        &*permit.connection()?,
+                        result.asset_id,
+                        task.record_version,
+                    );
                 } else {
                     failed.push(result.asset_id);
                     updates.push((result.asset_id, None, task.version));
-                    let _ = db::record_thumbnail_failure(
-                        &conn,
+                    let _ = db::record_thumbnail_failure_if_version_matches(
+                        &*permit.connection()?,
                         result.asset_id,
-                        task.modified_at,
+                        task.record_version,
                         Some("thumbnail generation failed"),
                     );
                 }
@@ -789,14 +872,18 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
         }
     }
 
-    let stale_ids = publish_thumbnail_updates(
-        &conn,
+    let mut stale_ids = publish_thumbnail_updates(
+        &*permit.connection()?,
         &updates,
         state.thumbnail_generation.load(Ordering::SeqCst),
         generation,
     )?;
 
     remove_dropped_thumbnail_files(&updates, &stale_ids);
+    stale_ids.extend(stale_ready);
+    let stale_set: HashSet<_> = stale_ids.iter().copied().collect();
+    ready.retain(|item| !stale_set.contains(&item.asset_id));
+    failed.retain(|id| !stale_set.contains(id));
 
     let _ = emit_progress(
         app,
@@ -818,7 +905,11 @@ fn ensure_page_thumbnails_with_sink<R: tauri::Runtime>(
             failed.len()
         );
     }
-    Ok(ThumbnailBatchResult { ready, failed })
+    Ok(ThumbnailBatchResult {
+        ready,
+        failed,
+        stale: stale_ids,
+    })
 }
 
 /// Publishes collected thumbnail results. Each row is written through a
@@ -852,7 +943,7 @@ fn remove_dropped_thumbnail_files(
 }
 
 fn emit_render_progress(
-    app: &tauri::AppHandle<impl tauri::Runtime>,
+    app: &impl crate::services::progress::ProgressSink,
     phase: &str,
     processed: usize,
     total: usize,
@@ -868,7 +959,11 @@ fn emit_render_progress(
     }
 }
 
-fn emit_page_progress(app: &tauri::AppHandle<impl tauri::Runtime>, processed: usize, total: usize) {
+fn emit_page_progress(
+    app: &impl crate::services::progress::ProgressSink,
+    processed: usize,
+    total: usize,
+) {
     if processed < total && !processed.is_multiple_of(16) {
         return;
     }
@@ -883,14 +978,15 @@ fn emit_page_progress(app: &tauri::AppHandle<impl tauri::Runtime>, processed: us
     }
 }
 
-pub fn clear_all_thumbnails<R: tauri::Runtime>(
-    state: &State<AppState>,
-    app: &tauri::AppHandle<R>,
+pub fn clear_all_thumbnails(
+    state: &AppState,
+    permit: &crate::services::db_pool::OperationPermit,
+    app: &impl crate::services::progress::ProgressSink,
 ) -> AppResult<usize> {
     // Invalidate every in-flight render before removing anything: results
     // completing after this point are dropped instead of written back.
     state.thumbnail_generation.fetch_add(1, Ordering::SeqCst);
-    let conn = db::open_connection(&state.db_path)?;
+    let conn = permit.connection()?;
     let thumbs = db::clear_all_thumbnail_paths(&conn)?;
     let total = thumbs.len();
     let _ = emit_progress(
@@ -913,7 +1009,7 @@ pub fn delete_thumbnail_files_in_root(thumbs_root: &Path, paths: Vec<String>) ->
 }
 
 pub fn delete_thumbnail_files_with_progress(
-    app: &tauri::AppHandle<impl tauri::Runtime>,
+    app: &impl crate::services::progress::ProgressSink,
     thumbs_root: &Path,
     paths: Vec<String>,
     total: usize,
@@ -1012,7 +1108,7 @@ mod tests {
         fs,
         path::{Path, PathBuf},
         sync::{
-            atomic::{AtomicBool, AtomicU64},
+            atomic::{AtomicBool, AtomicU64, Ordering},
             mpsc, Arc, Mutex, RwLock,
         },
     };
@@ -1034,6 +1130,7 @@ mod tests {
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
         AppState {
+            database: crate::services::db_pool::DatabaseRuntime::new(db_path.to_path_buf()),
             db_path: db_path.to_path_buf(),
             thumbs_dir: thumbs_dir.to_path_buf(),
             ffmpeg_path: PathBuf::from("ffmpeg"),
@@ -1043,12 +1140,7 @@ mod tests {
             thumbnail_render_all_running: AtomicBool::new(false),
             thumbnail_render_all_cancel_requested: AtomicBool::new(false),
             thumbnail_generation: std::sync::atomic::AtomicU64::new(0),
-            thumbnail_latest_request_id: std::sync::atomic::AtomicU64::new(0),
         }
-    }
-
-    fn as_state<'a>(state: &'a AppState) -> tauri::State<'a, AppState> {
-        unsafe { std::mem::transmute::<&'a AppState, tauri::State<'a, AppState>>(state) }
     }
 
     fn new_asset(path: &Path, modified_at: i64, thumb_path: Option<&Path>) -> NewAsset {
@@ -1138,8 +1230,9 @@ mod tests {
             .expect("upsert asset");
 
         let state = create_test_state(&db_path, &thumbs_dir);
-        let state_ref = as_state(&state);
-        let result = ensure_asset_thumbnail(1, &state_ref).expect("ensure thumb");
+        let state_ref = &state;
+        let result = ensure_asset_thumbnail(1, state_ref, &state.database.admit().unwrap())
+            .expect("ensure thumb");
 
         assert_eq!(
             result.as_deref(),
@@ -1158,8 +1251,8 @@ mod tests {
         db::init_schema(&conn).expect("init schema");
 
         let state = create_test_state(&db_path, &thumbs_dir);
-        let state_ref = as_state(&state);
-        let accepted = cancel_render_all_thumbnails(&state_ref).expect("cancel result");
+        let state_ref = &state;
+        let accepted = cancel_render_all_thumbnails(state_ref).expect("cancel result");
         assert!(!accepted);
         assert!(!state
             .thumbnail_render_all_cancel_requested
@@ -1181,8 +1274,8 @@ mod tests {
             .thumbnail_render_all_running
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
-        let state_ref = as_state(&state);
-        let accepted = cancel_render_all_thumbnails(&state_ref).expect("cancel result");
+        let state_ref = &state;
+        let accepted = cancel_render_all_thumbnails(state_ref).expect("cancel result");
         assert!(accepted);
         assert!(state
             .thumbnail_render_all_cancel_requested
@@ -1297,6 +1390,7 @@ mod tests {
         );
 
         let state = AppState {
+            database: crate::services::db_pool::DatabaseRuntime::new(db_path.to_path_buf()),
             db_path: db_path.to_path_buf(),
             thumbs_dir: thumbs_dir.to_path_buf(),
             ffmpeg_path: PathBuf::from("ffmpeg"),
@@ -1306,12 +1400,11 @@ mod tests {
             thumbnail_render_all_running: AtomicBool::new(false),
             thumbnail_render_all_cancel_requested: AtomicBool::new(false),
             thumbnail_generation: AtomicU64::new(0),
-            thumbnail_latest_request_id: AtomicU64::new(0),
         };
 
         let handle = std::thread::spawn(move || {
-            let state_ref = as_state(&state);
-            ensure_asset_thumbnail(1, &state_ref)
+            let state_ref = &state;
+            ensure_asset_thumbnail(1, state_ref, &state.database.admit().unwrap())
         });
 
         while !*started.lock().expect("started lock") {
@@ -1387,5 +1480,108 @@ mod tests {
         // Generation advanced meanwhile: nothing is committed at all.
         let stale = publish_thumbnail_updates(&conn, &updates, 8, 7).expect("publish after reset");
         assert_eq!(stale, vec![1]);
+    }
+    #[test]
+    fn stale_stream_result_is_never_ready_and_frontend_reload_can_retry() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let source = dir.path().join("source.png");
+        fs::write(&source, b"source").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        insert_scanned_asset(&conn, &source, 6, 1, 1_000_000_000);
+        drop(conn);
+        let mut state = create_test_state(&db_path, &thumbs);
+        let worker_db = db_path.clone();
+        let first = std::sync::atomic::AtomicBool::new(true);
+        state.thumb_scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                if first.swap(false, Ordering::SeqCst) {
+                    let conn = db::open_connection(&worker_db).unwrap();
+                    conn.execute("UPDATE assets SET fingerprint_mtime_ns = fingerprint_mtime_ns + 1, record_version = record_version + 1", []).unwrap();
+                }
+                fs::write(&task.target_path, b"thumbnail").unwrap();
+                Some(task.target_path.to_string_lossy().into())
+            }),
+        );
+        let permit = state.database.admit().unwrap();
+        let mut events = Vec::new();
+        super::ensure_thumbnails_stream(
+            77,
+            vec![1],
+            vec![],
+            &state,
+            &permit,
+            &|_| Ok(()),
+            |event| events.push(event),
+        )
+        .unwrap();
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, crate::models::ThumbnailStreamEvent::Ready(_))));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::models::ThumbnailStreamEvent::Done {
+                ready: 0,
+                failed: 0,
+                stale: 1
+            }
+        )));
+        events.clear();
+        super::ensure_thumbnails_stream(
+            1,
+            vec![1],
+            vec![],
+            &state,
+            &permit,
+            &|_| Ok(()),
+            |event| events.push(event),
+        )
+        .unwrap();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::models::ThumbnailStreamEvent::Done {
+                ready: 1,
+                failed: 0,
+                stale: 0
+            }
+        )));
+        assert!(
+            db::get_asset_for_thumbnail(&permit.connection().unwrap(), 1)
+                .unwrap()
+                .unwrap()
+                .thumb_path
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn cancellation_reaches_atomics_while_maintenance_and_workflow_locks_are_held() {
+        let dir = tempdir().unwrap();
+        let state = Arc::new(create_test_state(
+            &dir.path().join("media.db"),
+            &dir.path().join("thumbs"),
+        ));
+        state
+            .thumbnail_render_all_running
+            .store(true, Ordering::SeqCst);
+        let maintenance = state.database.maintenance().unwrap();
+        let scan = state.scan_lock.lock().unwrap();
+        let thumb = state.thumb_lock.write().unwrap();
+        let worker_state = state.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            tx.send(super::cancel_render_all_thumbnails(&worker_state).unwrap())
+                .unwrap()
+        });
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap());
+        drop(thumb);
+        drop(scan);
+        drop(maintenance);
+        worker.join().unwrap();
     }
 }

@@ -20,6 +20,7 @@ use crate::{
 const GL_DRAW_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
 const GL_DRAW_FRAMEBUFFER: u32 = 0x8CA9;
 const GL_FRAMEBUFFER_COMPLETE: u32 = 0x8CD5;
+const GL_RENDERER: u32 = 0x1F01;
 const GL_NO_ERROR: u32 = 0;
 
 thread_local! {
@@ -148,6 +149,32 @@ impl MpvRenderContext {
         mpv: &'static libmpv2::Mpv,
         update_sender: async_channel::Sender<()>,
     ) -> Result<Self, String> {
+        type GetString = unsafe extern "C" fn(u32) -> *const c_char;
+        let get_string: GetString = unsafe { std::mem::transmute(gl_function("glGetString")?) };
+        // GLArea has made this context current. The driver's string belongs to
+        // this GL context and remains valid while it is current.
+        let renderer = unsafe { get_string(GL_RENDERER) };
+        if renderer.is_null() {
+            return Err("OpenGL renderer is unavailable".to_string());
+        }
+        let renderer = unsafe { CStr::from_ptr(renderer) }.to_string_lossy();
+        let software_rendering = renderer.to_ascii_lowercase().contains("llvmpipe");
+        // mpv 0.41's normal rendering path produced black frames with Mesa 26.1
+        // llvmpipe. Its basic path passed decoded-frame, seek and fullscreen
+        // checks. Reset to auto for a context recreated on a hardware driver.
+        let configured = mpv.set_property(
+            "gpu-dumb-mode",
+            if software_rendering { "yes" } else { "auto" },
+        );
+        match configured {
+            Ok(()) if software_rendering => {
+                eprintln!("native video uses basic rendering for {renderer}");
+            }
+            // mpv documents this compatibility option as removable. A newer
+            // system library must still be allowed to use its default renderer.
+            Err(error) => eprintln!("libmpv renderer compatibility option unavailable: {error}"),
+            Ok(()) => {}
+        }
         let mut init_params = mpv_sys::mpv_opengl_init_params {
             get_proc_address: Some(mpv_get_proc_address),
             get_proc_address_ctx: std::ptr::null_mut(),

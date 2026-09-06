@@ -6,59 +6,58 @@ This page describes the setup and build behavior implemented by the current repo
 
 ## Prerequisites
 
-The packaged application supports Arch/CachyOS x86-64 as an unbundled native executable. The Docker workflow forces `linux/amd64` and builds the release executable without running test suites.
+Linux packages target x86_64. The Docker workflow builds Flatpak against GNOME 50 and AppImage on Debian 12. The Arch-native executable remains an explicit build option. The host needs Docker, Bash, GNU file/coreutils/findutils/diffutils, and `flock`; Bun, Node, Rust, and media libraries are installed inside Docker. Python 3 is also needed on the host for the optional native archive validation and packaging regression tests.
 
-The supported Linux release workflow requires a working Docker daemon plus Bash and the standard GNU utilities used by `scripts/build-linux-docker.sh` on the host. `Dockerfile.linux` installs the Arch build dependencies, Bun, Node.js, Rust/Cargo, WebKitGTK, and media runtime packages inside the image. Those language toolchains do not need to be installed on the host.
+Toolchains remain Bun `1.4.0`, Node `22.22.0`, and Rust `1.98.0`. Portable builds verify the checksums in [toolchains.json](../../packaging/linux/toolchains.json). Keep `.nvmrc`, `packageManager`, `rust-toolchain.toml`, `Cargo.toml`, CI, and packaging pins aligned when updating a toolchain. Lockfiles change only when dependency resolution changes.
 
-The repository-level runtime requirements are:
-
-| Tool | Declared requirement | Notes |
-| --- | --- | --- |
-| Bun | `1.4.0` | Pinned by `packageManager` in `package.json`, CI, and the Linux image. Bun installs dependencies and runs package scripts. |
-| Node.js | `22.22.0` | Pinned by `.nvmrc`, CI, and the Linux image. The broader `engines` range is a compatibility declaration, not the release/CI version. |
-| Rust and Cargo | `1.98.0` | Pinned with Clippy and rustfmt in `rust-toolchain.toml`, used by CI and the Linux image, and recorded as the minimum in `Cargo.toml`. |
-
-Linux builds use the system media, GTK, WebKit, and graphics stack. Install the runtime dependencies with `sudo pacman -S --needed webkit2gtk-4.1 gtk3 mpv libglvnd ffmpeg`. libmpv performs interactive playback; ffmpeg and ffprobe handle duration probing, E2E fixtures, and thumbnails. Building on rolling Arch targets current Arch/CachyOS systems and does not guarantee compatibility with older distributions or older glibc ABIs.
-
-### Toolchain update policy
-
-CI and release builds use the exact versions above. Update Node, Bun, and Rust in one reviewed dependency change: change `.nvmrc`, `package.json`, `rust-toolchain.toml`, `Cargo.toml`, `Dockerfile.linux`, and `.github/workflows/quality.yml` as applicable; regenerate lockfiles only when resolution changes; then run frozen Bun installation, all quality gates, `test:all`, and the Linux release build. Security fixes may trigger an immediate update. Otherwise review toolchains at least quarterly. The Arch base image and system packages remain rolling, so the build manifest records their resolved versions for each Linux artifact.
-
-### Containerized Arch Linux release
-
-Run the build directly so the host does not need Bun or Node.js:
+### Docker packages
 
 ```bash
+# Both Flatpak and AppImage
 ./scripts/build-linux-docker.sh
+# A single format
+./scripts/build-linux-docker.sh --format flatpak
+./scripts/build-linux-docker.sh --format appimage
+# Arch/CachyOS native executable, for systems with matching libraries
+./scripts/build-linux-docker.sh --format native
 ```
 
-The script builds the native release executable without running Vitest, Rust tests, or desktop E2E. It copies only `/out/.` into a temporary host directory, validates exactly one x86-64 ELF binary, one 512x512 PNG icon, one desktop launcher with matching name/icon/executable metadata, and the build manifest, rejects missing shared libraries reported by `ldd`, verifies generated checksums, and only then replaces `artifacts/linux/`. The output contains `media_tagger`, `tagrove.png`, `com.example.mediatagger.desktop`, `SHA256SUMS`, and `build-manifest.txt` with toolchain and package versions.
+Each successful export replaces only its format directory under `artifacts/linux/`. It contains one versioned application bundle, `SHA256SUMS`, a build manifest, application source, and dependency notices. Every requested format must build and validate before export starts. Failed builds and validation leave previous successful output in place. The build script never installs packages or changes launchers, executables, or application profiles. It uses ordinary Docker build/create/start/cp commands and does not require Buildx.
 
-If Bun is already available on the host, `bun run build:linux:docker` is an equivalent convenience command. Both forms use the ordinary `docker build`/`docker create`/`docker cp` interface and do not require Buildx.
+Flatpak Builder runs in a digest-pinned GNOME 50 container with `--privileged`, as documented by [Flatpak's container workflow](https://github.com/flatpak/flatpak-github-actions/blob/master/README.md). Inputs are copied through Docker's filtered build context. Mounts are limited to that build's working/repository volume, a per-checkout Builder state cache, and the dedicated `tagrove-flatpak-downloads-x86_64` download cache. Neither the host home nor Docker socket is mounted. The working volume and containers are removed on exit; the dedicated build and checksum-verified download caches survive.
 
-### CachyOS release artifact
+The first Flatpak container downloads checksum-verified sources generated from `bun.lock` and `Cargo.lock`. The second compiles and exports with Docker `--network none`, Flatpak network isolation, Bun `--offline`, and Cargo `--locked --offline`. It uses the populated Bun cache and Cargo vendor directory. AppImage likewise compiles and bundles in a container with networking disabled, after frozen dependency installation and checksum verification of its packaging tools. Host `node_modules`, Cargo targets, `dist`, app data and artifacts are excluded from Docker inputs.
 
-Build the artifact on CachyOS/Arch x86-64:
+Flatpak packages ffmpeg, ffprobe and libmpv under `/app`, using the runtime for GTK, WebKit, graphics and audio dependencies. AppImage includes the executable, adjacent ffmpeg/ffprobe, shared libraries, GTK/GStreamer resources and WebKit helper processes. Both exports check x86_64 architecture, linkage, graphics entry points and a generated media frame. These checks do not prove visible video or audible playback; see [package verification](linux-packaging.md).
+
+### Direct Flatpak installation
+
+Use Flatpak 1.16.6 or later. Debian 12 users need its supported Flatpak backport for same-version bundle reinstall; see [the tested version requirement](linux-packaging.md#sources-and-identity).
 
 ```bash
-./scripts/release-linux-user.sh
+flatpak install --user ./artifacts/linux/flatpak/Tagrove-*.flatpak
+# Close Tagrove before replacing it.
+flatpak install --user --reinstall ./artifacts/linux/flatpak/Tagrove-*.flatpak
+flatpak run com.example.mediatagger
 ```
 
-`bun run release:linux:user` is an equivalent wrapper. The script only invokes `scripts/build-linux-docker.sh`. It does not run tests, install files, launch the application, inspect or copy the production database, or modify anything under `~/.local/` or `/usr/local/`.
+Flatpak installs and exports its own desktop entry and icons. Reinstalling retains application data. The first Flatpak launch starts a separate library under `~/.var/app/com.example.mediatagger/`, leaving the native library under `~/.local/share/com.example.mediatagger/` untouched. The build and installation workflow does not migrate either library or replace an existing native launcher. Do not use `flatpak uninstall --delete-data` when you intend to retain the library.
 
-The resulting files are written to `artifacts/linux/`: `media_tagger`, `tagrove.png`, `com.example.mediatagger.desktop`, `build-manifest.txt`, and `SHA256SUMS`. Installation is separate from building; the local reinstall helper is described below.
+The local bundle includes GNOME runtime repository information; Flatpak may ask to fetch that runtime during installation. Filesystem access includes home, `/mnt`, `/media`, and `/run/media`. Grant a different media location explicitly, for example:
 
-### Local installation
+```bash
+flatpak override --user --filesystem=/srv/photos com.example.mediatagger
+```
 
-[`scripts/reinstall-linux-user.sh`](../../scripts/reinstall-linux-user.sh) reads `artifacts/linux/` relative to its checkout. It refuses replacement while `pgrep -x media_tagger` finds a process and verifies artifact checksums before writing installed files. It installs the executable through a temporary sibling followed by rename, then copies the Woven T icon and Tagrove launcher. It refreshes desktop/icon caches when the corresponding tools and icon-theme index are available.
+Wayland, fallback X11, IPC, graphics devices and PulseAudio access are declared in the manifest. Access is writable because rename/delete are application features. Always use disposable fixtures when testing them.
 
-The default prefix is `$HOME/.local`. The executable goes in `bin/media_tagger`, the icon in `share/icons/hicolor/512x512/apps/tagrove.png`, and the launcher in `share/applications/com.example.mediatagger.desktop`. Its `StartupWMClass=media_tagger` matches the native X11 window class. Pass a different prefix as the first argument for a custom or temporary installation. Its `bin` directory must be on `PATH` for the launcher's `Exec=media_tagger` to resolve. The script creates missing directories, replaces existing files without backups, and does not rebuild or launch the app. Application data remains under the existing Tauri identifier.
+The AppImage can be launched after `chmod +x artifacts/linux/appimage/Tagrove-*.AppImage`. It uses the existing native release identity and library. Use isolated XDG directories for package testing. Native builds need the matching Arch packages `webkit2gtk-4.1 gtk3 mpv libglvnd ffmpeg`; they do not promise Debian/Ubuntu ABI compatibility.
 
-`bun run test:linux-install` exercises installation and replacement under temporary prefixes, verifies the icon and launcher metadata, and checks checksum failure and running-process refusal.
+See [release preparation and verification](linux-packaging.md) for publishing identity, corresponding sources, CI, and the test matrix.
 
 ### Branding assets
 
-[`public/tagrove.svg`](../../public/tagrove.svg) is the Woven T master used by the header and HTML favicon. It recreates the selected proposal with flat `#2D5A2D` and `#7CB87C` fills and transparent gaps. Run `bun run icons:generate` after editing it to regenerate the 16, 32, 64, 128, 256, and 512px RGBA PNGs under `src-tauri/icons/`. Tauri embeds the configured native icons, and Docker exports the 512px icon as `tagrove.png`. The launcher source is [`src-tauri/linux/com.example.mediatagger.desktop`](../../src-tauri/linux/com.example.mediatagger.desktop). Linux is the supported packaging target; ICO and ICNS assets are not generated.
+[`public/tagrove.svg`](../../public/tagrove.svg) is the Woven T master used by the header and HTML favicon. It recreates the selected proposal with flat `#2D5A2D` and `#7CB87C` fills and transparent gaps. Run `bun run icons:generate` after editing it to regenerate the 16, 32, 64, 128, 256, and 512px RGBA PNGs under `src-tauri/icons/`. Tauri embeds the configured native icons, and packages retain those icons. The launcher source is [`src-tauri/linux/com.example.mediatagger.desktop`](../../src-tauri/linux/com.example.mediatagger.desktop). Linux is the supported packaging target; ICO and ICNS assets are not generated.
 
 ## Install dependencies
 
@@ -97,7 +96,6 @@ Build and development entry points are listed below. [Testing and quality comman
 | `bun run tauri:build:linux` | Creates the unbundled native Linux release executable. This is the inner container command; use `./scripts/build-linux-docker.sh` from the host. |
 | `bun run tauri:build:e2e` | Runs `node ./e2e/build-e2e.js`, validates the E2E identifier/title/target, and creates an unbundled debug executable in `src-tauri/target-e2e/debug/`. It does not build the frontend itself. |
 | `bun run build:linux:docker` | Convenience wrapper for `scripts/build-linux-docker.sh`; requires Bun on the host, unlike invoking the shell script directly. |
-| `bun run release:linux:user` | Convenience wrapper for the CachyOS/Arch Docker build. It only creates files under `artifacts/linux/`. |
 | `bun run tauri` | Exposes the local Tauri CLI directly for explicit subcommands. It does not select the safe development overlay on its own. |
 
 ## Development modes
@@ -118,7 +116,7 @@ bun run tauri:dev
 
 The base Tauri configuration expects the development URL `http://localhost:1420`; the strict Vite port ensures that URL cannot drift. The development overlay changes the product/window title to `Tagrove Dev` and the identifier to `com.example.mediatagger.dev`.
 
-Do not use an unqualified debug Tauri launch with the base configuration. In debug builds, `src-tauri/src/lib.rs` refuses startup when the effective identifier is the production identifier `com.example.mediatagger`. This protects production app data from a common configuration mistake. The guard requires the dev or E2E overlay, but it only rejects that one production identifier; it does not prove that every other identifier is safe.
+Do not use an unqualified debug Tauri launch with the base configuration. In debug builds, `src-tauri/src/lib.rs` permits startup only with `com.example.mediatagger.dev` or `com.example.mediatagger.e2e`. This protects both the local release profile and future publisher identities. Use the established dev or E2E overlay; arbitrary custom identifiers are rejected.
 
 ## Frontend build contract
 
@@ -148,7 +146,8 @@ The standalone `bun run tauri:build:e2e` consumes existing `dist/` because its o
 | `.github/workflows/quality.yml` | Frozen frontend/configuration checks and locked Rust checks under non-production profiles. |
 | `vite.config.ts` | React/Tailwind integration and the fixed, strict development port. Vite defaults own `dist/` and the preview port because they are not overridden. |
 | `src-tauri/tauri.conf.json` | Shared product metadata, frontend hooks/locations, release window/security settings, and icons. |
-| `src-tauri/tauri.linux.conf.json` | Disables bundling on Linux; Linux intentionally declares no media-tool sidecars. |
+| `src-tauri/tauri.linux.conf.json` | Disables bundling for ordinary native Linux builds. |
+| `src-tauri/tauri.appimage.conf.json` / `tauri.flatpak.conf.json` | Package-specific bundling, resources and installation configuration; the Flatpak generator supplies the configured release identity. |
 | `src-tauri/tauri.conf.dev.json` | Development identifier, product name, window title, and development window overlay. |
 | `src-tauri/tauri.conf.e2e.json` | E2E identifier/title and suppression of Tauri's automatic frontend build. |
 | `src-tauri/capabilities/default.json` | Permissions granted to the `main` window. |
@@ -158,7 +157,7 @@ The standalone `bun run tauri:build:e2e` consumes existing `dist/` because its o
 
 ## Native media dependencies
 
-The release links system libmpv/GTK and loads EGL/GLX entry points dynamically. The Docker build checks those symbols and verifies libmpv/GTK linkage with no missing dependencies inside the container. The host export script validates artifact shape, manifest fields, and checksums; it does not rerun `ldd` on the host. See [thumbnail tool discovery](../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery) for ffmpeg/ffprobe precedence and timeouts.
+Native releases link host libmpv/GTK and load EGL/GLX entry points dynamically. AppImage supplies its media and GTK libraries; Flatpak supplies them through `/app` and its runtime. Docker builds check those symbols and verify libmpv/GTK linkage inside the package environment. The host export script validates artifact shape, manifest fields, and checksums; it does not rerun `ldd` on the host. See [thumbnail tool discovery](../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery) for ffmpeg/ffprobe precedence and timeouts.
 
 ## Performance diagnostics
 
@@ -202,7 +201,7 @@ Run `bun install` for intentional JavaScript updates and an appropriate Cargo up
 - only Linux x86-64 packaging is configured;
 - the rolling `archlinux:base-devel` image and system packages are not digest/version pinned, so a later clean container build can use newer native dependencies;
 - compatible-range manifests mean lockfiles must be preserved for repeatable resolution;
-- the debug guard rejects only the production identifier and cannot certify arbitrary custom overlays;
+- the debug guard permits only the established dev/E2E identifiers; custom debug profiles require an explicit isolation review and allowlist change;
 - a standalone E2E build can package stale or missing frontend assets because its automatic frontend build is disabled;
 - Vite-only development cannot validate native IPC, dialogs, asset-protocol loading, app-data paths, or packaged resource layout;
 - unbundled E2E builds do not prove the release artifact's exact shared-library environment.
@@ -220,15 +219,15 @@ For a clean local desktop development setup:
 For an Arch Linux x86-64 release without host build dependencies:
 
 1. Confirm `docker version` can reach the daemon as the current user.
-2. Run `./scripts/release-linux-user.sh`.
-3. Confirm `artifacts/linux/` contains `media_tagger`, `tagrove.png`, `com.example.mediatagger.desktop`, `build-manifest.txt`, and `SHA256SUMS`, then run `(cd artifacts/linux && sha256sum --check SHA256SUMS)`.
+2. Run `./scripts/build-linux-docker.sh --format native`.
+3. Inspect `artifacts/linux/native/`, then run `(cd artifacts/linux/native && sha256sum --check SHA256SUMS)`.
 4. Install or launch the artifact manually when needed. The release script does not do either.
 
 ## Troubleshooting
 
 **Vite reports that port 1420 is already in use.** Stop the process using the port. `strictPort` intentionally prevents changing ports because Tauri's `devUrl` is fixed to `http://localhost:1420`.
 
-**A debug desktop process says it refuses the production identifier.** Launch with `bun run tauri:dev`, or pass the E2E overlay only for the isolated E2E workflow. An unqualified `tauri dev` inherits the unsafe production identifier from the base configuration.
+**A debug desktop process refuses its identifier.** Launch with `bun run tauri:dev`, or pass the E2E overlay only for the isolated E2E workflow. An unqualified `tauri dev` inherits the unsafe production identifier from the base configuration.
 
 **The app appears to have an empty library.** Check the selected identifier/profile before changing files. Release, dev, and E2E intentionally use different app-data directories.
 
@@ -236,7 +235,7 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **Video probing or thumbnails fail while images still work.** Confirm `ffmpeg` and `ffprobe` are on `PATH`. Application startup succeeding does not prove that both tools were found.
 
-**Linux video does not play.** Install `webkit2gtk-4.1`, `gtk3`, `mpv`, and `libglvnd`; verify `ldd artifacts/linux/media_tagger` has no missing dependencies and includes libmpv/GTK. Check that `libEGL.so.1` exports `eglGetProcAddress` or `libGL.so.1` exports `glXGetProcAddressARB`, then inspect player/surface stderr errors. The supported artifact is the native executable, not an AppImage.
+**Linux video does not play.** Install `webkit2gtk-4.1`, `gtk3`, `mpv`, and `libglvnd`; verify `ldd /path/to/extracted/media_tagger` has no missing dependencies and includes libmpv/GTK. Check that `libEGL.so.1` exports `eglGetProcAddress` or `libGL.so.1` exports `glXGetProcAddressARB`, then inspect player/surface stderr errors. For portable packages, inspect the packaged tools and runtime rather than the host libraries.
 
 **The Docker command cannot connect to `/var/run/docker.sock`.** Confirm the current login session has access to the Docker daemon. The build script deliberately does not elevate through `sudo`.
 

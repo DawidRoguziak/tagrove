@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": [
+      "appimage"
+    ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true,
+        "files": {
+          "/usr/bin/ffmpeg": "/usr/bin/ffmpeg",
+          "/usr/bin/ffprobe": "/usr/bin/ffprobe",
+          "/usr/lib/libEGL.so.1": "/usr/lib/x86_64-linux-gnu/libEGL.so.1",
+          "/usr/lib/libGL.so.1": "/usr/lib/x86_64-linux-gnu/libGL.so.1",
+          "/usr/lib/libGLX.so.0": "/usr/lib/x86_64-linux-gnu/libGLX.so.0",
+          "/usr/share/licenses/tagrove/LICENSE": "../LICENSE",
+          "/usr/share/metainfo/Tagrove.appdata.xml": "/inputs/.packaging/Tagrove.appdata.xml",
+          "/usr/lib/libasound.so.2": "/usr/lib/x86_64-linux-gnu/libasound.so.2",
+          "/usr/lib/libjack.so.0": "/usr/lib/x86_64-linux-gnu/libjack.so.0",
+          "/usr/lib/libpipewire-0.3.so.0": "/usr/lib/x86_64-linux-gnu/libpipewire-0.3.so.0",
+          "/usr/lib/libfribidi.so.0": "/usr/lib/x86_64-linux-gnu/libfribidi.so.0",
+          "/usr/lib/libharfbuzz.so.0": "/usr/lib/x86_64-linux-gnu/libharfbuzz.so.0",
+          "/usr/lib/libusb-1.0.so.0": "/usr/lib/x86_64-linux-gnu/libusb-1.0.so.0",
+          "/usr/lib/libGLESv2.so.2": "/usr/lib/x86_64-linux-gnu/libGLESv2.so.2",
+          "/usr/share/licenses/tagrove/packaging": "../packaging/linux/licenses",
+          "/usr/share/licenses/tagrove/dependencies": "/inputs/.packaging/dependencies",
+          "/usr/share/mime": "/usr/share/mime",
+          "/usr/share/icons/Adwaita": "/usr/share/icons/Adwaita",
+          "/usr/share/icons/hicolor/index.theme": "/usr/share/icons/hicolor/index.theme"
+        }
+      },
+      "deb": {
+        "desktopTemplate": "../.packaging/tagrove.desktop"
+      }
+    }
+  }
+}

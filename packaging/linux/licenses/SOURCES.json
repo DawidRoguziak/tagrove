@@ -1,0 +1,11 @@
+{
+  "AppImage-runtime.txt": {
+    "source": "https://github.com/AppImage/type2-runtime/tree/75849dce7cc37e4319b633df1f116ca895c71a12",
+    "note": "The runtime LICENSE also identifies its statically linked third-party libraries and their terms."
+  },
+  "AppImageKit.txt": {
+    "source": "https://github.com/AppImage/AppImageKit",
+    "binary": "https://github.com/tauri-apps/binary-releases/releases/tag/apprun-old",
+    "note": "Tauri publishes this launcher as a mirror of the older AppImageKit continuous build. The binary checksum is in appimage-tools.json."
+  }
+}

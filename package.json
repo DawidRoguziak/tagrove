@@ -10,7 +10,6 @@
   },
   "scripts": {
     "icons:generate": "tauri icon public/tagrove.svg --output src-tauri/icons --png 16 --png 32 --png 64 --png 128 --png 256 --png 512",
-    "test:linux-install": "node --test scripts/reinstall-linux-user.test.mjs",
     "dev": "vite",
     "build": "bun run typecheck && vite build",
     "typecheck": "tsc --noEmit --project tsconfig.json --pretty false && tsc --noEmit --project tsconfig.node.json --pretty false",
@@ -39,9 +38,9 @@
     "tauri:build:linux": "tauri build --no-bundle -- --locked",
     "tauri:build:e2e": "node ./e2e/build-e2e.js",
     "build:linux:docker": "bash ./scripts/build-linux-docker.sh",
-    "release:linux:user": "bash ./scripts/release-linux-user.sh",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:packaging": "python3 -m unittest discover -s packaging/tests -v"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.10",
@@ -75,5 +74,6 @@
     "vite": "^8.2.2",
     "vitest": "^4.1.11",
     "webdriverio": "^9.31.2"
-  }
+  },
+  "license": "GPL-3.0-or-later"
 }

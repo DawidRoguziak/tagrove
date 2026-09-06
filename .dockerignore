@@ -17,3 +17,8 @@ src-tauri/gen/schemas
 *.log
 .env
 .env.*
+output
+.cursor
+__pycache__
+**/__pycache__
+.packaging

@@ -38,3 +38,6 @@
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Python packaging verification cache
+/packaging/**/__pycache__/

@@ -1,0 +1,58 @@
+name: Linux packaging
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Dockerfile.*'
+      - 'packaging/**'
+      - 'scripts/build-linux-docker.sh'
+      - 'scripts/prepare-flathub.sh'
+      - 'scripts/test-linux-packages.sh'
+      - 'src-tauri/**'
+      - 'src/**'
+      - 'public/**'
+      - '*lock*'
+      - 'package.json'
+      - 'bunfig.toml'
+      - 'LICENSE'
+      - '.dockerignore'
+      - '.github/workflows/linux-packaging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [flatpak, appimage]
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s packaging/tests -v
+      - name: Build and validate in Docker
+        run: ./scripts/build-linux-docker.sh --format "${{ matrix.format }}"
+      - name: Test the actual package in a disposable container
+        run: ./scripts/test-linux-packages.sh --format "${{ matrix.format }}"
+      - name: Test AppImage on Ubuntu and Arch
+        if: matrix.format == 'appimage'
+        run: |
+          ./scripts/test-linux-packages.sh --format appimage --distribution ubuntu24
+          ./scripts/test-linux-packages.sh --format appimage --distribution arch
+      - name: Retain runtime evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tagrove-${{ matrix.format }}-runtime-evidence
+          path: artifacts/package-tests/
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tagrove-${{ matrix.format }}-x86_64
+          path: artifacts/linux/${{ matrix.format }}/
+          if-no-files-found: error
+          retention-days: 14

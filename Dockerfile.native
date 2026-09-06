@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1.7
+
+FROM --platform=linux/amd64 archlinux:base-devel AS dependencies
+
+RUN pacman -Syu --noconfirm \
+    && pacman -S --needed --noconfirm \
+      python \
+      curl \
+      ffmpeg \
+      file \
+      gtk3 \
+      libglvnd \
+      mpv \
+      openssl \
+      unzip \
+      xz \
+      dbus \
+      webkit2gtk-4.1 \
+    && pacman -Scc --noconfirm
+
+COPY packaging/linux/download.py packaging/linux/install-toolchains.sh packaging/linux/toolchains.json /inputs/packaging/linux/
+RUN bash /inputs/packaging/linux/install-toolchains.sh \
+    && rustc -vV \
+    && cargo --version \
+    && bun --version \
+    && node --version \
+    && pkg-config --modversion gtk+-3.0 \
+    && pkg-config --modversion webkit2gtk-4.1 \
+    && pkg-config --modversion mpv \
+    && objdump -T /usr/lib/libEGL.so.1 | grep -q 'eglGetProcAddress' \
+    && objdump -T /usr/lib/libGL.so.1 | grep -q 'glXGetProcAddressARB' \
+    && ffmpeg -version | head -n 1
+
+WORKDIR /workspace
+
+COPY package.json bun.lock bunfig.toml ./
+RUN bun install --frozen-lockfile
+
+COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
+RUN mkdir -p src-tauri/src && touch src-tauri/src/lib.rs \
+    && cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+
+COPY . .
+
+FROM dependencies AS release
+RUN bun run tauri:build:linux \
+    && ldd src-tauri/target/release/media_tagger > /tmp/media-tagger-ldd.txt \
+    && grep -q 'libmpv' /tmp/media-tagger-ldd.txt \
+    && grep -q 'libgtk-3' /tmp/media-tagger-ldd.txt \
+    && ! grep -q 'not found' /tmp/media-tagger-ldd.txt
+
+RUN bash packaging/linux/export-native.sh
+
+FROM scratch AS artifacts
+COPY --from=release /out /out

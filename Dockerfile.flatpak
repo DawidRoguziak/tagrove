@@ -1,0 +1,6 @@
+# syntax=docker/dockerfile:1.7
+FROM --platform=linux/amd64 ghcr.io/flathub-infra/flatpak-github-actions:gnome-50@sha256:1fb2df10a57276f90806e1f35454048e30bf1855b7b4ff4808c9ee55887bd852 AS builder
+WORKDIR /inputs
+RUN dbus-uuidgen --ensure=/etc/machine-id
+COPY . .
+ENTRYPOINT ["dbus-run-session", "--", "bash", "/inputs/packaging/flatpak/container.sh"]

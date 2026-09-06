@@ -54,6 +54,8 @@ Both probing and rendering poll child completion every 25 ms. A timed-out child 
 
 At startup, ffmpeg discovery searches the resource directory and its `binaries` child, then equivalent executable-adjacent and `resources` locations. In each directory it considers `ffmpeg`; it then checks `/usr/bin/ffmpeg` and finally falls back to `PATH`.
 
+Flatpak installs the tools beside the executable in `/app/bin`. AppImage carries them in its `usr/bin`. These layouts use the same discovery logic; package builds verify both tools can execute.
+
 For a probe, `ffprobe_candidates` tries a sibling name derived from the ffmpeg filename, a plain sibling `ffprobe`, bare `ffprobe` through `PATH`, then `/usr/bin/ffprobe`, removing duplicates. Failed probes fall back to the resolved ffmpeg's stderr duration. A missing or unlaunchable tool leaves duration absent or rendering failed without itself preventing startup.
 
 `get_video_tool_status` uses the same candidate builder. It runs `-version` with a three-second timeout per candidate and returns separate availability booleans. Settings reads these once when its shell-lived scan controller mounts. This is an executable check, not proof that a particular file decodes or native playback works.

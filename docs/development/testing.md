@@ -30,7 +30,6 @@ Run commands from the repository root.
 | `bun run app:control` | Keeps an isolated desktop E2E session open on a private Xvfb display for UI interaction, screenshots, and console inspection; see persistent desktop control below. |
 | `bun run test:app-control` | Runs Node tests for controller input validation, local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Requires Linux local sockets and ffmpeg. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
-| `bun run test:linux-install` | Installs fixture release files into a temporary prefix, checks the executable/icon/launcher, and verifies checksum and running-process guards. |
 | `bun run typecheck` | Runs no-emit checks for application code and Vite/Vitest configuration. |
 | `bun run lint` | Runs Biome lint across its configured source, E2E, and script includes. |
 | `bun run format:check` | Checks formatting in `scripts`, `vite.config.ts`, and `vitest.config.ts`; it does not format application source or Markdown. |
@@ -99,9 +98,13 @@ Cargo may execute independent tests concurrently. Never use a shared fixed datab
 
 The Rust player regression generates a temporary MP4 with ffmpeg and drives the actual libmpv worker using null audio/video output. It verifies seeking, looping, replacement, settings retention, corrupt-file errors, and retry recovery without claiming GTK or OpenGL coverage. A separate test supersedes a committed session before `loadfile` and checks retirement without cancelling the replacement request.
 
+## Packaging checks
+
+`bun run test:packaging` verifies lockfile source generation, publication identity rejection, checksum inventory, duplicate-bundle rejection, and failed-build preservation with disposable artifacts. Docker builds perform format-specific artifact checks. See [package verification](linux-packaging.md) for installed-package tests and remaining desktop coverage.
+
 ## Real desktop E2E
 
-Release production is documented in [setup and builds](setup-and-build.md#containerized-arch-linux-release). Its build does not run test suites.
+Release production is documented in [setup and builds](setup-and-build.md#docker-packages). Its build does not run test suites.
 
 ### Linux prerequisites
 

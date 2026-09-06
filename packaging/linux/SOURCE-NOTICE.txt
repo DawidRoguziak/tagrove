@@ -1,0 +1,20 @@
+Tagrove application code is licensed under GPL-3.0-or-later. AppStream metadata
+is CC0-1.0. Dependency license terms remain in effect for their respective code.
+
+application-source.tar.gz contains this build's application source and packaging
+scripts. bun.lock and Cargo.lock identify the exact registry dependency sources
+and integrity digests. The Flatpak manifest expands those into archive URLs and
+checksums. media-sources.json and toolchains.json identify additional downloads.
+
+The licenses directory retains discovered dependency license texts and package
+manifests. For AppImage/native builds it also contains system package copyright
+files. build-manifest.txt records the installed distribution package versions.
+Debian source package names and versions are recorded in debian-sources.tsv;
+obtain matching source packages from https://snapshot.debian.org/ or Debian's
+package archive. Arch package sources are available from https://gitlab.archlinux.org/archlinux/packaging/packages.
+
+Before redistributing packages, retain and provide the matching corresponding
+source for all bundled GPL/LGPL dependencies, including distribution patches.
+The URLs and dependency inventory here describe sources; they are not a written
+offer to provide sources. Runtime-provided Flatpak libraries are distributed by
+the runtime's publisher. Do not remove dependency notices when redistributing.

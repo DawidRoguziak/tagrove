@@ -115,6 +115,8 @@ Image and GIF source paths pass through `toMediaSrc`.
 
 Image/GIF load failures, native-session open failures, and backend video error events replace the failed media with a localized alert. Every asset ID/kind/path activation receives a new generation, so A→B→A retries A and a late callback from the first A activation cannot fail the new one. Open tokens reject superseded backend work; session IDs filter late events and commands. Original media is independent of thumbnail generation and thumbnail cache state. Video errors expose Retry, which starts a fresh activation. Recoverable control errors leave playback running and show a dismissible localized message above the native bounds. Fatal decoder or rendering errors stop playback and hide the native surface. Bounds can update only an active surface; they cannot reactivate a closed session.
 
+When the current OpenGL renderer identifies itself as llvmpipe, render-context initialization selects libmpv's `gpu-dumb-mode=yes`. This uses basic scaling and disables advanced shader processing. The mpv 0.41/Mesa 26.1 software path produced black video in package tests; the basic path passed decoded-frame, seek, fullscreen and audio checks. Hardware contexts retain `auto`, including after context recreation. GPU X11 and Wayland playback use the regular rendering path.
+
 ## Image fit, zoom, and pan
 
 `ResizeObserver` tracks the media viewport. Fit scale is `min(viewportWidth / intrinsicWidth, viewportHeight / intrinsicHeight)` and the `<img>` receives the resulting fitted pixel width and height. Missing dimensions produce fit scale 1 and no explicit display size. Natural image dimensions replace summary/details dimensions after load.

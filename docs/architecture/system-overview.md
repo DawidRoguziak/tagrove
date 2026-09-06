@@ -57,7 +57,7 @@ Concrete examples:
 `src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`, which:
 
 1. creates a `tauri::Builder` and installs the dialog plugin;
-2. during `setup`, refuses a debug build whose effective identifier is the production identifier;
+2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
 5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema and reconciles pending source-file operations;
@@ -108,15 +108,17 @@ The effective Tauri identifier determines `app.path().app_data_dir()`, so it is 
 | Profile | How it is selected | Product/window name | Identifier | Isolation behavior |
 | --- | --- | --- | --- | --- |
 | Release | `bun run tauri:build:release` / base `tauri.conf.json` | `Tagrove` | `com.example.mediatagger` | Production app-data profile and normal `src-tauri/target` build output. |
-| Development | `bun run tauri:dev`, merging `tauri.conf.dev.json` over the base | `Tagrove Dev` | `com.example.mediatagger.dev` | Separate app-data profile. Debug startup refuses the production identifier, making use of the dev or E2E overlay mandatory for a debug application. |
+| Development | `bun run tauri:dev`, merging `tauri.conf.dev.json` over the base | `Tagrove Dev` | `com.example.mediatagger.dev` | Separate app-data profile. Debug startup permits only the established dev/E2E identifiers, making use of the dev or E2E overlay mandatory for a debug application. |
 | Desktop E2E | `bun run test:e2e:tauri`, merging `tauri.conf.e2e.json` | `Tagrove E2E` | `com.example.mediatagger.e2e` | Separate app data and `src-tauri/target-e2e`. The runner validates the identifier, title, and target path, clears only the exact E2E app-data directory, builds the frontend separately, then makes an unbundled debug Tauri build. |
+
+Flatpak uses the local release identifier but receives Flatpak-specific XDG directories under `~/.var/app/<app-id>/`, so its first launch starts a fresh library. The native library is untouched. A configurable publication ID creates a separate Flatpak installation/profile. AppImage retains the native release profile.
 
 All three window configurations set `decorations: false`. Profile overlays repeat this
 setting because their `windows` arrays replace the base array. Native window titles use the
 profile names above for task switchers and the E2E identity guard. The frontend headers own
 window controls and drag regions; see [frontend window controls](../frontend/architecture-and-ui-conventions.md#compact-studio-visual-system).
 
-These profiles may run at the same time because their identifiers resolve to different data directories and lock files. Isolation relies on always selecting the intended config overlay. The debug guard protects production from an accidentally unoverlaid debug build, but it does not validate arbitrary non-production identifiers. The E2E runner adds stronger path/title checks before its destructive cleanup and again verifies the live window title before tests.
+These profiles may run at the same time because their identifiers resolve to different data directories and lock files. Isolation relies on always selecting the intended config overlay. The debug guard allows only `com.example.mediatagger.dev` and `com.example.mediatagger.e2e`, protecting both the local release ID and configurable publisher IDs. The E2E runner adds stronger path/title checks before its destructive cleanup and again verifies the live window title before tests.
 
 ### `instance.lock`
 
@@ -155,7 +157,7 @@ Current configuration is permissive and should be treated as current state, not 
 - `capabilities/default.json` applies to the `main` window and grants `core:default`, `dialog:default` (open, save, and message dialogs), and the window permissions for minimize, toggle-maximize, close, drag and resize-drag. Application commands are those explicitly registered in `lib.rs`.
 - The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `['**']`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails use this path. Video sources are authorized by asset ID and opened only by libmpv.
 - `app.security.csp` is `null`, so the configuration does not install a Content Security Policy.
-- Linux bundling is disabled; the release artifact is a native x86-64 executable built against the system media and graphics stack. Other platforms and ARM are not configured.
+- Docker produces x86_64 Flatpak and AppImage packages. Flatpak uses GNOME 50 and installs under `/app`; AppImage builds on Debian 12. The Arch-native executable is an explicit option. Other platforms and ARM are not configured. See [packaging](../development/linux-packaging.md).
 
 Security-sensitive changes should review capabilities, CSP, asset scope, dialog permissions, WebView arguments, and the direct `convertFileSrc` flow together. See [setup and build](../development/setup-and-build.md) for build prerequisites and commands.
 
@@ -170,14 +172,14 @@ This split is deliberate. Changing the Tauri identifier changes the app-data dir
 ## Known limitations
 
 - CSP is disabled and the asset scope is global.
-- The profile lock has no direct automated test, and bootstrap/profile guards and ffmpeg search precedence are not directly unit-tested.
+- The debug profile allowlist has a focused unit test. The profile lock and ffmpeg search precedence are not directly unit-tested.
 - Workflow locking remains selective outside database maintenance. Tag/favorite/group writes, CSV import, adding roots, and reads may overlap a scan, but they cannot overlap bundle snapshot/replacement because every live connection participates in the maintenance gate.
 - `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
 - Several command handlers contain filesystem/DB orchestration instead of being strictly thin adapters.
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.
 - Query supersession is shared by the application runtime. Another window or independent caller can supersede this window's query; frontend generations separately reject late responses. Thumbnail request generations belong to individual hooks and are not compared globally. See [IPC limits](ipc-contract.md#known-limitations).
 - Many progress emissions deliberately ignore delivery errors; completion of the underlying operation does not guarantee that every progress update reached the WebView.
-- Packaging supports Linux x86-64 only, depends on the documented system media/graphics libraries, and the production identifier still uses the example domain.
+- Packaging supports Linux x86-64 only. Local Flatpak builds use the example-domain identifier; publication validation requires a supplied publisher identity.
 
 ## Safe-change checklist
 

@@ -26,9 +26,10 @@ use commands::video::{
 use commands::{
     assets::{
         apply_duplicate_resolution_batch, delete_asset, find_duplicate_assets, get_asset_details,
-        get_asset_query_page, get_asset_query_position, get_asset_summaries_by_ids, list_assets, list_tags,
-        merge_asset_tags_bulk, set_asset_favorite, set_asset_media_group, set_asset_tags,
-        set_assets_media_group_bulk, start_asset_query, toggle_assets_favorite_bulk,
+        get_asset_query_page, get_asset_query_position, get_asset_summaries_by_ids, list_assets,
+        list_tags, merge_asset_tags_bulk, set_asset_favorite, set_asset_media_group,
+        set_asset_tags, set_assets_media_group_bulk, start_asset_query,
+        toggle_assets_favorite_bulk,
     },
     import_export::{
         clear_library_data, export_db_bundle, export_tags_csv, import_db_bundle, import_tags_csv,
@@ -46,17 +47,15 @@ use commands::{
 };
 use services::{asset_mutation_service, thumb_scheduler::ThumbnailScheduler};
 
-#[cfg(debug_assertions)]
-const PRODUCTION_APP_IDENTIFIER: &str = "com.example.mediatagger";
-
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(debug_assertions)]
-            if app.config().identifier == PRODUCTION_APP_IDENTIFIER {
+            if !app::profile::is_debug_profile(&app.config().identifier) {
                 return Err(format!(
-                    "Refusing to start a debug build with production identifier {PRODUCTION_APP_IDENTIFIER}. Use tauri.conf.dev.json or tauri.conf.e2e.json."
+                    "Refusing to start a debug build with identifier {}. Use tauri.conf.dev.json or tauri.conf.e2e.json.",
+                    app.config().identifier
                 )
                 .into());
             }

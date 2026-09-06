@@ -42,11 +42,13 @@ export function useGalleryVirtualGrid({
 }: UseGalleryVirtualGridOptions) {
   const [geometry, setGeometry] = useState({ width: 0, margin: 0 });
   const getScrollElement = useCallback(
-    () => scrollContainerRef?.current ?? galleryRef.current,
+    // A supplied parent ref can still be null during the child's mount.
+    () => scrollContainerRef ? scrollContainerRef.current : galleryRef.current,
     [scrollContainerRef, galleryRef]
   );
 
-  useLayoutEffect(() => {
+  // Parent DOM refs are attached before passive effects run.
+  useEffect(() => {
     const gallery = galleryRef.current;
     const grid = gridRef.current;
     const scroller = getScrollElement();

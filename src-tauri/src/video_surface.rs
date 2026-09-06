@@ -62,7 +62,7 @@ struct NativeVideoControls {
     scrubbing: Rc<Cell<bool>>,
 }
 
-const NATIVE_CONTROLS_HEIGHT: i32 = 68;
+const NATIVE_CONTROLS_HEIGHT: i32 = 88;
 
 #[derive(Debug, PartialEq, Eq)]
 struct NativeControlsBounds {
@@ -75,7 +75,7 @@ struct NativeControlsBounds {
 const NATIVE_CONTROLS_CSS: &[u8] = br#"
 .media-tagger-video-controls {
   background-image: linear-gradient(to bottom, rgba(8, 9, 10, 0), rgba(8, 9, 10, 0.82));
-  padding: 18px 12px 8px 12px;
+  padding: 8px 12px;
 }
 .media-tagger-video-controls button,
 .media-tagger-video-controls menubutton > button {
@@ -330,9 +330,18 @@ impl NativeVideoControls {
             .add_class("media-tagger-video-controls");
         root.set_visible(false);
 
+        let rows = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        rows.set_valign(gtk::Align::End);
+        root.add(&rows);
+
+        let seek = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.001);
+        seek.set_draw_value(false);
+        seek.set_hexpand(true);
+        seek.style_context().add_class("media-tagger-video-seek");
+        rows.pack_start(&seek, false, true, 0);
+
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        row.set_valign(gtk::Align::End);
-        root.add(&row);
+        rows.pack_start(&row, false, true, 0);
 
         let (play_button, play_icon) = icon_button("media-playback-start-symbolic");
         row.pack_start(&play_button, false, false, 0);
@@ -357,11 +366,8 @@ impl NativeVideoControls {
         time_label.set_xalign(0.5);
         row.pack_start(&time_label, false, false, 2);
 
-        let seek = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.001);
-        seek.set_draw_value(false);
-        seek.set_hexpand(true);
-        seek.style_context().add_class("media-tagger-video-seek");
-        row.pack_start(&seek, true, true, 4);
+        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        row.pack_start(&spacer, true, true, 0);
 
         let rate_button = gtk::MenuButton::new();
         rate_button.set_label("1×");
@@ -540,7 +546,7 @@ impl NativeVideoControls {
         }
 
         rate_choices.show_all();
-        row.show_all();
+        rows.show_all();
 
         Self {
             root,
@@ -1385,9 +1391,9 @@ mod tests {
             native_controls_bounds(20.0, 30.0, 640.0, 360.0),
             NativeControlsBounds {
                 x: 20,
-                y: 322,
+                y: 302,
                 width: 640,
-                height: 68,
+                height: 88,
             }
         );
         assert_eq!(

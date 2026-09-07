@@ -102,7 +102,7 @@ const NATIVE_CONTROLS_CSS: &[u8] = br#"
   font-size: 12px;
 }
 .media-tagger-video-seek trough {
-  min-height: 4px;
+  min-height: 6px;
   border: 0;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.28);

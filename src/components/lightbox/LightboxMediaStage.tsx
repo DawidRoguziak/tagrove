@@ -91,6 +91,14 @@ export function LightboxMediaStage({
           height: `${mediaDisplaySize.height}px`
         }
       : undefined;
+  const imageStyle = mediaStyle
+    ? {
+        width: `calc(${mediaStyle.width} * var(--lightbox-image-zoom, 1))`,
+        height: `calc(${mediaStyle.height} * var(--lightbox-image-zoom, 1))`,
+        maxWidth: "none",
+        maxHeight: "none"
+      }
+    : undefined;
 
   return (
     <div
@@ -184,8 +192,8 @@ export function LightboxMediaStage({
             }}
             src={toMediaSrc(selected.path ?? "")}
             alt={selected.file_name}
-            style={mediaStyle}
-            className={`max-h-full max-w-full origin-center shrink-0 select-none object-contain [backface-visibility:hidden] [will-change:transform] ${
+            style={imageStyle}
+            className={`max-h-full max-w-full shrink-0 select-none object-contain ${
               isZoomed ? (isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
             }`}
             onLoad={onImageLoad}

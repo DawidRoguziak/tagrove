@@ -97,6 +97,14 @@
     "retry": "Reintentar"
   },
   "bulk": {
+    "orderModal": {
+      "open": "Ordenar en una vista ampliada",
+      "title": "Ordenar los elementos del grupo",
+      "instructions": "Arrastra una imagen para moverla, o enfoca su tirador y usa las teclas de flecha. Guardar el orden también aplica la asignación al grupo.",
+      "save": "Guardar orden",
+      "moved": "{{name}} se ha movido a la posición {{position}} de {{count}}.",
+      "partial": "No se pudieron guardar algunos elementos. Reintenta o cierra esta ventana. Se conservarán los cambios ya guardados."
+    },
     "favorite": {
       "toggle": "Alternar favoritos de los elementos seleccionados",
       "remove": "Quitar los elementos seleccionados de favoritos",

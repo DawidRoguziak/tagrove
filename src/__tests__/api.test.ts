@@ -162,13 +162,21 @@ describe("api contract", () => {
       command: { type: "seek", time: 3.5 }
     });
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(4, "close_video", { sessionId: 17 });
+    await controlVideo(17, { type: "togglePause" });
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("control_video", {
+      sessionId: 17, command: { type: "togglePause" }
+    });
+    await controlVideo(17, { type: "seekRelative", seconds: -5 });
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("control_video", {
+      sessionId: 17, command: { type: "seekRelative", seconds: -5 }
+    });
     coreMocks.invoke.mockResolvedValueOnce(21);
     await expect(beginVideoOpen()).resolves.toBe(21);
     await cancelVideoOpen(21);
     await setVideoControlLabels(17, controlLabels);
-    expect(coreMocks.invoke).toHaveBeenNthCalledWith(5, "begin_video_open");
-    expect(coreMocks.invoke).toHaveBeenNthCalledWith(6, "cancel_video_open", { requestId: 21 });
-    expect(coreMocks.invoke).toHaveBeenNthCalledWith(7, "set_video_control_labels", { sessionId: 17, controlLabels });
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(7, "begin_video_open");
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(8, "cancel_video_open", { requestId: 21 });
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(9, "set_video_control_labels", { sessionId: 17, controlLabels });
   });
 
   it("uses the selection summary and processed group ID contracts", async () => {

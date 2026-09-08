@@ -13,7 +13,8 @@ import type {
   MpvVideoEvent,
   NativeVideoControlLabels,
   PlaybackSnapshot,
-  VideoBounds
+  VideoBounds,
+  VideoControl
 } from "./mpvVideoTypes";
 
 interface SessionOptions {
@@ -185,20 +186,25 @@ export function useNativeVideoSession(options: SessionOptions) {
     };
   }, [controlLabels, sessionId]);
 
-  const fullscreenQueue = useRef(Promise.resolve());
-  const toggleFullscreen = useCallback(() => {
+  const controlQueue = useRef(Promise.resolve());
+  const sendPlaybackControl = useCallback((command: VideoControl) => {
     const target = session.current;
-    const operation = fullscreenQueue.current.then(async () => {
+    const operation = controlQueue.current.then(async () => {
       if (!target || session.current !== target) return;
       try {
-        await controlVideo(target.id, { type: "toggleFullscreen" });
+        await controlVideo(target.id, command);
       } catch (error) {
         if (session.current === target) setControlError(errorMessage(error));
       }
     });
-    fullscreenQueue.current = operation;
+    controlQueue.current = operation;
     return operation;
   }, []);
+
+  const toggleFullscreen = useCallback(
+    () => sendPlaybackControl({ type: "toggleFullscreen" }),
+    [sendPlaybackControl]
+  );
 
   return {
     sessionId,
@@ -206,6 +212,7 @@ export function useNativeVideoSession(options: SessionOptions) {
     snapshot,
     controlError,
     dismissControlError: () => setControlError(null),
+    sendPlaybackControl,
     toggleFullscreen
   };
 }

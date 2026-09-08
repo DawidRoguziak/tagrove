@@ -1,3 +1,4 @@
+import { GroupOrderModal } from "./GroupOrderModal";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -32,6 +33,7 @@ export function BulkActionsSidebar({
   renderingThumbnailIds
 }: BulkActionsSidebarProps) {
   const { t } = useTranslation();
+  const [orderModalContext, setOrderModalContext] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState("");
   const [draggingAssetId, setDraggingAssetId] = useState<number | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
@@ -49,7 +51,12 @@ export function BulkActionsSidebar({
     controller.tagMode === "single" ? controller.singleAssetTags : controller.appliedBulkTags;
   const controlsDisabled = controller.selectedAssetIds.size === 0;
   const normalizedGroupKey = normalizeGroupKey(controller.groupKeyDraft);
+  const orderContext = JSON.stringify([selectionKey, normalizedGroupKey]);
   const hasOrderPanel = Boolean(normalizedGroupKey) && orderedAssets.length > 1;
+
+  useEffect(() => {
+    setOrderModalContext(previous => previous === orderContext ? previous : null);
+  }, [orderContext]);
 
   const orderScrollRef = useRef<HTMLDivElement | null>(null);
   const orderVirtualizer = useVirtualizer({ count: hasOrderPanel ? orderedAssets.length : 0,
@@ -220,7 +227,12 @@ export function BulkActionsSidebar({
           data-testid="bulk-group-order-panel"
         >
           <div className="grid gap-0.5">
-            <h3 className="m-0 text-sm">{t("bulk.panel.orderHeading")}</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="m-0 text-sm">{t("bulk.panel.orderHeading")}</h3>
+              <UiButton className="text-xs" data-testid="bulk-open-order-modal"
+                disabled={controller.groupApplying || controller.metadataLoading || controller.metadataFailed}
+                onClick={() => setOrderModalContext(orderContext)}>{t("bulk.orderModal.open")}</UiButton>
+            </div>
             <p className="m-0 text-[11px] leading-relaxed text-base-content/60">
               {t("bulk.panel.orderDescription")}
             </p>
@@ -374,6 +386,10 @@ export function BulkActionsSidebar({
           </UiAlert>
         ) : null}
       </section>
+      {hasOrderPanel && orderModalContext === orderContext ? (
+        <GroupOrderModal key={orderContext} controller={controller} thumbs={thumbs}
+          renderingThumbnailIds={renderingThumbnailIds} onClose={() => setOrderModalContext(null)} />
+      ) : null}
     </aside>
   );
 }

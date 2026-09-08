@@ -97,6 +97,14 @@
     "retry": "Retry"
   },
   "bulk": {
+    "orderModal": {
+      "open": "Sort in larger view",
+      "title": "Sort group order",
+      "instructions": "Drag an image to move it, or focus its grip and use the arrow keys. Save order also applies the group assignment.",
+      "save": "Save order",
+      "moved": "{{name}} moved to position {{position}} of {{count}}.",
+      "partial": "Some items could not be saved. Retry or close this window. Closing keeps changes already saved."
+    },
     "favorite": {
       "toggle": "Toggle favorites for selected items",
       "remove": "Remove selected items from favorites",

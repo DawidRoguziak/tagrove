@@ -23,11 +23,13 @@ export function useThumbnailSubscription(
 export function ThumbnailSubscription({
   id,
   path,
-  rendering
+  rendering,
+  fit = "cover"
 }: {
   id: number;
   path?: string;
   rendering?: boolean;
+  fit?: "cover" | "contain";
 }) {
   const current = useThumbnailSubscription(id, path, rendering);
   return (
@@ -35,7 +37,7 @@ export function ThumbnailSubscription({
       <ThumbnailImage
         src={current.path ? toMediaSrc(current.path) : TRANSPARENT_THUMBNAIL_SRC}
         alt=""
-        className="h-full w-full object-cover"
+        className={`h-full w-full ${fit === "contain" ? "object-contain" : "object-cover"}`}
         draggable={false}
       />
       {current.rendering && !current.path ? (

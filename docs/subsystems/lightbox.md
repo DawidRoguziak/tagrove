@@ -119,7 +119,7 @@ When the current OpenGL renderer identifies itself as llvmpipe, render-context i
 
 ## Image fit, zoom, and pan
 
-`ResizeObserver` tracks the media viewport. Fit scale is `min(viewportWidth / intrinsicWidth, viewportHeight / intrinsicHeight)` and the `<img>` receives the resulting fitted pixel width and height. Missing dimensions produce fit scale 1 and no explicit display size. Natural image dimensions replace summary/details dimensions after load.
+`ResizeObserver` tracks the media viewport. Fit scale is `min(viewportWidth / intrinsicWidth, viewportHeight / intrinsicHeight)`. The `<img>` layout width and height are the fitted dimensions multiplied by `--lightbox-image-zoom`, which defaults to 1. Once dimensions are known, the image has no viewport maximum width or height; the stage clips overflow. Missing dimensions produce fit scale 1 and no explicit display size, with viewport maximums retained until load. Natural image dimensions replace summary/details dimensions after load.
 
 Zoom is a factor relative to the fitted size:
 
@@ -132,11 +132,11 @@ Zoom is a factor relative to the fitted size:
 
 Wheel zoom is cursor-anchored and prevents native scrolling. Delta mode 1 is converted with a 16 px line height; mode 2 uses viewport height; the resulting delta is clamped to `[-100, 100]`. The factor is `current * exp(-delta * 0.002)`, then clamped to `[1, 12]`.
 
-Zoom preserves the source point under the pointer or viewport center. Pan is clamped independently per axis to half the overflow of `(fitted dimension * zoom) - viewport dimension`; an axis with no overflow remains centered. At factor 1, with a `0.001` epsilon in `clampPan`, pan is forced to zero. The DOM transform is `translate3d(xpx, ypx, 0) scale(factor)`.
+Zoom preserves the source point under the pointer or viewport center. Pan is clamped independently per axis to half the overflow of `(fitted dimension * zoom) - viewport dimension`; an axis with no overflow remains centered. At factor 1, with a `0.001` epsilon in `clampPan`, pan is forced to zero. The DOM transform is `translate(xpx, ypx)`. Zoom changes layout dimensions so the browser paints original-image detail at the requested size. Keep transform scaling, `will-change: transform`, and hidden backface styling off the image: the former composited, fitted-size image lost fine detail when enlarged in WebKitGTK, especially for tall originals.
 
 Primary-button drag starts only above factor 1. Pointer capture is preferred; window pointer listeners provide a fallback and window blur ends the drag. Movement over 3 px marks the gesture as a drag, suppressing the following image click for 120 ms. Selection changes reset zoom, pan, dragging, click suppression, and intrinsic dimensions. Viewport changes re-clamp pan while zoomed.
 
-Transform writes are coalesced to one `requestAnimationFrame`: callers update refs immediately, `requestImageTransform` refuses to queue a second frame, and the frame writes the transform once. The pending frame is cancelled on unmount. Resize measurement and tag-input focus also use their respective observer/animation-frame lifecycles.
+Zoom-property and translation writes are coalesced to one `requestAnimationFrame`: callers update refs immediately, `requestImageTransform` refuses to queue a second frame, and the frame writes both values. React owns fitted dimensions; the controls hook owns the zoom custom property and translation, so unrelated renders preserve zoom. The pending frame is cancelled on unmount. Resize measurement and tag-input focus also use their respective observer/animation-frame lifecycles.
 
 ## Fullscreen and keyboard behavior
 
@@ -150,13 +150,15 @@ The window-level shortcuts while an asset is selected are:
 | Key | Behavior |
 | --- | --- |
 | `Escape` | Exit image or native video fullscreen first; otherwise close the lightbox |
-| `ArrowLeft` / `ArrowRight` | Previous/next global result with wrap |
+| `ArrowLeft` / `ArrowRight` | Seek video backward/forward 5 seconds when the player or a native playback button has focus; otherwise previous/next global result with wrap |
 | `F` | Toggle image-shell or video-player fullscreen |
 | `0` | Reset image/GIF zoom |
 | `+` / `=` | Zoom image/GIF in by 1.25 |
 | `-` | Zoom image/GIF out by 1.25 |
 
-While delete confirmation is open, the lightbox shortcut listener is disabled and the inline confirmation owns Escape. Otherwise, form controls keep their keys. Native video `F` and fullscreen `Escape` are handled by the WebView shortcut path or, when focus is inside the native overlay, by GTK. Other shortcuts are suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
+While delete confirmation is open, the lightbox shortcut listener is disabled and the inline confirmation owns Escape. Otherwise, form controls keep their keys. Native video `F` and fullscreen `Escape` are handled by the WebView shortcut path or, when focus is inside the native overlay, by GTK. Global navigation is suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
+
+A primary-button click on the video picture focuses its WebView container and toggles pause. The GTK picture passes pointer input through to that container; native controls handle their own clicks. With the picture focused, unmodified Left/Right seek by five seconds and Space/Enter toggle pause. Native play, mute, and fullscreen buttons also handle unmodified Left/Right; sliders and the speed menu retain their keyboard behavior. Seeking preserves pause state and libmpv bounds the position to the media timeline. Pause toggles and relative seeks run on the playback worker, including accumulation of rapid relative seeks against libmpv's pending target. Frontend controls queue in input order and discard queued work for retired sessions; failures use the existing recoverable control-error UI.
 
 ## Backdrop-close and nested-overlay safety
 
@@ -199,7 +201,7 @@ When changing lightbox behavior:
 Current focused coverage is split across:
 
 - `src/hooks/__tests__/useSelectionState.test.ts`: editor hydration, cache-to-selection synchronization, empty-library close, tag-mutation serialization/retry, pending-mutation detail barriers, restore/reset ID reuse, deletion tombstones, stale-detail protection, rapid Right/Right and Right/Left ordering, and delegation to mutation actions. It also covers query-position recomputation and failed navigation retries, but not every prefetch race or global wrap/unloaded-page combination.
-- `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx`: A→B→A failure reset and rejection of a late error callback from an older activation.
+- `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx`: A→B→A failure reset and rejection of a late error callback from an older activation; image/GIF zoom sizing, preservation across unrelated renders, wheel anchoring, drag bounds, resize re-clamping, natural dimensions, navigation/reset, and RAF coalescing/cancellation. DOM tests establish sizing and interaction contracts; sharpness requires inspecting pixels in the desktop WebView.
 - `src/components/lightbox/__tests__/LightboxModal.test.tsx`: arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, and inline delete confirmation.
 - `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx`: cancellation before and after reservation, delayed open completion, A→B→A event isolation, coalesced bounds acknowledgements, label changes, recoverable/fatal errors, and serialized fullscreen toggles.
 - `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx`: copy availability, clipboard write, confirmed state, and 1,600 ms reset.

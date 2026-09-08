@@ -97,6 +97,14 @@
     "retry": "Réessayer"
   },
   "bulk": {
+    "orderModal": {
+      "open": "Trier dans une vue agrandie",
+      "title": "Trier les éléments du groupe",
+      "instructions": "Faites glisser une image pour la déplacer, ou sélectionnez sa poignée et utilisez les touches fléchées. Enregistrer l’ordre applique aussi l’affectation au groupe.",
+      "save": "Enregistrer l’ordre",
+      "moved": "{{name}} déplacé à la position {{position}} sur {{count}}.",
+      "partial": "Certains éléments n’ont pas pu être enregistrés. Réessayez ou fermez cette fenêtre. Les modifications déjà enregistrées sont conservées."
+    },
     "favorite": {
       "toggle": "Basculer les favoris pour les éléments sélectionnés",
       "remove": "Retirer les éléments sélectionnés des favoris",

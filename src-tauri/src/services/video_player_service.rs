@@ -126,7 +126,9 @@ enum WorkerCommand {
 pub enum PlayerCommand {
     Play,
     Pause,
+    TogglePause,
     Seek(f64),
+    SeekRelative(f64),
     SetVolume(f64),
     SetMuted(bool),
     SetRate(f64),
@@ -528,6 +530,16 @@ impl PlaybackWorker {
         match command {
             PlayerCommand::Play => self.mpv.set_property("pause", false),
             PlayerCommand::Pause => self.mpv.set_property("pause", true),
+            PlayerCommand::TogglePause => self.mpv.command("cycle", &["pause"]),
+            PlayerCommand::SeekRelative(seconds) => {
+                let duration = self.mpv.get_property::<f64>("duration").unwrap_or(0.0);
+                if duration <= 0.0 {
+                    return Err("video duration is unavailable".into());
+                }
+                // libmpv accumulates relative seeks against its pending seek target.
+                self.mpv
+                    .command("seek", &[&seconds.to_string(), "relative+exact"])
+            }
             PlayerCommand::Seek(time) => {
                 let duration = self.mpv.get_property::<f64>("duration").unwrap_or(0.0);
                 if duration <= 0.0 {
@@ -694,7 +706,7 @@ mod tests {
                 "-i",
                 "testsrc2=size=160x90:rate=10",
                 "-t",
-                "3",
+                "20",
                 "-c:v",
                 "mpeg4",
             ])
@@ -765,6 +777,38 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         assert!(service.playback_snapshot().unwrap().paused);
 
+        service.control(first, PlayerCommand::Seek(0.0)).unwrap();
+        wait(&|s| s.paused && !s.seeking && s.current_time < 0.1);
+        service
+            .control(first, PlayerCommand::SeekRelative(5.0))
+            .unwrap();
+        service
+            .control(first, PlayerCommand::SeekRelative(5.0))
+            .unwrap();
+        wait(&|s| s.paused && !s.seeking && (s.current_time - 10.0).abs() < 0.15);
+        service
+            .control(first, PlayerCommand::SeekRelative(-5.0))
+            .unwrap();
+        wait(&|s| s.paused && !s.seeking && (s.current_time - 5.0).abs() < 0.15);
+        service
+            .control(first, PlayerCommand::SeekRelative(-50.0))
+            .unwrap();
+        wait(&|s| s.paused && !s.seeking && s.current_time < 0.1);
+        service
+            .control(first, PlayerCommand::SeekRelative(50.0))
+            .unwrap();
+        wait(&|s| s.paused && !s.seeking && s.current_time > 19.8 && s.current_time <= s.duration);
+        service.control(first, PlayerCommand::Seek(1.0)).unwrap();
+        wait(&|s| s.paused && !s.seeking && (s.current_time - 1.0).abs() < 0.15);
+        service.control(first, PlayerCommand::TogglePause).unwrap();
+        wait(&|s| !s.paused && s.current_time > 1.1);
+        service.control(first, PlayerCommand::TogglePause).unwrap();
+        wait(&|s| s.paused);
+        service.control(first, PlayerCommand::TogglePause).unwrap();
+        service.control(first, PlayerCommand::TogglePause).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(service.playback_snapshot().unwrap().paused);
+
         let second_request = service.begin_open();
         let second = service
             .open(
@@ -782,10 +826,14 @@ mod tests {
         assert_eq!(snapshot.volume, 0.4);
         assert_eq!(snapshot.rate, 1.5);
         assert!(service.control(first, PlayerCommand::Pause).is_err());
+        assert!(service.control(first, PlayerCommand::TogglePause).is_err());
+        assert!(service
+            .control(first, PlayerCommand::SeekRelative(5.0))
+            .is_err());
         service.close(first).unwrap();
         assert_eq!(service.playback_snapshot().unwrap().session_id, second);
-        service.control(second, PlayerCommand::Seek(2.8)).unwrap();
-        wait(&|s| s.current_time > 2.5);
+        service.control(second, PlayerCommand::Seek(19.8)).unwrap();
+        wait(&|s| s.current_time > 19.5);
         wait(&|s| s.current_time < 1.0 && !s.paused);
         service.close(second).unwrap();
         assert!(service.playback_snapshot().is_none());

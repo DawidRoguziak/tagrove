@@ -97,6 +97,14 @@
     "retry": "Riprova"
   },
   "bulk": {
+    "orderModal": {
+      "open": "Ordina in una vista più grande",
+      "title": "Ordina gli elementi del gruppo",
+      "instructions": "Trascina un’immagine per spostarla, oppure seleziona la sua maniglia e usa i tasti freccia. Salvare l’ordine applica anche l’assegnazione al gruppo.",
+      "save": "Salva ordine",
+      "moved": "{{name}} spostato alla posizione {{position}} di {{count}}.",
+      "partial": "Impossibile salvare alcuni elementi. Riprova o chiudi questa finestra. Le modifiche già salvate vengono mantenute."
+    },
     "favorite": {
       "toggle": "Attiva o disattiva i preferiti per gli elementi selezionati",
       "remove": "Rimuovi gli elementi selezionati dai preferiti",

@@ -97,6 +97,14 @@
     "retry": "Wiederholen"
   },
   "bulk": {
+    "orderModal": {
+      "open": "In größerer Ansicht sortieren",
+      "title": "Gruppenreihenfolge sortieren",
+      "instructions": "Ziehe ein Bild, um es zu verschieben, oder fokussiere seinen Griff und verwende die Pfeiltasten. Beim Speichern der Reihenfolge wird auch die Gruppenzuweisung übernommen.",
+      "save": "Reihenfolge speichern",
+      "moved": "{{name}} auf Position {{position}} von {{count}} verschoben.",
+      "partial": "Einige Elemente konnten nicht gespeichert werden. Versuche es erneut oder schließe dieses Fenster. Bereits gespeicherte Änderungen bleiben erhalten."
+    },
     "favorite": {
       "toggle": "Favoriten für ausgewählte Elemente umschalten",
       "remove": "Ausgewählte Elemente aus Favoriten entfernen",

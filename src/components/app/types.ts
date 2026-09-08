@@ -59,6 +59,12 @@ export interface AppGalleryMediaController {
   pageFailureEpoch: number;
 }
 
+export type BulkGroupSaveResult =
+  | { status: "saved" }
+  | { status: "partial"; processed: number; requested: number }
+  | { status: "failed" }
+  | { status: "ignored" };
+
 export interface BulkSelectionController {
   metadataLoading?: boolean;
   metadataFailed?: boolean;
@@ -89,7 +95,7 @@ export interface BulkSelectionController {
   onBulkSelectionInteraction: (interaction: BulkSelectionInteraction) => void;
   onGroupKeyDraftChange: (value: string) => void;
   onReorderGroupAsset: (draggedAssetId: number, targetAssetId: number) => void;
-  onApplyGroup: () => Promise<void>;
+  onApplyGroup: (order?: number[]) => Promise<BulkGroupSaveResult>;
   onAddTag: (tag: string) => Promise<boolean>;
   onRemoveTag: (tag: string) => Promise<void>;
   onRetryTagDetails: () => void;

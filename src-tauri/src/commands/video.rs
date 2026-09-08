@@ -78,7 +78,9 @@ impl VideoBounds {
 pub enum VideoControl {
     Play,
     Pause,
+    TogglePause,
     Seek { time: f64 },
+    SeekRelative { seconds: f64 },
     SetVolume { volume: f64 },
     SetMuted { muted: bool },
     SetRate { rate: f64 },
@@ -159,7 +161,11 @@ pub fn control_video(
     let command = match command {
         VideoControl::Play => PlayerCommand::Play,
         VideoControl::Pause => PlayerCommand::Pause,
+        VideoControl::TogglePause => PlayerCommand::TogglePause,
         VideoControl::Seek { time } if time.is_finite() && time >= 0.0 => PlayerCommand::Seek(time),
+        VideoControl::SeekRelative { seconds } if seconds.is_finite() => {
+            PlayerCommand::SeekRelative(seconds)
+        }
         VideoControl::SetVolume { volume }
             if volume.is_finite() && (0.0..=1.0).contains(&volume) =>
         {
@@ -291,6 +297,15 @@ mod tests {
     }
     #[test]
     fn parses_camel_case_track_control_fields() {
+        assert!(matches!(
+            serde_json::from_value::<VideoControl>(serde_json::json!({ "type": "togglePause" }))
+                .unwrap(),
+            VideoControl::TogglePause
+        ));
+        assert!(matches!(
+            serde_json::from_value::<VideoControl>(serde_json::json!({ "type": "seekRelative", "seconds": -5 })).unwrap(),
+            VideoControl::SeekRelative { seconds } if seconds == -5.0
+        ));
         assert!(
             matches!(serde_json::from_value::<VideoControl>(serde_json::json!({
             "type": "selectAudioTrack", "trackId": "2"

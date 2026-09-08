@@ -180,6 +180,34 @@ describe("useNativeVideoSession", () => {
     expect(api.closeVideo).toHaveBeenCalledWith(10);
   });
 
+  it("keeps queued playback controls on their original session and ignores retired failures", async () => {
+    const opts = options();
+    const { result, rerender } = renderHook((props) => useNativeVideoSession(props), { initialProps: opts });
+    await waitFor(() => expect(result.current.sessionId).toBe(10));
+    const pending = deferred<void>();
+    api.controlVideo.mockReturnValueOnce(pending.promise);
+    let first: Promise<void>;
+    let second: Promise<void>;
+    act(() => {
+      first = result.current.sendPlaybackControl({ type: "togglePause" });
+      second = result.current.sendPlaybackControl({ type: "seekRelative", seconds: 5 });
+    });
+    await waitFor(() => expect(api.controlVideo).toHaveBeenCalledOnce());
+    rerender({ ...opts, assetId: 2 });
+    await waitFor(() => expect(result.current.sessionId).toBe(20));
+    await act(async () => {
+      pending.reject(new Error("retired session"));
+      await Promise.all([first, second]);
+    });
+    expect(api.controlVideo).toHaveBeenCalledOnce();
+    expect(result.current.controlError).toBeNull();
+    api.controlVideo.mockRejectedValueOnce(new Error("seek failed"));
+    await act(async () => result.current.sendPlaybackControl({ type: "seekRelative", seconds: -5 }));
+    expect(api.controlVideo).toHaveBeenLastCalledWith(20, { type: "seekRelative", seconds: -5 });
+    expect(result.current.controlError).toBe("seek failed");
+    expect(opts.onError).not.toHaveBeenCalled();
+  });
+
   it("serializes fullscreen toggles and reports rejection without optimistic UI state", async () => {
     const opts = options();
     const { result } = renderHook(() => useNativeVideoSession(opts));

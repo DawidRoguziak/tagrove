@@ -206,7 +206,7 @@ The layer manager's tabbable selector excludes disabled controls, hidden element
 
 GTK video controls are native widgets outside the DOM layer manager. Changes to video bounds, fullscreen, or sidebar visibility need desktop verification as well as DOM tests. See [native media presentation](../subsystems/lightbox.md#media-presentation).
 
-Bulk group drag handles support ArrowUp/ArrowDown reordering. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
+Bulk group drag handles support ArrowUp/ArrowDown reordering. The larger group-order modal also supports ArrowLeft/ArrowRight for adjacent positions, with Up/Down moving by grid row. It uses the shared modal layer, keeps changes in a local draft until Save order, and restores the triggering button on close. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
 
 ## Safe change checklist
 

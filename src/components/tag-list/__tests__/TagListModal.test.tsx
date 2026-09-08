@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TagListPage } from "../../../types";
+import * as tagListSelection from "../services/tagListSelectionService";
 
 vi.mock("../../UI/UiButton", () => ({
   UiButton: ({ children, type = "button", ...props }: ButtonHTMLAttributes<HTMLButtonElement>) => (
@@ -100,6 +101,31 @@ describe("TagListModal", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("does not prepare the tag vocabulary while closed, including after updates", async () => {
+    apiMocks.listTags.mockRejectedValue(new Error("offline"));
+    const dedupe = vi.spyOn(tagListSelection, "dedupeKnownTags");
+    const props = { open: false, knownTags: ["beta", "alpha"], onClose: vi.fn() };
+    const { rerender } = render(<TagListModal {...props} />);
+    rerender(<TagListModal {...props} knownTags={["gamma", "delta"]} />);
+
+    expect(dedupe).not.toHaveBeenCalled();
+    expect(apiMocks.listTags).not.toHaveBeenCalled();
+
+    rerender(<TagListModal {...props} open />);
+    expect(dedupe).toHaveBeenCalledWith(props.knownTags);
+    expect(await screen.findByRole("button", { name: "alpha, state: inactive" })).toBeInTheDocument();
+    dedupe.mockClear();
+    rerender(<TagListModal {...props} />);
+    const updatedTags = ["zeta", "epsilon"];
+    rerender(<TagListModal {...props} knownTags={updatedTags} />);
+    expect(dedupe).not.toHaveBeenCalled();
+    rerender(<TagListModal {...props} knownTags={updatedTags} open />);
+    expect(dedupe).toHaveBeenCalledWith(updatedTags);
+    expect(await screen.findByRole("button", { name: "epsilon, state: inactive" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "alpha, state: inactive" })).not.toBeInTheDocument();
   });
 
   it("opens lazily, requests the first page and focuses the filter input", async () => {

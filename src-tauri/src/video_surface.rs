@@ -394,18 +394,7 @@ impl NativeVideoControls {
                 let Some(session_id) = session_id.get() else {
                     return;
                 };
-                let Some(snapshot) = player
-                    .playback_snapshot()
-                    .filter(|snapshot| snapshot.session_id == session_id)
-                else {
-                    return;
-                };
-                let command = if snapshot.paused {
-                    PlayerCommand::Play
-                } else {
-                    PlayerCommand::Pause
-                };
-                if let Err(error) = player.control(session_id, command) {
+                if let Err(error) = player.control(session_id, PlayerCommand::TogglePause) {
                     player.report_control_error(session_id, error);
                 }
             });
@@ -542,6 +531,36 @@ impl NativeVideoControls {
                 } else {
                     glib::Propagation::Proceed
                 }
+            });
+        }
+
+        // Handle buttons before GTK's default arrow-key focus navigation. Sliders
+        // and the speed menu retain their own keyboard controls.
+        for button in [&play_button, &mute_button, &fullscreen_button] {
+            let player = player.clone();
+            let session_id = Rc::clone(&session_id);
+            button.connect_key_press_event(move |_, event| {
+                let modifiers = gtk::gdk::ModifierType::SHIFT_MASK
+                    | gtk::gdk::ModifierType::CONTROL_MASK
+                    | gtk::gdk::ModifierType::MOD1_MASK
+                    | gtk::gdk::ModifierType::SUPER_MASK
+                    | gtk::gdk::ModifierType::META_MASK;
+                if event.state().intersects(modifiers) {
+                    return glib::Propagation::Proceed;
+                }
+                let seconds = match event.keyval() {
+                    gtk::gdk::keys::constants::Left => -5.0,
+                    gtk::gdk::keys::constants::Right => 5.0,
+                    _ => return glib::Propagation::Proceed,
+                };
+                if let Some(session_id) = session_id.get() {
+                    if let Err(error) =
+                        player.control(session_id, PlayerCommand::SeekRelative(seconds))
+                    {
+                        player.report_control_error(session_id, error);
+                    }
+                }
+                glib::Propagation::Stop
             });
         }
 

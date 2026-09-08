@@ -13,9 +13,8 @@ export function normalizeTagName(tag: string): string {
 }
 
 export function sortTagsCaseInsensitive(tags: string[]): string[] {
-  return [...tags].sort((left, right) =>
-    left.localeCompare(right, undefined, { sensitivity: "base" })
-  );
+  const collator = new Intl.Collator(undefined, { sensitivity: "base" });
+  return [...tags].sort(collator.compare);
 }
 
 export function dedupeKnownTags(tags: string[]): string[] {

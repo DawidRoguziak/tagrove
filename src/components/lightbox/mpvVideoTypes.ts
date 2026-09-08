@@ -20,7 +20,9 @@ export interface NativeVideoControlLabels {
 export type VideoControl =
   | { type: "play" }
   | { type: "pause" }
+  | { type: "togglePause" }
   | { type: "seek"; time: number }
+  | { type: "seekRelative"; seconds: number }
   | { type: "setVolume"; volume: number }
   | { type: "setMuted"; muted: boolean }
   | { type: "setRate"; rate: number }

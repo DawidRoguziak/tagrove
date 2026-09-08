@@ -97,6 +97,14 @@
     "retry": "Znovu"
   },
   "bulk": {
+    "orderModal": {
+      "open": "Řadit ve větším zobrazení",
+      "title": "Pořadí položek ve skupině",
+      "instructions": "Přesuňte obrázek přetažením, nebo přejděte na jeho úchyt a použijte klávesy se šipkami. Uložení pořadí také použije přiřazení ke skupině.",
+      "save": "Uložit pořadí",
+      "moved": "Položka {{name}} přesunuta na pozici {{position}} z {{count}}.",
+      "partial": "Některé položky se nepodařilo uložit. Zkuste to znovu nebo zavřete toto okno. Již uložené změny zůstanou zachovány."
+    },
     "favorite": {
       "toggle": "Přepnout oblíbené u vybraných položek",
       "remove": "Odebrat vybrané položky z oblíbených",

@@ -1,3 +1,4 @@
+import type { BulkGroupSaveResult } from "../types";
 import { useSelectedSummaries } from "./useSelectedSummaries";
 import type { FilterDescriptor } from "../services/filterService";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -415,10 +416,14 @@ export function useBulkSelectionController({
     }
   }, [appliedFavoritesOnly, assetTagState, onFavoritesChanged, refresh, selectedAssetIds, selectionKey, setAssets, metadata.patch]);
 
-  const onApplyGroup = useCallback(async () => {
-    if (!selectedAssetIds.size || !metadata.ready || groupOperationRef.current) return;
+  const onApplyGroup = useCallback(async (order?: number[]): Promise<BulkGroupSaveResult> => {
+    if (!selectedAssetIds.size || !metadata.ready || groupOperationRef.current) return { status: "ignored" };
     const selectedIdSet = selectedAssetIds;
-    const capturedOrderedIds = orderedAssetIds.filter((id) => selectedIdSet.has(id));
+    const capturedOrderedIds = order ?? orderedAssetIds;
+    // An explicit modal draft must still describe the complete current selection.
+    if (capturedOrderedIds.length !== selectedIdSet.size ||
+        new Set(capturedOrderedIds).size !== selectedIdSet.size ||
+        capturedOrderedIds.some(id => !selectedIdSet.has(id))) return { status: "ignored" };
     const capturedSelectionKey = selectionKey;
     const normalizedDraft = normalizeGroupKey(groupKeyDraft);
     const singleAsset = selectedAssets.length === 1 ? selectedAssets[0]! : null;
@@ -433,7 +438,7 @@ export function useBulkSelectionController({
       if (!token) {
         for (const acquired of mutationTokens) assetTagState.settleMutation(acquired);
         setGroupFailed(true);
-        return;
+        return { status: "failed" };
       }
       mutationTokens.push(token);
     }
@@ -446,9 +451,16 @@ export function useBulkSelectionController({
         assetIdsInOrder: capturedOrderedIds,
         groupKey: normalizedDraft,
         preservedSingleOrder: preservesExistingGroup ? singleAsset?.media_group_order : null,
-        setAssets
+        setAssets: updater => {
+          if (mutationTokens.every(token => assetTagState.captureGeneration(token.assetId).epoch === token.epoch)) {
+            setAssets(updater);
+          }
+        }
       });
 
+      if (mutationTokens.some(token => assetTagState.captureGeneration(token.assetId).epoch !== token.epoch)) {
+        return { status: "ignored" };
+      }
       const processed = new Set(result?.processed_asset_ids ?? []);
       if (selectionKeyRef.current === capturedSelectionKey) setPartialResult({ processed: processed.size, requested: capturedOrderedIds.length });
       const normalizedKey = normalizedDraft || null;
@@ -476,14 +488,20 @@ export function useBulkSelectionController({
       });
 
       if (selectionKeyRef.current === capturedSelectionKey) {
+        setOrderedAssetIds(capturedOrderedIds);
         setGroupKeyDraft(normalizedDraft);
         setHasConflictingGroups(false);
       }
       // Group changes alter ordering/adjacency of the active view, so restart
       // the query session instead of trusting the local patch alone.
       void refresh().catch(() => {});
+      if (selectionKeyRef.current !== capturedSelectionKey) return { status: "ignored" };
+      return processed.size === capturedOrderedIds.length
+        ? { status: "saved" }
+        : { status: "partial", processed: processed.size, requested: capturedOrderedIds.length };
     } catch {
       if (selectionKeyRef.current === capturedSelectionKey) setGroupFailed(true);
+      return { status: "failed" };
     } finally {
       for (const token of mutationTokens) assetTagState.settleMutation(token);
       groupOperationRef.current = false;

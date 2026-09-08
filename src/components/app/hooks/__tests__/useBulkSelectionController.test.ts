@@ -4,7 +4,7 @@ import type { AssetDetails, AssetSummary } from "../../../../types";
 import { useBulkSelectionController } from "../useBulkSelectionController";
 import { useAssetTagState } from "../useAssetTagState";
 
-const apiMocks = vi.hoisted(() => ({ getAssetDetails: vi.fn(), setAssetTags: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({ getAssetDetails: vi.fn(), setAssetTags: vi.fn(), setAssetsMediaGroupBulk: vi.fn() }));
 const actionMocks = vi.hoisted(() => ({ applyBulkTagsAction: vi.fn() }));
 
 vi.mock("../../../../api", async () => {
@@ -58,6 +58,7 @@ describe("useBulkSelectionController", () => {
   beforeEach(() => {
     apiMocks.getAssetDetails.mockReset().mockResolvedValue(null);
     apiMocks.setAssetTags.mockReset();
+    apiMocks.setAssetsMediaGroupBulk.mockReset();
     actionMocks.applyBulkTagsAction.mockReset();
   });
 
@@ -511,5 +512,78 @@ describe("useBulkSelectionController", () => {
     await act(() => result.current.onAddTag("new"));
     expect(actionMocks.applyBulkTagsAction).toHaveBeenCalledWith(expect.objectContaining({ assetIds: [1, 2, 3] }));
     expect(result.current.partialResult).toEqual({ processed: 2, requested: 3 });
+  });
+});
+
+describe("bulk modal order submission", () => {
+  beforeEach(() => {
+    apiMocks.getAssetDetails.mockReset().mockResolvedValue(null);
+    apiMocks.setAssetsMediaGroupBulk.mockReset();
+  });
+
+  function selectedController() {
+    const config = options([createAsset(1), createAsset(2), createAsset(3)]);
+    const hook = renderHook(() => useBulkSelectionController(config));
+    act(() => hook.result.current.onToggleSelectionMode());
+    select(hook.result, 1, 0);
+    select(hook.result, 2, 1, true);
+    select(hook.result, 3, 2, true);
+    act(() => hook.result.current.onGroupKeyDraftChange(" trip "));
+    return { ...hook, config };
+  }
+
+  it("submits an explicit order atomically and publishes it only after acknowledgement", async () => {
+    const pending = deferred<{ processed_asset_ids: number[]; processed_assets: number; updated_assets: number; media_group_key: string }>();
+    apiMocks.setAssetsMediaGroupBulk.mockReturnValueOnce(pending.promise);
+    const { result, config } = selectedController();
+    let save!: ReturnType<typeof result.current.onApplyGroup>;
+    act(() => { save = result.current.onApplyGroup([3, 1, 2]); });
+    expect(apiMocks.setAssetsMediaGroupBulk).toHaveBeenCalledExactlyOnceWith([
+      { assetId: 3, mediaGroupOrder: 1 }, { assetId: 1, mediaGroupOrder: 2 }, { assetId: 2, mediaGroupOrder: 3 }
+    ], "trip");
+    expect(result.current.orderedAssetIds).toEqual([1, 2, 3]);
+    expect(config.setAssets).not.toHaveBeenCalled();
+    await act(async () => { expect(await result.current.onApplyGroup([2, 3, 1])).toEqual({ status: "ignored" }); });
+    await act(async () => {
+      pending.resolve({ processed_asset_ids: [3, 1, 2], processed_assets: 3, updated_assets: 3, media_group_key: "trip" });
+      expect(await save).toEqual({ status: "saved" });
+    });
+    expect(result.current.orderedAssetIds).toEqual([3, 1, 2]);
+    expect(config.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("rejects drafts for a different or incomplete selection without writing", async () => {
+    const { result } = selectedController();
+    for (const order of [[1, 2], [1, 2, 4], [1, 1, 2]]) {
+      await act(async () => { expect(await result.current.onApplyGroup(order)).toEqual({ status: "ignored" }); });
+    }
+    expect(apiMocks.setAssetsMediaGroupBulk).not.toHaveBeenCalled();
+  });
+
+  it("reports rejection and partial acknowledgement without claiming a full save", async () => {
+    const { result, config } = selectedController();
+    apiMocks.setAssetsMediaGroupBulk.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => { expect(await result.current.onApplyGroup([3, 1, 2])).toEqual({ status: "failed" }); });
+    expect(result.current.orderedAssetIds).toEqual([1, 2, 3]);
+    expect(config.setAssets).not.toHaveBeenCalled();
+    apiMocks.setAssetsMediaGroupBulk.mockResolvedValueOnce({ processed_asset_ids: [3, 1], processed_assets: 2, updated_assets: 2 });
+    await act(async () => {
+      expect(await result.current.onApplyGroup([3, 1, 2])).toEqual({ status: "partial", processed: 2, requested: 3 });
+    });
+    expect(result.current.partialResult).toEqual({ processed: 2, requested: 3 });
+  });
+
+  it("does not replace a new selection's draft when an earlier save completes", async () => {
+    const pending = deferred<{ processed_asset_ids: number[]; processed_assets: number; updated_assets: number }>();
+    apiMocks.setAssetsMediaGroupBulk.mockReturnValueOnce(pending.promise);
+    const { result } = selectedController();
+    let save!: ReturnType<typeof result.current.onApplyGroup>;
+    act(() => { save = result.current.onApplyGroup([3, 1, 2]); });
+    select(result, 2, 1);
+    await act(async () => {
+      pending.resolve({ processed_asset_ids: [3, 1, 2], processed_assets: 3, updated_assets: 3 });
+      expect(await save).toEqual({ status: "ignored" });
+    });
+    expect(result.current.orderedAssetIds).toEqual([2]);
   });
 });

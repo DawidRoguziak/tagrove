@@ -29,7 +29,10 @@ export function useTagListData({
   const [page, setPage] = useState<TagListPage>({ items: [], total: 0 });
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const fallbackKnownTags = useMemo(() => dedupeKnownTags(knownTags), [knownTags]);
+  const fallbackKnownTags = useMemo(
+    () => open ? dedupeKnownTags(knownTags) : [],
+    [open, knownTags]
+  );
 
   const resetPage = useCallback(() => {
     requestIdRef.current += 1;

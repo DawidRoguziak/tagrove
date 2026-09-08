@@ -97,6 +97,14 @@
     "retry": "Ponów"
   },
   "bulk": {
+    "orderModal": {
+      "open": "Sortuj w większym widoku",
+      "title": "Kolejność w grupie",
+      "instructions": "Przeciągnij obraz, aby go przenieść, lub ustaw fokus na jego uchwycie i użyj klawiszy strzałek. Zapisanie kolejności przypisuje też elementy do grupy.",
+      "save": "Zapisz kolejność",
+      "moved": "Przeniesiono {{name}} na pozycję {{position}} z {{count}}.",
+      "partial": "Nie udało się zapisać części elementów. Spróbuj ponownie lub zamknij okno. Zamknięcie zachowuje już zapisane zmiany."
+    },
     "favorite": {
       "toggle": "Przełącz ulubione dla zaznaczonych elementów",
       "remove": "Usuń zaznaczone elementy z ulubionych",

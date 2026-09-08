@@ -706,7 +706,22 @@ describe("MediaTagger desktop workflows", () => {
       { timeout: 10000, timeoutMsg: `Expected native ${name}=${value}` });
     await browser.waitUntil(async () => Number(await player.getAttribute("data-native-time")) > 0,
       { timeout: 15000, timeoutMsg: "Expected native playback to advance" });
-    await control({ type: "pause" });
+    await player.click();
+    await waitAttribute("paused", "true");
+    await player.click();
+    await waitAttribute("paused", "false");
+    await player.click();
+    await waitAttribute("paused", "true");
+    await control({ type: "seek", time: 1 });
+    await browser.waitUntil(async () => Math.abs(Number(await player.getAttribute("data-native-time")) - 1) < 0.1,
+      { timeout: 10000 });
+    await browser.keys("ArrowRight");
+    await browser.waitUntil(async () => Math.abs(Number(await player.getAttribute("data-native-time")) - 6) < 0.1,
+      { timeout: 10000 });
+    await browser.keys("ArrowLeft");
+    await browser.waitUntil(async () => Math.abs(Number(await player.getAttribute("data-native-time")) - 1) < 0.1,
+      { timeout: 10000 });
+    await waitAttribute("paused", "true");
     await control({ type: "setMuted", muted: true });
     await control({ type: "setVolume", volume: 0.4 });
     await control({ type: "setRate", rate: 1.5 });
@@ -719,7 +734,6 @@ describe("MediaTagger desktop workflows", () => {
       { timeout: 10000 });
     await waitAttribute("seeking", "false");
     await waitAttribute("paused", "true");
-    await player.click();
     await browser.keys("f");
     await browser.waitUntil(async () => (await player.getAttribute("data-native-fullscreen")) !== null,
       { timeout: 10000 });

@@ -1,3 +1,4 @@
+import { UiLayerProvider } from "../../UI/UiLayerProvider";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,7 +59,7 @@ function createController(
     onBulkSelectionInteraction: vi.fn(),
     onGroupKeyDraftChange: vi.fn(),
     onReorderGroupAsset: vi.fn(),
-    onApplyGroup: vi.fn(async () => {}),
+    onApplyGroup: vi.fn<BulkSelectionController["onApplyGroup"]>(async () => ({ status: "saved" })),
     onAddTag: vi.fn(async () => true),
     onRemoveTag: vi.fn(async () => {}),
     onRetryTagDetails: vi.fn(),
@@ -373,5 +374,100 @@ describe("BulkActionsSidebar", () => {
 
     expect(screen.getByTestId("bulk-tag-list")).toHaveTextContent("Loading tags...");
     expect(screen.queryByText("cat")).not.toBeInTheDocument();
+  });
+});
+
+function sortingController(overrides: Partial<BulkSelectionController> = {}) {
+  return createController({
+    selectedAssetIds: new Set([1, 2, 3]),
+    selectedAssets: [createAsset(1), createAsset(2), createAsset(3)],
+    orderedAssetIds: [1, 2, 3], groupKeyDraft: "trip", ...overrides
+  });
+}
+
+async function openSorter(controller = sortingController()) {
+  const view = render(<UiLayerProvider><BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} /></UiLayerProvider>);
+  const trigger = screen.getByRole("button", { name: "Sort in larger view" });
+  await userEvent.click(trigger);
+  return { ...view, trigger, controller };
+}
+
+function modalOrder() {
+  return screen.getAllByTestId(/^bulk-order-tile-/).map(tile => Number(tile.getAttribute("data-sort-asset")));
+}
+
+describe("bulk group sorting modal", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("keeps keyboard changes local, discards on Cancel and restores trigger focus", async () => {
+    const { controller, trigger } = await openSorter();
+    expect(screen.getByRole("dialog", { name: "Sort group order" })).toBeVisible();
+    fireEvent.keyDown(screen.getByTestId("bulk-order-handle-1"), { key: "ArrowRight" });
+    expect(modalOrder()).toEqual([2, 1, 3]);
+    expect(screen.getByTestId("bulk-order-handle-1")).toHaveFocus();
+    expect(controller.onReorderGroupAsset).not.toHaveBeenCalled();
+    expect(controller.onApplyGroup).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await userEvent.click(trigger);
+    expect(modalOrder()).toEqual([1, 2, 3]);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("saves the exact modal draft, blocks duplicate submissions and dismissal while saving", async () => {
+    let finish!: (value: Awaited<ReturnType<BulkSelectionController["onApplyGroup"]>>) => void;
+    const onApplyGroup = vi.fn<BulkSelectionController["onApplyGroup"]>(() => new Promise(resolve => { finish = resolve; }));
+    await openSorter(sortingController({ onApplyGroup }));
+    fireEvent.keyDown(screen.getByTestId("bulk-order-handle-1"), { key: "ArrowRight" });
+    await userEvent.click(screen.getByRole("button", { name: "Save order" }));
+    expect(onApplyGroup).toHaveBeenCalledExactlyOnceWith([2, 1, 3]);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByTestId("bulk-order-handle-1")).toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.mouseDown(screen.getByTestId("bulk-order-modal"));
+    expect(screen.getByRole("dialog")).toBeVisible();
+    await act(async () => finish({ status: "saved" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("retains the draft after failure and partial saves, then retries", async () => {
+    const onApplyGroup = vi.fn<BulkSelectionController["onApplyGroup"]>()
+      .mockResolvedValueOnce({ status: "failed" })
+      .mockResolvedValueOnce({ status: "partial", processed: 2, requested: 3 })
+      .mockResolvedValueOnce({ status: "saved" });
+    await openSorter(sortingController({ onApplyGroup }));
+    fireEvent.keyDown(screen.getByTestId("bulk-order-handle-1"), { key: "ArrowRight" });
+    await userEvent.click(screen.getByRole("button", { name: "Save order" }));
+    expect(screen.getByRole("alert")).toBeVisible();
+    expect(modalOrder()).toEqual([2, 1, 3]);
+    await userEvent.click(screen.getByRole("button", { name: "Save order" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Closing keeps changes already saved.");
+    await userEvent.click(screen.getByRole("button", { name: "Save order" }));
+    expect(onApplyGroup).toHaveBeenLastCalledWith([2, 1, 3]);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("invalidates the modal when its group context changes", async () => {
+    const { rerender, controller } = await openSorter();
+    rerender(<UiLayerProvider><BulkActionsSidebar controller={{ ...controller, groupKeyDraft: "other" }} thumbs={{}} renderingThumbnailIds={{}} /></UiLayerProvider>);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(controller.onApplyGroup).not.toHaveBeenCalled();
+  });
+
+  it("disables opening until selected metadata is ready", () => {
+    render(<BulkActionsSidebar controller={sortingController({ metadataLoading: true })} thumbs={{}} renderingThumbnailIds={{}} />);
+    expect(screen.getByRole("button", { name: "Sort in larger view" })).toBeDisabled();
+  });
+
+  it("bounds mounted tiles and thumbnail requests for a thousand selected items", async () => {
+    const assets = Array.from({ length: 1000 }, (_, index) => createAsset(index + 1));
+    const queueThumbnailsByIds = vi.fn();
+    await openSorter(sortingController({ selectedAssetIds: new Set(assets.map(asset => asset.id)), selectedAssets: assets,
+      orderedAssetIds: assets.map(asset => asset.id), queueThumbnailsByIds }));
+    expect(modalOrder().length).toBeLessThan(40);
+    expect(queueThumbnailsByIds).toHaveBeenCalled();
+    expect(queueThumbnailsByIds.mock.calls.every(([ids]) => ids.length < 40)).toBe(true);
   });
 });

@@ -154,6 +154,55 @@ describe("LightboxModal", () => {
     expect(onNavigatePrevious).toHaveBeenCalledTimes(1);
   });
 
+  it("toggles picture playback and seeks only with player focus", async () => {
+    const onNavigatePrevious = vi.fn();
+    const onNavigateNext = vi.fn();
+    render(
+      <LightboxModal
+        selected={selectedVideoAsset}
+        tagEditor={[]}
+        onTagEditorChange={() => {}}
+        onSaveTags={() => {}}
+        knownTags={[]}
+        onNavigatePrevious={onNavigatePrevious}
+        onNavigateNext={onNavigateNext}
+        onToggleFavorite={() => {}}
+        onClose={() => {}}
+      />
+    );
+    const player = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>("[data-native-video-active]");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    await act(async () => new Promise(requestAnimationFrame));
+    await userEvent.click(player);
+    expect(player).toHaveFocus();
+    await userEvent.keyboard("{ArrowLeft}{ArrowRight}{ArrowRight}");
+    await waitFor(() => expect(apiMocks.controlVideo.mock.calls.map((call) => call[1])).toEqual([
+      { type: "togglePause" },
+      { type: "seekRelative", seconds: -5 },
+      { type: "seekRelative", seconds: 5 },
+      { type: "seekRelative", seconds: 5 }
+    ]));
+    expect(onNavigatePrevious).not.toHaveBeenCalled();
+    expect(onNavigateNext).not.toHaveBeenCalled();
+
+    apiMocks.controlVideo.mockClear();
+    fireEvent.click(player, { button: 2 });
+    await userEvent.keyboard("{Control>}{ArrowLeft}{/Control}");
+    expect(apiMocks.controlVideo).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByLabelText("Add tag"));
+    await userEvent.keyboard("{ArrowLeft}{ArrowRight}");
+    expect(apiMocks.controlVideo).not.toHaveBeenCalled();
+    expect(onNavigateNext).not.toHaveBeenCalled();
+
+    screen.getByRole("dialog").focus();
+    await userEvent.keyboard("{ArrowLeft}{ArrowRight}");
+    expect(onNavigatePrevious).toHaveBeenCalledOnce();
+    expect(onNavigateNext).toHaveBeenCalledOnce();
+  });
+
   it("opens native video by asset id without rendering an HTML video", async () => {
     render(
       <LightboxModal

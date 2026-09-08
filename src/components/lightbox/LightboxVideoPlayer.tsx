@@ -52,7 +52,7 @@ export function LightboxVideoPlayer({
     }),
     [t]
   );
-  const { sessionId, fullscreen, snapshot, controlError, dismissControlError, toggleFullscreen } =
+  const { sessionId, fullscreen, snapshot, controlError, dismissControlError, toggleFullscreen, sendPlaybackControl } =
     useNativeVideoSession({
       assetId,
       generation,
@@ -97,6 +97,23 @@ export function LightboxVideoPlayer({
         data-native-volume={snapshot?.volume}
         data-native-rate={snapshot?.rate}
         tabIndex={0}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          event.currentTarget.focus({ preventScroll: true });
+          void sendPlaybackControl({ type: "togglePause" });
+        }}
+        onKeyDown={(event) => {
+          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+            event.preventDefault();
+            event.stopPropagation();
+            void sendPlaybackControl({ type: "seekRelative", seconds: event.key === "ArrowLeft" ? -5 : 5 });
+          } else if (event.key === " " || event.key === "Enter") {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) void sendPlaybackControl({ type: "togglePause" });
+          }
+        }}
         aria-label={title}
         style={{ aspectRatio }}
       />

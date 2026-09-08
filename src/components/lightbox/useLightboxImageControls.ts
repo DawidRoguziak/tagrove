@@ -9,7 +9,6 @@ import { useLightboxKeyboardShortcuts } from "./hooks/useLightboxKeyboardShortcu
 import { useLightboxViewportSize } from "./hooks/useLightboxViewportSize";
 import type { LightboxVideoPlayerHandle } from "./LightboxVideoPlayer";
 import {
-  buildImageTransform,
   calculateFittedMediaSize,
   clampPan,
   clampZoomFactor,
@@ -112,7 +111,9 @@ export function useLightboxImageControls({
     const image = lightboxImageRef.current;
     if (!image) return;
 
-    image.style.transform = buildImageTransform(panRef.current, zoomFactorRef.current);
+    // Grow the image's layout size so zoom paints detail from the original.
+    image.style.setProperty("--lightbox-image-zoom", String(zoomFactorRef.current));
+    image.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px)`;
   }, []);
 
   const requestImageTransform = useCallback(() => {

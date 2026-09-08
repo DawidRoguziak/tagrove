@@ -71,7 +71,3 @@ export function clampPan(
     y: Math.max(-maxY, Math.min(maxY, next.y))
   };
 }
-
-export function buildImageTransform(pan: { x: number; y: number }, zoomFactor: number) {
-  return `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoomFactor})`;
-}

@@ -90,6 +90,17 @@ describe("BulkActionsSidebar", () => {
     expect(screen.getByText("Could not update favorites. Try again.")).toBeVisible();
   });
 
+  it("disables every write control while rectangle IDs are resolving", () => {
+    const controller = createController({ selectionBusy: true, selectedAssetIds: new Set([1]),
+      selectedAssets: [createAsset(1)], tagMode: "single", singleAssetTags: ["cat"] });
+    render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    expect(screen.getByRole("button", { name: "Toggle favorites for selected items" })).toBeDisabled();
+    expect(screen.getByLabelText("Media group key")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove from group" })).toBeDisabled();
+    expect(screen.getByLabelText("Add tag")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove tag cat" })).toBeDisabled();
+  });
+
   it("renders as a scrollable inspector with disabled editors for an empty selection", () => {
     render(
       <BulkActionsSidebar controller={createController()} thumbs={{}} renderingThumbnailIds={{}} />

@@ -2,7 +2,7 @@ import type { GalleryRange } from "../gallery/hooks/useGalleryVirtualGrid";
 import type { RefObject } from "react";
 import type { AssetSummary } from "../../types";
 import type { SearchFilterValidationError } from "../../utils/media";
-import type { BulkSelectionInteraction } from "../gallery/GalleryGrid";
+import type { BulkSelectionHandler } from "../gallery/selection";
 import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
 export type { AppLanguage } from "../../i18n/languages";
 
@@ -66,6 +66,10 @@ export type BulkGroupSaveResult =
   | { status: "ignored" };
 
 export interface BulkSelectionController {
+  selectionQueryEpoch?: number;
+  selectionBusy?: boolean;
+  selectionError?: string | null;
+  onRetrySelection?: () => void;
   metadataLoading?: boolean;
   metadataFailed?: boolean;
   onRetryMetadata?: () => void;
@@ -92,7 +96,7 @@ export interface BulkSelectionController {
   tagApplying: boolean;
   tagSaveFailed: boolean;
   onToggleSelectionMode: () => void;
-  onBulkSelectionInteraction: (interaction: BulkSelectionInteraction) => void;
+  onBulkSelectionInteraction: BulkSelectionHandler;
   onGroupKeyDraftChange: (value: string) => void;
   onReorderGroupAsset: (draggedAssetId: number, targetAssetId: number) => void;
   onApplyGroup: (order?: number[]) => Promise<BulkGroupSaveResult>;

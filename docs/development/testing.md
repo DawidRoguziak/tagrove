@@ -196,6 +196,16 @@ setting those XDG directories and starting a private display:
 MEDIATAGGER_UI_REDESIGN=1 bun run test:e2e:tauri --spec e2e/specs/ui.redesign.e2e.js
 ```
 
+### Gallery selection gestures
+
+`e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages and eviction; normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.
+
+Run through the existing isolated harness on a private X11 display with temporary XDG directories:
+
+```sh
+MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri --spec e2e/specs/gallery-selection.e2e.js
+```
+
 ### Persistent desktop control
 
 `e2e/control.js` reuses the E2E build configuration and shared media fixtures without running

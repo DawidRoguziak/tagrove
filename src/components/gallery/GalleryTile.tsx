@@ -52,8 +52,6 @@ interface GalleryTileProps {
   videoChipLabel: string;
   gifChipLabel: string;
   thumbnailStore?: ThumbnailStore;
-  onMouseDown: (event: MouseEvent<HTMLButtonElement>) => void;
-  onMouseEnter: (event: MouseEvent<HTMLButtonElement>) => void;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
 }
 
@@ -72,8 +70,6 @@ export const GalleryTile = memo(function GalleryTile({
   videoChipLabel,
   gifChipLabel,
   thumbnailStore,
-  onMouseDown,
-  onMouseEnter,
   onClick
 }: GalleryTileProps) {
   const isGrouped = Boolean(asset.media_group_key?.trim());
@@ -104,8 +100,7 @@ export const GalleryTile = memo(function GalleryTile({
       }}
       data-asset-id={asset.id}
       data-asset-index={itemIndex}
-      onMouseDown={onMouseDown}
-      onMouseEnter={onMouseEnter}
+      draggable={false}
       onClick={onClick}
       aria-pressed={isBulkSelected || isLightboxSelected}
     >

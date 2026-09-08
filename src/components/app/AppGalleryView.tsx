@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useCallback } from "react";
 import { TileSizeSlider } from "../common/TileSizeSlider";
 import { GalleryGrid } from "../gallery/GalleryGrid";
 import { TopBar } from "../topbar/TopBar";
@@ -33,6 +33,12 @@ export function AppGalleryView({
   onOpenSettingsView,
 }: AppGalleryViewProps) {
   const { t } = useTranslation();
+  const retryLoad = media.onLoadRetry;
+  const retrySelection = bulkSelection.onRetrySelection;
+  const onLoadRetry = useCallback(() => {
+    retryLoad();
+    retrySelection?.();
+  }, [retryLoad, retrySelection]);
   return (
     <>
       <TopBar
@@ -90,8 +96,9 @@ export function AppGalleryView({
               selectionModeEnabled={bulkSelection.selectionModeEnabled}
               selectedAssetIds={bulkSelection.selectedAssetIds}
               onBulkSelectionInteraction={bulkSelection.onBulkSelectionInteraction}
-              loadError={media.loadError}
-              onLoadRetry={media.onLoadRetry}
+              queryEpoch={bulkSelection.selectionQueryEpoch}
+              loadError={bulkSelection.selectionError ?? media.loadError}
+              onLoadRetry={onLoadRetry}
               pageFailureEpoch={media.pageFailureEpoch}
             />
 

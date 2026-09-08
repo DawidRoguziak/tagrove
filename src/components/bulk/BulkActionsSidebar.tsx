@@ -49,7 +49,7 @@ export function BulkActionsSidebar({
   }, [controller.orderedAssetIds, controller.selectedAssets]);
   const displayedTags =
     controller.tagMode === "single" ? controller.singleAssetTags : controller.appliedBulkTags;
-  const controlsDisabled = controller.selectedAssetIds.size === 0;
+  const controlsDisabled = controller.selectedAssetIds.size === 0 || controller.selectionBusy;
   const normalizedGroupKey = normalizeGroupKey(controller.groupKeyDraft);
   const orderContext = JSON.stringify([selectionKey, normalizedGroupKey]);
   const hasOrderPanel = Boolean(normalizedGroupKey) && orderedAssets.length > 1;
@@ -153,7 +153,7 @@ export function BulkActionsSidebar({
           aria-label={t(controller.allSelectedFavorites ? "bulk.favorite.remove" : "bulk.favorite.toggle")}
           title={t(controller.allSelectedFavorites ? "bulk.favorite.remove" : "bulk.favorite.toggle")}
           aria-busy={controller.favoriteApplying}
-          disabled={controller.selectedAssetIds.size === 0 || controller.favoriteApplying}
+          disabled={controlsDisabled || controller.favoriteApplying}
           onClick={() => void controller.onToggleFavorite()}
         />
         {controller.favoriteFailed ? (
@@ -230,7 +230,7 @@ export function BulkActionsSidebar({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="m-0 text-sm">{t("bulk.panel.orderHeading")}</h3>
               <UiButton className="text-xs" data-testid="bulk-open-order-modal"
-                disabled={controller.groupApplying || controller.metadataLoading || controller.metadataFailed}
+                disabled={controller.selectionBusy || controller.groupApplying || controller.metadataLoading || controller.metadataFailed}
                 onClick={() => setOrderModalContext(orderContext)}>{t("bulk.orderModal.open")}</UiButton>
             </div>
             <p className="m-0 text-[11px] leading-relaxed text-base-content/60">
@@ -295,7 +295,7 @@ export function BulkActionsSidebar({
                     aria-label={t("bulk.panel.dragHandleAria", { position: index + 1 })}
                     aria-keyshortcuts="ArrowUp ArrowDown"
                     title={t("bulk.panel.dragHandleAria", { position: index + 1 })}
-                    disabled={controller.groupApplying}
+                    disabled={controller.selectionBusy || controller.groupApplying}
                     onKeyDown={(event) => {
                       if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
                       event.preventDefault();
@@ -350,7 +350,7 @@ export function BulkActionsSidebar({
               : undefined
           }
           getRemoveTagAriaLabel={(tag) => t("bulk.tagModal.removeTagAria", { tag })}
-          removeDisabled={controller.tagApplying || controller.tagDetailsLoading || controller.tagDetailsFailed}
+          removeDisabled={controller.selectionBusy || controller.tagApplying || controller.tagDetailsLoading || controller.tagDetailsFailed}
         />
         <SearchTagator
           inputId="bulk-tag-draft-input"

@@ -16,7 +16,8 @@ import {
   mergeTagLists,
   normalizeBulkTag
 } from "../../bulk/tagging/services/bulkTagMergeService";
-import type { BulkSelectionInteraction } from "../../gallery/GalleryGrid";
+import type { BulkSelectionInteraction, SelectionRange } from "../../gallery/selection";
+import { containsIndex } from "../../gallery/services/selectionGeometry";
 import {
   bulkTagMutationRequiresRefresh
 } from "../services/libraryInvalidationService";
@@ -123,6 +124,18 @@ export function useBulkSelectionController({
   const tagOperationRef = useRef(false);
   const tagOperationGenerationRef = useRef(0);
   const rangeRequestRef = useRef(0);
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const selectionBusyRef = useRef(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const retrySelectionRef = useRef<(() => void) | null>(null);
+  const invalidateSelectionRequest = useCallback(() => {
+    rangeRequestRef.current++;
+    selectionBusyRef.current = false;
+    setSelectionBusy(false);
+    setSelectionError(null);
+    retrySelectionRef.current = null;
+  }, []);
+  useEffect(() => () => { rangeRequestRef.current++; }, []);
   const observedTagEpochRef = useRef(assetTagState.epoch);
   const observedQueryEpochRef = useRef(queryEpoch);
   // Anchor position in the global session snapshot, independent of the
@@ -137,10 +150,11 @@ export function useBulkSelectionController({
     detailsRequestRef.current += 1;
     detailsCacheRef.current.clear();
     tagOperationGenerationRef.current += 1;
-    rangeRequestRef.current += 1;
+    invalidateSelectionRequest();
     tagOperationRef.current = false;
     groupOperationRef.current = false;
     setSelectedAssetIds(new Set());
+    selectionAnchorIndexRef.current = null;
     setSingleAssetTags([]);
     setAppliedBulkTags([]);
     setTagDetailsLoading(false);
@@ -149,7 +163,7 @@ export function useBulkSelectionController({
     setTagSaveFailed(false);
     setGroupApplying(false);
     setGroupFailed(false);
-  }, [assetTagState.epoch]);
+  }, [assetTagState.epoch, invalidateSelectionRequest]);
 
   const metadata = useSelectedSummaries(selectedAssetIds, assets, assetTagState.epoch);
   const selectedAssets = metadata.selected;
@@ -179,8 +193,8 @@ export function useBulkSelectionController({
     // A new session may reuse IDs for changed rows; cached details are stale.
     detailsCacheRef.current.clear();
     selectionAnchorIndexRef.current = null;
-    rangeRequestRef.current += 1;
-  }, [queryEpoch]);
+    invalidateSelectionRequest();
+  }, [queryEpoch, invalidateSelectionRequest]);
 
 
   useEffect(() => {
@@ -292,74 +306,103 @@ export function useBulkSelectionController({
     setTagDetailsFailed(false);
   }, [assetTagState, selectionIds]);
 
-  const onBulkSelectionInteraction = useCallback(
-    (interaction: BulkSelectionInteraction) => {
-      if (!selectionModeEnabled) return;
-      const { assetId, assetIndex, ctrlLike, shift, viaDrag } = interaction;
-      const requestId = rangeRequestRef.current + 1;
-      rangeRequestRef.current = requestId;
-
-      if (viaDrag) {
-        setSelectedAssetIds((previous) => {
-          if (previous.has(assetId)) return previous;
-          const next = new Set(previous);
-          next.add(assetId);
-          return next;
-        });
-        selectionAnchorIndexRef.current = selectionAnchorIndexRef.current ?? assetIndex;
-        return;
+  const resolveSelectionRanges = useCallback(async function resolve(
+    ranges: SelectionRange[], additive: boolean, clearAnchor: boolean
+  ): Promise<void> {
+    invalidateSelectionRequest();
+    const requestId = rangeRequestRef.current;
+    const requestEpoch = queryEpoch;
+    selectionBusyRef.current = true;
+    setSelectionBusy(true);
+    const isCurrent = () => rangeRequestRef.current === requestId && observedQueryEpochRef.current === requestEpoch;
+    try {
+      const resolved = new Set<number>();
+      let rangeIndex = 0;
+      let start = ranges[0]?.startIndex ?? 0;
+      const lastIndex = ranges[ranges.length - 1]?.endIndex ?? -1;
+      while (start <= lastIndex) {
+        if (!isCurrent()) return;
+        if (!getIdsRangeAsync) throw new Error("Selection range loader is unavailable");
+        // Read each 128-index window once, including gaps between selected columns.
+        // Resolving each row separately would repeatedly fetch the same uncached page.
+        const end = Math.min(lastIndex, (Math.floor(start / 128) + 1) * 128 - 1);
+        const ids = await getIdsRangeAsync(start, end);
+        if (!isCurrent()) return;
+        if (ids.length !== end - start + 1) throw new Error("Selection range is incomplete");
+        for (let offset = 0; offset < ids.length; offset++) {
+          if (containsIndex(ranges, start + offset)) resolved.add(ids[offset]);
+        }
+        while (rangeIndex < ranges.length && ranges[rangeIndex].endIndex <= end) rangeIndex++;
+        start = Math.max(end + 1, ranges[rangeIndex]?.startIndex ?? lastIndex + 1);
       }
+      if (!isCurrent()) return;
+      setSelectedAssetIds(previous => new Set(additive ? [...previous, ...resolved] : resolved));
+      if (clearAnchor) selectionAnchorIndexRef.current = null;
+      return;
+    } catch (error) {
+      if (isCurrent()) {
+        setSelectionError(String(error));
+        retrySelectionRef.current = () => { void resolve(ranges, additive, clearAnchor); };
+      }
+      return;
+    } finally {
+      if (isCurrent()) {
+        selectionBusyRef.current = false;
+        setSelectionBusy(false);
+      }
+    }
+  }, [getIdsRangeAsync, invalidateSelectionRequest, queryEpoch]);
 
-      if (shift) {
-        // Both ends are global session indexes; the tile-provided index is the
-        // virtualizer index, never the compact cache array position. Without a
-        // stored global anchor the Shift press degrades to a plain selection
-        // instead of guessing an index from the sparse render cache.
-        const anchorIndex = selectionAnchorIndexRef.current;
-        if (anchorIndex !== null) {
-          const from = Math.min(anchorIndex, assetIndex);
-          const to = Math.max(anchorIndex, assetIndex);
-          const rangeResolver = getIdsRangeAsync;
-          if (rangeResolver) {
-            const requestEpoch = queryEpoch;
-            void rangeResolver(from, to).then((rangeAssetIds) => {
-              if (rangeRequestRef.current !== requestId || observedQueryEpochRef.current !== requestEpoch) return;
-              setSelectedAssetIds((previous) => {
-                const next = ctrlLike ? new Set(previous) : new Set<number>();
-                for (const id of rangeAssetIds) next.add(id);
-                return next;
-              });
-            }).catch(() => {
-              // A failed range read leaves the current selection untouched;
-              // the next Shift click retries the whole range.
-            });
-            return;
+  const onBulkSelectionInteraction = useCallback(
+    (interaction: BulkSelectionInteraction): void | Promise<void> => {
+      if (!selectionModeEnabled) return;
+      invalidateSelectionRequest();
+      switch (interaction.type) {
+        case "clear":
+          setSelectedAssetIds(new Set());
+          selectionAnchorIndexRef.current = null;
+          return;
+        case "rectangle-start":
+          selectionBusyRef.current = true;
+          setSelectionBusy(true);
+          return;
+        case "rectangle-cancel": return;
+        case "rectangle-commit":
+          return resolveSelectionRanges(interaction.ranges, interaction.additive, true);
+        case "click": {
+          const { assetId, assetIndex, ctrlLike, shift } = interaction;
+          const anchor = selectionAnchorIndexRef.current;
+          if (shift && anchor !== null && getIdsRangeAsync) {
+            return resolveSelectionRanges([{ startIndex: Math.min(anchor, assetIndex), endIndex: Math.max(anchor, assetIndex) }], ctrlLike, false);
           }
+          selectionAnchorIndexRef.current = assetIndex;
+          setSelectedAssetIds(previous => {
+            if ((!ctrlLike || shift) && previous.has(assetId)) return previous;
+            const next = new Set(previous);
+            if (ctrlLike && !shift && next.has(assetId)) next.delete(assetId);
+            else next.add(assetId);
+            return next;
+          });
+          return;
+        }
+        default: {
+          const exhaustive: never = interaction;
+          return exhaustive;
         }
       }
-
-      selectionAnchorIndexRef.current = assetIndex;
-      if (ctrlLike) {
-        setSelectedAssetIds((previous) => {
-          const next = new Set(previous);
-          if (next.has(assetId)) next.delete(assetId);
-          else next.add(assetId);
-          return next;
-        });
-        return;
-      }
-      setSelectedAssetIds(new Set([assetId]));
     },
-    [getIdsRangeAsync, queryEpoch, selectionModeEnabled]
+    [getIdsRangeAsync, invalidateSelectionRequest, resolveSelectionRanges, selectionModeEnabled]
   );
 
+  const onRetrySelection = useCallback(() => retrySelectionRef.current?.(), []);
+
   const onToggleSelectionMode = useCallback(() => {
-    if (selectionModeEnabled) rangeRequestRef.current += 1;
-    setSelectionModeEnabled((previous) => !previous);
-  }, [selectionModeEnabled]);
+    invalidateSelectionRequest();
+    setSelectionModeEnabled(previous => !previous);
+  }, [invalidateSelectionRequest]);
 
   const onToggleFavorite = useCallback(async () => {
-    if (selectedAssetIds.size === 0 || favoriteOperationRef.current) return;
+    if (selectionBusyRef.current || selectedAssetIds.size === 0 || favoriteOperationRef.current) return;
     const capturedIds = selectedAssetIds;
     const capturedSelectionKey = selectionKey;
     const tokens: AssetTagMutationToken[] = [];
@@ -417,7 +460,7 @@ export function useBulkSelectionController({
   }, [appliedFavoritesOnly, assetTagState, onFavoritesChanged, refresh, selectedAssetIds, selectionKey, setAssets, metadata.patch]);
 
   const onApplyGroup = useCallback(async (order?: number[]): Promise<BulkGroupSaveResult> => {
-    if (!selectedAssetIds.size || !metadata.ready || groupOperationRef.current) return { status: "ignored" };
+    if (selectionBusyRef.current || !selectedAssetIds.size || !metadata.ready || groupOperationRef.current) return { status: "ignored" };
     const selectedIdSet = selectedAssetIds;
     const capturedOrderedIds = order ?? orderedAssetIds;
     // An explicit modal draft must still describe the complete current selection.
@@ -512,7 +555,7 @@ export function useBulkSelectionController({
   const onAddTag = useCallback(
     async (rawTag: string): Promise<boolean> => {
       const tag = normalizeBulkTag(rawTag);
-      if (!tag || !selectionIds.length || tagOperationRef.current) return false;
+      if (selectionBusyRef.current || !tag || !selectionIds.length || tagOperationRef.current) return false;
       if (selectionIds.length === 1 && !assetTagState.get(selectionIds[0]!)) return false;
       const capturedSelectionKey = selectionKey;
       const capturedIds = [...selectionIds];
@@ -646,6 +689,7 @@ export function useBulkSelectionController({
 
   const onRemoveTag = useCallback(
     async (tag: string) => {
+      if (selectionBusyRef.current) return;
       if (selectionIds.length !== 1 || tagOperationRef.current) return;
       const capturedSelectionKey = selectionKey;
       const assetId = selectionIds[0]!;
@@ -702,6 +746,10 @@ export function useBulkSelectionController({
   }, [selectionIds.length, tagDetailsLoading]);
 
   return {
+    selectionQueryEpoch: queryEpoch,
+    selectionBusy,
+    selectionError,
+    onRetrySelection,
     selectionModeEnabled,
     favoriteApplying,
     favoriteFailed: favoriteFailedSelection === selectedAssetIds,

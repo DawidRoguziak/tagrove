@@ -49,8 +49,8 @@ function options(assets: AssetSummary[], refresh = vi.fn(async () => {})) {
 }
 
 function select(result: { current: ReturnType<typeof useBulkSelectionController> }, id: number, index: number, ctrlLike = false) {
-  act(() => result.current.onBulkSelectionInteraction({
-    assetId: id, assetIndex: index, ctrlLike, shift: false, viaDrag: false
+  act(() => void result.current.onBulkSelectionInteraction({
+    assetId: id, assetIndex: index, ctrlLike, shift: false, type: "click"
   }));
 }
 
@@ -72,6 +72,7 @@ describe("useBulkSelectionController", () => {
     act(() => result.current.onToggleSelectionMode());
     select(result, 1, 0);
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledWith(1));
+    act(() => { result.current.onBulkSelectionInteraction({ type: "clear" }); });
     select(result, 2, 1);
     await waitFor(() => expect(result.current.singleAssetTags).toEqual(["dog"]));
     await act(async () => {
@@ -94,7 +95,7 @@ describe("useBulkSelectionController", () => {
     });
     act(() => result.current.controller.onToggleSelectionMode());
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     await waitFor(() => expect(result.current.controller.singleAssetTags).toEqual(["cat"]));
     const lightboxToken = result.current.assetTagState.beginMutation(1);
@@ -161,7 +162,7 @@ describe("useBulkSelectionController", () => {
     });
     act(() => result.current.controller.onToggleSelectionMode());
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledWith(1));
     act(() => result.current.assetTagState.remove(1));
@@ -187,14 +188,14 @@ describe("useBulkSelectionController", () => {
     });
     act(() => result.current.controller.onToggleSelectionMode());
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     await waitFor(() => expect(result.current.controller.singleAssetTags).toEqual(["old"]));
 
     act(() => result.current.assetTagState.reset());
     await waitFor(() => expect(result.current.controller.selectedAssets).toEqual([]));
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     await waitFor(() => expect(result.current.controller.singleAssetTags).toEqual(["new"]));
     expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2);
@@ -217,10 +218,10 @@ describe("useBulkSelectionController", () => {
     });
     act(() => result.current.controller.onToggleSelectionMode());
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 2, assetIndex: 1, ctrlLike: true, shift: false, viaDrag: false
+      assetId: 2, assetIndex: 1, ctrlLike: true, shift: false, type: "click"
     }));
     const otherOwner = result.current.assetTagState.beginMutation(2);
     expect(otherOwner).not.toBeNull();
@@ -272,10 +273,10 @@ describe("useBulkSelectionController", () => {
     });
     act(() => result.current.controller.onToggleSelectionMode());
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 2, assetIndex: 1, ctrlLike: true, shift: false, viaDrag: false
+      assetId: 2, assetIndex: 1, ctrlLike: true, shift: false, type: "click"
     }));
     let added = false;
     await act(async () => { added = await result.current.controller.onAddTag("travel"); });
@@ -299,10 +300,10 @@ describe("useBulkSelectionController", () => {
     });
     act(() => result.current.controller.onToggleSelectionMode());
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+      assetId: 1, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     act(() => result.current.controller.onBulkSelectionInteraction({
-      assetId: 2, assetIndex: 1, ctrlLike: true, shift: false, viaDrag: false
+      assetId: 2, assetIndex: 1, ctrlLike: true, shift: false, type: "click"
     }));
     const oldRead1 = result.current.assetTagState.captureGeneration(1);
     const oldRead2 = result.current.assetTagState.captureGeneration(2);
@@ -359,12 +360,12 @@ describe("useBulkSelectionController", () => {
       useBulkSelectionController({ ...options(assets), getIdsRangeAsync })
     );
     act(() => result.current.onToggleSelectionMode());
-    act(() => result.current.onBulkSelectionInteraction({
-      assetId: 10, assetIndex: 0, ctrlLike: false, shift: false, viaDrag: false
+    act(() => void result.current.onBulkSelectionInteraction({
+      assetId: 10, assetIndex: 0, ctrlLike: false, shift: false, type: "click"
     }));
     await act(async () => {
       result.current.onBulkSelectionInteraction({
-        assetId: 99, assetIndex: 2, ctrlLike: false, shift: true, viaDrag: false
+        assetId: 99, assetIndex: 2, ctrlLike: false, shift: true, type: "click"
       });
     });
     expect(ranges).toEqual([[0, 2]]);
@@ -385,8 +386,8 @@ describe("useBulkSelectionController", () => {
     );
     act(() => result.current.onToggleSelectionMode());
     select(result, 1, 0);
-    act(() => result.current.onBulkSelectionInteraction({
-      assetId: 2, assetIndex: 1, ctrlLike: false, shift: true, viaDrag: false
+    act(() => void result.current.onBulkSelectionInteraction({
+      assetId: 2, assetIndex: 1, ctrlLike: false, shift: true, type: "click"
     }));
     rerender({ queryEpoch: 2 });
     await act(async () => {
@@ -407,15 +408,15 @@ describe("useBulkSelectionController", () => {
     );
     act(() => result.current.onToggleSelectionMode());
     select(result, 1, 0);
-    act(() => result.current.onBulkSelectionInteraction({
-      assetId: 2, assetIndex: 1, ctrlLike: false, shift: true, viaDrag: false
+    act(() => void result.current.onBulkSelectionInteraction({
+      assetId: 2, assetIndex: 1, ctrlLike: false, shift: true, type: "click"
     }));
     select(result, 3, 2);
     await act(async () => {
       range.resolve([1, 2]);
       await range.promise;
     });
-    expect(result.current.selectedAssetIds).toEqual(new Set([3]));
+    expect(result.current.selectedAssetIds).toEqual(new Set([1, 3]));
   });
 
   it("ignores a Shift range that resolves after selection mode is disabled", async () => {
@@ -429,8 +430,8 @@ describe("useBulkSelectionController", () => {
     );
     act(() => result.current.onToggleSelectionMode());
     select(result, 1, 0);
-    act(() => result.current.onBulkSelectionInteraction({
-      assetId: 2, assetIndex: 1, ctrlLike: false, shift: true, viaDrag: false
+    act(() => void result.current.onBulkSelectionInteraction({
+      assetId: 2, assetIndex: 1, ctrlLike: false, shift: true, type: "click"
     }));
     act(() => result.current.onToggleSelectionMode());
     await act(async () => {
@@ -492,11 +493,11 @@ describe("useBulkSelectionController", () => {
     rerender({ assets: [createAsset(9), createAsset(1)], queryEpoch: 2 });
     await act(async () => {
       result.current.onBulkSelectionInteraction({
-        assetId: 9, assetIndex: 2, ctrlLike: false, shift: true, viaDrag: false
+        assetId: 9, assetIndex: 2, ctrlLike: false, shift: true, type: "click"
       });
     });
     expect(getIdsRangeAsync).not.toHaveBeenCalled();
-    expect([...result.current.selectedAssetIds]).toEqual([9]);
+    expect([...result.current.selectedAssetIds]).toEqual([1, 9]);
   });
   it("tags every selected ID after eviction and a filter change without resetting drafts", async () => {
     const assets = [createAsset(1), createAsset(2), createAsset(3)];
@@ -579,11 +580,87 @@ describe("bulk modal order submission", () => {
     const { result } = selectedController();
     let save!: ReturnType<typeof result.current.onApplyGroup>;
     act(() => { save = result.current.onApplyGroup([3, 1, 2]); });
+    act(() => { result.current.onBulkSelectionInteraction({ type: "clear" }); });
     select(result, 2, 1);
     await act(async () => {
       pending.resolve({ processed_asset_ids: [3, 1, 2], processed_assets: 3, updated_assets: 3 });
       expect(await save).toEqual({ status: "ignored" });
     });
     expect(result.current.orderedAssetIds).toEqual([2]);
+  });
+});
+
+describe("rectangle selection resolution", () => {
+  it("adds ordinary clicks, preserves repeated clicks, toggles modifiers and clears the anchor", async () => {
+    const loader = vi.fn(async () => [1, 2]);
+    const { result } = renderHook(() => useBulkSelectionController({ ...options([createAsset(1), createAsset(2)]), getIdsRangeAsync: loader }));
+    act(() => result.current.onToggleSelectionMode());
+    select(result, 1, 0); select(result, 2, 1); select(result, 1, 0);
+    expect([...result.current.selectedAssetIds]).toEqual([1, 2]);
+    select(result, 1, 0, true); expect([...result.current.selectedAssetIds]).toEqual([2]);
+    act(() => { result.current.onBulkSelectionInteraction({ type: "clear" }); });
+    expect(result.current.selectionModeEnabled).toBe(true);
+    await act(async () => { await result.current.onBulkSelectionInteraction({ type: "click", assetId: 3, assetIndex: 2, shift: true, ctrlLike: false }); });
+    expect(loader).not.toHaveBeenCalled(); expect([...result.current.selectedAssetIds]).toEqual([3]);
+  });
+
+  it("resolves more than the cache in bounded ascending reads and commits once", async () => {
+    const last = deferred<number[]>();
+    const loader = vi.fn(async (start: number, end: number) => end === 2047 ? last.promise : Array.from({ length: end - start + 1 }, (_, i) => start + i + 10));
+    const { result, rerender } = renderHook(({ assets }) => useBulkSelectionController({ ...options(assets), getIdsRangeAsync: loader }),
+      { initialProps: { assets: [createAsset(1)] } });
+    act(() => result.current.onToggleSelectionMode()); select(result, 1, 0);
+    let pending: void | Promise<void>;
+    act(() => { pending = result.current.onBulkSelectionInteraction({ type: "rectangle-commit", ranges: [{ startIndex: 0, endIndex: 2047 }], additive: false }); });
+    await waitFor(() => expect(loader).toHaveBeenCalledTimes(16));
+    expect([...result.current.selectedAssetIds]).toEqual([1]); expect(result.current.selectionBusy).toBe(true);
+    rerender({ assets: [] });
+    await act(async () => {
+      expect(await result.current.onAddTag("blocked")).toBe(false);
+      expect(await result.current.onApplyGroup()).toEqual({ status: "ignored" });
+      await result.current.onToggleFavorite();
+      last.resolve(Array.from({ length: 128 }, (_, i) => 1930 + i)); await pending;
+    });
+    expect(result.current.selectedAssetIds.size).toBe(2048);
+    expect([...result.current.selectedAssetIds]).toEqual(Array.from({ length: 2048 }, (_, i) => i + 10));
+    expect(loader.mock.calls.map(([from, to]) => [from, to])).toEqual(Array.from({ length: 16 }, (_, i) => [i * 128, i * 128 + 127]));
+    expect(result.current.selectionBusy).toBe(false);
+    loader.mockClear();
+    await act(async () => { await result.current.onBulkSelectionInteraction({ type: "click", assetId: 5, assetIndex: 4, shift: true, ctrlLike: false }); });
+    expect(loader).not.toHaveBeenCalled(); expect(result.current.selectedAssetIds.has(5)).toBe(true);
+  });
+
+  it("unions sparse rectangle ranges in query order with the previous IDs", async () => {
+    const loader = vi.fn(async (start: number, end: number) => Array.from({ length: end - start + 1 }, (_, i) => start + i + 10));
+    const { result } = renderHook(() => useBulkSelectionController({ ...options([createAsset(9)]), getIdsRangeAsync: loader }));
+    act(() => result.current.onToggleSelectionMode()); select(result, 9, 0);
+    await act(async () => { await result.current.onBulkSelectionInteraction({ type: "rectangle-commit", ranges: [{ startIndex: 1, endIndex: 2 }, { startIndex: 4, endIndex: 5 }], additive: true }); });
+    expect([...result.current.selectedAssetIds]).toEqual([9, 11, 12, 14, 15]);
+    expect(loader).toHaveBeenCalledExactlyOnceWith(1, 5);
+  });
+
+  it.each(["clear", "rectangle-cancel", "rectangle-start", "query", "unmount"] as const)("rejects late rectangle results after %s", async cause => {
+    const read = deferred<number[]>(); const loader = vi.fn(() => read.promise);
+    const { result, rerender, unmount } = renderHook(({ epoch }) => useBulkSelectionController({ ...options([createAsset(1)]), queryEpoch: epoch, getIdsRangeAsync: loader }), { initialProps: { epoch: 0 } });
+    act(() => result.current.onToggleSelectionMode()); select(result, 1, 0);
+    let pending: void | Promise<void>;
+    act(() => { pending = result.current.onBulkSelectionInteraction({ type: "rectangle-commit", ranges: [{ startIndex: 0, endIndex: 299 }], additive: false }); });
+    if (cause === "query") rerender({ epoch: 1 });
+    else if (cause === "unmount") unmount();
+    else act(() => { result.current.onBulkSelectionInteraction({ type: cause }); });
+    await act(async () => { read.resolve(Array.from({ length: 128 }, (_, i) => i + 20)); await pending; });
+    expect(loader).toHaveBeenCalledOnce();
+    expect([...result.current.selectedAssetIds]).toEqual(cause === "clear" ? [] : [1]);
+  });
+
+  it("preserves the previous selection after an incomplete read and retries the whole rectangle", async () => {
+    const loader = vi.fn().mockResolvedValueOnce([10]).mockResolvedValueOnce([10, 11]);
+    const { result } = renderHook(() => useBulkSelectionController({ ...options([createAsset(1)]), getIdsRangeAsync: loader }));
+    act(() => result.current.onToggleSelectionMode()); select(result, 1, 0);
+    await act(async () => { await result.current.onBulkSelectionInteraction({ type: "rectangle-commit", ranges: [{ startIndex: 0, endIndex: 1 }], additive: false }); });
+    expect([...result.current.selectedAssetIds]).toEqual([1]);
+    expect(result.current.selectionError).toContain("incomplete"); expect(result.current.selectionBusy).toBe(false);
+    await act(async () => { result.current.onRetrySelection(); });
+    expect([...result.current.selectedAssetIds]).toEqual([10, 11]); expect(result.current.selectionError).toBeNull();
   });
 });

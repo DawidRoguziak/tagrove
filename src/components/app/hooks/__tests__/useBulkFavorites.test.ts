@@ -34,7 +34,7 @@ function setup(initial = [asset(1), asset(2, true)], favoritesOnly = false) {
   act(() => hook.result.current.bulk.onToggleSelectionMode());
   const select = (id: number, ctrlLike = true) => act(() => {
     hook.result.current.bulk.onBulkSelectionInteraction({
-      assetId: id, assetIndex: id - 1, ctrlLike, shift: false, viaDrag: false
+      assetId: id, assetIndex: id - 1, ctrlLike, shift: false, type: "click"
     });
   });
   return { ...hook, refresh, onFavoritesChanged, select };
@@ -129,6 +129,7 @@ describe("bulk favorites", () => {
     let pending!: Promise<void>;
     act(() => { pending = result.current.bulk.onToggleFavorite(); });
     expect(result.current.bulk.favoriteApplying).toBe(true);
+    act(() => { result.current.bulk.onBulkSelectionInteraction({ type: "clear" }); });
     select(2, false);
     await act(() => result.current.bulk.onToggleFavorite());
     const maintenance = vi.fn(async () => {});

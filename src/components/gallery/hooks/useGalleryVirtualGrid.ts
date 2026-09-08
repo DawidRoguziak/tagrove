@@ -149,6 +149,7 @@ export function useGalleryVirtualGrid({
   }, [assetCount, columnCount, endIndex, hasMore, isLoading, onReachEnd]);
 
   return {
+    gridOffset: geometry.margin,
     tileGap: TILE_GAP,
     tilePixelSize,
     columnCount,

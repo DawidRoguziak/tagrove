@@ -417,7 +417,7 @@ export function GroupOrderModal({
           </UiButton>
           <UiButton
             variant="primary"
-            disabled={locked || controller.metadataLoading || controller.metadataFailed}
+            disabled={locked || controller.selectionBusy || controller.metadataLoading || controller.metadataFailed}
             aria-busy={saving}
             onClick={() => void save()}
           >

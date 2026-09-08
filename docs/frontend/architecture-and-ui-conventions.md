@@ -190,7 +190,7 @@ pill-shaped buttons. Native video controls retain their contrast gradient over t
 
 ## Modal and overlay conventions
 
-[UiLayerProvider](../../src/components/UI/UiLayerProvider.tsx), mounted by `App`, owns the DOM layer stack. [UiModal](../../src/components/UI/UiModal.tsx) and the specialized lightbox register modal layers and portal into `document.body`. `SettingsViewLayer` registers a nonmodal layer for page-level Escape.
+[UiLayerProvider](../../src/components/UI/UiLayerProvider.tsx), mounted by `App`, owns the DOM layer stack. [UiModal](../../src/components/UI/UiModal.tsx) and the specialized lightbox register modal layers and portal into `document.body`. `SettingsViewLayer` registers a nonmodal layer for page-level Escape. While bulk mode is enabled, the gallery registers a nonmodal layer that clears selection and cancels rectangle work on Escape. A modal above it receives Escape first.
 
 - Only the top registered layer receives managed Escape dismissal. A locked top layer does not select a lower layer as a fallback. UiModal backdrop dismissal also checks top-layer ownership.
 - A top modal makes `#root` and lower registered modal elements inert and aria-hidden, and locks body scrolling. Cleanup removes those attributes and restores the previous body overflow.

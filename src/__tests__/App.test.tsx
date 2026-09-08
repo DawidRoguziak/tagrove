@@ -61,8 +61,7 @@ function deferred<T>() {
 function selectAssetByPath(path: string) {
   const tile = screen.getByAltText(path).closest("button");
   if (!tile) throw new Error(`Missing gallery tile for ${path}`);
-  fireEvent.mouseDown(tile, { button: 0 });
-  fireEvent.mouseUp(window);
+  fireEvent.click(tile);
 }
 
 async function typeAssetTag(tag: string) {
@@ -460,6 +459,10 @@ describe("App", () => {
     selectAssetByPath("C:/media/b.jpg");
     selectAssetByPath("C:/media/c.jpg");
     expect(screen.getByText("Selected: 3")).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByLabelText("Media group key"), { key: "Escape" });
+    expect(screen.getByText("Selected: 0")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disable bulk actions" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Disable bulk actions" }));
     expect(screen.queryByTestId("bulk-action-panel")).not.toBeInTheDocument();

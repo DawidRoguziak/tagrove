@@ -547,67 +547,30 @@ describe("GalleryGrid", () => {
       assetIndex: 0,
       ctrlLike: true,
       shift: false,
-      viaDrag: false
+      type: "click"
     });
     expect(onBulkSelectionInteraction).toHaveBeenNthCalledWith(2, {
       assetId: sampleAsset.id,
       assetIndex: 0,
       ctrlLike: false,
       shift: true,
-      viaDrag: false
+      type: "click"
     });
   });
 
-  it("supports drag bulk selection in bulk mode", () => {
-    const secondAsset = {
-      ...sampleAsset,
-      id: 9,
-      path: "C:/media/b.jpg"
-    };
-    virtualItems = [
-      { key: 0, index: 0, start: 0 },
-      { key: 1, index: 1, start: 198 }
-    ];
-    const onBulkSelectionInteraction = vi.fn();
-
-    const { container } = render(
-      <GalleryGrid
-        assets={[sampleAsset, secondAsset]}
-        selectedId={null}
-        thumbs={{}}
-        tileSize={188}
-        hasMore={false}
-        isLoading={false}
-        isGeneratingThumbnails={false}
-        pendingThumbnailCount={0}
-        renderingThumbnailIds={{}}
-        onReachEnd={() => {}}
-        onSelect={() => {}}
-        selectionModeEnabled
-        selectedAssetIds={new Set()}
-        onBulkSelectionInteraction={onBulkSelectionInteraction}
-      />
-    );
-
-    const tiles = container.querySelectorAll("button");
-    fireEvent.mouseDown(tiles[0] as HTMLButtonElement);
-    fireEvent.mouseEnter(tiles[1] as HTMLButtonElement);
-    fireEvent.mouseUp(window);
-
-    expect(onBulkSelectionInteraction).toHaveBeenNthCalledWith(1, {
-      assetId: sampleAsset.id,
-      assetIndex: 0,
-      ctrlLike: false,
-      shift: false,
-      viaDrag: true
-    });
-    expect(onBulkSelectionInteraction).toHaveBeenNthCalledWith(2, {
-      assetId: secondAsset.id,
-      assetIndex: 1,
-      ctrlLike: false,
-      shift: false,
-      viaDrag: true
-    });
+  it("clears only gallery space and prevents native image dragging", () => {
+    virtualItems = [{ key: 0, index: 0, start: 0 }];
+    const interaction = vi.fn();
+    const { getByTestId, container } = render(<GalleryGrid assets={[sampleAsset]} selectedId={null}
+      thumbs={{}} tileSize={188} hasMore={false} isLoading={false} isGeneratingThumbnails={false}
+      pendingThumbnailCount={0} renderingThumbnailIds={{}} onReachEnd={vi.fn()} onSelect={vi.fn()}
+      selectionModeEnabled onBulkSelectionInteraction={interaction} loadError="failed" onLoadRetry={vi.fn()} />);
+    fireEvent.click(getByTestId("gallery-grid"));
+    expect(interaction).toHaveBeenLastCalledWith({ type: "clear" });
+    interaction.mockClear();
+    fireEvent.click(getByTestId("gallery-load-error").querySelector("button")!);
+    expect(interaction).not.toHaveBeenCalled();
+    expect(fireEvent.dragStart(container.querySelector("img")!)).toBe(false);
   });
   it("updates thumbnail tiles and progress without rerendering the grid content", () => {
     virtualItems = [{ key: 0, index: 0, start: 0 }];

@@ -276,8 +276,10 @@ export function useLibraryAssets({
       return;
     }
     const offsets = [...failedPagesRef.current.keys()].filter(offset => activePagesRef.current.has(offset));
-    for (const offset of offsets) failedPagesRef.current.delete(offset);
-    if (failedPagesRef.current.size === 0) setLoadError(null);
+    // Explicit Retry also unblocks offscreen pages needed by a selection read.
+    // Only viewport demand is fetched here; the selection retries its own ranges.
+    failedPagesRef.current.clear();
+    setLoadError(null);
     await Promise.all(offsets.map(offset => loadPage(offset)));
   }, [loadPage, refresh]);
 

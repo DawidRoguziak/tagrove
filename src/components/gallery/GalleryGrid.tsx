@@ -1,4 +1,5 @@
 import { memo, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { RefObject } from "react";
 import type { AssetSummary } from "../../types";
 import { GalleryEmptyState } from "./GalleryEmptyState";
@@ -8,6 +9,7 @@ import { useGalleryGridHandlers } from "./hooks/useGalleryGridHandlers";
 import { useGalleryVirtualGrid, type GalleryRange } from "./hooks/useGalleryVirtualGrid";
 import { useTranslation } from "react-i18next";
 import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import type { BulkSelectionHandler } from "./selection";
 
 const EMPTY_SELECTED_IDS = new Set<number>();
 const GROUP_BACKPLATE_EDGE = 4;
@@ -26,13 +28,6 @@ interface GalleryGroupBackplate {
   itemStart: number;
 }
 
-export interface BulkSelectionInteraction {
-  assetId: number;
-  assetIndex: number;
-  ctrlLike: boolean;
-  shift: boolean;
-  viaDrag: boolean;
-}
 
 interface GalleryGridProps {
   assets: AssetSummary[];
@@ -56,9 +51,10 @@ interface GalleryGridProps {
   onAddFirstFolder?: () => void;
   selectionModeEnabled?: boolean;
   selectedAssetIds?: Set<number>;
-  onBulkSelectionInteraction?: (interaction: BulkSelectionInteraction) => void;
+  onBulkSelectionInteraction?: BulkSelectionHandler;
   loadError?: string | null;
   onLoadRetry?: () => void;
+  queryEpoch?: number;
   pageFailureEpoch?: number;
 }
 
@@ -85,6 +81,7 @@ const GalleryGridContent = memo(function GalleryGridContent({
   onBulkSelectionInteraction,
   loadError = null,
   onLoadRetry,
+  queryEpoch = 0,
   pageFailureEpoch = 0
 }: Omit<GalleryGridProps, "isGeneratingThumbnails" | "pendingThumbnailCount">) {
   const resolvedAssetCount = assetCount ?? assets.length;
@@ -95,15 +92,6 @@ const GalleryGridContent = memo(function GalleryGridContent({
   const gifChipLabel = t("gallery.gifChip");
   const galleryRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
-
-  const handlers = useGalleryGridHandlers({
-    assets,
-    getAssetAt: resolvedGetAssetAt,
-    selectionModeEnabled,
-    onCtrlWheelZoom,
-    onSelect,
-    onBulkSelectionInteraction
-  });
 
   const virtualGrid = useGalleryVirtualGrid({
     assetCount: resolvedAssetCount,
@@ -118,6 +106,23 @@ const GalleryGridContent = memo(function GalleryGridContent({
     onVirtualRangeChange,
     rangeResetKey: pageFailureEpoch
   });
+  const handlers = useGalleryGridHandlers({
+    assets,
+    assetCount: resolvedAssetCount,
+    queryEpoch,
+    gridRef,
+    scrollContainerRef,
+    gridOffset: virtualGrid.gridOffset,
+    columnCount: virtualGrid.columnCount,
+    tilePixelSize: virtualGrid.tilePixelSize,
+    tileGap: virtualGrid.tileGap,
+    getAssetAt: resolvedGetAssetAt,
+    selectionModeEnabled,
+    onCtrlWheelZoom,
+    onSelect,
+    onBulkSelectionInteraction
+  });
+
   const virtualEntries = virtualGrid.virtualItems.map((item) => ({
     asset: resolvedGetAssetAt(item.index),
     item,
@@ -156,13 +161,27 @@ const GalleryGridContent = memo(function GalleryGridContent({
 
   return (
     <section
-      className={`min-h-0 min-w-0 w-full px-3 pt-3 sm:px-5 sm:pt-5 ${
+      className={`min-h-0 flex-1 min-w-0 w-full px-3 pb-16 pt-3 sm:px-5 sm:pt-5 ${
         selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""
       }`}
       ref={galleryRef}
       onWheel={handlers.handleGalleryWheel}
+      onPointerDown={handlers.handlePointerDown}
+      onPointerMove={handlers.handlePointerMove}
+      onPointerUp={handlers.handlePointerUp}
+      onPointerCancel={handlers.handlePointerCancel}
+      onLostPointerCapture={handlers.handleLostPointerCapture}
+      onClickCapture={handlers.handleClickCapture}
+      onClick={handlers.handleGalleryClick}
+      onDragStart={(event) => event.preventDefault()}
+      style={{ touchAction: selectionModeEnabled ? "none" : undefined }}
       data-testid="gallery-grid"
     >
+      {handlers.preview ? createPortal(
+        <div data-testid="gallery-selection-rectangle" aria-hidden="true"
+          className="pointer-events-none fixed z-20 border border-primary bg-primary/20"
+          style={handlers.preview.rectangle} />, document.body
+      ) : null}
       {loadError ? (
         <div
           role="alert"
@@ -212,7 +231,8 @@ const GalleryGridContent = memo(function GalleryGridContent({
                 return (
                   <div
                     key={`pending-${item.index}`}
-                    className="absolute z-[1] animate-pulse rounded-[var(--radius-surface)] bg-base-300/70"
+                    data-asset-index={item.index}
+                    className={`absolute z-[1] animate-pulse rounded-[var(--radius-surface)] bg-base-300/70 ${handlers.isPreviewSelected(item.index, false) ? "ring-2 ring-primary" : ""}`}
                     style={{
                       width: virtualGrid.tilePixelSize,
                       height: virtualGrid.tilePixelSize,
@@ -224,7 +244,7 @@ const GalleryGridContent = memo(function GalleryGridContent({
               }
 
               const showRenderLoader = Boolean(renderingThumbnailIds[asset.id]) && !thumbs[asset.id];
-              const isBulkSelected = selectionModeEnabled && selectedAssetIds.has(asset.id);
+              const isBulkSelected = selectionModeEnabled && handlers.isPreviewSelected(item.index, selectedAssetIds.has(asset.id));
               const isLightboxSelected = !selectionModeEnabled && selectedId === asset.id;
 
               return (
@@ -244,8 +264,6 @@ const GalleryGridContent = memo(function GalleryGridContent({
                   videoChipLabel={videoChipLabel}
                   gifChipLabel={gifChipLabel}
                   thumbnailStore={thumbnailStore}
-                  onMouseDown={handlers.handleTileMouseDown}
-                  onMouseEnter={handlers.handleTileMouseEnter}
                   onClick={handlers.handleTileClick}
                 />
               );
@@ -261,15 +279,17 @@ export const GalleryGrid = memo(function GalleryGrid({
 }: GalleryGridProps) {
   const { t } = useTranslation();
   return (
-    <div className="min-w-0 pb-3 sm:pb-4">
+    <div className="relative flex min-w-0 flex-col">
       <GalleryGridContent {...contentProps} />
       {(contentProps.assetCount ?? contentProps.assets.length) > 0 ? (
-        <GalleryStatusFooter
-          isGeneratingThumbnails={isGeneratingThumbnails}
-          hasMore={contentProps.hasMore}
-          generatingLabel={t("gallery.generatingThumbnails", { count: pendingThumbnailCount })}
-          noMoreLabel={t("gallery.noMoreItems")}
-        />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0">
+          <GalleryStatusFooter
+            isGeneratingThumbnails={isGeneratingThumbnails}
+            hasMore={contentProps.hasMore}
+            generatingLabel={t("gallery.generatingThumbnails", { count: pendingThumbnailCount })}
+            noMoreLabel={t("gallery.noMoreItems")}
+          />
+        </div>
       ) : null}
     </div>
   );

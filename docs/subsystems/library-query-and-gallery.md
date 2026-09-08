@@ -92,6 +92,12 @@ Near-end loading retains its two-row threshold for other consumers. Production u
 - A nonblank media-group key marks the tile as grouped. Backplates join consecutive loaded virtual entries only when they share the exact key, are adjacent lanes, and sit on the same row; a group that crosses a row or unloaded gap is drawn as separate pieces.
 - The status footer reports thumbnail generation only when `hasMore` is true, and reports “no more items” when thumbnail generation is idle and `hasMore` is false. It does not represent asset-page loading. Production therefore normally treats the known session total as the end boundary.
 
+## Bulk rectangle selection
+
+`useGalleryGridHandlers` owns the pointer gesture, capture, animation frame, and temporary highlights. `selectionGeometry` computes inclusive global-index ranges from the virtual grid's columns, square tile size, gap, and scroll position. It does not inspect mounted tiles or summaries. Unloaded placeholders receive the same preview highlight as loaded tiles. The gallery interaction section fills its available height, including padding and unused space below the last row; the status footer does not intercept pointer input.
+
+A primary-pointer movement of at least five pixels draws a translucent primary-color rectangle clipped to the visible gallery. An animation frame updates overlap and scrolls near the viewport's vertical edges. On release, the complete ranges go to `useBulkSelectionController`, which resolves at most 128 indices per read, sequentially in query order, and commits selected IDs once. The preview remains while resolution is pending and bulk writes stay disabled. Failure restores the previous visual selection and offers Retry. New input, query or layout changes, cancellation, lost capture, blur, and unmount discard stale gesture work. Escape clears selection and cancels pending gesture work without leaving bulk mode. The gallery registers a nonmodal UI layer so an open modal receives Escape first. See [bulk selection](search-tags-and-media-groups.md#bulk-selection) for click and modifier behavior.
+
 ## Refresh and invalidation paths
 
 The database revision is the authoritative invalidation epoch. Scans and query-visible mutations bump it according to [database](database.md), so a later page from an older session becomes `stale`. The frontend also refreshes eagerly on these paths:
@@ -113,7 +119,7 @@ Starting a refresh resets the active thumbnail queue but keeps the old asset cac
 
 ## Error behavior
 
-An invoke or database error rejects the corresponding promise and records `loadError`. Failed page offsets are remembered per generation, so repeated renders, viewport demand, and direct reads cannot retry them automatically. Retry reissues failed demanded pages within the same session; a failed initial query restarts. A successful unrelated page cannot clear another page's failure. `stale` pages still restart the query automatically.
+An invoke or database error rejects the corresponding promise and records `loadError`. Failed page offsets are remembered per generation, so repeated renders, viewport demand, and direct reads cannot retry them automatically. Explicit Retry unblocks all failed pages in the current generation and reissues failed demanded pages within the same session. A pending selection retry loads its own offscreen ranges; a failed initial query restarts. A successful unrelated page cannot clear another page's failure. `stale` pages still restart the query automatically.
 
 Inclusive range reads capture one session and generation, checking them after every awaited page. Refresh, library reset, and unmount invalidate pending reads. A changed session rejects the entire range before callers can apply a partial selection. Query loading counts are separate from settings-operation loading.
 

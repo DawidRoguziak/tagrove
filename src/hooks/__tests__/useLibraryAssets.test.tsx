@@ -341,6 +341,20 @@ describe("useLibraryAssets", () => {
     expect(apiMocks.startAssetQuery).toHaveBeenCalledOnce();
   });
 
+  it("Retry unblocks failed offscreen selection pages without fetching undemanded pages", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
+    apiMocks.getAssetQueryPage.mockRejectedValueOnce(new Error("offline"));
+    const { result } = await renderAssets();
+    await act(() => result.current.refresh());
+    act(() => result.current.ensureRange(0, 1));
+    await act(async () => { await expect(result.current.getIdsRangeAsync(4, 5)).rejects.toThrow("offline"); });
+    apiMocks.getAssetQueryPage.mockResolvedValue({ ...readyStart([createSummary(5), createSummary(6)], 6), offset: 4 });
+    await act(() => result.current.retryLoad());
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledOnce();
+    await act(async () => { expect(await result.current.getIdsRangeAsync(4, 5)).toEqual([5, 6]); });
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(2);
+  });
+
   it.each(["refresh", "reset", "unmount"] as const)("rejects an entire range interrupted by %s", async action => {
     apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
     let resolve!: (page: object) => void;

@@ -5,6 +5,17 @@ import App from "./App";
 import "./styles.css";
 import { applyTheme, THEME_STORAGE_KEY } from "./components/app/services/themeService";
 
+const preventNativeContextMenu = (event: MouseEvent) => {
+  event.preventDefault();
+};
+
+// Capture before descendant handlers, including content outside the React root.
+window.addEventListener("contextmenu", preventNativeContextMenu, true);
+
+import.meta.hot?.dispose(() => {
+  window.removeEventListener("contextmenu", preventNativeContextMenu, true);
+});
+
 const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
 const initialTheme = storedTheme === "light" || storedTheme === "dark"
   ? storedTheme

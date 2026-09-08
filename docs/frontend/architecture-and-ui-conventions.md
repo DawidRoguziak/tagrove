@@ -20,6 +20,8 @@ The gallery header displays Tagrove with the Woven T SVG from `public/tagrove.sv
 
 [`src/main.tsx`](../../src/main.tsx) is the browser bootstrap. It imports i18n and global CSS before rendering, applies the stored light/dark theme before the first React render, optionally installs performance instrumentation when `VITE_MEDIATAGGER_PERF=1`, and mounts `<App />` inside `React.StrictMode`.
 
+Before React renders, the bootstrap installs a window-level capture listener that calls `preventDefault()` on every `contextmenu` event. Native WebView context menus are disabled in development, E2E, and production, including images, editable fields, empty areas, and modal or other content outside the React root. Descendant handlers that stop propagation cannot bypass suppression. Mouse and keyboard context-menu invocation share this policy; event propagation, ordinary clicks, typing, and clipboard shortcuts remain available. Vite hot-module disposal removes the listener before the bootstrap reloads.
+
 Strict Mode means mount effects must tolerate setup, cleanup, and setup again during development. Effects that install listeners, animation frames, timers, observers, or async generations must provide cleanup or stale-result protection. Production behavior must not depend on an effect running exactly once merely because it has an empty dependency list.
 
 [`src/App.tsx`](../../src/App.tsx) is intentionally a thin composition surface:

@@ -40,7 +40,12 @@ id_ecdsa*
 # Local application data
 *.db
 *.db-*
-*.sqlite*
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 thumbs/
 restore-staging/
 instance.lock

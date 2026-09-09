@@ -12,7 +12,8 @@ import tempfile
 
 GITLEAKS_VERSION = '8.30.1'
 FORBIDDEN = ('.env', '.env.*', '.npmrc', '.pypirc', '*.key', '*.pem', '*.p12', '*.pfx',
-             'id_rsa*', 'id_ed25519*', 'id_ecdsa*', '*.db', '*.db-*', '*.sqlite*',
+             'id_rsa*', 'id_ed25519*', 'id_ecdsa*', '*.db', '*.db-*', '*.sqlite', '*.sqlite3', '*.sqlite-wal', '*.sqlite-shm',
+             '*.sqlite3-wal', '*.sqlite3-shm',
              '*.zip', '*.7z', '*.tar', '*.tar.gz', '*.tgz', '*.tsbuildinfo', '*.log')
 LOCAL_DIRECTORIES = {'node_modules', 'artifacts', 'output', 'thumbs', 'restore-staging'}
 HOME_PATH = re.compile(rb"""(?<![A-Za-z0-9_-])(?:/(?:home|Users)/[^/\s<>"'\x00]+|[A-Za-z]:[\\/]Users[\\/][^/\\\s<>"'\x00]+)(?:[/\\]|(?=$|[\s\x00"'<>]))""")

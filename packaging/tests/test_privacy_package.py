@@ -12,7 +12,7 @@ spec.loader.exec_module(audit)
 
 
 class PackagePrivacyTests(unittest.TestCase):
-    def run_audit(self, contents, name='note.txt', source_name='README.md'):
+    def run_audit(self, contents, name='note.txt', source_name='README.md', exported=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             extracted = root / 'extracted'
@@ -20,7 +20,7 @@ class PackagePrivacyTests(unittest.TestCase):
             temporary = root / 'temporary'
             for path in [extracted, export, temporary]:
                 path.mkdir()
-            path = extracted / name
+            path = (export if exported else extracted) / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(contents)
             with tarfile.open(export / 'application-source.tar.gz', 'w:gz') as archive:
@@ -35,8 +35,19 @@ class PackagePrivacyTests(unittest.TestCase):
     def test_private_path_and_local_database(self):
         with self.assertRaisesRegex(ValueError, 'Private home path'):
             self.run_audit(b'/home/' + b'synthetic-person/project')
-        with self.assertRaisesRegex(ValueError, 'Local application'):
-            self.run_audit(b'synthetic database', 'nested/media.db')
+        for name in ['nested/media.db', 'private.key', 'nested/id_ed25519',
+                     'nested/media.sqlite-wal', 'debug.log', 'archive.zip']:
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'Local application'):
+                self.run_audit(b'synthetic local file', name)
+
+    def test_bundle_wrapper_bytes(self):
+        for extension in ['AppImage', 'flatpak']:
+            with self.subTest(extension=extension), self.assertRaisesRegex(ValueError, 'Private home path'):
+                self.run_audit(b'/home/' + b'synthetic-person/project',
+                               'Tagrove-1.0-x86_64.' + extension, exported=True)
+
+    def test_mime_definition_is_not_a_database(self):
+        self.run_audit(b'<mime-type/>', 'usr/share/mime/application/vnd.sqlite3.xml')
 
     def test_secret_and_no_library_path_wildcard(self):
         token = b'token="' + b'ghp_' + b'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' + b'"'

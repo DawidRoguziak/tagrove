@@ -36,18 +36,18 @@ def audit(extracted, export, temporary):
             relative = path.relative_to(directory).as_posix()
             if privacy.private_paths(os.fsencode(relative)):
                 failures.append(f'Private path in filename: {prefix}/{relative}')
+            if privacy.forbidden(relative) and not (prefix == 'export' and relative == 'application-source.tar.gz'):
+                failures.append(f'Local application/configuration file: {prefix}/{relative}')
             if path.is_symlink():
                 record(f'{prefix}/{relative}', os.fsencode(os.readlink(path)))
                 continue
             if not path.is_file():
                 continue
-            if prefix == 'export' and (path.suffix in ('.AppImage', '.flatpak') or relative == 'application-source.tar.gz'):
+            if prefix == 'export' and relative == 'application-source.tar.gz':
                 continue
-            if path.name.startswith('.env') or path.name == '.npmrc' or path.suffix in ('.db', '.sqlite', '.sqlite3'):
-                failures.append(f'Local application/configuration file: {prefix}/{relative}')
             data = path.read_bytes()
             reviewed_paths = (f'{prefix}/{relative}', hashlib.sha256(data).hexdigest()) in allowed_path_files
-            if data.startswith(b'\x7fELF'):
+            if data.startswith(b'\x7fELF') or path.suffix in ('.AppImage', '.flatpak'):
                 # Scan paths in raw bytes and secrets in printable binary strings.
                 if not reviewed_paths and privacy.private_paths(data):
                     failures.append(f'Private home path in binary: {prefix}/{relative}')

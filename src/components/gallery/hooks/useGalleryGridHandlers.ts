@@ -40,6 +40,7 @@ interface Preview {
 }
 interface Gesture {
   pointerId: number;
+  pressedAt: number;
   element: HTMLElement;
   start: Point;
   origin: Point;
@@ -48,6 +49,7 @@ interface Gesture {
   dragging: boolean;
   lastFrame: number;
 }
+const dragHoldDelayMs = 150;
 const interactiveSelector =
   'button:not([data-asset-id]), input, select, textarea, a, [role="button"]:not([data-asset-id]), [contenteditable="true"]';
 function isControl(target: EventTarget | null): boolean {
@@ -184,6 +186,7 @@ export function useGalleryGridHandlers(options: Options) {
       const bounds = grid.getBoundingClientRect();
       gesture.current = {
         pointerId: event.pointerId,
+        pressedAt: performance.now(),
         element: event.currentTarget,
         start: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
         origin: { x: event.clientX, y: event.clientY },
@@ -205,6 +208,7 @@ export function useGalleryGridHandlers(options: Options) {
       active.latest = { x: event.clientX, y: event.clientY };
       if (
         !active.dragging &&
+        performance.now() - active.pressedAt >= dragHoldDelayMs &&
         Math.hypot(event.clientX - active.origin.x, event.clientY - active.origin.y) >= 5
       ) {
         active.dragging = true;
@@ -323,19 +327,6 @@ export function useGalleryGridHandlers(options: Options) {
       event.stopPropagation();
     }
   }, []);
-  const handleGalleryClick = useCallback(
-    (event: MouseEvent<HTMLElement>) => {
-      if (
-        !current.current.selectionModeEnabled ||
-        isControl(event.target) ||
-        (event.target instanceof Element &&
-          event.target.closest("[data-asset-id], [data-asset-index]"))
-      )
-        return;
-      clearSelection();
-    },
-    [clearSelection]
-  );
   const handleGalleryWheel = useCallback((event: WheelEvent<HTMLElement>) => {
     if (!event.ctrlKey) return;
     event.preventDefault();
@@ -355,7 +346,6 @@ export function useGalleryGridHandlers(options: Options) {
       if (gesture.current) cancel();
     },
     handleClickCapture,
-    handleGalleryClick,
     isPreviewSelected: (index: number, selected: boolean) =>
       preview ? containsIndex(preview.ranges, index) || (preview.additive && selected) : selected
   };

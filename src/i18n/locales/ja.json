@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "選択中: {{count}}",
+      "clearSelection": "選択を解除",
+      "clearSelectionHint": "Escで選択を解除",
       "addTag": "タグを追加",
       "addGroup": "グループを追加",
       "ariaLabel": "一括操作",

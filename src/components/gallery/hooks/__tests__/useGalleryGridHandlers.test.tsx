@@ -30,8 +30,7 @@ function Harness({ interaction, epoch = 0, offset = 0, size = 100, enabled = tru
   return <div ref={scroller} data-testid="scroller"><section data-testid="gallery"
     onPointerDown={handlers.handlePointerDown} onPointerMove={handlers.handlePointerMove}
     onPointerUp={handlers.handlePointerUp} onPointerCancel={handlers.handlePointerCancel}
-    onLostPointerCapture={handlers.handleLostPointerCapture} onClickCapture={handlers.handleClickCapture}
-    onClick={handlers.handleGalleryClick}>
+    onLostPointerCapture={handlers.handleLostPointerCapture} onClickCapture={handlers.handleClickCapture}>
     <div ref={gridRef} data-testid="grid"><button data-asset-id="1" data-asset-index="0" onClick={handlers.handleTileClick}>tile</button></div>
     <button>control</button><output>{JSON.stringify(handlers.preview)}</output>
   </section></div>;
@@ -54,7 +53,8 @@ function tick() { act(() => { clock += 16; frame?.(clock); }); }
 function preview() { return JSON.parse(screen.getByRole("status").textContent ?? "null"); }
 
 beforeEach(() => {
-  captured.clear(); clock = performance.now(); frame = undefined;
+  captured.clear(); clock = 0; frame = undefined;
+  vi.spyOn(performance, "now").mockImplementation(() => clock);
   vi.stubGlobal("PointerEvent", TestPointerEvent);
   vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => { frame = callback; return 1; });
   vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => { frame = undefined; });
@@ -65,18 +65,42 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("gallery pointer gestures", () => {
-  it("keeps sub-threshold movement a click and starts at five pixels", () => {
+  it("requires both a 150 ms hold and five pixels of movement", () => {
     const interaction = vi.fn(); render(<Harness interaction={interaction} />); layout();
-    down(); move(18, 17); expect(preview()).toBeNull(); up(18, 17);
-    fireEvent.click(screen.getByText("tile"));
+    down(); clock += 149; move(18, 19);
+    expect(preview()).toBeNull(); expect(captured.size).toBe(0); expect(frame).toBeUndefined();
+    clock += 1;
+    expect(preview()).toBeNull();
+    move(18, 17); expect(preview()).toBeNull();
+    move(18, 19); expect(preview()).not.toBeNull(); expect(captured.has(1)).toBe(true);
+  });
+  it("keeps quick repeated clicks immediate despite accidental movement", () => {
+    const interaction = vi.fn(); render(<Harness interaction={interaction} />); layout();
+    for (const detail of [1, 2]) {
+      down(); clock += 50; move(21, 15); up(21, 15);
+      fireEvent.click(screen.getByText("tile"), { detail });
+      expect(interaction).toHaveBeenLastCalledWith({ type: "click", assetId: 1, assetIndex: 0, ctrlLike: false, shift: false });
+      expect(preview()).toBeNull(); expect(captured.size).toBe(0); expect(frame).toBeUndefined();
+    }
+    expect(interaction.mock.calls.filter(([event]) => event.type === "click")).toHaveLength(2);
+    expect(interaction.mock.calls.some(([event]) => event.type === "rectangle-commit")).toBe(false);
+    clock += 200; move(150, 150);
+    expect(preview()).toBeNull();
+    down(); move(150, 150); expect(preview()).toBeNull();
+    clock += 150; move(150, 150); expect(preview()).not.toBeNull();
+  });
+  it("keeps a stationary hold a click", () => {
+    const interaction = vi.fn(); render(<Harness interaction={interaction} />); layout();
+    down(); clock += 1000; move(15, 15);
+    expect(preview()).toBeNull(); expect(frame).toBeUndefined();
+    up(15, 15); fireEvent.click(screen.getByText("tile"), { detail: 1 });
     expect(interaction).toHaveBeenLastCalledWith({ type: "click", assetId: 1, assetIndex: 0, ctrlLike: false, shift: false });
-    down(); move(18, 19); expect(preview()).not.toBeNull(); expect(captured.has(1)).toBe(true);
   });
   it.each([{ ctrlKey: true }, { metaKey: true }, {}])("captures modifiers, shrinks, commits once, and suppresses the generated click: %j", async modifiers => {
     let finish!: () => void;
     const interaction = vi.fn(event => event.type === "rectangle-commit" ? new Promise<void>(resolve => { finish = resolve; }) : undefined);
     render(<Harness interaction={interaction} />); layout();
-    down(15, 15, modifiers); move(240, 250); tick();
+    down(15, 15, modifiers); clock += 150; move(240, 250); tick();
     expect(preview().ranges).toEqual([{ startIndex: 0, endIndex: 8 }]);
     move(125, 125); tick();
     expect(preview().ranges).toEqual([{ startIndex: 0, endIndex: 1 }, { startIndex: 3, endIndex: 4 }]);
@@ -99,7 +123,7 @@ describe("gallery pointer gestures", () => {
       ? new Promise<void>(resolve => { finish = resolve; }) : undefined);
     render(<Harness interaction={interaction} />); layout();
     down();
-    if (stage !== "pressed") move(150, 150);
+    if (stage !== "pressed") { clock += 150; move(150, 150); }
     if (pending) up(150, 150);
     if (stage !== "pressed") expect(preview()).not.toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
@@ -135,24 +159,33 @@ describe("gallery pointer gestures", () => {
 
   it("selects through unloaded rows during edge scrolling", () => {
     render(<Harness interaction={vi.fn()} />); const scroller = layout();
-    down(); move(330, 399); tick(); expect(scroller.scrollTop).toBeGreaterThan(0);
+    down(); clock += 150; move(330, 399); tick(); expect(scroller.scrollTop).toBeGreaterThan(0);
     scroller.scrollTop = 66000; tick();
     expect(preview().ranges[0].endIndex).toBeGreaterThan(1536);
     expect(preview().rectangle.top).toBe(0);
     expect(preview().rectangle.height).toBeLessThanOrEqual(400);
   });
-  it.each(["pointerCancel", "lostPointerCapture", "blur", "query", "layout", "origin", "unmount"])("cancels on %s", cause => {
-    const interaction = vi.fn(); const view = render(<Harness interaction={interaction} />); layout(); down(); move(150, 150);
-    if (cause === "blur") fireEvent.blur(window);
-    else if (cause === "query") view.rerender(<Harness interaction={interaction} epoch={1} />);
-    else if (cause === "layout") view.rerender(<Harness interaction={interaction} size={110} />);
-    else if (cause === "origin") view.rerender(<Harness interaction={interaction} offset={20} />);
-    else if (cause === "unmount") view.unmount();
-    else if (cause === "pointerCancel") fireEvent.pointerCancel(screen.getByTestId("gallery"));
-    else fireEvent.lostPointerCapture(screen.getByTestId("gallery"));
-    expect(interaction).toHaveBeenLastCalledWith({ type: "rectangle-cancel" });
-    expect(captured.size).toBe(0); expect(frame).toBeUndefined();
-    if (cause !== "unmount") expect(preview()).toBeNull();
+  describe.each(["pressed", "dragging"])("cancellation while %s", stage => {
+    it.each(["pointerCancel", "lostPointerCapture", "blur", "query", "layout", "origin", "disabled", "unmount"])("cancels on %s", cause => {
+      const interaction = vi.fn(); const view = render(<Harness interaction={interaction} />); layout(); down();
+      clock += stage === "dragging" ? 150 : 149;
+      move(150, 150);
+      if (cause === "blur") fireEvent.blur(window);
+      else if (cause === "query") view.rerender(<Harness interaction={interaction} epoch={1} />);
+      else if (cause === "layout") view.rerender(<Harness interaction={interaction} size={110} />);
+      else if (cause === "origin") view.rerender(<Harness interaction={interaction} offset={20} />);
+      else if (cause === "disabled") view.rerender(<Harness interaction={interaction} enabled={false} />);
+      else if (cause === "unmount") view.unmount();
+      else if (cause === "pointerCancel") fireEvent.pointerCancel(screen.getByTestId("gallery"));
+      else fireEvent.lostPointerCapture(screen.getByTestId("gallery"));
+      expect(interaction).toHaveBeenLastCalledWith({ type: "rectangle-cancel" });
+      expect(captured.size).toBe(0); expect(frame).toBeUndefined();
+      if (cause !== "unmount") {
+        clock += 200; move(200, 200); up(200, 200);
+        expect(preview()).toBeNull();
+        expect(interaction.mock.calls.some(([event]) => event.type === "rectangle-commit")).toBe(false);
+      }
+    });
   });
   it("ignores controls, scrollbar, secondary pointers and normal-mode dragging", () => {
     const interaction = vi.fn(); const onSelect = vi.fn();
@@ -160,7 +193,7 @@ describe("gallery pointer gestures", () => {
     fireEvent.pointerDown(screen.getByText("control")); fireEvent.click(screen.getByText("control"));
     down(340, 20); down(15, 15, { button: 2 }); down(15, 15, { isPrimary: false });
     expect(interaction).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("gallery")); expect(interaction).toHaveBeenLastCalledWith({ type: "clear" });
+    fireEvent.click(screen.getByTestId("gallery")); expect(interaction).not.toHaveBeenCalled();
     view.rerender(<Harness interaction={interaction} enabled={false} onSelect={onSelect} />);
     interaction.mockClear(); down(); move(200, 200); up(200, 200); fireEvent.click(screen.getByText("tile"));
     fireEvent.keyDown(window, { key: "Escape" });

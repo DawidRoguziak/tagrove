@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "Выбрано: {{count}}",
+      "clearSelection": "Снять выделение",
+      "clearSelectionHint": "Esc снимает выделение",
       "addTag": "Добавить тег",
       "addGroup": "Добавить группу",
       "ariaLabel": "Массовые действия",

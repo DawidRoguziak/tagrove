@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "선택됨: {{count}}",
+      "clearSelection": "선택 해제",
+      "clearSelectionHint": "Esc로 선택 해제",
       "addTag": "태그 추가",
       "addGroup": "그룹 추가",
       "ariaLabel": "일괄 작업",

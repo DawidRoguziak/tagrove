@@ -156,6 +156,19 @@ export function BulkActionsSidebar({
           disabled={controlsDisabled || controller.favoriteApplying}
           onClick={() => void controller.onToggleFavorite()}
         />
+        {controller.selectedAssetIds.size > 0 ? (
+          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
+            <UiButton
+              className="h-8! min-h-8! text-xs"
+              onClick={() => void controller.onBulkSelectionInteraction({ type: "clear" })}
+            >
+              {t("bulk.panel.clearSelection")}
+            </UiButton>
+            <span className="text-[11px] text-base-content/60">
+              {t("bulk.panel.clearSelectionHint")}
+            </span>
+          </div>
+        ) : null}
         {controller.favoriteFailed ? (
           <UiAlert className="w-full" tone="error" title={t("bulk.panel.saveFailedTitle")}>
             {t("bulk.favorite.failed")}

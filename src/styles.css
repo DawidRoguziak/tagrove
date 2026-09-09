@@ -190,9 +190,10 @@
 .workspace-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 6px 20px; border-top: 1px solid var(--border-soft); }
 .workspace-sizing { margin-left: auto; display: flex; align-items: center; gap: 16px; }
 .workspace-body { display: grid; min-height: 100%; grid-template-columns: minmax(0, 1fr); }
-.bulk-inspector { align-self: start; min-width: 0; background: var(--surface-solid); border-top: 1px solid var(--border-strong); }
+.bulk-inspector { align-self: start; min-width: 0; background: var(--surface-solid); border-top: 1px solid var(--border-strong); border-bottom-left-radius: var(--radius-panel); }
 .bulk-inspector > header { position: sticky; top: 0; z-index: 2; padding: 16px; border-bottom: 1px solid var(--border-strong); }
 .bulk-inspector > section { padding: 16px; border-bottom: 1px solid var(--border-soft); }
+.bulk-inspector > section:last-of-type { border-bottom-left-radius: inherit; }
 .settings-layout { display: grid; gap: 24px; max-width: 1240px; margin: auto; }
 .settings-nav { display: flex; flex-wrap: wrap; align-content: start; gap: 4px; }
 .settings-nav a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--text-muted); font-size: 13px; text-decoration: none; }

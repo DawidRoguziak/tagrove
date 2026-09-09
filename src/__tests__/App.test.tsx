@@ -460,6 +460,30 @@ describe("App", () => {
     selectAssetByPath("C:/media/c.jpg");
     expect(screen.getByText("Selected: 3")).toBeInTheDocument();
 
+    selectAssetByPath("C:/media/b.jpg");
+    expect(screen.getByText("Selected: 2")).toBeInTheDocument();
+    expect(document.querySelector('button[data-asset-id="1"]')).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelector('button[data-asset-id="2"]')).toHaveAttribute("aria-pressed", "false");
+    expect(document.querySelector('button[data-asset-id="3"]')).toHaveAttribute("aria-pressed", "true");
+    selectAssetByPath("C:/media/b.jpg");
+    expect(screen.getByText("Selected: 3")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("gallery-grid"));
+    expect(screen.getByText("Selected: 3")).toBeInTheDocument();
+    expect(screen.getByText("Esc clears selection")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByText("Selected: 0")).toBeInTheDocument();
+    expect(panel).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disable bulk actions" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear selection" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Esc clears selection")).not.toBeInTheDocument();
+
+    selectAssetByPath("C:/media/a.jpg");
+    expect(screen.getByText("Selected: 1")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.getByText("Selected: 0")).toBeInTheDocument();
+
+    selectAssetByPath("C:/media/b.jpg");
     fireEvent.keyDown(screen.getByLabelText("Media group key"), { key: "Escape" });
     expect(screen.getByText("Selected: 0")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disable bulk actions" })).toBeInTheDocument();

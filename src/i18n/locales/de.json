@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "Ausgewählt: {{count}}",
+      "clearSelection": "Auswahl aufheben",
+      "clearSelectionHint": "Esc hebt die Auswahl auf",
       "addTag": "Tag hinzufügen",
       "addGroup": "Gruppe hinzufügen",
       "ariaLabel": "Stapelaktionen",

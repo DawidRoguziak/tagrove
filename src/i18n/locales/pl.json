@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "Zaznaczono: {{count}}",
+      "clearSelection": "Wyczyść zaznaczenie",
+      "clearSelectionHint": "Esc czyści zaznaczenie",
       "addTag": "Dodaj tag",
       "addGroup": "Dodaj grupe",
       "ariaLabel": "Akcje zbiorcze",

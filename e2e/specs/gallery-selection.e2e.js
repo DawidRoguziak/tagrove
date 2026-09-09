@@ -29,12 +29,12 @@ async function count(expected) {
   await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes(`Selected: ${expected}`), { timeout: 30000, timeoutMsg: `Expected ${expected} selected` });
 }
 async function clear() {
-  const g = await geometry();
-  await pointer([{ type: "pointerMove", duration: 0, x: g.left - 8, y: g.viewportTop + 8 }, { type: "pointerDown", button: 0 }, { type: "pointerUp", button: 0 }]);
+  await browser.keys("Escape");
   await count(0);
 }
 async function dragStart(x, y, endX, endY) {
   await pointer([{ type: "pointerMove", duration: 0, x, y }, { type: "pointerDown", button: 0 },
+    { type: "pause", duration: 200 },
     { type: "pointerMove", duration: 250, x: endX, y: endY }]);
   await $('[data-testid="gallery-selection-rectangle"]').waitForDisplayed();
 }
@@ -73,6 +73,25 @@ suite("gallery additive clicks and rectangle selection", function () {
     await invoke("clear_library_data");
     if (mediaRoot) await fs.rm(mediaRoot, { recursive: true, force: true });
   });
+  it("ignores accidental quick drags and keeps ordinary clicks toggling", async () => {
+    await $('button[aria-label="Enable bulk actions"]').click();
+    await $('button[data-asset-index="1"]').click();
+    await count(1);
+    const g = await geometry();
+    await pointer([
+      { type: "pointerMove", duration: 0, x: g.left - 5, y: g.top + 20 },
+      { type: "pointerDown", button: 0 },
+      { type: "pointerMove", duration: 0, x: g.left + 25, y: g.top + 20 },
+      { type: "pointerUp", button: 0 }
+    ]);
+    await browser.releaseActions();
+    await count(1);
+    assert.equal(await $('button[data-asset-index="1"]').getAttribute("aria-pressed"), "true");
+    assert.equal(await $('button[data-asset-index="0"]').getAttribute("aria-pressed"), "false");
+    assert.equal(await $('[data-testid="gallery-selection-rectangle"]').isExisting(), false);
+    await $('button[data-asset-index="0"]').click(); await count(2);
+    await $('button[data-asset-index="0"]').click(); await count(1);
+  });
   for (const theme of ["dark", "light"]) {
     it(`uses additive clicks, replacing rectangles and modifiers in ${theme}`, async () => {
       await $('button[aria-label="Open settings"]').click();
@@ -83,7 +102,9 @@ suite("gallery additive clicks and rectangle selection", function () {
       await $('button[data-asset-index="0"]').click();
       await $('button[data-asset-index="1"]').click();
       await $('button[data-asset-index="0"]').click();
-      await count(2);
+      await count(1);
+      assert.equal(await $('button[data-asset-index="0"]').getAttribute("aria-pressed"), "false");
+      assert.equal(await $('button[data-asset-index="1"]').getAttribute("aria-pressed"), "true");
       await clear();
       const g = await geometry();
       await dragStart(g.left + 5, g.top + 5, Math.round(g.left + g.size + 15), Math.round(g.top + g.size + 15));
@@ -101,6 +122,7 @@ suite("gallery additive clicks and rectangle selection", function () {
       await pointer([{ type: "pointerMove", duration: 150, x: g.left + 25, y: g.top + 25 }]);
       await browser.waitUntil(async () => (await $$('button[data-asset-index][aria-pressed="true"]')).length === 1);
       await release(); await count(1);
+      await $('button[data-asset-index="0"]').click(); await count(0);
       await $('button[data-asset-index="0"]').click(); await count(1);
       // Native Ctrl-click toggles, then Ctrl-drag retains the existing ID.
       await browser.performActions([{ id: "modifier", type: "key", actions: [{ type: "keyDown", value: "\uE009" }] }]);
@@ -149,7 +171,7 @@ suite("gallery additive clicks and rectangle selection", function () {
     await clear();
     await $('button[aria-label="Disable bulk actions"]').click();
   });
-  it("clears and starts rectangles below a short gallery while preserving control clicks", async () => {
+  it("preserves selection on empty-space clicks and starts rectangles below a short gallery", async () => {
     await $("select").selectByAttribute("value", "gif");
     await $('button=Search').click();
     await browser.waitUntil(() => browser.execute(() => document.querySelectorAll('button[data-asset-index]').length === 1));
@@ -160,7 +182,8 @@ suite("gallery additive clicks and rectangle selection", function () {
     const g = await geometry();
     await pointer([{ type: "pointerMove", duration: 0, x: g.left + 20, y: g.bottom - 25 },
       { type: "pointerDown", button: 0 }, { type: "pointerUp", button: 0 }]);
-    await count(0);
+    await count(1);
+    await clear();
     await dragStart(g.left + 20, g.bottom - 80, g.left + 40, g.top + 20);
     await release(); await count(1);
     await browser.saveScreenshot(path.join(output, "short-gallery.png"));

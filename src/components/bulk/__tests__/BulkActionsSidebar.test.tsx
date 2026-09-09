@@ -112,6 +112,8 @@ describe("BulkActionsSidebar", () => {
       expect(sidebar).toContainElement(screen.getByTestId(panelId));
     }
     expect(screen.getByText("Selected: 0")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear selection" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Esc clears selection")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Select all" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Media group key")).toBeDisabled();
     expect(screen.getByLabelText("Add tag")).toBeDisabled();

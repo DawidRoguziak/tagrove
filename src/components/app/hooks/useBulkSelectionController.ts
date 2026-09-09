@@ -377,9 +377,9 @@ export function useBulkSelectionController({
           }
           selectionAnchorIndexRef.current = assetIndex;
           setSelectedAssetIds(previous => {
-            if ((!ctrlLike || shift) && previous.has(assetId)) return previous;
+            if (shift && previous.has(assetId)) return previous;
             const next = new Set(previous);
-            if (ctrlLike && !shift && next.has(assetId)) next.delete(assetId);
+            if (!shift && next.has(assetId)) next.delete(assetId);
             else next.add(assetId);
             return next;
           });

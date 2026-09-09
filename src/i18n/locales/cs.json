@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "Vybráno: {{count}}",
+      "clearSelection": "Zrušit výběr",
+      "clearSelectionHint": "Esc zruší výběr",
       "addTag": "Přidat tag",
       "addGroup": "Přidat skupinu",
       "ariaLabel": "Hromadné akce",

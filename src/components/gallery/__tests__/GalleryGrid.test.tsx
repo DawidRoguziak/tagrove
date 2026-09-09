@@ -558,7 +558,7 @@ describe("GalleryGrid", () => {
     });
   });
 
-  it("clears only gallery space and prevents native image dragging", () => {
+  it("preserves selection on gallery space clicks and prevents native image dragging", () => {
     virtualItems = [{ key: 0, index: 0, start: 0 }];
     const interaction = vi.fn();
     const { getByTestId, container } = render(<GalleryGrid assets={[sampleAsset]} selectedId={null}
@@ -566,8 +566,7 @@ describe("GalleryGrid", () => {
       pendingThumbnailCount={0} renderingThumbnailIds={{}} onReachEnd={vi.fn()} onSelect={vi.fn()}
       selectionModeEnabled onBulkSelectionInteraction={interaction} loadError="failed" onLoadRetry={vi.fn()} />);
     fireEvent.click(getByTestId("gallery-grid"));
-    expect(interaction).toHaveBeenLastCalledWith({ type: "clear" });
-    interaction.mockClear();
+    expect(interaction).not.toHaveBeenCalled();
     fireEvent.click(getByTestId("gallery-load-error").querySelector("button")!);
     expect(interaction).not.toHaveBeenCalled();
     expect(fireEvent.dragStart(container.querySelector("img")!)).toBe(false);

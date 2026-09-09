@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "Sélectionné : {{count}}",
+      "clearSelection": "Effacer la sélection",
+      "clearSelectionHint": "Échap efface la sélection",
       "addTag": "Ajouter un tag",
       "addGroup": "Ajouter un groupe",
       "ariaLabel": "Actions groupées",

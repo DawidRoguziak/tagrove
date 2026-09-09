@@ -172,7 +172,6 @@ const GalleryGridContent = memo(function GalleryGridContent({
       onPointerCancel={handlers.handlePointerCancel}
       onLostPointerCapture={handlers.handleLostPointerCapture}
       onClickCapture={handlers.handleClickCapture}
-      onClick={handlers.handleGalleryClick}
       onDragStart={(event) => event.preventDefault()}
       style={{ touchAction: selectionModeEnabled ? "none" : undefined }}
       data-testid="gallery-grid"

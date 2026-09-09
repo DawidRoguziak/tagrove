@@ -591,13 +591,16 @@ describe("bulk modal order submission", () => {
 });
 
 describe("rectangle selection resolution", () => {
-  it("adds ordinary clicks, preserves repeated clicks, toggles modifiers and clears the anchor", async () => {
+  it("toggles individual tiles with ordinary and modifier clicks and clears the anchor", async () => {
     const loader = vi.fn(async () => [1, 2]);
     const { result } = renderHook(() => useBulkSelectionController({ ...options([createAsset(1), createAsset(2)]), getIdsRangeAsync: loader }));
     act(() => result.current.onToggleSelectionMode());
     select(result, 1, 0); select(result, 2, 1); select(result, 1, 0);
-    expect([...result.current.selectedAssetIds]).toEqual([1, 2]);
+    expect([...result.current.selectedAssetIds]).toEqual([2]);
+    select(result, 1, 0); expect([...result.current.selectedAssetIds]).toEqual([2, 1]);
     select(result, 1, 0, true); expect([...result.current.selectedAssetIds]).toEqual([2]);
+    select(result, 2, 1); expect(result.current.selectedAssetIds.size).toBe(0);
+    expect(result.current.selectionModeEnabled).toBe(true);
     act(() => { result.current.onBulkSelectionInteraction({ type: "clear" }); });
     expect(result.current.selectionModeEnabled).toBe(true);
     await act(async () => { await result.current.onBulkSelectionInteraction({ type: "click", assetId: 3, assetIndex: 2, shift: true, ctrlLike: false }); });

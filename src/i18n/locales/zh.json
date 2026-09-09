@@ -112,6 +112,8 @@
     },
     "panel": {
       "selectedItems": "已选择: {{count}}",
+      "clearSelection": "清除选择",
+      "clearSelectionHint": "Esc 清除选择",
       "addTag": "添加标签",
       "addGroup": "添加分组",
       "ariaLabel": "批量操作",

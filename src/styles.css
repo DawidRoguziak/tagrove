@@ -51,9 +51,9 @@
   --color-accent-content: #102010;
   --color-neutral: #101214;
   --color-neutral-content: #edf0f2;
-  --color-base-100: #1c1f22;
-  --color-base-200: #141618;
-  --color-base-300: #25292d;
+  --color-base-100: #14171a;
+  --color-base-200: #0c0e10;
+  --color-base-300: #1d2125;
   --color-base-content: #edf0f2;
   --color-info: #89bed7;
   --color-info-content: #10202b;
@@ -116,11 +116,15 @@
 }
 
 [data-theme="light"] {
+  --gallery-group-bg: color-mix(in oklab, var(--color-primary) 16%, transparent);
+  --gallery-group-edge: transparent;
   --border-soft: #dce1e5;
   --border-strong: #ccd3d8;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23455460' stroke-width='1.8'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 [data-theme="dark"] {
+  --gallery-group-bg: #20382b;
+  --gallery-group-edge: #52735c;
   --border-soft: #2c3136;
   --border-strong: #353b40;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23adb8c0' stroke-width='1.8'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");

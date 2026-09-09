@@ -213,7 +213,7 @@ const GalleryGridContent = memo(function GalleryGridContent({
               return (
                 <div
                   key={`group-backplate-${backplate.startIndex}`}
-                  className="pointer-events-none absolute z-0 rounded-[calc(var(--radius-surface)+4px)] bg-primary/16"
+                  className="pointer-events-none absolute z-0 rounded-[calc(var(--radius-surface)+4px)] bg-[var(--gallery-group-bg)] shadow-[inset_0_0_0_1px_var(--gallery-group-edge)]"
                   style={{
                     width:
                       tileCount * virtualGrid.tilePixelSize +

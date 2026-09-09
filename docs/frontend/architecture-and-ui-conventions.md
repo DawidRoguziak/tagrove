@@ -149,7 +149,11 @@ Global styles establish full-height roots, typography, field treatment, visible 
 
 The full redesign is tracked in [the redesign plan](../ui-redesign-plan.md). Both themes use
 neutral workspace/panel colors, with primary green `#7CB87C` in dark mode and `#2D5A2D` in
-light mode. The root stays at 16px for Tailwind rem sizing; body copy is 14px. Controls use
+light mode. Dark mode uses `#0c0e10` for the gallery workspace, `#14171a` for panels and
+the toolbar, and `#1d2125` for raised controls. Group backings use dedicated
+`--gallery-group-bg` and `--gallery-group-edge` tokens, keeping selection and focus on the
+brighter primary green. Light mode retains its existing surfaces and translucent group fill.
+The root stays at 16px for Tailwind rem sizing; body copy is 14px. Controls use
 4px corners, panels 6px, dialogs 8px. Standard buttons are 36px high and compact tools 32px.
 System sans fonts serve prose and controls; paths and technical metadata use monospace.
 

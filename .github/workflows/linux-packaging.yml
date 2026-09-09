@@ -7,6 +7,10 @@ on:
       - 'Dockerfile.*'
       - 'packaging/**'
       - 'scripts/build-linux-docker.sh'
+      - 'scripts/privacy-check.py'
+      - 'scripts/test_privacy.py'
+      - 'scripts/install-gitleaks.sh'
+      - '.gitignore'
       - 'scripts/prepare-flathub.sh'
       - 'scripts/test-linux-packages.sh'
       - 'src-tauri/**'
@@ -32,9 +36,23 @@ jobs:
         format: [flatpak, appimage]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned privacy scanner
+        run: |
+          bash scripts/install-gitleaks.sh "$RUNNER_TEMP/privacy-tools"
+          echo "$RUNNER_TEMP/privacy-tools" >> "$GITHUB_PATH"
+      - name: Audit full publication history
+        id: privacy
+        run: python3 scripts/privacy-check.py
+      - run: python3 -m unittest discover -s scripts -p test_privacy.py -v
       - run: python3 -m unittest discover -s packaging/tests -v
       - name: Build and validate in Docker
         run: ./scripts/build-linux-docker.sh --format "${{ matrix.format }}"
+      - name: Install package inspection tools
+        run: sudo apt-get update && sudo apt-get install --yes binutils flatpak ostree
+      - name: Audit the exported package and binary strings
+        run: python3 packaging/linux/audit-package.py "${{ matrix.format }}" "artifacts/linux/${{ matrix.format }}"
       - name: Test the actual package in a disposable container
         run: ./scripts/test-linux-packages.sh --format "${{ matrix.format }}"
       - name: Test AppImage on Ubuntu and Arch
@@ -43,7 +61,7 @@ jobs:
           ./scripts/test-linux-packages.sh --format appimage --distribution ubuntu24
           ./scripts/test-linux-packages.sh --format appimage --distribution arch
       - name: Retain runtime evidence, including failures
-        if: always()
+        if: always() && steps.privacy.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: Tagrove-${{ matrix.format }}-runtime-evidence
@@ -53,6 +71,23 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Tagrove-${{ matrix.format }}-x86_64
-          path: artifacts/linux/${{ matrix.format }}/
+          path: |
+            artifacts/linux/${{ matrix.format }}/Tagrove-*.AppImage
+            artifacts/linux/${{ matrix.format }}/Tagrove-*.flatpak
+            artifacts/linux/${{ matrix.format }}/application-source.tar.gz
+            artifacts/linux/${{ matrix.format }}/source-commit.txt
+            artifacts/linux/${{ matrix.format }}/LICENSE
+            artifacts/linux/${{ matrix.format }}/licenses/
+            artifacts/linux/${{ matrix.format }}/SHA256SUMS
+            artifacts/linux/${{ matrix.format }}/build-manifest.txt
+            artifacts/linux/${{ matrix.format }}/SOURCE-NOTICE.txt
+            artifacts/linux/${{ matrix.format }}/toolchains.json
+            artifacts/linux/${{ matrix.format }}/appimage-tools.json
+            artifacts/linux/${{ matrix.format }}/media-sources.json
+            artifacts/linux/${{ matrix.format }}/flatpak-manifest.json
+            artifacts/linux/${{ matrix.format }}/publisher.json
+            artifacts/linux/${{ matrix.format }}/debian-sources.tsv
+            artifacts/linux/${{ matrix.format }}/runtime-check.txt
+            artifacts/linux/${{ matrix.format }}/docker-image-id.txt
           if-no-files-found: error
           retention-days: 14

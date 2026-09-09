@@ -40,7 +40,9 @@
     "build:linux:docker": "bash ./scripts/build-linux-docker.sh",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:packaging": "python3 -m unittest discover -s packaging/tests -v"
+    "test:packaging": "python3 -m unittest discover -s packaging/tests -v",
+    "privacy:check": "python3 scripts/privacy-check.py",
+    "test:privacy": "python3 -m unittest discover -s scripts -p \"test_privacy.py\" -v"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.10",

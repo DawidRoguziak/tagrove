@@ -104,8 +104,19 @@ class ManifestTests(unittest.TestCase):
 
 
 class ExportTests(unittest.TestCase):
+    def prepare_build_repo(self, root):
+        for name in ['.gitignore', 'scripts/privacy-check.py', 'packaging/linux/prepare-source.py']:
+            target = root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / name, target)
+        for args in [('init', '-q'), ('config', 'user.name', 'Test'),
+                     ('config', 'user.email', 'test@example.invalid'), ('add', '.'),
+                     ('commit', '-qm', 'fixture')]:
+            subprocess.run(['git', '-C', str(root), *args], check=True, capture_output=True)
+
     def fixture(self, root):
-        for name, contents in {'build-manifest.txt': 'format=flatpak\narchitecture=x86_64\ncompile-network=none\n',
+        for name, contents in {'build-manifest.txt': 'format=flatpak\narchitecture=x86_64\ncompile-network=none\nsource-commit=' + 'a'*40 + '\n',
+                               'source-commit.txt': 'a'*40 + '\n',
                                'LICENSE': 'license', 'application-source.tar.gz': 'source', 'SOURCE-NOTICE.txt': 'notice',
                                'flatpak-manifest.json': '{}', 'Tagrove-1.0-x86_64.flatpak': 'fixture'}.items():
             (root / name).write_text(contents)
@@ -118,7 +129,7 @@ class ExportTests(unittest.TestCase):
             path = root / 'licenses' / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('fixture notice')
-        for name in ['debian-sources.tsv', 'toolchains.json', 'appimage-tools.json']:
+        for name in ['toolchains.json', 'appimage-tools.json']:
             (root / name).write_text('fixture source inventory')
         self.checksums(root)
 
@@ -155,11 +166,13 @@ class ExportTests(unittest.TestCase):
             fake_bin = root / 'bin'
             fake_bin.mkdir()
             docker = fake_bin / 'docker'
-            docker.write_text('#!/bin/sh\nexit 42\n')
+            docker.write_text('#!/bin/sh\necho docker-build-attempted >&2\nexit 42\n')
             docker.chmod(0o755)
+            self.prepare_build_repo(root)
             result = subprocess.run(['bash', str(root / 'scripts/build-linux-docker.sh'), '--format', 'flatpak'],
                                     env=dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ['PATH']), capture_output=True)
             self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b'docker-build-attempted', result.stderr)
             self.assertEqual(previous.read_bytes(), b'previous successful package')
             self.assertEqual(list((root / 'artifacts').glob('.linux.*')), [])
 
@@ -168,7 +181,8 @@ class ExportTests(unittest.TestCase):
             root = Path(temporary)
             self.fixture(root)
             (root / 'Tagrove-1.0-x86_64.flatpak').unlink()
-            (root / 'build-manifest.txt').write_text('format=native\narchitecture=x86_64\n')
+            (root / 'flatpak-manifest.json').unlink()
+            (root / 'build-manifest.txt').write_text('format=native\narchitecture=x86_64\nsource-commit=' + 'a'*40 + '\n')
             for fault in [None, 'not-elf', 'symlink', 'extra-file']:
                 with self.subTest(fault=fault):
                     with tarfile.open(root / 'Tagrove-1.0-x86_64-native.tar.gz', 'w:gz') as archive:
@@ -203,8 +217,10 @@ class ExportTests(unittest.TestCase):
                 self.fixture(fixture)
                 if format == 'appimage':
                     (fixture / 'Tagrove-1.0-x86_64.flatpak').unlink()
+                    (fixture / 'flatpak-manifest.json').unlink()
+                    (fixture / 'debian-sources.tsv').write_text('fixture')
                     shutil.copy('/usr/bin/true', fixture / 'Tagrove-1.0-x86_64.AppImage')
-                    (fixture / 'build-manifest.txt').write_text('format=appimage\narchitecture=x86_64\n')
+                    (fixture / 'build-manifest.txt').write_text('format=appimage\narchitecture=x86_64\nsource-commit=' + 'a'*40 + '\n')
                     (fixture / 'runtime-check.txt').write_text('fixture runtime check')
                     self.checksums(fixture)
                 previous = root / 'artifacts/linux' / format / 'previous'
@@ -224,19 +240,26 @@ case "$1" in
   volume) [[ "$2" != create ]] || echo test-volume ;;
   create) if [[ "$*" == *appimage* ]]; then echo appimage; else echo flatpak; fi ;;
   inspect) echo 0 ;;
-  cp) cp -a "$TEST_FIXTURES/${2%%:*}/." "$3" ;;
+  cp)
+    cp -a "$TEST_FIXTURES/${2%%:*}/." "$3"
+    cp "$TEST_PROJECT"/artifacts/.linux.*/context/.release-source/{application-source.tar.gz,source-commit.txt} "$3/"
+    sed -i '/^source-commit=/d' "$3/build-manifest.txt"
+    echo "source-commit=$(cat "$3/source-commit.txt")" >> "$3/build-manifest.txt"
+    (cd "$3" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS) ;;
 esac
 exit 0
 ''')
             docker.chmod(0o755)
             move = fake_bin / 'mv'
             move.write_text('''#!/bin/bash
-if [[ "$2" == */artifacts/.linux.*/appimage && "$3" == */artifacts/linux/appimage ]]; then exit 42; fi
+if [[ "$2" == */artifacts/.linux.*/appimage && "$3" == */artifacts/linux/appimage ]]; then echo rollback-triggered >&2; exit 42; fi
 exec /usr/bin/mv "$@"
 ''')
             move.chmod(0o755)
+            self.prepare_build_repo(root)
             result = subprocess.run(['bash', str(root / 'scripts/build-linux-docker.sh')], capture_output=True,
-                                    env=dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ['PATH'], TEST_FIXTURES=str(fixtures)))
+                                    env=dict(os.environ, PATH=str(fake_bin) + os.pathsep + os.environ['PATH'], TEST_FIXTURES=str(fixtures), TEST_PROJECT=str(root)))
+            self.assertIn(b'rollback-triggered', result.stderr)
             self.assertNotEqual(result.returncode, 0)
             for format in ['flatpak', 'appimage']:
                 output = root / 'artifacts/linux' / format

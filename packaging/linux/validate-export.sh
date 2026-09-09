@@ -6,6 +6,19 @@ test -s build-manifest.txt
 test -s LICENSE
 test -s application-source.tar.gz
 test -s SOURCE-NOTICE.txt
+test -s source-commit.txt
+grep -Ex '[0-9a-f]{40}' source-commit.txt >/dev/null
+grep -qx "source-commit=$(cat source-commit.txt)" build-manifest.txt
+# Only release files and dependency notices may be exported or uploaded.
+while IFS= read -r -d '' entry; do
+  case "${entry#./}" in
+    licenses|LICENSE|SOURCE-NOTICE.txt|SHA256SUMS|build-manifest.txt|application-source.tar.gz|source-commit.txt|toolchains.json|appimage-tools.json|media-sources.json|docker-image-id.txt) ;;
+    Tagrove-*.flatpak|flatpak-manifest.json|publisher.json) [[ "$format" == flatpak ]] ;;
+    Tagrove-*.AppImage|runtime-check.txt|debian-sources.tsv) [[ "$format" == appimage ]] ;;
+    Tagrove-*-native.tar.gz) [[ "$format" == native ]] ;;
+    *) echo "Unexpected release entry: $entry" >&2; exit 1 ;;
+  esac
+done < <(find . -mindepth 1 -maxdepth 1 -print0)
 test -d licenses
 test -s licenses/dependencies/index.json
 test -s SHA256SUMS

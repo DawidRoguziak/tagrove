@@ -12,6 +12,27 @@ Use Flatpak 1.16.6 or later for the direct bundle reinstall workflow. Debian 12'
 
 The application code is GPL-3.0-or-later, with [LICENSE](../../LICENSE) at the repository root. AppStream metadata is CC0-1.0. Dependency licenses remain attached to their respective code. Build outputs retain dependency manifests and discovered license texts, source URLs/checksums, resolved distribution package versions, and the application source used for that build. Inspect `SOURCE-NOTICE.txt` before redistribution and provide matching corresponding sources, including distribution patches, for bundled GPL/LGPL libraries. The dependency inventory is not a written source offer.
 
+## Privacy gate and release inputs
+
+Run `bun run privacy:check` or `python3 scripts/privacy-check.py` with Gitleaks 8.30.1 on `PATH`. `scripts/install-gitleaks.sh` downloads the pinned Linux x86_64 release and checks its SHA-256. Python 3.12 or later is required for source preparation.
+
+The gate scans every complete reachable Git object across local branches, remote-tracking branches and tags, including commit/tag metadata. It also checks tracked working files and staged blobs. It rejects shallow history, grafts and replacement refs. Gitleaks uses its default rules with decoding/archive traversal enabled, an explicit configuration and an empty ignore file. Local ignore settings and inline allow comments cannot suppress findings. Untracked and ignored working materials are outside this command's scope; release inputs come solely from a clean committed tree.
+
+The filename policy blocks environment/registry credentials, private-key filenames, databases, local archives and application working directories at any depth. Home-path detection covers Linux, macOS and Windows user directories. Two existing illustrative paths are allowed only in their owning documentation/test file. Container paths under `/root` are retained. This does not classify every possible personal identifier or approve screenshots; public images still need review. Example configuration requires an explicit reviewed change to both the ignore and scanner policies.
+
+`./scripts/build-linux-docker.sh --commit HEAD` audits history before preparing the Docker context. `application-source.tar.gz` contains exactly the selected commit's files, with neutral Git archive ownership. It excludes untracked/ignored data by construction. Archive attribute substitutions, generated source trees, symlinks and submodules are rejected. The recorded commit, archive bytes and checksums must match the export. Builds never archive the compiled working directory.
+
+After building each format, run:
+
+```bash
+python3 packaging/linux/audit-package.py appimage artifacts/linux/appimage
+python3 packaging/linux/audit-package.py flatpak artifacts/linux/flatpak
+```
+
+This validates the explicit export inventory and checksums, extracts the bundle into temporary storage, and scans its filenames, contents, ELF strings and corresponding sources. It requires binutils, Flatpak and OSTree. Findings print filenames and hashes, with raw secrets confined to temporary files removed on exit. The reviewed library findings file permits only exact combinations of library path, rule and finding digest. Its GnuTLS keys were compared with public 3.7.9 self-tests; the other entries are format markers and an error message. GTK SVG export paths from upstream assets are allowed only for a reviewed binary SHA-256. A changed dependency finding or binary fails until reviewed. The mpv text `fs-root/home/dos-drive` is a comment, not an absolute home directory.
+
+CI fetches full history and runs the repository gate and its regression tests. Packaging CI also audits each actual package before uploading an explicit list of bundles, corresponding sources, notices, manifests and checksums. A failed gate prevents that release artifact upload. Runtime evidence is generated using synthetic collections and retained separately only after the repository gate passes. Local `artifacts/` directories, session logs and historical backup archives are never a release upload list.
+
 ## Preparing a Flathub submission
 
 1. Choose an app ID you control and fill every field in `packaging/flatpak/publisher.json`. Use actual public screenshots and developer details.
@@ -32,7 +53,7 @@ AppImage uses Debian 12, a pinned Bun/Node/Rust toolchain and checksum-pinned li
 
 ## Verification
 
-Run `bun run test:packaging` or `python3 -m unittest discover -s packaging/tests -v` for source generation, publication validation, checksum inventory, duplicate-bundle rejection, failed-build preservation, and rollback after a later format fails to publish. Test fixtures use temporary directories.
+With the pinned Gitleaks on `PATH`, run `bun run test:privacy` for synthetic secrets, staged/history-only leaks, nested private files, shallow histories and exact source archives. Run `bun run test:packaging` or `python3 -m unittest discover -s packaging/tests -v` for source generation, publication validation, checksum inventory, duplicate-bundle rejection, failed-build preservation, and rollback after a later format fails to publish. Test fixtures use temporary directories.
 
 For each actual package, verify the SHA256SUMS file in its format directory. Flatpak export imports the generated bundle into a disposable OSTree repository and runs `ostree fsck`. Package builds check x86_64 ELF architecture, GTK/WebKit/libmpv linkage, EGL/GL entry points, ffmpeg/ffprobe execution and a generated image frame. AppImage checks its extracted WebKit helper processes. These checks do not establish GTK rendering, audio output or file-dialog behavior.
 

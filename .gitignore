@@ -24,16 +24,26 @@
 *.swp
 
 # Local configuration and logs
-/.env
-/.env.*
-!/.env.example
+.env
+.env.*
+.npmrc
+.pypirc
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+id_ecdsa*
 *.log
 
 # Local application data
-/media.db*
-/thumbs/
-/restore-staging/
-/instance.lock
+*.db
+*.db-*
+*.sqlite*
+thumbs/
+restore-staging/
+instance.lock
 
 # Operating-system metadata
 .DS_Store
@@ -42,3 +52,12 @@ Desktop.ini
 
 # Python packaging verification cache
 /packaging/**/__pycache__/
+
+# Local archives require explicit review before tracking
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+/.release-source/
+**/__pycache__/

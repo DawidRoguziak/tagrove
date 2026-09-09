@@ -1,0 +1,11 @@
+[
+  {
+    "path": "package/usr/lib/libgtk-3.so.0",
+    "binaryDigest": "9f73dfb86518b8be0b5c1b74dd245f245ee1483f960d6e0a7b5ca84edad79204",
+    "reason": "Embedded GTK SVG export metadata matches public Adwaita and HighContrast assets. Exception applies only to these exact binary bytes.",
+    "sources": [
+      "https://github.com/GNOME/gtk/blob/3.24.38/gtk/theme/Adwaita/assets/check-symbolic.svg",
+      "https://github.com/GNOME/gtk/blob/3.24.38/gtk/theme/HighContrast/assets/check-symbolic.svg"
+    ]
+  }
+]

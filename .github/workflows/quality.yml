@@ -9,6 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  privacy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          bash scripts/install-gitleaks.sh "$RUNNER_TEMP/privacy-tools"
+          echo "$RUNNER_TEMP/privacy-tools" >> "$GITHUB_PATH"
+      - run: python3 scripts/privacy-check.py
+      - run: python3 -m unittest discover -s scripts -p test_privacy.py -v
+
   frontend:
     name: Frontend and configuration
     runs-on: ubuntu-24.04

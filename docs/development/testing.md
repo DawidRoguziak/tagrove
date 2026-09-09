@@ -258,6 +258,12 @@ in place. SIGKILL/host crashes can leave a lock and temporary state; inspect rec
 process identities before manual recovery, never kill by process name or automatically
 remove a lock merely because a connection failed.
 
+## Privacy and source packaging regressions
+
+`bun run test:privacy` runs `scripts/test_privacy.py` against temporary Git repositories with the real Gitleaks 8.30.1 executable on `PATH`. It verifies historical and staged secrets, private home paths, nested configuration/databases/keys, shallow-clone rejection and source archives that match a clean commit. `bun run privacy:check` scans this checkout and all reachable history; it is not a scan of ignored working materials.
+
+`bun run test:packaging` also requires Gitleaks because failure/rollback fixtures pass through actual source preparation before their simulated Docker failures. They assert that the intended Docker/export failure was reached. For the real bundle audit and prerequisites, see [release privacy checks](linux-packaging.md#privacy-gate-and-release-inputs).
+
 ## Choosing the test level
 
 For documentation-only changes, verify local links/anchors, referenced commands and symbols, and `git diff --check`. Run an existing focused test only when it resolves a behavior claim. Builds, release scripts, and destructive desktop workflows are not documentation checks.

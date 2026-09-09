@@ -6,15 +6,15 @@ This page describes the setup and build behavior implemented by the current repo
 
 ## Prerequisites
 
-Linux packages target x86_64. The Docker workflow builds Flatpak against GNOME 50 and AppImage on Debian 12. The Arch-native executable remains an explicit build option. The host needs Docker, Bash, GNU file/coreutils/findutils/diffutils, and `flock`; Bun, Node, Rust, and media libraries are installed inside Docker. Python 3 is also needed on the host for the optional native archive validation and packaging regression tests.
+Linux packages target x86_64. The Docker workflow builds Flatpak against GNOME 50 and AppImage on Debian 12. The Arch-native executable remains an explicit build option. The host needs Docker, Bash, GNU file/coreutils/findutils/diffutils, `flock`, Python 3.12 or later, and Gitleaks 8.30.1. Bun, Node, Rust, and media libraries are installed inside Docker. Install the checksum-pinned scanner with `bash scripts/install-gitleaks.sh /path/to/tools` and add that directory to `PATH`. Package privacy inspection also needs binutils, Flatpak and OSTree.
 
 Toolchains remain Bun `1.4.0`, Node `22.22.0`, and Rust `1.98.0`. Portable builds verify the checksums in [toolchains.json](../../packaging/linux/toolchains.json). Keep `.nvmrc`, `packageManager`, `rust-toolchain.toml`, `Cargo.toml`, CI, and packaging pins aligned when updating a toolchain. Lockfiles change only when dependency resolution changes.
 
 ### Docker packages
 
 ```bash
-# Both Flatpak and AppImage
-./scripts/build-linux-docker.sh
+# Both Flatpak and AppImage from a clean, committed checkout
+./scripts/build-linux-docker.sh --commit HEAD
 # A single format
 ./scripts/build-linux-docker.sh --format flatpak
 ./scripts/build-linux-docker.sh --format appimage
@@ -22,9 +22,11 @@ Toolchains remain Bun `1.4.0`, Node `22.22.0`, and Rust `1.98.0`. Portable build
 ./scripts/build-linux-docker.sh --format native
 ```
 
+The build requires a clean checkout at the requested `--commit`, which defaults to `HEAD`, and a complete Git history. It runs the privacy gate, prepares a temporary Docker context from that Git tree, and creates `application-source.tar.gz` before compilation. Ignored local inputs never enter that context. Source preparation checks every archive file against Git, rejects symlinks/submodules and generated release inputs, and records `source-commit.txt`. The export must contain the same archive and commit record.
+
 Each successful export replaces only its format directory under `artifacts/linux/`. It contains one versioned application bundle, `SHA256SUMS`, a build manifest, application source, and dependency notices. Every requested format must build and validate before export starts. Failed builds and validation leave previous successful output in place. The build script never installs packages or changes launchers, executables, or application profiles. It uses ordinary Docker build/create/start/cp commands and does not require Buildx.
 
-Flatpak Builder runs in a digest-pinned GNOME 50 container with `--privileged`, as documented by [Flatpak's container workflow](https://github.com/flatpak/flatpak-github-actions/blob/master/README.md). Inputs are copied through Docker's filtered build context. Mounts are limited to that build's working/repository volume, a per-checkout Builder state cache, and the dedicated `tagrove-flatpak-downloads-x86_64` download cache. Neither the host home nor Docker socket is mounted. The working volume and containers are removed on exit; the dedicated build and checksum-verified download caches survive.
+Flatpak Builder runs in a digest-pinned GNOME 50 container with `--privileged`, as documented by [Flatpak's container workflow](https://github.com/flatpak/flatpak-github-actions/blob/master/README.md). Inputs come from the audited commit tree and pass through Docker's additional context exclusions. Mounts are limited to that build's working/repository volume, a per-checkout Builder state cache, and the dedicated `tagrove-flatpak-downloads-x86_64` download cache. Neither the host home nor Docker socket is mounted. The working volume and containers are removed on exit; the dedicated build and checksum-verified download caches survive.
 
 The first Flatpak container downloads checksum-verified sources generated from `bun.lock` and `Cargo.lock`. The second compiles and exports with Docker `--network none`, Flatpak network isolation, Bun `--offline`, and Cargo `--locked --offline`. It uses the populated Bun cache and Cargo vendor directory. AppImage likewise compiles and bundles in a container with networking disabled, after frozen dependency installation and checksum verification of its packaging tools. Host `node_modules`, Cargo targets, `dist`, app data and artifacts are excluded from Docker inputs.
 

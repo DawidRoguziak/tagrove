@@ -1,6 +1,6 @@
 # Testing
 
-Implementation entry points: [Vitest configuration](../../vitest.config.ts), [frontend test setup](../../src/test/setup.ts), [CI workflow](../../.github/workflows/quality.yml), [desktop harness](../../e2e/wdio.conf.js).
+Implementation entry points: [Vitest configuration](../../vitest.config.ts), [frontend test setup](../../src/test/setup.ts), [CI workflow](../../.github/workflows/privacy.yml), [desktop harness](../../e2e/wdio.conf.js).
 
 MediaTagger has four test layers. Use the lowest layer that can prove the behavior, then add a higher layer when the change crosses a contract or runtime boundary.
 
@@ -53,13 +53,13 @@ cargo test --manifest-path src-tauri/Cargo.toml module_or_test_name
 cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration test_name
 ```
 
-There is no numeric coverage threshold. CI runs the complete frontend and backend suites, but coverage output is not a merge gate.
+There is no numeric coverage threshold. Run the frontend and backend suites explicitly; they are not CI merge gates.
 
 ## Continuous integration
 
-`.github/workflows/quality.yml` runs on pull requests and pushes to `main`. The frontend job uses Node `22.22.0`, Bun `1.4.0`, and `bun install --frozen-lockfile`; it validates locales, generator tests, TypeScript application/configuration projects, Biome, production dependencies with `bun audit`, Vitest, and the production frontend build. The Rust job uses `rust-toolchain.toml`, `cargo fetch --locked`, pinned `cargo-audit 0.22.0`, rustfmt, locked Clippy with warnings denied, locked Cargo tests, and the RustSec gate matching `audit:rust`. The script and workflow currently exclude `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195`; they contain no rationale for those exclusions. Do not treat an excluded advisory as proof of safety.
+`.github/workflows/privacy.yml` is the only GitHub Actions workflow. It runs the `privacy` job on pull requests and pushes to `main`, using `ubuntu-24.04`. It fetches full history, installs checksum-pinned Gitleaks 8.30.1, scans publication data, and runs the privacy regression tests. It does not upload artifacts or use an Actions cache.
 
-CI does not launch an unqualified Tauri development or release profile and does not touch production app data. Real desktop E2E uses the isolated `.e2e` profile and must be run explicitly on a configured Linux host. The Docker release build does not run tests.
+Frontend checks, Rust checks, application tests, and Linux packaging are run explicitly with the commands documented here and in [Linux packaging](linux-packaging.md). The local `audit:rust` script excludes `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195` without recording a rationale; an excluded advisory is not proof of safety. Real desktop E2E uses the isolated `.e2e` profile on a configured Linux host. The Docker release build does not run tests.
 
 ## Frontend tests and Vitest
 

@@ -8,7 +8,7 @@ This page describes the setup and build behavior implemented by the current repo
 
 Linux packages target x86_64. The Docker workflow builds Flatpak against GNOME 50 and AppImage on Debian 12. The Arch-native executable remains an explicit build option. The host needs Docker, Bash, GNU file/coreutils/findutils/diffutils, `flock`, Python 3.12 or later, and Gitleaks 8.30.1. Bun, Node, Rust, and media libraries are installed inside Docker. Install the checksum-pinned scanner with `bash scripts/install-gitleaks.sh /path/to/tools` and add that directory to `PATH`. Package privacy inspection also needs binutils, Flatpak and OSTree.
 
-Toolchains remain Bun `1.4.0`, Node `22.22.0`, and Rust `1.98.0`. Portable builds verify the checksums in [toolchains.json](../../packaging/linux/toolchains.json). Keep `.nvmrc`, `packageManager`, `rust-toolchain.toml`, `Cargo.toml`, CI, and packaging pins aligned when updating a toolchain. Lockfiles change only when dependency resolution changes.
+Toolchains remain Bun `1.4.0`, Node `22.22.0`, and Rust `1.98.0`. Portable builds verify the checksums in [toolchains.json](../../packaging/linux/toolchains.json). Keep `.nvmrc`, `packageManager`, `rust-toolchain.toml`, `Cargo.toml`, and packaging pins aligned when updating a toolchain. Lockfiles change only when dependency resolution changes.
 
 ### Docker packages
 
@@ -145,9 +145,9 @@ The standalone `bun run tauri:build:e2e` consumes existing `dist/` because its o
 | `bunfig.toml` / `bun.lock` | Bun install policy and exact resolved JavaScript dependency graph. |
 | `tsconfig.json` | Frontend language target, strictness, module resolution, included source, and no-emit type checking. |
 | `tsconfig.node.json` | TypeScript project settings for `vite.config.ts` and `vitest.config.ts`. |
-| `.nvmrc` / `package.json` / `rust-toolchain.toml` | Exact CI/release Node, Bun, and Rust versions plus the Node compatibility range. |
+| `.nvmrc` / `package.json` / `rust-toolchain.toml` | Exact development/release Node, Bun, and Rust versions plus the Node compatibility range. |
 | `biome.json` | JavaScript/TypeScript lint rules and formatting policy for configuration and quality scripts. |
-| `.github/workflows/quality.yml` | Frozen frontend/configuration checks and locked Rust checks under non-production profiles. |
+| `.github/workflows/privacy.yml` | Full-history privacy scan and privacy regression tests on pull requests and pushes to `main`. |
 | `vite.config.ts` | React/Tailwind integration and the fixed, strict development port. Vite defaults own `dist/` and the preview port because they are not overridden. |
 | `src-tauri/tauri.conf.json` | Shared product metadata, frontend hooks/locations, release window/security settings, and icons. |
 | `src-tauri/tauri.linux.conf.json` | Disables bundling for ordinary native Linux builds. |

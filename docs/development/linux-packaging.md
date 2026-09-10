@@ -1,6 +1,6 @@
 # Linux packaging and release preparation
 
-[Setup and builds](setup-and-build.md#docker-packages) owns the build and direct Flatpak installation commands. The package build never installs application files on the host. Docker packaging CI builds Flatpak and AppImage, validates exports, and uploads workflow artifacts without publishing a release.
+[Setup and builds](setup-and-build.md#docker-packages) owns the build and direct Flatpak installation commands. The package build never installs application files on the host. Run Docker packaging and package verification explicitly with the documented scripts; GitHub Actions only runs the repository privacy checks.
 
 ## Sources and identity
 
@@ -31,7 +31,7 @@ python3 packaging/linux/audit-package.py flatpak artifacts/linux/flatpak
 
 This validates the explicit export inventory and checksums, extracts the bundle into temporary storage, and scans its filenames, contents, ELF strings and corresponding sources. It requires binutils, Flatpak and OSTree. Findings print filenames and hashes, with raw secrets confined to temporary files removed on exit. The reviewed library findings file permits only exact combinations of library path, rule and finding digest. Its GnuTLS keys were compared with public 3.7.9 self-tests; the other entries are format markers and an error message. GTK SVG export paths from upstream assets are allowed only for a reviewed binary SHA-256. A changed dependency finding or binary fails until reviewed. The mpv text `fs-root/home/dos-drive` is a comment, not an absolute home directory.
 
-CI fetches full history and runs the repository gate and its regression tests. Packaging CI also audits each actual package before uploading an explicit list of bundles, corresponding sources, notices, manifests and checksums. A failed gate prevents that release artifact upload. Runtime evidence is generated using synthetic collections and retained separately only after the repository gate passes. Local `artifacts/` directories, session logs and historical backup archives are never a release upload list.
+CI fetches full history and runs the repository gate and its regression tests. It does not build, audit, or upload packages. Before publishing a locally built package, run the package audit commands above and the runtime verification below. Review the selected bundles, corresponding sources, notices, manifests and checksums before uploading; local `artifacts/` directories, session logs and historical backup archives are never a release upload list.
 
 ## Preparing a Flathub submission
 
@@ -41,7 +41,7 @@ CI fetches full history and runs the repository gate and its regression tests. P
 4. Build that generated manifest with Flatpak Builder, run AppStream and desktop validation, and resolve Flathub linter findings. Verify screenshots, the owned publisher identity, source availability and distribution rights before submission.
 5. A maintainer must write and submit the application request. [Flathub's current policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy) requires disclosure of generated material and prohibits agents from authoring or opening submission interactions. Use the factual preparation notes in `packaging/flatpak/SUBMISSION.md` for review, not as a generated PR description.
 
-Public submission remains pending the publishing identity and public release. The eventual public archive and publication build have not been exercised by local packaging CI. A custom domain's ownership requires maintainer verification. This repository does not supply invented publisher details or screenshot links, and the preparation command does not submit anything.
+Public submission remains pending the publishing identity and public release. The eventual public archive and publication build have not been verified by the local package tests. A custom domain's ownership requires maintainer verification. This repository does not supply invented publisher details or screenshot links, and the preparation command does not submit anything.
 
 ## Container boundaries
 

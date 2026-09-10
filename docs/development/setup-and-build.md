@@ -118,6 +118,8 @@ bun run tauri:dev
 
 The base Tauri configuration expects the development URL `http://localhost:1420`; the strict Vite port ensures that URL cannot drift. The development overlay changes the product/window title to `Tagrove Dev` and the identifier to `com.example.mediatagger.dev`.
 
+The local development profile already has a collection of approximately 30,000 images. Use it for manual testing with `bun run tauri:dev` when a large library is useful. Continue to use temporary media fixtures for destructive tests.
+
 Do not use an unqualified debug Tauri launch with the base configuration. In debug builds, `src-tauri/src/lib.rs` permits startup only with `com.example.mediatagger.dev` or `com.example.mediatagger.e2e`. This protects both the local release profile and future publisher identities. Use the established dev or E2E overlay; arbitrary custom identifiers are rejected.
 
 ## Frontend build contract

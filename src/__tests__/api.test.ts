@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getStartupPopularTags,
   getAssetSummariesByIds,
   getAssetQueryPosition,
   setAssetsMediaGroupBulk,
@@ -39,6 +40,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("api contract", () => {
+  it("reads the ordered startup tag snapshot without arguments", async () => {
+    coreMocks.invoke.mockResolvedValueOnce(["travel", "cat"]);
+    await expect(getStartupPopularTags()).resolves.toEqual(["travel", "cat"]);
+    expect(coreMocks.invoke).toHaveBeenCalledWith("get_startup_popular_tags");
+  });
   it.each([{ status: "resolved", index: 201 }, { status: "missing" }, { status: "stale" }])("looks up query position through IPC: %j", async response => {
     coreMocks.invoke.mockResolvedValueOnce(response);
     await expect(getAssetQueryPosition(7, 202)).resolves.toEqual(response);

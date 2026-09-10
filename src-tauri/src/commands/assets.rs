@@ -7,14 +7,21 @@ use crate::{
     app::{locks::with_scan_and_thumb_lock, state::AppState},
     db::{self, list_assets_with_meta as db_list_assets_with_meta, AssetMetaFilter},
     models::{
-        AssetDetails, AssetPage, AssetQueryPageResult, AssetQueryPositionResult, AssetSummary, BulkMediaGroupSummary,
-        BulkTagMergeSummary, DeleteAssetSummary, DuplicateResolutionBatchInput,
-        DuplicateResolutionBatchSummary, DuplicateScanSummary, RenameAssetSummary,
-        SetAssetTagsSummary, StartAssetQueryResult, TagListPage,
+        AssetDetails, AssetPage, AssetQueryPageResult, AssetQueryPositionResult, AssetSummary,
+        BulkMediaGroupSummary, BulkTagMergeSummary, DeleteAssetSummary,
+        DuplicateResolutionBatchInput, DuplicateResolutionBatchSummary, DuplicateScanSummary,
+        RenameAssetSummary, SetAssetTagsSummary, StartAssetQueryResult, TagListPage,
     },
     services::{asset_mutation_service, asset_query_service, progress::emit_progress},
     utils::tags::normalize_and_validate_tags,
 };
+
+#[tauri::command]
+pub fn get_startup_popular_tags(
+    state: State<'_, crate::app::state::StartupPopularTags>,
+) -> Vec<String> {
+    state.tags().to_vec()
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { SelectedAsset } from "../../../types";
 
 interface UseLightboxKeyboardShortcutsOptions {
@@ -25,13 +25,41 @@ export function useLightboxKeyboardShortcuts({
   onZoomOut
 }: UseLightboxKeyboardShortcutsOptions) {
   const selectedKind = selected?.kind ?? null;
+  const active = enabled && selectedKind !== null;
+  const handlers = {
+    selectedKind,
+    isFullscreen,
+    onNavigatePrevious,
+    onNavigateNext,
+    onToggleFullscreen,
+    onResetZoom,
+    onZoomIn,
+    onZoomOut
+  };
+  const handlersRef = useRef(handlers);
+
+  useLayoutEffect(() => {
+    handlersRef.current = handlers;
+  });
 
   useEffect(() => {
-    if (!enabled || selectedKind === null) {
+    if (!active) {
       return;
     }
 
+    // An earlier keydown listener can reveal idle controls and commit a render.
+    // Keep this listener registered so that same event still reaches the shortcut.
     const onKeyDown = (event: KeyboardEvent) => {
+      const {
+        selectedKind,
+        isFullscreen,
+        onNavigatePrevious,
+        onNavigateNext,
+        onToggleFullscreen,
+        onResetZoom,
+        onZoomIn,
+        onZoomOut
+      } = handlersRef.current;
       const target = event.target instanceof HTMLElement ? event.target : null;
       const isFormControl =
         target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || Boolean(target?.isContentEditable);
@@ -100,5 +128,5 @@ export function useLightboxKeyboardShortcuts({
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [enabled, isFullscreen, onNavigateNext, onNavigatePrevious, onResetZoom, onToggleFullscreen, onZoomIn, onZoomOut, selectedKind]);
+  }, [active]);
 }

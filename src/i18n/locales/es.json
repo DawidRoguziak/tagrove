@@ -129,6 +129,7 @@
       "orderHeading": "Orden del grupo",
       "orderDescription": "Arrastra los elementos o usa las flechas en sus asas para definir el orden.",
       "dragHandleAria": "Reordena el elemento {{position}} arrastrándolo o con las flechas",
+      "mostUsedTags": "Etiquetas más usadas",
       "tagsHeading": "Etiquetas",
       "tagsMultipleDescription": "Las nuevas etiquetas se añaden a todos los elementos seleccionados. Las existentes se conservan.",
       "tagsSingleDescription": "Añade etiquetas o elimina las actuales del elemento seleccionado.",

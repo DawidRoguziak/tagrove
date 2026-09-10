@@ -129,6 +129,7 @@
       "orderHeading": "Pořadí skupiny",
       "orderDescription": "Pořadí nastavte přetažením položek nebo klávesami se šipkami na jejich úchytech.",
       "dragHandleAria": "Změnit pořadí položky {{position}} přetažením nebo klávesami se šipkami",
+      "mostUsedTags": "Nejpoužívanější štítky",
       "tagsHeading": "Tagy",
       "tagsMultipleDescription": "Nové tagy se přidají ke všem vybraným položkám. Stávající tagy zůstanou zachovány.",
       "tagsSingleDescription": "Přidejte tagy nebo odeberte aktuální tagy vybrané položky.",

@@ -129,6 +129,7 @@
       "orderHeading": "组内顺序",
       "orderDescription": "拖动项目，或在其手柄上使用方向键来设置顺序。",
       "dragHandleAria": "拖动第 {{position}} 项或使用方向键调整顺序",
+      "mostUsedTags": "最常用的标签",
       "tagsHeading": "标签",
       "tagsMultipleDescription": "新标签会添加到所有选定项目，现有标签将保留。",
       "tagsSingleDescription": "为所选项目添加标签或移除当前标签。",

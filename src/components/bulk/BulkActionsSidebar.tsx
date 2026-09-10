@@ -50,6 +50,7 @@ export function BulkActionsSidebar({
   const displayedTags =
     controller.tagMode === "single" ? controller.singleAssetTags : controller.appliedBulkTags;
   const controlsDisabled = controller.selectedAssetIds.size === 0 || controller.selectionBusy;
+  const tagControlsDisabled = controlsDisabled || controller.tagDetailsLoading || controller.tagDetailsFailed || controller.tagApplying;
   const normalizedGroupKey = normalizeGroupKey(controller.groupKeyDraft);
   const orderContext = JSON.stringify([selectionKey, normalizedGroupKey]);
   const hasOrderPanel = Boolean(normalizedGroupKey) && orderedAssets.length > 1;
@@ -381,8 +382,25 @@ export function BulkActionsSidebar({
           suggestionsStrategy="viewport"
           keepSuggestionsOpenOnPick
           autoSelectFirstSuggestion={false}
-          disabled={controlsDisabled || controller.tagDetailsLoading || controller.tagDetailsFailed || controller.tagApplying}
+          disabled={tagControlsDisabled}
         />
+        {controller.startupPopularTags.length > 0 ? (
+          <div className="grid gap-2" role="group" aria-label={t("bulk.panel.mostUsedTags")}>
+            <p className="m-0 text-xs text-base-content/65">{t("bulk.panel.mostUsedTags")}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {controller.startupPopularTags.map((tag) => (
+                <UiButton
+                  key={tag}
+                  className="h-auto! min-h-7! max-w-full break-all px-2! py-1! text-xs"
+                  disabled={tagControlsDisabled}
+                  onClick={() => addTagAndRestoreFocus(tag)}
+                >
+                  {tag}
+                </UiButton>
+              ))}
+            </div>
+          </div>
+        ) : null}
         {controller.tagDetailsFailed ? (
           <UiAlert tone="error" title={t("bulk.panel.tagLoadFailedTitle")}>
             <div className="grid gap-2">

@@ -26,7 +26,7 @@ function setup(initial = [asset(1), asset(2, true)], favoritesOnly = false) {
     const assetTagState = useAssetTagState();
     const bulk = useBulkSelectionController({
       assets, setAssets, assetTagState, refresh, onFavoritesChanged,
-      appliedFavoritesOnly: favoritesOnly, knownTags: [], settingsViewOpen: false,
+      appliedFavoritesOnly: favoritesOnly, knownTags: [], startupPopularTags: [], settingsViewOpen: false,
       queueThumbnailsByIds: vi.fn(), refreshKnownTags: vi.fn(async () => [])
     });
     return { bulk, assets, setAssets, assetTagState };

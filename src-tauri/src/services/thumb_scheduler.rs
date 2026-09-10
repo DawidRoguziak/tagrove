@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    num::NonZeroUsize,
     panic::{catch_unwind, AssertUnwindSafe},
     path::{Path, PathBuf},
     sync::{
@@ -12,10 +13,46 @@ use std::{
 
 use crate::thumbs;
 
-/// Hard cap on jobs that may sit in the scheduler queues at once. Enqueueing
+/// Hard cap on distinct queued and running jobs combined. Enqueueing
 /// beyond this bound fails fast instead of growing memory without limits.
 pub const MAX_PENDING_JOBS: usize = 2048;
 pub const MAX_WAITERS_PER_JOB: usize = 256;
+
+#[derive(Clone, Copy)]
+struct ThumbnailConcurrency {
+    browsing: usize,
+    bulk: usize,
+}
+
+impl ThumbnailConcurrency {
+    fn from_parallelism(parallelism: Option<NonZeroUsize>) -> Self {
+        Self {
+            browsing: parallelism
+                .map(|count| count.get().saturating_sub(2).clamp(2, 8))
+                .unwrap_or(4),
+            bulk: parallelism.map(NonZeroUsize::get).unwrap_or(4),
+        }
+    }
+
+    fn bulk_in_flight_limit(self) -> usize {
+        self.bulk.saturating_mul(3).clamp(24, MAX_PENDING_JOBS)
+    }
+}
+
+/// Restores browsing admission even when the bulk coordinator unwinds.
+#[must_use]
+pub(crate) struct BulkModeGuard {
+    shared: Arc<SchedulerShared>,
+}
+
+impl Drop for BulkModeGuard {
+    fn drop(&mut self) {
+        let mut state = self.shared.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.bulk_scopes -= 1;
+        drop(state);
+        self.shared.condvar.notify_all();
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThumbnailPriority {
@@ -59,6 +96,9 @@ struct SchedulerShared {
 }
 
 struct SchedulerState {
+    concurrency: ThumbnailConcurrency,
+    bulk_scopes: usize,
+    active_jobs: usize,
     jobs: HashMap<String, ScheduledJob>,
     high_queue: VecDeque<String>,
     low_queue: VecDeque<String>,
@@ -79,6 +119,14 @@ struct JobWaiter {
 type TaskProcessor = Arc<dyn Fn(&Path, &ThumbnailTask) -> Option<String> + Send + Sync + 'static>;
 
 impl ThumbnailScheduler {
+    pub fn from_available_parallelism(ffmpeg_path: PathBuf) -> Self {
+        Self::with_concurrency_and_processor(
+            ThumbnailConcurrency::from_parallelism(thread::available_parallelism().ok()),
+            ffmpeg_path,
+            Arc::new(process_thumbnail_task),
+        )
+    }
+
     pub fn new(worker_count: usize, ffmpeg_path: PathBuf) -> Self {
         Self::with_processor(worker_count, ffmpeg_path, Arc::new(process_thumbnail_task))
     }
@@ -102,6 +150,25 @@ impl ThumbnailScheduler {
     /// block forever waiting for results that can never arrive.
     pub fn worker_spawn_failures(&self) -> usize {
         self.shared.worker_spawn_failures.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn enter_bulk_mode(&self) -> Result<BulkModeGuard, String> {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .map_err(|e| format!("thumbnail scheduler lock error: {e}"))?;
+        state.bulk_scopes += 1;
+        drop(state);
+        self.shared.condvar.notify_all();
+        Ok(BulkModeGuard {
+            shared: Arc::clone(&self.shared),
+        })
+    }
+
+    pub(crate) fn bulk_in_flight_limit(&self) -> usize {
+        let state = self.shared.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.concurrency.bulk_in_flight_limit()
     }
 
     pub fn is_healthy(&self) -> bool {
@@ -202,8 +269,26 @@ impl ThumbnailScheduler {
         ffmpeg_path: PathBuf,
         processor: TaskProcessor,
     ) -> Self {
+        Self::with_concurrency_and_processor(
+            ThumbnailConcurrency {
+                browsing: worker_count.max(1),
+                bulk: worker_count.max(1),
+            },
+            ffmpeg_path,
+            processor,
+        )
+    }
+
+    fn with_concurrency_and_processor(
+        concurrency: ThumbnailConcurrency,
+        ffmpeg_path: PathBuf,
+        processor: TaskProcessor,
+    ) -> Self {
         let shared = Arc::new(SchedulerShared {
             state: Mutex::new(SchedulerState {
+                concurrency,
+                bulk_scopes: 0,
+                active_jobs: 0,
                 jobs: HashMap::new(),
                 high_queue: VecDeque::new(),
                 low_queue: VecDeque::new(),
@@ -215,7 +300,7 @@ impl ThumbnailScheduler {
             worker_spawn_failures: AtomicUsize::new(0),
         });
 
-        let threads = worker_count.max(1);
+        let threads = concurrency.browsing.max(concurrency.bulk);
         for idx in 0..threads {
             let worker_shared = Arc::clone(&shared);
             let spawn_result = thread::Builder::new()
@@ -248,6 +333,7 @@ fn worker_loop(shared: Arc<SchedulerShared>) {
                     if task.kind == "video" {
                         state.active_videos += 1;
                     }
+                    state.active_jobs += 1;
                     break (key, task);
                 }
 
@@ -281,6 +367,7 @@ fn worker_loop(shared: Arc<SchedulerShared>) {
             if task.kind == "video" {
                 state.active_videos = state.active_videos.saturating_sub(1);
             }
+            state.active_jobs -= 1;
             let waiters = state
                 .jobs
                 .remove(&key)
@@ -301,6 +388,14 @@ fn worker_loop(shared: Arc<SchedulerShared>) {
 }
 
 fn pop_runnable_key(state: &mut SchedulerState) -> Option<String> {
+    let (total_limit, video_limit) = if state.bulk_scopes > 0 {
+        (state.concurrency.bulk, state.concurrency.bulk)
+    } else {
+        (state.concurrency.browsing, 2)
+    };
+    if state.active_jobs >= total_limit {
+        return None;
+    }
     for high_priority in [true, false] {
         let position = {
             let queue = if high_priority {
@@ -312,7 +407,7 @@ fn pop_runnable_key(state: &mut SchedulerState) -> Option<String> {
                 state
                     .jobs
                     .get(key)
-                    .map(|job| job.task.kind != "video" || state.active_videos < 2)
+                    .map(|job| job.task.kind != "video" || state.active_videos < video_limit)
                     .unwrap_or(true)
             })
         };
@@ -360,6 +455,55 @@ fn process_thumbnail_task(ffmpeg_path: &Path, task: &ThumbnailTask) -> Option<St
     }
 
     Some(task.target_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    pub const WAIT: Duration = Duration::from_secs(5);
+
+    pub struct StartedJob {
+        pub asset_id: i64,
+        pub release: Sender<()>,
+    }
+
+    pub fn controlled_scheduler(cpus: usize) -> (ThumbnailScheduler, Receiver<StartedJob>) {
+        let (started_tx, started_rx) = mpsc::channel();
+        let scheduler = ThumbnailScheduler::with_concurrency_and_processor(
+            ThumbnailConcurrency::from_parallelism(NonZeroUsize::new(cpus)),
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                let (release, wait) = mpsc::channel();
+                started_tx
+                    .send(StartedJob {
+                        asset_id: task.asset_id,
+                        release,
+                    })
+                    .unwrap();
+                wait.recv_timeout(WAIT).expect("test must release the job");
+                Some(task.target_path.to_string_lossy().into_owned())
+            }),
+        );
+        assert!(scheduler.is_healthy());
+        (scheduler, started_rx)
+    }
+
+    pub fn wait_for_pending(scheduler: &ThumbnailScheduler, expected: usize) {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let count = scheduler.shared.state.lock().unwrap().jobs.len();
+            if count == expected {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "expected {expected} pending jobs, got {count}"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -621,6 +765,161 @@ mod tests {
             .recv_timeout(Duration::from_secs(2))
             .expect("healthy result timeout");
         assert!(ok_result.thumb_path.is_some());
+    }
+
+    #[test]
+    fn cpu_capacity_preserves_browsing_and_scales_bulk_window() {
+        for (cpus, browsing, bulk, window) in [
+            (None, 4, 4, 24),
+            (Some(1), 2, 1, 24),
+            (Some(2), 2, 2, 24),
+            (Some(8), 6, 8, 24),
+            (Some(16), 8, 16, 48),
+            (Some(32), 8, 32, 96),
+            (Some(256), 8, 256, 768),
+            (Some(1024), 8, 1024, 2048),
+            (Some(usize::MAX), 8, usize::MAX, 2048),
+        ] {
+            let limits = super::ThumbnailConcurrency::from_parallelism(
+                cpus.and_then(std::num::NonZeroUsize::new),
+            );
+            assert_eq!(
+                (limits.browsing, limits.bulk, limits.bulk_in_flight_limit()),
+                (browsing, bulk, window)
+            );
+        }
+    }
+
+    #[test]
+    fn bulk_runs_one_job_per_cpu_including_videos() {
+        use super::test_support::{controlled_scheduler, WAIT};
+        for cpus in [1, 2, 8, 16, 32] {
+            let (scheduler, started) = controlled_scheduler(cpus);
+            for kind in ["image", "video"] {
+                let bulk = scheduler.enter_bulk_mode().unwrap();
+                let mut results = Vec::new();
+                for id in 0..cpus + 1 {
+                    let mut job = task(id as i64, &format!("bulk-{kind}-{id}.jpg"));
+                    job.kind = kind.into();
+                    results.push(scheduler.enqueue(job, ThumbnailPriority::Low).unwrap());
+                }
+                let running: Vec<_> = (0..cpus)
+                    .map(|_| started.recv_timeout(WAIT).unwrap())
+                    .collect();
+                assert!(started.recv_timeout(Duration::from_millis(50)).is_err());
+                for job in running {
+                    job.release.send(()).unwrap();
+                }
+                started
+                    .recv_timeout(WAIT)
+                    .unwrap()
+                    .release
+                    .send(())
+                    .unwrap();
+                for result in results {
+                    assert!(result.recv_timeout(WAIT).unwrap().thumb_path.is_some());
+                }
+                drop(bulk);
+            }
+        }
+    }
+
+    #[test]
+    fn browsing_limits_return_while_bulk_jobs_are_still_running() {
+        use super::test_support::{controlled_scheduler, WAIT};
+        let (scheduler, started) = controlled_scheduler(16);
+        for (kind, browsing_limit) in [("image", 8), ("video", 2)] {
+            let mut results = Vec::new();
+            for id in 0..20 {
+                let mut job = task(id, &format!("transition-{kind}-{id}.jpg"));
+                job.kind = kind.into();
+                results.push(scheduler.enqueue(job, ThumbnailPriority::Low).unwrap());
+            }
+            let mut running: Vec<_> = (0..browsing_limit)
+                .map(|_| started.recv_timeout(WAIT).unwrap())
+                .collect();
+            assert!(started.recv_timeout(Duration::from_millis(50)).is_err());
+            let bulk = scheduler.enter_bulk_mode().unwrap();
+            running.extend((browsing_limit..16).map(|_| started.recv_timeout(WAIT).unwrap()));
+            assert!(started.recv_timeout(Duration::from_millis(50)).is_err());
+            // Unwinding with active decoders must restore admission too.
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                let _bulk = bulk;
+                panic!("injected bulk coordinator unwind");
+            }));
+            assert!(unwind.is_err());
+            // Finishing down to the browsing cap must not admit any queued job.
+            for job in running.drain(..16 - browsing_limit) {
+                job.release.send(()).unwrap();
+            }
+            assert!(started.recv_timeout(Duration::from_millis(50)).is_err());
+            running.pop().unwrap().release.send(()).unwrap();
+            let next = started.recv_timeout(WAIT).unwrap();
+            assert!(started.recv_timeout(Duration::from_millis(50)).is_err());
+            next.release.send(()).unwrap();
+            for job in running {
+                job.release.send(()).unwrap();
+            }
+            for _ in 0..3 {
+                started
+                    .recv_timeout(WAIT)
+                    .unwrap()
+                    .release
+                    .send(())
+                    .unwrap();
+            }
+            for result in results {
+                result.recv_timeout(WAIT).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn bulk_keeps_priority_promotion_deduplication_and_queue_bound() {
+        use super::test_support::{controlled_scheduler, WAIT};
+        let (scheduler, started) = controlled_scheduler(1);
+        let _bulk = scheduler.enter_bulk_mode().unwrap();
+        let (tx, rx) = mpsc::channel();
+        scheduler
+            .enqueue_with_sender(task(0, "queue-0.jpg"), ThumbnailPriority::Low, tx.clone())
+            .unwrap();
+        let first = started.recv_timeout(WAIT).unwrap();
+        for id in 1..super::MAX_PENDING_JOBS {
+            scheduler
+                .enqueue_with_sender(
+                    task(id as i64, &format!("queue-{id}.jpg")),
+                    ThumbnailPriority::Low,
+                    tx.clone(),
+                )
+                .unwrap();
+        }
+        assert!(scheduler
+            .enqueue(task(9999, "overflow.jpg"), ThumbnailPriority::High)
+            .unwrap_err()
+            .contains("full"));
+        // Attaching a visible waiter still works at capacity and promotes the job.
+        scheduler
+            .enqueue_with_sender(task(9999, "queue-50.jpg"), ThumbnailPriority::High, tx)
+            .unwrap();
+        first.release.send(()).unwrap();
+        let promoted = started.recv_timeout(WAIT).unwrap();
+        assert_eq!(promoted.asset_id, 50);
+        promoted.release.send(()).unwrap();
+        for _ in 2..super::MAX_PENDING_JOBS {
+            started
+                .recv_timeout(WAIT)
+                .unwrap()
+                .release
+                .send(())
+                .unwrap();
+        }
+        let mut ids = Vec::new();
+        for _ in 0..=super::MAX_PENDING_JOBS {
+            ids.push(rx.recv_timeout(WAIT).unwrap().asset_id);
+        }
+        assert_eq!(ids.iter().filter(|&&id| id == 50).count(), 1);
+        assert!(ids.contains(&9999));
+        assert!(started.try_recv().is_err());
     }
 
     #[test]

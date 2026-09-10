@@ -26,10 +26,10 @@ use commands::video::{
 use commands::{
     assets::{
         apply_duplicate_resolution_batch, delete_asset, find_duplicate_assets, get_asset_details,
-        get_asset_query_page, get_asset_query_position, get_asset_summaries_by_ids, list_assets,
-        list_tags, merge_asset_tags_bulk, set_asset_favorite, set_asset_media_group,
-        set_asset_tags, set_assets_media_group_bulk, start_asset_query,
-        toggle_assets_favorite_bulk,
+        get_asset_query_page, get_asset_query_position, get_asset_summaries_by_ids,
+        get_startup_popular_tags, list_assets, list_tags, merge_asset_tags_bulk,
+        set_asset_favorite, set_asset_media_group, set_asset_tags, set_assets_media_group_bulk,
+        start_asset_query, toggle_assets_favorite_bulk,
     },
     import_export::{
         clear_library_data, export_db_bundle, export_tags_csv, import_db_bundle, import_tags_csv,
@@ -78,6 +78,11 @@ pub fn run() {
             db::init_schema(&conn)?;
             conn.pragma_update(None, "synchronous", "FULL")?;
             asset_mutation_service::recover_pending_file_operations(&conn)?;
+            let popular_tags = db::list_popular_tags(&conn).unwrap_or_else(|error| {
+                eprintln!("Failed to calculate startup popular tags: {error}");
+                Vec::new()
+            });
+            app.manage(app::state::StartupPopularTags::new(popular_tags));
             app.manage(app::state::StartupScanState::new(db::list_scan_root_settings(&conn)?));
 
             let resource_dir = app
@@ -98,7 +103,7 @@ pub fn run() {
             video_surface::setup(&main_window, &player)?;
             app.manage(player);
             let thumb_scheduler =
-                ThumbnailScheduler::new(resolve_thumbnail_worker_count(), ffmpeg_path.clone());
+                ThumbnailScheduler::from_available_parallelism(ffmpeg_path.clone());
             // Demand calls block on scheduler results; a scheduler whose
             // workers never started would hang every thumbnail command.
             // Refuse the startup instead of entering a wedged state.
@@ -155,6 +160,7 @@ pub fn run() {
             find_duplicate_assets,
             apply_duplicate_resolution_batch,
             list_tags,
+            get_startup_popular_tags,
             export_tags_csv,
             import_tags_csv,
             export_db_bundle,
@@ -227,10 +233,4 @@ fn is_executable_file(path: &Path) -> bool {
 
     use std::os::unix::fs::PermissionsExt;
     metadata.permissions().mode() & 0o111 != 0
-}
-
-fn resolve_thumbnail_worker_count() -> usize {
-    std::thread::available_parallelism()
-        .map(|count| count.get().saturating_sub(2).clamp(2, 8))
-        .unwrap_or(4)
 }

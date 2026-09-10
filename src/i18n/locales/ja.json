@@ -129,6 +129,7 @@
       "orderHeading": "グループ内の順序",
       "orderDescription": "項目をドラッグするか、ハンドル上で矢印キーを使って順序を設定します。",
       "dragHandleAria": "項目 {{position}} をドラッグまたは矢印キーで並べ替え",
+      "mostUsedTags": "よく使われるタグ",
       "tagsHeading": "タグ",
       "tagsMultipleDescription": "新しいタグを選択したすべての項目に追加します。既存のタグは保持されます。",
       "tagsSingleDescription": "選択項目のタグを追加または削除します。",

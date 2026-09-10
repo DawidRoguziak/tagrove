@@ -129,6 +129,7 @@
       "orderHeading": "Ordine del gruppo",
       "orderDescription": "Trascina gli elementi o usa i tasti freccia sulle maniglie per impostare l’ordine.",
       "dragHandleAria": "Riordina l’elemento {{position}} trascinandolo o con i tasti freccia",
+      "mostUsedTags": "Tag più usati",
       "tagsHeading": "Tag",
       "tagsMultipleDescription": "I nuovi tag vengono aggiunti a tutti gli elementi selezionati. I tag esistenti vengono mantenuti.",
       "tagsSingleDescription": "Aggiungi tag o rimuovi quelli correnti dall’elemento selezionato.",

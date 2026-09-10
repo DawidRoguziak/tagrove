@@ -23,7 +23,6 @@ use crate::{
     thumbs,
 };
 
-const BULK_IN_FLIGHT_LIMIT: usize = 24;
 const RESULT_WAIT_TIMEOUT_MS: u64 = 50;
 /// Wall-clock budget for a single demand call waiting on its scheduler job.
 /// Covers a 45 s video render plus one zero-seek fallback and queueing delay;
@@ -52,6 +51,19 @@ struct PendingRenderTask {
 struct PendingPageTask {
     record_version: i64,
     version: crate::thumbs::SourceVersion,
+}
+
+struct BulkRenderStateGuard<'a>(&'a AppState);
+
+impl Drop for BulkRenderStateGuard<'_> {
+    fn drop(&mut self) {
+        self.0
+            .thumbnail_render_all_cancel_requested
+            .store(false, Ordering::SeqCst);
+        self.0
+            .thumbnail_render_all_running
+            .store(false, Ordering::SeqCst);
+    }
 }
 
 fn source_version_for(asset: &crate::models::ThumbnailAsset) -> crate::thumbs::SourceVersion {
@@ -106,16 +118,10 @@ fn render_bulk_thumbnails(
         .thumbnail_render_all_cancel_requested
         .store(false, Ordering::SeqCst);
 
-    let result = render_bulk_thumbnails_inner(state, permit, app, mode);
-
-    state
-        .thumbnail_render_all_running
-        .store(false, Ordering::SeqCst);
-    state
-        .thumbnail_render_all_cancel_requested
-        .store(false, Ordering::SeqCst);
-
-    result
+    // Drop the scheduler scope before allowing another bulk coordinator in.
+    let _running = BulkRenderStateGuard(state);
+    let _bulk = state.thumb_scheduler.enter_bulk_mode()?;
+    render_bulk_thumbnails_inner(state, permit, app, mode)
 }
 
 fn render_bulk_thumbnails_inner(
@@ -145,6 +151,9 @@ fn render_bulk_thumbnails_inner(
     let (completion_tx, completion_rx) = mpsc::channel::<ThumbnailTaskResult>();
     let generation = state.thumbnail_generation.load(Ordering::SeqCst);
 
+    let in_flight_limit = state.thumb_scheduler.bulk_in_flight_limit();
+    let candidate_page_size = 512.max(in_flight_limit);
+
     let mut stale = 0usize;
     let mut after = 0;
     loop {
@@ -152,7 +161,7 @@ fn render_bulk_thumbnails_inner(
             &*permit.connection()?,
             after,
             ceiling,
-            512,
+            candidate_page_size,
             matches!(mode, BulkRenderMode::FailedOnly),
         )?;
         if candidates.is_empty() {
@@ -236,7 +245,7 @@ fn render_bulk_thumbnails_inner(
                 },
             );
 
-            while pending.len() >= BULK_IN_FLIGHT_LIMIT {
+            while pending.len() >= in_flight_limit {
                 let Some(result) = wait_next_render_result(
                     &completion_rx,
                     &state.thumbnail_render_all_cancel_requested,
@@ -1335,6 +1344,288 @@ mod tests {
 
         assert_eq!(removed, 0);
         assert_eq!(fs::read(&outside).expect("outside survives"), b"outside");
+    }
+
+    fn controlled_bulk_state(
+        retry: bool,
+    ) -> (
+        tempfile::TempDir,
+        Arc<AppState>,
+        mpsc::Receiver<crate::services::thumb_scheduler::test_support::StartedJob>,
+    ) {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        for id in 0..60 {
+            let source = dir.path().join(format!("source-{id}.png"));
+            fs::write(&source, b"controlled processor fixture").unwrap();
+            db::upsert_asset(&conn, &new_asset(&source, 1, None)).unwrap();
+        }
+        if retry {
+            for id in 1..=60 {
+                db::record_thumbnail_failure(&conn, id, 1, Some("retry fixture")).unwrap();
+            }
+        }
+        let mut state = create_test_state(&db_path, &dir.path().join("thumbs"));
+        let (scheduler, started) =
+            crate::services::thumb_scheduler::test_support::controlled_scheduler(16);
+        state.thumb_scheduler = scheduler;
+        (dir, Arc::new(state), started)
+    }
+
+    fn assert_browsing_admission(
+        state: &AppState,
+        started: &mpsc::Receiver<crate::services::thumb_scheduler::test_support::StartedJob>,
+    ) {
+        use crate::services::thumb_scheduler::{test_support::WAIT, ThumbnailPriority};
+        for (kind, limit) in [("image", 8), ("video", 2)] {
+            let mut results = Vec::new();
+            for id in 0..12 {
+                results.push(
+                    state
+                        .thumb_scheduler
+                        .enqueue(
+                            ThumbnailTask {
+                                operation: None,
+                                asset_id: id,
+                                source_path: "browsing-source".into(),
+                                target_path: format!("browsing-{kind}-{id}.jpg").into(),
+                                kind: kind.into(),
+                                duration_ms: None,
+                                source_version: crate::thumbs::SourceVersion::new(
+                                    "browsing-source",
+                                    1,
+                                    0,
+                                ),
+                            },
+                            ThumbnailPriority::High,
+                        )
+                        .unwrap(),
+                );
+            }
+            let running: Vec<_> = (0..limit)
+                .map(|_| started.recv_timeout(WAIT).unwrap())
+                .collect();
+            assert!(started
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err());
+            for job in running {
+                job.release.send(()).unwrap();
+            }
+            for _ in limit..12 {
+                started
+                    .recv_timeout(WAIT)
+                    .unwrap()
+                    .release
+                    .send(())
+                    .unwrap();
+            }
+            for result in results {
+                result.recv_timeout(WAIT).unwrap();
+            }
+        }
+        assert!(!state.thumbnail_render_all_running.load(Ordering::SeqCst));
+        assert!(!state
+            .thumbnail_render_all_cancel_requested
+            .load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn both_bulk_actions_expand_submission_window_and_restore_browsing_after_success() {
+        use crate::services::thumb_scheduler::test_support::{wait_for_pending, WAIT};
+        for retry in [false, true] {
+            let (_dir, state, started) = controlled_bulk_state(retry);
+            let worker_state = Arc::clone(&state);
+            let (done_tx, done_rx) = mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let permit = worker_state.database.admit().unwrap();
+                let render = if retry {
+                    super::render_failed_thumbnails
+                } else {
+                    super::render_all_thumbnails
+                };
+                done_tx
+                    .send(render(&worker_state, &permit, &|_| Ok(())))
+                    .unwrap();
+            });
+            wait_for_pending(&state.thumb_scheduler, 48);
+            let running: Vec<_> = (0..16)
+                .map(|_| started.recv_timeout(WAIT).unwrap())
+                .collect();
+            assert!(started
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err());
+            for job in running {
+                job.release.send(()).unwrap();
+            }
+            for _ in 16..60 {
+                started
+                    .recv_timeout(WAIT)
+                    .unwrap()
+                    .release
+                    .send(())
+                    .unwrap();
+            }
+            let summary = done_rx.recv_timeout(WAIT).unwrap().unwrap();
+            worker.join().unwrap();
+            assert_eq!(
+                (summary.generated, summary.processed, summary.failed),
+                (60, 60, 0)
+            );
+            assert!(!summary.cancelled);
+            assert_browsing_admission(&state, &started);
+        }
+    }
+
+    #[test]
+    fn bulk_cancellation_restores_browsing_before_remaining_jobs_finish() {
+        use crate::services::thumb_scheduler::test_support::{wait_for_pending, WAIT};
+        let (_dir, state, started) = controlled_bulk_state(false);
+        let worker_state = Arc::clone(&state);
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let permit = worker_state.database.admit().unwrap();
+            done_tx
+                .send(super::render_all_thumbnails(
+                    &worker_state,
+                    &permit,
+                    &|_| Ok(()),
+                ))
+                .unwrap();
+        });
+        wait_for_pending(&state.thumb_scheduler, 48);
+        let mut running: Vec<_> = (0..16)
+            .map(|_| started.recv_timeout(WAIT).unwrap())
+            .collect();
+        let permit = state.database.admit().unwrap();
+        assert!(super::render_failed_thumbnails(&state, &permit, &|_| Ok(())).is_err());
+        assert!(cancel_render_all_thumbnails(&state).unwrap());
+        let summary = done_rx.recv_timeout(WAIT).unwrap().unwrap();
+        worker.join().unwrap();
+        assert!(summary.cancelled);
+        assert_eq!(summary.processed, 0);
+        for job in running.drain(..8) {
+            job.release.send(()).unwrap();
+        }
+        assert!(started
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+        running.pop().unwrap().release.send(()).unwrap();
+        let next = started.recv_timeout(WAIT).unwrap();
+        assert!(started
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+        next.release.send(()).unwrap();
+        for job in running {
+            job.release.send(()).unwrap();
+        }
+        for _ in 17..48 {
+            started
+                .recv_timeout(WAIT)
+                .unwrap()
+                .release
+                .send(())
+                .unwrap();
+        }
+        wait_for_pending(&state.thumb_scheduler, 0);
+        assert_browsing_admission(&state, &started);
+    }
+
+    #[test]
+    fn bulk_error_and_unwind_restore_browsing_and_running_flags() {
+        for panic in [false, true] {
+            let (_dir, state, started) = controlled_bulk_state(false);
+            let permit = state.database.admit().unwrap();
+            let sink = |_: crate::models::ScanProgress| -> crate::error::AppResult<()> {
+                if panic {
+                    panic!("injected coordinator panic");
+                }
+                permit
+                    .connection()
+                    .unwrap()
+                    .execute("DROP TABLE assets", [])
+                    .unwrap();
+                Ok(())
+            };
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                super::render_all_thumbnails(&state, &permit, &sink)
+            }));
+            if panic {
+                assert!(result.is_err());
+            } else {
+                assert!(result.unwrap().is_err());
+            }
+            assert_browsing_admission(&state, &started);
+        }
+    }
+
+    #[test]
+    fn bulk_enqueue_error_restores_limits_while_shared_jobs_are_running() {
+        use crate::services::thumb_scheduler::{
+            test_support::{wait_for_pending, WAIT},
+            ThumbnailPriority, MAX_PENDING_JOBS,
+        };
+        let (_dir, state, started) = controlled_bulk_state(false);
+        for id in 0..MAX_PENDING_JOBS {
+            state
+                .thumb_scheduler
+                .enqueue(
+                    ThumbnailTask {
+                        operation: None,
+                        asset_id: id as i64,
+                        source_path: "shared-source".into(),
+                        target_path: format!("shared-{id}.jpg").into(),
+                        kind: "video".into(),
+                        duration_ms: None,
+                        source_version: crate::thumbs::SourceVersion::new("shared-source", 1, 0),
+                    },
+                    ThumbnailPriority::Low,
+                )
+                .unwrap();
+        }
+        let mut running: Vec<_> = (0..2)
+            .map(|_| started.recv_timeout(WAIT).unwrap())
+            .collect();
+        let extra = Mutex::new(Vec::new());
+        let sink = |_: crate::models::ScanProgress| -> crate::error::AppResult<()> {
+            // Wait until the bulk scope has woken all 16 workers before the
+            // coordinator hits its first enqueue against the full scheduler.
+            extra
+                .lock()
+                .unwrap()
+                .extend((2..16).map(|_| started.recv_timeout(WAIT).unwrap()));
+            Ok(())
+        };
+        let permit = state.database.admit().unwrap();
+        assert!(super::render_all_thumbnails(&state, &permit, &sink)
+            .unwrap_err()
+            .to_string()
+            .contains("full"));
+        running.extend(extra.into_inner().unwrap());
+        for job in running.drain(..14) {
+            job.release.send(()).unwrap();
+        }
+        assert!(started
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+        running.pop().unwrap().release.send(()).unwrap();
+        let next = started.recv_timeout(WAIT).unwrap();
+        assert!(started
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+        next.release.send(()).unwrap();
+        running.pop().unwrap().release.send(()).unwrap();
+        for _ in 17..MAX_PENDING_JOBS {
+            started
+                .recv_timeout(WAIT)
+                .unwrap()
+                .release
+                .send(())
+                .unwrap();
+        }
+        wait_for_pending(&state.thumb_scheduler, 0);
+        assert_browsing_admission(&state, &started);
     }
 
     fn insert_scanned_asset(

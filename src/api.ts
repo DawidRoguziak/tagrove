@@ -210,6 +210,10 @@ export async function listAssets(params: {
   });
 }
 
+export async function getStartupPopularTags(): Promise<string[]> {
+  return invoke<string[]>("get_startup_popular_tags");
+}
+
 export async function listTags(params: {
   query: string;
   offset: number;

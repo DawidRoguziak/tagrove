@@ -527,6 +527,19 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
     Ok(groups)
 }
 
+/// Library-wide assignment counts, captured once by desktop startup.
+pub fn list_popular_tags(conn: &Connection) -> anyhow::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.name FROM tags t
+         JOIN asset_tags at ON at.tag_id = t.id
+         GROUP BY t.id
+         ORDER BY COUNT(*) DESC, t.name ASC
+         LIMIT 10",
+    )?;
+    let tags = stmt.query_map([], |row| row.get(0))?;
+    Ok(tags.collect::<rusqlite::Result<Vec<String>>>()?)
+}
+
 pub fn list_tags_page(
     conn: &Connection,
     query: &str,

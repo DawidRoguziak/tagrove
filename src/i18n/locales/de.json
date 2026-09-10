@@ -129,6 +129,7 @@
       "orderHeading": "Gruppenreihenfolge",
       "orderDescription": "Elemente ziehen oder die Pfeiltasten an ihren Griffen verwenden, um die Reihenfolge festzulegen.",
       "dragHandleAria": "Element {{position}} durch Ziehen oder mit den Pfeiltasten neu anordnen",
+      "mostUsedTags": "Meistverwendete Tags",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "Neue Tags werden allen ausgewählten Elementen hinzugefügt. Bestehende Tags bleiben erhalten.",
       "tagsSingleDescription": "Tags hinzufügen oder aktuelle Tags des ausgewählten Elements entfernen.",

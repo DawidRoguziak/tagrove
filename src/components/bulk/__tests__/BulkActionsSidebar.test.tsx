@@ -42,6 +42,7 @@ function createController(
     selectionModeEnabled: true,
     selectedAssetIds: new Set(),
     selectedAssets: [],
+    startupPopularTags: [],
     knownTags: ["cat", "travel"],
     groupKeyDraft: "",
     orderedAssetIds: [],
@@ -69,6 +70,62 @@ function createController(
 
 describe("BulkActionsSidebar", () => {
   afterEach(cleanup);
+
+  it("shows startup tags in snapshot order and keeps assigned single-asset tags clickable", async () => {
+    const controller = createController({ selectedAssetIds: new Set([1]), tagMode: "single",
+      singleAssetTags: ["travel"], startupPopularTags: ["travel", "cat"] });
+    render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    const group = screen.getByRole("group", { name: "Most used tags" });
+    expect(Array.from(group.querySelectorAll("button"), (button) => button.textContent)).toEqual(["travel", "cat"]);
+    await userEvent.click(screen.getByRole("button", { name: "travel" }));
+    expect(controller.onAddTag).toHaveBeenCalledWith("travel");
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).toHaveFocus());
+    expect(screen.getByLabelText("Add tag")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "travel" })).toBeVisible();
+  });
+
+  it.each(["{Enter}", " "])("activates popular tags with keyboard %s", async (key) => {
+    const controller = createController({ selectedAssetIds: new Set([1, 2]), tagMode: "multiple",
+      startupPopularTags: ["travel"] });
+    render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    screen.getByRole("button", { name: "travel" }).focus();
+    await userEvent.keyboard(key);
+    expect(controller.onAddTag).toHaveBeenCalledExactlyOnceWith("travel");
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).toHaveFocus());
+  });
+
+  it.each<Partial<BulkSelectionController>>([
+    { selectedAssetIds: new Set() }, { selectionBusy: true }, { tagApplying: true },
+    { tagDetailsLoading: true }, { tagDetailsFailed: true }
+  ])("disables popular tags under the input's disabled conditions: %j", async (state) => {
+    const controller = createController({ selectedAssetIds: new Set([1]), startupPopularTags: ["travel"], ...state });
+    render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    const chip = screen.getByRole("button", { name: "travel" });
+    expect(screen.getByLabelText("Add tag")).toBeDisabled();
+    expect(chip).toBeDisabled();
+    await userEvent.click(chip);
+    expect(controller.onAddTag).not.toHaveBeenCalled();
+  });
+
+  it("retains a failed chip submission as the draft for ordinary Enter retry", async () => {
+    const onAddTag = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const controller = createController({ selectedAssetIds: new Set([1, 2]), tagMode: "multiple",
+      startupPopularTags: ["travel"], onAddTag, tagSaveFailed: true });
+    render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    await userEvent.click(screen.getByRole("button", { name: "travel" }));
+    const input = screen.getByLabelText("Add tag");
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(input).toHaveValue("travel");
+    expect(screen.getByRole("alert")).toBeVisible();
+    await userEvent.keyboard("{Enter}");
+    expect(onAddTag).toHaveBeenNthCalledWith(2, "travel");
+    await waitFor(() => expect(input).toHaveValue(""));
+  });
+
+  it("hides the popular tag section for an empty snapshot", () => {
+    render(<BulkActionsSidebar controller={createController()} thumbs={{}} renderingThumbnailIds={{}} />);
+    expect(screen.queryByRole("group", { name: "Most used tags" })).not.toBeInTheDocument();
+  });
 
   it("renders the lightbox-style heart and exposes pending and failure states", async () => {
     const onToggleFavorite = vi.fn(async () => {});

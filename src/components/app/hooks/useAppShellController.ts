@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getStartupPopularTags } from "../../../api";
 import {
   DEFAULT_TILE_SIZE,
   TILE_SIZE_MAX,
@@ -20,6 +21,21 @@ import { useSettingsView } from "../../../hooks/useSettingsView";
 const PAGE_SIZE = 128;
 
 export function useAppShellController() {
+  const [startupPopularTags, setStartupPopularTags] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    void getStartupPopularTags()
+      .then((tags) => {
+        if (active) setStartupPopularTags(tags);
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to load startup popular tags", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const searchFilters = useAppSearchFilters();
   const [tileSize, setTileSize] = useState(DEFAULT_TILE_SIZE);
   const [highlightScanSection, setHighlightScanSection] = useState(false);
@@ -92,6 +108,7 @@ export function useAppShellController() {
     queryEpoch: library.queryEpoch,
     getIdsRangeAsync: library.getIdsRangeAsync,
     knownTags: library.knownTags,
+    startupPopularTags,
     settingsViewOpen,
     queueThumbnailsByIds: library.queueThumbnailsByIds,
     setAssets: library.setAssets,

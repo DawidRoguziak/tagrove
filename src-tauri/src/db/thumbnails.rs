@@ -1,5 +1,7 @@
 use super::*;
 
+pub const MAX_THUMBNAIL_CANDIDATE_PAGE: usize = 2048;
+
 pub fn thumbnail_candidates_page(
     conn: &Connection,
     after: i64,
@@ -11,7 +13,12 @@ pub fn thumbnail_candidates_page(
         tf.asset_id IS NOT NULL FROM assets a LEFT JOIN thumbnail_failures tf ON tf.asset_id = a.id AND tf.source_record_version = a.record_version
         WHERE a.id > ?1 AND a.id <= ?2 AND (?4 = 0 OR tf.asset_id IS NOT NULL) ORDER BY a.id LIMIT ?3")?;
     let rows = stmt.query_map(
-        params![after, ceiling, limit.min(512) as i64, failed_only],
+        params![
+            after,
+            ceiling,
+            limit.min(MAX_THUMBNAIL_CANDIDATE_PAGE) as i64,
+            failed_only
+        ],
         |row| {
             Ok((
                 ThumbnailAsset {
@@ -356,4 +363,33 @@ pub fn get_assets_for_thumbnails_by_ids(
         .iter()
         .filter_map(|asset_id| by_id.remove(asset_id))
         .collect())
+}
+
+#[cfg(test)]
+mod candidate_page_tests {
+    use super::*;
+
+    #[test]
+    fn candidate_pages_can_fill_large_bulk_windows_but_remain_bounded() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        conn.execute_batch(
+            "WITH RECURSIVE ids(id) AS (SELECT 1 UNION ALL SELECT id + 1 FROM ids WHERE id < 2055)
+             INSERT INTO assets(path, kind, size_bytes, modified_at)
+             SELECT 'fixture-' || id || '.png', 'image', 1, 1 FROM ids;",
+        )
+        .unwrap();
+        assert_eq!(
+            thumbnail_candidates_page(&conn, 0, 2055, 768, false)
+                .unwrap()
+                .len(),
+            768
+        );
+        let page = thumbnail_candidates_page(&conn, 0, 2055, usize::MAX, false).unwrap();
+        assert_eq!(page.len(), MAX_THUMBNAIL_CANDIDATE_PAGE);
+        let after = page.last().unwrap().0.id;
+        let tail = thumbnail_candidates_page(&conn, after, 2055, usize::MAX, false).unwrap();
+        assert_eq!(tail.len(), 7);
+        assert_eq!(tail.first().unwrap().0.id, after + 1);
+    }
 }

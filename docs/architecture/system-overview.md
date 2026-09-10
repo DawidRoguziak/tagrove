@@ -60,13 +60,13 @@ Concrete examples:
 2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema and reconciles pending source-file operations;
+5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema, reconciles pending source-file operations, and captures enabled scan roots and popular tags before automatic scanning;
 6. resolves ffmpeg, restores `LC_NUMERIC` to `C` after GTK initialization for libmpv, creates the process-wide `VideoPlayerService`, and installs the GTK video surface;
 7. creates the thumbnail scheduler and refuses startup if any worker failed to spawn, then manages `AppState`;
 8. registers every frontend-callable command; and
 9. runs the generated Tauri context until the application exits.
 
-Startup failure in any setup step prevents the windowed application from entering its normal event loop. `build.rs` only calls `tauri_build::build()`; compile-time application metadata and resources come from the effective Tauri configuration.
+Except for popular-tag calculation, which logs failures and stores an empty list, startup failure in any setup step prevents the windowed application from entering its normal event loop. `build.rs` only calls `tauri_build::build()`; compile-time application metadata and resources come from the effective Tauri configuration.
 
 ## Backend module boundaries
 
@@ -98,6 +98,12 @@ Startup failure in any setup step prevents the windowed application from enterin
 - atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and preserve cancellation without database or workflow locks.
 
 `StartupScanState` is separately managed by Tauri. It captures enabled scan roots after database initialization and recovery and atomically consumes them when shell initialization invokes the startup-scan command. Its empty state survives frontend reloads; preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline.
+
+`StartupPopularTags` is separately managed immutable state containing up to ten tag names
+ranked by library-wide assignment counts, then alphabetically. It is calculated once after
+initialization and recovery. Its command reads only memory; frontend reloads, scans, imports,
+restore, and clearing cannot recalculate it. The shell loads it on mount for the bulk sidebar.
+Calculation or loading failures are logged and omit suggestions. See [popular-tag behavior](../subsystems/search-tags-and-media-groups.md#startup-popular-tags).
 
 The `InstanceLock` and `VideoPlayerService` are separately managed by Tauri so their lifetimes match the application. The player service owns one process-wide libmpv handle, one active session, a dedicated playback worker, and monotonically increasing request/session IDs. The worker owns libmpv commands and per-session event clients; GTK only enqueues playback commands. `services/video_events.rs` checks native client creation and copies event information before the next poll invalidates it. Pending reservations can be cancelled before source resolution completes. It rejects stale controls and superseded opens, while retired-session closes are idempotent. `AppState.database` owns admission, the connection pool, and query state. One operation permit follows its connections and child workers. Idle connections retain no admission.
 

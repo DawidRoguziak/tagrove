@@ -78,6 +78,7 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 | `closeVideo` / `close_video` | `sessionId` | `void` | Invalidates the current session, queues decoder stop, hides its GTK surface, and exits its fullscreen. Closing retired sessions is an idempotent no-op. |
 | `listAssets` / `list_assets` | `offset`, `limit`, `tagsAnd`, `tagsNot`, `kind`, `favoritesOnly`, `metaFilter` | `AssetPage` | Legacy direct query returning full `Asset` rows. Negative offsets become 0 and limits are clamped to 1–500. It does not provide session consistency. |
 | `listTags` / `list_tags` | `query: string`, `offset: number`, `limit: number` | `TagListPage` | Trims the search query, matches tag names case-insensitively, clamps offset to at least 0, and clamps limit to 1–200. |
+| `getStartupPopularTags` / `get_startup_popular_tags` | none | `string[]` | Returns up to ten cached tag names, ordered by startup assignment count descending then name ascending with SQLite NOCASE ties. Reads immutable process state without SQLite or workflow locks. Captured after initialization/recovery and before startup scanning; remains fixed through frontend reload, restore, and clear until process restart. Calculation failure logs and stores an empty list. |
 
 `SearchMetaFilter` is a discriminated input union:
 

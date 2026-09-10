@@ -65,6 +65,7 @@ interface UseBulkSelectionControllerOptions {
   queryEpoch?: number;
   getIdsRangeAsync?: (startIndex: number, endIndex: number) => Promise<number[]>;
   knownTags: string[];
+  startupPopularTags: string[];
   settingsViewOpen: boolean;
   queueThumbnailsByIds: (assetIds: number[]) => void;
   setAssets: Dispatch<SetStateAction<AssetSummary[]>>;
@@ -87,6 +88,7 @@ export function useBulkSelectionController({
   queryEpoch = 0,
   getIdsRangeAsync,
   knownTags,
+  startupPopularTags,
   settingsViewOpen,
   queueThumbnailsByIds,
   setAssets,
@@ -764,6 +766,7 @@ export function useBulkSelectionController({
     queueThumbnailsByIds,
     partialResult,
     knownTags,
+    startupPopularTags,
     groupKeyDraft,
     orderedAssetIds,
     hasConflictingGroups,

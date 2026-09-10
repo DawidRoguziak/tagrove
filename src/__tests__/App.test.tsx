@@ -94,6 +94,7 @@ const apiMocks = vi.hoisted(() => {
     scanStartupRoots: vi.fn(),
     setScanRootAutoScan: vi.fn(),
     listTags: vi.fn(),
+    getStartupPopularTags: vi.fn(),
     mergeAssetTagsBulk: vi.fn(),
     setAssetsMediaGroupBulk: vi.fn(),
     removeScanRoot: vi.fn(),
@@ -192,6 +193,7 @@ describe("App", () => {
     });
     apiMocks.getAssetDetails.mockResolvedValue(null);
     apiMocks.ensureThumbnailsStream.mockResolvedValue(undefined);
+    apiMocks.getStartupPopularTags.mockReset().mockResolvedValue([]);
     apiMocks.listTags.mockResolvedValue(createTagListPage());
     apiMocks.mergeAssetTagsBulk.mockImplementation(async (assetIds: number[], tags: string[]) => ({
       processed_assets: assetIds.length,
@@ -490,6 +492,57 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Disable bulk actions" }));
     expect(screen.queryByTestId("bulk-action-panel")).not.toBeInTheDocument();
+  });
+
+  it("retains startup chips through submissions, filter changes, and sidebar remounts", async () => {
+    virtualizerState.renderItems = true;
+    const asset = createAsset(1, "C:/media/a.jpg");
+    apiMocks.listAssets.mockResolvedValue({ items: [asset, createAsset(2, "C:/media/b.jpg")], total: 2 });
+    apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: [] });
+    apiMocks.getStartupPopularTags.mockResolvedValue(["travel", "cat"]);
+    render(<App />);
+    await screen.findByText("No more items to load");
+    await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
+    selectAssetByPath("C:/media/a.jpg");
+    const chips = () => within(screen.getByRole("group", { name: "Most used tags" })).getAllByRole("button");
+    await waitFor(() => expect(chips()[0]).toBeEnabled());
+    await userEvent.click(chips()[0]!);
+    await waitFor(() => expect(apiMocks.setAssetTags).toHaveBeenCalledWith(1, ["travel"]));
+    expect(chips().map(chip => chip.textContent)).toEqual(["travel", "cat"]);
+    // Clicking the already assigned tag takes the existing duplicate/no-op path.
+    await waitFor(() => expect(chips()[0]).toBeEnabled());
+    await userEvent.click(chips()[0]!);
+    expect(apiMocks.setAssetTags).toHaveBeenCalledTimes(1);
+    selectAssetByPath("C:/media/b.jpg");
+    await userEvent.click(chips()[1]!);
+    await waitFor(() => expect(apiMocks.mergeAssetTagsBulk).toHaveBeenCalledWith([1, 2], ["cat"]));
+    await userEvent.type(screen.getByRole("combobox", { name: "" }), "travel{Enter}");
+    await userEvent.click(screen.getByRole("button", { name: "Disable bulk actions" }));
+    expect(screen.queryByRole("group", { name: "Most used tags" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
+    expect(chips().map(chip => chip.textContent)).toEqual(["travel", "cat"]);
+    expect(apiMocks.getStartupPopularTags).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs snapshot loading failure and leaves ordinary tagging available", async () => {
+    const error = new Error("snapshot unavailable");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    apiMocks.getStartupPopularTags.mockRejectedValueOnce(error);
+    virtualizerState.renderItems = true;
+    apiMocks.listAssets.mockResolvedValue({ items: [createAsset(1, "C:/media/a.jpg"), createAsset(2, "C:/media/b.jpg")], total: 2 });
+    try {
+      render(<App />);
+      await screen.findByText("No more items to load");
+      await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
+      selectAssetByPath("C:/media/a.jpg");
+      selectAssetByPath("C:/media/b.jpg");
+      expect(screen.queryByRole("group", { name: "Most used tags" })).not.toBeInTheDocument();
+      expect(log).toHaveBeenCalledWith("Failed to load startup popular tags", error);
+      await typeAssetTag("cat");
+      await waitFor(() => expect(apiMocks.mergeAssetTagsBulk).toHaveBeenCalledWith([1, 2], ["cat"]));
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("applies bulk tag merge for selected assets", async () => {

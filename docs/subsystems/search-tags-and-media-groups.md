@@ -90,6 +90,26 @@ The gallery owns the temporary highlights. On release, the controller resolves a
 
 The sidebar's group and tag controls remain disabled until at least one item is selected. The ordering list is virtualized and requests thumbnails only for its visible range plus overscan. Group submission stays disabled until every selected ID has ordering metadata.
 
+## Startup popular tags
+
+The bulk sidebar shows up to ten wrapping tag buttons directly beneath its tag input,
+under the localized "Most used tags" label. The backend counts assignments across the
+whole library after initialization and recovery, before automatic startup scanning.
+Unused tags are excluded; assignment count descending determines rank, with tag name
+ascending using SQLite's NOCASE collation for ties. Only names are displayed.
+
+`StartupPopularTags` holds the immutable process snapshot. `useAppShellController` loads
+it on mount through `getStartupPopularTags` and passes it through the bulk controller.
+Sidebar remounts, filters, tag edits, scans, imports, restore, library clearing, and frontend
+reloads retain that launch ranking. Only a new desktop process calculates a new snapshot.
+Calculation or loading failures are logged and leave the section hidden without blocking tagging.
+
+Each button uses the same `addTagAndRestoreFocus` path as autocomplete picks and input
+submission, preserving selected-ID targeting, duplicate handling, saving/error feedback,
+failed drafts, and focus restoration. Buttons share the input's disabled conditions.
+All startup buttons remain visible after applying them, including tags already assigned
+to a single selected asset. An empty snapshot hides the section.
+
 ## Tag mutations
 
 One tag cannot contain whitespace, comma, semicolon, or a control character. Lightbox, bulk, normal search, CSV, and backend command boundaries apply this rule; the backend remains authoritative. Replacements are serialized per asset by the shell-lived selection owner and rapid edits coalesce to the latest desired complete array. Both lightbox and bulk consume shell-owned `useAssetTagState`, which records whether each complete tag base is known. Every affected ID must acquire an exclusive mutation-start generation before IPC. A second writer for the same ID sends no command. Multi-asset bulk is all-or-none at lock acquisition: if any selected ID is busy, already-acquired tokens are released and the command is not sent with a reduced subset. Favorite and group writes acquire the same ownership so CSV maintenance can drain every field it may overwrite. Pending writes block detail publication, and settlement advances the generation again so reads started before or during the mutation stay invalid even after failure. A summary-derived editor placeholder is never accepted as a complete tag base. The backend normalizes again, validates the asset, replaces mappings when needed, repairs `tag_count`, canonicalizes legacy tag spelling, removes orphan rows, and conditionally bumps the library revision in the same transaction. After backend success the frontend publishes canonical response tags, patches loaded/detail state, and refreshes known tags best-effort.
@@ -152,6 +172,7 @@ Revision behavior for tag, favorite, and group writes is defined in [database pe
 
 ### Relevant existing tests
 
+- Startup popular-tag tests in `src-tauri/src/app/state.rs` cover empty/unused tags, global counts, alphabetical ties, the ten-tag limit, and immutable snapshots after mutations and clearing. Sidebar/App/API tests cover ordered chips, keyboard activation, disabled states, failed-draft retry, duplicate handling, and shell retention across filters and remounts. `e2e/specs/popular-tags.e2e.js` verifies persisted chip assignments, fixed ranking through edits/scans/reloads, and recalculation on process restart using disposable media. Run it with `bun run test:e2e:tauri --spec e2e/specs/popular-tags.e2e.js` in the isolated desktop environment described in [testing](../development/testing.md#real-desktop-e2e).
 - `src/utils/__tests__/media.test.ts`, `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts`, and `src/components/app/services/__tests__/filterService.test.ts` cover normalization, grammar validation, applied state, repeat refresh, and meta keys.
 - `src/components/search/services/__tests__/*` and `src/components/search/__tests__/SearchTagator.test.tsx` cover caret tokens, replacement, used-tag filtering, Fuse/fallback result shaping, reserved meta tokens, keyboard selection, focus, and editor auto-selection modes.
 - `src/components/tag-list/__tests__/TagListModal.test.tsx` and `TagListSearchLauncher.test.tsx` cover lazy opening, focus, fallback de-duplication/filtering, click arbitration, deterministic output, apply failure, pagination, and page merging.

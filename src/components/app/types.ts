@@ -83,6 +83,7 @@ export interface BulkSelectionController {
   selectedAssetIds: Set<number>;
   selectedAssets: AssetSummary[];
   knownTags: string[];
+  startupPopularTags: string[];
   groupKeyDraft: string;
   orderedAssetIds: number[];
   hasConflictingGroups: boolean;

@@ -129,6 +129,7 @@
       "orderHeading": "Group order",
       "orderDescription": "Drag items or use the arrow keys on their handles to set their order.",
       "dragHandleAria": "Reorder item {{position}} with drag or arrow keys",
+      "mostUsedTags": "Most used tags",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "New tags are added to every selected item. Existing tags are kept.",
       "tagsSingleDescription": "Add tags or remove the current tags from the selected item.",

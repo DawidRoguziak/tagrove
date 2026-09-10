@@ -129,6 +129,7 @@
       "orderHeading": "Kolejność w grupie",
       "orderDescription": "Przeciągnij elementy lub użyj klawiszy strzałek na ich uchwytach, aby ustawić kolejność.",
       "dragHandleAria": "Zmień kolejność elementu {{position}} przeciąganiem lub klawiszami strzałek",
+      "mostUsedTags": "Najczęściej używane tagi",
       "tagsHeading": "Tagi",
       "tagsMultipleDescription": "Nowe tagi są dodawane do wszystkich zaznaczonych elementów. Istniejące tagi pozostają bez zmian.",
       "tagsSingleDescription": "Dodawaj tagi lub usuwaj aktualne tagi zaznaczonego elementu.",

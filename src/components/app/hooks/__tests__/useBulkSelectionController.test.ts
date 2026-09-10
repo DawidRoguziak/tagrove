@@ -39,6 +39,7 @@ function deferred<T>() {
 function options(assets: AssetSummary[], refresh = vi.fn(async () => {})) {
   return {
     assets,
+    startupPopularTags: [],
     knownTags: [],
     settingsViewOpen: false,
     queueThumbnailsByIds: vi.fn(),

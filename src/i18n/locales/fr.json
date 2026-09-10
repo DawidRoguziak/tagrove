@@ -129,6 +129,7 @@
       "orderHeading": "Ordre du groupe",
       "orderDescription": "Faites glisser les éléments ou utilisez les touches fléchées sur leur poignée pour définir leur ordre.",
       "dragHandleAria": "Réorganiser l’élément {{position}} par glissement ou avec les touches fléchées",
+      "mostUsedTags": "Tags les plus utilisés",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "Les nouveaux tags sont ajoutés à tous les éléments sélectionnés. Les tags existants sont conservés.",
       "tagsSingleDescription": "Ajoutez des tags ou supprimez les tags actuels de l’élément sélectionné.",

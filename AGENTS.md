@@ -18,6 +18,8 @@ MediaTagger is a desktop application for efficiently browsing and tagging very l
 
 ## Working in this repository
 
+This repository is public. Never commit secrets, credentials, tokens, private keys, personal data, private media, local databases, or logs and screenshots containing private information. Use synthetic fixtures and anonymized examples. Review staged changes for private content before every commit; automated privacy checks do not replace this review.
+
 Use the documentation index to find the owning code before changing behavior. Source, executable configuration, and tests establish current behavior; documentation explains it. When they disagree, inspect the implementation and correct the owning page in the same change. Keep intended conventions distinct from enforced behavior and test coverage.
 
 For work crossing subsystem boundaries, read the primary topic plus the linked contract sections it depends on. A lightbox video change can require IPC and frontend layer guidance; a restore change requires data safety, database maintenance, settings orchestration, and isolated testing. Do not read every page for an unrelated small task.

@@ -12,7 +12,7 @@ export function SectionOperationStatus({ state, loaderTestId }: SectionOperation
     <div className="grid gap-1">
       {state.loading ? (
         <div
-          className="inline-flex items-center gap-2 text-xs text-base-content/65"
+          className="inline-flex items-center gap-2 text-xs text-[var(--text-muted)]"
           role="status"
           data-testid={loaderTestId}
         >
@@ -20,7 +20,7 @@ export function SectionOperationStatus({ state, loaderTestId }: SectionOperation
           <span>{state.message}</span>
         </div>
       ) : (
-        <div className="text-xs text-base-content/65">{state.message}</div>
+        <div className="text-xs text-[var(--text-muted)]">{state.message}</div>
       )}
 
       {state.progress && (

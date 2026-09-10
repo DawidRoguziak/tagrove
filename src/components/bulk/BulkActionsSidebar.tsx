@@ -141,7 +141,7 @@ export function BulkActionsSidebar({
       >
         <div className="grid gap-0.5" aria-live="polite">
           <h2 className="m-0 text-base">{t("bulk.panel.heading")}</h2>
-          <span className="text-xs text-base-content/65">
+          <span className="text-xs text-[var(--text-muted)]">
             {t("bulk.panel.selectedItems", { count: controller.selectedAssetIds.size })}
           </span>
         </div>
@@ -165,7 +165,7 @@ export function BulkActionsSidebar({
             >
               {t("bulk.panel.clearSelection")}
             </UiButton>
-            <span className="text-[11px] text-base-content/60">
+            <span className="text-xs text-[var(--text-muted)]">
               {t("bulk.panel.clearSelectionHint")}
             </span>
           </div>
@@ -183,7 +183,7 @@ export function BulkActionsSidebar({
       >
         <div className="grid gap-0.5">
           <h3 className="m-0 text-sm">{t("bulk.panel.groupHeading")}</h3>
-          <p className="m-0 text-[11px] leading-relaxed text-base-content/60">
+          <p className="m-0 text-xs leading-relaxed text-[var(--text-muted)]">
             {t("bulk.panel.groupDescription")}
           </p>
         </div>
@@ -247,7 +247,7 @@ export function BulkActionsSidebar({
                 disabled={controller.selectionBusy || controller.groupApplying || controller.metadataLoading || controller.metadataFailed}
                 onClick={() => setOrderModalContext(orderContext)}>{t("bulk.orderModal.open")}</UiButton>
             </div>
-            <p className="m-0 text-[11px] leading-relaxed text-base-content/60">
+            <p className="m-0 text-xs leading-relaxed text-[var(--text-muted)]">
               {t("bulk.panel.orderDescription")}
             </p>
           </div>
@@ -297,10 +297,10 @@ export function BulkActionsSidebar({
                   >
                     <ThumbnailSubscription id={asset.id} path={thumbs[asset.id]} rendering={Boolean(renderingThumbnailIds[asset.id])} />
                   </div>
-                  <span className="min-w-0 flex-1 truncate text-xs text-base-content/75" title={asset.file_name}>{asset.file_name}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-muted)]" title={asset.file_name}>{asset.file_name}</span>
                   <button
                     type="button"
-                    className={`grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-[var(--radius-control)] text-base-content/55 transition-colors ${
+                    className={`grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-[var(--radius-control)] text-[var(--text-muted)] transition-colors ${
                       controller.groupApplying
                         ? "cursor-not-allowed opacity-45"
                         : "cursor-grab hover:bg-base-content/8 hover:text-base-content active:cursor-grabbing"
@@ -341,7 +341,7 @@ export function BulkActionsSidebar({
       >
         <div className="grid gap-0.5">
           <h3 className="m-0 text-sm">{t("bulk.panel.tagsHeading")}</h3>
-          <p className="m-0 text-[11px] leading-relaxed text-base-content/60">
+          <p className="m-0 text-xs leading-relaxed text-[var(--text-muted)]">
             {controller.tagMode === "multiple"
               ? t("bulk.panel.tagsMultipleDescription")
               : t("bulk.panel.tagsSingleDescription")}
@@ -386,7 +386,7 @@ export function BulkActionsSidebar({
         />
         {controller.startupPopularTags.length > 0 ? (
           <div className="grid gap-2" role="group" aria-label={t("bulk.panel.mostUsedTags")}>
-            <p className="m-0 text-xs text-base-content/65">{t("bulk.panel.mostUsedTags")}</p>
+            <p className="m-0 text-xs text-[var(--text-muted)]">{t("bulk.panel.mostUsedTags")}</p>
             <div className="flex flex-wrap gap-1.5">
               {controller.startupPopularTags.map((tag) => (
                 <UiButton

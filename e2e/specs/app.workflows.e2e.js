@@ -254,12 +254,12 @@ describe("MediaTagger desktop workflows", () => {
     await disableFavoritesButton.waitForDisplayed({ timeout: 10000 });
     await disableFavoritesButton.click();
 
-    const mediaKindSelect = await $(".filter-kind-select");
-    await mediaKindSelect.waitForDisplayed({ timeout: 10000 });
-    await mediaKindSelect.selectByAttribute("value", "video");
+    const videoChoice = await $('#gallery-media-kind label:has(input[value="video"])');
+    await videoChoice.waitForDisplayed({ timeout: 10000 });
+    await videoChoice.click();
     await noResultsHeading.waitForDisplayed({ timeout: 15000 });
 
-    await mediaKindSelect.selectByAttribute("value", "all");
+    await $('#gallery-media-kind label:has(input[value="all"])').click();
     await noResultsHeading.waitForDisplayed({ timeout: 15000, reverse: true });
 
     const missingTagPage = await listAssetsForAssertions({ tagsAnd: [`missing-e2e-${Date.now()}`] });
@@ -693,7 +693,7 @@ describe("MediaTagger desktop workflows", () => {
     await resetLibraryState();
     await seedLibraryWithPlayableMedia("native-state");
     await ensureGalleryView();
-    await $(".filter-kind-select").selectByAttribute("value", "video");
+    await $('#gallery-media-kind label:has(input[value="video"])').click();
     await waitForTileAtIndex(1);
     await $('button[data-asset-index="0"]').click();
     const selector = "[data-native-video-active]";
@@ -814,8 +814,8 @@ describe("MediaTagger desktop workflows", () => {
     await closePreviewButton.click();
     await closePreviewButton.waitForDisplayed({ timeout: 10000, reverse: true });
 
-    const mediaKindSelect = await $(".filter-kind-select");
-    await mediaKindSelect.selectByAttribute("value", "video");
+    const videoChoice = await $('#gallery-media-kind label:has(input[value="video"])');
+    await videoChoice.click();
     await waitForTileAtIndex(1);
     const videoQuery = await invokeTauriCommand("start_asset_query", {
       tagsAnd: [],

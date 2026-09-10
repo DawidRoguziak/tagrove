@@ -183,6 +183,12 @@ The desktop harness does not force English. A fresh app chooses a stored languag
 copied media and the normal isolated E2E identity. It exercises both themes at 1440×900 and
 1000×720, search/suggestions, validation and empty results, bulk selection, tag browsing,
 lightbox deletion cancellation, settings navigation, duplicates and confirmation dialogs.
+It verifies theme persistence after reload, native arrow-key changes in the theme and media
+radio groups, and a visible focus ring when tabbing to the selected media segment.
+Contrast checks read the live theme tokens and require 4.5:1 for main/primary text on all
+three surfaces and secondary text on workspace/panels. Inactive segments use main text
+because the light secondary color does not meet 4.5:1 on raised controls.
+The fixtures include long filenames and tags.
 It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the stacked bulk layout at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
 the private X11 display into a fresh timestamped `artifacts/ui-redesign/` subdirectory per run.
 The normal workflow suite covers narrow lightbox and native media behavior; the separate

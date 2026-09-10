@@ -63,11 +63,11 @@ export function DuplicateAssetCard({
       </div>
 
       <div className="grid min-w-0 content-start gap-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/60">
+        <div className="text-xs font-semibold text-[var(--text-muted)]">
           {t("settings.duplicates.resolve")}
         </div>
-        <div className="break-all text-xs text-base-content/70">{asset.path}</div>
-        <div className="text-xs text-base-content/75">
+        <div className="break-all text-xs text-[var(--text-muted)]">{asset.path}</div>
+        <div className="text-xs text-[var(--text-muted)]">
           {staged?.type === "rename"
             ? t("settings.duplicates.pendingRename", { name: staged.nextFileName })
             : staged?.type === "delete"

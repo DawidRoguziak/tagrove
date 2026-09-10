@@ -113,7 +113,7 @@ export function LightboxToolbar({
       ref={sidebarRef}
       id="lightbox-sidebar"
       className={[
-        "grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden border-l border-[var(--border-soft)] bg-[var(--surface-solid)] p-3",
+        "grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden border-l border-[var(--border-soft)] bg-[var(--surface-solid)] p-4",
         "absolute inset-y-0 right-0 z-[8] transition-transform duration-200 motion-reduce:transition-none",
         isNarrow ? "w-[min(22rem,100%)]" : "w-[clamp(18rem,22vw,22rem)]",
         sidebarVisible ? "translate-x-0" : "pointer-events-none translate-x-full"
@@ -123,7 +123,7 @@ export function LightboxToolbar({
       aria-hidden={!sidebarVisible}
     >
       <header className="flex min-h-0 min-w-0 items-center justify-between gap-2 border-b border-[var(--border-soft)] pb-3">
-        <span className="min-w-0 truncate text-xs font-semibold text-base-content" title={selected.file_name}>
+        <span className="min-w-0 truncate text-sm font-semibold text-base-content" title={selected.file_name}>
           {selected.file_name}
         </span>
         <div className="flex shrink-0 items-center gap-1">
@@ -152,7 +152,7 @@ export function LightboxToolbar({
       </header>
 
       <div
-        className="panel-scroll flex min-h-0 min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto pr-0.5"
+        className="panel-scroll flex min-h-0 min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto pr-2"
         data-testid="lightbox-sidebar-upper"
       >
         {infoPanelOpen ? <LightboxInfoPanel selected={selected} /> : null}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 import { UiIcon } from "../UI/UiIcon";
 import { UiButton } from "../UI/UiButton";
 import { UiAlert } from "../UI/UiAlert";
@@ -45,6 +45,7 @@ export function SearchTagatorWrapper({
   submitOnParentCommit = true
 }: SearchTagatorWrapperProps) {
   const { t } = useTranslation();
+  const mediaKindName = useId();
   const submitAfterMediaKindChangeRef = useRef(false);
   const submitAfterFavoritesChangeRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -87,7 +88,7 @@ export function SearchTagatorWrapper({
       <div data-tauri-drag-region="deep" className="workspace-search window-drag-surface">
         {identity}
         <div data-tauri-drag-region="false" className="workspace-search-field flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--surface-muted)] px-2 focus-within:border-primary">
-          <UiIcon name="search" className="h-4 w-4 shrink-0 text-base-content/60" />
+          <UiIcon name="search" className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
           <div className="min-w-0 flex-1"><SearchTagator
             inputRef={searchInputRef}
             value={filterInput}
@@ -107,24 +108,25 @@ export function SearchTagatorWrapper({
         {headerAction}
       </div>
       <div className="workspace-tools">
-        <label className="sr-only" htmlFor="gallery-media-kind">{t("search.mediaKind")}</label>
-        <select
-          id="gallery-media-kind"
-          className="filter-kind-select h-8 min-w-28 text-xs"
-          aria-label={t("search.mediaKind")}
-          value={mediaKind}
-          onChange={(event) => {
-            const kind = event.target.value;
-            if (kind !== "all" && kind !== "image" && kind !== "gif" && kind !== "video") return;
-            submitAfterMediaKindChangeRef.current = submitOnParentCommit;
-            void Promise.resolve(onMediaKindChange(kind)).catch(() => {});
-          }}
-        >
-          <option value="all">{t("search.mediaKinds.all")}</option>
-          <option value="image">{t("search.mediaKinds.image")}</option>
-          <option value="gif">{t("search.mediaKinds.gif")}</option>
-          <option value="video">{t("search.mediaKinds.video")}</option>
-        </select>
+        <fieldset className="media-segments" id="gallery-media-kind">
+          <legend className="sr-only">{t("search.mediaKind")}</legend>
+          {(["all", "image", "gif", "video"] as const).map((kind) => (
+            <label key={kind}>
+              <input
+                className="choice-input"
+                type="radio"
+                name={mediaKindName}
+                value={kind}
+                checked={mediaKind === kind}
+                onChange={() => {
+                  submitAfterMediaKindChangeRef.current = submitOnParentCommit;
+                  void Promise.resolve(onMediaKindChange(kind)).catch(() => {});
+                }}
+              />
+              <span>{t(`search.mediaKinds.${kind}`)}</span>
+            </label>
+          ))}
+        </fieldset>
         <UiIconButton icon="heart" active={favoritesOnly} className="h-8! min-h-8! w-8!"
           onClick={() => {
             submitAfterFavoritesChangeRef.current = submitOnParentCommit;

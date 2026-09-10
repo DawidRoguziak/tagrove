@@ -65,7 +65,7 @@ export function LightboxDeleteConfirmDialog({
       }}
     >
       <h3 className="m-0 text-sm">{t("lightbox.deleteConfirm.heading")}</h3>
-      <p className="m-0 text-[13px] leading-[1.4] text-base-content/65">
+      <p className="m-0 text-[13px] leading-[1.4] text-[var(--text-muted)]">
         {t("lightbox.deleteConfirm.description")}
       </p>
       {errorMessage ? (
@@ -75,7 +75,7 @@ export function LightboxDeleteConfirmDialog({
       ) : null}
 
       <div className="grid gap-1">
-        <label className="text-xs text-base-content/65" htmlFor="lightbox-delete-confirm-input">
+        <label className="text-xs text-[var(--text-muted)]" htmlFor="lightbox-delete-confirm-input">
           {t("lightbox.deleteConfirm.typeYesLabel", { value: confirmWord })}
         </label>
         <input

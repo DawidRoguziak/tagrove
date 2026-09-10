@@ -145,24 +145,39 @@ Prefer semantic DaisyUI colors (`primary`, `base-*`, `error`, and similar) and t
 
 Global styles establish full-height roots, typography, field treatment, visible keyboard focus for buttons, links, inputs, and selects, and themed scrollbars. Preserve native elements where possible so keyboard and accessibility behavior come for free.
 
-## Compact studio visual system
+## Light and dark visual system
 
-The full redesign is tracked in [the redesign plan](../ui-redesign-plan.md). Both themes use
-neutral workspace/panel colors, with primary green `#7CB87C` in dark mode and `#2D5A2D` in
-light mode. Dark mode uses `#0c0e10` for the gallery workspace, `#14171a` for panels and
-the toolbar, and `#1d2125` for raised controls. Group backings use dedicated
-`--gallery-group-bg` and `--gallery-group-edge` tokens, keeping selection and focus on the
-brighter primary green. Light mode retains its existing surfaces and translucent group fill.
-The root stays at 16px for Tailwind rem sizing; body copy is 14px. Controls use
-4px corners, panels 6px, dialogs 8px. Standard buttons are 36px high and compact tools 32px.
-System sans fonts serve prose and controls; paths and technical metadata use monospace.
+Both themes share geometry and typography. The palette is defined in `src/styles.css`:
 
-`TopBar` composes the identity, search field and Settings action in one header row. A second
-row contains media kind, favorites, tag browsing, the result count, bulk-mode toggle and
-thumbnail sizing. Both rows belong to a full-width, non-scrolling header with natural height.
-The gallery scroll viewport fills the remaining height, so its scrollbar starts below both rows even when they wrap. The gallery uses the available
-width with square tiles and its existing measured 10px gaps. Bulk selection uses a green
-outline plus a checkmark; media-kind badges remain readable over arbitrary thumbnails.
+| Role | Light | Dark |
+| --- | --- | --- |
+| Workspace | `#F5F5F7` | `#101012` |
+| Toolbar and panels | `#FFFFFF` | `#19191B` |
+| Raised controls | `#EBEBED` | `#252528` |
+| Dividers | `#D9D9DE` | `#343438` |
+| Main text | `#1D1D1F` | `#F5F5F7` |
+| Secondary text | `#6E6E73` | `#ACACB2` |
+| Primary green | `#2D5A2D` | `#7CB87C` |
+
+The root stays at 16px for Tailwind rem sizing; body copy is 14px, utility labels 12px,
+and page headings 20px. The system font stack prefers Apple system fonts, then Windows
+system fonts and Noto Sans on Linux. Paths and technical metadata use monospace.
+Control corners are 8px, surfaces 12px, and dialogs 16px. Standard buttons are 36px
+high and compact tools 32px. Controls use a subtle shadow; floating dialogs use the
+stronger modal shadow. Secondary text uses `--text-muted` instead of local opacity.
+Use main text on raised controls: the specified light secondary gray meets 4.5:1 on
+workspace and panels but falls below it on the raised surface.
+
+`TopBar` composes the identity, search field and Settings action in a 56px desktop row.
+The second row targets 44px and contains media kind, favorites, tag browsing, the result
+count, bulk mode and thumbnail sizing. Media kind is a native radio group styled as a
+segmented selector, with localized All, Images, GIF and Video choices. Arrow keys change
+kind; the existing parent-commit search semantics are preserved. Both rows belong to a
+full-width, non-scrolling header and can grow when controls wrap, with search on its own
+row below 700px. The gallery scroll viewport fills the remaining height.
+The gallery retains square tiles and measured 10px gaps. Bulk selection uses a green
+outline plus a checkmark; neutral, opaque media-kind badges remain readable over thumbnails.
+Group backings retain their dedicated `--gallery-group-bg` and `--gallery-group-edge` tokens.
 
 Desktop windows omit native decorations. `WindowControls` adds localized minimize,
 maximize/restore and close buttons to the gallery and settings headers. Only the first gallery header
@@ -187,6 +202,10 @@ Full-page settings uses 200px navigation beside mounted sections at widths of at
 scrolls to the corresponding section without changing the URL or unmounting operation UI.
 The active marker follows the scroll position; settings section choice is not persisted.
 Sections appear in scan, appearance, import/export, duplicates, and danger-zone order.
+Operations pair descriptions with actions in compact rows, stacking below 700px.
+Appearance uses native light/dark radio choices with decorative CSS previews. Only the
+selected choice is a Tab stop; arrow keys select the adjacent choice. The preference values,
+dark default, storage service and native theme synchronization are unchanged.
 
 Keep shared field rules in the CSS base layer so component utilities can make deliberate
 adjustments. Avoid adding nested field outlines, panel blur, decorative gradients, or

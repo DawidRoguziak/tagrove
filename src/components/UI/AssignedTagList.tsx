@@ -27,8 +27,8 @@ export function AssignedTagList({
     ? "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-transparent text-primary transition-colors hover:bg-error hover:text-error-content focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40"
     : "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-transparent text-primary hover:bg-error hover:text-error-content";
   const statusClassName = isLightbox
-    ? "px-1 text-[11px] text-base-content/60"
-    : "text-xs text-base-content/60";
+    ? "px-1 text-xs text-[var(--text-muted)]"
+    : "text-xs text-[var(--text-muted)]";
 
   return (
     <div

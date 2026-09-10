@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "Azioni collettive",
+    "enableBulkActions": "Attiva le azioni collettive",
+    "disableBulkActions": "Disattiva le azioni collettive",
     "tileSize": "Dimensione riquadri",
     "enableSelectionMode": "Abilita modalità selezione",
     "disableSelectionMode": "Disabilita modalità selezione",
@@ -302,7 +302,9 @@
       "rescanAll": "Riscansiona tutto",
       "renderAllThumbnails": "Genera miniature per tutte le risorse indicizzate",
       "retryFailedThumbnails": "Riprova solo miniature fallite",
-      "stopThumbnailRender": "Ferma generazione miniature"
+      "stopThumbnailRender": "Ferma generazione miniature",
+      "rescanDescription": "Aggiorna la libreria dalle cartelle collegate.",
+      "thumbnailsDescription": "Genera anteprime per sfogliare i file più velocemente."
     },
     "importExport": {
       "heading": "Importa / Esporta",
@@ -310,7 +312,9 @@
       "importCsv": "Importa CSV dei tag",
       "exportDbBundle": "Esporta DB + miniature",
       "importDbBundle": "Importa DB + miniature",
-      "hint": "L'importazione CSV unisce tag e preferiti e applica chiave/ordine gruppo confrontando i nomi file. L'importazione database sostituisce database e miniature correnti."
+      "hint": "L'importazione CSV unisce tag e preferiti e applica chiave/ordine gruppo confrontando i nomi file. L'importazione database sostituisce database e miniature correnti.",
+      "csvDescription": "Trasferisci i tag con file CSV.",
+      "bundleDescription": "Salva o ripristina la libreria e le sue miniature."
     },
     "danger": {
       "heading": "Zona pericolosa",

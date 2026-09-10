@@ -257,10 +257,10 @@ export function GroupOrderModal({
     >
       <header className="shrink-0">
         <h2 className="m-0 text-lg font-semibold">{t("bulk.orderModal.title")}</h2>
-        <p className="m-0 truncate text-sm text-base-content/70" title={controller.groupKeyDraft}>
+        <p className="m-0 truncate text-sm text-[var(--text-muted)]" title={controller.groupKeyDraft}>
           {controller.groupKeyDraft} · {t("bulk.panel.selectedItems", { count: order.length })}
         </p>
-        <p className="mt-1 text-xs text-base-content/65">{t("bulk.orderModal.instructions")}</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">{t("bulk.orderModal.instructions")}</p>
       </header>
       <div
         ref={scrollRef}

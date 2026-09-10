@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "批量操作",
+    "enableBulkActions": "启用批量操作",
+    "disableBulkActions": "关闭批量操作",
     "tileSize": "缩略图大小",
     "enableSelectionMode": "启用选择模式",
     "disableSelectionMode": "禁用选择模式",
@@ -302,7 +302,9 @@
       "rescanAll": "重新扫描全部",
       "renderAllThumbnails": "为所有已索引资源生成缩略图",
       "retryFailedThumbnails": "仅重试失败的缩略图",
-      "stopThumbnailRender": "停止缩略图生成"
+      "stopThumbnailRender": "停止缩略图生成",
+      "rescanDescription": "从已关联的文件夹更新媒体库。",
+      "thumbnailsDescription": "生成缩略图以加快浏览速度。"
     },
     "importExport": {
       "heading": "导入 / 导出",
@@ -310,7 +312,9 @@
       "importCsv": "导入标签 CSV",
       "exportDbBundle": "导出数据库 + 缩略图",
       "importDbBundle": "导入数据库 + 缩略图",
-      "hint": "CSV 导入会合并标签和收藏标记，并通过匹配文件名应用媒体分组键/顺序。数据库导入会替换当前数据库和缩略图。"
+      "hint": "CSV 导入会合并标签和收藏标记，并通过匹配文件名应用媒体分组键/顺序。数据库导入会替换当前数据库和缩略图。",
+      "csvDescription": "通过 CSV 文件传输标签。",
+      "bundleDescription": "保存或恢复媒体库及其缩略图。"
     },
     "danger": {
       "heading": "危险区域",

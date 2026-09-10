@@ -63,7 +63,7 @@
     "mediaKinds": {
       "all": "All",
       "image": "Images",
-      "gif": "Gif",
+      "gif": "GIF",
       "video": "Video"
     },
     "clearFilters": "Clear all search filters",
@@ -302,7 +302,9 @@
       "rescanAll": "Rescan all",
       "renderAllThumbnails": "Render thumbnails for all indexed assets",
       "retryFailedThumbnails": "Retry failed thumbnails only",
-      "stopThumbnailRender": "Stop thumbnail render"
+      "stopThumbnailRender": "Stop thumbnail render",
+      "rescanDescription": "Refresh the library from your attached folders.",
+      "thumbnailsDescription": "Generate previews for faster browsing."
     },
     "importExport": {
       "heading": "Import / Export",
@@ -310,7 +312,9 @@
       "importCsv": "Import tags CSV",
       "exportDbBundle": "Export DB + thumbnails",
       "importDbBundle": "Import DB + thumbnails",
-      "hint": "CSV import merges tags and favorite flag, and applies media group key/order by matching file names. Database import replaces current database and thumbnails."
+      "hint": "CSV import merges tags and favorite flag, and applies media group key/order by matching file names. Database import replaces current database and thumbnails.",
+      "csvDescription": "Transfer tags with CSV files.",
+      "bundleDescription": "Save or restore the library and its thumbnails."
     },
     "danger": {
       "heading": "Danger zone",

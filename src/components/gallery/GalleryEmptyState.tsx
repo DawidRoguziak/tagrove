@@ -32,7 +32,7 @@ export function GalleryEmptyState({
       {!hasScanRoots ? (
         <>
           <h3 className="m-0 text-2xl leading-tight text-base-content">{noFoldersTitle}</h3>
-          <p className="m-0 max-w-[420px] text-sm leading-[1.45] text-base-content/65">
+          <p className="m-0 max-w-[420px] text-sm leading-[1.45] text-[var(--text-muted)]">
             {noFoldersDescription}
           </p>
           <UiButton variant="primary" onClick={onAddFirstFolder}>{addFirstFolderLabel}</UiButton>
@@ -40,7 +40,7 @@ export function GalleryEmptyState({
       ) : (
         <>
           <h3 className="m-0 text-2xl leading-tight text-base-content">{noResultsTitle}</h3>
-          <p className="m-0 max-w-[420px] text-sm leading-[1.45] text-base-content/65">
+          <p className="m-0 max-w-[420px] text-sm leading-[1.45] text-[var(--text-muted)]">
             {noResultsDescription}
           </p>
         </>

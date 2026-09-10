@@ -95,7 +95,7 @@ suite("gallery additive clicks and rectangle selection", function () {
   for (const theme of ["dark", "light"]) {
     it(`uses additive clicks, replacing rectangles and modifiers in ${theme}`, async () => {
       await $('button[aria-label="Open settings"]').click();
-      await $('#settings-theme-select').selectByAttribute("value", theme);
+      await $(`.theme-choice:has(input[value="${theme}"])`).click();
       await $('button[aria-label="Back"]').click();
       await $('button[aria-label="Enable bulk actions"]').click();
       await $('button[data-asset-index="0"]').waitForDisplayed();

@@ -44,7 +44,7 @@ export function LightboxTagPanel({
     <section
       aria-label={t("lightbox.taggingHeading")}
       data-testid="lightbox-tag-panel"
-      className="grid min-h-0 min-w-0 shrink-0 grid-cols-[minmax(0,1fr)] content-start gap-2 border-t border-[var(--border-soft)] pt-2"
+      className="grid min-h-0 min-w-0 shrink-0 grid-cols-[minmax(0,1fr)] content-start gap-2 border-t border-[var(--border-soft)] pt-4"
     >
       <h3 className="m-0 text-xs">{t("lightbox.taggingHeading")}</h3>
 
@@ -58,7 +58,7 @@ export function LightboxTagPanel({
       />
 
       <div className="relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
-        <label className="text-[11px] text-base-content/65" htmlFor="lightbox-tag-draft-input">
+        <label className="text-xs text-[var(--text-muted)]" htmlFor="lightbox-tag-draft-input">
           {t("lightbox.addTag")}
         </label>
         <SearchTagator
@@ -82,7 +82,7 @@ export function LightboxTagPanel({
       </div>
 
       {tagDetailsLoading ? (
-        <p className="m-0 text-[11px] text-base-content/60" role="status">{t("lightbox.tagDetailsLoading")}</p>
+        <p className="m-0 text-xs text-[var(--text-muted)]" role="status">{t("lightbox.tagDetailsLoading")}</p>
       ) : null}
       {tagDetailsFailed ? (
         <UiAlert tone="error" title={t("lightbox.tagDetailsLoadFailedTitle")}>
@@ -92,7 +92,7 @@ export function LightboxTagPanel({
           </div>
         </UiAlert>
       ) : null}
-      {tagSaving ? <p className="m-0 text-[11px] text-base-content/60">{t("lightbox.tagSaving")}</p> : null}
+      {tagSaving ? <p className="m-0 text-xs text-[var(--text-muted)]">{t("lightbox.tagSaving")}</p> : null}
       {tagFailed ? (
         <UiAlert tone="error" title={t("bulk.panel.saveFailedTitle")}>
           <div className="grid gap-2">

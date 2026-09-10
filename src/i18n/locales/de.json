@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "Stapelaktionen",
+    "enableBulkActions": "Stapelaktionen aktivieren",
+    "disableBulkActions": "Stapelaktionen deaktivieren",
     "tileSize": "Kachelgröße",
     "enableSelectionMode": "Auswahlmodus aktivieren",
     "disableSelectionMode": "Auswahlmodus deaktivieren",
@@ -302,7 +302,9 @@
       "rescanAll": "Alle neu scannen",
       "renderAllThumbnails": "Vorschaubilder für alle indizierten Assets erstellen",
       "retryFailedThumbnails": "Nur fehlgeschlagene Vorschaubilder erneut versuchen",
-      "stopThumbnailRender": "Vorschaubild-Erstellung stoppen"
+      "stopThumbnailRender": "Vorschaubild-Erstellung stoppen",
+      "rescanDescription": "Aktualisiere die Bibliothek aus den eingebundenen Ordnern.",
+      "thumbnailsDescription": "Erzeuge Vorschaubilder für schnelleres Durchsuchen."
     },
     "importExport": {
       "heading": "Import / Export",
@@ -310,7 +312,9 @@
       "importCsv": "Tags aus CSV importieren",
       "exportDbBundle": "DB + Vorschaubilder exportieren",
       "importDbBundle": "DB + Vorschaubilder importieren",
-      "hint": "Der CSV-Import führt Tags und Favoritenstatus zusammen und wendet Mediengruppenschlüssel/Reihenfolge anhand von Dateinamen an. Datenbankimport ersetzt die aktuelle Datenbank und Vorschaubilder."
+      "hint": "Der CSV-Import führt Tags und Favoritenstatus zusammen und wendet Mediengruppenschlüssel/Reihenfolge anhand von Dateinamen an. Datenbankimport ersetzt die aktuelle Datenbank und Vorschaubilder.",
+      "csvDescription": "Übertrage Tags mit CSV-Dateien.",
+      "bundleDescription": "Sichere die Bibliothek und ihre Vorschaubilder oder stelle sie wieder her."
     },
     "danger": {
       "heading": "Gefahrenbereich",

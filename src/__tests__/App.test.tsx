@@ -249,8 +249,7 @@ describe("App", () => {
     const input = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
     await userEvent.clear(input);
     await userEvent.type(input, "cat -dog{Enter}");
-    const mediaKindSelect = screen.getByRole("combobox", { name: "Media kind" }) as HTMLSelectElement;
-    await userEvent.selectOptions(mediaKindSelect, "video");
+    await userEvent.click(screen.getByRole("radio", { name: "Video" }));
 
     await waitFor(() => {
       expect(apiMocks.listAssets).toHaveBeenLastCalledWith({
@@ -272,8 +271,7 @@ describe("App", () => {
       expect(apiMocks.listAssets).toHaveBeenCalled();
     });
 
-    const mediaKindSelect = screen.getByRole("combobox", { name: "Media kind" }) as HTMLSelectElement;
-    await userEvent.selectOptions(mediaKindSelect, "video");
+    await userEvent.click(screen.getByRole("radio", { name: "Video" }));
 
     await waitFor(() => {
       expect(apiMocks.listAssets).toHaveBeenLastCalledWith({
@@ -293,8 +291,7 @@ describe("App", () => {
 
     const input = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
     await userEvent.type(input, "cat{Enter}");
-    const mediaKindSelect = screen.getByRole("combobox", { name: "Media kind" }) as HTMLSelectElement;
-    await userEvent.selectOptions(mediaKindSelect, "video");
+    await userEvent.click(screen.getByRole("radio", { name: "Video" }));
 
     await waitFor(() => {
       expect(apiMocks.listAssets).toHaveBeenLastCalledWith({
@@ -312,7 +309,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect((input as HTMLInputElement).value).toBe("");
-      expect(mediaKindSelect.value).toBe("all");
+      expect(screen.getByRole("radio", { name: "All" })).toBeChecked();
       expect(apiMocks.listAssets).toHaveBeenLastCalledWith({
         offset: 0,
         limit: 128,
@@ -1167,19 +1164,18 @@ describe("App", () => {
     });
   });
 
-  it("shows theme select only in settings and applies selected theme", async () => {
+  it("shows theme choices only in settings and applies selected theme", async () => {
     render(<App />);
 
     await waitFor(() => {
       expect(apiMocks.listAssets).toHaveBeenCalled();
     });
 
-    expect(screen.queryByRole("combobox", { name: "Select theme" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Select theme" })).not.toBeInTheDocument();
 
     await userEvent.click(await screen.findByRole("button", { name: "Open settings" }));
 
-    const themeSelect = await screen.findByRole("combobox", { name: "Select theme" });
-    await userEvent.selectOptions(themeSelect, "light");
+    await userEvent.click(await screen.findByRole("radio", { name: "Light" }));
 
     await waitFor(() => {
       expect(document.documentElement.getAttribute("data-theme")).toBe("light");

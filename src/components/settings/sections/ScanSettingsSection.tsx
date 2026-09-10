@@ -70,8 +70,8 @@ export function ScanSettingsSection({
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-[680px]">
-          <h2 className="m-0 text-lg">{t("settings.scan.heading")}</h2>
-          <p className="m-0 mt-1 text-sm leading-relaxed text-base-content/60">
+          <h2 className="m-0 text-base">{t("settings.scan.heading")}</h2>
+          <p className="m-0 mt-1 text-sm leading-relaxed text-[var(--text-muted)]">
             {t("settings.scan.description")}
           </p>
         </div>
@@ -81,7 +81,7 @@ export function ScanSettingsSection({
       </div>
 
       <div className="grid gap-3 border-t border-[var(--border-soft)] pt-4">
-        <h3 className="m-0 text-xs font-bold uppercase tracking-[0.08em] text-base-content/55">{t("settings.scan.attachedPaths")}</h3>
+        <h3 className="m-0 text-xs font-semibold text-[var(--text-muted)]">{t("settings.scan.attachedPaths")}</h3>
         {scanRoots.length ? (
           <ul className="m-0 grid list-none gap-2 p-0">
             {scanRoots.map(({ path, auto_scan_on_startup }) => (
@@ -89,7 +89,7 @@ export function ScanSettingsSection({
                 <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-primary/10 text-primary">
                   <UiIcon name="folder" className="h-[18px] w-[18px]" />
                 </span>
-                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-mono text-base-content/82" title={path}>
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-mono text-[var(--text-muted)]" title={path}>
                   {path}
                 </span>
                 <div className="col-span-2 flex flex-wrap items-center justify-end gap-2 sm:col-span-1">
@@ -115,29 +115,35 @@ export function ScanSettingsSection({
             ))}
           </ul>
         ) : (
-          <div className="p-5 text-base-content/65">{t("settings.scan.noPaths")}</div>
+          <div className="p-5 text-[var(--text-muted)]">{t("settings.scan.noPaths")}</div>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="settings-operation">
+        <p>{t("settings.scan.rescanDescription")}</p>
         <UiButton variant="secondary" onClick={onRescanAll} disabled={!scanRoots.length || isOperationLocked}>
           {t("settings.scan.rescanAll")}
         </UiButton>
-        <UiButton onClick={onRenderAllThumbnails} disabled={isOperationLocked}>
-          {t("settings.scan.renderAllThumbnails")}
-        </UiButton>
-        <UiButton onClick={onRenderFailedThumbnails} disabled={isOperationLocked}>
-          {t("settings.scan.retryFailedThumbnails")}
-        </UiButton>
-        {thumbnailBulkRunning && (
-          <UiButton variant="danger" onClick={onCancelThumbnailRender} disabled={cancelThumbnailRunning}>
-            {t("settings.scan.stopThumbnailRender")}
+      </div>
+      <div className="settings-operation">
+        <p>{t("settings.scan.thumbnailsDescription")}</p>
+        <div className="settings-operation-actions">
+          <UiButton onClick={onRenderAllThumbnails} disabled={isOperationLocked}>
+            {t("settings.scan.renderAllThumbnails")}
           </UiButton>
-        )}
+          <UiButton onClick={onRenderFailedThumbnails} disabled={isOperationLocked}>
+            {t("settings.scan.retryFailedThumbnails")}
+          </UiButton>
+          {thumbnailBulkRunning && (
+            <UiButton variant="danger" onClick={onCancelThumbnailRender} disabled={cancelThumbnailRunning}>
+              {t("settings.scan.stopThumbnailRender")}
+            </UiButton>
+          )}
+        </div>
       </div>
 
       {videoToolStatus && (
-        <div className="flex flex-wrap gap-3 text-xs text-base-content/65" data-testid="video-tool-status">
+        <div className="flex flex-wrap gap-3 text-xs text-[var(--text-muted)]" data-testid="video-tool-status">
           <span>ffmpeg: {videoToolStatus.ffmpeg_available ? "OK" : "N/A"}</span>
           <span>ffprobe: {videoToolStatus.ffprobe_available ? "OK" : "N/A"}</span>
         </div>

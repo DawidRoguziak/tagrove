@@ -34,10 +34,10 @@ export function RemoveScanRootConfirmDialog({
         <h3 id="remove-scan-root-confirm-heading" className="m-0">
           {t("settings.dialogs.removeScanRoot.heading")}
         </h3>
-        <p className="m-0 text-[13px] leading-[1.4] text-base-content/65">
+        <p className="m-0 text-[13px] leading-[1.4] text-[var(--text-muted)]">
           {t("settings.dialogs.removeScanRoot.description")}
         </p>
-        <p className="m-0 break-all rounded-[var(--radius-control)] border border-base-content/20 bg-base-200/50 px-2.5 py-2 text-xs text-base-content/80">
+        <p className="m-0 break-all rounded-[var(--radius-control)] border border-base-content/20 bg-base-200/50 px-2.5 py-2 text-xs text-[var(--text-muted)]">
           {path}
         </p>
         <div className="flex items-center gap-2">

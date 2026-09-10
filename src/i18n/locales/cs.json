@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "Hromadné akce",
+    "enableBulkActions": "Zapnout hromadné akce",
+    "disableBulkActions": "Vypnout hromadné akce",
     "tileSize": "Velikost dlaždic",
     "enableSelectionMode": "Zapnout režim výběru",
     "disableSelectionMode": "Vypnout režim výběru",
@@ -302,7 +302,9 @@
       "rescanAll": "Znovu prohledat vše",
       "renderAllThumbnails": "Vygenerovat náhledy pro všechna indexovaná média",
       "retryFailedThumbnails": "Zkusit znovu pouze neúspěšné náhledy",
-      "stopThumbnailRender": "Zastavit generování náhledů"
+      "stopThumbnailRender": "Zastavit generování náhledů",
+      "rescanDescription": "Aktualizujte knihovnu z připojených složek.",
+      "thumbnailsDescription": "Vygenerujte náhledy pro rychlejší procházení."
     },
     "importExport": {
       "heading": "Import / Export",
@@ -310,7 +312,9 @@
       "importCsv": "Importovat CSV s tagy",
       "exportDbBundle": "Exportovat DB + náhledy",
       "importDbBundle": "Importovat DB + náhledy",
-      "hint": "Import CSV sloučí tagy a příznak oblíbených a aplikuje klíč/pořadí skupiny médií podle názvů souborů. Import databáze nahradí aktuální databázi a náhledy."
+      "hint": "Import CSV sloučí tagy a příznak oblíbených a aplikuje klíč/pořadí skupiny médií podle názvů souborů. Import databáze nahradí aktuální databázi a náhledy.",
+      "csvDescription": "Přenášejte štítky pomocí souborů CSV.",
+      "bundleDescription": "Uložte nebo obnovte knihovnu a její náhledy."
     },
     "danger": {
       "heading": "Nebezpečná zóna",

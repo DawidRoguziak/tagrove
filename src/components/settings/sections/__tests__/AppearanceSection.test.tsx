@@ -17,10 +17,10 @@ describe("AppearanceSection", () => {
       />
     );
 
-    const themeSelect = screen.getByRole("combobox", { name: "Select theme" });
-    expect(themeSelect).toHaveValue("dark");
+    expect(screen.getByRole("radio", { name: "Dark" })).toBeChecked();
+    expect(screen.getByRole("group", { name: "Select theme" })).toBeInTheDocument();
 
-    await userEvent.selectOptions(themeSelect, "light");
+    await userEvent.click(screen.getByRole("radio", { name: "Light" }));
     expect(onThemeChange).toHaveBeenCalledWith("light");
 
     const languageSelect = screen.getByRole("combobox", { name: "Select language" });

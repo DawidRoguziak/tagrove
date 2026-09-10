@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "Acciones en lote",
+    "enableBulkActions": "Activar acciones en lote",
+    "disableBulkActions": "Desactivar acciones en lote",
     "tileSize": "Tamaño de las miniaturas",
     "enableSelectionMode": "Activar modo de selección",
     "disableSelectionMode": "Desactivar modo de selección",
@@ -302,7 +302,9 @@
       "rescanAll": "Reescanear todo",
       "renderAllThumbnails": "Generar miniaturas para todos los recursos indexados",
       "retryFailedThumbnails": "Reintentar solo las miniaturas fallidas",
-      "stopThumbnailRender": "Detener la generación de miniaturas"
+      "stopThumbnailRender": "Detener la generación de miniaturas",
+      "rescanDescription": "Actualiza la biblioteca desde las carpetas vinculadas.",
+      "thumbnailsDescription": "Genera vistas previas para explorar más rápido."
     },
     "importExport": {
       "heading": "Importar / Exportar",
@@ -310,7 +312,9 @@
       "importCsv": "Importar CSV de etiquetas",
       "exportDbBundle": "Exportar BD + miniaturas",
       "importDbBundle": "Importar BD + miniaturas",
-      "hint": "La importación de CSV fusiona etiquetas y la marca de favorito, y aplica la clave/orden del grupo multimedia haciendo coincidir los nombres de archivo. La importación de base de datos reemplaza la base de datos actual y las miniaturas."
+      "hint": "La importación de CSV fusiona etiquetas y la marca de favorito, y aplica la clave/orden del grupo multimedia haciendo coincidir los nombres de archivo. La importación de base de datos reemplaza la base de datos actual y las miniaturas.",
+      "csvDescription": "Transfiere etiquetas con archivos CSV.",
+      "bundleDescription": "Guarda o restaura la biblioteca y sus miniaturas."
     },
     "danger": {
       "heading": "Zona de peligro",

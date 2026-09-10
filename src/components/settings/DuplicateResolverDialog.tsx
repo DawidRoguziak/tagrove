@@ -114,7 +114,7 @@ export function DuplicateResolverDialog({
           <h3 id="duplicate-resolver-heading" className="m-0">
             {t("settings.duplicates.resolverHeading")}
           </h3>
-          <p className="m-0 text-xs text-base-content/65">
+          <p className="m-0 text-xs text-[var(--text-muted)]">
             {t("settings.duplicates.resolverSummary", {
               groups: groups.length,
               assets: state.duplicateAssetCount
@@ -139,7 +139,7 @@ export function DuplicateResolverDialog({
 
       <SectionOperationStatus state={operationState} loaderTestId="duplicates-modal-loader" />
 
-      <div className="text-xs text-base-content/75">
+      <div className="text-xs text-[var(--text-muted)]">
         {!hasPendingChanges
           ? t("settings.duplicates.queueHint")
           : state.validationResult.valid
@@ -149,7 +149,7 @@ export function DuplicateResolverDialog({
 
       <div ref={groupsScrollRef} className="overflow-auto pr-1">
         {!groups.length && !operationState.loading ? (
-          <div className="rounded-[var(--radius-control)] border border-base-content/20 bg-base-200/40 p-3 text-sm text-base-content/70">
+          <div className="rounded-[var(--radius-control)] border border-base-content/20 bg-base-200/40 p-3 text-sm text-[var(--text-muted)]">
             {t("settings.duplicates.noGroups")}
           </div>
         ) : null}

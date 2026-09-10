@@ -5,12 +5,9 @@ interface UiChipProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export function UiChip({ tone = "default", className = "", ...props }: UiChipProps) {
-  const isMediaChip = tone === "video" || tone === "gif";
   const classes = [
-    "inline-flex items-center border px-2.5 py-1 text-[10px] font-bold uppercase leading-none tracking-[0.1em]",
-    isMediaChip
-      ? "rounded-none rounded-bl-[var(--radius-surface)] border-r-0 border-t-0"
-      : "rounded-[var(--radius-control)]",
+    "inline-flex items-center border px-2.5 py-1 text-xs font-medium leading-none",
+    "rounded-[var(--radius-control)]",
     tone === "video"
       ? "border-white/20 bg-[var(--media-video-bg)] text-[var(--media-video-content)]"
       : tone === "gif"

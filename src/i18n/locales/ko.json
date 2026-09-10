@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "일괄 작업",
+    "enableBulkActions": "일괄 작업 활성화",
+    "disableBulkActions": "일괄 작업 비활성화",
     "tileSize": "타일 크기",
     "enableSelectionMode": "선택 모드 활성화",
     "disableSelectionMode": "선택 모드 비활성화",
@@ -302,7 +302,9 @@
       "rescanAll": "모두 재스캔",
       "renderAllThumbnails": "인덱싱된 모든 자산의 썸네일 렌더링",
       "retryFailedThumbnails": "실패한 썸네일만 재시도",
-      "stopThumbnailRender": "썸네일 렌더링 중지"
+      "stopThumbnailRender": "썸네일 렌더링 중지",
+      "rescanDescription": "연결된 폴더에서 라이브러리를 새로 고칩니다.",
+      "thumbnailsDescription": "빠른 탐색을 위해 미리보기를 생성합니다."
     },
     "importExport": {
       "heading": "가져오기 / 내보내기",
@@ -310,7 +312,9 @@
       "importCsv": "태그 CSV 가져오기",
       "exportDbBundle": "DB + 썸네일 내보내기",
       "importDbBundle": "DB + 썸네일 가져오기",
-      "hint": "CSV 가져오기는 태그와 즐겨찾기 플래그를 병합하고, 파일 이름 일치로 미디어 그룹 키/순서를 적용합니다. 데이터베이스 가져오기는 현재 데이터베이스와 썸네일을 대체합니다."
+      "hint": "CSV 가져오기는 태그와 즐겨찾기 플래그를 병합하고, 파일 이름 일치로 미디어 그룹 키/순서를 적용합니다. 데이터베이스 가져오기는 현재 데이터베이스와 썸네일을 대체합니다.",
+      "csvDescription": "CSV 파일로 태그를 옮깁니다.",
+      "bundleDescription": "라이브러리와 썸네일을 저장하거나 복원합니다."
     },
     "danger": {
       "heading": "위험 구역",

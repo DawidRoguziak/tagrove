@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "一括操作",
+    "enableBulkActions": "一括操作を有効にする",
+    "disableBulkActions": "一括操作を無効にする",
     "tileSize": "タイルサイズ",
     "enableSelectionMode": "選択モードを有効化",
     "disableSelectionMode": "選択モードを無効化",
@@ -302,7 +302,9 @@
       "rescanAll": "すべて再スキャン",
       "renderAllThumbnails": "インデックス済みアセットのサムネイルをすべて生成",
       "retryFailedThumbnails": "失敗したサムネイルのみ再試行",
-      "stopThumbnailRender": "サムネイル生成を停止"
+      "stopThumbnailRender": "サムネイル生成を停止",
+      "rescanDescription": "登録済みフォルダーからライブラリを更新します。",
+      "thumbnailsDescription": "プレビューを生成して、閲覧を高速化します。"
     },
     "importExport": {
       "heading": "インポート / エクスポート",
@@ -310,7 +312,9 @@
       "importCsv": "タグCSVをインポート",
       "exportDbBundle": "DB + サムネイルをエクスポート",
       "importDbBundle": "DB + サムネイルをインポート",
-      "hint": "CSVインポートはタグとお気に入りフラグをマージし、ファイル名の一致によりメディアグループキー/順序を適用します。データベースインポートは現在のデータベースとサムネイルを置き換えます。"
+      "hint": "CSVインポートはタグとお気に入りフラグをマージし、ファイル名の一致によりメディアグループキー/順序を適用します。データベースインポートは現在のデータベースとサムネイルを置き換えます。",
+      "csvDescription": "CSV ファイルでタグを転送します。",
+      "bundleDescription": "ライブラリとサムネイルを保存または復元します。"
     },
     "danger": {
       "heading": "危険ゾーン",

@@ -48,9 +48,9 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
+    "bulkActions": "Actions groupées",
+    "enableBulkActions": "Activer les actions groupées",
+    "disableBulkActions": "Désactiver les actions groupées",
     "tileSize": "Taille des vignettes",
     "enableSelectionMode": "Activer le mode de sélection",
     "disableSelectionMode": "Désactiver le mode de sélection",
@@ -63,7 +63,7 @@
     "mediaKinds": {
       "all": "Tout",
       "image": "Images",
-      "gif": "Gif",
+      "gif": "GIF",
       "video": "Vidéo"
     },
     "clearFilters": "Effacer tous les filtres de recherche",
@@ -302,7 +302,9 @@
       "rescanAll": "Réanalyser tout",
       "renderAllThumbnails": "Générer les miniatures pour tous les éléments indexés",
       "retryFailedThumbnails": "Réessayer uniquement les miniatures échouées",
-      "stopThumbnailRender": "Arrêter la génération des miniatures"
+      "stopThumbnailRender": "Arrêter la génération des miniatures",
+      "rescanDescription": "Actualisez la bibliothèque depuis les dossiers associés.",
+      "thumbnailsDescription": "Générez des aperçus pour parcourir les fichiers plus vite."
     },
     "importExport": {
       "heading": "Import / Export",
@@ -310,7 +312,9 @@
       "importCsv": "Importer les tags CSV",
       "exportDbBundle": "Exporter DB + miniatures",
       "importDbBundle": "Importer DB + miniatures",
-      "hint": "L’import CSV fusionne les tags et le statut favori et applique la clé/ordre de groupe média en faisant correspondre les noms de fichiers. L’import de base de données remplace la base actuelle et les miniatures."
+      "hint": "L’import CSV fusionne les tags et le statut favori et applique la clé/ordre de groupe média en faisant correspondre les noms de fichiers. L’import de base de données remplace la base actuelle et les miniatures.",
+      "csvDescription": "Transférez les tags avec des fichiers CSV.",
+      "bundleDescription": "Enregistrez ou restaurez la bibliothèque et ses miniatures."
     },
     "danger": {
       "heading": "Zone dangereuse",

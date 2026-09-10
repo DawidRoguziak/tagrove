@@ -34,7 +34,7 @@ export function DuplicateDeleteConfirmDialog({
         <h3 id="duplicate-delete-confirm-heading" className="m-0">
           {t("common.confirm")}
         </h3>
-        <p className="m-0 whitespace-pre-line text-[13px] leading-[1.4] text-base-content/65">
+        <p className="m-0 whitespace-pre-line text-[13px] leading-[1.4] text-[var(--text-muted)]">
           {t("settings.actions.dialogs.confirmDuplicateChanges", {
             count,
             deleteCount

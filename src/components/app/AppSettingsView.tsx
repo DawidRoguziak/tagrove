@@ -28,7 +28,7 @@ export function AppSettingsView({ onBack, ...settingsPanelProps }: AppSettingsVi
           </UiButton>
           <div className="min-w-0 flex-1 border-l border-[var(--border-soft)] pl-4">
             <h1 className="m-0 text-xl leading-tight">{t("settings.page.heading")}</h1>
-            <p className="m-0 mt-0.5 hidden text-xs text-base-content/60 sm:block">
+            <p className="m-0 mt-0.5 hidden text-xs text-[var(--text-muted)] sm:block">
               {t("settings.page.description")}
             </p>
           </div>

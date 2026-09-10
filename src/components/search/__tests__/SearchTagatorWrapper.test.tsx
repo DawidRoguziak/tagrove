@@ -63,8 +63,7 @@ describe("SearchTagatorWrapper", () => {
       />
     );
 
-    const select = screen.getByRole("combobox", { name: "Media kind" }) as HTMLSelectElement;
-    await userEvent.selectOptions(select, "video");
+    await userEvent.click(screen.getByRole("radio", { name: "Video" }));
 
     expect(onMediaKindChange).toHaveBeenCalledWith("video");
     expect(onSearchSubmit).not.toHaveBeenCalled();

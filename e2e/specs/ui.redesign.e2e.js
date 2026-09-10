@@ -52,6 +52,11 @@ suite("UI redesign desktop review", function () {
     console.log("UI_REDESIGN_EVIDENCE", evidence);
     root = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-ui-redesign-"));
     await copyPngFixtures(root, "study", 24);
+    const longFilename = `${"long-filename-".repeat(12)}.png`;
+    await fs.rename(path.join(root, "study-24.png"), path.join(root, longFilename));
+    // Keep the long name near the top so every viewport exercises truncation and wrapping.
+    const modifiedAt = new Date(Date.now() + 60000);
+    await fs.utimes(path.join(root, longFilename), modifiedAt, modifiedAt);
     await fs.mkdir(path.join(root, "duplicates"));
     await fs.copyFile(path.join(root, "study-1.png"), path.join(root, "duplicates", "study-1.png"));
     await createPlayableFixtures(root, "motion");
@@ -60,7 +65,7 @@ suite("UI redesign desktop review", function () {
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
     const page = await invoke("list_assets", { offset: 0, limit: 200, tagsAnd: [], tagsNot: [], kind: "image", favoritesOnly: false });
-    imageId = page.items[0].id;
+    imageId = page.items.find(asset => path.basename(asset.path) === longFilename).id;
     await invoke("set_asset_tags", { assetId: imageId, tags: ["architecture", "reference", "studio", "long_tag_".repeat(18)] });
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();
@@ -77,18 +82,59 @@ suite("UI redesign desktop review", function () {
         await browser.setWindowSize(width, height);
         await browser.refresh();
         await click('#open-settings-button');
-        await $('#settings-theme-select').selectByAttribute("value", theme);
+        await $(`.theme-choice:has(input[value="${theme}"])`).click();
         await browser.waitUntil(async () => (await $('html').getAttribute('data-theme')) === theme);
+        await browser.refresh();
+        await galleryReady();
+        assert.equal(await $('html').getAttribute('data-theme'), theme, 'Theme survives reload');
+        await click('#open-settings-button');
+        await $(`.theme-choice input[value="${theme}"]`).waitForExist();
+        assert.equal(await $(`.theme-choice input[value="${theme}"]`).isSelected(), true);
         await capture(`${theme}-${width}-settings`);
         await click('.settings-nav a[href="#settings-appearance"]');
         assert.equal(await $('#settings-appearance').isFocused(), true);
         const sectionTop = await browser.execute(() => document.getElementById('settings-appearance').getBoundingClientRect().top);
         assert.ok(sectionTop >= 65 && sectionTop < height - 100, `Section top: ${sectionTop}`);
+        await capture(`${theme}-${width}-appearance`);
+        await $(`.theme-choice:has(input[value="${theme}"])`).click();
+        await browser.keys(theme === 'light' ? 'ArrowRight' : 'ArrowLeft');
+        await browser.waitUntil(async () => (await $('html').getAttribute('data-theme')) !== theme);
+        await browser.keys(theme === 'light' ? 'ArrowLeft' : 'ArrowRight');
+        await browser.waitUntil(async () => (await $('html').getAttribute('data-theme')) === theme);
         await click('button[aria-label="Back"]');
         await galleryReady();
         assert.equal(await browser.execute(() => document.documentElement.scrollWidth <= innerWidth), true);
         const primary = await browser.execute(() => getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim());
         assert.equal(primary.toLowerCase(), theme === 'dark' ? '#7cb87c' : '#2d5a2d');
+        const colors = await browser.execute(() => {
+          const style = getComputedStyle(document.documentElement);
+          return Object.fromEntries(['--color-base-100', '--color-base-200', '--color-base-300', '--color-base-content', '--text-muted', '--color-primary', '--color-primary-content'].map(key => [key, style.getPropertyValue(key).trim()]));
+        });
+        const luminance = hex => {
+          const value = hex.replace('#', '');
+          const expanded = value.length === 3 ? [...value].map(c => c + c).join('') : value;
+          const rgb = expanded.match(/../g).map(channel => Number.parseInt(channel, 16) / 255).map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+          return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+        };
+        const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
+        for (const surface of ['--color-base-100', '--color-base-200', '--color-base-300']) {
+          for (const text of ['--color-base-content', '--color-primary', ...(surface === '--color-base-300' ? [] : ['--text-muted'])]) {
+            assert.ok(contrast(colors[text], colors[surface]) >= 4.5, `${text} on ${surface} must meet 4.5:1`);
+          }
+        }
+        assert.ok(contrast(colors['--color-primary'], colors['--color-primary-content']) >= 4.5);
+        await click('#gallery-media-kind label:has(input[value="all"])');
+        await browser.keys('ArrowRight');
+        await browser.waitUntil(async () => await $('#gallery-media-kind input[value="image"]').isSelected());
+        await browser.keys('ArrowLeft');
+        await browser.waitUntil(async () => await $('#gallery-media-kind input[value="all"]').isSelected());
+        await galleryReady();
+        await browser.keys(['Shift', 'Tab']);
+        await browser.keys('Tab');
+        assert.equal(await browser.execute(() => {
+          const input = document.querySelector('#gallery-media-kind input:checked');
+          return document.activeElement === input && getComputedStyle(input.nextElementSibling).outlineStyle === 'solid';
+        }), true, 'The selected segment has a visible keyboard focus ring');
         await capture(`${theme}-${width}-gallery`);
 
         await $('.filter-input').setValue('arch');
@@ -156,7 +202,7 @@ suite("UI redesign desktop review", function () {
       await browser.setWindowSize(1440, 900);
       await browser.refresh();
       await click('#open-settings-button');
-      await $('#settings-theme-select').selectByAttribute('value', theme);
+      await $(`.theme-choice:has(input[value="${theme}"])`).click();
       await click('button[aria-label="Back"]');
       for (const [width, height] of [[600, 400], [320, 360]]) {
         await browser.setWindowSize(1440, 900);
@@ -221,7 +267,7 @@ suite("UI redesign desktop review", function () {
     await browser.setWindowSize(1440, 900);
     await browser.refresh();
     await galleryReady();
-    await $('#gallery-media-kind').selectByAttribute('value', 'video');
+    await $('#gallery-media-kind label:has(input[value="video"])').click();
     await $('button[data-asset-index="0"]').waitForDisplayed();
     await click('button[data-asset-index="0"]');
     await $('[data-lightbox-video-player]').waitForDisplayed();

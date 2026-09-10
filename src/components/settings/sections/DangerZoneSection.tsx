@@ -19,8 +19,8 @@ export function DangerZoneSection({
   return (
     <section className="grid gap-4 rounded-[var(--radius-surface)] border border-error/20 bg-error/5 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ">
       <div>
-        <h3 className="m-0 text-lg text-error">{t("settings.danger.heading")}</h3>
-        <p className="m-0 mt-1 max-w-[760px] text-xs leading-relaxed text-base-content/58">
+        <h3 className="m-0 text-base text-error">{t("settings.danger.heading")}</h3>
+        <p className="m-0 mt-1 max-w-[760px] text-xs leading-relaxed text-[var(--text-muted)]">
           {t("settings.danger.hint")}
         </p>
       </div>

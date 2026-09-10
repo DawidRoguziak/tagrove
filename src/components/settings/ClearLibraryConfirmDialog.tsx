@@ -34,7 +34,7 @@ export function ClearLibraryConfirmDialog({
         <h3 id="clear-library-confirm-heading" className="m-0">
           {t("settings.dialogs.clearLibrary.heading")}
         </h3>
-        <p className="m-0 text-[13px] leading-[1.4] text-base-content/65">
+        <p className="m-0 text-[13px] leading-[1.4] text-[var(--text-muted)]">
           {t("settings.dialogs.clearLibrary.description")}
         </p>
         <div className="flex items-center gap-2">

@@ -25,7 +25,7 @@ export function GalleryStatusFooter({
 
   if (!isGeneratingThumbnails && !hasMore) {
     return (
-      <div className="mt-4 border-t border-[var(--border-soft)] px-5 py-3 text-xs text-base-content/65">
+      <div className="mt-4 border-t border-[var(--border-soft)] px-5 py-3 text-xs text-[var(--text-muted)]">
         {noMoreLabel}
       </div>
     );

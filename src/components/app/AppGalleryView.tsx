@@ -43,7 +43,7 @@ export function AppGalleryView({
     <>
       <TopBar
         toolbarContent={<>
-          <span className="text-xs tabular-nums text-base-content/65" role="status">{t("workspace.itemCount", { count: media.assetCount })}</span>
+          <span className="text-xs tabular-nums text-[var(--text-muted)]" role="status">{t("workspace.itemCount", { count: media.assetCount })}</span>
       <TileSizeSlider
         tileSize={media.tileSize}
         min={media.tileSizeMin}

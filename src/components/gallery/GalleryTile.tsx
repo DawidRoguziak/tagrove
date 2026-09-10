@@ -116,12 +116,12 @@ export const GalleryTile = memo(function GalleryTile({
         </span>
       ) : null}
       {asset.kind === "video" ? (
-        <UiChip className="pointer-events-none absolute right-0 top-0 shadow-[var(--shadow-chip)]" tone="video">
+        <UiChip className="pointer-events-none absolute right-2 top-2 shadow-[var(--shadow-chip)]" tone="video">
           {videoChipLabel}
         </UiChip>
       ) : null}
       {asset.kind === "gif" ? (
-        <UiChip className="pointer-events-none absolute right-0 top-0 shadow-[var(--shadow-chip)]" tone="gif">
+        <UiChip className="pointer-events-none absolute right-2 top-2 shadow-[var(--shadow-chip)]" tone="gif">
           {gifChipLabel}
         </UiChip>
       ) : null}

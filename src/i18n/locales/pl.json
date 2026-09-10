@@ -48,10 +48,10 @@
     }
   },
   "controls": {
-    "bulkActions": "Bulk actions",
-    "enableBulkActions": "Enable bulk actions",
-    "disableBulkActions": "Disable bulk actions",
-    "tileSize": "Rozmiar kafelkow",
+    "bulkActions": "Operacje zbiorcze",
+    "enableBulkActions": "Włącz operacje zbiorcze",
+    "disableBulkActions": "Wyłącz operacje zbiorcze",
+    "tileSize": "Rozmiar kafelków",
     "enableSelectionMode": "Wlacz tryb zaznaczania",
     "disableSelectionMode": "Wylacz tryb zaznaczania",
     "loadMore": "Wczytaj wiecej"
@@ -63,7 +63,7 @@
     "mediaKinds": {
       "all": "Wszystkie",
       "image": "Obrazy",
-      "gif": "Gif",
+      "gif": "GIF",
       "video": "Wideo"
     },
     "clearFilters": "Wyczysc wszystkie filtry",
@@ -302,7 +302,9 @@
       "rescanAll": "Skanuj wszystko ponownie",
       "renderAllThumbnails": "Renderuj miniaturki dla wszystkich zindeksowanych zasobow",
       "retryFailedThumbnails": "Ponow tylko nieudane miniaturki",
-      "stopThumbnailRender": "Zatrzymaj renderowanie miniaturek"
+      "stopThumbnailRender": "Zatrzymaj renderowanie miniaturek",
+      "rescanDescription": "Odśwież bibliotekę z podłączonych folderów.",
+      "thumbnailsDescription": "Generuj podglądy, aby szybciej przeglądać pliki."
     },
     "importExport": {
       "heading": "Import / Export",
@@ -310,7 +312,9 @@
       "importCsv": "Importuj tagi CSV",
       "exportDbBundle": "Eksportuj DB + miniaturki",
       "importDbBundle": "Importuj DB + miniaturki",
-      "hint": "Import CSV laczy tagi i flage ulubionych oraz stosuje klucz/kolejnosc grupy mediow po nazwie pliku. Import bazy podmienia obecna baze i miniaturki."
+      "hint": "Import CSV laczy tagi i flage ulubionych oraz stosuje klucz/kolejnosc grupy mediow po nazwie pliku. Import bazy podmienia obecna baze i miniaturki.",
+      "csvDescription": "Przenoś tagi za pomocą plików CSV.",
+      "bundleDescription": "Zapisz lub przywróć bibliotekę i jej miniatury."
     },
     "danger": {
       "heading": "Strefa ryzyka",

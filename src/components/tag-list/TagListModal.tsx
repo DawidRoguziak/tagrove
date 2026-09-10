@@ -169,7 +169,7 @@ export function TagListModal({
       </div>
 
       <div className="grid gap-1.5">
-        <label className="text-xs text-base-content/65" htmlFor="tag-list-filter-input">
+        <label className="text-xs text-[var(--text-muted)]" htmlFor="tag-list-filter-input">
           {t("tagList.filterLabel")}
         </label>
         <input
@@ -187,7 +187,7 @@ export function TagListModal({
         />
       </div>
 
-      <p className="m-0 text-xs text-base-content/65">{selectionSummary}</p>
+      <p className="m-0 text-xs text-[var(--text-muted)]">{selectionSummary}</p>
 
       <div
         ref={listRef}
@@ -196,9 +196,9 @@ export function TagListModal({
         onScroll={handleListScroll}
       >
         {loading && page.items.length === 0 ? (
-          <p className="m-0 px-1 py-2 text-sm text-base-content/65">{t("tagList.loading")}</p>
+          <p className="m-0 px-1 py-2 text-sm text-[var(--text-muted)]">{t("tagList.loading")}</p>
         ) : page.items.length === 0 ? (
-          <p className="m-0 px-1 py-2 text-sm text-base-content/65">
+          <p className="m-0 px-1 py-2 text-sm text-[var(--text-muted)]">
             {deferredQuery ? t("tagList.noMatches") : t("tagList.empty")}
           </p>
         ) : (
@@ -225,7 +225,7 @@ export function TagListModal({
         )}
 
         {loadingMore ? (
-          <p className="m-0 px-1 py-2 text-xs text-base-content/65">{t("tagList.loadingMore")}</p>
+          <p className="m-0 px-1 py-2 text-xs text-[var(--text-muted)]">{t("tagList.loadingMore")}</p>
         ) : null}
       </div>
 

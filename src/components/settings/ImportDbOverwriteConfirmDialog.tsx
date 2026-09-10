@@ -30,7 +30,7 @@ export function ImportDbOverwriteConfirmDialog({
         <h3 id="import-db-overwrite-confirm-heading" className="m-0">
           {t("common.confirm")}
         </h3>
-        <p className="m-0 whitespace-pre-line text-[13px] leading-[1.4] text-base-content/65">
+        <p className="m-0 whitespace-pre-line text-[13px] leading-[1.4] text-[var(--text-muted)]">
           {t("settings.actions.dialogs.confirmDbImportOverwrite")}
         </p>
         <div className="flex items-center gap-2">

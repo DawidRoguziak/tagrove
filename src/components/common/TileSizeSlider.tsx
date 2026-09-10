@@ -37,7 +37,7 @@ export function TileSizeSlider({
         {bulkActionsLabel}
       </UiButton>
       <div className="flex items-center gap-3 border-l border-[var(--border-soft)] pl-4">
-        <label htmlFor="tile-size" className="text-xs text-base-content/70">{t("controls.tileSize")}</label>
+        <label htmlFor="tile-size" className="text-xs text-[var(--text-muted)]">{t("controls.tileSize")}</label>
         <div className="flex w-28 items-center py-3">
           <UiSlider id="tile-size" aria-label={t("controls.tileSize")} min={min} max={max} step={step}
             value={tileSize} onChange={(event) => onChange(Number(event.target.value))} />

@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "Appearance",
-      "description": "Choose application theme and language.",
+      "description": "Choose application theme.",
       "theme": {
         "label": "Theme",
         "ariaLabel": "Select theme",
         "light": "Light",
         "dark": "Dark"
-      },
-      "language": {
-        "label": "Language",
-        "ariaLabel": "Select language",
-        "en": "English",
-        "pl": "Polish",
-        "fr": "French",
-        "de": "German",
-        "it": "Italian",
-        "es": "Spanish",
-        "ru": "Russian",
-        "zh": "Chinese (Simplified)",
-        "ja": "Japanese",
-        "ko": "Korean"
       }
+    },
+    "language": {
+      "heading": "Language",
+      "description": "Choose application language.",
+      "ariaLabel": "Select language"
     },
     "scan": {
       "autoScan": "Scan on app startup",

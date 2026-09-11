@@ -1,6 +1,6 @@
 # Settings navigation
 
-Settings exposes appearance, indexed scan paths, thumbnail actions, and data operations.
+Settings exposes appearance, language, indexed scan paths, thumbnail actions, and data operations.
 
 ## Sub-features
 
@@ -24,7 +24,7 @@ bun run app:control click "$control_session" 'button[aria-label="Back"]'
 bun run app:control inspect "$control_session" .filter-input
 ```
 
-Require `Appearance`, `Scan settings`, and the run's temporary media path in the returned
+Require `Appearance`, `Language`, `Scan settings`, and the run's temporary media path in the returned
 text. Require the search field after Back. This recipe proves navigation, not destructive actions.
 
 ## Gotchas

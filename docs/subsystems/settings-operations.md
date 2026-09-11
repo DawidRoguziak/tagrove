@@ -7,8 +7,10 @@ This page owns settings state, operation sequencing, progress presentation, conf
 ## Settings layout
 
 The full-page view keeps all operation sections mounted. A 200px navigation column links to
-scan settings, appearance, import/export, duplicates and the danger zone in that order. At
-widths below 1000px navigation wraps above the content. Selecting a link scrolls to and
+scan settings, appearance, language, import/export, duplicates and the danger zone in that order. At
+widths below 1000px navigation wraps above the content. The page grid stays within the
+viewport; the page title truncates when space beside the window controls is tight.
+Selecting a link scrolls to and
 focuses the section; it does not start an operation, change the URL or persist a new setting.
 The first-folder route still highlights and scrolls to scanning. Shared controls, compact
 folder rows and dialogs follow the [frontend visual system](../frontend/architecture-and-ui-conventions.md#compact-studio-visual-system).
@@ -17,13 +19,14 @@ folder rows and dialogs follow the [frontend visual system](../frontend/architec
 
 `useAppShellController` constructs `useSettingsActions` even when the gallery is visible. The settings action state therefore has shell lifetime: it survives switching between the gallery and the lazy-loaded `AppSettingsView`, but not a complete app unmount or restart. On shell mount, scan roots are hydrated alongside known tags. `useSettingsView` independently owns whether the full-page settings view is open; Back and the shell's registered settings-layer Escape handler return to the gallery.
 
-`AppSettingsView` supplies the sticky page header and renders `SettingsPanel` in full-view mode. `SettingsPanel` is the rendering/composition boundary for five sections:
+`AppSettingsView` supplies the sticky page header and renders `SettingsPanel` in full-view mode. `SettingsPanel` is the rendering/composition boundary for six sections:
 
-1. `AppearanceSection` changes theme and language through its own controller. These preferences do not use the operation runner.
-2. `ScanSettingsSection` lists roots and exposes add, remove, per-root/all-root rescan, bulk thumbnail render, retry, and stop controls.
-3. `ImportExportSection` exposes CSV and database-bundle import/export.
-4. `DuplicatesSection` starts the duplicate scan and shows the last non-zero result.
-5. `DangerZoneSection` opens the clear-library confirmation.
+1. `ScanSettingsSection` lists roots and exposes add, remove, per-root/all-root rescan, bulk thumbnail render, retry, and stop controls.
+2. `AppearanceSection` changes the theme, preserving the light/dark preview sizes.
+3. `LanguageSection` displays the language selector directly below Appearance. Its heading and description sit on the left and the selector on the right, stacking below at smaller widths. Both preference sections receive values and callbacks from the existing `appearance` controller and bypass the operation runner.
+4. `ImportExportSection` exposes CSV and database-bundle import/export.
+5. `DuplicatesSection` starts the duplicate scan and shows the last non-zero result.
+6. `DangerZoneSection` opens the clear-library confirmation.
 
 The panel also mounts the remove-root, clear-library, duplicate resolver, duplicate-delete, and database-import confirmation dialogs. Production composition passes the typed `appearance`, `scan`, `importExport`, `duplicates`, and `dangerZone` controller groups. The flat props and no-op defaults in `SettingsPanel` are a compatibility/test seam, not an additional state owner.
 
@@ -217,3 +220,18 @@ When changing settings behavior:
 - `src/__tests__/App.test.tsx` covers the full-page settings route, Back/Escape, highlighted first-folder route, root confirmation, thumbnail stop/retry, section loaders, timestamped export names, and disabling other settings actions during a running operation.
 
 The current tests do not comprehensively exercise listener-registration failure, translated JSON/backend error formats, every settings-specific nested focus transition, partial duplicate-application failure, or every cell of the refresh/reset matrix. Treat those as gaps when changing the corresponding behavior.
+
+## Language card verification
+
+The focused `AppearanceSection`, `LanguageSection`, and `SettingsPanel` tests cover theme
+selection, ordered language options, callbacks, and navigation focus. The opt-in desktop
+spec checks both cards in English and Polish at 1440, 600, and 320 pixels, including
+responsive placement, preview height, immediate switching, and persistence after reload.
+Run it on a private X11 display with temporary XDG directories as described in
+[desktop testing](../development/testing.md#real-desktop-e2e):
+
+```sh
+MEDIATAGGER_SETTINGS_LANGUAGE=1 bun run test:e2e:tauri --spec e2e/specs/settings-language.e2e.js
+```
+
+Screenshots stay under ignored `artifacts/settings-language/`.

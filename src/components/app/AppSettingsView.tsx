@@ -13,7 +13,7 @@ export function AppSettingsView({ onBack, ...settingsPanelProps }: AppSettingsVi
   const { t } = useTranslation();
 
   return (
-    <div className="grid min-h-full content-start pb-8">
+    <div className="grid min-h-full grid-cols-1 content-start pb-8">
       <header data-tauri-drag-region="deep" className="window-drag-surface sticky top-0 z-40 border-b border-[var(--border-soft)] bg-[var(--window-chrome-bg)] px-4 py-3 sm:px-6">
         <div className="flex w-full items-center gap-4">
           <UiButton
@@ -27,7 +27,7 @@ export function AppSettingsView({ onBack, ...settingsPanelProps }: AppSettingsVi
             {t("common.back")}
           </UiButton>
           <div className="min-w-0 flex-1 border-l border-[var(--border-soft)] pl-4">
-            <h1 className="m-0 text-xl leading-tight">{t("settings.page.heading")}</h1>
+            <h1 className="m-0 truncate text-xl leading-tight">{t("settings.page.heading")}</h1>
             <p className="m-0 mt-0.5 hidden text-xs text-[var(--text-muted)] sm:block">
               {t("settings.page.description")}
             </p>

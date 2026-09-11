@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "外观",
-      "description": "选择应用主题和语言。",
+      "description": "选择应用主题。",
       "theme": {
         "label": "主题",
         "ariaLabel": "选择主题",
         "light": "浅色",
         "dark": "深色"
-      },
-      "language": {
-        "label": "语言",
-        "ariaLabel": "选择语言",
-        "en": "英语",
-        "pl": "波兰语",
-        "fr": "法语",
-        "de": "德语",
-        "it": "意大利语",
-        "es": "西班牙语",
-        "ru": "俄语",
-        "zh": "中文（简体）",
-        "ja": "日语",
-        "ko": "韩语"
       }
+    },
+    "language": {
+      "heading": "语言",
+      "description": "选择应用语言。",
+      "ariaLabel": "选择语言"
     },
     "scan": {
       "autoScan": "应用启动时扫描",

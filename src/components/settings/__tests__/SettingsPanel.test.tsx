@@ -66,6 +66,7 @@ describe("SettingsPanel", () => {
     renderPanel();
 
     expect(screen.getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Language" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Scan settings" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Import / Export" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Danger zone" })).toBeInTheDocument();
@@ -74,6 +75,9 @@ describe("SettingsPanel", () => {
 
   it("wires section action callbacks", async () => {
     const { props } = renderPanel();
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Select language" }), "pl");
+    expect(props.onLanguageChange).toHaveBeenCalledWith("pl");
 
     await userEvent.click(screen.getByRole("button", { name: "Choose folder" }));
     await userEvent.click(screen.getByRole("button", { name: "Rescan all" }));
@@ -158,6 +162,19 @@ describe("SettingsPanel", () => {
     expect(appearance).toHaveFocus();
     expect(window.location.hash).toBe(previousHash);
     expect(within(navigation).getByRole("link", { name: "Appearance" })).toHaveAttribute("aria-current", "location");
+    const language = container.querySelector<HTMLElement>("#settings-language");
+    if (!language) throw new Error("Missing language section");
+    expect(appearance.nextElementSibling).toBe(language);
+    const languageLink = within(navigation).getByRole("link", { name: "Language" });
+    expect(within(navigation).getByRole("link", { name: "Appearance" }).nextElementSibling).toBe(languageLink);
+    const languageScroll = vi.fn();
+    language.scrollIntoView = languageScroll;
+    await userEvent.click(languageLink);
+    expect(languageScroll).toHaveBeenCalledWith({ block: "start", behavior: "instant" });
+    expect(language).toHaveFocus();
+    expect(languageLink).toHaveAttribute("aria-current", "location");
+    expect(within(navigation).getByRole("link", { name: "Appearance" })).not.toHaveAttribute("aria-current");
+    expect(window.location.hash).toBe(previousHash);
     expect(screen.getByRole("button", { name: "Choose folder" })).toBeInTheDocument();
   });
 

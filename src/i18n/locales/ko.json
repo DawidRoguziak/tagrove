@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "모양",
-      "description": "애플리케이션 테마와 언어를 선택하세요.",
+      "description": "앱 테마를 선택하세요.",
       "theme": {
         "label": "테마",
         "ariaLabel": "테마 선택",
         "light": "라이트",
         "dark": "다크"
-      },
-      "language": {
-        "label": "언어",
-        "ariaLabel": "언어 선택",
-        "en": "영어",
-        "pl": "폴란드어",
-        "fr": "프랑스어",
-        "de": "독일어",
-        "it": "이탈리아어",
-        "es": "스페인어",
-        "ru": "러시아어",
-        "zh": "중국어(간체)",
-        "ja": "일본어",
-        "ko": "한국어"
       }
+    },
+    "language": {
+      "heading": "언어",
+      "description": "앱 언어를 선택하세요.",
+      "ariaLabel": "언어 선택"
     },
     "scan": {
       "autoScan": "앱 시작 시 스캔",

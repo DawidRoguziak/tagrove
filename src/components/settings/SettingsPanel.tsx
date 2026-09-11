@@ -4,6 +4,7 @@ import { DuplicateDeleteConfirmDialog } from "./DuplicateDeleteConfirmDialog";
 import { DuplicateResolverDialog } from "./DuplicateResolverDialog";
 import { ImportDbOverwriteConfirmDialog } from "./ImportDbOverwriteConfirmDialog";
 import { RemoveScanRootConfirmDialog } from "./RemoveScanRootConfirmDialog";
+import { LanguageSection } from "./sections/LanguageSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
 import { DangerZoneSection } from "./sections/DangerZoneSection";
 import { DuplicatesSection } from "./sections/DuplicatesSection";
@@ -237,11 +238,15 @@ export function SettingsPanel({
             </div>
             <div id="settings-appearance" className="settings-section" tabIndex={-1}>
               <AppearanceSection
-            theme={appearanceController.theme}
-            onThemeChange={appearanceController.onThemeChange}
-            language={appearanceController.language}
-            onLanguageChange={appearanceController.onLanguageChange}
-          />
+                theme={appearanceController.theme}
+                onThemeChange={appearanceController.onThemeChange}
+              />
+            </div>
+            <div id="settings-language" className="settings-section" tabIndex={-1}>
+              <LanguageSection
+                language={appearanceController.language}
+                onLanguageChange={appearanceController.onLanguageChange}
+              />
             </div>
             <div id="settings-import-export" className="settings-section" tabIndex={-1}>
               <ImportExportSection

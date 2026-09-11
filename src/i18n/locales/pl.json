@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "Wyglad",
-      "description": "Wybierz motyw i jezyk aplikacji.",
+      "description": "Wybierz motyw aplikacji.",
       "theme": {
         "label": "Motyw",
         "ariaLabel": "Wybierz motyw",
         "light": "Jasny",
         "dark": "Ciemny"
-      },
-      "language": {
-        "label": "Jezyk",
-        "ariaLabel": "Wybierz jezyk",
-        "en": "Angielski",
-        "pl": "Polski",
-        "fr": "Francuski",
-        "de": "Niemiecki",
-        "it": "Wloski",
-        "es": "Hiszpanski",
-        "ru": "Rosyjski",
-        "zh": "Chinski (uproszczony)",
-        "ja": "Japonski",
-        "ko": "Koreanski"
       }
+    },
+    "language": {
+      "heading": "Język",
+      "description": "Wybierz język aplikacji.",
+      "ariaLabel": "Wybierz język"
     },
     "scan": {
       "autoScan": "Skanuj przy uruchomieniu aplikacji",

@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "外観",
-      "description": "アプリのテーマと言語を選択します。",
+      "description": "アプリのテーマを選択します。",
       "theme": {
         "label": "テーマ",
         "ariaLabel": "テーマを選択",
         "light": "ライト",
         "dark": "ダーク"
-      },
-      "language": {
-        "label": "言語",
-        "ariaLabel": "言語を選択",
-        "en": "英語",
-        "pl": "ポーランド語",
-        "fr": "フランス語",
-        "de": "ドイツ語",
-        "it": "イタリア語",
-        "es": "スペイン語",
-        "ru": "ロシア語",
-        "zh": "中国語（簡体字）",
-        "ja": "日本語",
-        "ko": "韓国語"
       }
+    },
+    "language": {
+      "heading": "言語",
+      "description": "アプリの言語を選択します。",
+      "ariaLabel": "言語を選択"
     },
     "scan": {
       "autoScan": "アプリ起動時にスキャン",

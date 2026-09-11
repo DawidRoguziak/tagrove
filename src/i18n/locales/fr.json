@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "Apparence",
-      "description": "Choisissez le thème de l’application et la langue.",
+      "description": "Choisissez le thème de l’application.",
       "theme": {
         "label": "Thème",
         "ariaLabel": "Sélectionner le thème",
         "light": "Clair",
         "dark": "Sombre"
-      },
-      "language": {
-        "label": "Langue",
-        "ariaLabel": "Sélectionner la langue",
-        "en": "Anglais",
-        "pl": "Polonais",
-        "fr": "Français",
-        "de": "Allemand",
-        "it": "Italien",
-        "es": "Espagnol",
-        "ru": "Russe",
-        "zh": "Chinois (simplifié)",
-        "ja": "Japonais",
-        "ko": "Coréen"
       }
+    },
+    "language": {
+      "heading": "Langue",
+      "description": "Choisissez la langue de l’application.",
+      "ariaLabel": "Sélectionner la langue"
     },
     "scan": {
       "autoScan": "Analyser au démarrage de l’application",

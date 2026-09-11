@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "Darstellung",
-      "description": "Wählen Sie das Anwendungsthema und die Sprache.",
+      "description": "Wählen Sie das Design der Anwendung.",
       "theme": {
         "label": "Thema",
         "ariaLabel": "Thema auswählen",
         "light": "Hell",
         "dark": "Dunkel"
-      },
-      "language": {
-        "label": "Sprache",
-        "ariaLabel": "Sprache auswählen",
-        "en": "Englisch",
-        "pl": "Polnisch",
-        "fr": "Französisch",
-        "de": "Deutsch",
-        "it": "Italienisch",
-        "es": "Spanisch",
-        "ru": "Russisch",
-        "zh": "Chinesisch (Vereinfacht)",
-        "ja": "Japanisch",
-        "ko": "Koreanisch"
       }
+    },
+    "language": {
+      "heading": "Sprache",
+      "description": "Wählen Sie die Sprache der Anwendung.",
+      "ariaLabel": "Sprache auswählen"
     },
     "scan": {
       "autoScan": "Beim App-Start scannen",

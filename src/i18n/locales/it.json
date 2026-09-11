@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "Aspetto",
-      "description": "Scegli il tema e la lingua dell'applicazione.",
+      "description": "Scegli il tema dell’applicazione.",
       "theme": {
         "label": "Tema",
         "ariaLabel": "Seleziona tema",
         "light": "Chiaro",
         "dark": "Scuro"
-      },
-      "language": {
-        "label": "Lingua",
-        "ariaLabel": "Seleziona lingua",
-        "en": "Inglese",
-        "pl": "Polacco",
-        "fr": "Francese",
-        "de": "Tedesco",
-        "it": "Italiano",
-        "es": "Spagnolo",
-        "ru": "Russo",
-        "zh": "Cinese (Semplificato)",
-        "ja": "Giapponese",
-        "ko": "Coreano"
       }
+    },
+    "language": {
+      "heading": "Lingua",
+      "description": "Scegli la lingua dell’applicazione.",
+      "ariaLabel": "Seleziona lingua"
     },
     "scan": {
       "autoScan": "Scansiona all’avvio dell’app",

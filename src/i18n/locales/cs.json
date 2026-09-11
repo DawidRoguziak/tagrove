@@ -263,27 +263,18 @@
     },
     "appearance": {
       "heading": "Vzhled",
-      "description": "Vyberte motiv aplikace a jazyk.",
+      "description": "Vyberte motiv aplikace.",
       "theme": {
         "label": "Motiv",
         "ariaLabel": "Vyberte motiv",
         "light": "Světlý",
         "dark": "Tmavý"
-      },
-      "language": {
-        "label": "Jazyk",
-        "ariaLabel": "Vyberte jazyk",
-        "en": "Angličtina",
-        "pl": "Polština",
-        "fr": "Francouzština",
-        "de": "Němčina",
-        "it": "Italština",
-        "es": "Španělština",
-        "ru": "Ruština",
-        "zh": "Čínština (zjednodušená)",
-        "ja": "Japonština",
-        "ko": "Korejština"
       }
+    },
+    "language": {
+      "heading": "Jazyk",
+      "description": "Vyberte jazyk aplikace.",
+      "ariaLabel": "Vyberte jazyk"
     },
     "scan": {
       "autoScan": "Skenovat při spuštění aplikace",

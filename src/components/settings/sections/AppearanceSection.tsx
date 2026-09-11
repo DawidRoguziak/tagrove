@@ -1,20 +1,14 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
-import type { AppLanguage } from "../../app/types";
-import { APP_LANGUAGES, APP_LANGUAGE_NATIVE_LABELS } from "../../../i18n/languages";
 
 interface AppearanceSectionProps {
   theme: "light" | "dark";
   onThemeChange: (value: "light" | "dark") => void;
-  language: AppLanguage;
-  onLanguageChange: (value: AppLanguage) => void;
 }
 
 export function AppearanceSection({
   theme,
-  onThemeChange,
-  language,
-  onLanguageChange
+  onThemeChange
 }: AppearanceSectionProps) {
   const { t } = useTranslation();
   const themeName = useId();
@@ -39,25 +33,6 @@ export function AppearanceSection({
             </label>
           ))}
         </fieldset>
-
-        <div className="grid gap-1.5">
-          <label htmlFor="settings-language-select" className="text-xs font-semibold text-[var(--text-muted)]">
-            {t("settings.appearance.language.label")}
-          </label>
-          <select
-            id="settings-language-select"
-            className="theme-select h-9 min-h-9 w-full text-sm"
-            aria-label={t("settings.appearance.language.ariaLabel")}
-            value={language}
-            onChange={(event) => onLanguageChange(event.target.value as AppLanguage)}
-          >
-            {APP_LANGUAGES.map((languageCode) => (
-              <option key={languageCode} value={languageCode}>
-                {APP_LANGUAGE_NATIVE_LABELS[languageCode]}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
     </section>
   );

@@ -60,7 +60,7 @@ export function ScanSettingsSection({
   return (
     <section
       ref={sectionRef}
-      className={`grid gap-5 rounded-[var(--radius-surface)] border bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)] transition-colors duration-150 ${
+      className={`grid gap-5 rounded-[var(--radius-surface)] border bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)] motion-feedback ${
         highlighted
           ? "border-primary/60 shadow-[0_0_0_3px_oklch(var(--p)/0.16),var(--shadow-surface)]"
           : "border-[var(--border-soft)]"

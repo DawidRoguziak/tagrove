@@ -266,7 +266,7 @@ export function BulkActionsSidebar({
                 <div
                   key={asset.id}
                   style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 78, transform: `translateY(${row.start}px)` }}
-                  className={`flex items-center gap-2 rounded-[var(--radius-control)] border border-base-content/12 bg-base-100/70 p-1.5 transition-[opacity,box-shadow] ${
+                  className={`flex items-center gap-2 rounded-[var(--radius-control)] border border-base-content/12 bg-base-100/70 p-1.5 motion-feedback-opacity ${
                     draggingAssetId === asset.id ? "opacity-60 ring-2 ring-primary/40" : ""
                   }`}
                   data-asset-id={asset.id}
@@ -300,7 +300,7 @@ export function BulkActionsSidebar({
                   <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-muted)]" title={asset.file_name}>{asset.file_name}</span>
                   <button
                     type="button"
-                    className={`grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-[var(--radius-control)] text-[var(--text-muted)] transition-colors ${
+                    className={`grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-[var(--radius-control)] text-[var(--text-muted)] ${
                       controller.groupApplying
                         ? "cursor-not-allowed opacity-45"
                         : "cursor-grab hover:bg-base-content/8 hover:text-base-content active:cursor-grabbing"

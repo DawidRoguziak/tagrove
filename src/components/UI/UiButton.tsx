@@ -6,7 +6,7 @@ interface UiButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export function UiButton({ variant = "secondary", className = "", type = "button", ...props }: UiButtonProps) {
   const classes = [
-    "btn btn-sm h-9 min-h-9 rounded-[var(--radius-control)] border px-3 normal-case font-semibold tracking-[-0.01em] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
+    "btn btn-sm h-9 min-h-9 rounded-[var(--radius-control)] border px-3 normal-case font-semibold tracking-[-0.01em] disabled:cursor-not-allowed disabled:opacity-50",
     variant === "primary"
       ? "shadow-[var(--shadow-control)] border-primary bg-primary text-primary-content hover:border-primary hover:bg-primary/88"
       : variant === "danger"

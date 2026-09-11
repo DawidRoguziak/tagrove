@@ -56,6 +56,14 @@ Only focused, enabled inputs with an eligible token request suggestions. Vocabul
 
 Suggestions open only while the input is focused and its overall trimmed value is nonempty. Arrow keys wrap through results, Escape closes the list, and Enter chooses the active result or submits when no result is active. Main search auto-selects the first suggestion. Lightbox and bulk tag editors do not; their first Enter submits the typed draft unless the user first moves into the suggestion list. Those editors receive a picked tag through `onSuggestionPick`, keep focus, and can keep the list open.
 
+The list stays mounted during that interaction while the worker replaces results. Empty
+or pending results hide the list, remove its options and pause its entrance fade. The
+combobox reports collapsed until current results are available. This keeps the 150 ms
+fade from replaying on every keystroke without exposing stale results. Viewport lists
+also wait for positioning before fading. Dismissing visible suggestions with Escape,
+blurring or disabling the input, or clearing its value unmounts the list immediately. See the shared
+[motion rules](../frontend/architecture-and-ui-conventions.md#motion).
+
 ## Known tags and the tag-list browser
 
 `useLibraryKnownTags`, owned by `useLibraryBrowser`, is the shared in-memory tag source for search, lightbox, bulk tagging, and the tag-list fallback. Hydration paginates `listTags` in pages of 200 until `total` is loaded. Overlapping refreshes share one drain promise and request a latest-generation pass. Superseded pagination stops between requests. Reset and unmount invalidate pending reads without publishing a partial vocabulary. Successful tag changes and relevant deletion/import/clear workflows refresh or reset this state according to their owning action. CSV import uses the global metadata-mutation barrier: it denies new tag, favorite, and group writes and drains already-dispatched writes before import IPC starts. After the atomic import settles, including rejection, the shell resets authoritative per-asset tags and both detail caches before releasing the barrier and refreshing, so reopened editors load canonical post-import tags. Confirmed database restore and clear-library use the same barrier and perform their broader identity/cache reset before release on both success and rejection; an uncertain rejection is followed by a best-effort library refresh.

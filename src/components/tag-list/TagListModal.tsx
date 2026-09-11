@@ -176,7 +176,7 @@ export function TagListModal({
           id="tag-list-filter-input"
           ref={inputRef}
           value={query}
-          className="w-full rounded-[var(--radius-control)] border border-base-content/12 bg-base-100 px-3 py-2.5 text-sm text-base-content shadow-[var(--shadow-surface)] transition-[box-shadow,border-color] duration-100 focus-visible:border-primary/40 focus-visible:outline-hidden focus-visible:shadow-[var(--field-shadow-focus)]"
+          className="w-full rounded-[var(--radius-control)] border border-base-content/12 bg-base-100 px-3 py-2.5 text-sm text-base-content shadow-[var(--shadow-surface)] focus-visible:border-primary/40 focus-visible:outline-hidden focus-visible:shadow-[var(--field-shadow-focus)]"
           placeholder={t("tagList.filterPlaceholder")}
           aria-label={t("tagList.filterLabel")}
           disabled={isApplying}

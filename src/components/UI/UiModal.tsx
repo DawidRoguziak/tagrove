@@ -61,7 +61,7 @@ export function UiModal({
   }
 
   const overlayClasses = [
-    "fixed inset-0 z-[60] grid place-items-center bg-neutral/58 p-3 sm:p-5",
+    "motion-enter fixed inset-0 z-[60] grid place-items-center bg-neutral/58 p-3 sm:p-5",
     className
   ]
     .filter(Boolean)

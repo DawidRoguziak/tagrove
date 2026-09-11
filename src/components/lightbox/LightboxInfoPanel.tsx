@@ -13,7 +13,7 @@ export function LightboxInfoPanel({ selected }: LightboxInfoPanelProps) {
     <aside
       aria-label={t("lightbox.infoHeading")}
       data-testid="lightbox-info-panel"
-      className="grid gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-[var(--surface-muted)] p-3 text-xs text-[var(--text-muted)]"
+      className="motion-enter grid gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-[var(--surface-muted)] p-3 text-xs text-[var(--text-muted)]"
     >
       <h3 className="m-0 text-xs">{t("lightbox.infoHeading")}</h3>
       <div className="grid gap-2 font-mono text-xs">

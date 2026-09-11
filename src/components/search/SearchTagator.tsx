@@ -70,7 +70,8 @@ export function SearchTagator({
   );
   const previousSuggestionsRef = useRef(suggestions);
   const inputNodeRef = useRef<HTMLInputElement | null>(null);
-  const popupOpen = inputFocused && shouldOpenSuggestions(value) && suggestionsOpen && suggestions.length > 0;
+  const suggestionSessionOpen = inputFocused && shouldOpenSuggestions(value) && suggestionsOpen && !disabled;
+  const popupOpen = suggestionSessionOpen && suggestions.length > 0;
 
   useEffect(() => {
     if (!inputFocused || !shouldOpenSuggestions(value)) {
@@ -151,7 +152,8 @@ export function SearchTagator({
       />
 
       {suggestionsFailed && inputFocused ? <button type="button" onClick={retrySuggestions}>{t("search.suggestionsRetry")}</button> : null}
-      {popupOpen ? (
+      {/* Keep the list mounted through pending worker results so typing cannot replay its entrance. */}
+      {suggestionSessionOpen ? (
         <SearchSuggestionsList
           id={listboxId}
           suggestions={suggestions}

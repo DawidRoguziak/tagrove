@@ -145,6 +145,38 @@ Prefer semantic DaisyUI colors (`primary`, `base-*`, `error`, and similar) and t
 
 Global styles establish full-height roots, typography, field treatment, visible keyboard focus for buttons, links, inputs, and selects, and themed scrollbars. Preserve native elements where possible so keyboard and accessibility behavior come for free.
 
+## Motion
+
+`src/styles.css` owns the shared motion tokens: `--motion-feedback` is 100 ms,
+`--motion-entrance` is 150 ms, and `--motion-ease` is a restrained ease-out curve.
+Buttons, interactive chips, search options, media segments, settings navigation and
+theme choices transition background, border color, text color and shadow. Keyboard
+focus indicators remain immediate. DaisyUI button presses do not translate controls.
+
+Use `motion-enter` for an opacity-only entrance after the element's layout is ready.
+Standard modal overlays, positioned suggestion lists, bulk inspector sections and
+inline lightbox information/confirmation use it. Suggestions keep the same mounted
+list while typing, hiding it and pausing the fade while worker results are empty.
+Their fade starts only once results and viewport positioning are available.
+Closing unmounts immediately, preserving focus restoration and scroll unlocking.
+Gallery hover/selection shadows and the checkmark opacity use control feedback.
+Tiles, thumbnail arrivals, reordering and virtual scrolling have no entrance animation.
+
+Never transition dimensions, spacing, offsets or grid tracks, or add scale-up, bounce,
+stagger, delayed layout or automatic scrolling. Preserve scroll containers, gutters,
+portal positioning and clipping; do not hide overflow globally to conceal a defect.
+Functional layout changes remain immediate. Decorative motion needs no React state,
+effect or timer. The lightbox's existing clipped 200 ms drawer slide and matching
+retention timer remain the exception, including native-video bounds coordination.
+Keep media, zoom/pan transforms, fullscreen geometry and native containers outside
+decorative motion. DOM controls still receive shared feedback.
+
+Under `prefers-reduced-motion: reduce`, decorative entrances and transitions stop;
+loading spinners and pulses continue. State feedback and existing modal focus,
+inertness and keyboard handling remain available. The desktop animation regression
+in `e2e/specs/animations.e2e.js` samples live scroll geometry across interactions and
+compares layout-changing actions with animations disabled.
+
 ## Light and dark visual system
 
 Both themes share geometry and typography. The palette is defined in `src/styles.css`:
@@ -225,7 +257,7 @@ Provide translated names and explicit close actions. Register new overlays with 
 
 ## Keyboard and accessibility
 
-Native controls, translated accessible names, pressed states, listbox suggestions, alerts, and status regions are the normal conventions. Global styles provide focus-visible feedback and a reduced-motion rule that minimizes animations/transitions and disables smooth scrolling.
+Native controls, translated accessible names, pressed states, listbox suggestions, alerts, and status regions are the normal conventions. Global styles provide immediate focus-visible feedback and a reduced-motion rule that disables decorative motion and smooth scrolling while preserving loading indicators.
 
 The layer manager's tabbable selector excludes disabled controls, hidden elements, and inert ancestors, but it does not perform a complete computed-visibility or browser tab-order calculation. Standalone components rendered without the provider receive only fallback Escape handling. Tests that claim focus trapping or nested dismissal must mount the provider.
 

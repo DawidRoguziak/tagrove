@@ -87,6 +87,9 @@
   --radius-control: 8px;
   --radius-surface: 12px;
   --radius-panel: 16px;
+  --motion-feedback: 100ms;
+  --motion-entrance: 150ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
   --bg-0: var(--color-base-200);
   --bg-1: var(--color-base-200);
   --bg-2: var(--color-base-100);
@@ -149,7 +152,7 @@
     color: var(--color-base-content);
     padding: 8px 10px;
     box-shadow: var(--field-shadow);
-    transition: background-color 120ms ease, box-shadow 120ms ease;
+    transition: background-color var(--motion-feedback) var(--motion-ease);
   }
   input::placeholder { color: var(--text-muted); }
   input:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }
@@ -213,9 +216,6 @@
   .workspace-tools { padding: 8px 12px; }
   .workspace-sizing { margin-left: 0; flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-}
 
 .lightbox-video-player {
   border: 0;
@@ -246,7 +246,7 @@
 
 /* Opacity preserves keyboard discovery; idle controls never intercept the image. */
 .lightbox-panel-trigger {
-  transition: opacity 180ms ease;
+  transition-property: background-color, border-color, color, box-shadow, opacity;
 }
 .lightbox-panel-trigger--idle:not(:focus-visible) {
   opacity: 0;
@@ -260,9 +260,6 @@
 [data-lightbox-toolbar] [data-ui="assigned-tag-list"] > span > span {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lightbox-panel-trigger { transition: none; }
 }
 
 /* Offscreen drawers must not create a scrollable area when a control gets focus. */
@@ -288,6 +285,35 @@
 }
 
 .workspace-identity { align-self: stretch; }
+
+/* Feedback never touches geometry, including the virtualizer's tile transforms. */
+:where(button, .settings-nav a, .media-segments span, .theme-choice > span, .motion-feedback, .motion-feedback-opacity) {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: var(--motion-feedback);
+  transition-timing-function: var(--motion-ease);
+}
+.motion-feedback-opacity { transition-property: opacity, box-shadow; }
+.btn:active:not(.btn-active) { translate: none; }
+
+/* Focus rings, including rings drawn with box-shadow, appear immediately. */
+:focus-visible, .choice-input:focus-visible + span { transition: none; }
+
+@keyframes motion-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.motion-enter, .bulk-inspector > header, .bulk-inspector > section {
+  animation: motion-fade-in var(--motion-entrance) var(--motion-ease);
+}
+.gallery-selection-mark {
+  transition: opacity var(--motion-feedback) var(--motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keep loading spinners/pulses running, and state changes immediate. */
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+  .motion-enter, .bulk-inspector > header, .bulk-inspector > section { animation: none; }
+}
 
 /* Native radios retain arrow-key navigation and one Tab stop per group. */
 .media-segments { display: flex; flex-wrap: wrap; gap: 2px; margin: 0; min-width: 0; padding: 3px; border: 0; border-radius: var(--radius-control); background: var(--surface-raised); }

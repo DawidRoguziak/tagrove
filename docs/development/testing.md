@@ -202,6 +202,46 @@ setting those XDG directories and starting a private display:
 MEDIATAGGER_UI_REDESIGN=1 bun run test:e2e:tauri --spec e2e/specs/ui.redesign.e2e.js
 ```
 
+### Animation geometry
+
+`e2e/specs/animations.e2e.js` is opt-in with `MEDIATAGGER_ANIMATIONS=1`. It seeds
+192 temporary PNGs and long labels, then samples scroll dimensions and positions on
+every rendering frame before, during and after interaction. Both themes run at 699,
+700, 767, 768, 999 and 1000 CSS pixels. Hover/press, bottom-of-gallery selection,
+suggestions, standard dialogs, bulk inspector, inline information/confirmation and
+repeated lightbox drawer toggles are covered. Layout-changing actions are paired with
+the same actions with decorative CSS animation and transitions disabled. The existing
+clipped drawer slide stays enabled in both halves of the comparison. Filtering, resizing and
+intentional navigation are not required to preserve scroll position.
+Worker-pending suggestion shells are hidden and excluded from popup comparisons.
+A metadata loading row can appear for a single frame in only one run; its temporary
+content height is excluded from the range comparison. Scroll positions, viewport
+dimensions and the complete settled layout remain checked.
+
+Run twice on a private X11 display with temporary XDG directories, as for the redesign
+matrix. Set `gtk-enable-animations=true` in the temporary
+`$XDG_CONFIG_HOME/gtk-3.0/settings.ini` for the first run, then `false` for the second.
+Each file needs a `[Settings]` header. Restart the desktop app between runs so WebKit
+reads the GTK preference. Use a private D-Bus session and a temporary GSettings keyfile
+backend as well; the GTK file alone did not activate the preference on the verified host.
+With the temporary XDG directories already exported, run:
+
+```sh
+export GSETTINGS_BACKEND=keyfile
+gsettings set org.gnome.desktop.interface enable-animations false
+MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_REDUCED_MOTION=1 dbus-run-session -- xvfb-run -a bun run test:e2e:tauri --spec e2e/specs/animations.e2e.js
+```
+
+Set the key and GTK file to `true` and omit `MEDIATAGGER_REDUCED_MOTION` for normal motion.
+Keep these settings inside the temporary profile. WebKitGTK 2.52 reads
+[`gtk-enable-animations`](https://github.com/WebKit/WebKit/blob/webkitgtk-2.52.6/Source/WebKit/UIProcess/gtk/SystemSettingsManagerProxyGtk.cpp).
+The spec asserts the real `prefers-reduced-motion` query;
+injected CSS supplies only the comparison baseline, never preference emulation.
+
+Frame samples and failure screenshots stay in a timestamped `artifacts/animations/`
+directory. The component tests cover focus trapping, inertness, Escape and restoration;
+they cannot prove desktop scroll geometry.
+
 ### Gallery selection gestures
 
 `e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages and eviction; normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.

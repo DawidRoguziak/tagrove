@@ -29,6 +29,28 @@ describe("SearchTagator", () => {
     cleanup();
   });
 
+  it("retains the suggestion list while typing and removes it on dismissal", async () => {
+    render(<ControlledSearchTagator knownTags={["cat", "car"]} initialValue="ca" />);
+    await userEvent.click(screen.getByRole("combobox", { name: "Search tags" }));
+    const listbox = await screen.findByRole("listbox", { name: "Tag suggestions" });
+
+    await userEvent.keyboard("t");
+    await waitFor(() => expect(screen.getByRole("option", { name: "cat" })).toBeInTheDocument());
+    expect(screen.getByRole("listbox", { name: "Tag suggestions" })).toBe(listbox);
+
+    await userEvent.keyboard("zzzzzz");
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    expect(listbox).toBeInTheDocument();
+    expect(listbox).toHaveStyle({ visibility: "hidden", animationPlayState: "paused" });
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.keyboard("{Backspace>6/}");
+    expect(await screen.findByRole("listbox", { name: "Tag suggestions" })).toBe(listbox);
+    await userEvent.keyboard("{Escape}");
+    expect(listbox).not.toBeInTheDocument();
+  });
+
   it("shows suggestions and applies selected suggestion with keyboard", async () => {
     render(<ControlledSearchTagator knownTags={["cat", "car", "dog"]} initialValue="ca" />);
 

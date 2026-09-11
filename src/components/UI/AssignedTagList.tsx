@@ -24,7 +24,7 @@ export function AssignedTagList({
     ? "panel-scroll flex max-h-[200px] min-h-[48px] flex-wrap items-start gap-1.5 overflow-auto rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-base-200/38 p-2"
     : "panel-scroll flex min-h-0 max-h-36 flex-wrap items-start gap-1.5 overflow-y-auto overscroll-contain rounded-[var(--radius-control)] border border-base-content/12 p-2";
   const removeButtonClassName = isLightbox
-    ? "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-transparent text-primary transition-colors hover:bg-error hover:text-error-content focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40"
+    ? "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-transparent text-primary hover:bg-error hover:text-error-content focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40"
     : "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-transparent text-primary hover:bg-error hover:text-error-content";
   const statusClassName = isLightbox
     ? "px-1 text-xs text-[var(--text-muted)]"

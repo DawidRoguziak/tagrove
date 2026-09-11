@@ -87,6 +87,7 @@ export function SearchSuggestionsList({
     <div
       id={id}
       className={[
+        strategy !== "viewport" || viewportStyle ? "motion-enter" : "",
         "grid gap-0.5 overflow-y-auto rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-[var(--surface-raised)] p-1.5 shadow-[var(--shadow-popover)]",
         strategy === "viewport"
           ? "fixed z-[70]"
@@ -94,7 +95,11 @@ export function SearchSuggestionsList({
               placement === "above" ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"
             }`
       ].join(" ")}
-      style={strategy === "viewport" ? viewportStyle ?? { visibility: "hidden" } : undefined}
+      style={{
+        ...(strategy === "viewport" ? viewportStyle : undefined),
+        visibility: suggestions.length === 0 || (strategy === "viewport" && !viewportStyle) ? "hidden" : undefined,
+        animationPlayState: suggestions.length === 0 ? "paused" : undefined
+      }}
       role="listbox"
       aria-label={listboxAriaLabel}
     >

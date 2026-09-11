@@ -56,7 +56,7 @@ export function LightboxDeleteConfirmDialog({
     <section
       aria-label={t("lightbox.deleteConfirm.heading")}
       data-testid="lightbox-delete-confirm-dialog"
-      className="grid gap-2.5 rounded-[var(--radius-control)] border border-error/32 bg-base-200/45 p-3"
+      className="motion-enter grid gap-2.5 rounded-[var(--radius-control)] border border-error/32 bg-base-200/45 p-3"
       onKeyDown={(event) => {
         if (event.key !== "Escape" || isSubmitting) return;
         event.preventDefault();

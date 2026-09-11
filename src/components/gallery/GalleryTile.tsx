@@ -110,11 +110,9 @@ export const GalleryTile = memo(function GalleryTile({
         showRenderLoader={effectiveRenderLoader}
       />
       {isGrouped ? <span className="sr-only">{groupedDescription}</span> : null}
-      {isBulkSelected ? (
-        <span className="pointer-events-none absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[var(--radius-control)] bg-primary text-primary-content" aria-hidden="true">
-          <UiIcon name="check-square" className="h-4 w-4" />
-        </span>
-      ) : null}
+      <span className="gallery-selection-mark pointer-events-none absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[var(--radius-control)] bg-primary text-primary-content" style={{ opacity: isBulkSelected ? 1 : 0 }} aria-hidden="true">
+        <UiIcon name="check-square" className="h-4 w-4" />
+      </span>
       {asset.kind === "video" ? (
         <UiChip className="pointer-events-none absolute right-2 top-2 shadow-[var(--shadow-chip)]" tone="video">
           {videoChipLabel}

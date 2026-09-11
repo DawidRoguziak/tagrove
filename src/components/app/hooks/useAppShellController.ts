@@ -1,3 +1,4 @@
+import { useQueryInvalidation } from "./useQueryInvalidation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getStartupPopularTags } from "../../../api";
 import {
@@ -58,6 +59,10 @@ export function useAppShellController() {
     appliedFavoritesOnly: searchFilters.appliedFavoritesOnly
   });
 
+  const { onTagMutation } = useQueryInvalidation(
+    searchFilters.appliedDescriptor, library.refresh, searchFilters.appliedFavoritesOnly
+  );
+
   const handleImportDbRestored = useCallback(() => {
     assetTagState.reset();
     library.handleImportDbRestored();
@@ -98,6 +103,7 @@ export function useAppShellController() {
     getAssetIndex: library.getAssetIndex,
     getAssetPosition: library.getAssetPosition,
     queryPending: library.queryPending,
+    onTagMutation,
     appliedFilter: searchFilters.appliedDescriptor
   });
 
@@ -115,6 +121,7 @@ export function useAppShellController() {
     refresh: library.refresh,
     refreshKnownTags: library.refreshKnownTags,
     assetTagState,
+    onTagMutation,
     appliedFilter: searchFilters.appliedDescriptor
   });
 

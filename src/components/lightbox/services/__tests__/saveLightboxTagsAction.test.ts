@@ -40,7 +40,7 @@ describe("saveLightboxTagsAction", () => {
   });
 
   it("saves tags and updates the selected asset view", async () => {
-    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({ asset_id: assetId, changed: true, tags, revision: 2 }));
+    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({ asset_id: assetId, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 }));
     const refreshKnownTags = vi.fn().mockResolvedValue(["cat", "dog"]);
 
     let selected: SelectedAsset = createDetails(2, ["old"]);
@@ -64,7 +64,7 @@ describe("saveLightboxTagsAction", () => {
   });
 
   it("normalizes tags from tag editor when explicit tags are not provided", async () => {
-    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({ asset_id: assetId, changed: true, tags, revision: 2 }));
+    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({ asset_id: assetId, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 }));
     const refreshKnownTags = vi.fn().mockResolvedValue(["cat", "dog"]);
 
     let selected: SelectedAsset = createDetails(5, ["old"]);
@@ -85,7 +85,7 @@ describe("saveLightboxTagsAction", () => {
   });
 
   it("does not patch stale local identity when the coordinator rejects the result", async () => {
-    apiMocks.setAssetTags.mockResolvedValue({ asset_id: 8, changed: true, tags: ["new"], revision: 2 });
+    apiMocks.setAssetTags.mockResolvedValue({ asset_id: 8, changed: true, tags: ["new"], query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 });
     const setSelected = vi.fn();
     const refreshKnownTags = vi.fn().mockResolvedValue([]);
     const onSaved = vi.fn(() => false);

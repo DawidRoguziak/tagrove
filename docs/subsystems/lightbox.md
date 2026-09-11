@@ -67,10 +67,12 @@ All lightbox mutations are backend-first: the action awaits its API command befo
 
 | Operation | Backend command | Local update after success | Follow-up |
 | --- | --- | --- | --- |
-| Add/remove tags | `set_asset_tags` | Publish canonical tags to the shared coordinator, details cache, and still-matching selection | Best-effort known-tag refresh; restart the query when changed tags touch applied include/exclude filters |
+| Add/remove tags | `set_asset_tags` | Publish canonical tags to the shared coordinator, details cache, and still-matching selection | Best-effort known-tag refresh; apply the returned query impact to the filter active at commit |
 | Toggle favorite | `set_asset_favorite` | Replace `is_favorite` in both places | Refresh the query only when removing a favorite while the applied favorites-only filter is active |
 | Apply media group | `set_asset_media_group` | Patch loaded summaries, matching selection, and cached details | The selection controller starts a fresh query because grouping changes order and adjacency |
 | Delete | `delete_asset` | Remove the ID from loaded pages and close the matching selection after a committed structured result | Start best-effort known-tag and query refreshes; refresh failure does not relabel the committed delete |
+
+Accepted tag saves use the shell's shared impact predicate: `none` preserves the query, `all` refreshes, and `tags` refreshes only when changed names intersect included/excluded names or an exact-count filter sees a count change. Same-count replacements preserve count-filter sessions. Obsolete and failed saves do not trigger success-driven refreshes. Stable callbacks read the latest applied filter after pending writes finish.
 
 Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `useSelectionState` is the only owner of save serialization/coalescing; `useLightboxTagging` only manages input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and starting the best-effort known-tag refresh. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. A successful add clears and refocuses the input.
 

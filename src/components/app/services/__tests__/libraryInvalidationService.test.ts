@@ -1,60 +1,30 @@
 import { buildFilterDescriptor } from "../filterService";
 import { describe, expect, it } from "vitest";
-import {
-  bulkTagMutationRequiresRefresh,
-  collectChangedTags,
-  favoriteMutationRequiresRefresh,
-  tagMutationTouchesFilters
-} from "../libraryInvalidationService";
+import { favoriteMutationRequiresRefresh, tagMutationRequiresRefresh } from "../libraryInvalidationService";
 
-describe("collectChangedTags", () => {
-  it("reports symmetric differences case-insensitively", () => {
-    expect(collectChangedTags(["Travel", "beach"], ["travel", "sunset"]).map((tag) => tag.toLowerCase())).toEqual([
-      "beach",
-      "sunset"
-    ]);
+describe("tag query impact", () => {
+  it.each(["", "cat", "-dog", "cat -dog", "tags:2", "gN:album"])("handles none/all under %s", filterInput => {
+    const filter = buildFilterDescriptor({ filterInput, mediaKind: "all", favoritesOnly: false });
+    expect(tagMutationRequiresRefresh({ type: "none" }, filter)).toBe(false);
+    expect(tagMutationRequiresRefresh({ type: "all" }, filter)).toBe(true);
   });
-
-  it("returns nothing when the tag sets are equivalent", () => {
-    expect(collectChangedTags([" Trip "], ["trip"])).toEqual([]);
-  });
-});
-
-describe("tagMutationTouchesFilters", () => {
-  it("detects changed tags referenced by applied include/exclude filters", () => {
-    expect(tagMutationTouchesFilters(["travel"], ["travel", "city"])).toBe(true);
-    expect(tagMutationTouchesFilters(["sunset"], ["TRAVEL"])).toBe(false);
-  });
-
-  it("is false without changed tags or without active filters", () => {
-    expect(tagMutationTouchesFilters([], ["travel"])).toBe(false);
-    expect(tagMutationTouchesFilters(["travel"], [])).toBe(false);
+  it.each([
+    ["cat", ["cat"], false, true],
+    ["-dog", ["dog"], false, true],
+    ["cat -dog", ["unrelated"], true, false],
+    ["tags:2", ["cat", "dog"], false, false],
+    ["tags:2", ["cat"], true, true],
+    ["", ["cat"], true, false],
+    ["gN:album", ["cat"], true, false],
+    ["żółć|%_:'新", ["żółć|%_:'新"], false, true],
+  ] as const)("checks actual membership/count changes for %s", (filterInput, names, count, expected) => {
+    const filter = buildFilterDescriptor({ filterInput, mediaKind: "image", favoritesOnly: true });
+    expect(tagMutationRequiresRefresh({ type: "tags", changed_tags: [...names], tag_count_changed: count }, filter)).toBe(expected);
   });
 });
 
-describe("favoriteMutationRequiresRefresh", () => {
-  it("requires refresh only when an un-favorite happens under favorites-only", () => {
-    expect(favoriteMutationRequiresRefresh(true, false)).toBe(true);
-    expect(favoriteMutationRequiresRefresh(true, true)).toBe(false);
-    expect(favoriteMutationRequiresRefresh(false, false)).toBe(false);
-  });
-});
-
-describe("bulkTagMutationRequiresRefresh", () => {
-  it("requires refresh for updated assets while tag filters are active", () => {
-    expect(bulkTagMutationRequiresRefresh(2, ["travel"])).toBe(true);
-  });
-
-  it("is false without updates or without active filters", () => {
-    expect(bulkTagMutationRequiresRefresh(0, ["travel"])).toBe(false);
-    expect(bulkTagMutationRequiresRefresh(3, [])).toBe(false);
-  });
-});
-
-it.each(["tags", "tags:2"])("invalidates exact-count filter %s after tags change", filterInput => {
-  const descriptor = buildFilterDescriptor({ filterInput, mediaKind: "all", favoritesOnly: false });
-  expect(tagMutationTouchesFilters(["cat"], descriptor)).toBe(true);
-  expect(bulkTagMutationRequiresRefresh(1, descriptor)).toBe(true);
-  expect(tagMutationTouchesFilters([], descriptor)).toBe(false);
-  expect(bulkTagMutationRequiresRefresh(0, descriptor)).toBe(false);
+it("preserves the lightbox Favorites refresh rule", () => {
+  expect(favoriteMutationRequiresRefresh(true, false)).toBe(true);
+  expect(favoriteMutationRequiresRefresh(true, true)).toBe(false);
+  expect(favoriteMutationRequiresRefresh(false, false)).toBe(false);
 });

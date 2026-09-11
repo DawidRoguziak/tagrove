@@ -4,6 +4,8 @@ mod schema;
 pub use schema::*;
 mod queries;
 pub use queries::*;
+mod query_revisions;
+pub use query_revisions::*;
 mod mutations;
 pub use mutations::*;
 mod scan_membership;
@@ -18,7 +20,7 @@ use rusqlite::{params, Connection, ErrorCode, OpenFlags, OptionalExtension, Tran
 
 use crate::models::{
     Asset, AssetDetails, AssetPage, AssetSummary, AssetTagResult, DuplicateAsset, DuplicateGroup,
-    NewAsset, SetAssetTagsSummary, TagListPage, ThumbnailAsset,
+    NewAsset, SetAssetTagsSummary, TagListPage, TagQueryImpact, ThumbnailAsset,
 };
 use crate::utils::{
     tags::{merge_tags, normalize_and_validate_tags, normalize_tags, parse_legacy_tags},
@@ -986,6 +988,7 @@ mod tests {
 
         let repaired = set_asset_tags_with_revision(&mut conn, 1, &[" CAT ".to_string()]).unwrap();
         assert!(repaired.changed);
+        assert_eq!(repaired.query_impact, crate::models::TagQueryImpact::All);
         assert_eq!(repaired.tags, vec!["cat".to_string()]);
         assert_eq!(repaired.revision, initial + 1);
         let stored: (String, i64) = conn
@@ -1042,6 +1045,7 @@ mod tests {
         let result = set_asset_tags_with_revision(&mut conn, 1, &["cat".to_string()]).unwrap();
         assert!(result.changed);
         assert_eq!(result.tags, vec!["cat".to_string()]);
+        assert_eq!(result.query_impact, crate::models::TagQueryImpact::All);
         let tag_rows: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM tags WHERE lower(trim(name)) = 'cat'",
@@ -1094,7 +1098,7 @@ mod tests {
         assert!(!noop.changed);
         assert_eq!(noop.revision, first.revision);
 
-        let (results, revision) =
+        let (results, revision, _) =
             merge_asset_tags_bulk_with_revision(&mut conn, &[1, 999, 2], &["travel".to_string()])
                 .unwrap();
         assert_eq!(
@@ -1124,9 +1128,9 @@ mod tests {
             .unwrap();
         let initial_revision = current_library_revision(&conn).unwrap();
 
-        let (empty_id_results, empty_id_revision) =
+        let (empty_id_results, empty_id_revision, _) =
             merge_asset_tags_bulk_with_revision(&mut conn, &[], &["travel".to_string()]).unwrap();
-        let (blank_tag_results, blank_tag_revision) = merge_asset_tags_bulk_with_revision(
+        let (blank_tag_results, blank_tag_revision, _) = merge_asset_tags_bulk_with_revision(
             &mut conn,
             &[1],
             &["  ".to_string(), "".to_string()],
@@ -1784,6 +1788,202 @@ mod tests {
         assert_eq!(
             current_library_revision(&conn).expect("bumped revision"),
             baseline + 1
+        );
+    }
+
+    #[test]
+    fn tag_impacts_use_actual_sets_and_bulk_unions() {
+        use crate::models::TagQueryImpact;
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        for id in 1..=3 {
+            insert_asset(&conn, &format!("/library/{id}.png"), "image", id);
+        }
+        let first = set_asset_tags_with_revision(
+            &mut conn,
+            1,
+            &[" CAT ".into(), "dog".into(), "cat".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            first.query_impact,
+            TagQueryImpact::Tags {
+                changed_tags: vec!["cat".into(), "dog".into()],
+                tag_count_changed: true
+            }
+        );
+        let noop =
+            set_asset_tags_with_revision(&mut conn, 1, &["DOG".into(), "cat".into()]).unwrap();
+        assert_eq!(noop.query_impact, TagQueryImpact::None);
+        assert_eq!(noop.revision, first.revision);
+        let replacement =
+            set_asset_tags_with_revision(&mut conn, 1, &["cat".into(), "żółć|%_:'新".into()])
+                .unwrap();
+        assert_eq!(
+            replacement.query_impact,
+            TagQueryImpact::Tags {
+                changed_tags: vec!["dog".into(), "żółć|%_:'新".into()],
+                tag_count_changed: false
+            }
+        );
+        set_asset_tags_with_revision(&mut conn, 2, &["cat".into()]).unwrap();
+        let (results, _, impact) =
+            merge_asset_tags_bulk_with_revision(&mut conn, &[1, 2, 999], &["żółć|%_:'新".into()])
+                .unwrap();
+        assert!(!results[0].changed);
+        assert!(results[1].changed);
+        assert_eq!(
+            impact,
+            TagQueryImpact::Tags {
+                changed_tags: vec!["żółć|%_:'新".into()],
+                tag_count_changed: true
+            }
+        );
+        conn.execute("UPDATE assets SET tag_count = 99 WHERE id = 2", [])
+            .unwrap();
+        let (_, _, impact) =
+            merge_asset_tags_bulk_with_revision(&mut conn, &[1, 2], &["cat".into()]).unwrap();
+        assert_eq!(impact, TagQueryImpact::All);
+        for (impact, value) in [
+            (TagQueryImpact::None, serde_json::json!({"type":"none"})),
+            (TagQueryImpact::All, serde_json::json!({"type":"all"})),
+            (
+                TagQueryImpact::Tags {
+                    changed_tags: vec!["cat".into()],
+                    tag_count_changed: false,
+                },
+                serde_json::json!({"type":"tags","changed_tags":["cat"],"tag_count_changed":false}),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(impact).unwrap(), value);
+        }
+    }
+
+    #[test]
+    fn marker_write_failure_rolls_back_metadata_and_global_revision() {
+        for operation in [
+            "single_tag",
+            "bulk_tag",
+            "favorite",
+            "bulk_favorite",
+            "general",
+        ] {
+            let mut conn = Connection::open_in_memory().unwrap();
+            init_schema(&conn).unwrap();
+            insert_asset(&conn, "/library/1.png", "image", 1);
+            let revision = current_library_revision(&conn).unwrap();
+            conn.execute_batch(
+                "CREATE TRIGGER reject_marker BEFORE INSERT ON library_metadata
+                WHEN substr(NEW.key, 1, 15) = 'query_revision:'
+                BEGIN SELECT RAISE(ABORT, 'marker failure'); END;",
+            )
+            .unwrap();
+            let failed = match operation {
+                "single_tag" => {
+                    set_asset_tags_with_revision(&mut conn, 1, &["cat".into()]).is_err()
+                }
+                "bulk_tag" => {
+                    merge_asset_tags_bulk_with_revision(&mut conn, &[1], &["cat".into()]).is_err()
+                }
+                "favorite" => set_asset_favorite_with_revision(&mut conn, 1, true).is_err(),
+                "bulk_favorite" => super::toggle_assets_favorite_bulk(&mut conn, &[1]).is_err(),
+                _ => super::bump_library_revision(&conn).is_err(),
+            };
+            assert!(failed, "{operation}");
+            assert_eq!(current_library_revision(&conn).unwrap(), revision);
+            let detail = super::get_asset_details(&conn, 1).unwrap().unwrap();
+            assert!(!detail.summary.is_favorite);
+            assert!(detail.tags.is_empty());
+            assert_eq!(
+                super::query_dependency_revision(
+                    &conn,
+                    &[
+                        "general".into(),
+                        "favorites".into(),
+                        "tag_count".into(),
+                        "tag:cat".into()
+                    ]
+                )
+                .unwrap(),
+                revision
+            );
+        }
+    }
+
+    #[test]
+    fn initialization_rebuilds_only_dependency_namespace_and_batches_exact_keys() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        insert_asset(&conn, "/library/1.png", "image", 1);
+        set_asset_tags_with_revision(&mut conn, 1, &["cat".into()]).unwrap();
+        conn.execute(
+            "INSERT INTO library_metadata(key, value) VALUES ('extension', 77)",
+            [],
+        )
+        .unwrap();
+        for absent in [true, false] {
+            conn.execute(
+                "DELETE FROM library_metadata WHERE substr(key,1,15) = 'query_revision:'",
+                [],
+            )
+            .unwrap();
+            if !absent {
+                conn.execute_batch("INSERT INTO library_metadata VALUES ('query_revision:general', 9999), ('query_revision:obsolete', 9999), ('query_revision:tag:cat', 9999)").unwrap();
+            }
+            for _ in 0..2 {
+                init_schema(&conn).unwrap();
+                let revision = current_library_revision(&conn).unwrap();
+                let mut stmt = conn.prepare("SELECT key,value FROM library_metadata WHERE substr(key,1,15) = 'query_revision:' ORDER BY key").unwrap();
+                let markers = stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                    })
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap();
+                assert_eq!(
+                    markers,
+                    vec![
+                        ("query_revision:favorites".into(), revision),
+                        ("query_revision:general".into(), revision),
+                        ("query_revision:tag_count".into(), revision)
+                    ]
+                );
+                assert_eq!(
+                    conn.query_row(
+                        "SELECT value FROM library_metadata WHERE key='extension'",
+                        [],
+                        |row| row.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                    77
+                );
+                assert_eq!(
+                    super::get_asset_details(&conn, 1).unwrap().unwrap().tags,
+                    vec!["cat"]
+                );
+            }
+        }
+        let names = (0..1200)
+            .map(|n| format!("tag:tag-{n}"))
+            .collect::<Vec<_>>();
+        conn.execute(
+            "INSERT INTO library_metadata VALUES ('query_revision:tag:tag-1199', 123)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            super::query_dependency_revision(&conn, &names).unwrap(),
+            123
+        );
+        conn.execute("INSERT INTO library_metadata VALUES ('query_revision:tag:a_b', 222), ('query_revision:tag:axb', 333)", []).unwrap();
+        assert_eq!(
+            super::query_dependency_revision(&conn, &["tag:a_b".into()]).unwrap(),
+            222
+        );
+        assert_eq!(
+            super::query_dependency_revision(&conn, &["tag:%".into()]).unwrap(),
+            0
         );
     }
 }

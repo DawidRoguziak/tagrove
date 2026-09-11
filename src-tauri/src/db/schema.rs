@@ -181,6 +181,7 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         conn.execute_batch("ALTER TABLE thumbnail_failures ADD COLUMN source_record_version INTEGER NOT NULL DEFAULT 0; DELETE FROM thumbnail_failures;")?;
     }
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    rebuild_query_revisions(conn)?;
 
     Ok(())
 }
@@ -930,7 +931,7 @@ pub(super) fn migrate_canonical_keys_and_tags(conn: &Connection) -> anyhow::Resu
         values
     };
     for (asset_id, tags) in asset_tags {
-        changed |= set_asset_tags_in_tx(&tx, asset_id, &tags)?.0;
+        changed |= set_asset_tags_in_tx(&tx, asset_id, &tags)?.changed;
     }
     cleanup_orphan_tags(&tx)?;
     if changed {

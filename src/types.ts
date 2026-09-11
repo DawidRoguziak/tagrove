@@ -167,11 +167,18 @@ export interface AssetTagResult {
   tags: string[];
 }
 
+export type TagQueryImpact =
+  | { type: "none" }
+  | { type: "tags"; changed_tags: string[]; tag_count_changed: boolean }
+  | { type: "all" };
+
 export interface SetAssetTagsSummary extends AssetTagResult {
+  query_impact: TagQueryImpact;
   revision: number;
 }
 
 export interface BulkTagMergeSummary {
+  query_impact: TagQueryImpact;
   processed_assets: number;
   updated_assets: number;
   processed_asset_ids: number[];

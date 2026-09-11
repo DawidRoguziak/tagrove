@@ -75,6 +75,7 @@ export function useLibraryAssets({
   const [queryEpoch, setQueryEpoch] = useState(0);
   const sessionIdRef = useRef<number | null>(null);
   const generationRef = useRef(0);
+  const patchCounterRef = useRef(0);
   const inFlightPagesRef = useRef<Map<number, Promise<AssetSummary[] | undefined>>>(new Map());
   const failedPagesRef = useRef(new Map<number, Error>());
   const inFlightCountRef = useRef(0);
@@ -165,7 +166,8 @@ export function useLibraryAssets({
     const perfMark = `asset-query-${generation}`;
     if (import.meta.env.VITE_MEDIATAGGER_PERF === "1") performance.mark(`${perfMark}-start`);
     try {
-      const result = await startAssetQuery({
+      let patchCounter = patchCounterRef.current;
+      let result: Awaited<ReturnType<typeof startAssetQuery>> | Awaited<ReturnType<typeof getAssetQueryPage>> = await startAssetQuery({
         tagsAnd: filterInclude,
         tagsNot: filterExclude,
         mediaKind: appliedMediaKind,
@@ -174,7 +176,15 @@ export function useLibraryAssets({
         generation,
         pageSize
       });
+      while (generation === generationRef.current && result.status === "ready" && patchCounter !== patchCounterRef.current) {
+        patchCounter = patchCounterRef.current;
+        result = await getAssetQueryPage(result.session_id, result.offset, pageSize);
+      }
       if (generation !== generationRef.current || result.status === "superseded") return;
+      if (result.status === "stale") {
+        await refresh();
+        return;
+      }
       sessionIdRef.current = result.session_id;
       setQueryEpoch((epoch) => epoch + 1);
       setTotal(result.total);
@@ -231,7 +241,12 @@ export function useLibraryAssets({
       request = (async () => {
         beginLoading();
         try {
-          const result = await getAssetQueryPage(sessionId, pageOffset, pageSize);
+          let patchCounter = patchCounterRef.current;
+          let result = await getAssetQueryPage(sessionId, pageOffset, pageSize);
+          while (generation === generationRef.current && result.status === "ready" && patchCounter !== patchCounterRef.current) {
+            patchCounter = patchCounterRef.current;
+            result = await getAssetQueryPage(result.session_id, result.offset, pageSize);
+          }
           if (generation !== generationRef.current) return undefined;
           if (result.status === "stale") {
             await refresh();
@@ -390,6 +405,7 @@ export function useLibraryAssets({
   }, [cache.assetsById, setThumbs]);
 
   const setAssets = useCallback<Dispatch<SetStateAction<AssetSummary[]>>>((action) => {
+    patchCounterRef.current += 1;
     setCache((previous) => {
       const current = Array.from(previous.assetsById.values());
       const nextAssets = typeof action === "function" ? action(current) : action;

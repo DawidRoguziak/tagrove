@@ -1553,82 +1553,140 @@ mod tests {
 
     #[test]
     fn import_db_bundle_restores_database_and_thumbnails() {
-        let tmp = tempdir().expect("tempdir");
-        let source_db_path = tmp.path().join("source.db");
-        let source_root = tmp.path().join("restored-root");
-        fs::create_dir_all(&source_root).expect("create restored root");
-        let source_thumb_bytes = b"thumb-bytes";
+        for with_markers in [false, true] {
+            let tmp = tempdir().expect("tempdir");
+            let source_db_path = tmp.path().join("source.db");
+            let source_root = tmp.path().join("restored-root");
+            fs::create_dir_all(&source_root).expect("create restored root");
+            let source_thumb_bytes = b"thumb-bytes";
 
-        {
-            let conn = db::open_connection(&source_db_path).expect("open source db");
-            db::init_schema(&conn).expect("init source schema");
-            db::add_scan_root(&conn, &source_root.to_string_lossy()).expect("add restored root");
-            let asset_path = source_root.join("asset.jpg");
-            fs::write(&asset_path, b"asset").expect("write source asset");
-            db::upsert_scanned_asset(
-                &conn,
-                &new_asset(&asset_path, 10),
-                10,
-                &source_root.to_string_lossy(),
-                1,
+            {
+                let conn = db::open_connection(&source_db_path).expect("open source db");
+                db::init_schema(&conn).expect("init source schema");
+                db::add_scan_root(&conn, &source_root.to_string_lossy())
+                    .expect("add restored root");
+                let asset_path = source_root.join("asset.jpg");
+                fs::write(&asset_path, b"asset").expect("write source asset");
+                db::upsert_scanned_asset(
+                    &conn,
+                    &new_asset(&asset_path, 10),
+                    10,
+                    &source_root.to_string_lossy(),
+                    1,
+                )
+                .expect("upsert source asset");
+                conn.execute(
+                    "DELETE FROM library_metadata WHERE substr(key,1,15) = 'query_revision:'",
+                    [],
+                )
+                .unwrap();
+                if with_markers {
+                    conn.execute_batch("INSERT INTO library_metadata VALUES ('query_revision:general', 9999), ('query_revision:tag:obsolete', 9999)").unwrap();
+                }
+                conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                    .expect("checkpoint source");
+            }
+
+            let archive_path = tmp.path().join("restore.zip");
+            {
+                let file = fs::File::create(&archive_path).expect("create archive");
+                let mut zip = zip::ZipWriter::new(file);
+                zip.start_file("media.db", zip::write::SimpleFileOptions::default())
+                    .expect("start media db");
+                let db_bytes = fs::read(&source_db_path).expect("read source db");
+                zip.write_all(&db_bytes).expect("write media db");
+
+                zip.start_file(
+                    "thumbs/restored/thumb.jpg",
+                    zip::write::SimpleFileOptions::default(),
+                )
+                .expect("start thumb");
+                zip.write_all(source_thumb_bytes)
+                    .expect("write thumb bytes");
+                zip.finish().expect("finish archive");
+            }
+
+            let profile_dir = tmp.path().join("profile");
+            let target_db_path = profile_dir.join("media.db");
+            let target_thumbs_dir = profile_dir.join("thumbs");
+            fs::create_dir_all(&target_thumbs_dir).expect("create target thumbs dir");
+            let conn = db::open_connection(&target_db_path).expect("open target db");
+            db::init_schema(&conn).expect("init target schema");
+            db::add_scan_root(&conn, "C:/old-root").expect("seed old root");
+            drop(conn);
+
+            let state = create_test_state(&target_db_path, &target_thumbs_dir);
+            let filters = crate::services::asset_query_service::AssetQueryFilters {
+                tags_and: vec![],
+                tags_not: vec![],
+                kind: None,
+                favorites_only: false,
+                meta_filter: None,
+            };
+            let manager = &state.database.queries;
+            let old_session = {
+                let permit = state.database.admit().unwrap();
+                let crate::models::StartAssetQueryResult::Ready { session_id, .. } = manager
+                    .start(&permit, filters.clone(), 10, manager.begin_request(1), 1)
+                    .unwrap()
+                else {
+                    panic!("ready")
+                };
+                session_id
+            };
+            let state_ref = &state;
+            let summary = import_db_bundle(
+                archive_path.to_string_lossy().to_string(),
+                Vec::new(),
+                state_ref,
+                &state.database.maintenance().unwrap(),
             )
-            .expect("upsert source asset");
-            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
-                .expect("checkpoint source");
+            .expect("import bundle");
+
+            assert_eq!(summary.restored_files, 1);
+            assert_eq!(summary.restored_thumbnails, 1);
+
+            let restored_thumb = target_thumbs_dir.join("restored").join("thumb.jpg");
+            assert_eq!(
+                fs::read(&restored_thumb).expect("read restored thumb"),
+                source_thumb_bytes
+            );
+
+            let conn = db::open_connection(&target_db_path).expect("open restored db");
+            let roots = db::list_scan_roots(&conn).expect("list restored roots");
+            assert_eq!(roots, vec![source_root.to_string_lossy().to_string()]);
+            let page = db::list_assets(&conn, 0, 50, &[], &[], None, false).expect("list assets");
+            assert_eq!(page.total, 1);
+            let revision = db::current_library_revision(&conn).unwrap();
+            assert_eq!(
+                db::query_dependency_revision(&conn, &["general".into()]).unwrap(),
+                revision
+            );
+            assert_eq!(
+                db::query_dependency_revision(&conn, &["favorites".into(), "tag_count".into()])
+                    .unwrap(),
+                revision - 1
+            );
+            assert_eq!(
+                db::query_dependency_revision(&conn, &["tag:obsolete".into()]).unwrap(),
+                0
+            );
+            let permit = state.database.admit().unwrap();
+            assert_eq!(
+                manager.page(&permit, old_session, 0, 10).unwrap(),
+                crate::models::AssetQueryPageResult::Stale
+            );
+            let crate::models::StartAssetQueryResult::Ready {
+                total, session_id, ..
+            } = manager
+                .start(&permit, filters, 10, manager.begin_request(2), 2)
+                .unwrap()
+            else {
+                panic!("ready")
+            };
+            assert_eq!(total, 1);
+            assert_ne!(session_id, old_session);
         }
-
-        let archive_path = tmp.path().join("restore.zip");
-        {
-            let file = fs::File::create(&archive_path).expect("create archive");
-            let mut zip = zip::ZipWriter::new(file);
-            zip.start_file("media.db", zip::write::SimpleFileOptions::default())
-                .expect("start media db");
-            let db_bytes = fs::read(&source_db_path).expect("read source db");
-            zip.write_all(&db_bytes).expect("write media db");
-
-            zip.start_file(
-                "thumbs/restored/thumb.jpg",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .expect("start thumb");
-            zip.write_all(source_thumb_bytes)
-                .expect("write thumb bytes");
-            zip.finish().expect("finish archive");
-        }
-
-        let profile_dir = tmp.path().join("profile");
-        let target_db_path = profile_dir.join("media.db");
-        let target_thumbs_dir = profile_dir.join("thumbs");
-        fs::create_dir_all(&target_thumbs_dir).expect("create target thumbs dir");
-        let conn = db::open_connection(&target_db_path).expect("open target db");
-        db::init_schema(&conn).expect("init target schema");
-        db::add_scan_root(&conn, "C:/old-root").expect("seed old root");
-        drop(conn);
-
-        let state = create_test_state(&target_db_path, &target_thumbs_dir);
-        let state_ref = &state;
-        let summary = import_db_bundle(
-            archive_path.to_string_lossy().to_string(),
-            Vec::new(),
-            state_ref,
-            &state.database.maintenance().unwrap(),
-        )
-        .expect("import bundle");
-
-        assert_eq!(summary.restored_files, 1);
-        assert_eq!(summary.restored_thumbnails, 1);
-
-        let restored_thumb = target_thumbs_dir.join("restored").join("thumb.jpg");
-        assert_eq!(
-            fs::read(&restored_thumb).expect("read restored thumb"),
-            source_thumb_bytes
-        );
-
-        let conn = db::open_connection(&target_db_path).expect("open restored db");
-        let roots = db::list_scan_roots(&conn).expect("list restored roots");
-        assert_eq!(roots, vec![source_root.to_string_lossy().to_string()]);
-        let page = db::list_assets(&conn, 0, 50, &[], &[], None, false).expect("list assets");
-        assert_eq!(page.total, 1);
     }
 
     #[test]

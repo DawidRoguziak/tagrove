@@ -27,10 +27,32 @@ pub struct AssetQueryFilters {
     pub meta_filter: Option<AssetMetaFilter>,
 }
 
+impl AssetQueryFilters {
+    fn dependencies(&self) -> Vec<String> {
+        let mut names = vec!["general".into()];
+        if self.favorites_only {
+            names.push("favorites".into());
+        }
+        if matches!(self.meta_filter, Some(AssetMetaFilter::HasNoTags { .. })) {
+            names.push("tag_count".into());
+        }
+        names.extend(
+            self.tags_and
+                .iter()
+                .chain(&self.tags_not)
+                .map(|tag| format!("tag:{tag}")),
+        );
+        names.sort();
+        names.dedup();
+        names
+    }
+}
+
 #[derive(Clone)]
 struct QuerySession {
     id: u64,
-    revision: i64,
+    dependency_revision: i64,
+    dependencies: Vec<String>,
     key: String,
     asset_ids: Arc<Vec<i64>>,
     last_accessed: Instant,
@@ -47,6 +69,8 @@ pub struct AssetQueryManager {
     latest_request: Arc<AtomicU64>,
     cache: Mutex<QueryCache>,
     max_id_bytes: usize,
+    #[cfg(test)]
+    after_revision_read: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 impl AssetQueryManager {
@@ -56,6 +80,8 @@ impl AssetQueryManager {
             latest_request: Arc::new(AtomicU64::new(0)),
             cache: Mutex::new(QueryCache::default()),
             max_id_bytes: MAX_RETAINED_ID_BYTES,
+            #[cfg(test)]
+            after_revision_read: Mutex::new(None),
         }
     }
 
@@ -105,7 +131,11 @@ impl AssetQueryManager {
         // first page a single consistent SQLite snapshot.
         let tx = conn.unchecked_transaction()?;
         let revision = db::current_library_revision(&tx)?;
-        let key = filter_key(&filters, revision);
+        #[cfg(test)]
+        self.after_revision_read();
+        let dependencies = filters.dependencies();
+        let dependency_revision = db::query_dependency_revision(&tx, &dependencies)?;
+        let key = filter_key(&filters, dependency_revision);
         let page_size = page_size.clamp(1, 256);
         // An obsolete request must never observe a ready result, including on
         // the cheap cache-hit path.
@@ -153,7 +183,8 @@ impl AssetQueryManager {
 
         let session = QuerySession {
             id: self.next_session_id.fetch_add(1, Ordering::Relaxed),
-            revision,
+            dependency_revision,
+            dependencies,
             key,
             asset_ids: Arc::new(asset_ids),
             last_accessed: Instant::now(),
@@ -188,10 +219,13 @@ impl AssetQueryManager {
         let conn = permit.connection()?;
         let tx = conn.unchecked_transaction()?;
         let revision = db::current_library_revision(&tx)?;
+        #[cfg(test)]
+        self.after_revision_read();
         let Some(session) = self.session_by_id(session_id) else {
             return Ok(AssetQueryPageResult::Stale);
         };
-        if session.revision != revision {
+        if session.dependency_revision != db::query_dependency_revision(&tx, &session.dependencies)?
+        {
             self.remove_session(session_id);
             return Ok(AssetQueryPageResult::Stale);
         }
@@ -217,18 +251,24 @@ impl AssetQueryManager {
         asset_id: i64,
     ) -> AppResult<AssetQueryPositionResult> {
         let conn = permit.connection()?;
-        let revision = db::current_library_revision(&conn)?;
+        let tx = conn.unchecked_transaction()?;
+        let _revision = db::current_library_revision(&tx)?;
+        #[cfg(test)]
+        self.after_revision_read();
         let Some(session) = self.session_by_id(session_id) else {
             return Ok(AssetQueryPositionResult::Stale);
         };
-        if session.revision != revision {
+        if session.dependency_revision != db::query_dependency_revision(&tx, &session.dependencies)?
+        {
             self.remove_session(session_id);
             return Ok(AssetQueryPositionResult::Stale);
         }
-        Ok(match session.asset_ids.iter().position(|id| *id == asset_id) {
-            Some(index) => AssetQueryPositionResult::Resolved { index },
-            None => AssetQueryPositionResult::Missing,
-        })
+        Ok(
+            match session.asset_ids.iter().position(|id| *id == asset_id) {
+                Some(index) => AssetQueryPositionResult::Resolved { index },
+                None => AssetQueryPositionResult::Missing,
+            },
+        )
     }
 
     fn cached_session(&self, key: &str) -> Option<QuerySession> {
@@ -285,6 +325,14 @@ impl AssetQueryManager {
     fn remove_session(&self, id: u64) {
         if let Ok(mut cache) = self.cache.lock() {
             cache.sessions.retain(|session| session.id != id);
+        }
+    }
+
+    #[cfg(test)]
+    fn after_revision_read(&self) {
+        let hook = self.after_revision_read.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook();
         }
     }
 
@@ -674,7 +722,8 @@ mod tests {
         let request = manager.begin_request(1);
         let session = |id| QuerySession {
             id,
-            revision: 1,
+            dependency_revision: 1,
+            dependencies: vec!["general".into()],
             key: id.to_string(),
             asset_ids: Arc::new(vec![1, 2]),
             last_accessed: Instant::now(),
@@ -686,5 +735,334 @@ mod tests {
         let fresh = manager.begin_request(1);
         assert!(!manager.insert_session(session(3), fresh, 0));
         assert!(manager.insert_session(session(4), fresh, 1));
+    }
+
+    fn ready_id(result: StartAssetQueryResult) -> (u64, i64, usize) {
+        let StartAssetQueryResult::Ready {
+            session_id,
+            revision,
+            total,
+            ..
+        } = result
+        else {
+            panic!("ready")
+        };
+        (session_id, revision, total)
+    }
+
+    #[test]
+    fn scoped_mutations_preserve_unread_pages_positions_and_cached_starts() {
+        // Include, exclude, combined, count, favorite, kind and group dependencies.
+        for case in 0..8 {
+            let target = test_db(32);
+            let mut conn = db::open_connection(&target.path).unwrap();
+            for id in 1..=32 {
+                db::set_asset_tags_with_revision(&mut conn, id, &["common".into(), "old".into()])
+                    .unwrap();
+                db::set_asset_favorite_with_revision(&mut conn, id, true).unwrap();
+            }
+            let mut filter = filters(&[]);
+            match case {
+                1 => filter.tags_and = vec!["common".into()],
+                2 => filter.tags_not = vec!["excluded".into()],
+                3 => {
+                    filter.tags_and = vec!["common".into()];
+                    filter.tags_not = vec!["excluded".into()];
+                    filter.favorites_only = true;
+                }
+                4 => filter.meta_filter = Some(AssetMetaFilter::HasNoTags { tag_count: 2 }),
+                5 => filter.favorites_only = true,
+                6 => filter.kind = Some("image".into()),
+                7 => {
+                    filter.meta_filter = Some(AssetMetaFilter::GroupName {
+                        group_name: "absent".into(),
+                    })
+                }
+                _ => {}
+            }
+            let manager = AssetQueryManager::new();
+            let (id, revision, total) = ready_id(start(
+                &manager,
+                &target.path,
+                &filter,
+                manager.begin_request(1),
+                1,
+            ));
+            let changed = db::set_asset_tags_with_revision(
+                &mut conn,
+                20,
+                &["common".into(), "żółć|%_:'新".into()],
+            )
+            .unwrap();
+            assert!(changed.revision > revision);
+            let permit = target.runtime.admit().unwrap();
+            let AssetQueryPageResult::Ready {
+                session_id,
+                revision: public,
+                items,
+                total: page_total,
+                ..
+            } = manager.page(&permit, id, 16, 16).unwrap()
+            else {
+                panic!("unrelated edit, case {case}")
+            };
+            assert_eq!(session_id, id);
+            assert_eq!(public, changed.revision);
+            assert_eq!(page_total, total);
+            assert_eq!(
+                items.iter().map(|a| a.id).collect::<Vec<_>>(),
+                if total == 0 {
+                    vec![]
+                } else {
+                    (17..=32).collect()
+                }
+            );
+            assert_eq!(
+                manager.position(&permit, id, 20).unwrap(),
+                if total == 0 {
+                    AssetQueryPositionResult::Missing
+                } else {
+                    AssetQueryPositionResult::Resolved { index: 19 }
+                }
+            );
+            assert_eq!(
+                ready_id(start(
+                    &manager,
+                    &target.path,
+                    &filter,
+                    manager.begin_request(2),
+                    2
+                )),
+                (id, changed.revision, total)
+            );
+            // Relevant edits stale the same snapshot.
+            match case {
+                1 | 3 => {
+                    db::set_asset_tags_with_revision(&mut conn, 20, &["other".into()]).unwrap();
+                }
+                2 => {
+                    db::set_asset_tags_with_revision(&mut conn, 20, &["excluded".into()]).unwrap();
+                }
+                4 => {
+                    db::set_asset_tags_with_revision(&mut conn, 20, &[]).unwrap();
+                }
+                5 => {
+                    db::set_asset_favorite_with_revision(&mut conn, 20, false).unwrap();
+                }
+                _ => {
+                    db::bump_library_revision(&conn).unwrap();
+                }
+            }
+            assert_eq!(
+                manager.page(&permit, id, 16, 16).unwrap(),
+                AssetQueryPageResult::Stale
+            );
+        }
+    }
+
+    #[test]
+    fn favorites_noops_and_missing_ids_preserve_dependencies_but_report_global_bumps() {
+        let target = test_db(32);
+        let mut conn = db::open_connection(&target.path).unwrap();
+        let manager = AssetQueryManager::new();
+        let mut filter = filters(&[]);
+        filter.favorites_only = true;
+        let (id, initial, _) = ready_id(start(
+            &manager,
+            &target.path,
+            &filter,
+            manager.begin_request(1),
+            1,
+        ));
+        db::set_asset_favorite_with_revision(&mut conn, 20, false).unwrap();
+        let revision = db::set_asset_favorite_with_revision(&mut conn, 999, true).unwrap();
+        assert_eq!(revision, initial + 2);
+        assert_eq!(
+            ready_id(start(
+                &manager,
+                &target.path,
+                &filter,
+                manager.begin_request(2),
+                2
+            )),
+            (id, revision, 0)
+        );
+        let all = filters(&[]);
+        let (all_id, _, _) = ready_id(start(
+            &manager,
+            &target.path,
+            &all,
+            manager.begin_request(3),
+            3,
+        ));
+        let bulk = db::toggle_assets_favorite_bulk(&mut conn, &[20, 999]).unwrap();
+        let permit = target.runtime.admit().unwrap();
+        assert_eq!(
+            manager.page(&permit, id, 0, 10).unwrap(),
+            AssetQueryPageResult::Stale
+        );
+        let AssetQueryPageResult::Ready {
+            items, revision, ..
+        } = manager.page(&permit, all_id, 19, 1).unwrap()
+        else {
+            panic!("ready")
+        };
+        assert!(items[0].is_favorite);
+        assert_eq!(revision, bulk.revision);
+    }
+
+    #[test]
+    fn removed_tag_markers_survive_orphan_cleanup_and_recreation() {
+        let target = test_db(20);
+        let mut conn = db::open_connection(&target.path).unwrap();
+        let manager = AssetQueryManager::new();
+        let filter = filters(&["żółć|%_:'新"]);
+        let (empty, _, _) = ready_id(start(
+            &manager,
+            &target.path,
+            &filter,
+            manager.begin_request(1),
+            1,
+        ));
+        db::set_asset_tags_with_revision(&mut conn, 20, &filter.tags_and).unwrap();
+        assert_eq!(
+            manager
+                .position(&target.runtime.admit().unwrap(), empty, 20)
+                .unwrap(),
+            AssetQueryPositionResult::Stale
+        );
+        let (present, _, _) = ready_id(start(
+            &manager,
+            &target.path,
+            &filter,
+            manager.begin_request(2),
+            2,
+        ));
+        let removed = db::set_asset_tags_with_revision(&mut conn, 20, &[]).unwrap();
+        assert_eq!(
+            db::query_dependency_revision(&conn, &filter.dependencies()).unwrap(),
+            removed.revision
+        );
+        assert_eq!(
+            manager
+                .position(&target.runtime.admit().unwrap(), present, 20)
+                .unwrap(),
+            AssetQueryPositionResult::Stale
+        );
+        let (empty_again, _, _) = ready_id(start(
+            &manager,
+            &target.path,
+            &filter,
+            manager.begin_request(3),
+            3,
+        ));
+        db::set_asset_tags_with_revision(&mut conn, 20, &filter.tags_and).unwrap();
+        assert_eq!(
+            manager
+                .position(&target.runtime.admit().unwrap(), empty_again, 20)
+                .unwrap(),
+            AssetQueryPositionResult::Stale
+        );
+    }
+
+    #[test]
+    fn wal_reads_keep_revision_dependencies_and_rows_in_one_snapshot() {
+        use std::sync::Barrier;
+        for mode in ["fresh", "cached", "page", "position"] {
+            let target = test_db(32);
+            let mut conn = db::open_connection(&target.path).unwrap();
+            db::toggle_assets_favorite_bulk(&mut conn, &(1..=32).collect::<Vec<_>>()).unwrap();
+            let before = db::current_library_revision(&conn).unwrap();
+            let manager = AssetQueryManager::new();
+            let mut filter = filters(&[]);
+            filter.favorites_only = true;
+            let initial = if mode == "fresh" {
+                None
+            } else {
+                Some(
+                    ready_id(start(
+                        &manager,
+                        &target.path,
+                        &filter,
+                        manager.begin_request(1),
+                        1,
+                    ))
+                    .0,
+                )
+            };
+            let barrier = Arc::new(Barrier::new(2));
+            let hook_barrier = barrier.clone();
+            *manager.after_revision_read.lock().unwrap() = Some(Box::new(move || {
+                hook_barrier.wait();
+                hook_barrier.wait();
+            }));
+            std::thread::scope(|scope| {
+                let read = scope.spawn(|| {
+                    let permit = target.runtime.admit().unwrap();
+                    match mode {
+                        "fresh" | "cached" => {
+                            let result = manager
+                                .start(&permit, filter.clone(), 32, manager.begin_request(2), 2)
+                                .unwrap();
+                            let StartAssetQueryResult::Ready {
+                                session_id,
+                                revision,
+                                items,
+                                total,
+                                ..
+                            } = result
+                            else {
+                                panic!("ready")
+                            };
+                            assert_eq!(revision, before);
+                            assert_eq!(total, 32);
+                            assert!(items.iter().all(|a| a.is_favorite));
+                            if let Some(id) = initial {
+                                assert_eq!(id, session_id);
+                            }
+                            session_id
+                        }
+                        "page" => {
+                            let id = initial.unwrap();
+                            let AssetQueryPageResult::Ready {
+                                revision, items, ..
+                            } = manager.page(&permit, id, 16, 16).unwrap()
+                            else {
+                                panic!("ready")
+                            };
+                            assert_eq!(revision, before);
+                            assert!(items.iter().all(|a| a.is_favorite));
+                            id
+                        }
+                        _ => {
+                            let id = initial.unwrap();
+                            assert_eq!(
+                                manager.position(&permit, id, 20).unwrap(),
+                                AssetQueryPositionResult::Resolved { index: 19 }
+                            );
+                            id
+                        }
+                    }
+                });
+                barrier.wait();
+                db::set_asset_favorite_with_revision(&mut conn, 20, false).unwrap();
+                barrier.wait();
+                let id = read.join().unwrap();
+                let permit = target.runtime.admit().unwrap();
+                assert_eq!(
+                    manager.page(&permit, id, 16, 16).unwrap(),
+                    AssetQueryPageResult::Stale
+                );
+                let (_, revision, total) = ready_id(start(
+                    &manager,
+                    &target.path,
+                    &filter,
+                    manager.begin_request(3),
+                    3,
+                ));
+                assert_eq!(revision, before + 1);
+                assert_eq!(total, 31);
+            });
+        }
     }
 }

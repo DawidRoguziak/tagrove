@@ -73,6 +73,13 @@ gallerySuite("gallery scrolling performance", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: mediaRoot });
     await invoke("rescan_all_roots");
+    const ids = [];
+    for (let offset = 0; offset < IMAGE_COUNT; offset += 500) {
+      const page = await invoke("list_assets", { offset, limit: 500, tagsAnd: [], tagsNot: [], kind: "image", favoritesOnly: false });
+      ids.push(...page.items.map(item => item.id));
+    }
+    assert.equal(ids.length, IMAGE_COUNT);
+    await invoke("merge_asset_tags_bulk", { assetIds: ids, tags: ["gallery-common"] });
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();
     try {
@@ -92,6 +99,119 @@ gallerySuite("gallery scrolling performance", function () {
   after(async () => {
     await invoke("clear_library_data");
     if (mediaRoot) await fs.rm(mediaRoot, { recursive: true, force: true });
+  });
+
+
+  it("preserves sessions, scroll anchors and edits across unrelated mutations and evicted pages", async () => {
+    await $('#gallery-media-kind input[value="image"]').click();
+    await $('button[data-asset-index="0"]').waitForExist({ timeout: 20000 });
+    await browser.execute(() => {
+      // Tauri's invoke property is immutable. Observe its real custom-protocol
+      // requests and cloned responses without replacing the bridge or payloads.
+      const original = window.fetch;
+      window.queryTrace = [];
+      window.fetch = async function(input, options) {
+        const url = new URL(String(input));
+        const command = decodeURIComponent(url.pathname.slice(1));
+        const response = await original.call(this, input, options);
+        if (url.protocol === "ipc:" && ["start_asset_query", "get_asset_query_page", "get_asset_query_position"].includes(command)) {
+          window.queryTrace.push({ command, args: JSON.parse(options.body), result: await response.clone().json() });
+        }
+        return response;
+      };
+    });
+    const evidence = [];
+    for (const filter of ["", "gallery-common"]) {
+      if (filter) await $(".filter-input").setValue(filter);
+      else await $(".filter-input").clearValue();
+      await $("button=Search").click();
+      await browser.waitUntil(() => browser.execute(() => window.queryTrace.some(entry => entry.command === "start_asset_query" && entry.result.status === "ready")));
+      const targetIndex = filter ? 384 : 256;
+      await scrollToAsset(targetIndex);
+      await $(`button[data-asset-index="${targetIndex}"]`).waitForExist({ timeout: 20000 });
+      await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000 });
+      const anchor = await browser.execute(() => {
+        const viewport = document.querySelector(".gallery-scroll").getBoundingClientRect();
+        const tile = [...document.querySelectorAll("button[data-asset-index]")].find(tile => {
+          const rect = tile.getBoundingClientRect();
+          return rect.top >= viewport.top && rect.bottom <= viewport.bottom;
+        });
+        return { id: Number(tile.dataset.assetId), index: Number(tile.dataset.assetIndex),
+          top: tile.getBoundingClientRect().top, scroll: document.querySelector(".gallery-scroll").scrollTop };
+      });
+      const baseline = await browser.execute(() => {
+        const starts = window.queryTrace.filter(entry => entry.command === "start_asset_query" && entry.result.status === "ready");
+        return { starts: starts.length, session: starts.at(-1).result.session_id, total: starts.at(-1).result.total };
+      });
+      assert.equal(baseline.total, IMAGE_COUNT);
+      const proofTag = filter ? "filtered-proof" : "unfiltered-proof";
+      await $(`button[data-asset-id="${anchor.id}"]`).click();
+      await $("#lightbox-tag-draft-input").waitForEnabled();
+      await $("#lightbox-tag-draft-input").setValue(proofTag);
+      await browser.keys("Enter");
+      await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: anchor.id })).tags.includes(proofTag));
+      await $('[role="dialog"] button[aria-label="Add to favorites"]').click();
+      await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: anchor.id })).is_favorite);
+      await $('button[aria-label="Close preview"]').click();
+      const readAnchor = () => browser.execute(id => ({
+        top: document.querySelector(`button[data-asset-id="${id}"]`)?.getBoundingClientRect().top,
+        scroll: document.querySelector(".gallery-scroll").scrollTop
+      }), anchor.id);
+      let current = await readAnchor();
+      assert.ok(Math.abs(current.scroll - anchor.scroll) < 2, "save retains scroll position");
+      assert.ok(Math.abs(current.top - anchor.top) < 2, "save retains visible anchor");
+      for (const index of [...Array.from({ length: 16 }, (_, page) => page * 128), 2047, 128, anchor.index]) {
+        await scrollToAsset(index);
+        await $(`button[data-asset-index="${index}"]`).waitForExist({ timeout: 20000 });
+        await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000 });
+      }
+      await browser.execute(scroll => { document.querySelector(".gallery-scroll").scrollTop = scroll; }, anchor.scroll);
+      current = await readAnchor();
+      assert.ok(Math.abs(current.top - anchor.top) < 2, "evicted page restores the same anchor");
+      const trace = await browser.execute(() => window.queryTrace);
+      assert.equal(trace.filter(entry => entry.command === "start_asset_query").length, baseline.starts);
+      const pages = trace.filter(entry => entry.command === "get_asset_query_page");
+      assert.ok(new Set(pages.map(entry => entry.args.offset)).size >= 16);
+      assert.ok(pages.every(entry => entry.result.status === "ready" && entry.result.session_id === baseline.session));
+      await $(`button[data-asset-id="${anchor.id}"]`).click();
+      await browser.waitUntil(async () => (await $('[data-testid="lightbox-tag-panel"]').getText()).includes(proofTag));
+      await $('[role="dialog"] button[aria-label="Remove from favorites"]').waitForExist();
+      await $('button[aria-label="Close preview"]').click();
+      evidence.push({ filter, anchor, baseline, pageOffsets: pages.map(entry => entry.args.offset), proofTag });
+      // Each case gets its own trace, including its query start.
+      await browser.execute(() => { window.queryTrace = []; });
+    }
+    await browser.refresh();
+    await $('button[data-asset-index="0"]').waitForExist({ timeout: 20000 });
+    for (const proof of evidence) {
+      const details = await invoke("get_asset_details", { assetId: proof.anchor.id });
+      assert.ok(details.tags.includes(proof.proofTag));
+      assert.equal(details.is_favorite, true);
+    }
+    // Relevant tag edits must immediately replace the filtered query.
+    await $(".filter-input").setValue("filtered-proof");
+    await $("button=Search").click();
+    await $('button[data-asset-index="0"]').waitForExist({ timeout: 20000 });
+    const editedId = evidence[1].anchor.id;
+    await $(`button[data-asset-id="${editedId}"]`).click();
+    await $('[data-testid="lightbox-tag-panel"] button[aria-label="Remove tag filtered-proof"]').click();
+    await browser.waitUntil(async () => !(await invoke("get_asset_details", { assetId: editedId })).tags.includes("filtered-proof"));
+    await $('button[aria-label="Close preview"]').click();
+    await browser.waitUntil(async () => (await $("body").getText()).includes("No results"));
+    // Favorites removal also refreshes membership.
+    await $('button[aria-label="Clear all search filters"]').click();
+    await $('button[aria-label="Show favorites only"]').click();
+    await browser.waitUntil(async () => (await $$("button[data-asset-id]")).length > 0);
+    await $(`button[data-asset-id="${editedId}"]`).click();
+    await $('[role="dialog"] button[aria-label="Remove from favorites"]').click();
+    await browser.waitUntil(async () => !(await invoke("get_asset_details", { assetId: editedId })).is_favorite);
+    await $('button[aria-label="Close preview"]').click();
+    await browser.waitUntil(async () => !(await $(`button[data-asset-id="${editedId}"]`).isExisting()));
+    await $('button[aria-label="Clear all search filters"]').click();
+    const output = path.resolve("artifacts/gallery-performance");
+    await fs.mkdir(output, { recursive: true });
+    await fs.writeFile(path.join(output, "stable-metadata.json"), JSON.stringify(evidence, null, 2));
+    await browser.saveScreenshot(path.join(output, "stable-metadata.png"));
   });
 
   it("loads static GIF tiles, crosses the page cache, and keeps lightbox animation", async () => {
@@ -136,7 +256,7 @@ gallerySuite("gallery scrolling performance", function () {
     await browser.saveScreenshot(path.join(output, "gallery.png"));
     console.log("Gallery timing samples, including WebDriver overhead:", JSON.stringify(results));
 
-    await $("select").selectByAttribute("value", "gif");
+    await $('#gallery-media-kind input[value="gif"]').click();
     await $(".filter-input").click();
     await browser.keys("Enter");
     const gif = await $('button[data-asset-id] img[alt$=".gif"]');

@@ -23,14 +23,16 @@ The local generation rejects late frontend responses. The backend also registers
 
 ## Backend session and page contract
 
-`AssetQueryManager` registers each start in arrival order before blocking work is scheduled; one authoritative registration token defines the runtime's latest request. It reads the current library revision, builds the ordered ID list, and materializes the first page inside one deferred read transaction, so a ready response reflects a single SQLite snapshot. On a cache miss it asks SQLite for the complete ordered list of matching asset IDs, using a SQLite progress callback during execution and sorting as well as row-loop checks so a superseded request stops work. That frozen ID vector, rather than full rows, is the session snapshot. The ordering keeps matching media-group members adjacent, orders group buckets by their newest matching member, and then applies group order, modification time, and ID tie-breakers.
+`AssetQueryManager` registers each start in arrival order before blocking work is scheduled; one authoritative registration token defines the runtime's latest request. It reads the global and dependency revisions, builds the ordered ID list, and materializes the first page inside one deferred read transaction, so a ready response reflects a single SQLite snapshot. On a cache miss it asks SQLite for the complete ordered list of matching asset IDs, using a SQLite progress callback during execution and sorting as well as row-loop checks so a superseded request stops work. That frozen ID vector, rather than full rows, is the session snapshot. The ordering keeps matching media-group members adjacent, orders group buckets by their newest matching member, and then applies group order, modification time, and ID tie-breakers.
+
+Each session stores its dependency keys and their maximum revision. Only a changed dependency makes its pages or position lookups stale. Unrelated tags and favorites preserve IDs, order, total, and the cached session ID, while the public `revision` advances with the read snapshot. Dependency keys and initialization rules belong to [database revisions](database.md#library-revision-and-query-sessions).
 
 The application-owned cache has these bounds:
 
 - at most four sessions and 64 MiB of retained ID-vector capacity;
 - expiry after five minutes without cache access;
 - most-recently-accessed promotion for lookup by key or session ID; and
-- reuse of an equal normalized-filter/revision key, including reuse of its session ID.
+- reuse of an equal normalized-filter/dependency-revision key, including reuse of its session ID.
 
 A separate cache epoch changes on clear. Insertion checks both the request token and epoch under the cache mutex, preventing an in-flight build from repopulating a cleared cache. SQLite progress callbacks are removed before connection reuse. The retained-ID budget excludes transient SQLite allocations and vectors still held by in-flight readers; the [backend measurements](../development/backend-refactor-verification.md) report these separately.
 
@@ -39,6 +41,12 @@ The [IPC query states](../architecture/ipc-contract.md#query-session-states) def
 The initial page size and later page limit are clamped by Rust to 1–256. Page offsets use unsigned transport values; an offset past the snapshot end is clamped to `total`. Summary lookup runs in chunks of 500 IDs and reconstructs the snapshot order after SQLite returns rows. The registered legacy `list_assets` command is not the production gallery path; it returns full `Asset` rows, clamps its limit to 1–500, and does not provide a stable session.
 
 Query start, page reads, position lookups, and detail reads run as blocking work outside the async runtime. Command failures reject with a string as described in the [IPC contract](../architecture/ipc-contract.md).
+
+## Mutation refresh and overlapping reads
+
+The shell uses `useQueryInvalidation` to evaluate accepted tag results against the latest applied filter and refresh function. `none` preserves the query; `all` refreshes; `tags` refreshes for an include/exclude intersection or an actual count change under an exact-count filter. Lightbox and both bulk editing modes share this predicate. Missing-ID recovery and Favorites rules also use current query state.
+
+`useLibraryAssets.setAssets` increments a local patch counter synchronously. Start/page calls capture it before IPC. If a ready response crosses a patch, the hook rereads that page from the returned session before merging or returning rows to asynchronous callers. It repeats when another patch overlaps, retaining generation checks and request deduplication. These rereads preserve the query and thumbnail queue; unavailable sessions keep ordinary stale recovery. Reads never wait for metadata ownership to release, since a favorite action can await refresh while holding it.
 
 ## Frontend sparse page cache
 
@@ -100,7 +108,7 @@ A primary-pointer movement of at least five pixels draws a translucent primary-c
 
 ## Refresh and invalidation paths
 
-The database revision is the authoritative invalidation epoch. Scans and query-visible mutations bump it according to [database](database.md), so a later page from an older session becomes `stale`. The frontend also refreshes eagerly on these paths:
+The dependency revision is authoritative for session invalidation. General changes and changes to a query's dependencies make its later reads `stale`, according to [database](database.md). The global revision alone does not invalidate a session. The frontend also refreshes eagerly on these paths:
 
 | Trigger | Frontend behavior |
 | --- | --- |
@@ -111,7 +119,7 @@ The database revision is the authoritative invalidation epoch. Scans and query-v
 | Lightbox delete | Removes the loaded object and selection locally, refreshes known tags, then starts a fresh asset query. |
 | Bulk favorite toggle | Uses all selected IDs, patches loaded summaries and both detail caches, and refreshes after either toggle direction in a favorites-only query or after missing IDs. Existing selected IDs survive the refresh. |
 | Favorite toggle | Patches loaded state. Removing an item while favorites-only is applied also refreshes; other favorite changes do not. |
-| Single/bulk tag edit | Patches loaded objects locally. Tag operations also refresh known tags. When the changed tags intersect an applied include/exclude filter, or the applied filter uses an exact tag count, the query restarts immediately so membership is re-evaluated. Otherwise a later uncached page observes the bumped revision as `stale` and refreshes. |
+| Single/bulk tag edit | Patches loaded objects locally. Tag operations also refresh known tags. The returned impact restarts the query for repairs, changed names in the current include/exclude filter, or actual count changes under an exact-count filter. Unrelated edits preserve the session even when pages have been evicted. |
 | Single/bulk media-group edit | Patches loaded objects locally and then always restarts the asset query, because group changes alter ordering and adjacency of the active view. |
 | Thumbnail generation or cleanup | Updates thumbnail state without changing query membership/order and does not bump the library revision. The thumbnail store is authoritative for production tiles. |
 
@@ -162,3 +170,5 @@ Inclusive range reads capture one session and generation, checking them after ev
 `src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` runs the installed TanStack virtualizer with 10,000 numeric slots and asserts that scrolling and page/status updates do not rebuild row measurements. It also checks external-scroll offsets, partial rows, and resize anchoring. A 26,000-slot regression mounts initially null parent refs, bounds every intermediate commit and range callback on cold mount and Settings return, and checks scrolling, resize anchoring, observer cleanup, and real page-loader demand with and without Strict Mode. These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. Queue/store tests cover latest-viewport priority, additive consumers, reset/unmount races, atomic tile updates, and version cleanup; page-cache tests cross the 12-page bound and reload evicted pages.
 
 The opt-in desktop spec uses 2,048 copied PNGs, 12 GIFs, and two videos in a temporary root. It follows the same route with cold and warm thumbnails, visits more than 12 pages, returns to evicted ranges, bounds mounted tiles, and compares decoded pixels from native-display captures of lightbox GIF frames. Run with `MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js` in the isolated desktop environment described in [testing](../development/testing.md). For headless Linux, use `env -u WAYLAND_DISPLAY GDK_BACKEND=x11 MEDIATAGGER_GALLERY_PERF=1 xvfb-run -a -s '-screen 0 1920x1080x24' bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js`. The pixel check requires ImageMagick `import` and `magick`. It writes samples to `artifacts/gallery-performance/`. Timings include WebDriver overhead and are observations, not portable frame-rate thresholds. Million-file desktop behavior requires manual validation; no million-file dataset is generated.
+
+The stable-metadata regressions cover unread pages, cached starts, position lookup, dependency changes, and file-backed WAL snapshots. Database tests cover marker-write rollback, initialization without markers, namespace rebuilding, exact batched keys, canonical no-ops, and shared-tag repairs. Backup tests restore both missing and obsolete marker namespaces. Frontend tests use pending saves and reads to check current-filter decisions, ownership rejection, and repeated page rereads after favorite saves. The opt-in `gallery.performance.e2e.js` case uses 2,048 temporary PNGs with a common tag, observes real IPC transport, and checks unchanged session IDs and scroll anchors across 16 pages and eviction. It also verifies reopened/reloaded edits and relevant tag/Favorites refreshes.

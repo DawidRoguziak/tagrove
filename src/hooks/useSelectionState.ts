@@ -1,3 +1,4 @@
+import { useQueryInvalidation, type OnTagMutation } from "../components/app/hooks/useQueryInvalidation";
 import { useSelectionNavigation } from "./useSelectionNavigation";
 import { useMediaGroupDraft } from "./useMediaGroupDraft";
 import type { FilterDescriptor } from "../components/app/services/filterService";
@@ -6,10 +7,6 @@ import type { Dispatch, SetStateAction } from "react";
 import { deleteLightboxAssetAction } from "../components/lightbox/services/deleteLightboxAssetAction";
 import { useSelectionMetadataActions } from "./useSelectionMetadataActions";
 import { saveLightboxTagsAction } from "../components/lightbox/services/saveLightboxTagsAction";
-import {
-  collectChangedTags,
-  tagMutationTouchesFilters
-} from "../components/app/services/libraryInvalidationService";
 import { useAssetTagState } from "../components/app/hooks/useAssetTagState";
 import type {
   AssetTagGenerationToken,
@@ -34,6 +31,7 @@ interface UseSelectionStateArgs {
   getAssetPosition?: (assetId: number) => Promise<AssetQueryPositionResult>;
   getAssetAtAsync?: (index: number) => Promise<AssetSummary | undefined>;
   getAssetIndex?: (assetId: number) => number | null;
+  onTagMutation?: OnTagMutation;
   appliedFilter?: FilterDescriptor;
   appliedFilterTags?: string[];
 }
@@ -92,7 +90,7 @@ export function useSelectionState({
   assets,
   setAssets,
   appliedFavoritesOnly,
-  refresh,
+  refresh: refreshQuery,
   refreshKnownTags,
   assetTagState: sharedAssetTagState,
   assetCount = assets.length,
@@ -105,9 +103,13 @@ export function useSelectionState({
     return index >= 0 ? index : null;
   },
   appliedFilter,
+  onTagMutation: onCommitted,
   appliedFilterTags = []
 }: UseSelectionStateArgs) {
   const { t } = useTranslation();
+  const { refresh, onTagMutation, isFavoritesOnly } = useQueryInvalidation(
+    appliedFilter ?? appliedFilterTags, refreshQuery, appliedFavoritesOnly, onCommitted
+  );
   const localAssetTagState = useAssetTagState();
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
   const [navigationStatus, setNavigationStatus] = useState<"ready" | "resolving" | "missing" | "failed">("ready");
@@ -252,7 +254,6 @@ export function useSelectionState({
     if (!authoritative) return;
 
     const requestedTags = mutation.desired;
-    const confirmedTags = [...mutation.confirmed];
     const mutationToken = assetTagState.beginMutation(assetId);
     if (!mutationToken) {
       mutation.token = null;
@@ -304,16 +305,7 @@ export function useSelectionState({
         current.confirmed = result?.tags ?? requestedTags;
         current.failed = false;
         if (current.desired && sameTags(current.desired, requestedTags)) current.desired = null;
-        // A tag change that can flip the active include/exclude filter
-        // membership must restart the query session, not just patch the cache.
-        if (
-          tagMutationTouchesFilters(
-            collectChangedTags(confirmedTags, result?.tags ?? requestedTags),
-            appliedFilter ?? appliedFilterTags
-          )
-        ) {
-          void refresh().catch(() => {});
-        }
+        if (mutationSettled && result) onTagMutation(result.query_impact);
       })
       .catch(() => {
         assetTagState.settleMutation(mutationToken);
@@ -332,7 +324,7 @@ export function useSelectionState({
         else if (!current.failed && selectedRef.current?.id !== assetId) tagMutationsRef.current.delete(assetId);
       });
   }, [
-    appliedFilter, appliedFilterTags, assetTagState, assets, getCachedDetails, putCachedDetails, refresh,
+    onTagMutation, assetTagState, assets, getCachedDetails, putCachedDetails,
     refreshKnownTags, syncVisibleTagMutationState
   ]);
 
@@ -453,7 +445,7 @@ export function useSelectionState({
   }, [assetTagState, assets, getAssetPosition, selectedId]);
 
   const { toggleSelectedFavorite, saveMediaGroup, favoritePending, groupPending, favoriteFailed, groupFailed } = useSelectionMetadataActions({
-    selected, assetTagState, appliedFavoritesOnly, setAssets, setSelectedState, refresh, getCachedDetails, putCachedDetails
+    selected, assetTagState, appliedFavoritesOnly: isFavoritesOnly, setAssets, setSelectedState, refresh, getCachedDetails, putCachedDetails
   });
 
   const applyFavoriteChanges = useCallback((assetIds: ReadonlySet<number>, isFavorite: boolean) => {

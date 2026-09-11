@@ -242,11 +242,18 @@ pub fn set_asset_favorite_with_revision(
     is_favorite: bool,
 ) -> anyhow::Result<i64> {
     retry_immediate_transaction(conn, |tx| {
-        tx.execute(
-            "UPDATE assets SET is_favorite = ?1 WHERE id = ?2",
+        let changed = tx.execute(
+            "UPDATE assets SET is_favorite = ?1 WHERE id = ?2 AND is_favorite != ?1",
             params![if is_favorite { 1 } else { 0 }, asset_id],
-        )?;
-        bump_library_revision_in_tx(tx)
+        )? > 0;
+        bump_scoped_revision(
+            tx,
+            &if changed {
+                vec!["favorites".into()]
+            } else {
+                vec![]
+            },
+        )
     })
 }
 
@@ -281,7 +288,7 @@ pub fn toggle_assets_favorite_bulk(
             for &asset_id in &processed_asset_ids {
                 update.execute(params![is_favorite, asset_id])?;
             }
-            bump_library_revision_in_tx(tx)?
+            bump_scoped_revision(tx, &["favorites".into()])?
         };
         Ok(crate::models::BulkFavoriteSummary {
             processed_asset_ids,
@@ -500,15 +507,22 @@ pub(super) fn canonicalize_tag_rows_in_tx(
     Ok(changed)
 }
 
+pub(crate) struct TagMutationOutcome {
+    pub changed: bool,
+    pub tags: Vec<String>,
+    pub query_impact: TagQueryImpact,
+}
+
 pub(crate) fn set_asset_tags_in_tx(
     tx: &rusqlite::Transaction<'_>,
     asset_id: i64,
     tags: &[String],
-) -> anyhow::Result<(bool, Vec<String>)> {
+) -> anyhow::Result<TagMutationOutcome> {
     let normalized = normalize_and_validate_tags(tags.to_vec())?;
     let existing = list_asset_tags_in_tx(tx, asset_id)?
         .ok_or_else(|| anyhow::anyhow!("Asset {asset_id} not found"))?;
-    let canonicalized = canonicalize_tag_rows_in_tx(tx, asset_id)?;
+    let noncanonical = existing != normalize_tags(existing.clone());
+    let canonicalized = canonicalize_tag_rows_in_tx(tx, asset_id)? || noncanonical;
     let actual_count: i64 = tx.query_row(
         "SELECT COUNT(*) FROM asset_tags WHERE asset_id = ?1",
         params![asset_id],
@@ -530,7 +544,15 @@ pub(crate) fn set_asset_tags_in_tx(
     let mut comparable = normalized.clone();
     comparable.sort();
     if existing == comparable {
-        return Ok((canonicalized || count_repaired, comparable));
+        return Ok(TagMutationOutcome {
+            changed: canonicalized || count_repaired,
+            tags: comparable,
+            query_impact: if canonicalized || count_repaired {
+                TagQueryImpact::All
+            } else {
+                TagQueryImpact::None
+            },
+        });
     }
 
     tx.execute(
@@ -559,19 +581,26 @@ pub(crate) fn set_asset_tags_in_tx(
         params![asset_id],
     )?;
     let canonical = list_asset_tags_in_tx(tx, asset_id)?.unwrap_or_default();
-    Ok((true, canonical))
+    let before: std::collections::BTreeSet<_> = normalize_tags(existing).into_iter().collect();
+    let after: std::collections::BTreeSet<_> =
+        normalize_tags(canonical.clone()).into_iter().collect();
+    let query_impact = if canonicalized || count_repaired {
+        TagQueryImpact::All
+    } else {
+        TagQueryImpact::Tags {
+            changed_tags: before.symmetric_difference(&after).cloned().collect(),
+            tag_count_changed: before.len() != after.len(),
+        }
+    };
+    Ok(TagMutationOutcome {
+        changed: true,
+        tags: canonical,
+        query_impact,
+    })
 }
 
 pub(crate) fn bump_library_revision_in_tx(tx: &rusqlite::Transaction<'_>) -> anyhow::Result<i64> {
-    tx.execute(
-        "UPDATE library_metadata SET value = value + 1 WHERE key = 'revision'",
-        [],
-    )?;
-    Ok(tx.query_row(
-        "SELECT value FROM library_metadata WHERE key = 'revision'",
-        [],
-        |row| row.get(0),
-    )?)
+    bump_scoped_revision(tx, &["general".into()])
 }
 
 pub(super) fn is_retryable_sqlite_error(error: &anyhow::Error) -> bool {
@@ -727,21 +756,14 @@ pub fn set_asset_tags_with_revision(
 ) -> anyhow::Result<SetAssetTagsSummary> {
     let normalized = normalize_and_validate_tags(tags.to_vec())?;
     retry_immediate_transaction(conn, |tx| {
-        let (changed, canonical_tags) = set_asset_tags_in_tx(tx, asset_id, &normalized)?;
+        let outcome = set_asset_tags_in_tx(tx, asset_id, &normalized)?;
         cleanup_orphan_tags(tx)?;
-        let revision = if changed {
-            bump_library_revision_in_tx(tx)?
-        } else {
-            tx.query_row(
-                "SELECT value FROM library_metadata WHERE key = 'revision'",
-                [],
-                |row| row.get(0),
-            )?
-        };
+        let revision = bump_tag_revision(tx, &outcome.query_impact)?;
         Ok(SetAssetTagsSummary {
             asset_id,
-            changed,
-            tags: canonical_tags,
+            changed: outcome.changed,
+            tags: outcome.tags,
+            query_impact: outcome.query_impact,
             revision,
         })
     })
@@ -765,8 +787,8 @@ pub fn merge_asset_tags_bulk(
         };
         processed += 1;
         let merged = merge_tags(&existing, &normalized_incoming);
-        let (changed, _) = set_asset_tags_in_tx(&tx, *asset_id, &merged)?;
-        updated += usize::from(changed);
+        let outcome = set_asset_tags_in_tx(&tx, *asset_id, &merged)?;
+        updated += usize::from(outcome.changed);
     }
     cleanup_orphan_tags(&tx)?;
     tx.commit()?;
@@ -777,44 +799,40 @@ pub fn merge_asset_tags_bulk_with_revision(
     conn: &mut Connection,
     asset_ids: &[i64],
     incoming_tags: &[String],
-) -> anyhow::Result<(Vec<AssetTagResult>, i64)> {
+) -> anyhow::Result<(Vec<AssetTagResult>, i64, TagQueryImpact)> {
     let normalized_incoming = normalize_and_validate_tags(incoming_tags.to_vec())?;
     if asset_ids.is_empty() || normalized_incoming.is_empty() {
-        return Ok((Vec::new(), current_library_revision(conn)?));
+        return Ok((
+            Vec::new(),
+            current_library_revision(conn)?,
+            TagQueryImpact::None,
+        ));
     }
     retry_immediate_transaction(conn, |tx| {
         let mut results = Vec::new();
+        let mut query_impact = TagQueryImpact::None;
         for asset_id in asset_ids {
             let Some(existing) = list_asset_tags_in_tx(tx, *asset_id)? else {
                 continue;
             };
             let merged = merge_tags(&existing, &normalized_incoming);
-            let (changed, tags) = set_asset_tags_in_tx(tx, *asset_id, &merged)?;
+            let outcome = set_asset_tags_in_tx(tx, *asset_id, &merged)?;
+            query_impact.union(outcome.query_impact);
             results.push(AssetTagResult {
                 asset_id: *asset_id,
-                changed,
-                tags,
+                changed: outcome.changed,
+                tags: outcome.tags,
             });
         }
         cleanup_orphan_tags(tx)?;
-        let changed = results.iter().any(|result| result.changed);
-        let revision = if changed {
-            bump_library_revision_in_tx(tx)?
-        } else {
-            tx.query_row(
-                "SELECT value FROM library_metadata WHERE key = 'revision'",
-                [],
-                |row| row.get(0),
-            )?
-        };
-        Ok((results, revision))
+        let revision = bump_tag_revision(tx, &query_impact)?;
+        Ok((results, revision, query_impact))
     })
 }
 
 pub fn bump_library_revision(conn: &Connection) -> anyhow::Result<i64> {
-    conn.execute(
-        "UPDATE library_metadata SET value = value + 1 WHERE key = 'revision'",
-        [],
-    )?;
-    current_library_revision(conn)
+    let tx = conn.unchecked_transaction()?;
+    let revision = bump_library_revision_in_tx(&tx)?;
+    tx.commit()?;
+    Ok(revision)
 }

@@ -7,7 +7,7 @@ type Status = { id: number; pending: boolean; failed: boolean } | null;
 interface Options {
   selected: SelectedAsset | null;
   assetTagState: AssetTagStateController;
-  appliedFavoritesOnly: boolean;
+  appliedFavoritesOnly: boolean | (() => boolean);
   setAssets: Dispatch<SetStateAction<AssetSummary[]>>;
   setSelectedState: Dispatch<SetStateAction<SelectedAsset | null>>;
   refresh: () => Promise<void>;

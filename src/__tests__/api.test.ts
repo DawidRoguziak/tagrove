@@ -98,12 +98,13 @@ describe("api contract", () => {
   });
 
   it("maps tag mutation payloads and returns canonical backend summaries", async () => {
-    const single = { asset_id: 7, changed: true, tags: ["cat"], revision: 4 };
+    const single = { query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true }, asset_id: 7, changed: true, tags: ["cat"], revision: 4 };
     const bulk = {
       processed_assets: 1,
       updated_assets: 1,
       processed_asset_ids: [7],
       updated_asset_ids: [7],
+      query_impact: { type: "tags", changed_tags: ["travel"], tag_count_changed: true },
       results: [{ asset_id: 7, changed: true, tags: ["cat", "travel"] }],
       revision: 5
     };

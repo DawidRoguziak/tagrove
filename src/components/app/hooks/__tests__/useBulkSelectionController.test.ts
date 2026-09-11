@@ -87,7 +87,7 @@ describe("useBulkSelectionController", () => {
     const asset = createAsset(1);
     apiMocks.getAssetDetails.mockResolvedValueOnce({ ...asset, tags: ["cat"] });
     apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({
-      asset_id: assetId, changed: true, tags, revision: 3
+      asset_id: assetId, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 3
     }));
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
@@ -123,7 +123,7 @@ describe("useBulkSelectionController", () => {
     apiMocks.getAssetDetails
       .mockRejectedValueOnce(new Error("load failed"))
       .mockResolvedValueOnce({ ...asset, tags: ["cat"] });
-    apiMocks.setAssetTags.mockResolvedValue({ asset_id: 1, changed: true, tags: ["cat", "dog"], revision: 2 });
+    apiMocks.setAssetTags.mockResolvedValue({ asset_id: 1, changed: true, tags: ["cat", "dog"], query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 });
     const { result } = renderHook(() => useBulkSelectionController(options([asset])));
     act(() => result.current.onToggleSelectionMode());
     select(result, 1, 0);
@@ -202,6 +202,33 @@ describe("useBulkSelectionController", () => {
     expect(apiMocks.getAssetDetails).toHaveBeenCalledTimes(2);
   });
 
+
+  it.each([0, 2])("rejects an obsolete bulk result with %s processed assets", async processed => {
+    const assets = [createAsset(1), createAsset(2)];
+    const pending = deferred<void>();
+    const refresh = vi.fn(async () => {});
+    actionMocks.applyBulkTagsAction.mockImplementation(async () => {
+      await pending.promise;
+      return { processed_assets: processed, updated_assets: processed, processed_asset_ids: processed ? [1, 2] : [],
+        updated_asset_ids: processed ? [1, 2] : [], revision: 2, query_impact: { type: "all" },
+        results: processed ? assets.map(asset => ({ asset_id: asset.id, tags: ["new"], changed: true })) : [] };
+    });
+    const { result } = renderHook(() => {
+      const assetTagState = useAssetTagState();
+      return { assetTagState, controller: useBulkSelectionController({ ...options(assets, refresh), assetTagState }) };
+    });
+    act(() => result.current.controller.onToggleSelectionMode());
+    act(() => result.current.controller.onBulkSelectionInteraction({ type: "click", assetId: 1, assetIndex: 0, ctrlLike: false, shift: false }));
+    act(() => result.current.controller.onBulkSelectionInteraction({ type: "click", assetId: 2, assetIndex: 1, ctrlLike: true, shift: false }));
+    let saving: Promise<boolean>;
+    act(() => { saving = result.current.controller.onAddTag("new"); });
+    act(() => result.current.assetTagState.reset());
+    await act(async () => { pending.resolve(); expect(await saving).toBe(false); });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(result.current.assetTagState.get(1)).toBeNull();
+    expect(result.current.controller.tagSaveFailed).toBe(false);
+  });
+
   it("does not send a multi-asset command unless every selected ID lock is acquired", async () => {
     const assets = [createAsset(1), createAsset(2)];
     actionMocks.applyBulkTagsAction.mockResolvedValue({
@@ -210,7 +237,7 @@ describe("useBulkSelectionController", () => {
         { asset_id: 1, changed: true, tags: ["travel"] },
         { asset_id: 2, changed: true, tags: ["travel"] }
       ],
-      revision: 2
+      query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2
     });
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
@@ -248,7 +275,7 @@ describe("useBulkSelectionController", () => {
     const refresh = vi.fn(async () => {});
     actionMocks.applyBulkTagsAction.mockResolvedValue({
       processed_assets: 0, updated_assets: 0, processed_asset_ids: [], updated_asset_ids: [],
-      results: [], revision: 1
+      results: [], query_impact: { type: "none" }, revision: 1
     });
     const { result } = renderHook(() => useBulkSelectionController(options(assets, refresh)));
     act(() => result.current.onToggleSelectionMode());
@@ -265,7 +292,7 @@ describe("useBulkSelectionController", () => {
     const assets = [createAsset(1), createAsset(2)];
     actionMocks.applyBulkTagsAction.mockResolvedValue({
       processed_assets: 1, updated_assets: 0, processed_asset_ids: [1], updated_asset_ids: [],
-      results: [{ asset_id: 1, changed: false, tags: ["travel"] }], revision: 1
+      results: [{ asset_id: 1, changed: false, tags: ["travel"] }], query_impact: { type: "none" }, revision: 1
     });
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
@@ -291,6 +318,7 @@ describe("useBulkSelectionController", () => {
     const pending = deferred<{
       processed_assets: number; updated_assets: number; processed_asset_ids: number[];
       updated_asset_ids: number[]; results: { asset_id: number; changed: boolean; tags: string[] }[];
+      query_impact: import("../../../../types").TagQueryImpact;
       revision: number;
     }>();
     actionMocks.applyBulkTagsAction.mockReturnValueOnce(pending.promise);
@@ -317,7 +345,7 @@ describe("useBulkSelectionController", () => {
     await act(async () => {
       pending.resolve({
         processed_assets: 1, updated_assets: 1, processed_asset_ids: [1], updated_asset_ids: [1],
-        results: [{ asset_id: 1, changed: true, tags: ["travel"] }], revision: 2
+        results: [{ asset_id: 1, changed: true, tags: ["travel"] }], query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2
       });
       await addPromise;
     });
@@ -335,7 +363,7 @@ describe("useBulkSelectionController", () => {
       processed_asset_ids: [1],
       updated_asset_ids: [1],
       results: [{ asset_id: 1, changed: true, tags: ["travel"] }],
-      revision: 2
+      query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2
     });
     const { result } = renderHook(() => useBulkSelectionController(options(assets, refresh)));
     act(() => result.current.onToggleSelectionMode());
@@ -443,12 +471,68 @@ describe("useBulkSelectionController", () => {
     expect(result.current.selectedAssetIds).toEqual(new Set());
   });
 
+
+  it.each(["add", "remove", "merge"])("uses the commit-time filter for bulk %s", async operation => {
+    const assets = [createAsset(1), createAsset(2)];
+    apiMocks.getAssetDetails.mockImplementation(async (id: number) => createDetails(assets[id - 1]!, ["cat"]));
+    const pending = deferred<void>();
+    const impact = { type: "tags", changed_tags: ["cat"], tag_count_changed: true };
+    apiMocks.setAssetTags.mockImplementation(async () => {
+      await pending.promise;
+      return { asset_id: 1, tags: [], changed: true, revision: 2, query_impact: impact };
+    });
+    actionMocks.applyBulkTagsAction.mockImplementation(async () => {
+      await pending.promise;
+      return { processed_assets: 2, updated_assets: 2, processed_asset_ids: [1, 2], updated_asset_ids: [1, 2],
+        results: assets.map(asset => ({ asset_id: asset.id, changed: true, tags: ["cat"] })),
+        revision: 2, query_impact: impact };
+    });
+    const firstRefresh = vi.fn(async () => {});
+    const currentRefresh = vi.fn(async () => {});
+    const { result, rerender } = renderHook(({ filter, refreshQuery }) => useBulkSelectionController({
+      ...options(assets, refreshQuery), appliedFilterTags: [filter]
+    }), { initialProps: { filter: "other", refreshQuery: firstRefresh } });
+    act(() => result.current.onToggleSelectionMode());
+    select(result, 1, 0);
+    await waitFor(() => expect(result.current.singleAssetTags).toEqual(["cat"]));
+    if (operation === "merge") select(result, 2, 1, true);
+    let saving: Promise<unknown>;
+    act(() => { saving = operation === "remove" ? result.current.onRemoveTag("cat") : result.current.onAddTag("new"); });
+    rerender({ filter: "cat", refreshQuery: currentRefresh });
+    await act(async () => { pending.resolve(); await saving; });
+    expect(firstRefresh).not.toHaveBeenCalled();
+    expect(currentRefresh).toHaveBeenCalledTimes(1);
+    expect(result.current.tagSaveFailed).toBe(false);
+  });
+
+  it.each(["none", "unrelated", "all", "failed"])("handles bulk merge impact %s", async mode => {
+    const assets = [createAsset(1), createAsset(2)];
+    const refresh = vi.fn(async () => {});
+    const config = options(assets, refresh);
+    if (mode === "failed") actionMocks.applyBulkTagsAction.mockRejectedValue(new Error("offline"));
+    else actionMocks.applyBulkTagsAction.mockResolvedValue({
+      processed_assets: 2, updated_assets: mode === "none" ? 0 : 2,
+      processed_asset_ids: [1, 2], updated_asset_ids: [1, 2],
+      results: assets.map(asset => ({ asset_id: asset.id, changed: mode !== "none", tags: ["new"] })),
+      revision: 2, query_impact: mode === "unrelated"
+        ? { type: "tags", changed_tags: ["new"], tag_count_changed: true } : { type: mode }
+    });
+    const { result } = renderHook(() => useBulkSelectionController({ ...config, appliedFilterTags: ["cat"] }));
+    act(() => result.current.onToggleSelectionMode());
+    select(result, 1, 0);
+    select(result, 2, 1, true);
+    await act(async () => { await result.current.onAddTag("new"); });
+    expect(refresh).toHaveBeenCalledTimes(mode === "all" ? 1 : 0);
+    expect(result.current.tagSaveFailed).toBe(mode === "failed");
+    if (mode === "failed") expect(result.current.appliedBulkTags).toEqual([]);
+  });
+
   it("refreshes a filtered query after removing its tag", async () => {
     const asset = createAsset(1);
     const refresh = vi.fn(async () => {});
     apiMocks.getAssetDetails.mockResolvedValueOnce(createDetails(asset, ["cat"]));
     apiMocks.setAssetTags.mockResolvedValueOnce({
-      asset_id: 1, changed: true, tags: [], revision: 2
+      asset_id: 1, changed: true, tags: [], query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2
     });
     const { result } = renderHook(() =>
       useBulkSelectionController({ ...options([asset], refresh), appliedFilterTags: ["cat"] })

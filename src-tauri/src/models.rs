@@ -259,8 +259,45 @@ pub struct AssetTagResult {
     pub tags: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TagQueryImpact {
+    None,
+    Tags {
+        changed_tags: Vec<String>,
+        tag_count_changed: bool,
+    },
+    All,
+}
+
+impl TagQueryImpact {
+    pub(crate) fn union(&mut self, other: Self) {
+        match (&mut *self, other) {
+            (Self::All, _) | (_, Self::None) => {}
+            (_, Self::All) => *self = Self::All,
+            (Self::None, impact) => *self = impact,
+            (
+                Self::Tags {
+                    changed_tags,
+                    tag_count_changed,
+                },
+                Self::Tags {
+                    changed_tags: names,
+                    tag_count_changed: count,
+                },
+            ) => {
+                changed_tags.extend(names);
+                changed_tags.sort();
+                changed_tags.dedup();
+                *tag_count_changed |= count;
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct SetAssetTagsSummary {
+    pub query_impact: TagQueryImpact,
     pub asset_id: i64,
     pub changed: bool,
     pub tags: Vec<String>,
@@ -269,6 +306,7 @@ pub struct SetAssetTagsSummary {
 
 #[derive(Debug, Serialize)]
 pub struct BulkTagMergeSummary {
+    pub query_impact: TagQueryImpact,
     pub processed_assets: usize,
     pub updated_assets: usize,
     pub processed_asset_ids: Vec<i64>,

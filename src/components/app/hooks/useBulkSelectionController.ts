@@ -1,3 +1,4 @@
+import { useQueryInvalidation, type OnTagMutation } from "./useQueryInvalidation";
 import type { BulkGroupSaveResult } from "../types";
 import { useSelectedSummaries } from "./useSelectedSummaries";
 import type { FilterDescriptor } from "../services/filterService";
@@ -18,9 +19,7 @@ import {
 } from "../../bulk/tagging/services/bulkTagMergeService";
 import type { BulkSelectionInteraction, SelectionRange } from "../../gallery/selection";
 import { containsIndex } from "../../gallery/services/selectionGeometry";
-import {
-  bulkTagMutationRequiresRefresh
-} from "../services/libraryInvalidationService";
+
 import { useAssetTagState } from "./useAssetTagState";
 import type { AssetTagMutationToken, AssetTagStateController } from "./useAssetTagState";
 
@@ -72,6 +71,7 @@ interface UseBulkSelectionControllerOptions {
   refresh: () => Promise<void>;
   refreshKnownTags: () => Promise<string[]>;
   assetTagState?: AssetTagStateController;
+  onTagMutation?: OnTagMutation;
   appliedFilter?: FilterDescriptor;
   appliedFilterTags?: string[];
   appliedFavoritesOnly?: boolean;
@@ -92,14 +92,18 @@ export function useBulkSelectionController({
   settingsViewOpen,
   queueThumbnailsByIds,
   setAssets,
-  refresh,
+  refresh: refreshQuery,
   refreshKnownTags,
   assetTagState: sharedAssetTagState,
   appliedFavoritesOnly = false,
   onFavoritesChanged,
   appliedFilter,
+  onTagMutation: onCommitted,
   appliedFilterTags = []
 }: UseBulkSelectionControllerOptions) {
+  const { refresh, onTagMutation, isFavoritesOnly } = useQueryInvalidation(
+    appliedFilter ?? appliedFilterTags, refreshQuery, appliedFavoritesOnly, onCommitted
+  );
   const localAssetTagState = useAssetTagState();
   const assetTagState = sharedAssetTagState ?? localAssetTagState;
   const [selectionModeEnabled, setSelectionModeEnabled] = useState(false);
@@ -446,7 +450,7 @@ export function useBulkSelectionController({
       if (missingIds.size > 0) {
         setSelectedAssetIds((previous) => new Set([...previous].filter((id) => !missingIds.has(id))));
       }
-      if (missingIds.size > 0 || (acceptedIds.size > 0 && appliedFavoritesOnly)) {
+      if (missingIds.size > 0 || (acceptedIds.size > 0 && isFavoritesOnly())) {
         void refresh().catch(() => {});
       }
     } catch {
@@ -459,7 +463,7 @@ export function useBulkSelectionController({
       favoriteOperationRef.current = false;
       setFavoriteApplying(false);
     }
-  }, [appliedFavoritesOnly, assetTagState, onFavoritesChanged, refresh, selectedAssetIds, selectionKey, setAssets, metadata.patch]);
+  }, [isFavoritesOnly, assetTagState, onFavoritesChanged, refresh, selectedAssetIds, selectionKey, setAssets, metadata.patch]);
 
   const onApplyGroup = useCallback(async (order?: number[]): Promise<BulkGroupSaveResult> => {
     if (selectionBusyRef.current || !selectedAssetIds.size || !metadata.ready || groupOperationRef.current) return { status: "ignored" };
@@ -600,9 +604,7 @@ export function useBulkSelectionController({
           }
           if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
           void refreshKnownTags().catch(() => []);
-          if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilter ?? appliedFilterTags)) {
-            void refresh().catch(() => {});
-          }
+          onTagMutation(result.query_impact);
           return true;
         } catch {
           assetTagState.settleMutation(mutationToken);
@@ -636,11 +638,13 @@ export function useBulkSelectionController({
       try {
         const result = await applyBulkTagsAction({ assetIds, tags: [tag], refreshKnownTags });
         if (!result || result.processed_assets === 0) {
+          let accepted = false;
+          for (const token of mutationTokens.values()) accepted = assetTagState.settleMutation(token) || accepted;
+          if (!accepted) return false;
           if (selectionKeyRef.current === capturedSelectionKey) {
             setPartialResult({ processed: 0, requested: assetIds.length });
             setTagSaveFailed(true);
           }
-          for (const token of mutationTokens.values()) assetTagState.settleMutation(token);
           void refresh().catch(() => {});
           return false;
         }
@@ -670,10 +674,7 @@ export function useBulkSelectionController({
         if (selectionKeyRef.current === capturedSelectionKey) {
           setAppliedBulkTags((previous) => mergeTagLists(previous, [tag]));
         }
-        if (result.processed_assets !== assetIds.length) void refresh().catch(() => {});
-        else if (bulkTagMutationRequiresRefresh(result.updated_assets, appliedFilter ?? appliedFilterTags)) {
-          void refresh().catch(() => {});
-        }
+        onTagMutation(result.query_impact, result.processed_assets !== assetIds.length);
         return true;
       } catch {
         for (const token of mutationTokens.values()) assetTagState.settleMutation(token);
@@ -686,7 +687,7 @@ export function useBulkSelectionController({
         }
       }
     },
-    [appliedFilter, appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
+    [onTagMutation, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
   );
 
   const onRemoveTag = useCallback(
@@ -726,9 +727,7 @@ export function useBulkSelectionController({
         }
         if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
         void refreshKnownTags().catch(() => []);
-        if (bulkTagMutationRequiresRefresh(result.changed ? 1 : 0, appliedFilter ?? appliedFilterTags)) {
-          void refresh().catch(() => {});
-        }
+        onTagMutation(result.query_impact);
       } catch {
         assetTagState.settleMutation(mutationToken);
         if (selectionKeyRef.current === capturedSelectionKey) setTagSaveFailed(true);
@@ -739,7 +738,7 @@ export function useBulkSelectionController({
         }
       }
     },
-    [appliedFilter, appliedFilterTags, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
+    [onTagMutation, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
   );
 
   const onRetryTagDetails = useCallback(() => {

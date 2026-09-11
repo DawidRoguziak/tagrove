@@ -11,7 +11,7 @@ type SetSelected = (updater: (previous: SelectedAsset | null) => SelectedAsset |
 
 interface ToggleLightboxFavoriteActionArgs {
   selected: SelectedAsset | null;
-  appliedFavoritesOnly: boolean;
+  appliedFavoritesOnly: boolean | (() => boolean);
   setAssets: SetAssets;
   setSelected: SetSelected;
   refresh: () => Promise<void>;
@@ -35,7 +35,7 @@ export async function toggleLightboxFavoriteAction({
   setAssets((previous) => updateAssetFavorite(previous, assetId, nextFavorite));
   setSelected((previous) => updateSelectedFavoriteIfMatchingAsset(previous, assetId, nextFavorite));
 
-  if (favoriteMutationRequiresRefresh(appliedFavoritesOnly, nextFavorite)) {
+  if (favoriteMutationRequiresRefresh(typeof appliedFavoritesOnly === "function" ? appliedFavoritesOnly() : appliedFavoritesOnly, nextFavorite)) {
     await refresh();
   }
 }

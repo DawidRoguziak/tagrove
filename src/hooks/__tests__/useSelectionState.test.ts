@@ -187,6 +187,40 @@ describe("useSelectionState", () => {
     });
   });
 
+
+  it.each([
+    ["cat", "other", false, false],
+    ["other", "cat", false, true],
+    ["other", "cat", true, false],
+  ])("uses the current filter after lightbox save %s → %s, failed=%s", async (before, after, fail, refreshes) => {
+    const asset = createAsset({ id: 1, tags: ["cat"] });
+    const pending = deferred<void>();
+    serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }) => {
+      await pending.promise;
+      onSaved(1, []);
+      return { asset_id: 1, tags: [], changed: true, revision: 2,
+        query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true } };
+    });
+    const oldRefresh = vi.fn(async () => {});
+    const nextRefresh = vi.fn(async () => {});
+    const { result, rerender } = renderHook(({ filter, refreshQuery }) => useSelectionState({
+      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh: refreshQuery,
+      refreshKnownTags, appliedFilterTags: [filter]
+    }), { initialProps: { filter: before, refreshQuery: oldRefresh } });
+    act(() => result.current.setSelected(asset));
+    act(() => result.current.saveTags([]));
+    rerender({ filter: after, refreshQuery: nextRefresh });
+    await act(async () => {
+      if (fail) pending.reject(new Error("offline"));
+      else pending.resolve();
+    });
+    await waitFor(() => expect(result.current.tagSaving).toBe(false));
+    expect(oldRefresh).not.toHaveBeenCalled();
+    expect(nextRefresh).toHaveBeenCalledTimes(refreshes ? 1 : 0);
+    expect(result.current.tagFailed).toBe(fail);
+    if (!fail) expect(result.current.tagEditor).toEqual([]);
+  });
+
   it("syncs selected object with latest assets and clears when selected asset disappears", async () => {
     const initialAsset = createAsset({ id: 7, tags: ["old"], media_group_key: "legacy" });
     const updatedAsset = createAsset({
@@ -241,10 +275,10 @@ describe("useSelectionState", () => {
       if (serviceMocks.saveLightboxTagsAction.mock.calls.length === 1) {
         return firstSave.promise.then(() => {
           onSaved?.(1, tags);
-          return { asset_id: 1, changed: true, tags, revision: 2 };
+          return { asset_id: 1, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
         });
       }
-      return Promise.resolve({ asset_id: 1, changed: true, tags, revision: 3 });
+      return Promise.resolve({ asset_id: 1, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 3 });
     });
 
     const { result } = renderHook(() => useSelectionState({
@@ -274,7 +308,7 @@ describe("useSelectionState", () => {
         ? firstSave.promise
         : retrySave.promise;
       return pending.finally(() => { activeSaves -= 1; }).then(() => ({
-        asset_id: 4, changed: true, tags, revision: 2
+        asset_id: 4, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2
       }));
     });
 
@@ -305,7 +339,7 @@ describe("useSelectionState", () => {
     apiMocks.getAssetDetails.mockReturnValueOnce(lateDetails.promise);
     serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }, tags: string[]) => {
       onSaved?.(5, tags);
-      return { asset_id: 5, changed: true, tags, revision: 2 };
+      return { asset_id: 5, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
     });
 
     const { result } = renderHook(() => useSelectionState({
@@ -489,7 +523,7 @@ describe("useSelectionState", () => {
     serviceMocks.saveLightboxTagsAction.mockImplementation(({ onSaved }, tags: string[]) =>
       pendingSave.promise.then(() => {
         onSaved?.(23, tags);
-        return { asset_id: 23, changed: true, tags, revision: 2 };
+        return { asset_id: 23, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
       })
     );
     const { result } = renderHook(() => {
@@ -511,6 +545,30 @@ describe("useSelectionState", () => {
 
     act(() => pendingSave.resolve());
     await waitFor(() => expect(result.current.selection.selected?.tags).toEqual(["cat", "dog"]));
+  });
+
+
+  it("does not publish or refresh an obsolete lightbox save", async () => {
+    const asset = createAsset({ id: 24, tags: ["old"] });
+    const pending = deferred<void>();
+    serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }) => {
+      await pending.promise;
+      expect(onSaved(24, ["new"])).toBe(false);
+      return { asset_id: 24, tags: ["new"], changed: true, revision: 2, query_impact: { type: "all" } };
+    });
+    const { result } = renderHook(() => {
+      const assetTagState = useAssetTagState();
+      return { assetTagState, selection: useSelectionState({
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags, assetTagState
+      }) };
+    });
+    act(() => result.current.selection.setSelected(asset));
+    act(() => result.current.selection.saveTags(["new"]));
+    act(() => result.current.assetTagState.reset());
+    await act(async () => pending.resolve());
+    expect(refresh).not.toHaveBeenCalled();
+    expect(result.current.assetTagState.get(24)).toBeNull();
+    expect(result.current.selection.selected).toBeNull();
   });
 
   it("clears local caches on identity reset and reloads a reused asset ID", async () => {
@@ -671,8 +729,8 @@ describe("useSelectionState", () => {
     expect(serviceMocks.toggleLightboxFavoriteAction).toHaveBeenCalledWith(
       expect.objectContaining({
         selected: first,
-        appliedFavoritesOnly: true,
-        refresh
+        appliedFavoritesOnly: expect.any(Function),
+        refresh: expect.any(Function)
       })
     );
 
@@ -686,7 +744,7 @@ describe("useSelectionState", () => {
     expect(serviceMocks.deleteLightboxAssetAction).toHaveBeenCalledWith(
       expect.objectContaining({
         selected: first,
-        refresh,
+        refresh: expect.any(Function),
         refreshKnownTags
       })
     );

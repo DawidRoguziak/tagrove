@@ -1,3 +1,4 @@
+import { toggleLightboxFavoriteAction } from "../../components/lightbox/services/toggleLightboxFavoriteAction";
 import { ThumbnailStore } from "../services/thumbnailStore";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,6 +38,7 @@ const apiMocks = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
   getAssetQueryPosition: vi.fn(),
+  setAssetFavorite: vi.fn(),
   listTags: vi.fn()
 }));
 
@@ -93,6 +95,7 @@ describe("useLibraryBrowser", () => {
     apiMocks.startAssetQuery.mockReset();
     apiMocks.getAssetQueryPage.mockReset();
     apiMocks.getAssetQueryPosition.mockReset();
+    apiMocks.setAssetFavorite.mockReset().mockResolvedValue(undefined);
     apiMocks.listTags.mockReset();
     queueMocks.queueThumbnailsByIds.mockReset();
     queueMocks.setGalleryThumbnailDemand.mockReset();
@@ -123,6 +126,47 @@ describe("useLibraryBrowser", () => {
     await act(async () => result.current.refresh());
     reply.resolve({ status: "resolved", index: 200 });
     await expect(position).resolves.toEqual({ status: "stale" });
+  });
+
+
+  it.each(["initial", "page"])("rereads delayed %s summaries across every metadata patch without restarting", async kind => {
+    const delayed = deferred<ReturnType<typeof ready>>();
+    const reread = deferred<ReturnType<typeof ready>>();
+    const original = createAsset(2);
+    const saved = { ...original, is_favorite: true };
+    const final = { ...saved, media_group_key: "saved" };
+    apiMocks.startAssetQuery.mockReturnValue(kind === "initial" ? delayed.promise : Promise.resolve(ready([createAsset(1)], 2)));
+    apiMocks.getAssetQueryPage
+      .mockReturnValueOnce(kind === "initial" ? reread.promise : delayed.promise);
+    if (kind === "page") apiMocks.getAssetQueryPage.mockReturnValueOnce(reread.promise);
+    apiMocks.getAssetQueryPage.mockResolvedValue(ready([final], 2, kind === "initial" ? 0 : 1));
+    const { result } = renderHook(() => useLibraryBrowser({
+      pageSize: 1, filterInclude: [], filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: false
+    }));
+    let pending: Promise<void | AssetSummary | undefined>;
+    if (kind === "initial") act(() => { pending = result.current.refresh(); });
+    else {
+      await act(() => result.current.refresh());
+      act(() => { pending = result.current.getAssetAtAsync(1); });
+    }
+    await act(async () => toggleLightboxFavoriteAction({
+      selected: { ...original, path: "/synthetic/2.jpg", size_bytes: 100, tags: [] },
+      setAssets: result.current.setAssets, setSelected: vi.fn(),
+      appliedFavoritesOnly: false, refresh: result.current.refresh
+    }));
+    expect(apiMocks.setAssetFavorite).toHaveBeenCalledExactlyOnceWith(2, true);
+    await act(async () => delayed.resolve(ready([original], 2, kind === "initial" ? 0 : 1)));
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(kind === "initial" ? 1 : 2);
+    act(() => result.current.setAssets(previous => previous.map(asset => ({ ...asset, media_group_key: "saved" }))));
+    await act(async () => {
+      reread.resolve(ready([saved], 2, kind === "initial" ? 0 : 1));
+      const returned = await pending;
+      if (kind === "page") expect(returned).toEqual(final);
+    });
+    expect(result.current.assets).toContainEqual(final);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(1);
+    expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getAssetQueryPage).toHaveBeenLastCalledWith(1, kind === "initial" ? 0 : 1, 1);
   });
 
   it("loads first page with replace mode and resets thumbnail queue", async () => {

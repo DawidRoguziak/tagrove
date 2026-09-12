@@ -142,6 +142,14 @@ Image/GIF load failures, native-session open failures, and backend video error e
 
 When the current OpenGL renderer identifies itself as llvmpipe, render-context initialization selects libmpv's `gpu-dumb-mode=yes`. This uses basic scaling and disables advanced shader processing. The mpv 0.41/Mesa 26.1 software path produced black video in package tests; the basic path passed decoded-frame, seek, fullscreen and audio checks. Hardware contexts retain `auto`, including after context recreation. GPU X11 and Wayland playback use the regular rendering path.
 
+Playback snapshots and decoder-stop polling read libmpv flags through a private `c_int` adapter. `MPV_FORMAT_FLAG` writes a C integer; the installed libmpv2 6 wrapper's generic Rust `bool` getter allocates only one byte. The adapter converts the initialized integer only after a successful read and preserves each caller's error default. Dependencies and public payloads are unchanged.
+
+The native speed menu offers 0.5, 0.75, 1, 1.25, 1.5 and 2×. Selection queues a worker command; the authoritative playback snapshot updates the speed label. A GTK capture gesture claims the entire outside click, including release, over the picture, native controls, sidebar and backdrop. That click only dismisses the menu. The trigger toggles it, selection closes it, and a capture-phase Escape handler dismisses it before fullscreen or lightbox shortcuts. The popover is nonmodal because capture owns outside dismissal. Its visibility and trigger state are cleared together on close, replacement, focus loss and zero visible bounds. Dismissal runs outside the player mutex and surface borrow, and choice callbacks hold weak popover references.
+
+Normal lightbox close/reopen hides and reuses the renderer. GLArea unrealize makes its owning context current before unregistering the libmpv update callback and freeing the renderer. Callback storage survives renderer destruction. GTK's private GLArea input window also passes input through; setting pass-through only on the parent overlay leaves picture clicks intercepted.
+
+Video bounds clamp against the GTK content allocation in logical pixels. On Wayland, popover configure events can replace Tao's cached window size with the popup dimensions. Using that cache shrinks the video and controls on reopening even though the WebView reports full-size bounds. Session checks still reject stale bounds and close operations.
+
 ## Image fit, zoom, and pan
 
 `ResizeObserver` tracks the media viewport. Fit scale is `min(viewportWidth / intrinsicWidth, viewportHeight / intrinsicHeight)`. The `<img>` layout width and height are the fitted dimensions multiplied by `--lightbox-image-zoom`, which defaults to 1. Once dimensions are known, the image has no viewport maximum width or height; the stage clips overflow. Missing dimensions produce fit scale 1 and no explicit display size, with viewport maximums retained until load. Natural image dimensions replace summary/details dimensions after load.
@@ -174,7 +182,7 @@ The window-level shortcuts while an asset is selected are:
 
 | Key | Behavior |
 | --- | --- |
-| `Escape` | Exit image or native video fullscreen first; otherwise close the lightbox |
+| `Escape` | Dismiss the native speed menu first, then exit image or native video fullscreen; otherwise close the lightbox |
 | `ArrowLeft` / `ArrowRight` | Seek video backward/forward 5 seconds when the player or a native playback button has focus; otherwise previous/next global result with wrap |
 | `F` | Toggle image-shell or video-player fullscreen |
 | `0` | Reset image/GIF zoom |
@@ -232,6 +240,7 @@ Current focused coverage is split across:
 - `src/components/UI/__tests__/ModalPresence.test.tsx`: exit retention, interrupted transitions, reduced motion, compiled duration tokens, nested focus restoration and locked confirmations.
 - `src/components/lightbox/__tests__/LightboxModal.test.tsx`: 75 ms opening and 50 ms closing, navigation without replay, rapid reactivation, reduced motion, retained editor props, immediate native-player shutdown, arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, and inline delete confirmation.
 - `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx`: cancellation before and after reservation, delayed open completion, A→B→A event isolation, coalesced bounds acknowledgements, label changes, recoverable/fatal errors, and serialized fullscreen toggles.
+- `e2e/specs/video-speed.e2e.js`: actual native speed selection, outside-click consumption, focus loss, zero/stale bounds, Escape/fullscreen and 30 reopen cycles with decoded-picture comparisons. See the [native playback test setup](../development/testing.md#native-speed-menu-and-repeated-playback).
 - `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx`: copy availability, clipboard write, confirmed state, and 1,600 ms reset.
 - `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` and `hooks/__tests__/useLightboxModalHandlers.test.ts`: confirmation text, inline close/confirm callbacks, media-group parsing, and pending-delete guards.
 - `src/components/lightbox/__tests__/useLightboxImageControls.test.ts`: keyboard navigation/zoom/fullscreen, wheel suppression, direct double-click zoom, drag fallback, and close timing.

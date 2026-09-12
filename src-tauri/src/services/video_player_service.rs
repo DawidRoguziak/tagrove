@@ -1,3 +1,4 @@
+use std::ffi::{c_int, CStr};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -5,6 +6,32 @@ use super::video_events::{NativeEvent, VideoEventClient};
 use libmpv2::Mpv;
 use serde::Serialize;
 use tauri::ipc::Channel;
+
+// libmpv2 6's GetData for bool supplies one byte, but MPV_FORMAT_FLAG writes
+// a C int. Keep flag reads here, including decoder-stop polling and tests.
+fn boolean_property(mpv: &Mpv, name: &CStr) -> Result<bool, libmpv2::Error> {
+    let mut value: c_int = 0;
+    read_flag(mpv, name, &mut value)?;
+    Ok(value != 0)
+}
+
+fn read_flag(mpv: &Mpv, name: &CStr, value: &mut c_int) -> Result<(), libmpv2::Error> {
+    // SAFETY: the live handle and C string outlive this synchronous call. FLAG
+    // requires writable, aligned sizeof(int) storage, provided by value.
+    let result = unsafe {
+        libmpv2_sys::mpv_get_property(
+            mpv.ctx.as_ptr(),
+            name.as_ptr(),
+            libmpv2_sys::mpv_format_MPV_FORMAT_FLAG,
+            (value as *mut c_int).cast(),
+        )
+    };
+    if result < 0 {
+        Err(libmpv2::Error::Raw(result))
+    } else {
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VideoEvent {
@@ -70,11 +97,11 @@ impl PlaybackSnapshot {
     fn refresh(&mut self, mpv: &Mpv) {
         self.duration = mpv.get_property("duration").unwrap_or(0.0);
         self.current_time = mpv.get_property("time-pos").unwrap_or(0.0);
-        self.paused = mpv.get_property("pause").unwrap_or(true);
-        self.seeking = mpv.get_property("seeking").unwrap_or(false);
-        self.buffering = mpv.get_property("paused-for-cache").unwrap_or(false);
+        self.paused = boolean_property(mpv, c"pause").unwrap_or(true);
+        self.seeking = boolean_property(mpv, c"seeking").unwrap_or(false);
+        self.buffering = boolean_property(mpv, c"paused-for-cache").unwrap_or(false);
         self.volume = mpv.get_property::<f64>("volume").unwrap_or(100.0) / 100.0;
-        self.muted = mpv.get_property("mute").unwrap_or(false);
+        self.muted = boolean_property(mpv, c"mute").unwrap_or(false);
         self.rate = mpv.get_property("speed").unwrap_or(1.0);
     }
 }
@@ -438,11 +465,7 @@ impl PlaybackWorker {
             .map_err(|error| error.to_string())?;
         // Stop completion is a boundary: old decoder events cannot enter the next client's queue.
         let deadline = Instant::now() + Duration::from_secs(5);
-        while !self
-            .mpv
-            .get_property::<bool>("idle-active")
-            .unwrap_or(false)
-        {
+        while !boolean_property(self.mpv, c"idle-active").unwrap_or(false) {
             if Instant::now() >= deadline {
                 return Err("libmpv stop timed out".into());
             }
@@ -680,7 +703,7 @@ mod tests {
         assert!(service.playback_snapshot().is_none());
         assert!(worker.session.is_none());
         assert!(service.require_pending(replacement).is_ok());
-        assert!(mpv.get_property::<bool>("idle-active").unwrap());
+        assert!(boolean_property(mpv, c"idle-active").unwrap());
 
         activate(&service, replacement, 8);
         worker.session = Some((8, VideoEventClient::new(mpv).unwrap()));
@@ -690,6 +713,40 @@ mod tests {
         assert!(service.playback_snapshot().is_none());
         assert!(service.require_current(8).is_err());
         assert!(service.require_pending(next_request).is_ok());
+    }
+
+    #[test]
+    fn real_mpv_boolean_reads_use_c_int_storage_and_propagate_errors() {
+        let mpv = Mpv::with_initializer(|init| {
+            init.set_option("vo", "null")?;
+            init.set_option("ao", "null")?;
+            Ok(())
+        })
+        .unwrap();
+        #[repr(C)]
+        struct GuardedFlag {
+            before: c_int,
+            value: c_int,
+            after: c_int,
+        }
+        for enabled in [true, false, true, false] {
+            mpv.set_property("pause", enabled).unwrap();
+            assert_eq!(boolean_property(&mpv, c"pause").unwrap(), enabled);
+            let mut storage = GuardedFlag {
+                before: 0x12345678,
+                value: -1,
+                after: 0x12345678,
+            };
+            read_flag(&mpv, c"pause", &mut storage.value).unwrap();
+            assert_eq!(storage.value, c_int::from(enabled));
+            assert_eq!(storage.before, 0x12345678);
+            assert_eq!(storage.after, 0x12345678);
+        }
+        assert!(matches!(
+            boolean_property(&mpv, c"not-a-real-property"),
+            Err(libmpv2::Error::Raw(_))
+        ));
+        assert!(boolean_property(&mpv, c"time-pos").is_err());
     }
 
     #[test]
@@ -875,6 +932,43 @@ mod tests {
         service.fail(broken_session, "late retired error".into());
         assert_eq!(service.playback_snapshot().unwrap().session_id, retry);
         service.close(retry).unwrap();
+        let other = temp.path().join("other.mp4");
+        std::fs::copy(&path, &other).unwrap();
+        let mut previous = retry;
+        for cycle in 0..30 {
+            // Pairs reopen the same file; each next pair switches assets.
+            let next_path = if cycle % 4 < 2 { &path } else { &other };
+            let id = service
+                .open(
+                    service.begin_open(),
+                    next_path.to_str().unwrap().into(),
+                    Channel::new(|_| Ok(())),
+                )
+                .unwrap();
+            let start = wait(&|s| s.session_id == id && s.duration > 2.0 && !s.paused);
+            assert!(
+                start.current_time < 1.0,
+                "reopen must start at the beginning"
+            );
+            assert_eq!(start.rate, if cycle == 0 { 1.5 } else { 2.0 });
+            for rate in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] {
+                service.control(id, PlayerCommand::SetRate(rate)).unwrap();
+                wait(&|s| s.session_id == id && s.rate == rate && !s.paused);
+            }
+            wait(&|s| s.current_time > start.current_time + 0.2);
+            assert!(service
+                .control(previous, PlayerCommand::SetRate(0.5))
+                .is_err());
+            service.close(previous).unwrap();
+            service.fail(previous, "late retired error".into());
+            assert_eq!(service.playback_snapshot().unwrap().session_id, id);
+            if cycle % 2 == 0 {
+                service.close(id).unwrap();
+                assert!(service.playback_snapshot().is_none());
+            }
+            previous = id;
+        }
+        service.close(previous).unwrap();
         let cancelled = service.begin_open();
         service.cancel_open(cancelled);
         assert!(service

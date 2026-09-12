@@ -35,6 +35,8 @@ struct VideoSurface {
     fullscreen: bool,
     _overlay: gtk::Overlay,
     _pointer_motion: gtk::EventControllerMotion,
+    _menu_pointer: gtk::GestureMultiPress,
+    _menu_keys: gtk::EventControllerKey,
     _css_provider: gtk::CssProvider,
     render_context: Rc<RefCell<RenderContextState>>,
     _render_source: glib::JoinHandle<()>,
@@ -372,12 +374,25 @@ impl NativeVideoControls {
         let rate_button = gtk::MenuButton::new();
         rate_button.set_label("1×");
         let rate_popover = gtk::Popover::new(Some(&rate_button));
+        // A window capture gesture owns outside clicks, including the WebView.
+        // GTK's modal grab alone does not reliably dismiss across these siblings.
+        rate_popover.set_modal(false);
         rate_popover
             .style_context()
             .add_class("media-tagger-video-rate-popover");
         let rate_choices = gtk::Box::new(gtk::Orientation::Vertical, 2);
         rate_popover.add(&rate_choices);
         rate_button.set_popover(Some(&rate_popover));
+        // Nonmodal popovers do not move keyboard focus themselves.
+        rate_popover.connect_map(|popover| popover.grab_focus());
+        {
+            let button = rate_button.downgrade();
+            rate_popover.connect_closed(move |_| {
+                if let Some(button) = button.upgrade() {
+                    button.set_active(false);
+                }
+            });
+        }
         row.pack_start(&rate_button, false, false, 0);
 
         let (fullscreen_button, fullscreen_icon) = icon_button("view-fullscreen-symbolic");
@@ -471,14 +486,16 @@ impl NativeVideoControls {
             let button = gtk::Button::with_label(&format_rate(rate));
             let player = player.clone();
             let session_id = Rc::clone(&session_id);
-            let popover = rate_popover.clone();
+            let popover = rate_popover.downgrade();
             button.connect_clicked(move |_| {
                 if let Some(session_id) = session_id.get() {
                     if let Err(error) = player.control(session_id, PlayerCommand::SetRate(rate)) {
                         player.report_control_error(session_id, error);
                     }
                 }
-                popover.popdown();
+                if let Some(popover) = popover.upgrade() {
+                    dismiss_rate_menu(&popover);
+                }
             });
             rate_choices.pack_start(&button, false, false, 0);
         }
@@ -588,9 +605,6 @@ impl NativeVideoControls {
     }
 
     fn activate(&self, session_id: u64) {
-        if self.session_id.get() != Some(session_id) {
-            self.rate_popover.popdown();
-        }
         self.scrubbing.set(false);
         self.adjusting_volume.set(false);
         self.session_id.set(Some(session_id));
@@ -600,7 +614,6 @@ impl NativeVideoControls {
     fn deactivate(&self, session_id: u64) {
         if self.session_id.get() == Some(session_id) {
             self.session_id.set(None);
-            self.rate_popover.popdown();
             self.root.hide();
         }
     }
@@ -765,6 +778,7 @@ fn format_rate(rate: f64) -> String {
 
 pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), String> {
     let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
+    eprintln!("native video GDK backend: {}", gtk_window.display().type_());
     let vbox = window.default_vbox().map_err(|error| error.to_string())?;
     let webview = vbox
         .children()
@@ -814,6 +828,54 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
     fixed.show();
     webview.show();
 
+    let menu_pointer = gtk::GestureMultiPress::new(&gtk_window);
+    menu_pointer.set_button(0);
+    menu_pointer.set_propagation_phase(gtk::PropagationPhase::Capture);
+    {
+        let popover = controls.rate_popover.downgrade();
+        let button = controls.rate_button.downgrade();
+        menu_pointer.connect_pressed(move |gesture, _, x, y| {
+            let (Some(popover), Some(button), Some(widget)) =
+                (popover.upgrade(), button.upgrade(), gesture.widget())
+            else {
+                return;
+            };
+            if !popover.is_visible() {
+                return;
+            }
+            let on_trigger = contains_point(&button, &widget, x, y);
+            if on_trigger || !contains_point(&popover, &widget, x, y) {
+                // Claim before hiding, and keep ownership until release so the
+                // WebView/control underneath receives neither half of the click.
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+                dismiss_rate_menu(&popover);
+            }
+        });
+    }
+    let menu_keys = gtk::EventControllerKey::new(&gtk_window);
+    menu_keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    {
+        let popover = controls.rate_popover.downgrade();
+        menu_keys.connect_key_pressed(move |_, key, _, _| {
+            if key == *gtk::gdk::keys::constants::Escape {
+                if let Some(popover) = popover.upgrade().filter(|menu| menu.is_visible()) {
+                    dismiss_rate_menu(&popover);
+                    return true;
+                }
+            }
+            false
+        });
+    }
+    {
+        let popover = controls.rate_popover.downgrade();
+        gtk_window.connect_focus_out_event(move |_, _| {
+            if let Some(popover) = popover.upgrade() {
+                dismiss_rate_menu(&popover);
+            }
+            glib::Propagation::Proceed
+        });
+    }
+
     // Capture observes native controls as well as the pass-through picture without
     // consuming input. The WebView uses the same activity timer for its controls.
     let pointer_motion = gtk::EventControllerMotion::new(&gtk_window);
@@ -846,6 +908,13 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
     {
         let render_context = Rc::clone(&render_context);
         gl_area.connect_realize(move |area| {
+            if let Some(window) = area.window() {
+                // GLArea has a private input-only child window. Overlay pass-through
+                // applies only to its parent, so that child must also pass clicks.
+                for child in window.children() {
+                    child.set_pass_through(true);
+                }
+            }
             area.make_current();
             if let Some(error) = area.error() {
                 *render_context.borrow_mut() = RenderContextState::Failed(error.to_string());
@@ -874,8 +943,13 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
     }
     {
         let render_context = Rc::clone(&render_context);
-        gl_area.connect_unrealize(move |_| {
-            *render_context.borrow_mut() = RenderContextState::Pending;
+        gl_area.connect_unrealize(move |area| {
+            // GtkGLArea's default unrealize handler destroys this context after
+            // our handler. libmpv must unregister/free with its owning GL current.
+            area.make_current();
+            let context = render_context.replace(RenderContextState::Pending);
+            // The boxed callback sender remains alive through renderer destruction.
+            drop(context);
         });
     }
     {
@@ -971,6 +1045,17 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
                 break;
             }
 
+            let retired = SURFACE.with(|surface| {
+                surface.borrow().as_ref().and_then(|surface| {
+                    surface
+                        .sessions
+                        .active
+                        .filter(|id| controls_player.require_current(*id).is_err())
+                })
+            });
+            if let Some(id) = retired {
+                dismiss_session_menu(id);
+            }
             SURFACE.with(|surface| {
                 let mut surface = surface.borrow_mut();
                 if let Some(surface) = surface.as_mut() {
@@ -998,6 +1083,8 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
             fullscreen: false,
             _overlay: overlay,
             _pointer_motion: pointer_motion,
+            _menu_pointer: menu_pointer,
+            _menu_keys: menu_keys,
             _css_provider: css_provider,
             render_context,
             _render_source: render_source,
@@ -1047,20 +1134,20 @@ impl VideoSurface {
         Ok(())
     }
 
-    fn position(&self, window: &WebviewWindow, bounds: VideoBounds) -> Result<(), String> {
-        let scale = window.scale_factor().map_err(|error| error.to_string())?;
-        let inner = window.inner_size().map_err(|error| error.to_string())?;
-        let max_width = f64::from(inner.width) / scale;
-        let max_height = f64::from(inner.height) / scale;
+    fn position(&self, bounds: VideoBounds) {
+        // Wayland popover configure events can overwrite Tao's cached inner_size
+        // with the popup's dimensions. This GTK allocation is the actual content
+        // area, in the same logical coordinates as the WebView bounds.
+        let max_width = f64::from(self.fixed.allocated_width());
+        let max_height = f64::from(self.fixed.allocated_height());
         let x = bounds.x.min(max_width);
         let y = bounds.y.min(max_height);
         let width = bounds.width.min((max_width - x).max(0.0));
         let height = bounds.height.min((max_height - y).max(0.0));
         if width == 0.0 || height == 0.0 {
             self.gl_area.hide();
-            self.controls.rate_popover.popdown();
             self.controls.root.hide();
-            return Ok(());
+            return;
         }
         self.fixed
             .move_(&self.gl_area, x.round() as i32, y.round() as i32);
@@ -1075,7 +1162,6 @@ impl VideoSurface {
         self.controls.root.show();
         self.gl_area.show();
         self.gl_area.queue_render();
-        Ok(())
     }
 }
 
@@ -1089,6 +1175,16 @@ pub fn activate(
     let player = player.clone();
     let target = window.clone();
     run_on_main_thread_result(window, move || {
+        player.require_current(session_id)?;
+        let previous = SURFACE.with(|surface| {
+            surface
+                .borrow()
+                .as_ref()
+                .and_then(|surface| surface.sessions.active)
+        });
+        if let Some(previous) = previous {
+            dismiss_session_menu(previous);
+        }
         player.with_session(session_id, |_| {
             SURFACE.with(|surface| {
                 let mut surface = surface.borrow_mut();
@@ -1104,7 +1200,8 @@ pub fn activate(
                 surface.controls.activate(session_id);
                 let _ = surface.controls_wakeup.try_send(());
                 surface.controls.set_labels(labels);
-                surface.position(&target, bounds)
+                surface.position(bounds);
+                Ok(())
             })
         })
     })
@@ -1117,8 +1214,22 @@ pub fn set_bounds(
     bounds: VideoBounds,
 ) -> Result<(), String> {
     let player = player.clone();
-    let target = window.clone();
     run_on_main_thread_result(window, move || {
+        player.require_current(session_id)?;
+        // Position can also clamp positive off-window bounds to zero.
+        let empty = SURFACE.with(|surface| {
+            let surface = surface.borrow();
+            surface.as_ref().is_some_and(|surface| {
+                surface.sessions.active == Some(session_id)
+                    && (bounds.width == 0.0
+                        || bounds.height == 0.0
+                        || bounds.x >= f64::from(surface.fixed.allocated_width())
+                        || bounds.y >= f64::from(surface.fixed.allocated_height()))
+            })
+        });
+        if empty {
+            dismiss_session_menu(session_id);
+        }
         player.with_session(session_id, |_| {
             SURFACE.with(|surface| {
                 let surface = surface.borrow();
@@ -1128,7 +1239,8 @@ pub fn set_bounds(
                 if surface.sessions.active != Some(session_id) {
                     return Err("stale video surface".into());
                 }
-                surface.position(&target, bounds)
+                surface.position(bounds);
+                Ok(())
             })
         })
     })
@@ -1212,6 +1324,7 @@ pub fn set_fullscreen(
 pub fn hide(window: &WebviewWindow, session_id: u64) -> Result<(), String> {
     let target = window.clone();
     run_on_main_thread_result(window, move || {
+        dismiss_session_menu(session_id);
         SURFACE.with(|surface| {
             if let Some(surface) = surface.borrow_mut().as_mut() {
                 surface.hide(&target, session_id)
@@ -1220,6 +1333,54 @@ pub fn hide(window: &WebviewWindow, session_id: u64) -> Result<(), String> {
             }
         })
     })
+}
+
+fn contains_point(child: &impl IsA<gtk::Widget>, ancestor: &gtk::Widget, x: f64, y: f64) -> bool {
+    child.is_mapped()
+        && child
+            .translate_coordinates(ancestor, 0, 0)
+            .is_some_and(|(left, top)| {
+                x >= f64::from(left)
+                    && y >= f64::from(top)
+                    && x < f64::from(left + child.allocated_width())
+                    && y < f64::from(top + child.allocated_height())
+            })
+}
+
+fn dismiss_rate_menu(popover: &gtk::Popover) {
+    let restore_focus = popover
+        .toplevel()
+        .and_then(|widget| widget.downcast::<gtk::Window>().ok())
+        .and_then(|window| window.focused_widget())
+        .is_some_and(|focus| focus.is_ancestor(popover));
+    // Hide synchronously: no closing animation may keep input or the active
+    // trigger behind when the lightbox/session disappears.
+    popover.popdown();
+    popover.hide();
+    if let Some(button) = popover
+        .relative_to()
+        .and_then(|widget| widget.downcast::<gtk::MenuButton>().ok())
+    {
+        button.set_active(false);
+        if restore_focus {
+            button.grab_focus();
+        }
+    }
+}
+
+fn dismiss_session_menu(session_id: u64) {
+    let popover = SURFACE.with(|surface| {
+        surface
+            .borrow()
+            .as_ref()
+            .filter(|surface| surface.sessions.active == Some(session_id))
+            .map(|surface| surface.controls.rate_popover.clone())
+    });
+    // GTK signals can re-enter application code. Neither SURFACE nor the player
+    // mutex is borrowed while emitting them.
+    if let Some(popover) = popover {
+        dismiss_rate_menu(&popover);
+    }
 }
 
 fn run_on_main_thread_result<T: Send + 'static>(

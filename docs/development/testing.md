@@ -98,6 +98,8 @@ Cargo may execute independent tests concurrently. Never use a shared fixed datab
 
 The Rust player regression generates a temporary MP4 with ffmpeg and drives the actual libmpv worker using null audio/video output. It verifies seeking, looping, replacement, settings retention, corrupt-file errors, and retry recovery without claiming GTK or OpenGL coverage. A separate test supersedes a committed session before `loadfile` and checks retirement without cancelling the replacement request.
 
+The same worker regression runs 30 cycles of all six speed choices, alternating same-file reopening and two-file replacement. It checks autoplay from the beginning, advancing time, retained rate and rejection of stale controls, close and failure events. Real-libmpv flag tests cover true/false values, property errors and guarded C-integer storage. Run these with `cargo test --manifest-path src-tauri/Cargo.toml video_ --lib`. The frontend lifecycle checks are `useNativeVideoSession.test.tsx`, `LightboxModal.test.tsx` and `useLightboxKeyboardShortcuts.test.ts`.
+
 ## Packaging checks
 
 `bun run test:packaging` verifies lockfile source generation, publication identity rejection, checksum inventory, duplicate-bundle rejection, and failed-build preservation with disposable artifacts. Docker builds perform format-specific artifact checks. See [package verification](linux-packaging.md) for installed-package tests and remaining desktop coverage.
@@ -292,6 +294,20 @@ Run through the existing isolated harness on a private X11 display with temporar
 MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri --spec e2e/specs/gallery-selection.e2e.js
 ```
 
+### Native speed menu and repeated playback
+
+`e2e/specs/video-speed.e2e.js` is opt-in with `MEDIATAGGER_NATIVE_VIDEO=1`. It uses generated MP4s and native XTest pointer/key events through `e2e/native-input.py`. WebDriver reads session snapshots and supplies DOM geometry; it does not click GTK controls. The spec checks outside dismissal over the picture, controls, sidebar and backdrop, trigger toggling, Escape before fullscreen, focus loss, zero bounds, stale bounds, and 30 speed-change/close/reopen cycles across two videos. Some cycles explicitly close the backend session while the menu is open to check teardown.
+
+Each cycle captures two native screenshots and uses `e2e/video-frames.py` to require colored, changing pixels inside the picture, excluding controls and sidebar. Evidence and pixel measurements remain under `artifacts/video-speed/<timestamp>/`. Dependencies beyond the ordinary desktop harness are Python with Pillow and PyGObject, libXtst, and ImageMagick `import`. The focus fixture opens a temporary GTK window in the isolated session.
+
+Use a fresh `/tmp/mediatagger-*` profile and an authenticated private Xvfb display. Set `MEDIATAGGER_NATIVE_DISPLAY` to that display only. The helper refuses ordinary `:0` and `:1` displays. For example, with temporary XDG data/config/cache directories already exported:
+
+```sh
+GDK_BACKEND=x11 MEDIATAGGER_NATIVE_VIDEO=1 dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; bun run test:e2e:tauri --spec e2e/specs/video-speed.e2e.js'
+```
+
+For Wayland, use a private compositor and display its development viewer inside private Xvfb. Run the app with `GDK_BACKEND=wayland`, its private Wayland socket and isolated runtime directory. Native input targets the viewer, which forwards it through the compositor. `MEDIATAGGER_NATIVE_X` and `MEDIATAGGER_NATIVE_Y` account for viewer chrome; verify offsets against screenshots. The GTK controls are measured at scale 1 with the default theme. Record the actual `native video GDK backend` startup line; the host's session type alone does not identify the app backend. A Wayland viewer run does not prove behavior on every compositor or GPU.
+
 ### Persistent desktop control
 
 `e2e/control.js` reuses the E2E build configuration and shared media fixtures without running
@@ -332,10 +348,10 @@ application stdout/stderr are recorded from launch. `diagnose` emits known test 
 it does not prove application error handling.
 
 Screenshots capture the private display, including GTK overlays. Gallery/image screenshots
-were visually verified. On the verification host, the native MP4 picture was black or
-corrupt on Xvfb, including with software GL; decoded video pixels remain unverified.
-WebDriver selectors cannot control native GTK playback buttons or native file dialogs.
-Do not change playback code or weaken isolation to work around these limitations.
+were visually verified. The controller's original verification did not establish decoded
+MP4 playback. The separate native speed regression above checks decoded picture changes
+with native input. WebDriver selectors still cannot control native GTK playback buttons
+or native file dialogs. Preserve isolation when checking those paths.
 
 `stop` and handled signals close the WebDriver session and owned process groups before
 removing the marked temporary root. Stop is repeatable, and evidence survives. Failed

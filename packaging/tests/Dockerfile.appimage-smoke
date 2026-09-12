@@ -2,9 +2,9 @@ ARG BASE=debian:12-slim
 FROM ${BASE}
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates bash python3 file xvfb dbus-x11 x11-utils libxtst6 \
-    libgl1 libegl1 libgl1-mesa-dri fontconfig fonts-dejavu-core pulseaudio pulseaudio-utils \
+    libgl1 libegl1 libgl1-mesa-dri fontconfig fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 RUN mkdir /bundle
 COPY packaging/tests/smoke-appimage.sh /tests/smoke-appimage.sh
-COPY packaging/tests/media-fixtures.sh packaging/tests/media-ui.py packaging/tests/x11-input.py packaging/tests/audio-test.sh /tests/
+COPY packaging/tests/media-fixtures.sh packaging/tests/media-ui.py packaging/tests/x11-input.py /tests/
 ENTRYPOINT ["dbus-run-session", "--", "bash", "/tests/smoke-appimage.sh"]

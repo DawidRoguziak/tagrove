@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 import {
   liveGroupMembers,
   removeOwnedScratch,
@@ -17,6 +18,7 @@ import {
 import { copyPngFixtures, createPlayableFixtures } from "./fixtures.js";
 
 const id = "a".repeat(32);
+const execFileAsync = promisify(execFile);
 
 test("rejects paths as session IDs and malformed commands", () => {
   for (const invalid of ["../other", "", "/tmp/test", undefined]) {
@@ -121,8 +123,15 @@ test("shared fixtures create real media exclusively in the supplied temporary ro
     const gif = await fs.readFile(path.join(root, "playable.gif"));
     assert.equal(gif.subarray(0, 3).toString(), "GIF");
     for (const index of [1, 2]) {
-      const mp4 = await fs.readFile(path.join(root, `playable-${index}.mp4`));
+      const videoPath = path.join(root, `playable-${index}.mp4`);
+      const mp4 = await fs.readFile(videoPath);
       assert.equal(mp4.subarray(4, 8).toString(), "ftyp");
+      const { stdout } = await execFileAsync(process.env.FFPROBE_PATH ?? "ffprobe", [
+        "-v", "error", "-show_entries", "stream=codec_type", "-of", "json", videoPath
+      ]);
+      const { streams } = JSON.parse(stdout);
+      assert.ok(streams.some((stream) => stream.codec_type === "video"), videoPath);
+      assert.equal(streams.filter((stream) => stream.codec_type === "audio").length, 0, videoPath);
     }
   } finally {
     await fs.rm(root, { recursive: true, force: true });

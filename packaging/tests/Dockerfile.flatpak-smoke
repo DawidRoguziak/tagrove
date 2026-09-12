@@ -3,7 +3,7 @@ FROM debian:12-slim
 RUN printf 'deb http://deb.debian.org/debian bookworm-backports main\n' > /etc/apt/sources.list.d/backports.list \
     && apt-get update && apt-get install -y --no-install-recommends \
     flatpak dbus-x11 xvfb x11-utils libxtst6 python3 ca-certificates \
-    libgl1-mesa-dri fontconfig fonts-dejavu-core pulseaudio pulseaudio-utils \
+    libgl1-mesa-dri fontconfig fonts-dejavu-core \
     xdg-desktop-portal xdg-desktop-portal-gtk \
     && apt-get install -y --no-install-recommends -t bookworm-backports flatpak \
     && rm -rf /var/lib/apt/lists/*

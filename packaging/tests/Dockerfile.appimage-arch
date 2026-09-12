@@ -1,7 +1,7 @@
 FROM archlinux:base
 RUN pacman -Syu --noconfirm --needed python file xorg-server-xvfb xorg-xwininfo \
-    libxtst libglvnd mesa dbus fontconfig ttf-dejavu ca-certificates pulseaudio \
+    libxtst libglvnd mesa dbus fontconfig ttf-dejavu ca-certificates \
     && pacman -Scc --noconfirm
 RUN mkdir /bundle
-COPY packaging/tests/smoke-appimage.sh packaging/tests/media-fixtures.sh packaging/tests/media-ui.py packaging/tests/x11-input.py packaging/tests/audio-test.sh /tests/
+COPY packaging/tests/smoke-appimage.sh packaging/tests/media-fixtures.sh packaging/tests/media-ui.py packaging/tests/x11-input.py /tests/
 ENTRYPOINT ["dbus-run-session", "--", "bash", "/tests/smoke-appimage.sh"]

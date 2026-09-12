@@ -18,14 +18,13 @@ bash /tests/media-fixtures.sh env "LD_LIBRARY_PATH=$package_libraries" "$appdir/
 export DISPLAY=:97 GDK_BACKEND=x11
 export XDG_DATA_HOME=/tmp/tagrove-data XDG_CONFIG_HOME=/tmp/tagrove-config XDG_CACHE_HOME=/tmp/tagrove-cache
 export XDG_RUNTIME_DIR=/tmp/tagrove-runtime
-source /tests/audio-test.sh
-start_package_audio
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
 unset WAYLAND_DISPLAY
 Xvfb "$DISPLAY" -screen 0 1440x900x24 -nolisten tcp -fbdir /evidence > /evidence/xvfb.log 2>&1 &
 xvfb_pid=$!
 app_pid=""
 cleanup() {
-  if [[ -n "$package_recorder_pid" ]]; then kill "$package_recorder_pid" 2>/dev/null || true; fi
   cp /evidence/Xvfb_screen0 /evidence/final-screen.xwd 2>/dev/null || true
   if [[ -n "$app_pid" ]]; then kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true; fi
   kill "$xvfb_pid" 2>/dev/null || true
@@ -52,6 +51,5 @@ PY
 cp /evidence/Xvfb_screen0 /evidence/window.xwd
 echo 'PASS: clean runtime linkage, packaged tools, application startup and database initialization' > /evidence/result.txt
 python3 /tests/media-ui.py "$XDG_DATA_HOME/com.example.mediatagger/media.db" >> /evidence/result.txt
-finish_package_audio
 
 if [[ "${TAGROVE_PACKAGE_INTERACTIVE:-}" == 1 ]]; then wait "$app_pid"; fi

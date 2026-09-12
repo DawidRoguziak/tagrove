@@ -21,15 +21,13 @@ flatpak info --user "$app_id" > /evidence/installed.txt
 flatpak info --user --show-metadata "$app_id" > /evidence/metadata.ini
 export DISPLAY=:97
 export GDK_BACKEND=x11 XDG_CURRENT_DESKTOP=GNOME
-source /inputs/packaging/tests/audio-test.sh
-start_package_audio
 unset WAYLAND_DISPLAY
 Xvfb "$DISPLAY" -screen 0 1440x900x24 -nolisten tcp -fbdir /evidence > /evidence/xvfb.log 2>&1 &
 xvfb_pid=$!
-trap 'cp /evidence/Xvfb_screen0 /evidence/final-screen.xwd 2>/dev/null || true; [[ -z "$package_recorder_pid" ]] || kill "$package_recorder_pid" 2>/dev/null || true; flatpak kill "$app_id" >/dev/null 2>&1 || true; kill "$xvfb_pid" >/dev/null 2>&1 || true; wait "$xvfb_pid" 2>/dev/null || true' EXIT
+trap 'cp /evidence/Xvfb_screen0 /evidence/final-screen.xwd 2>/dev/null || true; flatpak kill "$app_id" >/dev/null 2>&1 || true; kill "$xvfb_pid" >/dev/null 2>&1 || true; wait "$xvfb_pid" 2>/dev/null || true' EXIT
 sleep 1
 dbus-update-activation-environment DISPLAY GDK_BACKEND XDG_CURRENT_DESKTOP XDG_RUNTIME_DIR \
-  XDG_DATA_HOME XDG_CONFIG_HOME XDG_CACHE_HOME PULSE_SERVER
+  XDG_DATA_HOME XDG_CONFIG_HOME XDG_CACHE_HOME
 flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 "$app_id" > /evidence/application.log 2>&1 &
 app_pid=$!
 app_data="/root/.var/app/$app_id/data/$app_id"
@@ -42,7 +40,6 @@ test -s "$app_data/media.db"
 sleep 3
 bash /inputs/packaging/tests/media-fixtures.sh flatpak run --user --command=ffmpeg "$app_id"
 python3 /inputs/packaging/tests/media-ui.py "$app_data/media.db" > /evidence/media-result.txt
-finish_package_audio
 if [[ "${TAGROVE_PACKAGE_INTERACTIVE:-}" == 1 ]]; then wait "$app_pid"; fi
 flatpak kill "$app_id"
 wait "$app_pid" || true

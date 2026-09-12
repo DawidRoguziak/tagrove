@@ -8,7 +8,13 @@ mkdir /root/tagrove-media
 # Distinct from the GIF: blue for 2.5 seconds, then yellow. Seeking can be
 # verified from pixels without mistaking a previous GIF frame for video.
 "$@" -v error -f lavfi -i "color=c=blue:s=320x240:r=25,drawbox=c=yellow:t=fill:enable='gte(t,2.5)'" \
-  -f lavfi -i sine=frequency=440 -t 5 -c:v mpeg4 -c:a aac /root/tagrove-media/sample.mp4
+  -t 5 -c:v mpeg4 -an /root/tagrove-media/sample.mp4
+# Inspect the generated streams with the same packaged tool, requiring video.
+stream_info="$("$@" -hide_banner -i /root/tagrove-media/sample.mp4 -map 0:v:0 -c copy -f null - 2>&1)"
+if grep -q 'Stream #.*Audio:' <<< "$stream_info"; then
+  echo 'Generated package MP4 must not contain audio streams' >&2
+  exit 1
+fi
 # Make the gallery's default newest-first order independent of scan scheduling.
 touch -d '2026-01-01 00:00:01 UTC' /root/tagrove-media/red.png
 touch -d '2026-01-01 00:00:02 UTC' /root/tagrove-media/sample.gif

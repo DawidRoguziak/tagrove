@@ -66,7 +66,7 @@ Run the actual exported packages in disposable containers:
 ./scripts/test-linux-packages.sh --format appimage --distribution arch
 ```
 
-The media test drives the native folder chooser, scans generated fixtures, waits for gallery thumbnails, saves a tag and checks the database. A video distinct from the GIF changes from blue to yellow; seek assertions require each color, and fullscreen must cover the former sidebar. Evidence goes into a unique `artifacts/package-tests/` directory, including failure screenshots. The Flatpak test uses Debian 12 with GNOME 50 runtimes and captures PulseAudio output to an isolated null sink. It additionally tests direct installation, same-version reinstall, a changed-deployment upgrade fixture, retained database bytes and an untouched native-profile fixture. The upgrade fixture changes metadata and adds a payload marker; it is not a second released application version. Installation can fetch the runtime repository descriptor. Compilation remains offline.
+The media test drives the native folder chooser, scans generated fixtures, waits for gallery thumbnails, saves a tag and checks the database. The generated MP4 has no audio tracks; the fixture generator checks this with the packaged ffmpeg and requires a video stream. AppImage and Flatpak tests do not record or assert audio output. A video distinct from the GIF changes from blue to yellow; seek assertions require each color, and fullscreen must cover the former sidebar. Evidence goes into a unique `artifacts/package-tests/` directory, including failure screenshots. The Flatpak test uses Debian 12 with GNOME 50 runtimes. It additionally tests direct installation, same-version reinstall, a changed-deployment upgrade fixture, retained database bytes and an untouched native-profile fixture. The upgrade fixture changes metadata and adds a payload marker; it is not a second released application version. Installation can fetch the runtime repository descriptor. Compilation remains offline.
 
 The AppImage runtime baseline includes the host C library, desktop font configuration and graphics drivers. GTK/WebKit, media libraries, tools, MIME data and icon resources come from the AppImage. The pinned GTK launcher selects X11, including XWayland on Wayland desktops. Native Wayland is provided by the Flatpak.
 
@@ -85,9 +85,9 @@ Record results for these checks:
 | Upgrade | Install a higher-version bundle over the same app ID and check retained library data |
 | Profile separation | Fresh Flatpak library and untouched native library/profile |
 | Basic media | Temporary PNG/JPEG/GIF/video fixtures; scan, thumbnails, tag persistence and image/GIF viewing |
-| Native video | Visible decoded picture, audible sound, play/pause, seeking and fullscreen on a real graphics session |
+| Native video | Visible decoded picture, play/pause, seeking and fullscreen on a real graphics session; generated fixtures have no audio tracks |
 | File dialogs | Open a temporary media directory and save a disposable backup |
 | Filesystem/backup | Rename/delete temporary copies; backup/restore only the disposable library |
 | Distribution/session coverage | Debian 12, Ubuntu 24.04 and Arch/CachyOS; X11 and Wayland |
 
-Build-time linkage and metadata checks are automated. The full distribution/session matrix and visible/audible playback require installed-package execution and must be reported separately. Do not infer those results from an unbundled E2E run or a successful build.
+Build-time linkage and metadata checks are automated. The full distribution/session matrix and visible playback require installed-package execution and must be reported separately. These tests do not verify sound. Do not infer those results from an unbundled E2E run or a successful build.

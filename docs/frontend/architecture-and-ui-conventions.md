@@ -136,6 +136,7 @@ Reusable primitives live in [`src/components/UI`](../../src/components/UI):
 - `UiIconButton` layers active and danger states over `UiButton`; callers still provide an accessible name.
 - `UiIcon` centralizes the SVG set. Icons with no title or ARIA metadata are decorative and receive `aria-hidden`; a title or explicit ARIA metadata makes the icon expose image semantics.
 - `UiChip`, `UiAlert`, `UiProgressBar`, and `UiSlider` centralize common display/control styling. `UiAlert` always uses `role="alert"`.
+- `UiSegmentedControl` owns controlled native radio groups with translated labels, independent names, and content-based wrapping. An accessibility-hidden bold copy reserves each label’s selected width. The media filter uses it; filter submission stays in `SearchTagatorWrapper`.
 - `UiModal` is the standard portal dialog primitive described below.
 - `browserAssistDisabledProps` is shared by exact-token/confirmation inputs where browser autocorrection would be harmful.
 
@@ -162,14 +163,23 @@ Closing unmounts immediately, preserving focus restoration and scroll unlocking.
 Gallery hover/selection shadows and the checkmark opacity use control feedback.
 Tiles, thumbnail arrivals, reordering and virtual scrolling have no entrance animation.
 
-Never transition dimensions, spacing, offsets or grid tracks, or add scale-up, bounce,
-stagger, delayed layout or automatic scrolling. Preserve scroll containers, gutters,
+Outside the segmented highlight described below, never transition dimensions, spacing,
+offsets or grid tracks, or add scale-up, bounce, stagger, delayed layout or automatic scrolling. Preserve scroll containers, gutters,
 portal positioning and clipping; do not hide overflow globally to conceal a defect.
-Functional layout changes remain immediate. Decorative motion needs no React state,
+Functional layout changes remain immediate. Other decorative motion needs no React state,
 effect or timer. The lightbox's existing clipped 200 ms drawer slide and matching
 retention timer remain the exception, including native-video bounds coordination.
 Keep media, zoom/pan transforms, fullscreen geometry and native containers outside
 decorative motion. DOM controls still receive shared feedback.
+
+`UiSegmentedControl` is a bounded exception. Only its non-interactive, absolute-positioned
+highlight transitions translation, width and height over 150 ms with `--motion-ease`.
+Labels and adjacent controls keep their geometry when selection changes. Measurement
+stays inside the component: a layout effect places the highlight before paint, and
+`ResizeObserver` snaps it after wrapping, resizing or font changes. Translated-label
+changes also snap. Native radio selection and external controlled-value updates slide
+from the current highlight position, including during rapid changes. Observers disconnect
+on cleanup. No dependency, timer or application state coordinates this animation.
 
 Under `prefers-reduced-motion: reduce`, decorative entrances and transitions stop;
 loading spinners and pulses continue. State feedback and existing modal focus,

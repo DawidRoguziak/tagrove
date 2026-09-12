@@ -1,5 +1,6 @@
-import { useEffect, useId, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { UiIcon } from "../UI/UiIcon";
+import { UiSegmentedControl } from "../UI/UiSegmentedControl";
 import { UiButton } from "../UI/UiButton";
 import { UiAlert } from "../UI/UiAlert";
 import { UiIconButton } from "../UI/UiIconButton";
@@ -45,7 +46,6 @@ export function SearchTagatorWrapper({
   submitOnParentCommit = true
 }: SearchTagatorWrapperProps) {
   const { t } = useTranslation();
-  const mediaKindName = useId();
   const submitAfterMediaKindChangeRef = useRef(false);
   const submitAfterFavoritesChangeRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -108,25 +108,18 @@ export function SearchTagatorWrapper({
         {headerAction}
       </div>
       <div className="workspace-tools">
-        <fieldset className="media-segments" id="gallery-media-kind">
-          <legend className="sr-only">{t("search.mediaKind")}</legend>
-          {(["all", "image", "gif", "video"] as const).map((kind) => (
-            <label key={kind}>
-              <input
-                className="choice-input"
-                type="radio"
-                name={mediaKindName}
-                value={kind}
-                checked={mediaKind === kind}
-                onChange={() => {
-                  submitAfterMediaKindChangeRef.current = submitOnParentCommit;
-                  void Promise.resolve(onMediaKindChange(kind)).catch(() => {});
-                }}
-              />
-              <span>{t(`search.mediaKinds.${kind}`)}</span>
-            </label>
-          ))}
-        </fieldset>
+        <UiSegmentedControl
+          id="gallery-media-kind"
+          label={t("search.mediaKind")}
+          options={(["all", "image", "gif", "video"] as const).map(kind => ({
+            value: kind, label: t(`search.mediaKinds.${kind}`)
+          }))}
+          value={mediaKind}
+          onChange={kind => {
+            submitAfterMediaKindChangeRef.current = submitOnParentCommit;
+            void Promise.resolve(onMediaKindChange(kind)).catch(() => {});
+          }}
+        />
         <UiIconButton icon="heart" active={favoritesOnly} className="h-8! min-h-8! w-8!"
           onClick={() => {
             submitAfterFavoritesChangeRef.current = submitOnParentCommit;

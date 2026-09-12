@@ -213,6 +213,14 @@ repeated lightbox drawer toggles are covered. Layout-changing actions are paired
 the same actions with decorative CSS animation and transitions disabled. The existing
 clipped drawer slide stays enabled in both halves of the comparison. Filtering, resizing and
 intentional navigation are not required to preserve scroll position.
+The segmented-control cases additionally sample every label and adjacent toolbar child
+through mouse selection, native arrow keys and rapid changes. They check intermediate
+highlight movement, final alignment, keyboard focus and immediate resize placement in
+both themes, English and Polish, at 320, 699 and 1000 CSS pixels. A query with no matches
+holds result counts constant so functional count changes do not affect this comparison.
+Use `--mochaOpts.grep 'segmented selection'` to run only these cases. The same cases assert
+immediate highlight placement when running with the real reduced-motion preference.
+
 Worker-pending suggestion shells are hidden and excluded from popup comparisons.
 A metadata loading row can appear for a single frame in only one run; its temporary
 content height is excluded from the range comparison. Scroll positions, viewport
@@ -228,11 +236,16 @@ With the temporary XDG directories already exported, run:
 
 ```sh
 export GSETTINGS_BACKEND=keyfile
+export GDK_BACKEND=x11
 gsettings set org.gnome.desktop.interface enable-animations false
 MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_REDUCED_MOTION=1 dbus-run-session -- xvfb-run -a bun run test:e2e:tauri --spec e2e/specs/animations.e2e.js
 ```
 
 Set the key and GTK file to `true` and omit `MEDIATAGGER_REDUCED_MOTION` for normal motion.
+Force `GDK_BACKEND=x11` so GTK uses the private Xvfb display even on a Wayland host.
+The GTK WebView must have native focus for WebKit to expose `:focus-visible`. On bare
+Xvfb, activate it with a native click in the window; WebDriver DOM clicks alone do not
+activate the GTK widget. The segmented cases assert `document.hasFocus()` before sampling.
 Keep these settings inside the temporary profile. WebKitGTK 2.52 reads
 [`gtk-enable-animations`](https://github.com/WebKit/WebKit/blob/webkitgtk-2.52.6/Source/WebKit/UIProcess/gtk/SystemSettingsManagerProxyGtk.cpp).
 The spec asserts the real `prefers-reduced-motion` query;

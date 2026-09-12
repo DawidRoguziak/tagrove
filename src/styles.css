@@ -287,7 +287,7 @@
 .workspace-identity { align-self: stretch; }
 
 /* Feedback never touches geometry, including the virtualizer's tile transforms. */
-:where(button, .settings-nav a, .media-segments span, .theme-choice > span, .motion-feedback, .motion-feedback-opacity) {
+:where(button, .settings-nav a, .ui-segmented-label, .theme-choice > span, .motion-feedback, .motion-feedback-opacity) {
   transition-property: background-color, border-color, color, box-shadow;
   transition-duration: var(--motion-feedback);
   transition-timing-function: var(--motion-ease);
@@ -316,12 +316,15 @@
 }
 
 /* Native radios retain arrow-key navigation and one Tab stop per group. */
-.media-segments { display: flex; flex-wrap: wrap; gap: 2px; margin: 0; min-width: 0; padding: 3px; border: 0; border-radius: var(--radius-control); background: var(--surface-raised); }
-.media-segments label, .theme-choice { position: relative; cursor: pointer; }
+.ui-segmented-control { position: relative; isolation: isolate; display: flex; flex-wrap: wrap; gap: 2px; margin: 0; min-width: 0; padding: 3px; border: 0; border-radius: var(--radius-control); background: var(--surface-raised); }
+.ui-segmented-control > label, .theme-choice { position: relative; cursor: pointer; }
 .choice-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.media-segments span { display: block; padding: 3px 12px; border-radius: 6px; font-size: 12px; line-height: 20px; color: var(--color-base-content); }
-.media-segments label:hover span { background: var(--surface-solid); color: var(--color-base-content); }
-.media-segments input:checked + span { background: var(--surface-solid); color: var(--color-primary); box-shadow: var(--shadow-control); font-weight: 600; }
+.ui-segmented-label { display: grid; padding: 3px 12px; border-radius: 6px; font-size: 12px; line-height: 20px; color: var(--color-base-content); }
+.ui-segmented-label > span { grid-area: 1 / 1; }
+.ui-segmented-reserve { visibility: hidden; font-weight: 600; }
+.ui-segmented-control label:hover .ui-segmented-label { background: var(--surface-solid); color: var(--color-base-content); }
+.ui-segmented-control input:checked + .ui-segmented-label { background: transparent; color: var(--color-primary); font-weight: 600; }
+.ui-segmented-highlight { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; border-radius: 6px; background: var(--surface-solid); box-shadow: var(--shadow-control); transition: transform var(--motion-entrance) var(--motion-ease), width var(--motion-entrance) var(--motion-ease), height var(--motion-entrance) var(--motion-ease); }
 .choice-input:focus-visible + span { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .theme-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .theme-choices legend { margin-bottom: 8px; }

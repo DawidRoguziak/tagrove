@@ -255,6 +255,55 @@ async function exercise(theme, disabled) {
   return results;
 }
 
+async function sampleSegments(action) {
+  await browser.execute(() => {
+    const probe = { frames: [], running: true };
+    window.__segmentProbe = probe;
+    const rect = element => {
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    const record = () => {
+      const group = document.getElementById("gallery-media-kind");
+      const highlight = group.querySelector(".ui-segmented-highlight");
+      probe.frames.push({
+        labels: Array.from(group.querySelectorAll("label"), rect),
+        toolbar: Array.from(document.querySelector(".workspace-tools").children, rect),
+        highlight: rect(highlight),
+        selected: rect(group.querySelector("input:checked").closest("label")),
+        value: group.querySelector("input:checked").value,
+        duration: getComputedStyle(highlight).transitionDuration
+      });
+      if (probe.running) requestAnimationFrame(record);
+    };
+    record();
+  });
+  await action();
+  await browser.pause(240);
+  return browser.execute(() => {
+    window.__segmentProbe.running = false;
+    return window.__segmentProbe.frames;
+  });
+}
+
+function aligned(frame) {
+  for (const key of ["x", "y", "width", "height"]) {
+    assert.ok(Math.abs(frame.highlight[key] - frame.selected[key]) < 0.6,
+      `Highlight ${key} aligns with selected label: ${JSON.stringify(frame)}`);
+  }
+}
+
+function stableSegments(frames, value) {
+  assert.ok(frames.length > 3, "Sample selection across rendering frames");
+  for (const frame of frames) {
+    assert.deepEqual(frame.labels, frames[0].labels, "Every tab keeps its bounds");
+    assert.deepEqual(frame.toolbar, frames[0].toolbar, "Adjacent toolbar controls stay fixed");
+    if (reduced) aligned(frame);
+  }
+  assert.equal(frames.at(-1).value, value);
+  aligned(frames.at(-1));
+}
+
 suite("animation scroll geometry", function () {
   this.timeout(180000);
   before(async () => {
@@ -284,6 +333,70 @@ suite("animation scroll geometry", function () {
     await invoke("clear_library_data");
     if (root) await fs.rm(root, { recursive: true, force: true });
   });
+  for (const theme of ["dark", "light"]) {
+    for (const language of ["en", "pl"]) {
+      for (const width of [320, 699, 1000]) {
+        it(`segmented selection ${theme} ${language} ${width}px, reduced motion ${reduced}`, async () => {
+          await browser.setWindowSize(width, 720);
+          await browser.execute((theme, language) => {
+            localStorage.setItem("media-tagger.theme", theme);
+            localStorage.setItem("media-tagger.language", language);
+          }, theme, language);
+          await browser.refresh();
+          await $('#gallery-media-kind input[value="all"]').waitForExist();
+          // Keep result counts constant so filtering does not legitimately resize the toolbar.
+          await $('.filter-input').setValue('"segment-no-match"');
+          await browser.keys("Enter");
+          await browser.waitUntil(() => browser.execute(() =>
+            document.querySelector('.workspace-tools [role="status"]').textContent.includes("0") &&
+            !document.querySelector('button[data-asset-index="0"]')));
+          assert.equal(await browser.execute(() => document.hasFocus()), true,
+            "Activate the native GTK WebView before keyboard checks; DOM clicks alone do not activate bare Xvfb windows");
+          const initial = await sampleSegments(async () => {});
+          initial.forEach(aligned);
+          const labels = await browser.execute(() => Array.from(
+            document.querySelectorAll("#gallery-media-kind .ui-segmented-label > span:last-child"), el => el.textContent));
+          assert.deepEqual(labels, language === "en" ? ["All", "Images", "GIF", "Video"] : ["Wszystkie", "Obrazy", "GIF", "Wideo"]);
+          const mouse = await sampleSegments(() => click('#gallery-media-kind input[value="video"]'));
+          stableSegments(mouse, "video");
+          if (!reduced) {
+            assert.ok(mouse.some(frame => frame.highlight.x > mouse[0].highlight.x + 0.6 &&
+              frame.highlight.x < mouse.at(-1).highlight.x - 0.6), "Highlight slides through intermediate positions");
+            assert.ok(mouse.some(frame => frame.duration.includes("0.15s")), "Uses the shared 150 ms duration");
+          }
+          const keyboard = await sampleSegments(() => browser.keys("ArrowLeft"));
+          stableSegments(keyboard, "gif");
+          assert.equal(await $('#gallery-media-kind input[value="gif"]').isFocused(), true);
+          // WebKit keeps pointer focus modality after arrow navigation from a click.
+          // Tab back into the group to verify the visible keyboard focus indicator.
+          await browser.keys(["Shift", "Tab"]);
+          await browser.keys("Tab");
+          assert.equal(await browser.execute(() => {
+            const input = document.querySelector('#gallery-media-kind input:checked');
+            return document.activeElement === input &&
+              getComputedStyle(input.nextElementSibling).outlineStyle === "solid";
+          }), true, "The selected segment has a visible keyboard focus ring");
+          // Native key actions spaced inside 150 ms interrupt the active transition.
+          const rapid = await sampleSegments(async () => {
+            await browser.performActions([{ type: "key", id: "segments", actions: [
+              { type: "keyDown", value: "\uE012" }, { type: "keyUp", value: "\uE012" },
+              { type: "pause", duration: 35 },
+              { type: "keyDown", value: "\uE012" }, { type: "keyUp", value: "\uE012" },
+              { type: "pause", duration: 35 },
+              { type: "keyDown", value: "\uE014" }, { type: "keyUp", value: "\uE014" }
+            ] }]);
+            await browser.releaseActions();
+          });
+          stableSegments(rapid, "image");
+          await browser.saveScreenshot(path.join(output, `segments-${theme}-${language}-${width}.png`));
+          const resized = await sampleSegments(() => browser.setWindowSize(width === 320 ? 1000 : 320, 720));
+          resized.forEach(aligned);
+          await fs.writeFile(path.join(output, `segments-${theme}-${language}-${width}.json`),
+            JSON.stringify({ initial, mouse, keyboard, rapid, resized }));
+        });
+      }
+    }
+  }
   for (const theme of ["dark", "light"]) {
     for (const width of [699, 700, 767, 768, 999, 1000]) {
       it(`${theme} at ${width}px, reduced motion ${reduced}`, async () => {

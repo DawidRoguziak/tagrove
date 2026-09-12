@@ -95,13 +95,9 @@ export function DuplicateResolverDialog({
     createUuidName
   });
 
-  if (!open) {
-    return null;
-  }
-
   return (
     <UiModal
-      open
+      open={open}
       onClose={onClose}
       closeOnOverlayClick={!isOperationLocked}
       closeOnEscape={!isOperationLocked}

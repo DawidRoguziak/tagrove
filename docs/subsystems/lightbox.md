@@ -106,6 +106,29 @@ Group copy is enabled only when the trimmed editor key is non-empty and `navigat
 
 Delete renders inline in the sidebar, not as a nested modal. Opening it clears its text and focuses the confirmation input on the next animation frame. Confirm is enabled only when trimmed input equals the localized confirmation word, case-insensitively. Submission is guarded against duplicates; close/cancel and both buttons are blocked while it is pending. While the confirmation is open the lightbox shortcut listener is disabled and Escape closes only the confirmation (restoring focus to the delete button), never the lightbox. A committed delete closes the selection; missing/cleanup outcomes are announced first. A rejected pre-commit delete keeps the confirmation open with an alert, and post-commit refresh failures are only best-effort follow-up failures.
 
+## Opening and closing presence
+
+`App` activates the lazy `LightboxModal` on first selection and keeps that presence
+owner mounted. It uses the same `useModalPresence` lifecycle as `UiModal`: a 75 ms
+opacity entrance, an open state, a 50 ms opacity exit, then hidden. Local
+`--modal-entrance` and `--modal-exit` tokens leave other animations unchanged. The backdrop
+and DOM controls fade together. Image/GIF pixels also fade; native video pixels and
+GTK controls retain their current startup and shutdown behavior. Reduced motion
+skips both animations and the closing delay.
+
+Clearing selection releases the layer manager and keyboard shortcuts immediately.
+It also unmounts the native video player immediately, cancelling pending opens and
+closing the session. The closing frame retains the displayed asset, editor props,
+zoom/pan and shell layout. Its content is inert and hidden from accessibility APIs;
+the backdrop intercepts pointer input until removal. Image fullscreen shells fade
+in the browser top layer without resizing. Closing a native fullscreen video still
+restores the window through the existing native session cleanup.
+
+Navigation changes the asset inside the same open presence owner and never restarts
+the fade. Closing and reopening cancels stale animation completion and fallback
+timers, uses the new selection, and resets the lightbox session's local editor and
+sidebar state. After the exit, the retained content unmounts and its references clear.
+
 ## Media presentation
 
 Image and GIF source paths pass through `toMediaSrc`.
@@ -206,7 +229,8 @@ Current focused coverage is split across:
 
 - `src/hooks/__tests__/useSelectionState.test.ts`: editor hydration, cache-to-selection synchronization, empty-library close, tag-mutation serialization/retry, pending-mutation detail barriers, restore/reset ID reuse, deletion tombstones, stale-detail protection, rapid Right/Right and Right/Left ordering, and delegation to mutation actions. It also covers query-position recomputation and failed navigation retries, but not every prefetch race or global wrap/unloaded-page combination.
 - `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx`: A→B→A failure reset and rejection of a late error callback from an older activation; image/GIF zoom sizing, preservation across unrelated renders, wheel anchoring, drag bounds, resize re-clamping, natural dimensions, navigation/reset, and RAF coalescing/cancellation. DOM tests establish sizing and interaction contracts; sharpness requires inspecting pixels in the desktop WebView.
-- `src/components/lightbox/__tests__/LightboxModal.test.tsx`: arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, and inline delete confirmation.
+- `src/components/UI/__tests__/ModalPresence.test.tsx`: exit retention, interrupted transitions, reduced motion, compiled duration tokens, nested focus restoration and locked confirmations.
+- `src/components/lightbox/__tests__/LightboxModal.test.tsx`: 75 ms opening and 50 ms closing, navigation without replay, rapid reactivation, reduced motion, retained editor props, immediate native-player shutdown, arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, and inline delete confirmation.
 - `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx`: cancellation before and after reservation, delayed open completion, A→B→A event isolation, coalesced bounds acknowledgements, label changes, recoverable/fatal errors, and serialized fullscreen toggles.
 - `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx`: copy availability, clipboard write, confirmed state, and 1,600 ms reset.
 - `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` and `hooks/__tests__/useLightboxModalHandlers.test.ts`: confirmation text, inline close/confirm callbacks, media-group parsing, and pending-delete guards.

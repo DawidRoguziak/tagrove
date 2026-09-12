@@ -34,6 +34,8 @@ export function BulkActionsSidebar({
 }: BulkActionsSidebarProps) {
   const { t } = useTranslation();
   const [orderModalContext, setOrderModalContext] = useState<string | null>(null);
+  const [orderModalActivated, setOrderModalActivated] = useState(false);
+  if (orderModalContext !== null && !orderModalActivated) setOrderModalActivated(true);
   const [tagDraft, setTagDraft] = useState("");
   const [draggingAssetId, setDraggingAssetId] = useState<number | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
@@ -417,10 +419,8 @@ export function BulkActionsSidebar({
           </UiAlert>
         ) : null}
       </section>
-      {hasOrderPanel && orderModalContext === orderContext ? (
-        <GroupOrderModal key={orderContext} controller={controller} thumbs={thumbs}
-          renderingThumbnailIds={renderingThumbnailIds} onClose={() => setOrderModalContext(null)} />
-      ) : null}
+      {orderModalActivated && <GroupOrderModal open={hasOrderPanel && orderModalContext === orderContext} controller={controller} thumbs={thumbs}
+          renderingThumbnailIds={renderingThumbnailIds} onClose={() => setOrderModalContext(null)} />}
     </aside>
   );
 }

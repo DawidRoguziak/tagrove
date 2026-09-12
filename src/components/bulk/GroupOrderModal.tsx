@@ -10,6 +10,7 @@ import { UiModal } from "../UI/UiModal";
 import { reorderAssetIdsByDrop } from "./grouping/services/bulkGroupOrderService";
 
 interface GroupOrderModalProps {
+  open?: boolean;
   controller: BulkSelectionController;
   thumbs: Record<number, string>;
   renderingThumbnailIds: Record<number, true>;
@@ -28,6 +29,7 @@ interface PointerDrag {
 }
 
 export function GroupOrderModal({
+  open = true,
   controller,
   thumbs,
   renderingThumbnailIds,
@@ -40,11 +42,26 @@ export function GroupOrderModal({
   const [announcement, setAnnouncement] = useState("");
   const [draggedId, setDraggedId] = useState<number | null>(null);
   const [targetId, setTargetId] = useState<number | null>(null);
+  const savingRef = useRef(false);
+  const sessionRef = useRef(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    sessionRef.current += 1;
+    if (open) {
+      savingRef.current = false;
+      setSaving(false);
+      setOrder([...controller.orderedAssetIds]);
+      setResult(null);
+      setAnnouncement("");
+      setDraggedId(null);
+      setTargetId(null);
+    }
+  }
   const [width, setWidth] = useState(960);
   const scrollRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<PointerDrag | null>(null);
-  const savingRef = useRef(false);
   const mountedRef = useRef(true);
   const focusIdRef = useRef<number | null>(null);
   const assetsById = useMemo(
@@ -67,6 +84,7 @@ export function GroupOrderModal({
   const locked = saving || controller.groupApplying;
 
   useEffect(() => {
+    if (!open) return;
     const element = scrollRef.current;
     if (!element) return;
     const resize = () => setWidth(element.clientWidth || 960);
@@ -74,15 +92,16 @@ export function GroupOrderModal({
     const observer = new ResizeObserver(resize);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     virtualizer.measure();
   }, [virtualizer, rowHeight]);
 
   useEffect(() => {
+    if (!open) return;
     controller.queueThumbnailsByIds?.(order.slice(firstIndex, lastIndex));
-  }, [controller.queueThumbnailsByIds, order, firstIndex, lastIndex]);
+  }, [open, controller.queueThumbnailsByIds, order, firstIndex, lastIndex]);
 
   useEffect(() => {
     const id = focusIdRef.current;
@@ -114,6 +133,7 @@ export function GroupOrderModal({
 
   // Capture on the stable scroll container: virtual rows can disappear during a drag.
   useEffect(() => {
+    if (!open) return;
     let frame = 0;
     const dropTarget = (scroller: HTMLElement, x: number, y: number): number | null => {
       const viewport = scroller.getBoundingClientRect();
@@ -215,23 +235,26 @@ export function GroupOrderModal({
       window.removeEventListener("pointercancel", finish);
       window.removeEventListener("blur", finish);
     };
-  }, []);
+  }, [open]);
 
   const save = async () => {
     if (savingRef.current || locked) return;
+    const session = sessionRef.current;
     savingRef.current = true;
     setSaving(true);
     setResult(null);
     try {
       const outcome = await controller.onApplyGroup(order);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || sessionRef.current !== session) return;
       setResult(outcome);
       if (outcome.status === "saved") onClose();
     } catch {
-      if (mountedRef.current) setResult({ status: "failed" });
+      if (mountedRef.current && sessionRef.current === session) setResult({ status: "failed" });
     } finally {
-      savingRef.current = false;
-      if (mountedRef.current) setSaving(false);
+      if (mountedRef.current && sessionRef.current === session) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   };
 
@@ -244,7 +267,7 @@ export function GroupOrderModal({
   const showInsertionLine = draggedIndex >= 0 && targetIndex >= 0 && draggedIndex !== targetIndex;
   return (
     <UiModal
-      open
+      open={open}
       onClose={() => {
         if (!savingRef.current && !locked) onClose();
       }}

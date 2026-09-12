@@ -83,8 +83,9 @@ export function UiLayerProvider({ children }: { children: ReactNode }) {
           setTopLayerId(nextTop?.id ?? null);
           if (wasTop) {
             window.requestAnimationFrame(() => {
+              if (layersRef.current.at(-1) !== (nextTop ?? undefined)) return;
               const restoreTarget = layer.restoreFocus();
-              if (restoreTarget?.isConnected) {
+              if (restoreTarget?.isConnected && !restoreTarget.closest("[inert]")) {
                 restoreTarget.focus();
               } else if (nextTop?.containerRef.current) {
                 focusInitialElement(nextTop.containerRef.current);
@@ -145,7 +146,7 @@ export function UiLayerProvider({ children }: { children: ReactNode }) {
       appRoot?.setAttribute("aria-hidden", "true");
       document.body.style.overflow = "hidden";
       for (const element of layerElements) {
-        if (element.dataset.uiLayer !== String(topLayerId?.description)) {
+        if (element.dataset.modalPresence !== "closing" && element.dataset.uiLayer !== String(topLayerId?.description)) {
           element.setAttribute("inert", "");
           element.setAttribute("aria-hidden", "true");
         }
@@ -158,7 +159,7 @@ export function UiLayerProvider({ children }: { children: ReactNode }) {
       document.body.style.overflow = previousOverflow;
       for (const element of layerElements) {
         element.removeAttribute("inert");
-        element.removeAttribute("aria-hidden");
+        if (element.dataset.modalPresence !== "closing") element.removeAttribute("aria-hidden");
       }
     };
   }, [topLayerId]);

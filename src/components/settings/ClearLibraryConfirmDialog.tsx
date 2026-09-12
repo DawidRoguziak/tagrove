@@ -17,10 +17,6 @@ export function ClearLibraryConfirmDialog({
 }: ClearLibraryConfirmDialogProps) {
   const { t } = useTranslation();
 
-  if (!open) {
-    return null;
-  }
-
   return (
     <UiModal
       open={open}

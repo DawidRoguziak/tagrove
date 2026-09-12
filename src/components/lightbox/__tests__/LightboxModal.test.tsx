@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
+import styles from "../../../styles.css?raw";
 
 const apiMocks = vi.hoisted(() => ({
   beginVideoOpen: vi.fn(),
@@ -88,6 +89,13 @@ describe("LightboxModal", () => {
   });
 
   beforeEach(() => {
+    // Load the real lightbox timing rule; jsdom cannot parse the full Tailwind stylesheet.
+    const style = document.createElement("style");
+    style.dataset.lightboxTiming = "";
+    const rule = styles.match(/\[data-lightbox-backdrop\]\s*\{[^}]+\}/)?.[0];
+    if (!rule) throw new Error("Missing lightbox timing rule");
+    style.textContent = rule;
+    document.head.append(style);
     stubMatchMedia(false);
     apiMocks.beginVideoOpen.mockReset().mockResolvedValue(1);
     apiMocks.cancelVideoOpen.mockReset().mockResolvedValue(undefined);
@@ -100,9 +108,98 @@ describe("LightboxModal", () => {
 
   afterEach(() => {
     cleanup();
+    document.querySelector("style[data-lightbox-timing]")?.remove();
     vi.restoreAllMocks();
+    vi.useRealTimers();
     window.ResizeObserver = originalResizeObserver;
     Object.defineProperty(window, "matchMedia", { configurable: true, value: originalMatchMedia });
+  });
+
+  it("does not replay the fade on navigation and retains the closing image and editor props", () => {
+    vi.useFakeTimers();
+    const props = {
+      selected: selectedAsset, tagEditor: ["retained-tag"], mediaGroupKeyEditor: "retained-group",
+      onTagEditorChange: vi.fn(), onSaveTags: vi.fn(), knownTags: [],
+      onNavigatePrevious: vi.fn(), onNavigateNext: vi.fn(), onToggleFavorite: vi.fn(), onClose: vi.fn()
+    };
+    const { rerender } = render(<LightboxModal {...props} />);
+    const overlay = document.querySelector("[data-lightbox-backdrop]");
+    act(() => vi.advanceTimersByTime(74));
+    expect(overlay).toHaveAttribute("data-modal-presence", "opening");
+    act(() => vi.advanceTimersByTime(1));
+    expect(overlay).toHaveAttribute("data-modal-presence", "open");
+    const next = { ...selectedAsset, id: 2, path: "/synthetic/next.gif", file_name: "next.gif", kind: "gif" as const };
+    rerender(<LightboxModal {...props} selected={next} />);
+    expect(document.querySelector("[data-lightbox-backdrop]")).toBe(overlay);
+    expect(overlay).toHaveAttribute("data-modal-presence", "open");
+    rerender(<LightboxModal {...props} selected={null} tagEditor={[]} mediaGroupKeyEditor="" />);
+    expect(overlay).toHaveAttribute("data-modal-presence", "closing");
+    expect(overlay).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByTestId("lightbox-image")).toHaveAttribute("src", "media:///synthetic/next.gif");
+    expect(screen.getByDisplayValue("retained-group")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(props.onNavigateNext).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(49));
+    expect(overlay).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(overlay).not.toBeInTheDocument();
+  });
+
+  it("keeps a rapidly reactivated lightbox open after the old exit deadline", () => {
+    vi.useFakeTimers();
+    const props = {
+      selected: selectedAsset, tagEditor: [], knownTags: [],
+      onTagEditorChange: vi.fn(), onSaveTags: vi.fn(), onNavigatePrevious: vi.fn(),
+      onNavigateNext: vi.fn(), onToggleFavorite: vi.fn(), onClose: vi.fn()
+    };
+    const { rerender } = render(<LightboxModal {...props} />);
+    act(() => vi.advanceTimersByTime(25));
+    rerender(<LightboxModal {...props} selected={null} />);
+    act(() => vi.advanceTimersByTime(25));
+    rerender(<LightboxModal {...props} />);
+    const overlay = document.querySelector("[data-lightbox-backdrop]");
+    act(() => vi.advanceTimersByTime(74));
+    expect(overlay).toHaveAttribute("data-modal-presence", "opening");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(overlay).toHaveAttribute("data-modal-presence", "open");
+  });
+
+  it("opens and closes immediately with reduced motion", () => {
+    stubMatchMedia(true);
+    const props = {
+      selected: selectedAsset, tagEditor: [], knownTags: [],
+      onTagEditorChange: vi.fn(), onSaveTags: vi.fn(), onNavigatePrevious: vi.fn(),
+      onNavigateNext: vi.fn(), onToggleFavorite: vi.fn(), onClose: vi.fn()
+    };
+    const { rerender } = render(<LightboxModal {...props} />);
+    expect(document.querySelector("[data-lightbox-backdrop]")).toHaveAttribute("data-modal-presence", "open");
+    rerender(<LightboxModal {...props} selected={null} />);
+    expect(document.querySelector("[data-lightbox-backdrop]")).toBeNull();
+    rerender(<LightboxModal {...props} />);
+    expect(document.querySelector("[data-lightbox-backdrop]")).toHaveAttribute("data-modal-presence", "open");
+  });
+
+  it("closes native video immediately while retaining the dialog for its exit", async () => {
+    const props = {
+      selected: selectedVideoAsset, tagEditor: [], knownTags: [],
+      onTagEditorChange: vi.fn(), onSaveTags: vi.fn(), onNavigatePrevious: vi.fn(),
+      onNavigateNext: vi.fn(), onToggleFavorite: vi.fn(), onClose: vi.fn()
+    };
+    const { rerender } = render(<LightboxModal {...props} />);
+    await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
+    vi.useFakeTimers();
+    rerender(<LightboxModal {...props} selected={null} />);
+    expect(apiMocks.closeVideo).toHaveBeenCalledWith(1);
+    expect(document.querySelector("[data-lightbox-video-player]")).toBeNull();
+    const overlay = document.querySelector("[data-lightbox-backdrop]");
+    expect(overlay).toHaveAttribute("data-modal-presence", "closing");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(props.onNavigateNext).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(49));
+    expect(overlay).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(overlay).not.toBeInTheDocument();
   });
 
   it("retains collapsed state across media navigation and drafts across toggling", async () => {

@@ -89,6 +89,7 @@
   --radius-panel: 16px;
   --motion-feedback: 100ms;
   --motion-entrance: 150ms;
+  --motion-exit: 100ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
   --bg-0: var(--color-base-200);
   --bg-1: var(--color-base-200);
@@ -293,6 +294,10 @@
   transition-timing-function: var(--motion-ease);
 }
 .motion-feedback-opacity { transition-property: opacity, box-shadow; }
+[data-lightbox-backdrop] {
+  --modal-entrance: 75ms;
+  --modal-exit: 50ms;
+}
 .btn:active:not(.btn-active) { translate: none; }
 
 /* Focus rings, including rings drawn with box-shadow, appear immediately. */

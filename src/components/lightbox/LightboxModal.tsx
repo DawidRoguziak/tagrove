@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useModalPresence, useModalSnapshot } from "../UI/useModalPresence";
 import { createPortal } from "react-dom";
 import type { SelectedAsset } from "../../types";
 import { LightboxMediaStage } from "./LightboxMediaStage";
@@ -50,7 +51,21 @@ interface LightboxModalProps {
   getRestoreFocus?: () => HTMLElement | null;
 }
 
-export function LightboxModal({
+export function LightboxModal(props: LightboxModalProps) {
+  const active = props.selected !== null;
+  const [session, setSession] = useState({ active, generation: 0 });
+  if (session.active !== active) {
+    setSession({ active, generation: session.generation + (active ? 1 : 0) });
+  }
+  const presence = useModalPresence(active);
+  const visible = useModalSnapshot(active, presence.present, props);
+  if (!presence.present || !visible.selected) return null;
+  return <LightboxContent key={session.generation} {...visible} selected={visible.selected} active={active} presence={presence} />;
+}
+
+function LightboxContent({
+  active,
+  presence,
   selected,
   tagEditor,
   onTagEditorChange,
@@ -80,7 +95,7 @@ export function LightboxModal({
   onDeleteMedia = () => {},
   onClose,
   getRestoreFocus
-}: LightboxModalProps) {
+}: LightboxModalProps & { active: boolean; presence: ReturnType<typeof useModalPresence> }) {
   const { t } = useTranslation();
   const restoreTriggerFocusRef = useRef(true);
   const sidebarWasOpenRef = useRef<boolean | null>(null);
@@ -109,7 +124,7 @@ export function LightboxModal({
     restoreTriggerFocusRef.current = restoreFocus;
     requestCloseSidebar();
   }, [requestCloseSidebar]);
-  const activity = useLightboxActivity(selected !== null);
+  const activity = useLightboxActivity(active);
   const openSidebar = () => {
     if (!sidebarOccupied) setNativePanelReady(false);
     sidebar.openSidebar();
@@ -129,7 +144,7 @@ export function LightboxModal({
   });
 
   const mediaControls = useLightboxImageControls({
-    keyboardShortcutsEnabled: !handlers.deleteConfirmOpen && !(isNarrow && sidebarOpen),
+    keyboardShortcutsEnabled: active && !handlers.deleteConfirmOpen && !(isNarrow && sidebarOpen),
     selected,
     onClose,
     onNavigatePrevious,
@@ -139,7 +154,7 @@ export function LightboxModal({
 
   const clipboard = useLightboxMediaGroupClipboard(mediaGroupKeyEditor, selectedId);
   const { isTopLayer, layerId } = useUiLayer({
-    active: selected !== null,
+    active,
     modal: true,
     containerRef: mediaControls.lightboxShellRef,
     closeOnEscape: !mediaControls.isFullscreen && !handlers.deleteConfirmOpen,
@@ -156,6 +171,7 @@ export function LightboxModal({
   const sidebarVisible = sidebarOpen && (selected?.kind !== "video" || nativePanelReady);
 
   useEffect(() => {
+    if (!active) return;
     const wasOpen = sidebarWasOpenRef.current;
     sidebarWasOpenRef.current = sidebarVisible;
     if (wasOpen === null || wasOpen === sidebarVisible) return;
@@ -171,7 +187,7 @@ export function LightboxModal({
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [sidebarVisible, sidebarOpen, activity.reveal, mediaControls.lightboxShellRef]);
+  }, [active, sidebarVisible, sidebarOpen, activity.reveal, mediaControls.lightboxShellRef]);
 
   const handleNativeBounds = useCallback((bounds: VideoBounds) => {
     const viewport = mediaControls.mediaViewportRef.current?.getBoundingClientRect();
@@ -194,6 +210,9 @@ export function LightboxModal({
 
   return createPortal(
     <div
+      ref={presence.overlayRef}
+      data-modal-presence={presence.phase}
+      aria-hidden={!active || undefined}
       className={[
         "fixed inset-0 z-[55] grid place-items-center",
         videoFullscreen
@@ -201,7 +220,7 @@ export function LightboxModal({
           : `bg-neutral/62 ${isVideo ? "p-5" : "p-2 sm:p-5"}`
       ].join(" ")}
       onClick={() => {
-        if (!isTopLayer) return;
+        if (!active || !isTopLayer) return;
         if (isNarrow && sidebarOpen) {
           if (!handlers.deleteConfirmOpen && !handlers.deleteSubmitting) {
             closeSidebar();
@@ -230,6 +249,7 @@ export function LightboxModal({
                   : "border-[var(--border-soft)] bg-[var(--surface-solid)]"
               ].join(" ")
         ].join(" ")}
+        {...(!active ? { inert: "" } : {})}
         ref={mediaControls.lightboxShellRef}
         role="dialog"
         aria-modal="true"
@@ -308,6 +328,7 @@ export function LightboxModal({
               ) : null}
 
               <LightboxMediaStage
+                playbackActive={active}
                 selected={selected}
                 detailsLoading={tagDetailsLoading}
                 detailsFailed={assetDetailsFailed}

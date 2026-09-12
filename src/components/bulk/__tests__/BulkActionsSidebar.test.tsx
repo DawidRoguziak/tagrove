@@ -467,7 +467,7 @@ function modalOrder() {
 }
 
 describe("bulk group sorting modal", () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
   it("keeps keyboard changes local, discards on Cancel and restores trigger focus", async () => {
     const { controller, trigger } = await openSorter();
@@ -484,6 +484,19 @@ describe("bulk group sorting modal", () => {
     expect(modalOrder()).toEqual([1, 2, 3]);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("retains the sorted closing frame, removes it after exit and initializes a fresh draft on reopening", async () => {
+    const { trigger } = await openSorter();
+    vi.useFakeTimers();
+    fireEvent.keyDown(screen.getByTestId("bulk-order-handle-1"), { key: "ArrowRight" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("bulk-order-modal")).toHaveAttribute("data-modal-presence", "closing");
+    expect(modalOrder()).toEqual([2, 1, 3]);
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.queryByTestId("bulk-order-modal")).toBeNull();
+    fireEvent.click(trigger);
+    expect(modalOrder()).toEqual([1, 2, 3]);
   });
 
   it("saves the exact modal draft, blocks duplicate submissions and dismissal while saving", async () => {
@@ -517,6 +530,18 @@ describe("bulk group sorting modal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save order" }));
     expect(onApplyGroup).toHaveBeenLastCalledWith([2, 1, 3]);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("ignores a retired group's save completion after another group opens", async () => {
+    let finish!: (value: Awaited<ReturnType<BulkSelectionController["onApplyGroup"]>>) => void;
+    const onApplyGroup = vi.fn<BulkSelectionController["onApplyGroup"]>(() => new Promise(resolve => { finish = resolve; }));
+    const { rerender, controller, trigger } = await openSorter(sortingController({ onApplyGroup }));
+    fireEvent.click(screen.getByRole("button", { name: "Save order" }));
+    rerender(<UiLayerProvider><BulkActionsSidebar controller={{ ...controller, groupKeyDraft: "other" }} thumbs={{}} renderingThumbnailIds={{}} /></UiLayerProvider>);
+    fireEvent.click(trigger);
+    await act(async () => finish({ status: "saved" }));
+    expect(screen.getByRole("dialog", { name: "Sort group order" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save order" })).toBeEnabled();
   });
 
   it("invalidates the modal when its group context changes", async () => {

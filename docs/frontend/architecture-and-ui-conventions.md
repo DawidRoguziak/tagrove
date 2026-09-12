@@ -28,7 +28,7 @@ Strict Mode means mount effects must tolerate setup, cleanup, and setup again du
 
 1. `useAppShellController()` creates the long-lived application state and callbacks.
 2. `App` chooses either `AppGalleryView` or `AppSettingsView`.
-3. The gallery view conditionally mounts the bulk sidebar, while `App` conditionally mounts the lightbox overlay.
+3. The gallery view conditionally mounts the bulk sidebar, while `App` activates the lazy lightbox on first selection and leaves its presence owner mounted for later closing fades.
 4. View components receive controller-shaped prop groups instead of discovering application state themselves.
 
 [`useAppShellController`](../../src/components/app/hooks/useAppShellController.ts) is the composition root for frontend hooks. It combines search filters, library browsing, selection, bulk selection, settings actions, appearance, and settings-view state. It also owns the shell-only tile-size scheduler and translates feature APIs into the typed props consumed by [`AppGalleryView`](../../src/components/app/AppGalleryView.tsx), [`AppSettingsView`](../../src/components/app/AppSettingsView.tsx), and lazy overlays. The prop contracts in [`src/components/app/types.ts`](../../src/components/app/types.ts) are useful seams: extend the narrow controller group that a view needs rather than passing the entire shell controller through the component tree.
@@ -71,7 +71,7 @@ Settings closes through Back or the layer registered by `SettingsViewLayer` in `
 
 ## Lazy loading and delayed prefetch
 
-The gallery is eagerly imported. Settings, the bulk sidebar, and lightbox use `React.lazy`. Settings shows a localized status while loading; lightbox shows a named loading dialog. `LazyErrorBoundary` supplies localized failure UI with reload and Back/Close actions. Its reset key follows settings visibility or selected asset ID; resetting the boundary alone does not guarantee a fresh download of a rejected lazy module.
+The gallery is eagerly imported. Settings, the bulk sidebar, and lightbox use `React.lazy`. Settings shows a localized status while loading; lightbox shows a named loading dialog. `LazyErrorBoundary` supplies localized failure UI with reload and Back/Close actions. Its reset key follows settings visibility or lightbox opening/asset changes, preserving a closing failure dialog until its fade ends; resetting the boundary alone does not guarantee a fresh download of a rejected lazy module.
 
 After `App` mounts, an effect schedules dynamic imports for settings and lightbox after 1,500 ms. The bulk sidebar loads on demand. Opening one earlier starts its import immediately. The timer is cleared on cleanup; module loading itself is cached by the JavaScript module loader. Preserve this split when adding a large, infrequently used surface: make the initial render path explicit, cancel delayed work in cleanup, and do not assume prefetch completed before user interaction.
 
@@ -149,17 +149,35 @@ Global styles establish full-height roots, typography, field treatment, visible 
 ## Motion
 
 `src/styles.css` owns the shared motion tokens: `--motion-feedback` is 100 ms,
-`--motion-entrance` is 150 ms, and `--motion-ease` is a restrained ease-out curve.
+`--motion-entrance` is 150 ms, `--motion-exit` is 100 ms, and `--motion-ease` is a restrained ease-out curve.
 Buttons, interactive chips, search options, media segments, settings navigation and
 theme choices transition background, border color, text color and shadow. Keyboard
 focus indicators remain immediate. DaisyUI button presses do not translate controls.
 
 Use `motion-enter` for an opacity-only entrance after the element's layout is ready.
-Standard modal overlays, positioned suggestion lists, bulk inspector sections and
-inline lightbox information/confirmation use it. Suggestions keep the same mounted
+Positioned suggestion lists, bulk inspector sections and inline lightbox
+information/confirmation use it. Suggestions keep the same mounted
 list while typing, hiding it and pausing the fade while worker results are empty.
 Their fade starts only once results and viewport positioning are available.
-Closing unmounts immediately, preserving focus restoration and scroll unlocking.
+`UiModal` and `LightboxModal` use `useModalPresence` instead. Their backdrop and DOM
+content fade together using the shared easing. `UiModal` opens in 150 ms and closes
+in 100 ms. The lightbox uses local `--modal-entrance` and `--modal-exit` tokens for
+75 ms opening and 50 ms closing, leaving inline entrances and other motion unchanged.
+The hook tracks opening, open, closing and hidden states. Interrupted
+animations cancel their completion callbacks and fallback timers, so stale cleanup
+cannot remove a reopened dialog. Animations and timers are cleaned on unmount.
+A fullscreen image shell receives its own fade because browser top-layer elements
+ignore ancestor opacity. Native video playback and GTK controls keep their existing
+startup/shutdown behavior, while the WebView backdrop and dialog controls fade.
+
+Keep modal owners mounted when their logical `open` becomes false. The standard
+modal retains its last visible children and presentation props until exit completes;
+the lightbox retains its asset/editor props. Asset navigation keeps the same presence
+owner and does not replay the entrance. On logical close, release the layer, focus
+trap, background inertness and body scroll lock immediately. The closing content is
+inert and aria-hidden; the backdrop remains a pointer shield until removal. Reduced
+motion shows and removes dialogs immediately, including when the preference changes
+during a fade. No persistent image compositing hints are added.
 Gallery hover/selection shadows and the checkmark opacity use control feedback.
 Tiles, thumbnail arrivals, reordering and virtual scrolling have no entrance animation.
 

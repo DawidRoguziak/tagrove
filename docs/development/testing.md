@@ -209,8 +209,15 @@ MEDIATAGGER_UI_REDESIGN=1 bun run test:e2e:tauri --spec e2e/specs/ui.redesign.e2
 every rendering frame before, during and after interaction. Both themes run at 699,
 700, 767, 768, 999 and 1000 CSS pixels. Hover/press, bottom-of-gallery selection,
 suggestions, standard dialogs, bulk inspector, inline information/confirmation and
-repeated lightbox drawer toggles are covered. Layout-changing actions are paired with
-the same actions with decorative CSS animation and transitions disabled. The existing
+repeated lightbox drawer toggles are covered. Modal samples also record opening and
+closing opacity, durations, accessibility hiding, inertness and fixed shell bounds.
+The `modal media lifecycle` case checks image/GIF/video opening, navigation without
+another entrance, closing and fullscreen, saving synthetic screenshots. Run just
+that case with `--mochaOpts.grep 'modal media lifecycle'`. Native fullscreen video
+uses Escape to return to the window before Close preview; its immediate playback
+shutdown during the exit is covered separately by the lightbox component tests. Layout-changing actions are paired with
+the same actions with decorative CSS animation and transitions disabled and the
+modal duration tokens set to zero. The existing
 clipped drawer slide stays enabled in both halves of the comparison. Filtering, resizing and
 intentional navigation are not required to preserve scroll position.
 The segmented-control cases additionally sample every label and adjacent toolbar child

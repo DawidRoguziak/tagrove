@@ -16,6 +16,7 @@ import {
 } from "./LightboxVideoPlayer";
 
 interface LightboxMediaStageProps {
+  playbackActive?: boolean;
   selected: SelectedAsset;
   detailsLoading?: boolean;
   detailsFailed?: boolean;
@@ -39,6 +40,7 @@ interface LightboxMediaStageProps {
 }
 
 export function LightboxMediaStage({
+  playbackActive = true,
   selected,
   detailsFailed = false,
   onRetryDetails = () => {},
@@ -154,7 +156,7 @@ export function LightboxMediaStage({
         )
       ) : selected.kind === "video" ? (
         <div className="flex h-full w-full items-center justify-center overflow-hidden">
-          <LightboxVideoPlayer
+          {playbackActive && <LightboxVideoPlayer
             style={isFullscreen ? undefined : mediaStyle}
             assetId={selected.id}
             generation={activationGeneration}
@@ -172,7 +174,7 @@ export function LightboxMediaStage({
             onPointerActivity={onPointerActivity}
             onNativeBounds={onNativeBounds}
             onError={reportMediaFailure}
-          />
+          />}
         </div>
       ) : (
         <div

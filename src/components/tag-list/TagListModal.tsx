@@ -92,10 +92,6 @@ export function TagListModal({
     };
   }, [open, resetPage]);
 
-  if (!open) {
-    return null;
-  }
-
   const handleTagClick = (tag: string, clickCount: number) => {
     if (clickCount > 1 || isApplying) {
       return;
@@ -145,7 +141,7 @@ export function TagListModal({
 
   return (
     <UiModal
-      open
+      open={open}
       onClose={onClose}
       closeOnOverlayClick={!isApplying}
       closeOnEscape={!isApplying}

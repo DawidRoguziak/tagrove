@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useModalPresence, useModalSnapshot } from "./useModalPresence";
 import { useUiLayer } from "./UiLayerProvider";
 
 export type UiModalSize = "small" | "medium" | "large" | "xlarge";
@@ -46,6 +47,8 @@ export function UiModal({
   getRestoreFocus,
   children
 }: UiModalProps) {
+  const presence = useModalPresence(open);
+  const visible = useModalSnapshot(open, presence.present, { children, ariaLabel, labelledBy, describedBy, size, className, contentClassName });
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { isTopLayer, layerId } = useUiLayer({
     active: open,
@@ -56,29 +59,32 @@ export function UiModal({
     getRestoreFocus
   });
 
-  if (!open) {
+  if (!presence.present) {
     return null;
   }
 
   const overlayClasses = [
-    "motion-enter fixed inset-0 z-[60] grid place-items-center bg-neutral/58 p-3 sm:p-5",
-    className
+    "fixed inset-0 z-[60] grid place-items-center bg-neutral/58 p-3 sm:p-5",
+    visible.className
   ]
     .filter(Boolean)
     .join(" ");
   const contentClasses = [
     "rounded-[var(--radius-panel)] border border-[var(--border-soft)] bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-modal)] sm:p-6",
-    sizeClasses[size],
-    contentClassName
+    sizeClasses[visible.size],
+    visible.contentClassName
   ]
     .filter(Boolean)
     .join(" ");
 
   return createPortal(
     <div
+      ref={presence.overlayRef}
+      data-modal-presence={presence.phase}
+      aria-hidden={!open || undefined}
       className={overlayClasses}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && closeOnOverlayClick && isTopLayer) {
+        if (open && event.target === event.currentTarget && closeOnOverlayClick && isTopLayer) {
           onClose();
         }
       }}
@@ -87,16 +93,17 @@ export function UiModal({
     >
       <div
         ref={contentRef}
+        {...(!open ? { inert: "" } : {})}
         className={contentClasses}
         role="dialog"
         aria-modal="true"
-        aria-label={ariaLabel}
-        aria-labelledby={labelledBy}
-        aria-describedby={describedBy}
+        aria-label={visible.ariaLabel}
+        aria-labelledby={visible.labelledBy}
+        aria-describedby={visible.describedBy}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        {children}
+        {visible.children}
       </div>
     </div>,
     document.body

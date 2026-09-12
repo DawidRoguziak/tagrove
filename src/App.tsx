@@ -1,6 +1,6 @@
 import { ThumbnailContext } from "./components/UI/ThumbnailSubscription";
 import { SuggestionProvider } from "./components/search/worker/SuggestionProvider";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AppGalleryView } from "./components/app/AppGalleryView";
 import { useAppShellController } from "./components/app/hooks/useAppShellController";
 import { UiLayerProvider, useUiLayer } from "./components/UI/UiLayerProvider";
@@ -32,6 +32,12 @@ function SettingsViewLayer({ children, onBack }: { children: ReactNode; onBack: 
 
 function AppContent() {
   const controller = useAppShellController();
+  const selectedId = controller.lightbox.selected?.id ?? null;
+  const [lightboxActivation, setLightboxActivation] = useState<{ selectedId: number | null; resetKey: number }>({ selectedId: null, resetKey: 0 });
+  if (selectedId !== lightboxActivation.selectedId) {
+    // Keep loading/error dialogs mounted on close so their own exit can finish.
+    setLightboxActivation({ selectedId, resetKey: lightboxActivation.resetKey + (selectedId === null ? 0 : 1) });
+  }
   const { t } = useTranslation();
   const lightboxRestoreFocusRef = useRef<HTMLElement | null>(null);
   const previousSelectedIdRef = useRef<number | null>(null);
@@ -93,7 +99,7 @@ function AppContent() {
       )}
 
       <LazyErrorBoundary
-        resetKey={controller.lightbox.selected?.id ?? null}
+        resetKey={lightboxActivation.resetKey}
         fallback={
           <UiModal
             open={Boolean(controller.lightbox.selected)}
@@ -124,7 +130,7 @@ function AppContent() {
             <p className="m-0 text-center" role="status">{t("common.loading")}</p>
           </UiModal>
         }>
-          {controller.lightbox.selected ? (
+          {lightboxActivation.resetKey > 0 ? (
             <LightboxModal
               {...controller.lightbox}
               getRestoreFocus={() => lightboxRestoreFocusRef.current}

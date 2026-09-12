@@ -17,13 +17,9 @@ export function RemoveScanRootConfirmDialog({
 }: RemoveScanRootConfirmDialogProps) {
   const { t } = useTranslation();
 
-  if (!path) {
-    return null;
-  }
-
   return (
     <UiModal
-      open
+      open={Boolean(path)}
       onClose={onCancel}
       closeOnOverlayClick={!isOperationLocked}
       closeOnEscape={!isOperationLocked}

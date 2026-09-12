@@ -482,8 +482,8 @@ describe("MediaTagger desktop workflows", () => {
           await $('button[aria-label="Close asset panel"]').click();
           await browser.waitUntil(async () => (await $("[data-lightbox-toolbar]").getAttribute("aria-hidden")) === "true");
           await browser.waitUntil(() => browser.execute(() =>
-            getComputedStyle(document.querySelector("#lightbox-sidebar-trigger-button")).opacity === "0"
-          ), { timeout: 6000, timeoutMsg: "Collapsed panel trigger did not fade after inactivity" });
+            getComputedStyle(document.querySelector("#lightbox-sidebar-trigger-button")).opacity === "1"
+          ), { timeout: 6000, timeoutMsg: "Collapsed panel trigger must remain visible" });
           await browser.saveScreenshot(path.join(evidence, `${width}-${index}-idle.png`));
           await browser.keys("ArrowRight");
           await $('button[aria-label="Open asset panel"]').waitForDisplayed();
@@ -520,11 +520,11 @@ describe("MediaTagger desktop workflows", () => {
     await browser.waitUntil(() => browser.execute(() => {
       const video = document.querySelector("[data-lightbox-video-player]").getBoundingClientRect();
       const trigger = document.querySelector("#lightbox-sidebar-trigger-button").getBoundingClientRect();
-      return video.right <= trigger.left + 1;
+      return trigger.bottom <= video.top + 1;
     }));
     const beforeIdle = await $("[data-lightbox-video-player]").getSize();
     await browser.waitUntil(() => browser.execute(() =>
-      getComputedStyle(document.querySelector("#lightbox-sidebar-trigger-button")).opacity === "0"
+      getComputedStyle(document.querySelector("#lightbox-sidebar-trigger-button")).opacity === "1"
     ), { timeout: 6000 });
     const afterIdle = await $("[data-lightbox-video-player]").getSize();
     if (JSON.stringify(beforeIdle) !== JSON.stringify(afterIdle)) throw new Error("Idle video bounds changed");

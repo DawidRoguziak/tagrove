@@ -23,7 +23,7 @@ export function renderHighlightedMatch(
 
     if (end > start) {
       fragments.push(
-        <span key={`m-${index}-${start}`} className="font-bold text-primary">
+        <span key={`m-${index}-${start}`} className="font-bold text-primary-text">
           {value.slice(start, end)}
         </span>
       );

@@ -6,14 +6,14 @@ This page owns settings state, operation sequencing, progress presentation, conf
 
 ## Settings layout
 
-The full-page view keeps all operation sections mounted. A 200px navigation column links to
+The full-page view keeps all operation sections mounted. A 240px navigation column links to
 scan settings, appearance, language, import/export, duplicates and the danger zone in that order. At
 widths below 1000px navigation wraps above the content. The page grid stays within the
 viewport; the page title truncates when space beside the window controls is tight.
 Selecting a link scrolls to and
 focuses the section; it does not start an operation, change the URL or persist a new setting.
 The first-folder route still highlights and scrolls to scanning. Shared controls, compact
-folder rows and dialogs follow the [frontend visual system](../frontend/architecture-and-ui-conventions.md#compact-studio-visual-system).
+folder rows and dialogs follow the [frontend visual system](../frontend/architecture-and-ui-conventions.md#light-and-dark-visual-system).
 
 ## Composition and state ownership
 
@@ -23,7 +23,7 @@ folder rows and dialogs follow the [frontend visual system](../frontend/architec
 
 1. `ScanSettingsSection` lists roots and exposes add, remove, per-root/all-root rescan, bulk thumbnail render, retry, and stop controls.
 2. `AppearanceSection` changes the theme, preserving the light/dark preview sizes.
-3. `LanguageSection` displays the language selector directly below Appearance. Its heading and description sit on the left and the selector on the right, stacking below at smaller widths. Both preference sections receive values and callbacks from the existing `appearance` controller and bypass the operation runner.
+3. `LanguageSection` displays the language selector directly below Appearance. Its heading and description precede the selector, whose width is capped at 480px. Both preference sections receive values and callbacks from the existing `appearance` controller and bypass the operation runner.
 4. `ImportExportSection` exposes CSV and database-bundle import/export.
 5. `DuplicatesSection` starts the duplicate scan and shows the last non-zero result.
 6. `DangerZoneSection` opens the clear-library confirmation.

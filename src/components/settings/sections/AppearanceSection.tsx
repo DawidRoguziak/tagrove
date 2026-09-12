@@ -14,12 +14,12 @@ export function AppearanceSection({
   const themeName = useId();
 
   return (
-    <section className="grid gap-5 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)] lg:grid-cols-[minmax(220px,0.8fr)_1.2fr] lg:items-start">
+    <section className="grid gap-5 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)]">
       <div>
-        <h2 className="m-0 text-base">{t("settings.appearance.heading")}</h2>
+        <h2 className="m-0 text-lg">{t("settings.appearance.heading")}</h2>
         <p className="m-0 mt-1 text-sm leading-relaxed text-[var(--text-muted)]">{t("settings.appearance.description")}</p>
       </div>
-      <div className="grid items-start gap-5 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+      <div className="grid max-w-[480px] items-start gap-5">
         <fieldset className="theme-choices" aria-label={t("settings.appearance.theme.ariaLabel")}>
           <legend className="text-xs font-semibold text-[var(--text-muted)]">{t("settings.appearance.theme.label")}</legend>
           {(["light", "dark"] as const).map((choice) => (

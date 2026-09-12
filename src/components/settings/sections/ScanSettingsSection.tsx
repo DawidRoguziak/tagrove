@@ -70,7 +70,7 @@ export function ScanSettingsSection({
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-[680px]">
-          <h2 className="m-0 text-base">{t("settings.scan.heading")}</h2>
+          <h2 className="m-0 text-lg">{t("settings.scan.heading")}</h2>
           <p className="m-0 mt-1 text-sm leading-relaxed text-[var(--text-muted)]">
             {t("settings.scan.description")}
           </p>
@@ -86,7 +86,7 @@ export function ScanSettingsSection({
           <ul className="m-0 grid list-none gap-2 p-0">
             {scanRoots.map(({ path, auto_scan_on_startup }) => (
               <li key={path} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-base-200/38 p-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
-                <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-primary/10 text-primary">
+                <span className="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-primary/10 text-primary-text">
                   <UiIcon name="folder" className="h-[18px] w-[18px]" />
                 </span>
                 <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-mono text-[var(--text-muted)]" title={path}>
@@ -96,7 +96,7 @@ export function ScanSettingsSection({
                   <label className="flex cursor-pointer items-center gap-2 text-sm">
                     <input
                       type="checkbox"
-                      className="checkbox checkbox-sm"
+                      className="toggle toggle-sm toggle-primary"
                       checked={auto_scan_on_startup}
                       disabled={isOperationLocked}
                       aria-label={t("settings.scan.autoScanLabel", { path })}

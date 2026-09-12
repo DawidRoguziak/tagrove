@@ -25,8 +25,8 @@ async function scrollToAsset(index) {
     const scroller = document.querySelector(".gallery-scroll");
     const tile = document.querySelector("button[data-asset-index]");
     const grid = tile.parentElement;
-    const stride = tile.getBoundingClientRect().width + 10;
-    const columns = Math.max(1, Math.floor((grid.clientWidth + 10) / stride));
+    const stride = tile.getBoundingClientRect().width + 12;
+    const columns = Math.max(1, Math.floor((grid.clientWidth + 12) / stride));
     const margin =
       grid.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
     scroller.scrollTop = margin + Math.floor(target / columns) * stride;

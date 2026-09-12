@@ -50,9 +50,25 @@ elif sys.argv[1] == "key":
     t.XTestFakeKeyEvent(d, code, 1, 0)
     t.XTestFakeKeyEvent(d, code, 0, 50)
 else:
-    assert sys.argv[1] in ("click", "move", "drag")
+    assert sys.argv[1] in ("click", "move", "drag", "focus")
     t.XTestFakeMotionEvent(d, -1, int(sys.argv[2]), int(sys.argv[3]), 0)
-    if sys.argv[1] != "move":
+    if sys.argv[1] == "focus":
+        # Focus the application window under the supplied point on the owned display.
+        x.XDefaultRootWindow.argtypes = [c.c_void_p]
+        x.XDefaultRootWindow.restype = c.c_ulong
+        x.XQueryPointer.argtypes = [c.c_void_p, c.c_ulong, c.POINTER(c.c_ulong), c.POINTER(c.c_ulong),
+                                   c.POINTER(c.c_int), c.POINTER(c.c_int), c.POINTER(c.c_int), c.POINTER(c.c_int), c.POINTER(c.c_uint)]
+        x.XSetInputFocus.argtypes = [c.c_void_p, c.c_ulong, c.c_int, c.c_ulong]
+        root, child = c.c_ulong(), c.c_ulong()
+        rx, ry, wx, wy, mask = c.c_int(), c.c_int(), c.c_int(), c.c_int(), c.c_uint()
+        x.XFlush(d)
+        assert x.XQueryPointer(d, x.XDefaultRootWindow(d), c.byref(root), c.byref(child),
+                               c.byref(rx), c.byref(ry), c.byref(wx), c.byref(wy), c.byref(mask))
+        assert child.value, "No application window at the focus point"
+        x.XSetInputFocus(d, child, 1, 0)
+        t.XTestFakeButtonEvent(d, 1, 1, 0)
+        t.XTestFakeButtonEvent(d, 1, 0, 80)
+    elif sys.argv[1] != "move":
         t.XTestFakeButtonEvent(d, 1, 1, 0)
         if sys.argv[1] == "drag":
             t.XTestFakeMotionEvent(d, -1, int(sys.argv[4]), int(sys.argv[5]), 80)

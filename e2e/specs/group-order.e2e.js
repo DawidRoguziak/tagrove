@@ -5,7 +5,8 @@ import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
 
 let mediaRoot;
-const output = path.resolve("artifacts/group-order");
+const output = path.resolve("artifacts/group-order", new Date().toISOString().replace(/[:.]/g, "-"));
+const groupSize = 96;
 
 async function invoke(command, payload = {}) {
   const response = await browser.executeAsync(
@@ -127,7 +128,7 @@ describe("large group order modal", function () {
   this.timeout(90000);
   before(async () => {
     mediaRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-group-order-"));
-    await copyPngFixtures(mediaRoot, "sort", 24);
+    await copyPngFixtures(mediaRoot, "sort", groupSize);
     await fs.mkdir(output, { recursive: true });
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: mediaRoot });
@@ -137,19 +138,18 @@ describe("large group order modal", function () {
     await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
     await $('button[aria-label="Enable bulk actions"]').click();
     await $('button[data-asset-index="0"]').click();
+    await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes("Selected: 1"));
     await browser.execute(() => {
       const scroller = document.querySelector(".gallery-scroll");
       scroller.scrollTop = scroller.scrollHeight;
     });
-    const last = await $('button[data-asset-index="23"]');
+    const last = await $(`button[data-asset-index="${groupSize - 1}"]`);
     await last.waitForDisplayed();
-    await browser.execute(
-      (element) =>
-        element.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })),
-      last
-    );
+    await browser.performActions([{ id: "range-selection", type: "key", actions: [{ type: "keyDown", value: "\uE008" }] }]);
+    await last.click();
+    await browser.releaseActions();
     await browser.waitUntil(async () =>
-      (await $('[data-testid="bulk-header-panel"]').getText()).includes("Selected: 24")
+      (await $('[data-testid="bulk-header-panel"]').getText()).includes(`Selected: ${groupSize}`)
     );
     await $("#bulk-group-key-input").setValue("sorting-proof");
   });
@@ -173,6 +173,17 @@ describe("large group order modal", function () {
     );
     const first = initial[0];
     const second = initial[1];
+    const firstHandle = await $(`[data-sort-handle="${first}"]`);
+    await firstHandle.click();
+    await browser.keys("ArrowRight");
+    assert.deepEqual((await visibleOrder()).slice(0, 2), [second, first]);
+    await browser.keys("ArrowLeft");
+    assert.deepEqual(await visibleOrder(), initial);
+    await browser.keys("ArrowDown");
+    assert.ok((await visibleOrder()).indexOf(first) > 1);
+    assert.equal(await $(`[data-sort-handle="${first}"]`).isFocused(), true);
+    await browser.keys("ArrowUp");
+    assert.deepEqual(await visibleOrder(), initial);
     await dragWithInsertionLine(first, second, "after");
     await browser.waitUntil(async () => (await visibleOrder())[0] === second, {
       timeoutMsg: "pointer drop did not reorder"
@@ -208,7 +219,7 @@ describe("large group order modal", function () {
     await $("button=Save order").click();
     await waitForGone('[data-testid="bulk-order-modal"]');
     const saved = await persistedOrder();
-    assert.equal(saved.length, 24);
+    assert.equal(saved.length, groupSize);
     assert.deepEqual(saved.slice(0, 2), [second, first]);
     await openSorter();
     assert.deepEqual((await visibleOrder()).slice(0, 2), [second, first]);
@@ -223,7 +234,7 @@ describe("large group order modal", function () {
       return {
         x: Math.round(from.x + from.width / 2),
         y: Math.round(from.y + from.height / 2),
-        edgeX: Math.round(grid.left + 80),
+        edgeX: Math.round(grid.right - 8),
         edgeY: Math.round(grid.bottom - 8)
       };
     }, handle);
@@ -232,7 +243,7 @@ describe("large group order modal", function () {
       .move({ x: coords.x, y: coords.y })
       .down()
       .move({ x: coords.edgeX, y: coords.edgeY, duration: 500 })
-      .pause(1400)
+      .pause(7000)
       .up()
       .perform();
     assert.ok(
@@ -244,8 +255,8 @@ describe("large group order modal", function () {
     await waitForGone('[data-testid="bulk-order-modal"]');
     const scrolledSave = await persistedOrder();
     assert.ok(
-      scrolledSave.indexOf(second) > 3,
-      "edge scrolling did not move the first item to a later row"
+      scrolledSave.indexOf(second) >= groupSize - 4,
+      "edge scrolling did not move the first item to the final row"
     );
 
     await browser.setWindowSize(800, 700);
@@ -253,6 +264,23 @@ describe("large group order modal", function () {
     await browser.saveScreenshot(path.join(output, "narrow.png"));
     assert.ok(await $("button=Save order").isDisplayed());
     assert.ok(await $("button=Cancel").isDisplayed());
+    await browser.keys("Escape");
+    await waitForGone('[data-testid="bulk-order-modal"]');
+    await $('#open-settings-button').click();
+    await $('.theme-choice:has(input[value="light"])').click();
+    await browser.execute(() => { document.querySelector("main").scrollTop = 0; });
+    await $('.settings-nav a[href="#settings-language"]').click();
+    await $('#settings-language-select').scrollIntoView({ block: "center" });
+    await $('#settings-language-select').selectByAttribute("value", "pl");
+    await $('button[aria-label="Wstecz"]').click();
+    await openSorter();
+    await browser.saveScreenshot(path.join(output, "light-pl-narrow.png"));
+    await browser.setWindowSize(1440, 900);
+    await browser.waitUntil(() => browser.execute(() => {
+      const tiles = [...document.querySelectorAll("[data-sort-asset]")];
+      return tiles.length >= 4 && Math.abs(tiles[0].getBoundingClientRect().top - tiles[3].getBoundingClientRect().top) < 1;
+    }));
+    await browser.saveScreenshot(path.join(output, "light-pl-wide.png"));
     await browser.keys("Escape");
     await waitForGone('[data-testid="bulk-order-modal"]');
     await fs.writeFile(

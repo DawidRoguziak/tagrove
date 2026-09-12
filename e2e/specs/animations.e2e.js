@@ -18,8 +18,6 @@ async function captureMedia(name) {
 }
 async function click(selector) {
   if (selector === 'button[aria-label="Open asset panel"]') {
-    // Keyboard activity reveals the existing idle trigger. Repeated WebDriver
-    // moves to the same coordinates do not produce a mousemove in WebKit.
     await browser.keys("Tab");
     await browser.waitUntil(() => browser.execute(() =>
       getComputedStyle(document.getElementById("lightbox-sidebar-trigger-button")).opacity === "1"
@@ -304,7 +302,7 @@ async function exercise(theme, disabled) {
     await check(`drawer close ${i}`, async () => click('button[aria-label="Close asset panel"]'), true);
   }
   await check("drawer open for info", async () => click('button[aria-label="Open asset panel"]'), true);
-  await check("inline info", async () => click('button[aria-label="Show info"]'), true);
+  await check("inline info", async () => click('[data-lightbox-toolbar] button[aria-expanded]:not([aria-controls])'), true);
   await $('#lightbox-tag-draft-input').scrollIntoView();
   await browser.pause(280);
   await check("suggestions at drawer edge", async () => {
@@ -312,8 +310,12 @@ async function exercise(theme, disabled) {
     await $('[role="listbox"]').waitForDisplayed();
   });
   await check("dismiss drawer suggestions", async () => browser.keys("Escape"));
+  await check("close panel for delete action", async () => click('button[aria-label="Close asset panel"]'), true);
   await check("inline confirmation", async () => click('#lightbox-delete-button'), true);
   await check("inline confirmation close", async () => browser.keys("Escape"), true);
+  if (await browser.execute(() => innerWidth < 768)) {
+    await check("close drawer for preview close", async () => click('button[aria-label="Close asset panel"]'), true);
+  }
   fades(await check("lightbox close", async () => click('button[aria-label="Close preview"]')), "close", disabled);
   return results;
 }
@@ -468,6 +470,12 @@ suite("animation scroll geometry", function () {
           await browser.waitUntil(() => browser.execute(() =>
             document.querySelector('.workspace-tools [role="status"]').textContent.includes("0") &&
             !document.querySelector('button[data-asset-index="0"]')));
+          const windowRect = await browser.getWindowRect();
+          const inputPoint = await browser.execute(() => {
+            const rect = document.querySelector('.filter-input').getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          });
+          await execFileAsync("python3", ["e2e/native-input.py", "focus", String(Math.round(windowRect.x + inputPoint.x)), String(Math.round(windowRect.y + inputPoint.y))]);
           assert.equal(await browser.execute(() => document.hasFocus()), true,
             "Activate the native GTK WebView before keyboard checks; DOM clicks alone do not activate bare Xvfb windows");
           const initial = await sampleSegments(async () => {});

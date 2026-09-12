@@ -57,7 +57,7 @@
     "loadMore": "加载更多"
   },
   "search": {
-    "placeholder": "标签: cat vacation -dog | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "标签: cat vacation -dog",
     "tagSuggestions": "标签建议",
     "mediaKind": "媒体类型",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "导入标签 CSV",
       "exportDbBundle": "导出数据库 + 缩略图",
       "importDbBundle": "导入数据库 + 缩略图",
-      "hint": "CSV 导入会合并标签和收藏标记，并通过匹配文件名应用媒体分组键/顺序。数据库导入会替换当前数据库和缩略图。",
+      "hint": "CSV 会向所有同名的已索引文件添加标签并应用收藏和分组值，匹配名称时不区分大小写。空白收藏字段保留当前值，空白分组字段会清除对应值。数据库导入会替换数据库和缩略图。",
       "csvDescription": "通过 CSV 文件传输标签。",
       "bundleDescription": "保存或恢复媒体库及其缩略图。"
     },
     "danger": {
       "heading": "危险区域",
       "clearLibrary": "删除所有缩略图、已索引资源和扫描路径",
-      "hint": "删除操作仅影响应用数据库/缓存。原始照片和视频不会被编辑或删除。"
+      "hint": "清空媒体库会删除索引、缩略图和扫描路径，原始媒体文件保持不变。"
     },
     "duplicates": {
       "heading": "重复文件管理",

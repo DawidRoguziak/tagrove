@@ -158,7 +158,7 @@ describe("GalleryGrid", () => {
 
     const gifBadge = getByText("GIF");
     expect(gifBadge).toBeInTheDocument();
-    expect(gifBadge).toHaveClass("right-2", "top-2");
+    expect(gifBadge).toHaveClass("right-2", "bottom-2");
     expect(gifBadge).not.toHaveClass("left-2");
   });
 

@@ -57,7 +57,7 @@
     "loadMore": "Load more"
   },
   "search": {
-    "placeholder": "Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "Tags: cat vacation -dog",
     "tagSuggestions": "Tag suggestions",
     "mediaKind": "Media kind",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "Import tags CSV",
       "exportDbBundle": "Export DB + thumbnails",
       "importDbBundle": "Import DB + thumbnails",
-      "hint": "CSV import merges tags and favorite flag, and applies media group key/order by matching file names. Database import replaces current database and thumbnails.",
+      "hint": "CSV adds tags and applies favorite and group values to all indexed files with the same name, ignoring case. Blank favorite cells keep the current value; blank group fields clear it. Database import replaces the database and thumbnails.",
       "csvDescription": "Transfer tags with CSV files.",
       "bundleDescription": "Save or restore the library and its thumbnails."
     },
     "danger": {
       "heading": "Danger zone",
       "clearLibrary": "Remove all thumbnails, indexed assets and scan paths",
-      "hint": "Deletion operations affect only app database/cache. Original photos and videos are never edited or removed."
+      "hint": "Clearing the library removes its index, thumbnails and scan paths. It leaves original media files unchanged."
     },
     "duplicates": {
       "heading": "Duplicate manager",

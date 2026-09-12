@@ -246,7 +246,7 @@ describe("App", () => {
       expect(apiMocks.listScanRoots).toHaveBeenCalled();
     });
 
-    const input = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
+    const input = screen.getByPlaceholderText("Tags: cat vacation -dog");
     await userEvent.clear(input);
     await userEvent.type(input, "cat -dog{Enter}");
     await userEvent.click(screen.getByRole("radio", { name: "Video" }));
@@ -289,7 +289,7 @@ describe("App", () => {
   it("clears search filters and resets media kind to all", async () => {
     render(<App />);
 
-    const input = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
+    const input = screen.getByPlaceholderText("Tags: cat vacation -dog");
     await userEvent.type(input, "cat{Enter}");
     await userEvent.click(screen.getByRole("radio", { name: "Video" }));
 
@@ -329,7 +329,7 @@ describe("App", () => {
       expect(apiMocks.listAssets).toHaveBeenCalled();
     });
 
-    const input = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
+    const input = screen.getByPlaceholderText("Tags: cat vacation -dog");
     await userEvent.clear(input);
     await userEvent.type(input, "tags:2{Enter}");
 
@@ -356,7 +356,7 @@ describe("App", () => {
       expect(apiMocks.listAssets).toHaveBeenCalled();
     });
 
-    const input = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
+    const input = screen.getByPlaceholderText("Tags: cat vacation -dog");
     await userEvent.clear(input);
     await userEvent.type(input, "gN:Trip-2026{Enter}");
 
@@ -384,7 +384,7 @@ describe("App", () => {
     });
 
     const callsBeforeSubmit = apiMocks.listAssets.mock.calls.length;
-    const input = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
+    const input = screen.getByPlaceholderText("Tags: cat vacation -dog");
     await userEvent.type(input, "cat tags{Enter}");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -858,7 +858,7 @@ describe("App", () => {
     apiMocks.listAssets.mockResolvedValue({ items: [reusedAsset], total: 1 });
     apiMocks.getAssetDetails.mockResolvedValueOnce({ ...reusedAsset, tags: ["fresh"] });
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
-    const searchInput = screen.getByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026");
+    const searchInput = screen.getByPlaceholderText("Tags: cat vacation -dog");
     await userEvent.type(searchInput, "{Enter}");
     const reusedTile = (await screen.findByAltText("C:/media/reused.jpg")).closest("button");
     if (!reusedTile) throw new Error("Missing reused gallery tile");
@@ -923,18 +923,18 @@ describe("App", () => {
   it("opens settings as a standalone view and returns to gallery", async () => {
     render(<App />);
 
-    expect(await screen.findByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Tags: cat vacation -dog")).toBeInTheDocument();
 
     const settingsButton = await screen.findByRole("button", { name: "Open settings" });
     await userEvent.click(settingsButton);
 
     expect(await screen.findByRole("button", { name: "Back" })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Tags: cat vacation -dog")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear all search filters" })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
 
-    expect(await screen.findByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Tags: cat vacation -dog")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Open settings" })).toHaveFocus();
     });
@@ -948,7 +948,7 @@ describe("App", () => {
 
     await userEvent.keyboard("{Escape}");
 
-    expect(await screen.findByPlaceholderText("Tags: cat vacation -dog | tags | tags:3 | gN:Trip 2026")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Tags: cat vacation -dog")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
   });
 

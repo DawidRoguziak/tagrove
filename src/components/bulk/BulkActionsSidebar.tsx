@@ -142,8 +142,8 @@ export function BulkActionsSidebar({
         data-testid="bulk-header-panel"
       >
         <div className="grid gap-0.5" aria-live="polite">
-          <h2 className="m-0 text-base">{t("bulk.panel.heading")}</h2>
-          <span className="text-xs text-[var(--text-muted)]">
+          <h2 className="m-0 text-lg">{t("bulk.panel.heading")}</h2>
+          <span className="font-mono text-xs text-primary-text">
             {t("bulk.panel.selectedItems", { count: controller.selectedAssetIds.size })}
           </span>
         </div>
@@ -288,7 +288,7 @@ export function BulkActionsSidebar({
                   }}
                 >
                   <span
-                    className="grid h-7 w-7 place-items-center rounded-[var(--radius-control)] bg-primary/14 text-xs font-semibold text-primary"
+                    className="grid h-7 w-7 place-items-center rounded-[var(--radius-control)] bg-primary/14 text-xs font-semibold text-primary-text"
                     data-testid={`bulk-group-order-${asset.id}`}
                   >
                     {index + 1}

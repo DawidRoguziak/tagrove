@@ -57,7 +57,7 @@
     "loadMore": "Mehr laden"
   },
   "search": {
-    "placeholder": "Tags: katze urlaub -hund | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "Tags: katze urlaub -hund",
     "tagSuggestions": "Tag-Vorschläge",
     "mediaKind": "Medientyp",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "Tags aus CSV importieren",
       "exportDbBundle": "DB + Vorschaubilder exportieren",
       "importDbBundle": "DB + Vorschaubilder importieren",
-      "hint": "Der CSV-Import führt Tags und Favoritenstatus zusammen und wendet Mediengruppenschlüssel/Reihenfolge anhand von Dateinamen an. Datenbankimport ersetzt die aktuelle Datenbank und Vorschaubilder.",
+      "hint": "CSV fügt Tags hinzu und setzt Favoriten und Gruppen für alle indexierten Dateien gleichen Namens, unabhängig von Groß- und Kleinschreibung. Leere Favoritenfelder behalten den Wert; leere Gruppenfelder löschen ihn. Der Datenbankimport ersetzt Datenbank und Vorschaubilder.",
       "csvDescription": "Übertrage Tags mit CSV-Dateien.",
       "bundleDescription": "Sichere die Bibliothek und ihre Vorschaubilder oder stelle sie wieder her."
     },
     "danger": {
       "heading": "Gefahrenbereich",
       "clearLibrary": "Alle Vorschaubilder, indizierten Assets und Scanpfade entfernen",
-      "hint": "Löschvorgänge betreffen nur die App-Datenbank/Cache. Originale Fotos und Videos werden niemals geändert oder gelöscht."
+      "hint": "Das Leeren der Bibliothek entfernt Index, Vorschaubilder und Scanpfade. Die ursprünglichen Mediendateien bleiben unverändert."
     },
     "duplicates": {
       "heading": "Duplikat-Manager",

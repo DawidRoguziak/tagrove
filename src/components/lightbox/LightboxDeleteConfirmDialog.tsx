@@ -6,6 +6,8 @@ import { UiAlert } from "../UI/UiAlert";
 
 interface LightboxDeleteConfirmDialogProps {
   open: boolean;
+  focusReady?: boolean;
+  restoreFocusId?: string;
   isSubmitting: boolean;
   errorMessage?: string | null;
   onClose: () => void;
@@ -16,6 +18,8 @@ const DELETE_BUTTON_ID = "lightbox-delete-button";
 
 export function LightboxDeleteConfirmDialog({
   open,
+  focusReady = true,
+  restoreFocusId = DELETE_BUTTON_ID,
   isSubmitting,
   errorMessage,
   onClose,
@@ -23,6 +27,7 @@ export function LightboxDeleteConfirmDialog({
 }: LightboxDeleteConfirmDialogProps) {
   const { t } = useTranslation();
   const [confirmationText, setConfirmationText] = useState("");
+  const wasOpenRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -31,6 +36,7 @@ export function LightboxDeleteConfirmDialog({
       return;
     }
 
+    if (!focusReady) return;
     const frame = window.requestAnimationFrame(() => {
       inputRef.current?.focus();
     });
@@ -38,13 +44,14 @@ export function LightboxDeleteConfirmDialog({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [open]);
+  }, [open, focusReady]);
 
   useEffect(() => {
-    if (open) return;
-    const deleteButton = document.getElementById(DELETE_BUTTON_ID);
-    if (deleteButton?.isConnected) deleteButton.focus();
-  }, [open]);
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (open || !wasOpen) return;
+    document.getElementById(restoreFocusId)?.focus({ preventScroll: true });
+  }, [open, restoreFocusId]);
 
   if (!open) return null;
 

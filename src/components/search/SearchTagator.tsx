@@ -16,6 +16,7 @@ interface SearchTagatorProps {
   onSuggestionPick?: (value: string) => void;
   placeholder?: string;
   ariaLabel?: string;
+  ariaKeyShortcuts?: string;
   listboxAriaLabel?: string;
   inputId?: string;
   inputRef?: MutableRefObject<HTMLInputElement | null> | RefObject<HTMLInputElement>;
@@ -40,6 +41,7 @@ export function SearchTagator({
   onSuggestionPick,
   placeholder,
   ariaLabel,
+  ariaKeyShortcuts,
   listboxAriaLabel,
   inputId,
   inputRef,
@@ -132,7 +134,8 @@ export function SearchTagator({
         value={value}
         disabled={disabled}
         {...browserAssistDisabledProps}
-        aria-label={ariaLabel}
+        aria-keyshortcuts={ariaKeyShortcuts}
+          aria-label={ariaLabel}
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={popupOpen}

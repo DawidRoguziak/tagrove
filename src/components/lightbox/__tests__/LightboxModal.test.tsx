@@ -356,7 +356,7 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     expect(toolbar).toHaveAttribute("aria-label", "Asset actions");
     expect(toolbar?.parentElement).toHaveClass(
       "grid",
-      "grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,22rem)]"
+      "grid-cols-[minmax(0,1fr)_340px]"
     );
 
     rerender(
@@ -853,6 +853,27 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     expect(within(actionRail).getAllByRole("button")).toHaveLength(6);
     expect(actionRail.parentElement).not.toHaveClass("overflow-y-auto");
     expect(upperSection).not.toContainElement(actionRail);
+  });
+
+  it("keeps actions outside the collapsed panel and opens it for details and deletion", async () => {
+    render(<LightboxModal selected={selectedAsset} tagEditor={[]} onTagEditorChange={vi.fn()}
+      onSaveTags={vi.fn()} knownTags={[]} onNavigatePrevious={vi.fn()} onNavigateNext={vi.fn()}
+      onToggleFavorite={vi.fn()} onClose={vi.fn()} />);
+    const panel = document.getElementById("lightbox-sidebar");
+    const rail = screen.getByTestId("lightbox-action-rail");
+    expect(panel).not.toContainElement(rail);
+    await userEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
+    expect(panel).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("button", { name: "Close preview" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Show info" }));
+    expect(panel).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByTestId("lightbox-info-panel")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
+    await userEvent.click(document.getElementById("lightbox-delete-button")!);
+    expect(panel).toHaveAttribute("aria-hidden", "false");
+    await waitFor(() => expect(document.getElementById("lightbox-delete-confirm-input")).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).not.toBeInTheDocument();
   });
 
   it("uses a closed drawer on narrow viewports and closes it with Escape", async () => {

@@ -57,7 +57,7 @@
     "loadMore": "Carica altro"
   },
   "search": {
-    "placeholder": "Tag: gatto vacanza -cane | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "Tag: gatto vacanza -cane",
     "tagSuggestions": "Suggerimenti tag",
     "mediaKind": "Tipo di media",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "Importa CSV dei tag",
       "exportDbBundle": "Esporta DB + miniature",
       "importDbBundle": "Importa DB + miniature",
-      "hint": "L'importazione CSV unisce tag e preferiti e applica chiave/ordine gruppo confrontando i nomi file. L'importazione database sostituisce database e miniature correnti.",
+      "hint": "Il CSV aggiunge tag e applica preferiti e gruppi a tutti i file indicizzati con lo stesso nome, ignorando maiuscole e minuscole. Un campo preferito vuoto mantiene il valore; i campi gruppo vuoti lo cancellano. L’importazione del database sostituisce database e miniature.",
       "csvDescription": "Trasferisci i tag con file CSV.",
       "bundleDescription": "Salva o ripristina la libreria e le sue miniature."
     },
     "danger": {
       "heading": "Zona pericolosa",
       "clearLibrary": "Rimuovi tutte le miniature, risorse indicizzate e percorsi di scansione",
-      "hint": "Le operazioni di eliminazione riguardano solo database/cache dell'app. Foto e video originali non vengono mai modificati o eliminati."
+      "hint": "Lo svuotamento della libreria rimuove indice, miniature e percorsi di scansione. I file multimediali originali restano invariati."
     },
     "duplicates": {
       "heading": "Gestore duplicati",

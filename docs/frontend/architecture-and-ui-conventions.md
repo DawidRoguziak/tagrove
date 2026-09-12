@@ -16,7 +16,7 @@ Feature behavior belongs in the narrower canonical guides:
 
 ## Bootstrap and shell composition
 
-The gallery header displays Tagrove with the Woven T SVG from `public/tagrove.svg`. The image supplies the accessible app name; the adjacent visible wordmark is hidden from assistive technology to avoid repeating it. The same SVG is the HTML favicon and the source for native PNG icons. See [branding assets](../development/setup-and-build.md#branding-assets) for regeneration and desktop metadata.
+The gallery header displays Tagrove with the Obsidian Grove SVG from `public/tagrove.svg`. The image supplies the accessible app name; the adjacent visible wordmark is hidden from assistive technology to avoid repeating it. The same SVG is the HTML favicon and the source for native PNG icons. See [branding assets](../development/setup-and-build.md#branding-assets) for regeneration and desktop metadata.
 
 [`src/main.tsx`](../../src/main.tsx) is the browser bootstrap. It imports i18n and global CSS before rendering, applies the stored light/dark theme before the first React render, optionally installs performance instrumentation when `VITE_MEDIATAGGER_PERF=1`, and mounts `<App />` inside `React.StrictMode`.
 
@@ -211,31 +211,32 @@ Both themes share geometry and typography. The palette is defined in `src/styles
 
 | Role | Light | Dark |
 | --- | --- | --- |
-| Workspace | `#F5F5F7` | `#101012` |
-| Toolbar and panels | `#FFFFFF` | `#19191B` |
-| Raised controls | `#EBEBED` | `#252528` |
-| Dividers | `#D9D9DE` | `#343438` |
-| Main text | `#1D1D1F` | `#F5F5F7` |
-| Secondary text | `#6E6E73` | `#ACACB2` |
-| Primary green | `#2D5A2D` | `#7CB87C` |
+| Workspace | `#F4F6F5` | `#141618` |
+| Toolbar and panels | `#FFFFFF` | `#202224` |
+| Raised controls | `#E8EEEB` | `#232528` |
+| Dividers | `#CCD7D0` | `#2C2E31` |
+| Main text | `#17241E` | `#F4F6F5` |
+| Secondary text | `#52635A` | `#A5B0AA` |
+| Primary green | `#087F5B` | `#10B981` |
 
-The root stays at 16px for Tailwind rem sizing; body copy is 14px, utility labels 12px,
-and page headings 20px. The system font stack prefers Apple system fonts, then Windows
-system fonts and Noto Sans on Linux. Paths and technical metadata use monospace.
-Control corners are 8px, surfaces 12px, and dialogs 16px. Standard buttons are 36px
-high and compact tools 32px. Controls use a subtle shadow; floating dialogs use the
-stronger modal shadow. Secondary text uses `--text-muted` instead of local opacity.
-Use main text on raised controls: the specified light secondary gray meets 4.5:1 on
-workspace and panels but falls below it on the raised surface.
+The root stays at 16px for Tailwind rem sizing; body copy is 13px, utility labels 12px,
+and headings 18/24px. Inter and JetBrains Mono are bundled under `public/fonts/` with
+SIL OFL licenses. Inter covers the interface; paths and metadata use JetBrains Mono.
+System fonts remain fallbacks for other scripts. Tile corners are 4px, controls 6px,
+and panels/dialogs 8px. Buttons are 32px high. Green text in the light theme uses
+`--color-primary-text: #076C4D` for 4.5:1 contrast on raised controls, while filled
+buttons retain the specified `#087F5B` accent and white text. Both themes use the same geometry.
 
-`TopBar` composes the identity, search field and Settings action in a 56px desktop row.
+`TopBar` composes the identity, search field and Settings action in a 52px desktop row.
 The second row targets 44px and contains media kind, favorites, tag browsing, the result
 count, bulk mode and thumbnail sizing. Media kind is a native radio group styled as a
-segmented selector, with localized All, Images, GIF and Video choices. Arrow keys change
+segmented selector, with localized All, Images, GIF and Video choices. The track uses a muted
+background and an inset border; the selected segment has a solid primary-green fill and
+primary-content text. Only unselected segments receive the raised hover background. Arrow keys change
 kind; the existing parent-commit search semantics are preserved. Both rows belong to a
 full-width, non-scrolling header and can grow when controls wrap, with search on its own
-row below 700px. The gallery scroll viewport fills the remaining height.
-The gallery retains square tiles and measured 10px gaps. Bulk selection uses a green
+row below 700px. The gallery scroll viewport fills the remaining height. Ctrl+K / Cmd+K focuses the existing search input without changing or applying its draft. An open modal or inert search field blocks the shortcut. The placeholder gives one valid query; the field tooltip separates further examples onto individual lines.
+The gallery retains square tiles and measured 12px gaps. Bulk selection uses a green
 outline plus a checkmark; neutral, opaque media-kind badges remain readable over thumbnails.
 Group backings retain their dedicated `--gallery-group-bg` and `--gallery-group-edge` tokens.
 
@@ -257,11 +258,11 @@ Bulk editing occupies a 360px inspector at window widths of at least 1000px, and
 the gallery below that width. The inspector sticks to the gallery viewport's top and scrolls independently on desktop, with its maximum height supplied by the surrounding CSS size container. Its tag
 suggestions use the existing viewport portal so inspector overflow cannot clip them.
 
-Full-page settings uses 200px navigation beside mounted sections at widths of at least
+Full-page settings uses 240px navigation beside mounted sections at widths of at least
 1000px, and wrapping navigation above the content below that width. Navigation focuses and
 scrolls to the corresponding section without changing the URL or unmounting operation UI.
 The active marker follows the scroll position; settings section choice is not persisted.
-Sections appear in scan, appearance, import/export, duplicates, and danger-zone order.
+Sections appear in scan, appearance, language, import/export, duplicates, and danger-zone order.
 Operations pair descriptions with actions in compact rows, stacking below 700px.
 Appearance uses native light/dark radio choices with decorative CSS previews. Only the
 selected choice is a Tab stop; arrow keys select the adjacent choice. The preference values,

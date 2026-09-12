@@ -29,7 +29,7 @@ export function TagListChipList({
         const tagClasses = [
           "inline-flex break-all items-center rounded-[var(--radius-control)] border px-3 py-1 text-xs font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/35",
           tagMode === "include"
-            ? "border-primary/45 bg-primary/12 text-primary hover:bg-primary/20"
+            ? "border-primary/45 bg-primary/12 text-primary-text hover:bg-primary/20"
             : tagMode === "exclude"
               ? "border-error/45 bg-error/12 text-error hover:border-error/60 hover:bg-error/18"
               : "border-base-content/12 bg-base-100 text-base-content hover:border-base-content/24 hover:bg-base-100/80"

@@ -738,7 +738,7 @@ export function useBulkSelectionController({
         }
       }
     },
-    [onTagMutation, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
+    [onTagMutation, assetTagState, refreshKnownTags, selectionIds, selectionKey]
   );
 
   const onRetryTagDetails = useCallback(() => {

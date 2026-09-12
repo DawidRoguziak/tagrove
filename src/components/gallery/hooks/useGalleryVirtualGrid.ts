@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AssetSummary } from "../../../types";
 
-const TILE_GAP = 10;
+const TILE_GAP = 12;
 const getRowKey = (index: number) => index;
 
 export interface GalleryRange {

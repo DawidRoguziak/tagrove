@@ -24,11 +24,15 @@ The runtime path is:
 3. It calls `getAssetDetails(asset.id)` and replaces the summary with `AssetDetails` if that request is still current. Until a complete tag list is available from details or the shared authoritative tag state, tag editing is disabled.
 4. `LightboxModal` delegates persistent edits back to `useSelectionState`; local hooks manage panels, confirmation, clipboard feedback, media transforms, fullscreen, and shortcuts. Detail-load failure and tag-save failure are displayed and retried independently.
 
-At widths of at least 768 px the modal initially shows the media stage beside the action sidebar. Below 768 px the sidebar starts as a closed right drawer. Both layouts allow the sidebar to slide off the right edge in 200 ms, with reduced motion respected. An explicit open/closed choice survives asset navigation and resizing until the lightbox closes; without a choice the default follows the breakpoint. Editors remain mounted while collapsed. The sidebar uses shrinkable grid tracks, wraps long tags, scrolls vertically, and keeps actions reachable. Shell height stays within the viewport. Desktop minimum window dimensions remain unchanged.
+At widths of at least 768 px the modal initially shows the media stage beside the action sidebar. Below 768 px the sidebar starts as a closed right drawer. Both layouts allow the sidebar to slide off the right edge in 200 ms, with reduced motion respected. The covered media header and action island are inert while the drawer is open. An explicit open/closed choice survives asset navigation and resizing until the lightbox closes; without a choice the default follows the breakpoint. Editors remain mounted while collapsed. The sidebar uses shrinkable grid tracks, wraps long tags, scrolls vertically, and keeps actions reachable. Shell height stays within the viewport. Desktop minimum window dimensions remain unchanged.
 
-A collapsed sidebar leaves one 44 px reopen button at the shell's top-right corner, inset 10 px from both edges. Mouse movement anywhere in the app reveals it, and three seconds of inactivity fades it without intercepting pointer input. Keyboard activity reveals it; keyboard focus and touch input keep it discoverable. Hidden panel content is inert and aria-hidden. Opening moves focus into the panel without scrolling the shell. Keyboard collapse returns focus to the trigger; mouse collapse focuses the viewer so the idle button can fade. Offscreen drawer transforms are clipped without creating a scrollable area. Delete confirmation and pending deletion prevent collapse. The confirmation remains inline at the bottom of the sidebar.
-
-`useLightboxSidebar` owns this session-scoped choice and retains occupied space through the closing transition. `useLightboxActivity` owns the cleaned-up activity listeners and idle timer. Selection-scoped info/confirmation state remains in `useLightboxModalHandlers`.
+A collapsed sidebar leaves a persistent reopen button in the media header, alongside the
+filename and explicit Close preview action. The header occupies its own row above native
+video bounds. The sidebar remains mounted, inert and aria-hidden while hidden. Opening
+moves focus into the panel after GTK acknowledges bounds that leave it clear. Keyboard
+collapse returns focus to the trigger. Delete confirmation and pending deletion prevent
+collapse. `useLightboxSidebar` retains occupied space through the closing transition;
+selection-scoped info and confirmation state remain in `useLightboxModalHandlers`.
 
 Group drafts live in `useMediaGroupDraft`. Selected-ID changes initialize fields; canonical arrivals update untouched fields and preserve dirty ones. `useSelectionNavigation` owns asynchronous global-index navigation, and `useSelectionMetadataActions` owns favorite/group writes and pending state. Busy mutation ownership rejects visibly through the existing failure UI rather than silently succeeding.
 
@@ -82,29 +86,42 @@ Delete runs under the scan/thumbnail lock. An existing source is journaled and s
 
 ## Visual treatment
 
-The media frame and inspector use the shared compact studio tokens in both themes. The
-inspector separates its filename header, editing sections and pinned action rail with thin
-rules. Tags are muted green chips; paths and metadata use monospace. Apply controls are
-32px high. This styling preserves the collapse/drawer state, viewport limits, idle reveal,
-focus restoration and native-surface coordination described below.
+The media frame and inspector use the Obsidian Grove tokens in both themes. The fixed
+340px inspector contains group editing, autosaved tags, expandable details and the inline
+delete confirmation. Paths and metadata use bundled JetBrains Mono. Only available
+size, dimension and duration values are shown.
 
-GTK playback controls remain dark over video in either application theme. Their buttons use
-4px corners and the same `#7CB87C` primary green for seek progress and focus. The contrast
-gradient, control bounds, native session logic and fullscreen behavior are unchanged.
+GTK playback controls remain dark in both themes. Their buttons use 6px corners and
+`#10B981` for seek progress and focus. Native session logic, gradient and control bounds
+are unchanged.
 
 ## Toolbar, sidebar, confirmation, and clipboard
 
-On a wide viewport the sidebar occupies `clamp(18rem, 22vw, 22rem)` and the media uses the remaining width. It contains the action buttons (favorite, group copy, reset zoom, info, image fullscreen, delete, close), tagging/media-group editing, and an inline file-information section. Navigation remains keyboard-driven; there are no pointer navigation buttons. The sidebar keeps a pinned header and one-row action rail while the middle area scrolls.
+The media column has three rows: filename/close header, viewport, and a centered action
+island below the viewport. Favorite, group copy, reset zoom, details, fullscreen and delete
+remain reachable with the inspector collapsed. The island wraps in narrow windows and
+stays outside native GTK video bounds. Reset is disabled for video. Both native video and
+image fullscreen use the existing fullscreen action. Image fullscreen retains the chrome;
+native fullscreen hides it and preserves the prior sidebar choice when returning.
 
-The information section is toggleable and collapsed by default; its info button carries `aria-expanded`. The media-group editor follows it, with tagging directly below. Tag suggestions open below the input through a viewport-positioned portal, so sidebar overflow cannot clip them.
+Details starts collapsed. Its action opens a closed panel with details expanded, or toggles
+details in an already open panel. Group editing precedes tagging and details. Suggestions
+use the existing viewport portal. Navigation remains keyboard-driven across global results.
 
-Below 768 px the drawer starts closed. A compact header above the media opens it or closes the lightbox; keeping these controls outside the media bounds makes them visible above the native GTK video surface. The drawer has a maximum width of 22 rem; its scrim and Escape close only the drawer, then return focus to its trigger. Changing the selected asset or entering fullscreen closes it. While delete confirmation is open, its Escape and submitting guards take priority over drawer dismissal.
+Below 768px the sidebar starts as a closed drawer, with width `min(340px, 100%)`. Scrim
+and Escape close the drawer first. The covered media header and action island are inert while the drawer is open. An explicit open/closed choice survives asset navigation
+and resizing until the lightbox closes. Native fullscreen temporarily hides the drawer;
+it does not discard that choice. Editors stay mounted while collapsed.
 
-Info and tagging are inline sections in the sidebar rather than popovers. There are no mutually exclusive popovers and no outside-pointer-dismiss behavior; selecting a new asset resets the delete-confirmation and submission state. The shell's click handler stops propagation so ordinary interaction does not close the backdrop.
+Group copy requires a nonempty trimmed editor key and clipboard availability. Success
+shows confirmation for 1,600ms; selection/key changes, failure and unmount reset it.
 
-Group copy is enabled only when the trimmed editor key is non-empty and `navigator.clipboard.writeText` exists. Success swaps the copy icon to a confirmed state for 1,600 ms. Selection changes, key edits, failures, and unmount clear confirmation or its timer.
-
-Delete renders inline in the sidebar, not as a nested modal. Opening it clears its text and focuses the confirmation input on the next animation frame. Confirm is enabled only when trimmed input equals the localized confirmation word, case-insensitively. Submission is guarded against duplicates; close/cancel and both buttons are blocked while it is pending. While the confirmation is open the lightbox shortcut listener is disabled and Escape closes only the confirmation (restoring focus to the delete button), never the lightbox. A committed delete closes the selection; missing/cleanup outcomes are announced first. A rejected pre-commit delete keeps the confirmation open with an alert, and post-commit refresh failures are only best-effort follow-up failures.
+Delete opens the panel and its existing inline confirmation. The input receives focus only
+after the panel becomes available, including GTK bounds acknowledgement. Cancel clears
+confirmation and restores focus to the bottom delete button on desktop or the drawer collapse control on narrow windows. The localized confirmation
+word, duplicate-submit guard, locked pending state and error handling remain unchanged.
+Escape dismisses confirmation before the drawer or lightbox. A committed delete closes
+the selection; a rejected pre-commit delete retains the confirmation and error.
 
 ## Opening and closing presence
 
@@ -134,7 +151,7 @@ sidebar state. After the exit, the retained content unmounts and its references 
 Image and GIF source paths pass through `toMediaSrc`.
 
 - `image` and `gif` use the same non-draggable `<img>` stage. GIF animation is browser-native, and both kinds receive the image fit, zoom, and pan behavior.
-- On a wide viewport the media stage occupies only the left shell column. `measureNativeVideoBounds` therefore reports a rect inside that column, so the native GTK surface cannot cover the sidebar's DOM controls. Opening the narrow drawer hides the video stage; its resize observer publishes zero bounds, which hides the native GTK surface until the drawer finishes closing. A windowed collapsed video reserves a 54 px right-edge area outside native bounds for the reopen button; its fade does not resize the video. Sidebar opening waits for acknowledged native bounds that leave the panel clear. Native GTK pointer motion is observed in capture phase without consuming input and forwards session-scoped `pointerActivity` events, throttled to at most ten per second, to the same frontend idle timer. `useNativeVideoSession` reserves an open request before resolving an authorized video by asset ID, accepts events for its returned session, publishes measured bounds, and cancels pending opens and closes playback on unmount. React renders a plain container and no `<video>` or hidden control rail. Resize work keeps one outstanding request and only the latest pending measurement. Labels update through a separate command without restarting playback.
+- On a wide viewport the media stage occupies only the left shell column. `measureNativeVideoBounds` therefore reports a rect inside that column, so the native GTK surface cannot cover the sidebar's DOM controls. Opening the narrow drawer hides the video stage; its resize observer publishes zero bounds, which hides the native GTK surface until the drawer finishes closing. The windowed header and action island occupy rows above and below native bounds, including when the sidebar is collapsed. Sidebar opening waits for acknowledged native bounds that leave the panel clear. Native GTK pointer motion is observed in capture phase without consuming input and forwards session-scoped `pointerActivity` events, throttled to at most ten per second, to the same frontend idle timer. `useNativeVideoSession` reserves an open request before resolving an authorized video by asset ID, accepts events for its returned session, publishes measured bounds, and cancels pending opens and closes playback on unmount. React renders a plain container and no `<video>` or hidden control rail. Resize work keeps one outstanding request and only the latest pending measurement. Labels update through a separate command without restarting playback.
 - The backend validates the SQLite row, video kind, canonical regular file, assigned roots, and symlink containment before passing the canonical path to libmpv. One process-wide player uses `vo=libmpv`, `hwdec=auto-safe`, and infinite looping. Each video autoplays from the beginning; volume, mute, and speed survive navigation until app exit. Startup defaults are volume 100, unmuted, and speed 1. GTK positions an input-pass-through `GLArea` above the WebView. The controls are a direct `GtkOverlay` child sized only to the bottom 88 px of the video rectangle, clamped to the video height for shorter surfaces, so they accept input without blocking the rest of the WebView. Both rows overlay the picture in windowed and fullscreen modes. A full-width seek bar sits above a button row with play/pause, mute, a 0–100% volume slider, and elapsed / duration time on the left, then flexible space before playback-rate and fullscreen controls on the right. Raising the volume unmutes playback; mute preserves the selected level. Unmuting at zero restores 100%. The volume slider supports pointer dragging and keyboard increments, and snapshot updates do not move its thumb during a drag. The fitted dimensions describe the complete decoded-video footprint; no separate DOM control rail is reserved below it. The controls use a transparent-to-dark gradient only for contrast rather than a bordered panel. The non-fullscreen video dialog keeps at least 20 px from every window edge, and its shell owns the only visible border, radius, and shadow. GTK receives authoritative playback snapshots from the same session as React. A single worker executes libmpv commands and consumes events. Initial pause/load commands are submitted asynchronously through the session event client; completion errors are consumed there, so initialization does not make synchronous libmpv calls while holding the mutex shared with GTK. The worker blocks on its command channel when there is no session. GTK rendering wakes from the existing bounded callback channel rather than a permanent 8 ms timer; the controls timer is suspended without an active surface. Replacing a file stops the previous decoder and retires its event client before creating the next client. Paused, seeking, and buffering are independent properties. GTK callbacks enqueue commands without blocking the render thread. Seeking stays disabled until duration is known, and progress updates do not move the thumb during a drag. This avoids relying on WebKitGTK alpha compositing, which cannot reliably place DOM controls over a sibling native widget. The render context must be ready before libmpv receives `loadfile`.
 - libmpv metadata events supply duration and intrinsic dimensions. Before that, selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`. Native control labels follow the active i18next language. Picture-in-picture and remote playback are unavailable.
 

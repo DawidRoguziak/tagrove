@@ -50,6 +50,18 @@ export function SearchTagatorWrapper({
   const submitAfterFavoritesChangeRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    const focusSearch = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k" || event.isComposing) return;
+      const input = searchInputRef.current;
+      if (!input || input.closest("[inert]") || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      event.preventDefault();
+      input.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", focusSearch);
+    return () => window.removeEventListener("keydown", focusSearch);
+  }, []);
+
   const validationMessage = useMemo(() => {
     if (!validationError) {
       return null;
@@ -87,18 +99,20 @@ export function SearchTagatorWrapper({
     <>
       <div data-tauri-drag-region="deep" className="workspace-search window-drag-surface">
         {identity}
-        <div data-tauri-drag-region="false" className="workspace-search-field flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--surface-muted)] px-2 focus-within:border-primary">
+        <div data-tauri-drag-region="false" title={"cat vacation -dog\ntags\ntags:3\ngN:Trip 2026"} className="workspace-search-field flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--surface-muted)] px-2 focus-within:border-primary">
           <UiIcon name="search" className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
           <div className="min-w-0 flex-1"><SearchTagator
             inputRef={searchInputRef}
+            ariaKeyShortcuts="Control+k Meta+k"
             value={filterInput}
             onValueChange={onFilterChange}
             knownTags={knownTags}
             onSubmit={onSearchSubmit}
             placeholder={t("search.placeholder")}
             listboxAriaLabel={t("search.tagSuggestions")}
-            inputClassName="filter-input h-9 w-full border-0 bg-transparent px-1 py-2 text-base-content shadow-none focus-visible:shadow-none"
+            inputClassName="filter-input font-mono h-8 w-full border-0 bg-transparent px-1 py-2 text-base-content shadow-none focus-visible:shadow-none"
           /></div>
+          <kbd className="search-shortcut" aria-hidden="true">{navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K"}</kbd>
           <UiIconButton icon="reset" className="h-8! min-h-8! w-8! border-transparent! bg-transparent!"
             onClick={handleClearAll} aria-label={t("search.clearFilters")} title={t("search.clear")} />
           <UiButton variant="primary" className="h-7! min-h-7! text-xs" onClick={onSearchSubmit}>

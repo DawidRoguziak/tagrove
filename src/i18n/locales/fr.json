@@ -57,7 +57,7 @@
     "loadMore": "Charger plus"
   },
   "search": {
-    "placeholder": "Tags : chat vacances -chien | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "Tags : chat vacances -chien",
     "tagSuggestions": "Suggestions de tags",
     "mediaKind": "Type de média",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "Importer les tags CSV",
       "exportDbBundle": "Exporter DB + miniatures",
       "importDbBundle": "Importer DB + miniatures",
-      "hint": "L’import CSV fusionne les tags et le statut favori et applique la clé/ordre de groupe média en faisant correspondre les noms de fichiers. L’import de base de données remplace la base actuelle et les miniatures.",
+      "hint": "Le CSV ajoute des tags et applique les favoris et les groupes à tous les fichiers indexés de même nom, sans tenir compte de la casse. Un favori vide conserve sa valeur ; un champ de groupe vide l’efface. L’import de base remplace la base et les miniatures.",
       "csvDescription": "Transférez les tags avec des fichiers CSV.",
       "bundleDescription": "Enregistrez ou restaurez la bibliothèque et ses miniatures."
     },
     "danger": {
       "heading": "Zone dangereuse",
       "clearLibrary": "Supprimer toutes les miniatures, éléments indexés et chemins d’analyse",
-      "hint": "Les opérations de suppression affectent uniquement la base/cache de l’application. Les photos et vidéos originales ne sont jamais modifiées ni supprimées."
+      "hint": "Le nettoyage de la bibliothèque supprime son index, ses miniatures et ses chemins de scan. Les fichiers multimédias originaux restent inchangés."
     },
     "duplicates": {
       "heading": "Gestionnaire de doublons",

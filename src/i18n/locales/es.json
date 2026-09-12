@@ -57,7 +57,7 @@
     "loadMore": "Cargar más"
   },
   "search": {
-    "placeholder": "Etiquetas: gato vacaciones -perro | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "Etiquetas: gato vacaciones -perro",
     "tagSuggestions": "Sugerencias de etiquetas",
     "mediaKind": "Tipo de medio",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "Importar CSV de etiquetas",
       "exportDbBundle": "Exportar BD + miniaturas",
       "importDbBundle": "Importar BD + miniaturas",
-      "hint": "La importación de CSV fusiona etiquetas y la marca de favorito, y aplica la clave/orden del grupo multimedia haciendo coincidir los nombres de archivo. La importación de base de datos reemplaza la base de datos actual y las miniaturas.",
+      "hint": "El CSV añade etiquetas y aplica favoritos y grupos a todos los archivos indexados con el mismo nombre, sin distinguir mayúsculas. Un campo favorito vacío conserva su valor; los campos de grupo vacíos lo borran. La importación de base de datos reemplaza la base y las miniaturas.",
       "csvDescription": "Transfiere etiquetas con archivos CSV.",
       "bundleDescription": "Guarda o restaura la biblioteca y sus miniaturas."
     },
     "danger": {
       "heading": "Zona de peligro",
       "clearLibrary": "Eliminar todas las miniaturas, recursos indexados y rutas de escaneo",
-      "hint": "Las operaciones de eliminación solo afectan a la base de datos/caché de la app. Las fotos y vídeos originales nunca se editan ni se eliminan."
+      "hint": "Vaciar la biblioteca elimina su índice, miniaturas y rutas de escaneo. Los archivos multimedia originales no se modifican."
     },
     "duplicates": {
       "heading": "Gestor de duplicados",

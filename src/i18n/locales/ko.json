@@ -57,7 +57,7 @@
     "loadMore": "더 불러오기"
   },
   "search": {
-    "placeholder": "태그: cat vacation -dog | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "태그: cat vacation -dog",
     "tagSuggestions": "태그 제안",
     "mediaKind": "미디어 종류",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "태그 CSV 가져오기",
       "exportDbBundle": "DB + 썸네일 내보내기",
       "importDbBundle": "DB + 썸네일 가져오기",
-      "hint": "CSV 가져오기는 태그와 즐겨찾기 플래그를 병합하고, 파일 이름 일치로 미디어 그룹 키/순서를 적용합니다. 데이터베이스 가져오기는 현재 데이터베이스와 썸네일을 대체합니다.",
+      "hint": "CSV는 대소문자를 구분하지 않고 이름이 같은 모든 색인 파일에 태그를 추가하고 즐겨찾기와 그룹 값을 적용합니다. 즐겨찾기 필드가 비어 있으면 현재 값을 유지하고, 그룹 필드가 비어 있으면 값을 지웁니다. 데이터베이스 가져오기는 데이터베이스와 썸네일을 교체합니다.",
       "csvDescription": "CSV 파일로 태그를 옮깁니다.",
       "bundleDescription": "라이브러리와 썸네일을 저장하거나 복원합니다."
     },
     "danger": {
       "heading": "위험 구역",
       "clearLibrary": "모든 썸네일, 인덱싱된 자산 및 스캔 경로 제거",
-      "hint": "삭제 작업은 앱 데이터베이스/캐시에만 영향을 줍니다. 원본 사진과 동영상은 절대 편집되거나 삭제되지 않습니다."
+      "hint": "라이브러리를 비우면 색인, 썸네일, 스캔 경로가 삭제됩니다. 원본 미디어 파일은 변경되지 않습니다."
     },
     "duplicates": {
       "heading": "중복 관리자",

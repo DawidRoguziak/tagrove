@@ -6,20 +6,15 @@ import { MediaGroupSetter } from "./MediaGroupSetter";
 import type { SelectedAsset } from "../../types";
 import { useEffect, useRef, type RefObject } from "react";
 
-const DELETE_BUTTON_ID = "lightbox-delete-button";
 export const SIDEBAR_CLOSE_BUTTON_ID = "lightbox-sidebar-close-button";
 
 interface LightboxToolbarProps {
   selected: SelectedAsset;
   mediaGroupKeyEditor: string;
   mediaGroupOrderEditor: string;
-  groupCopyConfirmed: boolean;
-  canCopyMediaGroup: boolean;
-  copyMediaGroupTitle: string;
   isNarrow: boolean;
   sidebarOpen: boolean;
   sidebarVisible: boolean;
-  isFullscreen: boolean;
   selectedTags: string[];
   tagDraft: string;
   knownTags: string[];
@@ -40,14 +35,7 @@ interface LightboxToolbarProps {
   infoPanelOpen: boolean;
   onToggleInfo: () => void;
   onCloseSidebar: (restoreFocus: boolean) => void;
-  favoritePending?: boolean;
   groupPending?: boolean;
-  onToggleFavorite: () => void;
-  onCopyMediaGroup: () => void;
-  onResetZoom: () => void;
-  onToggleFullscreen: () => void;
-  onOpenDeleteConfirm: () => void;
-  onCloseLightbox: () => void;
   deleteConfirmOpen: boolean;
   deleteSubmitting: boolean;
   deleteError?: string | null;
@@ -60,13 +48,9 @@ export function LightboxToolbar({
   selected,
   mediaGroupKeyEditor,
   mediaGroupOrderEditor,
-  groupCopyConfirmed,
-  canCopyMediaGroup,
-  copyMediaGroupTitle,
   isNarrow,
   sidebarOpen,
   sidebarVisible,
-  isFullscreen,
   selectedTags,
   tagDraft,
   knownTags,
@@ -87,14 +71,7 @@ export function LightboxToolbar({
   infoPanelOpen,
   onToggleInfo,
   onCloseSidebar,
-  favoritePending = false,
   groupPending = false,
-  onToggleFavorite,
-  onCopyMediaGroup,
-  onResetZoom,
-  onToggleFullscreen,
-  onOpenDeleteConfirm,
-  onCloseLightbox,
   deleteConfirmOpen,
   deleteSubmitting,
   deleteError = null,
@@ -115,7 +92,7 @@ export function LightboxToolbar({
       className={[
         "grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden border-l border-[var(--border-soft)] bg-[var(--surface-solid)] p-4",
         "absolute inset-y-0 right-0 z-[8] transition-transform duration-200 motion-reduce:transition-none",
-        isNarrow ? "w-[min(22rem,100%)]" : "w-[clamp(18rem,22vw,22rem)]",
+        isNarrow ? "w-[min(340px,100%)]" : "w-[340px]",
         sidebarVisible ? "translate-x-0" : "pointer-events-none translate-x-full"
       ].join(" ")}
       data-lightbox-toolbar={selected.kind}
@@ -139,15 +116,7 @@ export function LightboxToolbar({
             disabled={deleteConfirmOpen}
             onClick={(event) => onCloseSidebar(event.detail === 0)}
           />
-          <UiIconButton
-            icon="close"
-            iconClassName="h-3.5 w-3.5 shrink-0"
-            className="h-8! w-8! min-h-8!"
-            aria-label={t("lightbox.closePreview")}
-            title={t("common.close")}
-            disabled={deleteSubmitting}
-            onClick={onCloseLightbox}
-          />
+
         </div>
       </header>
 
@@ -155,7 +124,6 @@ export function LightboxToolbar({
         className="panel-scroll flex min-h-0 min-w-0 flex-col gap-4 overflow-x-hidden overflow-y-auto pr-2"
         data-testid="lightbox-sidebar-upper"
       >
-        {infoPanelOpen ? <LightboxInfoPanel selected={selected} /> : null}
 
         <section
           aria-label={t("lightbox.mediaGroup")}
@@ -189,75 +157,19 @@ export function LightboxToolbar({
           onRetryTags={onRetryTags}
           onRetryTagDetails={onRetryTagDetails}
         />
+        <button type="button" className="flex items-center justify-between border-t border-[var(--border-soft)] py-3 text-xs text-[var(--text-muted)]" aria-expanded={infoPanelOpen} onClick={onToggleInfo}>
+          {t("lightbox.infoHeading")} <span aria-hidden="true">{infoPanelOpen ? "−" : "+"}</span>
+        </button>
+        {infoPanelOpen ? <LightboxInfoPanel selected={selected} /> : null}
       </div>
 
       <div className={`grid max-h-[calc(100dvh-100px)] min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 ${deleteConfirmOpen ? "panel-scroll overflow-y-auto" : "overflow-visible"}`}>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(36px,1fr))] items-center gap-1 border-t border-[var(--border-soft)] pt-3" data-testid="lightbox-action-rail">
-          <UiIconButton
-            icon="heart"
-            iconClassName="h-4 w-4 shrink-0"
-            className="h-8! w-8! min-h-8! justify-self-center"
-            active={selected.is_favorite}
-            aria-label={selected.is_favorite ? t("lightbox.favorite.remove") : t("lightbox.favorite.add")}
-            title={selected.is_favorite ? t("lightbox.favorite.on") : t("lightbox.favorite.off")}
-            onClick={onToggleFavorite}
-            disabled={favoritePending}
-            aria-busy={favoritePending}
-          />
-          <UiIconButton
-            icon={groupCopyConfirmed ? "check-square" : "copy"}
-            iconClassName="h-4 w-4 shrink-0"
-            className="h-8! w-8! min-h-8! justify-self-center"
-            active={groupCopyConfirmed}
-            disabled={!canCopyMediaGroup}
-            aria-label={copyMediaGroupTitle}
-            title={copyMediaGroupTitle}
-            onClick={onCopyMediaGroup}
-          />
-          <UiIconButton
-            icon="reset"
-            iconClassName="h-4 w-4 shrink-0"
-            className="h-8! w-8! min-h-8! justify-self-center"
-            disabled={selected.kind === "video"}
-            aria-label={t("lightbox.resetZoom")}
-            title={t("lightbox.reset")}
-            onClick={onResetZoom}
-          />
-          <UiIconButton
-            icon="info"
-            iconClassName="h-4 w-4 shrink-0"
-            className="h-8! w-8! min-h-8! justify-self-center"
-            active={infoPanelOpen}
-            aria-expanded={infoPanelOpen}
-            aria-label={t("lightbox.showInfo")}
-            title={infoPanelOpen ? t("lightbox.hideInfo") : t("lightbox.showInfo")}
-            onClick={onToggleInfo}
-          />
-          {selected.kind === "video" ? null : (
-            <UiIconButton
-              icon="fullscreen"
-              iconClassName="h-4 w-4 shrink-0"
-              className="h-8! w-8! min-h-8! justify-self-center"
-              active={isFullscreen}
-              aria-label={t("lightbox.toggleFullscreen")}
-              title={isFullscreen ? t("lightbox.exitFullscreen") : t("lightbox.fullscreen")}
-              onClick={onToggleFullscreen}
-            />
-          )}
-          <UiIconButton
-            id={DELETE_BUTTON_ID}
-            icon="trash"
-            iconClassName="h-4 w-4 shrink-0"
-            className="h-8! w-8! min-h-8! justify-self-center"
-            danger
-            aria-label={t("lightbox.deleteMedia")}
-            title={t("lightbox.deleteMedia")}
-            onClick={onOpenDeleteConfirm}
-          />
-        </div>
+
 
         <LightboxDeleteConfirmDialog
           open={deleteConfirmOpen}
+          focusReady={sidebarVisible}
+          restoreFocusId={isNarrow ? SIDEBAR_CLOSE_BUTTON_ID : "lightbox-delete-button"}
           isSubmitting={deleteSubmitting}
           errorMessage={deleteError}
           onClose={onDeleteConfirmClose}

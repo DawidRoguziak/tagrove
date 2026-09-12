@@ -59,7 +59,9 @@ See [release preparation and verification](linux-packaging.md) for publishing id
 
 ### Branding assets
 
-[`public/tagrove.svg`](../../public/tagrove.svg) is the Woven T master used by the header and HTML favicon. It recreates the selected proposal with flat `#2D5A2D` and `#7CB87C` fills and transparent gaps. Run `bun run icons:generate` after editing it to regenerate the 16, 32, 64, 128, 256, and 512px RGBA PNGs under `src-tauri/icons/`. Tauri embeds the configured native icons, and packages retain those icons. The launcher source is [`src-tauri/linux/com.example.mediatagger.desktop`](../../src-tauri/linux/com.example.mediatagger.desktop). Linux is the supported packaging target; ICO and ICNS assets are not generated.
+[`public/tagrove.svg`](../../public/tagrove.svg) is the Obsidian Grove master used by the header and HTML favicon. It traces the three tag shapes and central triangle from `docs/frontend/new_logo.png`, with an emerald gradient, transparent holes and no glow or background. The cropped square viewBox keeps the mark readable at small sizes. Run `bun run icons:generate` after editing it to regenerate the 16, 32, 64, 128, 256, and 512px RGBA PNGs under `src-tauri/icons/`. Tauri embeds the configured native icons, and packages retain those icons. The launcher source is [`src-tauri/linux/com.example.mediatagger.desktop`](../../src-tauri/linux/com.example.mediatagger.desktop). Linux is the supported packaging target; ICO and ICNS assets are not generated.
+
+Local Inter and JetBrains Mono variable fonts, including SIL OFL licenses, are in `public/fonts/`. They are copied into the application bundle by Vite; rendering does not contact a font CDN. The source is the `ofl/inter` and `ofl/jetbrainsmono` directories in the Google Fonts repository.
 
 ## Install dependencies
 
@@ -91,7 +93,7 @@ Build and development entry points are listed below. [Testing and quality comman
 | --- | --- |
 | `bun run dev` | Starts only the Vite development server. It does not compile or launch the Rust/Tauri application. |
 | `bun run build` | Runs both no-emit TypeScript checks, including Vite/Vitest configuration, then `vite build`. |
-| `bun run icons:generate` | Rasterizes the Woven T SVG master into the checked-in native PNG icon sizes using the local Tauri CLI. |
+| `bun run icons:generate` | Rasterizes the Obsidian Grove SVG master into the checked-in native PNG icon sizes using the local Tauri CLI. |
 | `bun run preview` | Serves an existing Vite production build for browser inspection. It does not build first and does not launch Tauri. |
 | `bun run tauri:dev` | Runs `tauri dev --config src-tauri/tauri.conf.dev.json`. This is the canonical desktop development command and selects the isolated development identifier and title. Tauri starts `bun run dev` through `beforeDevCommand`. |
 | `bun run tauri:build:release` | Runs `tauri build` for the supported Linux target. The Docker release command below is preferred for artifact production. |

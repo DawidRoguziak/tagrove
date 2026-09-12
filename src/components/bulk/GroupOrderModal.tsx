@@ -68,9 +68,10 @@ export function GroupOrderModal({
     () => new Map(controller.selectedAssets.map((asset) => [asset.id, asset])),
     [controller.selectedAssets]
   );
-  const columns = Math.max(1, Math.floor((width + 12) / 232));
+  const columns = Math.max(1, Math.floor((width + 12) / 292));
   const tileWidth = Math.max(1, (width - (columns - 1) * 12) / columns);
-  const rowHeight = tileWidth + 48;
+  const previewHeight = Math.round(tileWidth * 0.66);
+  const rowHeight = previewHeight + 56;
   const virtualizer = useVirtualizer({
     count: Math.ceil(order.length / columns),
     getScrollElement: () => scrollRef.current,
@@ -334,7 +335,7 @@ export function GroupOrderModal({
                     }}
                     className={`touch-none select-none overflow-hidden rounded-[var(--radius-control)] border border-base-content/15 bg-base-200 ${locked ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${draggedId === id ? "opacity-50" : ""}`}
                   >
-                    <div className="relative" style={{ height: tileWidth - 2 }}>
+                    <div className="relative" style={{ height: previewHeight }}>
                       <ThumbnailSubscription
                         id={id}
                         path={thumbs[id]}
@@ -342,8 +343,8 @@ export function GroupOrderModal({
                         fit="contain"
                       />
                     </div>
-                    <div className="flex h-9 items-center gap-2 px-2">
-                      <span className="text-xs font-semibold tabular-nums text-primary">
+                    <div className="flex h-11 items-center gap-2 border-t border-[var(--border-soft)] px-3 font-mono">
+                      <span className="text-xs font-semibold tabular-nums text-primary-text">
                         {index + 1}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-xs" title={asset.file_name}>
@@ -424,7 +425,7 @@ export function GroupOrderModal({
       <span className="sr-only" aria-live="polite">
         {announcement}
       </span>
-      <footer className="grid shrink-0 gap-3">
+      <footer className="grid shrink-0 gap-3 border-t border-[var(--border-soft)] pt-4">
         {result?.status === "failed" || result?.status === "ignored" ? (
           <UiAlert tone="error" title={t("bulk.panel.saveFailedTitle")}>
             {t("bulk.panel.groupSaveFailed")}

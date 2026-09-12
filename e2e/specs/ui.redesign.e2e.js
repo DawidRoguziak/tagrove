@@ -105,10 +105,10 @@ suite("UI redesign desktop review", function () {
         await galleryReady();
         assert.equal(await browser.execute(() => document.documentElement.scrollWidth <= innerWidth), true);
         const primary = await browser.execute(() => getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim());
-        assert.equal(primary.toLowerCase(), theme === 'dark' ? '#7cb87c' : '#2d5a2d');
+        assert.equal(primary.toLowerCase(), theme === 'dark' ? '#10b981' : '#087f5b');
         const colors = await browser.execute(() => {
           const style = getComputedStyle(document.documentElement);
-          return Object.fromEntries(['--color-base-100', '--color-base-200', '--color-base-300', '--color-base-content', '--text-muted', '--color-primary', '--color-primary-content'].map(key => [key, style.getPropertyValue(key).trim()]));
+          return Object.fromEntries(['--color-base-100', '--color-base-200', '--color-base-300', '--color-base-content', '--text-muted', '--color-primary', '--color-primary-text', '--color-primary-content'].map(key => [key, style.getPropertyValue(key).trim()]));
         });
         const luminance = hex => {
           const value = hex.replace('#', '');
@@ -118,7 +118,7 @@ suite("UI redesign desktop review", function () {
         };
         const contrast = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
         for (const surface of ['--color-base-100', '--color-base-200', '--color-base-300']) {
-          for (const text of ['--color-base-content', '--color-primary', ...(surface === '--color-base-300' ? [] : ['--text-muted'])]) {
+          for (const text of ['--color-base-content', '--color-primary-text', ...(surface === '--color-base-300' ? [] : ['--text-muted'])]) {
             assert.ok(contrast(colors[text], colors[surface]) >= 4.5, `${text} on ${surface} must meet 4.5:1`);
           }
         }
@@ -135,6 +135,11 @@ suite("UI redesign desktop review", function () {
           const input = document.querySelector('#gallery-media-kind input:checked');
           return document.activeElement === input && getComputedStyle(input.nextElementSibling).outlineStyle === 'solid';
         }), true, 'The selected segment has a visible keyboard focus ring');
+        const fonts = await browser.executeAsync((done) => {
+          Promise.all([document.fonts.load('13px Inter'), document.fonts.load('12px "JetBrains Mono"')])
+            .then(loaded => done(loaded.every(faces => faces.length > 0)));
+        });
+        assert.equal(fonts, true, 'Both bundled fonts load in the desktop WebView');
         await capture(`${theme}-${width}-gallery`);
 
         await $('.filter-input').setValue('arch');
@@ -169,6 +174,14 @@ suite("UI redesign desktop review", function () {
         await click(`button[data-asset-id="${imageId}"]`);
         await $('#lightbox-tag-draft-input').waitForEnabled();
         await click('button[aria-label="Show info"]');
+        const layout = await browser.execute(() => {
+          const stage = document.querySelector('[data-lightbox-media-stage]').getBoundingClientRect();
+          const rail = document.querySelector('[data-testid="lightbox-action-rail"]').getBoundingClientRect();
+          const panel = document.querySelector('[data-lightbox-toolbar]').getBoundingClientRect();
+          return { stageBottom: stage.bottom, railTop: rail.top, panelWidth: panel.width };
+        });
+        assert.ok(layout.railTop >= layout.stageBottom);
+        assert.equal(layout.panelWidth, 340);
         await capture(`${theme}-${width}-lightbox`);
         await click('#lightbox-delete-button');
         await $('#lightbox-delete-confirm-input').waitForDisplayed();
@@ -219,8 +232,10 @@ suite("UI redesign desktop review", function () {
             && panel.scrollWidth <= panel.clientWidth + 1 && rail.bottom <= rect.bottom;
         }));
         await capture(`${theme}-${width}-drawer`);
+        await click('button[aria-label="Close asset panel"]');
         await click('#lightbox-delete-button');
         await $('#lightbox-delete-confirm-input').waitForDisplayed();
+        assert.equal(await $('#lightbox-delete-confirm-input').isFocused(), true);
         await capture(`${theme}-${width}-drawer-confirmation`);
         await browser.keys('Escape');
         await $('#lightbox-delete-confirm-input').waitForExist({ reverse: true });
@@ -232,23 +247,57 @@ suite("UI redesign desktop review", function () {
       await browser.setWindowSize(1440, 900);
     });
   }
-  it('fits Polish settings and stacks the bulk inspector below 1000px', async () => {
-    await browser.setWindowSize(1000, 720);
+  it('focuses a search draft with Ctrl+K in gallery and bulk, while modals retain focus', async () => {
+    await browser.setWindowSize(1440, 900);
     await browser.refresh();
-    await click('#open-settings-button');
-    await $('#settings-language-select').selectByAttribute('value', 'pl');
-    await browser.waitUntil(async () => (await $('html').getAttribute('lang')) === 'pl');
-    await capture('pl-1000-settings');
-    await click('button[aria-label="Wstecz"]');
     await galleryReady();
-    await capture('pl-1000-gallery');
+    for (const bulk of [false, true]) {
+      if (bulk) await click('button[aria-label="Enable bulk actions"]');
+      await $('.filter-input').click();
+      await browser.keys(['Control', 'a']);
+      await browser.keys('absent-shortcut-draft');
+      await click('.workspace-identity');
+      await browser.keys(['Control', 'k']);
+      assert.equal(await $('.filter-input').isFocused(), true);
+      assert.equal(await $('.filter-input').getValue(), 'absent-shortcut-draft');
+      assert.ok((await $$('button[data-asset-id]')).length > 0, 'Focusing does not submit the draft');
+    }
+    await click('button[aria-label="Disable bulk actions"]');
     await click(`button[data-asset-id="${imageId}"]`);
     await $('#lightbox-tag-draft-input').waitForEnabled();
-    await capture('pl-1000-lightbox');
-    await browser.keys('Escape');
-    await click('#open-settings-button');
-    await $('#settings-language-select').selectByAttribute('value', 'en');
-    await click('button[aria-label="Back"]');
+    await $('#lightbox-tag-draft-input').click();
+    await browser.keys(['Control', 'k']);
+    assert.equal(await $('#lightbox-tag-draft-input').isFocused(), true);
+    await closeLightbox();
+    await click('button[aria-label="Clear all search filters"]');
+  });
+
+  it('fits Polish settings and stacks the bulk inspector below 1000px', async () => {
+    for (const theme of ['dark', 'light']) {
+      for (const [width, height] of [[1440, 900], [1000, 720]]) {
+        await browser.setWindowSize(width, height);
+        await browser.refresh();
+        await click('#open-settings-button');
+        await $(`.theme-choice:has(input[value="${theme}"])`).click();
+        await $('.settings-nav a[href="#settings-language"]').click();
+        await $('#settings-language-select').scrollIntoView({ block: 'center' });
+        await $('#settings-language-select').selectByAttribute('value', 'pl');
+        await browser.waitUntil(async () => (await $('html').getAttribute('lang')) === 'pl');
+        await capture(`pl-${theme}-${width}-settings`);
+        await click('button[aria-label="Wstecz"]');
+        await galleryReady();
+        await capture(`pl-${theme}-${width}-gallery`);
+        await click(`button[data-asset-id="${imageId}"]`);
+        await $('#lightbox-tag-draft-input').waitForEnabled();
+        await capture(`pl-${theme}-${width}-lightbox`);
+        await browser.keys('Escape');
+        await click('#open-settings-button');
+        await $('.settings-nav a[href="#settings-language"]').click();
+        await $('#settings-language-select').scrollIntoView({ block: 'center' });
+        await $('#settings-language-select').selectByAttribute('value', 'en');
+        await click('button[aria-label="Back"]');
+      }
+    }
     await browser.setWindowSize(900, 720);
     await click('button[aria-label="Enable bulk actions"]');
     await $('[data-testid="bulk-action-panel"]').waitForExist();
@@ -272,6 +321,21 @@ suite("UI redesign desktop review", function () {
     await click('button[data-asset-index="0"]');
     await $('[data-lightbox-video-player]').waitForDisplayed();
     await capture('native-video-controls');
+    await click('button[aria-label="Close asset panel"]');
+    await click('button[aria-label="Show info"]');
+    await $('#lightbox-sidebar').waitForDisplayed();
+    await browser.waitUntil(() => browser.execute(() => {
+      const video = document.querySelector('[data-lightbox-video-player]').getBoundingClientRect();
+      const panel = document.querySelector('[data-lightbox-toolbar]').getBoundingClientRect();
+      return video.right <= panel.left + 1;
+    }));
+    await click('button[aria-label="Close asset panel"]');
+    await click('#lightbox-delete-button');
+    await browser.waitUntil(async () => await $('#lightbox-delete-confirm-input').isFocused());
+    await capture('native-video-delete-focus');
+    await browser.keys('Escape');
+    await $('#lightbox-delete-confirm-input').waitForExist({ reverse: true });
+    assert.equal(await $('#lightbox-delete-button').isFocused(), true);
     await browser.keys('Escape');
     await $('[data-lightbox-kind]').waitForExist({ reverse: true });
 

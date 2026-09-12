@@ -59,7 +59,7 @@ function mountGrid(count = 10_000, externalScroller = true) {
   scroller.append(gallery);
   gallery.append(grid);
   document.body.append(scroller);
-  let width = 980;
+  let width = 988;
   Object.defineProperties(scroller, {
     offsetWidth: { get: () => width },
     offsetHeight: { value: 600 },
@@ -117,7 +117,7 @@ describe("gallery row virtualization with the real TanStack virtualizer", () => 
     expect(result.current.virtualItems.length).toBeGreaterThan(0);
     expect(result.current.virtualItems.length).toBeLessThan(70);
     act(() => {
-      scroller.scrollTop = 20_000;
+      scroller.scrollTop = 20_080;
       scroller.dispatchEvent(new Event("scroll"));
     });
     expect(result.current.virtualItems[0].index).toBeGreaterThan(450);
@@ -126,7 +126,7 @@ describe("gallery row virtualization with the real TanStack virtualizer", () => 
 
   it.each([false, true])("bounds every mount and Settings-return commit and page demand (Strict Mode: %s)", async (strict) => {
     const count = 26_000;
-    let width = 980;
+    let width = 988;
     // jsdom has no layout. The gallery grows with its spacer, while its parent
     // remains a 600px viewport. These getters run before React attaches refs.
     const contentHeight = (element: HTMLElement) =>
@@ -230,17 +230,17 @@ describe("gallery row virtualization with the real TanStack virtualizer", () => 
       if (typeof options === "object") scroller.scrollTop = options.top ?? 0;
     });
     act(() => {
-      scroller.scrollTop = 80 + 198 * 100;
+      scroller.scrollTop = 80 + 200 * 100;
       scroller.dispatchEvent(new Event("scroll"));
     });
     assertBounded();
     expect(ranges[ranges.length - 1]?.visibleStartIndex).toBe(500);
     expect(apiMocks.getAssetQueryPage.mock.calls.map(([, offset]) => offset)).toEqual([384, 512]);
-    width = 584;
+    width = 588;
     act(() => { for (const callback of resizeCallbacks) callback([]); });
     act(() => { scroller.dispatchEvent(new Event("scroll")); });
     assertBounded();
-    expect(scroller.scrollTop).toBe(80 + 166 * 198);
+    expect(scroller.scrollTop).toBe(80 + 166 * 200);
     expect(mounted.container.querySelector('[data-slot="500"]')).not.toBeNull();
     // A narrower grid briefly reports the old scroll offset before anchoring.
     expect(apiMocks.getAssetQueryPage.mock.calls.map(([, offset]) => offset)).toEqual([384, 512, 256]);
@@ -251,11 +251,11 @@ describe("gallery row virtualization with the real TanStack virtualizer", () => 
   it("does not rebuild all measurements on scroll, page arrival, or status renders", () => {
     const { result, rerender, options, scroller } = mountGrid();
     expect(result.current.columnCount).toBe(5);
-    expect(result.current.totalSize).toBe(2000 * 198 - 10);
+    expect(result.current.totalSize).toBe(2000 * 200 - 12);
     expect(result.current.virtualItems.length).toBeLessThan(70);
     measurements.calls = 0;
     act(() => {
-      scroller.scrollTop = 20_000;
+      scroller.scrollTop = 20_080;
       scroller.dispatchEvent(new Event("scroll"));
     });
     rerender({ ...options, getAssetAt: vi.fn(() => undefined) });
@@ -270,10 +270,10 @@ describe("gallery row virtualization with the real TanStack virtualizer", () => 
   it("keeps the first visible asset in view when columns change", () => {
     const { result, scroller, setWidth } = mountGrid();
     act(() => {
-      scroller.scrollTop = 80 + 198 * 10;
+      scroller.scrollTop = 80 + 200 * 10;
       scroller.dispatchEvent(new Event("scroll"));
     });
-    setWidth(584);
+    setWidth(588);
     act(() => {
       for (const callback of resizeCallbacks) callback([]);
     });
@@ -281,7 +281,7 @@ describe("gallery row virtualization with the real TanStack virtualizer", () => 
       scroller.dispatchEvent(new Event("scroll"));
     });
     expect(result.current.columnCount).toBe(3);
-    expect(scroller.scrollTop).toBe(80 + 16 * 198);
+    expect(scroller.scrollTop).toBe(80 + 16 * 200);
     expect(result.current.virtualItems.some((item) => item.index === 50)).toBe(true);
   });
 
@@ -289,8 +289,8 @@ describe("gallery row virtualization with the real TanStack virtualizer", () => 
     const { result, options } = mountGrid(7);
     expect(result.current.virtualItems.map((item) => item.index)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(result.current.virtualItems[0].start).toBe(0);
-    expect(result.current.virtualItems[5]).toMatchObject({ lane: 0, start: 198 });
-    expect(result.current.totalSize).toBe(386);
+    expect(result.current.virtualItems[5]).toMatchObject({ lane: 0, start: 200 });
+    expect(result.current.totalSize).toBe(388);
     expect(options.onVirtualRangeChange).toHaveBeenLastCalledWith({
       startIndex: 0,
       endIndex: 6,

@@ -172,7 +172,7 @@ suite("gallery additive clicks and rectangle selection", function () {
     await $('button[aria-label="Disable bulk actions"]').click();
   });
   it("preserves selection on empty-space clicks and starts rectangles below a short gallery", async () => {
-    await $("select").selectByAttribute("value", "gif");
+    await $('#gallery-media-kind label:has(input[value="gif"])').click();
     await $('button=Search').click();
     await browser.waitUntil(() => browser.execute(() => document.querySelectorAll('button[data-asset-index]').length === 1));
     await $('button[aria-label="Enable bulk actions"]').click();

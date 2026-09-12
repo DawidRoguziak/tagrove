@@ -18,11 +18,11 @@ export function LightboxInfoPanel({ selected }: LightboxInfoPanelProps) {
       <h3 className="m-0 text-xs">{t("lightbox.infoHeading")}</h3>
       <div className="grid gap-2 font-mono text-xs">
         <span><strong className="font-semibold text-base-content">{t("lightbox.type")}:</strong> {selected.kind}</span>
-        <span><strong className="font-semibold text-base-content">{t("lightbox.size")}:</strong> {selected.size_bytes === null ? "-" : formatBytes(selected.size_bytes)}</span>
-        <span>
-          <strong className="font-semibold text-base-content">{t("lightbox.dimensions")}:</strong> {selected.width ?? "-"} x {selected.height ?? "-"}
-        </span>
-        <span><strong className="font-semibold text-base-content">{t("lightbox.duration")}:</strong> {formatDuration(selected.duration_ms)}</span>
+        {selected.size_bytes !== null ? <span><strong className="font-semibold text-base-content">{t("lightbox.size")}:</strong> {formatBytes(selected.size_bytes)}</span> : null}
+        {selected.width !== null && selected.height !== null ? <span>
+          <strong className="font-semibold text-base-content">{t("lightbox.dimensions")}:</strong> {selected.width} x {selected.height}
+        </span> : null}
+        {selected.duration_ms !== null ? <span><strong className="font-semibold text-base-content">{t("lightbox.duration")}:</strong> {formatDuration(selected.duration_ms)}</span> : null}
         <span className="break-all text-xs leading-relaxed text-[var(--text-muted)]">{t("lightbox.path")}: {selected.path ?? selected.file_name}</span>
       </div>
     </aside>

@@ -155,7 +155,7 @@ Revision behavior for tag, favorite, and group writes is defined in [database pe
 ## Known limitations
 
 - SQL tag-list search interpolates the user's `%` and `_` characters into a `LIKE` pattern without an escape clause, so they act as SQLite wildcards rather than literal characters. Backend ordering and the locale-sensitive fallback ordering can also differ.
-- There is no quoted-tag grammar. Whitespace and CSV delimiters are rejected rather than represented inside one tag.
+- Quoted literals protect reserved-looking tag names and leading minus signs. They do not permit whitespace or CSV delimiters inside stored tags.
 - Tag-list selection is always a new expression. Opening it does not show or preserve the current include/exclude choices, and applying it discards any existing normal or meta-filter search text. Its 220 ms timer is mouse-oriented; selection does not expose an equivalent explicit include/exclude keyboard command beyond activating the tag buttons.
 - Selected IDs and selection metadata survive page eviction and filter changes. A new query invalidates the Shift anchor rather than guessing its new position. Group submission waits for all required summaries; tag and favorite targets remain the complete selected-ID set.
 - Ordinary clicks and Ctrl/Cmd-clicks toggle individual IDs. Rectangle selection replaces the set unless Ctrl/Cmd was held when it began.
@@ -170,7 +170,7 @@ Revision behavior for tag, favorite, and group writes is defined in [database pe
 
 1. Keep the parser, validation messages, autocomplete meta-token suppression, TypeScript filter union, Rust `AssetMetaFilterInput`, and SQL semantics synchronized. Update the [IPC contract](../architecture/ipc-contract.md) for any boundary change.
 2. Preserve the draft/applied split. Test initial refresh, changed filters, exact-repeat refresh, invalid-submit non-refresh, clear-at-default refresh, media/favorite immediate apply, and semantically equal spellings.
-3. If tag syntax gains quoting or escaping, define one tokenizer for parsing, caret replacement, used-tag detection, tag-list serialization, and tag editors. Add round trips for whitespace, leading `-`, reserved prefixes, `%`, `_`, `|`, Unicode case, and duplicate tags.
+3. When changing quoting or escaping, retain one tokenizer for parsing, caret replacement, used-tag detection, tag-list serialization, and tag editors. Preserve rejection of whitespace and add round trips for leading `-`, reserved prefixes, `%`, `_`, `|`, Unicode case, and duplicate tags.
 4. Keep autocomplete limits, Fuse options, caret restoration, negative-prefix preservation, keyboard wrapping, blur/escape behavior, and the different auto-select policies explicit and covered by tests.
 5. Preserve complete known-tag pagination in backend-sized pages and its request-generation guard. Test more than 200 tags, request races, query changes, failed later pages, duplicate page boundaries, and fallback ordering.
 6. Preserve the tag-list single/double-click arbiter when changing event handling. Test a pending click followed by Apply, different-tag clicks within 220 ms, every include/exclude transition, close/unmount cleanup, and deterministic full search replacement.

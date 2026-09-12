@@ -87,7 +87,7 @@ export const GalleryTile = memo(function GalleryTile({
 
   return (
     <button
-      className={`absolute z-[1] overflow-hidden rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-base-300/95 p-0 ${
+      className={`absolute z-[1] overflow-hidden rounded-[var(--radius-tile)] border border-[var(--border-soft)] bg-base-300/95 p-0 ${
         isBulkSelected
           ? "shadow-[0_0_0_2px_var(--color-primary),var(--shadow-tile-hover)]"
           : isLightboxSelected
@@ -111,16 +111,16 @@ export const GalleryTile = memo(function GalleryTile({
         showRenderLoader={effectiveRenderLoader}
       />
       {isGrouped ? <span className="sr-only">{groupedDescription}</span> : null}
-      <span className="gallery-selection-mark pointer-events-none absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-[var(--radius-control)] bg-primary text-primary-content" style={{ opacity: isBulkSelected ? 1 : 0 }} aria-hidden="true">
+      <span className="gallery-selection-mark pointer-events-none absolute left-2 top-2 grid h-5 w-5 place-items-center rounded-[var(--radius-tile)] bg-primary text-primary-content" style={{ opacity: isBulkSelected ? 1 : 0 }} aria-hidden="true">
         <UiIcon name="check-square" className="h-4 w-4" />
       </span>
       {asset.kind === "video" ? (
-        <UiChip className="pointer-events-none absolute right-2 top-2 shadow-[var(--shadow-chip)]" tone="video">
+        <UiChip className="pointer-events-none absolute right-2 bottom-2 shadow-[var(--shadow-chip)]" tone="video">
           {videoChipLabel}
         </UiChip>
       ) : null}
       {asset.kind === "gif" ? (
-        <UiChip className="pointer-events-none absolute right-2 top-2 shadow-[var(--shadow-chip)]" tone="gif">
+        <UiChip className="pointer-events-none absolute right-2 bottom-2 shadow-[var(--shadow-chip)]" tone="gif">
           {gifChipLabel}
         </UiChip>
       ) : null}

@@ -57,7 +57,7 @@
     "loadMore": "Načíst více"
   },
   "search": {
-    "placeholder": "Tagy: kočka dovolená -pes | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "Tagy: kočka dovolená -pes",
     "tagSuggestions": "Návrhy tagů",
     "mediaKind": "Typ média",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "Importovat CSV s tagy",
       "exportDbBundle": "Exportovat DB + náhledy",
       "importDbBundle": "Importovat DB + náhledy",
-      "hint": "Import CSV sloučí tagy a příznak oblíbených a aplikuje klíč/pořadí skupiny médií podle názvů souborů. Import databáze nahradí aktuální databázi a náhledy.",
+      "hint": "CSV přidává štítky a nastavuje oblíbené a skupiny u všech indexovaných souborů stejného názvu bez ohledu na velikost písmen. Prázdné pole oblíbených zachová hodnotu; prázdná pole skupiny ji vymažou. Import databáze nahradí databázi a náhledy.",
       "csvDescription": "Přenášejte štítky pomocí souborů CSV.",
       "bundleDescription": "Uložte nebo obnovte knihovnu a její náhledy."
     },
     "danger": {
       "heading": "Nebezpečná zóna",
       "clearLibrary": "Odstranit všechny náhledy, indexovaná média a cesty skenování",
-      "hint": "Operace mazání ovlivňují pouze databázi/cache aplikace. Původní fotografie a videa nejsou nikdy upravovány ani mazány."
+      "hint": "Vymazání knihovny odstraní index, náhledy a cesty skenování. Původní mediální soubory zůstanou beze změny."
     },
     "duplicates": {
       "heading": "Správce duplicit",

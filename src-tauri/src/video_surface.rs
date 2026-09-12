@@ -85,7 +85,7 @@ const NATIVE_CONTROLS_CSS: &[u8] = br#"
   min-height: 34px;
   padding: 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   color: #edf0f2;
   background: transparent;
   box-shadow: none;
@@ -96,7 +96,7 @@ const NATIVE_CONTROLS_CSS: &[u8] = br#"
 }
 .media-tagger-video-controls button:focus,
 .media-tagger-video-controls menubutton > button:focus {
-  box-shadow: inset 0 0 0 2px #7cb87c;
+  box-shadow: inset 0 0 0 2px #10b981;
 }
 .media-tagger-video-time {
   font-family: monospace;
@@ -112,7 +112,7 @@ const NATIVE_CONTROLS_CSS: &[u8] = br#"
 .media-tagger-video-seek highlight {
   border: 0;
   border-radius: 2px;
-  background: #7cb87c;
+  background: #10b981;
 }
 .media-tagger-video-seek slider {
   min-width: 13px;

@@ -57,7 +57,7 @@
     "loadMore": "Wczytaj wiecej"
   },
   "search": {
-    "placeholder": "Tagi: kot wakacje -pies | tags | tags:3 | gN:Trip 2026",
+    "placeholder": "Tagi: kot wakacje -pies",
     "tagSuggestions": "Podpowiedzi tagow",
     "mediaKind": "Typ mediow",
     "mediaKinds": {
@@ -303,14 +303,14 @@
       "importCsv": "Importuj tagi CSV",
       "exportDbBundle": "Eksportuj DB + miniaturki",
       "importDbBundle": "Importuj DB + miniaturki",
-      "hint": "Import CSV laczy tagi i flage ulubionych oraz stosuje klucz/kolejnosc grupy mediow po nazwie pliku. Import bazy podmienia obecna baze i miniaturki.",
+      "hint": "CSV dodaje tagi i ustawia ulubione oraz grupy we wszystkich zaindeksowanych plikach o tej samej nazwie, bez rozróżniania wielkości liter. Puste pole ulubionych zachowuje wartość; puste pola grupy ją usuwają. Import bazy zastępuje bazę i miniaturki.",
       "csvDescription": "Przenoś tagi za pomocą plików CSV.",
       "bundleDescription": "Zapisz lub przywróć bibliotekę i jej miniatury."
     },
     "danger": {
       "heading": "Strefa ryzyka",
       "clearLibrary": "Usun wszystkie miniaturki, zindeksowane zasoby i sciezki skanowania",
-      "hint": "Operacje usuwania dotycza tylko bazy/cache aplikacji. Oryginalne zdjecia i filmy nigdy nie sa modyfikowane ani usuwane."
+      "hint": "Czyszczenie biblioteki usuwa indeks, miniaturki i ścieżki skanowania. Oryginalne pliki mediów pozostają bez zmian."
     },
     "duplicates": {
       "heading": "Menedzer duplikatow",

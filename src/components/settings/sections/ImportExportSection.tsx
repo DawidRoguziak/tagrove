@@ -24,7 +24,7 @@ export function ImportExportSection({
 
   return (
     <section className="grid min-h-full gap-4 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)]">
-      <h3 className="m-0 text-base">{t("settings.importExport.heading")}</h3>
+      <h3 className="m-0 text-lg">{t("settings.importExport.heading")}</h3>
       <div className="settings-operation">
         <p>{t("settings.importExport.csvDescription")}</p>
         <div className="settings-operation-actions">

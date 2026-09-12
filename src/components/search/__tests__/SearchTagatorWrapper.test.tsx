@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SearchTagatorWrapper } from "../SearchTagatorWrapper";
@@ -42,6 +42,29 @@ describe("SearchTagatorWrapper", () => {
   afterEach(() => {
     cleanup();
     mockedSearchTagator.mockClear();
+  });
+
+  it.each(["ctrlKey", "metaKey"] as const)("focuses the preserved draft with %s+K without submitting, and respects modals", (modifier) => {
+    const onSearchSubmit = vi.fn();
+    const onFilterChange = vi.fn();
+    render(<SearchTagatorWrapper filterInput="cat -dog" onFilterChange={onFilterChange}
+      knownTags={[]} mediaKind="all" onMediaKindChange={vi.fn()} onSearchSubmit={onSearchSubmit}
+      onClearAll={vi.fn()} favoritesOnly={false} onFavoritesOnlyChange={vi.fn()} />);
+    const input = screen.getByRole("textbox", { name: "Mock search input" });
+    fireEvent.keyDown(window, { key: "k", [modifier]: true });
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("cat -dog");
+    expect(onSearchSubmit).not.toHaveBeenCalled();
+    expect(onFilterChange).not.toHaveBeenCalled();
+    const modal = document.createElement("div");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.tabIndex = -1;
+    document.body.append(modal);
+    modal.focus();
+    fireEvent.keyDown(window, { key: "k", [modifier]: true });
+    expect(modal).toHaveFocus();
+    modal.remove();
   });
 
   it("changes media kind and submits after parent applies new media kind", async () => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useModalPresence, useModalSnapshot } from "../UI/useModalPresence";
 import { createPortal } from "react-dom";
 import type { SelectedAsset } from "../../types";
+import { LightboxActionRail } from "./LightboxActionRail";
 import { LightboxMediaStage } from "./LightboxMediaStage";
 import { LightboxToolbar, SIDEBAR_CLOSE_BUTTON_ID } from "./LightboxToolbar";
 import { useLightboxModalHandlers } from "./hooks/useLightboxModalHandlers";
@@ -177,7 +178,7 @@ function LightboxContent({
     if (wasOpen === null || wasOpen === sidebarVisible) return;
     const frame = window.requestAnimationFrame(() => {
       if (sidebarVisible) {
-        document.getElementById(SIDEBAR_CLOSE_BUTTON_ID)?.focus({ preventScroll: true });
+        document.getElementById(handlers.deleteConfirmOpen ? "lightbox-delete-confirm-input" : SIDEBAR_CLOSE_BUTTON_ID)?.focus({ preventScroll: true });
       } else if (wasOpen && !sidebarOpen) {
         const target = restoreTriggerFocusRef.current
           ? document.getElementById(SIDEBAR_TRIGGER_BUTTON_ID)
@@ -187,7 +188,7 @@ function LightboxContent({
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, sidebarVisible, sidebarOpen, activity.reveal, mediaControls.lightboxShellRef]);
+  }, [active, sidebarVisible, sidebarOpen, handlers.deleteConfirmOpen, activity.reveal, mediaControls.lightboxShellRef]);
 
   const handleNativeBounds = useCallback((bounds: VideoBounds) => {
     const viewport = mediaControls.mediaViewportRef.current?.getBoundingClientRect();
@@ -267,32 +268,35 @@ function LightboxContent({
             className={[
               "lightbox-layout relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)]",
               videoFullscreen ? "grid-cols-[minmax(0,1fr)]" : !isNarrow && sidebarOccupied
-                ? "grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,22rem)]"
-                : isVideo ? "grid-cols-[minmax(0,1fr)_54px]" : "grid-cols-[minmax(0,1fr)]"
+                ? "grid-cols-[minmax(0,1fr)_340px]"
+                : "grid-cols-[minmax(0,1fr)]"
             ].join(" ")}
           >
-            {!videoFullscreen && !sidebarOpen ? (
-              <div className="pointer-events-none absolute right-[10px] top-[10px] z-[9]">
-                <UiIconButton
-                  id={SIDEBAR_TRIGGER_BUTTON_ID}
-                  icon="arrow-left"
-                  iconClassName="h-4 w-4 shrink-0"
-                  className={`lightbox-panel-trigger pointer-events-auto h-[44px]! w-[44px]! min-h-[44px]! ${activity.visible ? "" : "lightbox-panel-trigger--idle"}`}
-                  aria-label={t("lightbox.openPanel")}
-                  title={t("lightbox.openPanel")}
-                  aria-expanded={false}
-                  aria-controls="lightbox-sidebar"
-                  onClick={openSidebar}
-                />
-              </div>
-            ) : null}
 
             <div
+              {...(!videoFullscreen && isNarrow && sidebarOpen ? { inert: "" } : {})}
+              aria-hidden={!videoFullscreen && isNarrow && sidebarOpen || undefined}
               className={[
-                "relative h-full min-h-0 min-w-0 overflow-hidden",
+                "lightbox-media-column relative grid h-full min-h-0 min-w-0 overflow-hidden",
+                videoFullscreen ? "grid-rows-[minmax(0,1fr)]" : "grid-rows-[auto_minmax(0,1fr)_auto]",
                 hideNativeVideoForSidebar ? "hidden" : ""
               ].join(" ")}
             >
+              {!videoFullscreen ? (
+                <header className="lightbox-media-header">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs" title={selected.file_name}>{selected.file_name}</span>
+                  {!sidebarOpen ? <UiIconButton
+                    id={SIDEBAR_TRIGGER_BUTTON_ID}
+                    icon="arrow-left"
+                    aria-label={t("lightbox.openPanel")}
+                    title={t("lightbox.openPanel")}
+                    aria-expanded={false}
+                    aria-controls="lightbox-sidebar"
+                    onClick={openSidebar}
+                  /> : null}
+                  <UiIconButton icon="close" aria-label={t("lightbox.closePreview")} title={t("common.close")} disabled={handlers.deleteSubmitting} onClick={handlers.handleCloseLightbox} />
+                </header>
+              ) : null}
               {favoriteFailed || externalFavoriteFailed || handlers.mediaGroupFailed || groupFailed ? (
                 <div className="absolute left-3 top-3 z-[5] grid max-w-[min(28rem,calc(100%-6rem))] gap-2">
                   {favoriteFailed || externalFavoriteFailed ? (
@@ -350,6 +354,36 @@ function LightboxContent({
                 onImagePointerMove={mediaControls.handleImagePointerMove}
                 onImagePointerEnd={mediaControls.handleImagePointerEnd}
               />
+              {!videoFullscreen ? <LightboxActionRail
+              groupCopyConfirmed={groupCopyConfirmed}
+              canCopyMediaGroup={clipboard.canCopyMediaGroup}
+              copyMediaGroupTitle={copyMediaGroupTitle}
+              isFullscreen={mediaControls.isFullscreen}
+              favoritePending={favoritePending}
+              onToggleFavorite={() => {
+                const requestedAssetId = selectedId;
+                setFavoriteFailed(false);
+                void Promise.resolve(onToggleFavorite()).catch(() => {
+                  if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
+                });
+              }}
+              onCopyMediaGroup={() => { void clipboard.copyMediaGroup(); }}
+              onResetZoom={mediaControls.resetZoom}
+              onToggleFullscreen={() => { void mediaControls.toggleFullscreen(); }}
+              onOpenDeleteConfirm={() => {
+                openSidebar();
+                handlers.handleOpenDeleteConfirm();
+              }}
+              selected={selected}
+              infoPanelOpen={handlers.infoPanelOpen}
+              onToggleInfo={() => {
+                if (!sidebarOpen) {
+                  openSidebar();
+                  if (!handlers.infoPanelOpen) handlers.handleToggleInfoPanel();
+                } else handlers.handleToggleInfoPanel();
+              }}
+              t={t}
+              /> : null}
             </div>
 
             {!videoFullscreen && isNarrow && sidebarOpen ? (
@@ -369,13 +403,9 @@ function LightboxContent({
               selected={selected}
               mediaGroupKeyEditor={mediaGroupKeyEditor}
               mediaGroupOrderEditor={mediaGroupOrderEditor}
-              groupCopyConfirmed={groupCopyConfirmed}
-              canCopyMediaGroup={clipboard.canCopyMediaGroup}
-              copyMediaGroupTitle={copyMediaGroupTitle}
               isNarrow={isNarrow}
               sidebarOpen={sidebarOpen}
               sidebarVisible={sidebarVisible}
-              isFullscreen={mediaControls.isFullscreen}
               selectedTags={tagging.selectedTags}
               tagDraft={tagging.tagDraft}
               knownTags={tagging.availableKnownTags}
@@ -396,24 +426,7 @@ function LightboxContent({
               infoPanelOpen={handlers.infoPanelOpen}
               onToggleInfo={handlers.handleToggleInfoPanel}
               onCloseSidebar={closeSidebar}
-              favoritePending={favoritePending}
               groupPending={groupPending}
-              onToggleFavorite={() => {
-                const requestedAssetId = selectedId;
-                setFavoriteFailed(false);
-                void Promise.resolve(onToggleFavorite()).catch(() => {
-                  if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
-                });
-              }}
-              onCopyMediaGroup={() => {
-                void clipboard.copyMediaGroup();
-              }}
-              onResetZoom={mediaControls.resetZoom}
-              onToggleFullscreen={() => {
-                void mediaControls.toggleFullscreen();
-              }}
-              onOpenDeleteConfirm={handlers.handleOpenDeleteConfirm}
-              onCloseLightbox={handlers.handleCloseLightbox}
               deleteConfirmOpen={handlers.deleteConfirmOpen}
               deleteSubmitting={handlers.deleteSubmitting}
               deleteError={handlers.deleteError}

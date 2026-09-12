@@ -20,6 +20,7 @@ const TilePreview = memo(function TilePreview({
   return (
     <>
       <ThumbnailImage
+        fadeIn
         className="block h-full w-full object-cover"
         src={src}
         alt={asset.preview_path ?? asset.file_name}

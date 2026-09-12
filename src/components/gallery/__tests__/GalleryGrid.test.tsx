@@ -209,6 +209,7 @@ describe("GalleryGrid", () => {
     const preview = getByAltText("a.jpg");
     expect(preview).toHaveAttribute("src", "media://C:/thumbs/a.jpg");
     expect(preview).not.toHaveAttribute("loading");
+    expect(preview).toHaveClass("thumbnail-fade-in");
   });
 
   it("shows a transparent fallback when a thumbnail fails to load", () => {

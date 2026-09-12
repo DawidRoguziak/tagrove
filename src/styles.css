@@ -308,11 +308,17 @@
 .gallery-selection-mark {
   transition: opacity var(--motion-feedback) var(--motion-ease);
 }
+.thumbnail-fade-in { opacity: 0; }
+.thumbnail-fade-in-ready {
+  opacity: 1;
+  animation: motion-fade-in 300ms ease-in-out;
+}
 
 @media (prefers-reduced-motion: reduce) {
   /* Keep loading spinners/pulses running, and state changes immediate. */
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
   .motion-enter, .bulk-inspector > header, .bulk-inspector > section { animation: none; }
+  .thumbnail-fade-in-ready { animation: none; }
 }
 
 /* Native radios retain arrow-key navigation and one Tab stop per group. */

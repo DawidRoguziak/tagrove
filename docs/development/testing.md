@@ -255,6 +255,26 @@ Frame samples and failure screenshots stay in a timestamped `artifacts/animation
 directory. The component tests cover focus trapping, inertness, Escape and restoration;
 they cannot prove desktop scroll geometry.
 
+### Gallery thumbnail fade
+
+`e2e/specs/thumbnail-fade.e2e.js` is opt-in with `MEDIATAGGER_THUMBNAIL_FADE=1`.
+It creates 192 temporary colorful PNGs and samples image opacity on rendering frames
+during rapid tag-filter changes and native wheel scrolling in both themes. It checks
+the 300 ms ease-in-out fade, full opacity on tile backgrounds and the gallery container,
+and unchanged loaded images staying visible. Screenshots and samples remain under
+`artifacts/thumbnail-fade/`.
+
+Run on a private X11 display with temporary XDG directories, using the GTK and GSettings
+setup in [animation geometry](#animation-geometry). Run again with animations disabled
+and `MEDIATAGGER_REDUCED_MOTION=1` to check the real reduced-motion preference.
+
+```sh
+MEDIATAGGER_THUMBNAIL_FADE=1 bun run test:e2e:tauri --spec e2e/specs/thumbnail-fade.e2e.js
+```
+
+`ThumbnailImage.test.tsx` covers delayed/cached/failed loads, transparent placeholders,
+source replacement, unchanged-source rerenders, and the default without fading.
+
 ### Gallery selection gestures
 
 `e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages and eviction; normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.

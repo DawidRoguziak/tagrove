@@ -15,6 +15,7 @@
   font-display: swap;
 }
 @theme {
+  --color-favorite: #c64b57;
   --color-primary-text: #076c4d;
   --font-mono: "JetBrains Mono", "Noto Sans Mono", monospace;
   --text-sm: 13px;
@@ -30,6 +31,7 @@
   default: false;
   prefersdark: false;
   color-scheme: light;
+  --color-favorite: #c64b57;
   --color-primary: #087f5b;
   --color-primary-text: #076c4d;
   --color-primary-content: #ffffff;
@@ -67,6 +69,7 @@
   default: true;
   prefersdark: true;
   color-scheme: dark;
+  --color-favorite: #d95d67;
   --color-primary: #10b981;
   --color-primary-text: #10b981;
   --color-primary-content: #06251b;

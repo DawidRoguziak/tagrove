@@ -20,7 +20,11 @@ export function UiIconButton({
 }: UiIconButtonProps) {
   const classes = [
     "h-9 w-9 min-h-9 shrink-0 p-0",
-    active && !danger ? "border-primary/40! bg-primary/12! text-primary-text!" : "",
+    active && !danger
+      ? icon === "heart"
+        ? "border-favorite/40! bg-favorite/12! text-favorite!"
+        : "border-primary/40! bg-primary/12! text-primary-text!"
+      : "",
     className
   ].filter(Boolean).join(" ");
 

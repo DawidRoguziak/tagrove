@@ -218,6 +218,12 @@ Both themes share geometry and typography. The palette is defined in `src/styles
 | Main text | `#17241E` | `#F4F6F5` |
 | Secondary text | `#52635A` | `#A5B0AA` |
 | Primary green | `#087F5B` | `#10B981` |
+| Favorite heart | `#C64B57` | `#D95D67` |
+
+`UiIconButton` uses `--color-favorite` for active hearts in the favorites filter,
+bulk favorites, and lightbox favorite control. The filled heart uses the solid color,
+with a 12% background tint and a 40% border. Other active icons keep their primary
+color treatment. Disabled opacity and keyboard focus follow the shared button styles.
 
 The root stays at 16px for Tailwind rem sizing; body copy is 13px, utility labels 12px,
 and headings 18/24px. Inter and JetBrains Mono are bundled under `public/fonts/` with

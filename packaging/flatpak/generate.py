@@ -85,13 +85,14 @@ def validate_publisher(publisher, publication=False):
         raise ValueError("Publication requires a non-placeholder appId")
     if app_id.rsplit(".", 1)[1].lower() in ("desktop", "app", "linux"):
         raise ValueError("Publication appId must not end in a generic platform term")
-    for key in ("repository", "releaseUrl", "releaseRef", "releaseDate", "developerId", "developerName"):
-        if not publisher.get(key):
-            raise ValueError(f"Publication requires {key}")
+    missing = [key for key in ("repository", "releaseUrl", "releaseRef", "releaseDate", "developerId", "developerName")
+               if not publisher.get(key)]
     if not re.fullmatch(r"[0-9a-f]{64}", publisher.get("releaseSha256") or ""):
-        raise ValueError("Publication requires a pinned releaseSha256")
+        missing.append("releaseSha256 (pinned SHA-256)")
     if not publisher.get("screenshots"):
-        raise ValueError("Publication requires public screenshot URLs")
+        missing.append("screenshots (public URLs)")
+    if missing:
+        raise ValueError("Publication requires: " + ", ".join(missing))
     for url in [publisher["repository"], publisher["releaseUrl"], *publisher["screenshots"]]:
         parsed = urlparse(url)
         if (parsed.scheme != "https" or not parsed.hostname or parsed.username
@@ -112,7 +113,10 @@ def validate_publisher(publisher, publication=False):
             product = re.sub(r"^_(?=[0-9])", "", components[-1])
             expected = "/" + "/".join([*namespace, product])
             repository = urlparse(publisher["repository"])
-            if repository.hostname != host or repository.path.rstrip("/").removesuffix(".git") != expected:
+            actual = repository.path.rstrip("/").removesuffix(".git")
+            if host == "github.com":
+                actual, expected = actual.casefold(), expected.casefold()
+            if repository.hostname != host or actual != expected:
                 raise ValueError(f"Code-hosting appId requires repository https://{host}{expected}")
     release_names = [publisher["releaseRef"] + suffix for suffix in ("", ".tar.gz", ".tar.xz", ".tgz")]
     if not any(part in release_names for part in unquote(urlparse(publisher["releaseUrl"]).path).split("/")):
@@ -150,8 +154,16 @@ def metadata(root, publisher):
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(component, encoding="unicode") + "\n"
 
 
-def generate(root, publisher, publication=False):
+def build_publisher(root, publisher, publication=False):
     validate_publisher(publisher, publication)
+    if publication:
+        return dict(publisher)
+    local_id = json.loads((root / "src-tauri/tauri.conf.json").read_text())["identifier"]
+    return dict(publisher, appId=local_id)
+
+
+def generate(root, publisher, publication=False):
+    publisher = build_publisher(root, publisher, publication)
     tools = json.loads((root / "packaging/linux/toolchains.json").read_text())
     tool_sources = [dict(type="archive", dest=f"toolchain-{name}", **source)
                     for name, source in tools.items()]
@@ -211,4 +223,4 @@ if __name__ == "__main__":
     manifest = generate(args.root, publisher, args.publication)
     args.output.write_text(json.dumps(manifest, indent=4) + "\n")
     if args.metadata_output:
-        args.metadata_output.write_text(metadata(args.root, publisher))
+        args.metadata_output.write_text(metadata(args.root, build_publisher(args.root, publisher, args.publication)))

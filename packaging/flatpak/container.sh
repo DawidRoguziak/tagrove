@@ -21,7 +21,14 @@ case "$1" in
     flatpak build-import-bundle /work/validation-repo /out/*.flatpak
     ostree --repo=/work/validation-repo fsck
     cp manifest.json /out/flatpak-manifest.json
-    cp source/packaging/flatpak/publisher.json /out/publisher.json
+    python3 - <<'PYTHON'
+import json
+from pathlib import Path
+manifest = json.loads(Path("manifest.json").read_text())
+publisher = next(source["contents"] for source in manifest["modules"][-1]["sources"]
+                 if source.get("dest-filename") == "publisher.json")
+Path("/out/publisher.json").write_text(publisher + "\n")
+PYTHON
     cp source/LICENSE /out/LICENSE
     cp -a build/files/share/licenses /out/licenses
     {

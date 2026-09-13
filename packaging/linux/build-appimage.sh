@@ -9,6 +9,7 @@ spec = importlib.util.spec_from_file_location("generate", root / "packaging/flat
 generate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generate)
 publisher = json.loads((root / "packaging/flatpak/publisher.json").read_text())
+publisher = generate.build_publisher(root, publisher)
 metadata = generate.metadata(root, publisher).replace(publisher["appId"] + ".desktop", "Tagrove.desktop")
 (root / ".packaging/Tagrove.appdata.xml").write_text(metadata)
 desktop = (root / "src-tauri/linux/com.example.mediatagger.desktop").read_text().replace("Icon=tagrove", "Icon=media_tagger")

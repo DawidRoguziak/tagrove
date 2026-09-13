@@ -160,7 +160,7 @@ libmpv performs interactive playback; ffmpeg and ffprobe perform indexing and th
 
 Current configuration is permissive and should be treated as current state, not a recommended end state:
 
-- `capabilities/default.json` applies to the `main` window and grants `core:default`, `dialog:default` (open, save, and message dialogs), and the window permissions for minimize, toggle-maximize, close, drag and resize-drag. Application commands are those explicitly registered in `lib.rs`.
+- `capabilities/default.json` applies to the `main` window and grants `core:default`, `dialog:default` (open, save, and message dialogs), and the window permissions for minimize, toggle-maximize, close, drag and resize-drag. It also grants `opener:allow-open-url` scoped to the Tagrove GitHub repository and its subpages, with automatic HTML-link handling disabled. Application commands are those explicitly registered in `lib.rs`.
 - The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `['**']`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails use this path. Video sources are authorized by asset ID and opened only by libmpv.
 - `app.security.csp` is `null`, so the configuration does not install a Content Security Policy.
 - Docker produces x86_64 Flatpak and AppImage packages. Flatpak uses GNOME 50 and installs under `/app`; AppImage builds on Debian 12. The Arch-native executable is an explicit option. Other platforms and ARM are not configured. See [packaging](../development/linux-packaging.md).
@@ -171,7 +171,7 @@ Security-sensitive changes should review capabilities, CSP, asset scope, dialog 
 
 The user-facing product name is **Tagrove**, with `Dev` and `E2E` suffixes for isolated profiles. The frontend header, HTML metadata, npm package, native window titles, and Linux launcher use Tagrove. The Woven T mark comes from `public/tagrove.svg`; `bun run icons:generate` creates the checked-in native PNG sizes. The Linux launcher uses `Name=Tagrove`, `Icon=tagrove`, and `Exec=media_tagger`.
 
-The Rust crate/binary (`media_tagger`), Tauri identifiers, SQLite identity and backup format markers, local-storage keys, and performance variables retain their existing internal names. Older repository guidance and E2E suite labels still refer to MediaTagger.
+The public publisher is Tagrove. Publication Flatpaks use `io.github.dawidroguziak.tagrove`, configured in `packaging/flatpak/publisher.json`; local Flatpaks retain `com.example.mediatagger`. The Rust crate/binary (`media_tagger`), local Tauri identifiers, SQLite identity and backup format markers, local-storage keys, and performance variables retain their existing internal names. Older repository guidance and E2E suite labels still refer to MediaTagger.
 
 This split is deliberate. Changing the Tauri identifier changes the app-data directory and can make an existing library appear empty unless data is migrated. Renaming the Rust binary also affects the E2E executable path. A future internal rename is a migration, not a cosmetic search-and-replace.
 

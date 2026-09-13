@@ -1,11 +1,11 @@
 {
-  "appId": "com.example.mediatagger",
-  "repository": null,
+  "appId": "io.github.dawidroguziak.tagrove",
+  "repository": "https://github.com/DawidRoguziak/tagrove",
   "releaseUrl": null,
   "releaseSha256": null,
   "releaseRef": null,
   "releaseDate": null,
-  "developerId": null,
-  "developerName": null,
+  "developerId": "io.github.dawidroguziak.tagrove",
+  "developerName": "Tagrove",
   "screenshots": []
 }

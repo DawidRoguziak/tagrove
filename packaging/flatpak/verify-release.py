@@ -11,7 +11,9 @@ REQUIRED_INPUTS = ["package.json", "bun.lock", "bunfig.toml", "src-tauri/tauri.c
                    "src-tauri/linux/com.example.mediatagger.desktop", "packaging/flatpak/generate.py", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock",
                    "src-tauri/tauri.flatpak.conf.json", "packaging/flatpak/install.sh",
                    "packaging/linux/toolchains.json", "packaging/flatpak/media.json",
-                   "packaging/linux/notices.py", "packaging/linux/check-runtime.sh", "LICENSE"]
+                   "packaging/linux/notices.py", "packaging/linux/check-runtime.sh", "LICENSE", "PRIVACY.md",
+                   "src-tauri/capabilities/default.json"]
+PUBLISHER_INPUT = "packaging/flatpak/publisher.json"
 
 
 def verify_archive(root, archive_path):
@@ -31,6 +33,16 @@ def verify_archive(root, archive_path):
             expected = hashlib.sha256((root / name).read_bytes()).digest()
             if actual != expected:
                 raise ValueError(f"Release and checkout differ: {name}. Generate from the release checkout.")
+        member = archive.getmember(prefix + "/" + PUBLISHER_INPUT)
+        if not member.isfile():
+            raise ValueError(f"Release input is not a regular file: {PUBLISHER_INPUT}")
+        actual = json.load(archive.extractfile(member))
+        expected = json.loads((root / PUBLISHER_INPUT).read_text())
+        # The release archive cannot contain its own final checksum. Compare only
+        # identity fields shared by the embedded UI and generated metadata.
+        for key in ("appId", "developerId", "developerName", "repository"):
+            if actual.get(key) != expected.get(key):
+                raise ValueError(f"Release and checkout differ: publisher {key}")
 
 
 if __name__ == "__main__":

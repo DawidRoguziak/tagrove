@@ -18,3 +18,9 @@ source for all bundled GPL/LGPL dependencies, including distribution patches.
 The URLs and dependency inventory here describe sources; they are not a written
 offer to provide sources. Runtime-provided Flatpak libraries are distributed by
 the runtime's publisher. Do not remove dependency notices when redistributing.
+
+The bundled Inter and JetBrains Mono fonts retain their SIL OFL 1.1 notices in
+the frontend fonts directory. See docs/development/linux-packaging.md in the
+application source for the release source procedure and major components.
+A link to the current branch does not establish that corresponding sources
+are complete or match the distributed binaries.

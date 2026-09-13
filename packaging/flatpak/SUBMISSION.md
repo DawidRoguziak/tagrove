@@ -17,9 +17,9 @@ Writable access supports user-requested rename/delete operations. Wayland,
 fallback X11, IPC, graphics devices and PulseAudio support the desktop and
 native video player.
 
-Before submitting, insert the chosen app ID, public repository, release archive
-and digest, developer identity, screenshot links, and links to the actual
-package-verification results. Confirm ownership of the app ID and source
+The configured publisher is Tagrove, with the publication identity and repository
+in publisher.json. Before submitting, add the release archive and digest, release
+reference/date, screenshot links, and links to actual package-verification results. Confirm ownership of the app ID and source
 availability for the bundled dependencies. Run a full build and linter against
 the actual public release before submitting.
 

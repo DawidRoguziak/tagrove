@@ -8,7 +8,8 @@ const sections = [
   { id: "language", label: "settings.language.heading", icon: "settings" },
   { id: "import-export", label: "settings.importExport.heading", icon: "copy" },
   { id: "duplicates", label: "settings.duplicates.heading", icon: "group" },
-  { id: "danger", label: "settings.danger.heading", icon: "trash" }
+  { id: "danger", label: "settings.danger.heading", icon: "trash" },
+  { id: "about", label: "settings.about.heading", icon: "info" }
 ] satisfies { id: string; label: string; icon: UiIconName }[];
 
 export function SettingsNavigation() {
@@ -23,6 +24,10 @@ export function SettingsNavigation() {
     const root = elements[0]?.closest("main");
     if (!root) return;
     const update = () => {
+      if (root.scrollHeight > root.clientHeight && root.scrollTop + root.clientHeight >= root.scrollHeight - 1) {
+        setActiveSection(sections[sections.length - 1].id);
+        return;
+      }
       const top = root.getBoundingClientRect().top + 120;
       const current = elements.reduce<HTMLElement | undefined>((previous, element) =>
         element.getBoundingClientRect().top <= top ? element : previous, undefined);

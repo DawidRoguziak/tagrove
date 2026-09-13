@@ -454,6 +454,20 @@
         "confirmDuplicateChanges": "キューにある {{count}} 件の変更を適用しますか？\n\nこれにより、{{deleteCount}} 個のファイルがディスクから完全に削除されます。",
         "confirmDbImportOverwrite": "アーカイブからのデータベースインポートは、現在のデータベースとサムネイルを上書きします。続行しますか？"
       }
+    },
+    "about": {
+      "heading": "このアプリについて",
+      "version": "バージョン",
+      "publisher": "発行元",
+      "license": "ライセンス",
+      "source": "GitHub のソースコード",
+      "contact": "GitHub で問い合わせ",
+      "openError": "ブラウザーを開けませんでした。アドレスをコピーして手動で開いてください。",
+      "linkAddress": "リンク先のアドレス",
+      "rights": "GPL-3.0-or-later ライセンスの条件に従って Tagrove を変更・再配布できます。法律で認められる範囲で、いかなる保証もありません。",
+      "fileSafety": "Tagrove はファイルを変更したり、完全に削除したりできます。変更する前にメディアとライブラリをバックアップしてください。",
+      "fullLicense": "GPL ライセンス全文 · 英語",
+      "privacy": "プライバシーに関する説明 · 英語"
     }
   },
   "validation": {

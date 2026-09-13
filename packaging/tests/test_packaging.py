@@ -24,11 +24,18 @@ class ReleaseArchiveTests(unittest.TestCase):
     def test_public_archive_matches_checkout_and_rejects_ambiguous_inputs(self):
         with tempfile.TemporaryDirectory() as temporary:
             archive_path = Path(temporary) / 'release.tar.gz'
-            for fault in [None, 'changed', 'symlink', 'duplicate', 'extra-root']:
+            for fault in [None, 'changed', 'symlink', 'duplicate', 'extra-root', 'publisher', 'release-fields']:
                 with self.subTest(fault=fault):
                     with tarfile.open(archive_path, 'w:gz') as archive:
-                        for name in verify_release.REQUIRED_INPUTS:
+                        for name in [*verify_release.REQUIRED_INPUTS, verify_release.PUBLISHER_INPUT]:
                             data = (ROOT / name).read_bytes()
+                            if name == verify_release.PUBLISHER_INPUT:
+                                publisher = json.loads(data)
+                                if fault == 'publisher':
+                                    publisher['developerName'] = 'Different publisher'
+                                if fault == 'release-fields':
+                                    publisher['releaseSha256'] = 'a' * 64
+                                data = json.dumps(publisher).encode()
                             member = tarfile.TarInfo('release/' + name)
                             if name == 'package.json' and fault == 'changed':
                                 data += b'changed'
@@ -43,7 +50,7 @@ class ReleaseArchiveTests(unittest.TestCase):
                                 archive.addfile(member, io.BytesIO(data))
                         if fault == 'extra-root':
                             archive.addfile(tarfile.TarInfo('elsewhere/input'))
-                    if fault:
+                    if fault and fault != 'release-fields':
                         with self.assertRaises(ValueError):
                             verify_release.verify_archive(ROOT, archive_path)
                     else:
@@ -71,13 +78,57 @@ class ManifestTests(unittest.TestCase):
 
     def test_publication_rejects_local_and_profile_identities(self):
         with self.assertRaisesRegex(ValueError, 'placeholder'):
-            generate.generate(ROOT, self.publisher, True)
+            generate.generate(ROOT, dict(self.publisher, appId='com.example.mediatagger'), True)
         for app_id in ['com.example.mediatagger.e2e', 'com.example.mediatagger.dev', 'bad/id',
                        'Org.tagrove.Tagrove', 'org.tagróve.Tagrove', 'org.a.b.c.d.Tagrove',
                        'org.tagrove.1App', 'org.' + 'a' * 250 + '.Tagrove']:
             with self.subTest(app_id=app_id), self.assertRaises(ValueError):
                 generate.validate_publisher(dict(self.publisher, appId=app_id))
         generate.validate_publisher(dict(self.publisher, appId='org.tagrove.Tagrove-player'))
+
+    def test_publisher_identity_local_profile_and_missing_release(self):
+        publisher = self.publisher
+        repository = generate.urlparse(publisher['repository'])
+        owner, product = repository.path.strip('/').split('/')
+        self.assertEqual(publisher['appId'], f'io.github.{owner.lower()}.{product.lower()}')
+        self.assertEqual(publisher['developerId'], publisher['appId'])
+        self.assertEqual(publisher['developerName'], 'Tagrove')
+        with self.assertRaises(ValueError) as error:
+            generate.generate(ROOT, publisher, True)
+        for missing in ('releaseUrl', 'releaseRef', 'releaseDate', 'releaseSha256', 'screenshots'):
+            self.assertIn(missing, str(error.exception))
+        complete = dict(publisher, releaseUrl=publisher['repository'] + '/archive/refs/tags/v0.1.1.tar.gz',
+                        releaseRef='v0.1.1', releaseDate='2026-09-13', releaseSha256='a'*64,
+                        screenshots=[publisher['repository'] + '/raw/v0.1.1/gallery.png'])
+        local_id = json.loads((ROOT / 'src-tauri/tauri.conf.json').read_text())['identifier']
+        for publication, expected_id in ((False, local_id), (True, publisher['appId'])):
+            manifest = generate.generate(ROOT, complete, publication)
+            self.assertEqual(manifest['app-id'], expected_id)
+            sources = {s['dest-filename']: s['contents'] for s in manifest['modules'][-1]['sources']
+                       if s['type'] == 'inline'}
+            self.assertEqual(json.loads(sources['tauri.flatpak.generated.json'])['identifier'], expected_id)
+            self.assertEqual(json.loads(sources['publisher.json'])['appId'], expected_id)
+            self.assertIn('Icon=' + expected_id, sources['tagrove.desktop'])
+            metadata = generate.ET.fromstring(sources['tagrove.metainfo.xml'])
+            self.assertEqual(metadata.findtext('id'), expected_id)
+            self.assertEqual(metadata.findtext('launchable'), expected_id + '.desktop')
+            self.assertEqual(metadata.findtext('developer/name'), publisher['developerName'])
+            self.assertEqual(metadata.find('developer').attrib['id'], publisher['developerId'])
+            self.assertEqual(metadata.findtext('url'), publisher['repository'])
+            self.assertEqual(metadata.find('releases/release').attrib['version'],
+                             json.loads((ROOT / 'package.json').read_text())['version'])
+            self.assertNotIn('--share=network', manifest['finish-args'])
+        generate.validate_publisher(dict(complete, repository=publisher['repository'].upper().replace('HTTPS', 'https')), True)
+        with self.assertRaisesRegex(ValueError, 'requires repository'):
+            generate.validate_publisher(dict(complete, repository='https://github.com/another/tagrove'), True)
+        self.assertEqual(self.publisher['appId'], publisher['appId'])
+
+    def test_opener_is_scoped_to_the_shared_repository(self):
+        capability = json.loads((ROOT / 'src-tauri/capabilities/default.json').read_text())
+        permissions = [p for p in capability['permissions']
+                       if (p if isinstance(p, str) else p['identifier']).startswith('opener:')]
+        self.assertEqual(permissions, [{'identifier': 'opener:allow-open-url', 'allow': [
+            {'url': self.publisher['repository']}, {'url': self.publisher['repository'] + '/*'}]}])
 
     def test_publication_shares_modules_and_uses_checksummed_release(self):
         publisher = dict(self.publisher, appId='org.tagrove.Tagrove', repository='https://github.com/tagrove/tagrove',

@@ -50,6 +50,7 @@ use services::{asset_mutation_service, thumb_scheduler::ThumbnailScheduler};
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .setup(|app| {
             #[cfg(debug_assertions)]
             if !app::profile::is_debug_profile(&app.config().identifier) {

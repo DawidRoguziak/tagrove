@@ -454,6 +454,20 @@
         "confirmDuplicateChanges": "Zastosowac {{count}} zmian z kolejki?\n\nTo trwale usunie {{deleteCount}} plikow z dysku.",
         "confirmDbImportOverwrite": "Import bazy z archiwum nadpisze obecna baze i miniaturki. Kontynuowac?"
       }
+    },
+    "about": {
+      "heading": "O aplikacji",
+      "version": "Wersja",
+      "publisher": "Wydawca",
+      "license": "Licencja",
+      "source": "Kod źródłowy na GitHubie",
+      "contact": "Kontakt przez GitHub",
+      "openError": "Nie udało się otworzyć przeglądarki. Skopiuj adres i otwórz go ręcznie.",
+      "linkAddress": "Adres odnośnika",
+      "rights": "Możesz modyfikować i rozpowszechniać Tagrove na warunkach licencji GPL-3.0-or-later. W granicach dozwolonych prawem aplikacja nie jest objęta gwarancją.",
+      "fileSafety": "Tagrove może zmieniać i trwale usuwać pliki. Przed wprowadzeniem zmian wykonaj kopię zapasową mediów i biblioteki.",
+      "fullLicense": "Pełny tekst licencji GPL · po angielsku",
+      "privacy": "Informacje o prywatności · po angielsku"
     }
   },
   "validation": {

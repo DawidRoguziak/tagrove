@@ -278,3 +278,13 @@ When changing IPC:
 - Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, `asset_query_service.rs`, `video_source_service.rs`, and `video_player_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive and video-source safety, query/session semantics, and persistence behavior.
 - `src-tauri/tests/backend_integration.rs` and `backend_e2e.rs` cover file-backed cross-layer mutation/import workflows but do not exercise JavaScript serialization.
 - `e2e/specs/*.e2e.js` exercises the registered commands through a real desktop WebView and is the strongest existing check for Rust/TypeScript integration.
+
+## System browser links
+
+Settings → About uses the official `@tauri-apps/plugin-opener` `openUrl` binding,
+registered through `tauri_plugin_opener` at bootstrap. The main window's capability
+allows `opener:allow-open-url` only for the repository configured in
+`packaging/flatpak/publisher.json` and its subpages. The packaging regression checks
+that these URLs stay synchronized. No `opener:default`, path-opening or arbitrary
+application selection permission is granted. Automatic HTML-link handling is disabled.
+The component handles rejected calls with a local message and a selectable URL.

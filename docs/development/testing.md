@@ -450,3 +450,38 @@ bun run test:e2e:tauri -- --spec ./e2e/specs/review-fixes.e2e.js
 ```
 
 Lower-layer regressions are `queryRefreshNavigation.test.tsx`, `literalTagSearch.test.ts`, the library hook/API tests, the query-position service test, and `src-tauri/tests/thumbnail_clear.rs`. The Rust file-backed test also checks nested obsolete files, skipped symlinks, exclusive-reader coordination, failure-marker removal, source preservation, and actual image regeneration.
+
+## About and publisher metadata
+
+`e2e/specs/about.e2e.js` is opt-in with `MEDIATAGGER_ABOUT=1`. On an authenticated
+private Xvfb display with temporary XDG directories, run:
+
+```sh
+GDK_BACKEND=x11 MEDIATAGGER_ABOUT=1 dbus-run-session -- xvfb-run -a -s '-screen 0 1440x900x24 -nolisten tcp' sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; bun run test:e2e:tauri --spec e2e/specs/about.e2e.js'
+```
+
+Use a fresh `/tmp/mediatagger-*` data/config/cache profile, as in native video
+verification. The native input helper requires libXtst and refuses the ordinary
+`:0` and `:1` displays. The spec checks About navigation and focus at the bottom of
+Settings, the package version and exact bundled GPL/privacy text, Polish and English,
+and both themes. It exercises real Opener capability rejection for unrelated URLs,
+file opening and explicit application selection. One test changes only the outgoing
+Opener URL at the fetch boundary to provoke a real native denial after a button click;
+it verifies the error UI and native focus and keyboard selection of the original address.
+Screenshots remain in ignored `artifacts/about/` directories.
+
+`AboutSection.test.tsx` covers both links, opener rejection/retry, metadata, local
+text and navigation. Packaging tests check local/publication IDs across generated
+files, case-insensitive GitHub identity, publisher/capability consistency, missing
+release fields, and legal/capability/publisher inputs in a source archive. Release
+fields are excluded from publisher identity comparison because an archive cannot
+contain its own final checksum.
+
+For a real browser handoff, use the persistent desktop controller with a browser
+profile and MIME-handler configuration inside its disposable XDG directories. Check
+both source and contact buttons, then close only that browser before stopping the
+controller. The September 2026 verification opened the repository and issues page
+in Firefox on the private display, without signing in or submitting anything.
+This unbundled desktop check does not verify a Flatpak portal or an installed release
+package. Opener reports errors returned by its launch call; a browser failure after
+a successful detached launch may not be reported to the application.

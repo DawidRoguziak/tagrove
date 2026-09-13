@@ -454,6 +454,20 @@
         "confirmDuplicateChanges": "Apply {{count}} queued changes?\n\nThis will permanently delete {{deleteCount}} files from disk.",
         "confirmDbImportOverwrite": "Importing database from archive will overwrite the current database and thumbnails. Continue?"
       }
+    },
+    "about": {
+      "heading": "About",
+      "version": "Version",
+      "publisher": "Publisher",
+      "license": "License",
+      "source": "Source code on GitHub",
+      "contact": "Contact on GitHub",
+      "openError": "Could not open the browser. Copy the address and open it manually.",
+      "linkAddress": "Link address",
+      "rights": "You may modify and redistribute Tagrove under the GPL-3.0-or-later license. There is no warranty to the extent permitted by law.",
+      "fileSafety": "Tagrove can change and permanently delete files. Back up your media and library before making changes.",
+      "fullLicense": "Full GPL license · English",
+      "privacy": "Privacy notice · English"
     }
   },
   "validation": {

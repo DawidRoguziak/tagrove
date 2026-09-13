@@ -4,13 +4,32 @@
 
 ## Sources and identity
 
-[The publisher configuration](../../packaging/flatpak/publisher.json) holds the app ID, repository URL, release archive URL and SHA-256, release reference/date, developer ID/name and screenshot URLs. Local builds use `com.example.mediatagger`. The manifest generator rejects development/E2E IDs for release packaging. Debug startup permits only the established development and E2E identities, protecting future publisher IDs as well.
+[The publisher configuration](../../packaging/flatpak/publisher.json) holds the app ID, repository URL, release archive URL and SHA-256, release reference/date, developer ID/name and screenshot URLs. The public publisher is Tagrove; its publication ID and developer ID are `io.github.dawidroguziak.tagrove`, derived from the existing GitHub repository. The frontend reads the publisher name and repository from this same JSON file and the version from `package.json` at build time. Local builds use the unchanged `tauri.conf.json` identifier, `com.example.mediatagger`; only `--publication` uses the publisher app ID. GitHub owner/repository comparisons ignore case. The manifest generator rejects development/E2E IDs for release packaging. Debug startup permits only the established development and E2E identities, protecting future publisher IDs as well.
 
 Flatpak keeps data under `~/.var/app/<app-id>/`. Its XDG data directory contains the Tauri identifier-specific library. A new Flatpak install starts empty even with a populated native library. Changing the app ID creates a separate installation and data profile. No migration is implicit. AppImage retains the existing native release identity.
 
 Use Flatpak 1.16.6 or later for the direct bundle reinstall workflow. Debian 12's Flatpak 1.14.10 rejected reinstalling the same bundle in the package test; [the supported bookworm backport](https://packages.debian.org/bookworm-backports/flatpak) at 1.16.6 accepted the same command. The disposable Debian test image installs that backport.
 
 The application code is GPL-3.0-or-later, with [LICENSE](../../LICENSE) at the repository root. AppStream metadata is CC0-1.0. Dependency licenses remain attached to their respective code. Build outputs retain dependency manifests and discovered license texts, source URLs/checksums, resolved distribution package versions, and the application source used for that build. Inspect `SOURCE-NOTICE.txt` before redistribution and provide matching corresponding sources, including distribution patches, for bundled GPL/LGPL libraries. The dependency inventory is not a written source offer.
+
+## Licenses and corresponding sources
+
+The offline Settings → About section includes the unchanged root GPL text and [privacy notice](../../PRIVACY.md). It shows the publisher, version, license and GitHub contact. Links go through the Tauri Opener plugin after a click. Its capability allows only the configured HTTPS repository and its subpages; Flatpak gains no network permission.
+
+Major components include React/React DOM, TanStack Virtual, Fuse.js, i18next/react-i18next, Zod and the Tauri API/plugins on the frontend; Tauri, rusqlite with bundled SQLite, image, serde, csv, zip, and libmpv bindings in Rust; and GTK/WebKit, mpv/libmpv, FFmpeg/ffprobe, libass and libplacebo on Linux. Build tooling includes Bun, Vite, TypeScript, Tailwind CSS and DaisyUI. This is an orientation list, not a complete license audit. The lockfiles, dependency manifests and retained upstream notices identify the versions and terms for a particular build.
+
+Inter and JetBrains Mono are bundled under the SIL Open Font License 1.1. Their original notices are [Inter-OFL.txt](../../public/fonts/Inter-OFL.txt) and [JetBrainsMono-OFL.txt](../../public/fonts/JetBrainsMono-OFL.txt), copied into the frontend's `fonts/` directory. Preserve the authors and copyright statements. See [font sources](../../public/fonts/README.md).
+
+Flatpak installs the application's GPL in `/app/share/licenses/tagrove/LICENSE`, discovered Rust/npm dependency notices and manifests under `/app/share/licenses/dependencies/`, and native media licenses under `/app/share/licenses/{mpv,ffmpeg,libass,libplacebo}/`. The exported `licenses/` directory and `SOURCE-NOTICE.txt` accompany Linux artifacts. AppImage/native exports also retain distribution copyright files. `packaging/linux/notices.py` collects available notices; its presence does not establish that every license obligation has been fulfilled.
+
+For each release:
+
+1. Record the exact application commit and version. Retain `application-source.tar.gz`, the lockfiles, packaging scripts, generated manifest, source inventories and checksums from that build.
+2. Collect the corresponding sources for bundled GPL/LGPL components at the recorded versions, including distribution patches, local modifications and the scripts needed to build and install them. Use `debian-sources.tsv`, dependency source URLs/digests and media/toolchain manifests to locate matching inputs.
+3. Check that the retained source set matches the distributed binaries and includes the material required by the applicable licenses. A link to the current branch, a list of download URLs, or the application's source archive alone does not establish completeness.
+4. Make the matching source set available alongside the binary release, with clear download instructions and retained notices, using a distribution method permitted by the applicable licenses. Keep versioned sources available when the branch advances.
+
+Source archive collection and a full dependency license audit remain release tasks. This repository's source inventory is not a written source offer or a claim that a Flathub submission is ready.
 
 ## Privacy gate and release inputs
 
@@ -35,13 +54,13 @@ CI fetches full history and runs the repository gate and its regression tests. I
 
 ## Preparing a Flathub submission
 
-1. Choose an app ID you control and fill every field in `packaging/flatpak/publisher.json`. Use actual public screenshots and developer details.
+1. Review the configured Tagrove publisher identity and confirm control of the repository. Complete the release fields and public screenshot URLs in `packaging/flatpak/publisher.json`. They intentionally remain empty until a release is prepared.
 2. Publish a source release that includes the application, lockfiles and these packaging definitions. Set `releaseUrl`, `releaseSha256`, `releaseRef`, and `releaseDate` to that release. Verify that the release archive has the same lockfiles used to generate the manifest.
 3. Run `./scripts/prepare-flathub.sh`. It uses Docker and writes `artifacts/flathub/prepared/<app-id>.json` plus `flathub.json`, which restricts builds to x86_64. AppStream validation and the Flathub manifest linter must pass. Validation rejects placeholder identities, invalid ID syntax, mismatched code-hosting IDs, missing metadata, local source references, and unpinned release archives. The preparation command downloads and verifies the release archive and rejects a mismatch with the checkout's lockfiles, version or required packaging files. `releaseUrl` must include the chosen release reference. The publication manifest shares toolchain/media modules, permissions, dependency generation, and installation commands with the local manifest.
 4. Build that generated manifest with Flatpak Builder, run AppStream and desktop validation, and resolve Flathub linter findings. Verify screenshots, the owned publisher identity, source availability and distribution rights before submission.
 5. A maintainer must write and submit the application request. [Flathub's current policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy) requires disclosure of generated material and prohibits agents from authoring or opening submission interactions. Use the factual preparation notes in `packaging/flatpak/SUBMISSION.md` for review, not as a generated PR description.
 
-Public submission remains pending the publishing identity and public release. The eventual public archive and publication build have not been verified by the local package tests. A custom domain's ownership requires maintainer verification. This repository does not supply invented publisher details or screenshot links, and the preparation command does not submit anything.
+Public submission remains pending a public release, screenshots and package verification. The eventual public archive and publication build have not been verified by the local package tests. A custom domain's ownership requires maintainer verification. This repository does not supply invented publisher details or screenshot links, and the preparation command does not submit anything.
 
 ## Container boundaries
 

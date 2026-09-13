@@ -2,7 +2,7 @@
 # Run only inside the dedicated disposable Flatpak test container.
 set -euo pipefail
 [[ -f /.dockerenv && -d /inputs && "$EUID" == 0 ]]
-app_id="$(python3 -c 'import json; print(json.load(open("/inputs/packaging/flatpak/publisher.json"))["appId"])')"
+app_id="$(python3 -c 'import json; print(json.load(open("/inputs/src-tauri/tauri.conf.json"))["identifier"])')"
 [[ "$app_id" == com.example.mediatagger ]]
 [[ ! -e "/root/.var/app/$app_id" ]]
 [[ ! -e "/root/.local/share/$app_id" ]]

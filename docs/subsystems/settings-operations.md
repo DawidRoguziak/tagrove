@@ -235,3 +235,20 @@ MEDIATAGGER_SETTINGS_LANGUAGE=1 bun run test:e2e:tauri --spec e2e/specs/settings
 ```
 
 Screenshots stay under ignored `artifacts/settings-language/`.
+
+## About, legal texts and external links
+
+`sections/AboutSection.tsx` is the last settings section, with the `settings-about`
+navigation target and the same focus/scroll behavior as other sections. It reads the
+publisher name and repository from `packaging/flatpak/publisher.json`, and the build
+version and license identifier from `package.json`. The root `LICENSE` and `PRIVACY.md`
+are bundled as raw text in native disclosure blocks, available offline in English.
+Short UI text is localized in all supported languages.
+
+Source and contact buttons call the official Tauri Opener `openUrl` after a click.
+Only the repository URL and its subpages are allowed by the main-window capability;
+there is no general URL/file opening permission or added Flatpak network permission.
+Automatic plugin interception of HTML links is disabled. A failed launch displays a
+localized message and a read-only address field for manual selection and copying. Opening is local component state and does not acquire the settings
+operation lock. Component tests cover metadata, exact document text, navigation and
+opener success/failure; desktop verification is needed to prove the native handoff.

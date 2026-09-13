@@ -454,6 +454,20 @@
         "confirmDuplicateChanges": "应用 {{count}} 个排队更改？\n\n这将永久从磁盘删除 {{deleteCount}} 个文件。",
         "confirmDbImportOverwrite": "从归档导入数据库将覆盖当前数据库和缩略图。继续？"
       }
+    },
+    "about": {
+      "heading": "关于",
+      "version": "版本",
+      "publisher": "发布者",
+      "license": "许可证",
+      "source": "GitHub 源代码",
+      "contact": "通过 GitHub 联系",
+      "openError": "无法打开浏览器。请复制地址并手动打开。",
+      "linkAddress": "链接地址",
+      "rights": "您可以根据 GPL-3.0-or-later 许可证修改和再分发 Tagrove。在法律允许的范围内，本应用不提供任何担保。",
+      "fileSafety": "Tagrove 可以修改和永久删除文件。更改前请备份您的媒体文件和媒体库。",
+      "fullLicense": "GPL 许可证全文 · 英文",
+      "privacy": "隐私声明 · 英文"
     }
   },
   "validation": {

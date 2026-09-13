@@ -1,3 +1,4 @@
+import { AboutSection } from "./sections/AboutSection";
 import { SettingsNavigation } from "./SettingsNavigation";
 import { ClearLibraryConfirmDialog } from "./ClearLibraryConfirmDialog";
 import { DuplicateDeleteConfirmDialog } from "./DuplicateDeleteConfirmDialog";
@@ -273,6 +274,9 @@ export function SettingsPanel({
                 operationState={dangerZoneController.operationState}
                 onOpenClearConfirm={dangerZoneController.onOpenClearConfirm}
               />
+            </div>
+            <div id="settings-about" className="settings-section" tabIndex={-1}>
+              <AboutSection />
             </div>
           </div>
         </div>

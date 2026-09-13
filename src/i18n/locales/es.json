@@ -454,6 +454,20 @@
         "confirmDuplicateChanges": "¿Aplicar {{count}} cambios en cola?\n\nEsto eliminará permanentemente {{deleteCount}} archivos del disco.",
         "confirmDbImportOverwrite": "Importar la base de datos desde el archivo sobrescribirá la base de datos actual y las miniaturas. ¿Continuar?"
       }
+    },
+    "about": {
+      "heading": "Acerca de",
+      "version": "Versión",
+      "publisher": "Editor",
+      "license": "Licencia",
+      "source": "Código fuente en GitHub",
+      "contact": "Contacto en GitHub",
+      "openError": "No se pudo abrir el navegador. Copia la dirección y ábrela manualmente.",
+      "linkAddress": "Dirección del enlace",
+      "rights": "Puedes modificar y redistribuir Tagrove según los términos de la licencia GPL-3.0-or-later. No se ofrece ninguna garantía en la medida permitida por la ley.",
+      "fileSafety": "Tagrove puede modificar y eliminar archivos de forma permanente. Haz una copia de seguridad de tus archivos multimedia y de la biblioteca antes de realizar cambios.",
+      "fullLicense": "Texto completo de la GPL · inglés",
+      "privacy": "Aviso de privacidad · inglés"
     }
   },
   "validation": {

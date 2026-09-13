@@ -454,6 +454,20 @@
         "confirmDuplicateChanges": "Použít {{count}} čekajících změn?\n\nTím bude trvale smazáno {{deleteCount}} souborů z disku.",
         "confirmDbImportOverwrite": "Import databáze z archivu přepíše aktuální databázi a náhledy. Pokračovat?"
       }
+    },
+    "about": {
+      "heading": "O aplikaci",
+      "version": "Verze",
+      "publisher": "Vydavatel",
+      "license": "Licence",
+      "source": "Zdrojový kód na GitHubu",
+      "contact": "Kontakt přes GitHub",
+      "openError": "Prohlížeč se nepodařilo otevřít. Zkopírujte adresu a otevřete ji ručně.",
+      "linkAddress": "Adresa odkazu",
+      "rights": "Tagrove můžete upravovat a dále šířit za podmínek licence GPL-3.0-or-later. V rozsahu povoleném zákonem není poskytována žádná záruka.",
+      "fileSafety": "Tagrove může měnit a trvale mazat soubory. Před provedením změn zálohujte média a knihovnu.",
+      "fullLicense": "Úplný text licence GPL · anglicky",
+      "privacy": "Informace o soukromí · anglicky"
     }
   },
   "validation": {

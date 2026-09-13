@@ -454,6 +454,20 @@
         "confirmDuplicateChanges": " {{count}} vorgemerkte Änderungen anwenden?\n\nDabei werden {{deleteCount}} Dateien dauerhaft von der Festplatte gelöscht.",
         "confirmDbImportOverwrite": "Der Import der Datenbank aus dem Archiv überschreibt die aktuelle Datenbank und Vorschaubilder. Fortfahren?"
       }
+    },
+    "about": {
+      "heading": "Über die App",
+      "version": "Version",
+      "publisher": "Herausgeber",
+      "license": "Lizenz",
+      "source": "Quellcode auf GitHub",
+      "contact": "Kontakt über GitHub",
+      "openError": "Der Browser konnte nicht geöffnet werden. Kopieren Sie die Adresse und öffnen Sie sie manuell.",
+      "linkAddress": "Linkadresse",
+      "rights": "Sie dürfen Tagrove unter den Bedingungen der Lizenz GPL-3.0-or-later ändern und weitergeben. Soweit gesetzlich zulässig, wird keine Gewährleistung übernommen.",
+      "fileSafety": "Tagrove kann Dateien ändern und dauerhaft löschen. Sichern Sie Ihre Medien und Bibliothek, bevor Sie Änderungen vornehmen.",
+      "fullLicense": "Vollständige GPL-Lizenz · Englisch",
+      "privacy": "Datenschutzhinweise · Englisch"
     }
   },
   "validation": {

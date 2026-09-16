@@ -319,6 +319,10 @@ It generates PNG, GIF and MP4 fixtures and checks both themes at 1000px and 600p
 Native clicks and keys verify header Close placement, keyboard collapse/reopen focus,
 the first Enter after idle, computed opacity and pointer hit testing, and unchanged
 media rectangles and native session identity through the fade. The open panel stays visible.
+The group-copy and hover cases check the 32px sidebar button placement and copy feedback
+at both widths. Native pointer movement over metadata and island padding keeps the bottom
+box clickable beyond three seconds while top controls hide; exiting into surrounding row
+space restores delayed hiding. Run just these cases with `--mochaOpts.grep 'keeps the bottom box'`.
 Samples and private-display screenshots remain under `artifacts/lightbox-activity/`.
 
 Use temporary XDG directories, a private D-Bus session, and authenticated Xvfb as in

@@ -366,9 +366,8 @@ function LightboxContent({
               />
               {!videoFullscreen ? <LightboxActionRail
               visible={activity.visible}
-              groupCopyConfirmed={groupCopyConfirmed}
-              canCopyMediaGroup={clipboard.canCopyMediaGroup}
-              copyMediaGroupTitle={copyMediaGroupTitle}
+              covered={isNarrow && sidebarOccupied}
+              onReveal={activity.reveal}
               isFullscreen={mediaControls.isFullscreen}
               favoritePending={favoritePending}
               onToggleFavorite={() => {
@@ -378,7 +377,6 @@ function LightboxContent({
                   if (selectedIdRef.current === requestedAssetId) setFavoriteFailed(true);
                 });
               }}
-              onCopyMediaGroup={() => { void clipboard.copyMediaGroup(); }}
               onResetZoom={mediaControls.resetZoom}
               onToggleFullscreen={() => { void mediaControls.toggleFullscreen(); }}
               onOpenDeleteConfirm={() => {
@@ -404,6 +402,10 @@ function LightboxContent({
             ) : null}
 
             {!videoFullscreen && <LightboxToolbar
+              groupCopyConfirmed={groupCopyConfirmed}
+              canCopyMediaGroup={clipboard.canCopyMediaGroup}
+              copyMediaGroupTitle={copyMediaGroupTitle}
+              onCopyMediaGroup={() => { void clipboard.copyMediaGroup(); }}
               selected={selected}
               mediaGroupKeyEditor={mediaGroupKeyEditor}
               mediaGroupOrderEditor={mediaGroupOrderEditor}

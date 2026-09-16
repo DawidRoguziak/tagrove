@@ -275,6 +275,60 @@ describe("LightboxModal", () => {
     expect(floating).toHaveClass("duration-200", "motion-reduce:transition-none");
   });
 
+  it.each(["leave", "cancel"])("holds only the bottom box on hover and restarts hiding after %s", (exit) => {
+    vi.useFakeTimers();
+    render(<LightboxModal selected={selectedAsset} tagEditor={[]} knownTags={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} onNavigatePrevious={vi.fn()}
+      onNavigateNext={vi.fn()} onToggleFavorite={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
+    act(() => vi.advanceTimersByTime(250));
+    const island = screen.getByTestId("lightbox-action-rail");
+    const row = island.parentElement!;
+    const top = document.querySelector(".lightbox-media-controls");
+    fireEvent.pointerEnter(island);
+    act(() => vi.advanceTimersByTime(4000));
+    expect(row).toHaveStyle({ opacity: "1" });
+    expect(row.style.pointerEvents).not.toBe("none");
+    expect(top).toHaveStyle({ opacity: "0" });
+    // Crossing from a button into metadata never exits the box.
+    const favorite = within(island).getByRole("button", { name: "Add to favorites" });
+    const metadata = within(island).getByText("IMAGE");
+    fireEvent(favorite, new MouseEvent("pointerout", { bubbles: true, relatedTarget: metadata }));
+    fireEvent(metadata, new MouseEvent("pointerover", { bubbles: true, relatedTarget: favorite }));
+    act(() => vi.advanceTimersByTime(4000));
+    expect(row).toHaveStyle({ opacity: "1" });
+    if (exit === "leave") fireEvent.pointerLeave(island);
+    else fireEvent.pointerCancel(island);
+    expect(top).toHaveStyle({ opacity: "1" });
+    act(() => vi.advanceTimersByTime(2999));
+    expect(row).toHaveStyle({ opacity: "1" });
+    act(() => vi.advanceTimersByTime(1));
+    expect(row).toHaveStyle({ opacity: "0", pointerEvents: "none" });
+    fireEvent(row, new MouseEvent("pointermove", { bubbles: true, clientX: 1, clientY: 1 }));
+    fireEvent.pointerEnter(row);
+    act(() => vi.advanceTimersByTime(3000));
+    expect(row).toHaveStyle({ opacity: "0" });
+  });
+
+  it("clears bottom hover when covered by the narrow sidebar", () => {
+    vi.useFakeTimers();
+    const wideMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", { configurable: true,
+      value: (query: string) => ({ ...wideMatchMedia(query), matches: query === "(max-width: 767px)" }) });
+    render(<LightboxModal selected={selectedAsset} tagEditor={[]} knownTags={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} onNavigatePrevious={vi.fn()}
+      onNavigateNext={vi.fn()} onToggleFavorite={vi.fn()} onClose={vi.fn()} />);
+    const island = screen.getByTestId("lightbox-action-rail");
+    fireEvent.pointerEnter(island);
+    fireEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+    act(() => vi.advanceTimersByTime(4000));
+    expect(island.parentElement).toHaveStyle({ opacity: "0" });
+    fireEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
+    act(() => vi.advanceTimersByTime(250));
+    act(() => vi.advanceTimersByTime(3000));
+    expect(island.parentElement).toHaveStyle({ opacity: "0" });
+  });
+
   it("retains collapsed state across media navigation and drafts across toggling", async () => {
     const props = {
       selected: selectedAsset, tagEditor: [], onTagEditorChange: vi.fn(), onSaveTags: vi.fn(),
@@ -788,7 +842,7 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
         onTagEditorChange={() => {}}
         onSaveTags={() => {}}
         mediaGroupKeyEditor="custom-group"
-        mediaGroupOrderEditor="12.5"
+        mediaGroupOrderEditor="0012"
         onMediaGroupKeyEditorChange={onMediaGroupKeyEditorChange}
         onMediaGroupOrderEditorChange={() => {}}
         onSaveMediaGroup={onSaveMediaGroup}
@@ -804,7 +858,7 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     expect(onMediaGroupKeyEditorChange).toHaveBeenCalledWith(generatedUuid);
 
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(onSaveMediaGroup).toHaveBeenCalledWith({ key: "custom-group", order: 12.5 });
+    expect(onSaveMediaGroup).toHaveBeenCalledWith({ key: "custom-group", order: 12 });
 
     randomUuidSpy.mockRestore();
   });
@@ -921,7 +975,7 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     expect(tags).toHaveClass("border-t");
     expect(tags).not.toHaveClass("mt-auto");
     expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("h-8!", "min-h-8!");
-    expect(within(actionRail).getAllByRole("button")).toHaveLength(5);
+    expect(within(actionRail).getAllByRole("button")).toHaveLength(4);
     expect(actionRail.parentElement).not.toHaveClass("overflow-y-auto");
     expect(upperSection).not.toContainElement(actionRail);
   });

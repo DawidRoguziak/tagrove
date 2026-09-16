@@ -1,4 +1,4 @@
-﻿import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+﻿import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
@@ -43,14 +43,18 @@ describe("LightboxModal copy media group", () => {
     });
   });
 
-  it("disables copy button when media group name is empty", () => {
+  it.each([
+    ["   ", { writeText: vi.fn() }, "No group name to copy"],
+    ["group-alpha", undefined, "No group name to copy"]
+  ])("disables unavailable copying for %s", (draft, clipboard, label) => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: clipboard });
     render(
       <LightboxModal
         selected={selectedAsset}
         tagEditor={[]}
         onTagEditorChange={() => {}}
         onSaveTags={() => {}}
-        mediaGroupKeyEditor="   "
+        mediaGroupKeyEditor={draft}
         knownTags={[]}
         onNavigatePrevious={() => {}}
         onNavigateNext={() => {}}
@@ -59,7 +63,7 @@ describe("LightboxModal copy media group", () => {
       />
     );
 
-    expect(screen.getByRole("button", { name: "No group name to copy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: label })).toBeDisabled();
   });
 
   it("copies media group name to clipboard and clears copied state after timeout", async () => {
@@ -75,7 +79,7 @@ describe("LightboxModal copy media group", () => {
         tagEditor={[]}
         onTagEditorChange={() => {}}
         onSaveTags={() => {}}
-        mediaGroupKeyEditor="group-alpha"
+        mediaGroupKeyEditor="  group-alpha  "
         knownTags={[]}
         onNavigatePrevious={() => {}}
         onNavigateNext={() => {}}
@@ -85,6 +89,14 @@ describe("LightboxModal copy media group", () => {
     );
 
     const copyButton = screen.getByRole("button", { name: "Copy group name" });
+
+    const groupPanel = screen.getByTestId("lightbox-media-group-panel");
+    expect(groupPanel).toContainElement(copyButton);
+    expect(within(screen.getByTestId("lightbox-action-rail")).queryByRole("button", { name: /copy/i })).toBeNull();
+    const input = document.getElementById("lightbox-media-group-key-input");
+    expect(input?.nextElementSibling).toBe(copyButton);
+    expect(copyButton.nextElementSibling).toHaveAttribute("aria-label", "Generate media group key");
+    expect(copyButton).toHaveClass("h-8!", "w-8!");
 
     await act(async () => {
       fireEvent.click(copyButton);

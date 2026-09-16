@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SelectedAsset } from "../../types";
 import { formatBytes } from "../../utils/media";
 import { UiIconButton } from "../UI/UiIconButton";
@@ -6,14 +7,12 @@ const DELETE_BUTTON_ID = "lightbox-delete-button";
 
 interface LightboxActionRailProps {
   visible: boolean;
+  covered: boolean;
+  onReveal: () => void;
   selected: SelectedAsset;
-  groupCopyConfirmed: boolean;
-  canCopyMediaGroup: boolean;
-  copyMediaGroupTitle: string;
   isFullscreen: boolean;
   favoritePending?: boolean;
   onToggleFavorite: () => void;
-  onCopyMediaGroup: () => void;
   onResetZoom: () => void;
   onToggleFullscreen: () => void;
   onOpenDeleteConfirm: () => void;
@@ -22,25 +21,39 @@ interface LightboxActionRailProps {
 
 export function LightboxActionRail({
   visible,
+  covered,
+  onReveal,
   selected,
-  groupCopyConfirmed,
-  canCopyMediaGroup,
-  copyMediaGroupTitle,
   isFullscreen,
   favoritePending,
   onToggleFavorite,
-  onCopyMediaGroup,
   onResetZoom,
   onToggleFullscreen,
   onOpenDeleteConfirm,
   t
 }: LightboxActionRailProps) {
+  const [hovered, setHovered] = useState(false);
+  if (covered && hovered) setHovered(false);
+  const controlsVisible = visible || (hovered && !covered);
+  const endHover = () => {
+    onReveal();
+    setHovered(false);
+  };
+
   return (
     <div
       className="lightbox-action-row transition-opacity duration-200 motion-reduce:transition-none"
-      style={{ opacity: visible ? 1 : 0, pointerEvents: visible ? undefined : "none" }}
+      style={{ opacity: controlsVisible ? 1 : 0, pointerEvents: controlsVisible ? undefined : "none" }}
     >
-      <div className="lightbox-action-island" data-testid="lightbox-action-rail">
+      <div
+        className="lightbox-action-island"
+        data-testid="lightbox-action-rail"
+        onPointerEnter={(event) => {
+          if (!covered && event.pointerType !== "touch") setHovered(true);
+        }}
+        onPointerLeave={endHover}
+        onPointerCancel={endHover}
+      >
         <UiIconButton
           icon="heart"
           iconClassName="h-4 w-4 shrink-0"
@@ -53,16 +66,6 @@ export function LightboxActionRail({
           onClick={onToggleFavorite}
           disabled={favoritePending}
           aria-busy={favoritePending}
-        />
-        <UiIconButton
-          icon={groupCopyConfirmed ? "check-square" : "copy"}
-          iconClassName="h-4 w-4 shrink-0"
-          className="h-8! w-8! min-h-8! justify-self-center"
-          active={groupCopyConfirmed}
-          disabled={!canCopyMediaGroup}
-          aria-label={copyMediaGroupTitle}
-          title={copyMediaGroupTitle}
-          onClick={onCopyMediaGroup}
         />
         <UiIconButton
           icon="reset"

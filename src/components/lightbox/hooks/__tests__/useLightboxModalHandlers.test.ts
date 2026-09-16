@@ -51,13 +51,13 @@ describe("useLightboxModalHandlers", () => {
           onDeleteMedia: vi.fn(async () => {}),
           onClose: vi.fn()
         }),
-      { initialProps: { order: "12.5" } }
+      { initialProps: { order: "0012" } }
     );
 
     act(() => {
       result.current.handleApplyMediaGroup();
     });
-    expect(onSaveMediaGroup).toHaveBeenCalledWith({ key: "group-key", order: 12.5 });
+    expect(onSaveMediaGroup).toHaveBeenCalledWith({ key: "group-key", order: 12 });
 
     rerender({ order: "" });
     act(() => {
@@ -70,6 +70,20 @@ describe("useLightboxModalHandlers", () => {
       result.current.handleApplyMediaGroup();
     });
     expect(onSaveMediaGroup).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["0", "00", "-1", "+1", "1.5", "1e3", "9007199254740992", " 2", "2 ", "2\n", "abc", "Infinity"])("guards direct submission of invalid draft %j", (order) => {
+    const onSaveMediaGroup = vi.fn();
+    const { result } = renderHook(() => useLightboxModalHandlers({
+      selectedId: 1,
+      mediaGroupKeyEditor: "group",
+      mediaGroupOrderEditor: order,
+      onSaveMediaGroup,
+      onDeleteMedia: vi.fn(),
+      onClose: vi.fn()
+    }));
+    act(() => result.current.handleApplyMediaGroup());
+    expect(onSaveMediaGroup).not.toHaveBeenCalled();
   });
 
   it("handles delete confirmation flow and blocks close while submitting", async () => {

@@ -37,6 +37,10 @@ interface LightboxToolbarProps {
   onCloseSidebar: (restoreFocus: boolean) => void;
   onCloseLightbox: () => void;
   groupPending?: boolean;
+  groupCopyConfirmed: boolean;
+  canCopyMediaGroup: boolean;
+  copyMediaGroupTitle: string;
+  onCopyMediaGroup: () => void;
   deleteConfirmOpen: boolean;
   deleteSubmitting: boolean;
   deleteError?: string | null;
@@ -47,6 +51,10 @@ interface LightboxToolbarProps {
 
 export function LightboxToolbar({
   selected,
+  groupCopyConfirmed,
+  canCopyMediaGroup,
+  copyMediaGroupTitle,
+  onCopyMediaGroup,
   mediaGroupKeyEditor,
   mediaGroupOrderEditor,
   isNarrow,
@@ -141,6 +149,10 @@ export function LightboxToolbar({
         >
           <h3 className="m-0 text-xs">{t("lightbox.mediaGroup")}</h3>
           <MediaGroupSetter
+            groupCopyConfirmed={groupCopyConfirmed}
+            canCopyMediaGroup={canCopyMediaGroup}
+            copyMediaGroupTitle={copyMediaGroupTitle}
+            onCopyMediaGroup={onCopyMediaGroup}
             groupKey={mediaGroupKeyEditor}
             groupOrder={mediaGroupOrderEditor}
             onGroupKeyChange={onMediaGroupKeyChange}

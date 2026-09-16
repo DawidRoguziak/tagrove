@@ -84,7 +84,7 @@ Accepted tag saves use the shell's shared impact predicate: `none` preserves the
 
 Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `useSelectionState` is the only owner of save serialization/coalescing; `useLightboxTagging` only manages input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and starting the best-effort known-tag refresh. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. A successful add clears and refocuses the input.
 
-Media-group apply trims the key and converts an empty key to null. Empty order becomes null; any finite JavaScript number, including a decimal, is accepted; non-finite or unparseable input does nothing. The generate button uses `crypto.randomUUID()` when available, with a timestamp/random fallback. Applying does not mutate the editor controls directly; the selected-object update rehydrates them.
+Media-group apply trims the key and converts an empty key to null. The order uses a text field with a numeric keyboard hint and no native spinner arrows. Empty order becomes null. Nonempty edits must contain only digits and represent a positive safe integer, at most `9007199254740991`. Leading zeros are accepted and saved as the numeric value. Invalid typing or paste is rejected as a whole change without stripping characters. The field and Apply handler share validation; invalid preloaded drafts disable Apply and cannot be submitted. Existing stored orders remain visible and unchanged until explicitly edited or cleared. The generate button uses `crypto.randomUUID()` when available, with a timestamp/random fallback. Applying does not mutate the editor controls directly; the selected-object update rehydrates them.
 
 Delete runs under the scan/thumbnail lock. An existing source is journaled and staged before one database/revision transaction; a missing source explicitly removes stale metadata. The frontend inspects `DeleteAssetSummary`: missing source and post-commit cleanup staging are announced separately, while a pre-commit filesystem rejection remains in the confirmation dialog and states that metadata was preserved.
 
@@ -104,7 +104,7 @@ are unchanged.
 The media column contains the viewport and a centered action island below it, with
 reopen and close controls floating at the top right only while the sidebar is collapsed.
 Close preview moves into the open sidebar header and is disabled during pending deletion.
-Favorite, group copy, reset zoom, fullscreen and delete
+Favorite, reset zoom, fullscreen and delete
 remain reachable with the inspector collapsed. The island wraps in narrow windows and
 stays outside native GTK video bounds. Reset is disabled for video. Both native video and
 image fullscreen use the existing fullscreen action. Image fullscreen retains the chrome;
@@ -115,6 +115,11 @@ three seconds without activity they fade to zero opacity over 200 ms and stop re
 pointer input. Reduced motion makes the opacity change immediate. Both stay mounted and
 retain their layout space, including the native video's top clearance, so fading does not
 resize media. The open sidebar and its header remain visible.
+
+Hovering anywhere inside the bottom action island, including gaps and metadata, keeps
+it visible and clickable. Surrounding row space does not hold it open. Top controls
+still follow the inactivity timer. Leaving or cancelling the pointer restarts the normal
+three-second countdown. Narrow-sidebar coverage and unmounting clear the hover state.
 
 Actual pointer movement, pointer presses, wheel, scroll, keyboard input, and native-video
 activity events reveal controls and restart the timer. Repeated movement events at unchanged
@@ -130,7 +135,8 @@ and Escape close the drawer first. The covered media controls and action island 
 and resizing until the lightbox closes. Native fullscreen temporarily hides the drawer;
 it does not discard that choice. Editors stay mounted while collapsed.
 
-Group copy requires a nonempty trimmed editor key and clipboard availability. Success
+The group input row contains the input, Copy group name, and Generate UUID, in that order,
+with 32px icon buttons. Group copy requires a nonempty trimmed editor key and clipboard availability. Success
 shows confirmation for 1,600ms; selection/key changes, failure and unmount reset it.
 
 Delete opens the panel and its existing inline confirmation. The input receives focus only

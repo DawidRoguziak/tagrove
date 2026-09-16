@@ -98,6 +98,73 @@ suite("lightbox activity desktop", function () {
     if (root) await fs.rm(root, { recursive: true, force: true });
   });
 
+  for (const width of [600, 1000]) {
+    it(`keeps the bottom box hovered and places group copy in the sidebar, ${width}px`, async () => {
+      await browser.refresh();
+      await browser.setWindowSize(width, 720);
+      const id = assets.find(asset => asset.kind === "image").id;
+      await click(`button[data-asset-id="${id}"]`);
+      await browser.waitUntil(() => browser.execute(() => document.querySelector('[data-testid="lightbox-image"]')?.naturalWidth > 0));
+      if (width < 768) await click('#lightbox-sidebar-trigger-button');
+      const input = await $('#lightbox-media-group-key-input');
+      await input.setValue('  synthetic-hover-group  ');
+      const placement = await browser.execute(() => {
+        const input = document.querySelector('#lightbox-media-group-key-input');
+        const copy = input.nextElementSibling;
+        const uuid = copy.nextElementSibling;
+        const rect = el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+        return { input: rect(input), copy: rect(copy), uuid: rect(uuid), label: copy.getAttribute('aria-label'),
+          railCopy: Boolean(document.querySelector('.lightbox-action-island button[aria-label="Copy group name"]')) };
+      });
+      assert.equal(placement.label, 'Copy group name');
+      assert.equal(placement.railCopy, false);
+      assert.equal(placement.copy.width, 32);
+      assert.equal(placement.copy.height, 32);
+      assert.ok(placement.input.x < placement.copy.x && placement.copy.x < placement.uuid.x);
+      assert.equal(placement.copy.y, placement.uuid.y);
+      await click('#lightbox-media-group-key-input + button');
+      await $('button[aria-label="Group name copied"]').waitForExist();
+      await run('import', ['-window', 'root', path.join(evidence, `copy-${width}.png`)]);
+      await click('#lightbox-sidebar-close-button');
+      await browser.pause(300);
+      const move = async (selector, gap = false) => {
+        const r = await browser.execute(selector => {
+          const r = document.querySelector(selector).getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        }, selector);
+        const window = await browser.getWindowRect();
+        await native('move', Math.round(window.x + r.x + (gap ? 2 : r.width / 2)), Math.round(window.y + r.y + r.height / 2));
+      };
+      // Metadata and the island's padding both hold the whole box open.
+      for (const [selector, gap] of [['.lightbox-media-summary', false], ['.lightbox-action-island', true]]) {
+        await move(selector, gap);
+        await browser.pause(3500);
+        const held = await sample();
+        assert.equal(held.row.opacity, 1);
+        assert.equal(held.row.clickable, true);
+        assert.equal(held.floating.opacity, 0);
+      }
+      await run('import', ['-window', 'root', path.join(evidence, `hover-${width}.png`)]);
+      // Empty surrounding row space exits the box and does not hold it open.
+      // Capture before the deadline in-page: software WebKit driver calls can
+      // take longer than the full inactivity interval.
+      await browser.execute(() => {
+        const island = document.querySelector('.lightbox-action-island');
+        island.addEventListener('pointerleave', () => {
+          setTimeout(() => {
+            island.dataset.exitOpacity = getComputedStyle(island.parentElement).opacity;
+          }, 500);
+        }, { once: true });
+      });
+      await move('.lightbox-action-row', true);
+      await opacity(0);
+      assert.equal(await $('.lightbox-action-island').getAttribute('data-exit-opacity'), '1');
+      await fs.writeFile(path.join(evidence, `copy-hover-${width}.json`), JSON.stringify({ placement, hidden: await sample() }, null, 2));
+      await click('.lightbox-media-controls button[aria-label="Close preview"]');
+      await $('[data-lightbox-kind]').waitForExist({ reverse: true });
+    });
+  }
+
   for (const theme of ["light", "dark"]) {
     for (const width of [600, 1000]) {
       for (const kind of ["video", "image", "gif"]) {

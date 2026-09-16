@@ -1,3 +1,4 @@
+import { parseMediaGroupOrder } from "../services/parseMediaGroupOrder";
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 interface UseLightboxModalHandlersOptions {
@@ -45,9 +46,8 @@ export function useLightboxModalHandlers({
     const nextKeyRaw = mediaGroupKeyEditor.trim();
     const nextKey = nextKeyRaw.length > 0 ? nextKeyRaw : null;
 
-    const orderRaw = mediaGroupOrderEditor.trim();
-    const parsedOrder = orderRaw ? Number(orderRaw) : null;
-    if (parsedOrder !== null && !Number.isFinite(parsedOrder)) return;
+    const parsedOrder = parseMediaGroupOrder(mediaGroupOrderEditor);
+    if (parsedOrder === undefined) return;
 
     const requestedAssetId = selectedId;
     setMediaGroupFailed(false);

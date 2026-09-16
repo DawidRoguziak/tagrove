@@ -92,6 +92,29 @@ suite("gallery additive clicks and rectangle selection", function () {
     await $('button[data-asset-index="0"]').click(); await count(2);
     await $('button[data-asset-index="0"]').click(); await count(1);
   });
+  for (const omitTrailingClick of [false, true]) {
+    it(`opens an image on the first click after leaving rectangle selection, omitted trailing click: ${omitTrailingClick}`, async () => {
+      await $('button[aria-label="Enable bulk actions"]').click();
+      const g = await geometry();
+      await dragStart(g.left + 5, g.top + 5, Math.round(g.left + g.size * 1.5), Math.round(g.top + g.size * 1.5));
+      if (omitTrailingClick) {
+        // Model a drag-ending click that never reaches React, using real pointer input.
+        await browser.execute(() => {
+          window.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }, { capture: true, once: true });
+        });
+      }
+      await release();
+      await count(4);
+      await $('button[aria-label="Disable bulk actions"]').click();
+      await $('button[data-asset-id] img[alt$=".png"]').click();
+      await $('[data-lightbox-kind="image"]').waitForDisplayed();
+      await browser.saveScreenshot(path.join(output, `first-click-${omitTrailingClick}.png`));
+      await $('button[aria-label="Close preview"]').click();
+    });
+  }
   for (const theme of ["dark", "light"]) {
     it(`uses additive clicks, replacing rectangles and modifiers in ${theme}`, async () => {
       await $('button[aria-label="Open settings"]').click();

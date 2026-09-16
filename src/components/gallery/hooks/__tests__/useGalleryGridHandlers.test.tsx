@@ -116,6 +116,25 @@ describe("gallery pointer gestures", () => {
     fireEvent.click(screen.getByText("tile"), { detail: 0 });
     expect(interaction).toHaveBeenCalledOnce();
   });
+  it.each([false, true])("handles the first new click after a rectangle without a trailing click, bulk enabled: %s", async enabled => {
+    const interaction = vi.fn(); const onSelect = vi.fn();
+    const view = render(<Harness interaction={interaction} onSelect={onSelect} />); layout();
+    down(); clock += 150; move(125, 125);
+    await act(async () => up(125, 125));
+    expect(interaction).toHaveBeenLastCalledWith({ type: "rectangle-commit", additive: false,
+      ranges: [{ startIndex: 0, endIndex: 1 }, { startIndex: 3, endIndex: 4 }] });
+    // The browser never delivered the click belonging to the completed drag.
+    view.rerender(<Harness interaction={interaction} onSelect={onSelect} enabled={enabled} />);
+    interaction.mockClear();
+    down(); up(15, 15); fireEvent.click(screen.getByText("tile"), { detail: 1 });
+    if (enabled) {
+      expect(interaction).toHaveBeenLastCalledWith({ type: "click", assetId: 1, assetIndex: 0, ctrlLike: false, shift: false });
+      expect(onSelect).not.toHaveBeenCalled();
+    } else {
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith(asset);
+      expect(interaction).not.toHaveBeenCalled();
+    }
+  });
   it.each(["pressed", "dragging", "pending"])("Escape clears selection during %s", async stage => {
     const pending = stage === "pending";
     let finish: (() => void) | undefined;

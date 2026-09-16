@@ -164,13 +164,10 @@ export function useGalleryGridHandlers(options: Options) {
 
   const handlePointerDown = useCallback(
     (event: PointerEvent<HTMLElement>) => {
-      if (
-        !current.current.selectionModeEnabled ||
-        event.button !== 0 ||
-        !event.isPrimary ||
-        isControl(event.target)
-      )
-        return;
+      if (event.button !== 0 || !event.isPrimary) return;
+      // A new press must not consume click suppression left by an earlier drag.
+      suppressClick.current = false;
+      if (!current.current.selectionModeEnabled || isControl(event.target)) return;
       const grid = current.current.gridRef.current;
       if (!grid) return;
       const scroller = current.current.scrollContainerRef?.current ?? event.currentTarget;

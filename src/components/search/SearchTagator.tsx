@@ -22,6 +22,7 @@ interface SearchTagatorProps {
   inputRef?: MutableRefObject<HTMLInputElement | null> | RefObject<HTMLInputElement>;
   excludedTags?: string[];
   inputClassName?: string;
+  wrapperClassName?: string;
   keepSuggestionsOpenOnPick?: boolean;
   autoSelectFirstSuggestion?: boolean;
   suggestionsPlacement?: "above" | "below";
@@ -47,6 +48,7 @@ export function SearchTagator({
   inputRef,
   excludedTags = [],
   inputClassName = "w-full",
+  wrapperClassName = "",
   keepSuggestionsOpenOnPick = false,
   autoSelectFirstSuggestion = true,
   suggestionsPlacement = "below",
@@ -123,7 +125,7 @@ export function SearchTagator({
   });
 
   return (
-    <div className="relative min-w-0">
+    <div className={`relative min-w-0 ${wrapperClassName}`}>
       <input
         id={resolvedInputId}
         ref={(node) => {

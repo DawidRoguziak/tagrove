@@ -138,6 +138,7 @@ Reusable primitives live in [`src/components/UI`](../../src/components/UI):
 - `UiChip`, `UiAlert`, `UiProgressBar`, and `UiSlider` centralize common display/control styling. `UiAlert` always uses `role="alert"`.
 - `UiSegmentedControl` owns controlled native radio groups with translated labels, independent names, and content-based wrapping. An accessibility-hidden bold copy reserves each label’s selected width. The media filter uses it; filter submission stays in `SearchTagatorWrapper`.
 - `UiModal` is the standard portal dialog primitive described below.
+- `TagEditor` composes assigned chips and a borderless `SearchTagator` input inside one wrapping field. Callers supply controlled tags, draft, accessible labels, disabled/loading state, and mutation callbacks. Blank field space focuses the input; input focus highlights the field. The field scrolls to keep the focused input visible after chip changes and resizing.
 - `browserAssistDisabledProps` is shared by exact-token/confirmation inputs where browser autocorrection would be harmful.
 
 [`src/styles.css`](../../src/styles.css) imports Tailwind CSS, disables DaisyUI's stock theme set, and declares the app's `light` and `dark` DaisyUI themes. Components combine Tailwind utility classes, DaisyUI component classes such as `btn`, `progress`, and `loading`, and app CSS variables.
@@ -325,6 +326,7 @@ The existing tests exercise these boundaries:
 - `UiModal` tests cover closed rendering, backdrop/Escape options, top-layer dismissal, locked nested layers, focus trapping/restoration, app-root inertness, and responsive sizes; `UiAlert` tests cover semantic role and tone styling.
 - Hook tests cover query-cache lifecycle, stale/duplicate work protection, selection/editor synchronization, thumbnail queues, settings actions, confirmation flows, and shell search behavior.
 - `App.test.tsx` is the integration seam for initial hydration, gallery/settings replacement, Back and Escape navigation, modal flows, mutation wiring, and runtime theme application.
+- `TagEditor.test.tsx` covers shared-field composition, blank-space focus, removal, loading/disabled guards, add-only chips, assigned-tag exclusion, and typed versus suggestion submission.
 - Focused component tests cover specialized keyboard, labeling, selection, and modal behavior. End-to-end Tauri tests cover behavior that requires the desktop runtime.
 
 Add a direct service test for pure policy, a hook test for ownership/effect behavior, a component test for semantics and interaction, and an `App` integration test only when the composition contract changes. Run targeted Vitest files while iterating, then `bun run test` and `bun run build` in proportion to the change; consult the [testing guide](../development/testing.md) for the maintained command matrix.

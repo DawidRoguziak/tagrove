@@ -2,8 +2,7 @@ import { GroupOrderModal } from "./GroupOrderModal";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BulkSelectionController } from "../app/types";
-import { SearchTagator } from "../search/SearchTagator";
-import { AssignedTagList } from "../UI/AssignedTagList";
+import { TagEditor } from "../UI/TagEditor";
 import { UiAlert } from "../UI/UiAlert";
 import { UiButton } from "../UI/UiButton";
 import { UiIconButton } from "../UI/UiIconButton";
@@ -35,7 +34,7 @@ export function BulkActionsSidebar({
   if (orderModalContext !== null && !orderModalActivated) setOrderModalActivated(true);
   const [tagDraft, setTagDraft] = useState("");
   const tagInputRef = useRef<HTMLInputElement | null>(null);
-  const tagFocusFrameRef = useRef<number | null>(null);
+  const [pendingTagFocus, setPendingTagFocus] = useState<string | null>(null);
   const selectionKey = [...controller.selectedAssetIds].join(",");
   const displayedTags =
     controller.tagMode === "single" ? controller.singleAssetTags : controller.appliedBulkTags;
@@ -58,9 +57,20 @@ export function BulkActionsSidebar({
     setTagDraft("");
   }, [selectionKey]);
 
-  useEffect(() => () => {
-    if (tagFocusFrameRef.current !== null) cancelAnimationFrame(tagFocusFrameRef.current);
-  }, []);
+  useEffect(() => {
+    if (pendingTagFocus === null) return;
+    if (pendingTagFocus !== selectionKey) {
+      setPendingTagFocus(null);
+      return;
+    }
+    if (tagControlsDisabled) return;
+    // Focus only after React has committed the enabled input.
+    const frame = requestAnimationFrame(() => {
+      tagInputRef.current?.focus();
+      setPendingTagFocus(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingTagFocus, selectionKey, tagControlsDisabled]);
 
   const addTagAndRestoreFocus = (tag: string) => {
     const attemptedTag = normalizeBulkTag(tag);
@@ -69,18 +79,8 @@ export function BulkActionsSidebar({
     void controller.onAddTag(attemptedTag).then((saved) => {
       if (selectionKeyRef.current !== capturedSelection) return;
       if (saved) setTagDraft("");
-      if (tagFocusFrameRef.current !== null) {
-        cancelAnimationFrame(tagFocusFrameRef.current);
-      }
-      tagFocusFrameRef.current = requestAnimationFrame(() => {
-        tagFocusFrameRef.current = null;
-        tagInputRef.current?.focus();
-      });
+      setPendingTagFocus(capturedSelection);
     }).catch(() => {});
-  };
-
-  const submitTag = () => {
-    addTagAndRestoreFocus(tagDraft);
   };
 
   return (
@@ -206,7 +206,7 @@ export function BulkActionsSidebar({
       ) : null}
 
       <section
-        className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto_auto] gap-3 overflow-visible bg-[var(--surface-solid)]"
+        className="grid min-h-0 gap-3 overflow-visible bg-[var(--surface-solid)]"
         data-testid="bulk-tags-panel"
       >
         <div className="grid gap-0.5">
@@ -217,41 +217,26 @@ export function BulkActionsSidebar({
               : t("bulk.panel.tagsSingleDescription")}
           </p>
         </div>
-        <AssignedTagList
+        <TagEditor
           variant="bulk"
           tags={displayedTags}
           loadingText={controller.tagDetailsLoading ? t("bulk.panel.loadingTags") : undefined}
-          emptyText={
-            controller.tagMode === "none"
-              ? t("bulk.panel.selectItemsPrompt")
-              : controller.tagMode === "multiple"
-                ? t("bulk.panel.noBulkTagsAdded")
-                : t("lightbox.noTags")
-          }
+          emptyText={controller.tagMode === "none" ? t("bulk.panel.selectItemsPrompt") : undefined}
           onRemoveTag={
             controller.tagMode === "single"
               ? (tag) => void controller.onRemoveTag(tag).catch(() => {})
               : undefined
           }
           getRemoveTagAriaLabel={(tag) => t("bulk.tagModal.removeTagAria", { tag })}
-          removeDisabled={controller.selectionBusy || controller.tagApplying || controller.tagDetailsLoading || controller.tagDetailsFailed}
-        />
-        <SearchTagator
-          inputId="bulk-tag-draft-input"
-          value={tagDraft}
-          onValueChange={setTagDraft}
+          draft={tagDraft}
+          onDraftChange={setTagDraft}
           knownTags={controller.knownTags}
-          excludedTags={displayedTags}
-          onSuggestionPick={addTagAndRestoreFocus}
-          onSubmit={submitTag}
+          onAddTag={addTagAndRestoreFocus}
+          inputId="bulk-tag-draft-input"
           inputRef={tagInputRef}
           placeholder={t("bulk.tagModal.tagInputPlaceholder")}
-          ariaLabel={t("bulk.tagModal.addTag")}
+          inputAriaLabel={t("bulk.tagModal.addTag")}
           listboxAriaLabel={t("bulk.tagModal.suggestions")}
-          inputClassName="w-full"
-          suggestionsStrategy="viewport"
-          keepSuggestionsOpenOnPick
-          autoSelectFirstSuggestion={false}
           disabled={tagControlsDisabled}
         />
         {controller.startupPopularTags.length > 0 ? (

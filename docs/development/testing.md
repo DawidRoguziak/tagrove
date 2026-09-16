@@ -516,3 +516,32 @@ in Firefox on the private display, without signing in or submitting anything.
 This unbundled desktop check does not verify a Flatpak portal or an installed release
 package. Opener reports errors returned by its launch call; a browser failure after
 a successful detached launch may not be reported to the application.
+
+
+## Shared tag editor regressions
+
+`TagEditor.test.tsx` covers composition, blank-space focus, disabled/loading guards,
+controlled exclusion updates and keyboard focus. `BulkActionsSidebar.test.tsx` uses
+deferred saves to check that success, a failed result and rejection from a retired
+selection cannot erase a new draft or move focus. Save-completion tests also cover
+waiting for the enabled input to commit and canceling pending focus on selection changes. `LightboxModal.test.tsx` checks that
+Escape dismisses suggestions while retaining the lightbox, draft and input focus.
+
+`e2e/specs/tag-editor.e2e.js` is opt-in with `MEDIATAGGER_TAG_EDITOR=1`. It requires
+a disposable XDG profile and an authenticated private Xvfb display, with
+`MEDIATAGGER_NATIVE_DISPLAY` set to that display. Use the same isolation setup as
+[native speed verification](#native-speed-menu-and-repeated-playback), then run:
+
+```sh
+GDK_BACKEND=x11 MEDIATAGGER_TAG_EDITOR=1 dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; bun run test:e2e:tauri --spec e2e/specs/tag-editor.e2e.js'
+```
+
+The spec copies two disposable PNGs and seeds long/many tags through the backend.
+Behavior checks use the visible editors: native clicks on field padding, keyboard
+submission, suggestion selection and removal. Geometry and computed styles cover
+both editors, both themes, 600px and 1100px widths, height limits, wrapping,
+input visibility and focus feedback. Read-only details calls check persisted writes,
+including a multiple-selection addition, followed by a frontend reload.
+Evidence remains under `artifacts/tag-editor/<timestamp>/`. The bottom-edge suggestion
+placement limitation remains a separate issue; the popup assertion uses a desktop
+viewport with room below the input.

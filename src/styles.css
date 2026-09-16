@@ -397,3 +397,5 @@
   .lightbox-action-island { gap: 4px; padding: 4px; }
   .lightbox-media-summary { order: -1; width: 100%; }
 }
+
+.tag-editor:has(input:focus) { border-color: var(--color-primary); box-shadow: var(--field-shadow-focus); }

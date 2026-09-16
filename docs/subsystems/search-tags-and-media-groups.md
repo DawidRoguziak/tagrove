@@ -46,6 +46,8 @@ A lone `-` is a normal included token, and the same normalized tag may be presen
 
 The frontend sends only applied parsed values. The Rust query boundary normalizes tag arrays again, accepts only `image`, `gif`, and `video`, rejects negative exact counts and blank group names, and forwards the normalized filters to the session query. The complete SQL membership and group-ordering rules are in [database](database.md).
 
+Lightbox and bulk actions share `TagEditor`. Chips and the input wrap together inside one border, with long names wrapping within chips. The bulk field retains its 144px height limit and viewport suggestions. Empty editable fields show the input placeholder; empty selection and loading messages remain visible. Single selection exposes removal controls; multiple selection shows successful additions for the current selection and stays add-only. Draft normalization, failure recovery, and selection resets remain in the existing callers. Bulk focus restoration waits for the enabled input to commit after a save; changing selection cancels that pending focus.
+
 ## Search autocomplete
 
 `SearchTagator` discovers the active token around the current caret, scanning left and right to whitespace boundaries. The active query is trimmed, lowercased, and stripped of one leading `-`; replacement covers the entire token even when the caret is in its middle, and preserves the negative prefix. Caret position is restored immediately after the inserted tag.
@@ -63,6 +65,8 @@ fade from replaying on every keystroke without exposing stale results. Viewport 
 also wait for positioning before fading. Dismissing visible suggestions with Escape,
 blurring or disabling the input, or clearing its value unmounts the list immediately. See the shared
 [motion rules](../frontend/architecture-and-ui-conventions.md#motion).
+
+Viewport suggestions retain their requested above/below placement rather than flipping automatically. A below-input list can have zero available height when the input sits at the viewport bottom, including the narrow bulk layout.
 
 ## Known tags and the tag-list browser
 
@@ -86,7 +90,7 @@ Apply disables closing interactions while in flight. Success closes the modal; r
 
 ## Bulk selection
 
-Bulk selection stores authoritative IDs independently of gallery-page eviction and current filters. `useSelectedSummaries` retains ordering/display metadata only for those IDs, seeds it from cached pages, and hydrates missing summaries through batches of at most 256 IDs with at most four requests in flight. Omitted records and failed batches show a retryable hydration error. Turning selection mode off clears the selected-ID set and anchor. A new query session clears the global-index anchor and invalidates in-flight selection ranges. Enabling bulk mode adds a sticky right column beside the gallery, bounded to the viewport height. The column scrolls vertically when its content exceeds the viewport, with its header sticky at the top. Long tag content also scrolls inside its list. The sidebar has an 8px rounded bottom-left corner. Changing the selected-ID set resets its group draft, order, tag feedback, and request state.
+Bulk selection stores authoritative IDs independently of gallery-page eviction and current filters. `useSelectedSummaries` retains ordering/display metadata only for those IDs, seeds it from cached pages, and hydrates missing summaries through batches of at most 256 IDs with at most four requests in flight. Omitted records and failed batches show a retryable hydration error. Turning selection mode off clears the selected-ID set and anchor. A new query session clears the global-index anchor and invalidates in-flight selection ranges. Enabling bulk mode adds a sticky right column beside the gallery, bounded to the viewport height. The column scrolls vertically when its content exceeds the viewport, with its header sticky at the top. Long tag content also scrolls inside the shared editor field. The sidebar has an 8px rounded bottom-left corner. Changing the selected-ID set resets its group draft, order, tag feedback, and request state.
 
 In bulk mode, an ordinary click toggles only the clicked tile: an unselected tile is added, and a selected tile is removed while other selected IDs are preserved. Ctrl/Cmd-click has the same toggle behavior. Both set its global-index anchor. Shift-click resolves the inclusive range from the anchor, replacing selection; Ctrl/Cmd+Shift adds that range. Shift does not move an existing anchor. Without an anchor, Shift-click adds the tile and establishes an anchor.
 

@@ -70,6 +70,76 @@ function createController(
 describe("BulkActionsSidebar", () => {
   afterEach(cleanup);
 
+
+  it("restores focus after a completed save's disabled state is committed away", async () => {
+    let settle: (saved: boolean) => void = () => {};
+    const pending = new Promise<boolean>(resolve => { settle = resolve; });
+    const controller = createController({ selectedAssetIds: new Set([1]), tagMode: "single",
+      onAddTag: vi.fn(() => pending) });
+    const { rerender } = render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    await userEvent.type(screen.getByLabelText("Add tag"), "cat{Enter}");
+    rerender(<BulkActionsSidebar controller={{ ...controller, tagApplying: true }} thumbs={{}} renderingThumbnailIds={{}} />);
+    await userEvent.click(screen.getByPlaceholderText("Group key (uuid or custom)"));
+    await act(async () => { settle(true); await pending; });
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(screen.getByLabelText("Add tag")).toBeDisabled();
+    rerender(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    await waitFor(() => expect(screen.getByLabelText("Add tag")).toHaveFocus());
+    expect(screen.getByLabelText("Add tag")).toHaveValue("");
+  });
+
+  it("cancels deferred tag focus when selection changes before re-enabling", async () => {
+    let settle: (saved: boolean) => void = () => {};
+    const pending = new Promise<boolean>(resolve => { settle = resolve; });
+    const controller = createController({ selectedAssetIds: new Set([1]), tagMode: "single",
+      onAddTag: vi.fn(() => pending) });
+    const { rerender } = render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+    await userEvent.type(screen.getByLabelText("Add tag"), "cat{Enter}");
+    rerender(<BulkActionsSidebar controller={{ ...controller, tagApplying: true }} thumbs={{}} renderingThumbnailIds={{}} />);
+    await act(async () => { settle(true); await pending; });
+    rerender(<BulkActionsSidebar controller={{ ...controller, selectedAssetIds: new Set([2]) }} thumbs={{}} renderingThumbnailIds={{}} />);
+    const groupInput = screen.getByPlaceholderText("Group key (uuid or custom)");
+    await userEvent.click(groupInput);
+    await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+    expect(groupInput).toHaveFocus();
+    expect(screen.getByLabelText("Add tag")).toHaveValue("");
+  });
+
+  it.each(["saved", "failed", "rejected"] as const)(
+    "ignores a retired selection's %s tag save without clearing the new draft or stealing focus",
+    async (outcome) => {
+      let settle: (saved: boolean) => void = () => {};
+      let reject: (error: Error) => void = () => {};
+      const pending = new Promise<boolean>((resolve, rejectPromise) => {
+        settle = resolve;
+        reject = rejectPromise;
+      });
+      const controller = createController({
+        selectedAssetIds: new Set([1]), tagMode: "single",
+        onAddTag: vi.fn(() => pending)
+      });
+      const { rerender } = render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
+      await userEvent.type(screen.getByLabelText("Add tag"), "old-tag{Enter}");
+      expect(controller.onAddTag).toHaveBeenCalledExactlyOnceWith("old-tag");
+      rerender(<BulkActionsSidebar controller={{ ...controller, selectedAssetIds: new Set([2]) }}
+        thumbs={{}} renderingThumbnailIds={{}} />);
+      expect(screen.getByLabelText("Add tag")).toHaveValue("");
+      await userEvent.type(screen.getByLabelText("Add tag"), "new-draft");
+      const groupInput = screen.getByPlaceholderText("Group key (uuid or custom)");
+      await userEvent.click(groupInput);
+      await act(async () => {
+        if (outcome === "rejected") reject(new Error("retired save"));
+        else settle(outcome === "saved");
+        await pending.catch(() => {});
+      });
+      // Flush the frame used for focus restoration, not merely the promise callback.
+      await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+      expect(screen.getByLabelText("Add tag")).toHaveValue("new-draft");
+      expect(groupInput).toHaveFocus();
+      expect(controller.onAddTag).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it("shows startup tags in snapshot order and keeps assigned single-asset tags clickable", async () => {
     const controller = createController({ selectedAssetIds: new Set([1]), tagMode: "single",
       singleAssetTags: ["travel"], startupPopularTags: ["travel", "cat"] });
@@ -182,7 +252,7 @@ describe("BulkActionsSidebar", () => {
       "p-2"
     );
     expect(screen.getByTestId("bulk-tag-list")).not.toHaveClass("p-1", "w-fit");
-    expect(screen.getByTestId("bulk-tag-list")).toHaveAttribute("data-ui", "assigned-tag-list");
+    expect(screen.getByTestId("bulk-tag-list")).toHaveAttribute("data-ui", "tag-editor");
     expect(screen.getByText("Select at least one item")).toBeInTheDocument();
   });
 

@@ -13,6 +13,8 @@ Related documentation:
 - [Database](database.md) covers library revisions changed by lightbox mutations.
 - [Thumbnails](thumbnails.md) covers gallery previews; the lightbox itself loads the original media URL rather than a thumbnail.
 
+The tagging panel uses the shared `TagEditor` with chips and input inside one border. It retains the 200px scrolling limit, wraps long names, and keeps the focused input visible. The input has an accessible Add tag name without a separate visible label. Empty editable fields show the existing placeholder; details-loading status and retry controls remain outside the field. Autosave and draft ownership remain in the lightbox tagging hook.
+
 ## Ownership and composition
 
 `useAppShellController` creates `useLibraryBrowser` and passes its loaded assets, total result count, global lookup functions, refresh functions, and cache setter to `useSelectionState`. It exposes the returned selection state as the `lightbox` props. `App` lazy-loads and renders `LightboxModal` only while `selected` is non-null.

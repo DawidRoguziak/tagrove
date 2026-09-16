@@ -1,8 +1,7 @@
 import type { RefObject } from "react";
-import { AssignedTagList } from "../UI/AssignedTagList";
+import { TagEditor } from "../UI/TagEditor";
 import { UiAlert } from "../UI/UiAlert";
 import { UiButton } from "../UI/UiButton";
-import { SearchTagator } from "../search/SearchTagator";
 import { useTranslation } from "react-i18next";
 
 interface LightboxTagPanelProps {
@@ -48,38 +47,22 @@ export function LightboxTagPanel({
     >
       <h3 className="m-0 text-xs">{t("lightbox.taggingHeading")}</h3>
 
-      <AssignedTagList
+      <TagEditor
         variant="lightbox"
         tags={selectedTags}
-        emptyText={t("lightbox.noTags")}
+        draft={tagDraft}
+        knownTags={knownTags}
+        inputRef={tagInputRef}
+        inputId="lightbox-tag-draft-input"
+        inputAriaLabel={t("lightbox.addTag")}
+        placeholder={t("lightbox.tagInputPlaceholder")}
+        listboxAriaLabel={t("lightbox.taggingSuggestions")}
+        onDraftChange={onTagDraftChange}
+        onAddTag={onAddTag}
         onRemoveTag={onRemoveTag}
-        removeDisabled={tagEditingDisabled}
+        disabled={tagEditingDisabled}
         getRemoveTagAriaLabel={(tag) => t("lightbox.removeTagAria", { tag })}
       />
-
-      <div className="relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1">
-        <label className="text-xs text-[var(--text-muted)]" htmlFor="lightbox-tag-draft-input">
-          {t("lightbox.addTag")}
-        </label>
-        <SearchTagator
-          inputId="lightbox-tag-draft-input"
-          inputRef={tagInputRef}
-          value={tagDraft}
-          onValueChange={onTagDraftChange}
-          knownTags={knownTags}
-          excludedTags={selectedTags}
-          onSuggestionPick={onAddTag}
-          onSubmit={() => onAddTag(tagDraft)}
-          placeholder={t("lightbox.tagInputPlaceholder")}
-          listboxAriaLabel={t("lightbox.taggingSuggestions")}
-          inputClassName="h-8 w-full"
-          keepSuggestionsOpenOnPick
-          autoSelectFirstSuggestion={false}
-          suggestionsPlacement="below"
-          suggestionsStrategy="viewport"
-          disabled={tagEditingDisabled}
-        />
-      </div>
 
       {tagDetailsLoading ? (
         <p className="m-0 text-xs text-[var(--text-muted)]" role="status">{t("lightbox.tagDetailsLoading")}</p>

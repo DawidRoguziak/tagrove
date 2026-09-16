@@ -662,7 +662,7 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     expect(screen.getByTestId("lightbox-tag-list")).not.toHaveClass("p-1", "w-fit");
     expect(screen.getByTestId("lightbox-tag-list")).toHaveAttribute(
       "data-ui",
-      "assigned-tag-list"
+      "tag-editor"
     );
     await userEvent.click(screen.getByRole("button", { name: "Remove tag dog" }));
 
@@ -706,6 +706,23 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     expect(suggestions.style.bottom).toBe("");
     expect(within(suggestions).queryByRole("option", { name: /cat/i })).not.toBeInTheDocument();
     expect(within(suggestions).getByRole("option", { name: /ca\s*r/i })).toBeInTheDocument();
+  });
+
+  it("dismisses tag suggestions with Escape without closing the lightbox or losing the draft", async () => {
+    const onClose = vi.fn();
+    render(<LightboxModal selected={selectedAsset} tagEditor={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} knownTags={["cat"]}
+      onNavigatePrevious={vi.fn()} onNavigateNext={vi.fn()}
+      onToggleFavorite={vi.fn()} onClose={onClose} />);
+    const input = screen.getByLabelText("Add tag");
+    await userEvent.type(input, "ca");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Escape}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(input).toHaveValue("ca");
+    expect(input).toHaveFocus();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("adds suggested tag with keyboard enter, clears input and keeps tagging panel open", async () => {

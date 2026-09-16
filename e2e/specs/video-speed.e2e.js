@@ -105,6 +105,76 @@ suite("native video speed and reopening", function () {
     await invoke("clear_library_data");
     if (root) await fs.rm(root, { recursive: true, force: true });
   });
+  it("exits bottom-button fullscreen once with WebView, native and speed-menu focus in both themes", async () => {
+    await close();
+    for (const theme of ["light", "dark"]) {
+      await browser.execute(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      for (const width of [1000, 600]) {
+        await browser.setWindowSize(width, 720);
+        for (const focus of ["webview", "native", "menu"]) {
+          await open(ids[0]);
+          const session = await attribute("session");
+          const picture = await rect(player);
+          await point(picture.x + picture.width / 2, picture.y + picture.height / 2);
+          await waitAttribute("paused", true);
+          const before = Number(await attribute("time"));
+          const initialPanelOpen = await browser.execute(() =>
+            document.getElementById("lightbox-sidebar-close-button").getAttribute("aria-expanded"));
+          const geometry = await browser.execute(() => {
+            const column = document.querySelector(".lightbox-media-column");
+            const controls = document.querySelector(".lightbox-media-controls")?.getBoundingClientRect();
+            const picture = document.querySelector("[data-native-video-active]").getBoundingClientRect();
+            return { padding: getComputedStyle(column).paddingTop, controlsBottom: controls?.bottom ?? null, pictureTop: picture.top,
+              headerClose: Boolean(document.querySelector('#lightbox-sidebar[aria-hidden="false"] header button[aria-label="Close preview"]')) };
+          });
+          assert.equal(geometry.padding, "44px");
+          if (initialPanelOpen === "false") assert.ok(geometry.controlsBottom <= geometry.pictureTop);
+          else {
+            assert.equal(geometry.controlsBottom, null);
+            assert.equal(geometry.headerClose, true);
+          }
+          // A real native click must reach the floating reopen button above video.
+          if (initialPanelOpen === "false") {
+            await click('button[aria-label="Open asset panel"]');
+            await $('button[aria-label="Close asset panel"]').waitForDisplayed();
+            await click('button[aria-label="Close asset panel"]');
+            await browser.pause(300);
+          }
+          await click('[data-testid="lightbox-action-rail"] button[aria-label="Toggle fullscreen"]');
+          await browser.waitUntil(async () => await attribute("fullscreen") !== null);
+          assert.equal(await browser.execute(() => getComputedStyle(document.querySelector(".lightbox-media-column")).paddingTop), "0px");
+          assert.equal(await $('button[aria-label="Close preview"]').isExisting(), false);
+          if (focus === "webview") {
+            await browser.execute(() => document.querySelector("[data-native-video-active]").focus());
+            assert.equal(await browser.execute(() => document.activeElement?.hasAttribute("data-lightbox-video-player")), true);
+          } else if (focus === "native") {
+            const { play } = await controls();
+            await point(play.x, play.y);
+            await waitAttribute("paused", false);
+            await point(play.x, play.y);
+            await waitAttribute("paused", true);
+          } else {
+            await menu();
+            await capture(`escape-${theme}-${width}-menu`);
+            await native("key", "Escape");
+            await browser.pause(200);
+            assert.notEqual(await attribute("fullscreen"), null, "first Escape dismisses only speed menu");
+          }
+          await native("key", "Escape");
+          await browser.waitUntil(async () => await attribute("fullscreen") === null);
+          await browser.pause(300);
+          assert.equal(await attribute("session"), session, "Escape keeps the mounted playback session");
+          assert.ok(Number(await attribute("time")) >= before - .25, `Escape preserves playback position: before=${before}, after=${await attribute("time")}, ${theme}/${width}/${focus}`);
+          assert.equal(await browser.execute(() => document.getElementById("lightbox-sidebar-close-button").getAttribute("aria-expanded")), initialPanelOpen);
+          await capture(`escape-${theme}-${width}-${focus}-exited`);
+          await close();
+        }
+      }
+    }
+    await browser.setWindowSize(1000, 720);
+    await open(ids[0]);
+  });
+
   it("dismisses outside clicks without activating the picture or controls", async () => {
     await menu();
     await capture("menu-open");

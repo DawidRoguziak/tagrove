@@ -64,22 +64,15 @@ export function useLightboxKeyboardShortcuts({
       const isFormControl =
         target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || Boolean(target?.isContentEditable);
 
-      if (isFormControl) {
-        return;
-      }
-
-      const isVideoPlayerTarget = Boolean(target?.closest("[data-lightbox-video-player]"));
-
-      if (
-        selectedKind === "video" &&
-        isFullscreen &&
-        event.key === "Escape"
-      ) {
+      if (selectedKind === "video" && isFullscreen && event.key === "Escape") {
         event.preventDefault();
-        event.stopPropagation();
-        void onToggleFullscreen();
+        event.stopImmediatePropagation();
+        if (!event.repeat) void onToggleFullscreen();
         return;
       }
+
+      if (isFormControl) return;
+      const isVideoPlayerTarget = Boolean(target?.closest("[data-lightbox-video-player]"));
 
       if (event.key === "f" || event.key === "F") {
         event.preventDefault();

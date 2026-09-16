@@ -24,13 +24,17 @@ The runtime path is:
 3. It calls `getAssetDetails(asset.id)` and replaces the summary with `AssetDetails` if that request is still current. Until a complete tag list is available from details or the shared authoritative tag state, tag editing is disabled.
 4. `LightboxModal` delegates persistent edits back to `useSelectionState`; local hooks manage panels, confirmation, clipboard feedback, media transforms, fullscreen, and shortcuts. Detail-load failure and tag-save failure are displayed and retried independently.
 
-At widths of at least 768 px the modal initially shows the media stage beside the action sidebar. Below 768 px the sidebar starts as a closed right drawer. Both layouts allow the sidebar to slide off the right edge in 200 ms, with reduced motion respected. The covered media header and action island are inert while the drawer is open. An explicit open/closed choice survives asset navigation and resizing until the lightbox closes; without a choice the default follows the breakpoint. Editors remain mounted while collapsed. The sidebar uses shrinkable grid tracks, wraps long tags, scrolls vertically, and keeps actions reachable. Shell height stays within the viewport. Desktop minimum window dimensions remain unchanged.
+At widths of at least 768 px the modal initially shows the media stage beside the action sidebar. Below 768 px the sidebar starts as a closed right drawer. Both layouts allow the sidebar to slide off the right edge in 200 ms, with reduced motion respected. The covered media controls and action island are inert while the drawer is open. An explicit open/closed choice survives asset navigation and resizing until the lightbox closes; without a choice the default follows the breakpoint. Editors remain mounted while collapsed. The sidebar uses shrinkable grid tracks, wraps long tags, scrolls vertically, and keeps actions reachable. Shell height stays within the viewport. Desktop minimum window dimensions remain unchanged.
 
-A collapsed sidebar leaves a persistent reopen button in the media header, alongside the
-filename and explicit Close preview action. The header occupies its own row above native
-video bounds. The sidebar remains mounted, inert and aria-hidden while hidden. Opening
+An open sidebar keeps Close preview beside the collapse arrow in its header.
+A collapsed sidebar leaves a reopen button floating at the media column's top
+right, alongside Close preview. Images and GIFs sit underneath these controls. Windowed
+native video reserves 44px above the surface so GTK cannot cover either button. This
+space uses the media background without a divider; video fullscreen removes it and hides
+the controls. The filename remains in the dialog's accessible name and sidebar information. The sidebar remains mounted, inert and aria-hidden while hidden. Opening
 moves focus into the panel after GTK acknowledges bounds that leave it clear. Keyboard
-collapse returns focus to the trigger. Delete confirmation and pending deletion prevent
+collapse returns focus to the trigger. In a narrow video layout, restoration waits for
+the closing transition to reveal the media column that contains the trigger. Delete confirmation and pending deletion prevent
 collapse. `useLightboxSidebar` retains occupied space through the closing transition;
 selection-scoped info and confirmation state remain in `useLightboxModalHandlers`.
 
@@ -97,19 +101,32 @@ are unchanged.
 
 ## Toolbar, sidebar, confirmation, and clipboard
 
-The media column has three rows: filename/close header, viewport, and a centered action
-island below the viewport. Favorite, group copy, reset zoom, details, fullscreen and delete
+The media column contains the viewport and a centered action island below it, with
+reopen and close controls floating at the top right only while the sidebar is collapsed.
+Close preview moves into the open sidebar header and is disabled during pending deletion.
+Favorite, group copy, reset zoom, fullscreen and delete
 remain reachable with the inspector collapsed. The island wraps in narrow windows and
 stays outside native GTK video bounds. Reset is disabled for video. Both native video and
 image fullscreen use the existing fullscreen action. Image fullscreen retains the chrome;
 native fullscreen hides it and preserves the prior sidebar choice when returning.
 
-Details starts collapsed. Its action opens a closed panel with details expanded, or toggles
-details in an already open panel. Group editing precedes tagging and details. Suggestions
+`useLightboxActivity.visible` controls the floating buttons and bottom action row. After
+three seconds without activity they fade to zero opacity over 200 ms and stop receiving
+pointer input. Reduced motion makes the opacity change immediate. Both stay mounted and
+retain their layout space, including the native video's top clearance, so fading does not
+resize media. The open sidebar and its header remain visible.
+
+Actual pointer movement, pointer presses, wheel, scroll, keyboard input, and native-video
+activity events reveal controls and restart the timer. Repeated movement events at unchanged
+coordinates do not reset it. The first action also performs its normal function. Keyboard
+input reveals controls before focus navigation; focus alone does not extend visibility.
+Touch devices keep controls visible. Closing removes activity listeners and cancels the timer.
+
+Information starts collapsed and its toggle lives only in the sidebar. Group editing precedes tagging and details. Suggestions
 use the existing viewport portal. Navigation remains keyboard-driven across global results.
 
 Below 768px the sidebar starts as a closed drawer, with width `min(340px, 100%)`. Scrim
-and Escape close the drawer first. The covered media header and action island are inert while the drawer is open. An explicit open/closed choice survives asset navigation
+and Escape close the drawer first. The covered media controls and action island are inert while the drawer is open. An explicit open/closed choice survives asset navigation
 and resizing until the lightbox closes. Native fullscreen temporarily hides the drawer;
 it does not discard that choice. Editors stay mounted while collapsed.
 
@@ -161,7 +178,7 @@ When the current OpenGL renderer identifies itself as llvmpipe, render-context i
 
 Playback snapshots and decoder-stop polling read libmpv flags through a private `c_int` adapter. `MPV_FORMAT_FLAG` writes a C integer; the installed libmpv2 6 wrapper's generic Rust `bool` getter allocates only one byte. The adapter converts the initialized integer only after a successful read and preserves each caller's error default. Dependencies and public payloads are unchanged.
 
-The native speed menu offers 0.5, 0.75, 1, 1.25, 1.5 and 2×. Selection queues a worker command; the authoritative playback snapshot updates the speed label. A GTK capture gesture claims the entire outside click, including release, over the picture, native controls, sidebar and backdrop. That click only dismisses the menu. The trigger toggles it, selection closes it, and a capture-phase Escape handler dismisses it before fullscreen or lightbox shortcuts. The popover is nonmodal because capture owns outside dismissal. Its visibility and trigger state are cleared together on close, replacement, focus loss and zero visible bounds. Dismissal runs outside the player mutex and surface borrow, and choice callbacks hold weak popover references.
+The native speed menu offers 0.5, 0.75, 1, 1.25, 1.5 and 2×. Selection queues a worker command; the authoritative playback snapshot updates the speed label. A GTK capture gesture claims the entire outside click, including release, over the picture, native controls, sidebar and backdrop. That click only dismisses the menu. The trigger toggles it, selection closes it, and the GTK window capture handler consumes Escape to dismiss it first. With no menu open, that handler explicitly exits fullscreen for the current video session and consumes the event, including when WebView or native controls have focus. Control failures use the existing error report. The popover is nonmodal because capture owns outside dismissal. Its visibility and trigger state are cleared together on close, replacement, focus loss and zero visible bounds. Dismissal runs outside the player mutex and surface borrow, and choice callbacks hold weak popover references.
 
 Normal lightbox close/reopen hides and reuses the renderer. GLArea unrealize makes its owning context current before unregistering the libmpv update callback and freeing the renderer. Callback storage survives renderer destruction. GTK's private GLArea input window also passes input through; setting pass-through only on the parent overlay leaves picture clicks intercepted.
 
@@ -208,7 +225,7 @@ The window-level shortcuts while an asset is selected are:
 
 The first key press after three seconds of inactivity both reveals the controls and executes its eligible shortcut. `useLightboxKeyboardShortcuts` keeps one listener registered while shortcuts are enabled and an asset is selected. A layout effect updates its local ref with the current callbacks, media kind, and fullscreen state, so an activity-triggered render during `keydown` cannot remove the listener before it handles that event. Asset changes and control visibility do not replace the listener; disabling shortcuts, closing, and unmounting remove it.
 
-While delete confirmation is open, the lightbox shortcut listener is disabled and the inline confirmation owns Escape. Otherwise, form controls keep their keys. Native video `F` and fullscreen `Escape` are handled by the WebView shortcut path or, when focus is inside the native overlay, by GTK. Global navigation is suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
+While delete confirmation is open, the lightbox shortcut listener is disabled and the inline confirmation owns Escape. Otherwise, form controls keep their keys except video fullscreen Escape. The WebView fallback consumes fullscreen Escape before other listeners and ignores repeated keydown events. It remains enabled while fullscreen hides an open narrow sidebar. Native video `F` is handled by the WebView shortcut path or GTK controls; the GTK window captures fullscreen Escape regardless of focus. Global navigation is suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
 
 A primary-button click on the video picture focuses its WebView container and toggles pause. The GTK picture passes pointer input through to that container; native controls handle their own clicks. With the picture focused, unmodified Left/Right seek by five seconds and Space/Enter toggle pause. Native play, mute, and fullscreen buttons also handle unmodified Left/Right; sliders and the speed menu retain their keyboard behavior. Seeking preserves pause state and libmpv bounds the position to the media timeline. Pause toggles and relative seeks run on the playback worker, including accumulation of rapid relative seeks against libmpv's pending target. Frontend controls queue in input order and discard queued work for retired sessions; failures use the existing recoverable control-error UI.
 
@@ -255,13 +272,13 @@ Current focused coverage is split across:
 - `src/hooks/__tests__/useSelectionState.test.ts`: editor hydration, cache-to-selection synchronization, empty-library close, tag-mutation serialization/retry, pending-mutation detail barriers, restore/reset ID reuse, deletion tombstones, stale-detail protection, rapid Right/Right and Right/Left ordering, and delegation to mutation actions. It also covers query-position recomputation and failed navigation retries, but not every prefetch race or global wrap/unloaded-page combination.
 - `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx`: A→B→A failure reset and rejection of a late error callback from an older activation; image/GIF zoom sizing, preservation across unrelated renders, wheel anchoring, drag bounds, resize re-clamping, natural dimensions, navigation/reset, and RAF coalescing/cancellation. DOM tests establish sizing and interaction contracts; sharpness requires inspecting pixels in the desktop WebView.
 - `src/components/UI/__tests__/ModalPresence.test.tsx`: exit retention, interrupted transitions, reduced motion, compiled duration tokens, nested focus restoration and locked confirmations.
-- `src/components/lightbox/__tests__/LightboxModal.test.tsx`: 75 ms opening and 50 ms closing, navigation without replay, rapid reactivation, reduced motion, retained editor props, immediate native-player shutdown, arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, and inline delete confirmation.
+- `src/components/lightbox/__tests__/LightboxModal.test.tsx`: 75 ms opening and 50 ms closing, navigation without replay, rapid reactivation, reduced motion, retained editor props, immediate native-player shutdown, arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, fullscreen Escape consumption with an open narrow sidebar, session preservation, sidebar-only information, and inline delete confirmation.
 - `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx`: cancellation before and after reservation, delayed open completion, A→B→A event isolation, coalesced bounds acknowledgements, label changes, recoverable/fatal errors, and serialized fullscreen toggles.
-- `e2e/specs/video-speed.e2e.js`: actual native speed selection, outside-click consumption, focus loss, zero/stale bounds, Escape/fullscreen and 30 reopen cycles with decoded-picture comparisons. See the [native playback test setup](../development/testing.md#native-speed-menu-and-repeated-playback).
+- `e2e/specs/video-speed.e2e.js`: actual native speed selection, outside-click consumption, focus loss, zero/stale bounds, Escape after bottom-button fullscreen with WebView/native/menu focus at 1000px and 600px in both themes, session/position/sidebar preservation, native button clickability, and 30 reopen cycles with decoded-picture comparisons. See the [native playback test setup](../development/testing.md#native-speed-menu-and-repeated-playback).
 - `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx`: copy availability, clipboard write, confirmed state, and 1,600 ms reset.
 - `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` and `hooks/__tests__/useLightboxModalHandlers.test.ts`: confirmation text, inline close/confirm callbacks, media-group parsing, and pending-delete guards.
 - `src/components/lightbox/__tests__/useLightboxImageControls.test.ts`: keyboard navigation/zoom/fullscreen, wheel suppression, direct double-click zoom, drag fallback, and close timing.
-- `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts`: first-arrow navigation and default prevention after idle with a synchronous render in an earlier key listener, current callbacks/media/fullscreen without re-registration, and listener cleanup across disabling, closing, Strict Mode, and reopening.
+- `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts`: first-arrow navigation and default prevention after idle with a synchronous render in an earlier key listener, current callbacks/media/fullscreen without re-registration, fullscreen Escape from form focus and repeat suppression, and listener cleanup across disabling, closing, Strict Mode, and reopening.
 - `src/components/lightbox/services/__tests__`: backend-first local updates and follow-up refresh rules for tags, favorite, group, and deletion. The `selectPrevious/Next` service tests cover legacy non-runtime helpers only.
 - `src/components/app/services/__tests__/assetMutationService.test.ts`: immutable list/selection update helpers.
 - `src/__tests__/api.test.ts`: API payload/source conversion plus single and bulk tag mutation result mapping. `src/__tests__/App.test.tsx` mocks `getAssetDetails`, but currently has no end-to-end lightbox selection/details/mutation case.

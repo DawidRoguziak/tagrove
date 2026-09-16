@@ -35,6 +35,7 @@ interface LightboxToolbarProps {
   infoPanelOpen: boolean;
   onToggleInfo: () => void;
   onCloseSidebar: (restoreFocus: boolean) => void;
+  onCloseLightbox: () => void;
   groupPending?: boolean;
   deleteConfirmOpen: boolean;
   deleteSubmitting: boolean;
@@ -71,6 +72,7 @@ export function LightboxToolbar({
   infoPanelOpen,
   onToggleInfo,
   onCloseSidebar,
+  onCloseLightbox,
   groupPending = false,
   deleteConfirmOpen,
   deleteSubmitting,
@@ -113,10 +115,17 @@ export function LightboxToolbar({
             aria-expanded={sidebarOpen}
             aria-controls="lightbox-sidebar"
             title={t("lightbox.closePanel")}
-            disabled={deleteConfirmOpen}
+            disabled={deleteConfirmOpen || deleteSubmitting}
             onClick={(event) => onCloseSidebar(event.detail === 0)}
           />
-
+          <UiIconButton
+            icon="close"
+            className="h-8! w-8! min-h-8!"
+            aria-label={t("lightbox.closePreview")}
+            title={t("common.close")}
+            disabled={deleteSubmitting}
+            onClick={onCloseLightbox}
+          />
         </div>
       </header>
 

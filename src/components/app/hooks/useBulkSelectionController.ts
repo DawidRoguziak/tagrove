@@ -9,8 +9,7 @@ import type { AssetDetails, AssetSummary } from "../../../types";
 import { applyBulkMediaGroupAction } from "../../bulk/grouping/services/applyBulkMediaGroupAction";
 import {
   deriveBulkGroupSelectionState,
-  normalizeGroupKey,
-  reorderAssetIdsByDrop
+  normalizeGroupKey
 } from "../../bulk/grouping/services/bulkGroupOrderService";
 import { applyBulkTagsAction } from "../../bulk/tagging/services/applyBulkTagsAction";
 import {
@@ -781,8 +780,6 @@ export function useBulkSelectionController({
     onToggleSelectionMode,
     onBulkSelectionInteraction,
     onGroupKeyDraftChange: (value: string) => { groupDirtyRef.current = true; setGroupKeyDraft(value); },
-    onReorderGroupAsset: (draggedAssetId: number, targetAssetId: number) =>
-      setOrderedAssetIds((previous) => reorderAssetIdsByDrop(previous, draggedAssetId, targetAssetId)),
     onApplyGroup,
     onAddTag,
     onRemoveTag,

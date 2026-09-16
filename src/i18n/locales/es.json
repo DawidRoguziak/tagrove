@@ -92,7 +92,11 @@
     "gifChip": "GIF",
     "groupedChip": "Parte de un grupo multimedia",
     "generatingThumbnails": "Generando miniaturas para {{count}} elementos en cola.",
-    "noMoreItems": "No hay más elementos para cargar",
+    "endOfResults": "Fin de los resultados",
+    "resultCount_one": "{{formattedCount}} elemento",
+    "resultCount_few": "{{formattedCount}} elementos",
+    "resultCount_many": "{{formattedCount}} elementos",
+    "resultCount_other": "{{formattedCount}} elementos",
     "loadError": "No se pudo cargar la biblioteca.",
     "retry": "Reintentar"
   },

@@ -145,7 +145,8 @@ function LightboxContent({
   });
 
   const mediaControls = useLightboxImageControls({
-    keyboardShortcutsEnabled: active && !handlers.deleteConfirmOpen && !(isNarrow && sidebarOpen),
+    keyboardShortcutsEnabled: active && !handlers.deleteConfirmOpen,
+    keyboardShortcutsSuspended: isNarrow && sidebarOpen,
     selected,
     onClose,
     onNavigatePrevious,
@@ -174,9 +175,15 @@ function LightboxContent({
   useEffect(() => {
     if (!active) return;
     const wasOpen = sidebarWasOpenRef.current;
-    sidebarWasOpenRef.current = sidebarVisible;
-    if (wasOpen === null || wasOpen === sidebarVisible) return;
+    // Narrow video keeps the entire media column hidden until the drawer exits.
+    // Its reopen button cannot receive focus before that column is shown again.
+    if (wasOpen && !sidebarOpen && selected?.kind === "video" && isNarrow && sidebarOccupied) return;
+    if (wasOpen === null || wasOpen === sidebarVisible) {
+      sidebarWasOpenRef.current = sidebarVisible;
+      return;
+    }
     const frame = window.requestAnimationFrame(() => {
+      sidebarWasOpenRef.current = sidebarVisible;
       if (sidebarVisible) {
         document.getElementById(handlers.deleteConfirmOpen ? "lightbox-delete-confirm-input" : SIDEBAR_CLOSE_BUTTON_ID)?.focus({ preventScroll: true });
       } else if (wasOpen && !sidebarOpen) {
@@ -188,7 +195,7 @@ function LightboxContent({
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, sidebarVisible, sidebarOpen, handlers.deleteConfirmOpen, activity.reveal, mediaControls.lightboxShellRef]);
+  }, [active, sidebarVisible, sidebarOpen, sidebarOccupied, isNarrow, selected?.kind, handlers.deleteConfirmOpen, activity.reveal, mediaControls.lightboxShellRef]);
 
   const handleNativeBounds = useCallback((bounds: VideoBounds) => {
     const viewport = mediaControls.mediaViewportRef.current?.getBoundingClientRect();
@@ -278,14 +285,17 @@ function LightboxContent({
               aria-hidden={!videoFullscreen && isNarrow && sidebarOpen || undefined}
               className={[
                 "lightbox-media-column relative grid h-full min-h-0 min-w-0 overflow-hidden",
-                videoFullscreen ? "grid-rows-[minmax(0,1fr)]" : "grid-rows-[auto_minmax(0,1fr)_auto]",
+                videoFullscreen ? "grid-rows-[minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)_auto]",
+                isVideo && !videoFullscreen ? "pt-11" : "",
                 hideNativeVideoForSidebar ? "hidden" : ""
               ].join(" ")}
             >
-              {!videoFullscreen ? (
-                <header className="lightbox-media-header">
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs" title={selected.file_name}>{selected.file_name}</span>
-                  {!sidebarOpen ? <UiIconButton
+              {!videoFullscreen && !sidebarOpen ? (
+                <div
+                  className="lightbox-media-controls absolute right-3 top-1.5 z-[5] flex gap-2 transition-opacity duration-200 motion-reduce:transition-none"
+                  style={{ opacity: activity.visible ? 1 : 0, pointerEvents: activity.visible ? undefined : "none" }}
+                >
+                  <UiIconButton
                     id={SIDEBAR_TRIGGER_BUTTON_ID}
                     icon="arrow-left"
                     aria-label={t("lightbox.openPanel")}
@@ -293,9 +303,9 @@ function LightboxContent({
                     aria-expanded={false}
                     aria-controls="lightbox-sidebar"
                     onClick={openSidebar}
-                  /> : null}
+                  />
                   <UiIconButton icon="close" aria-label={t("lightbox.closePreview")} title={t("common.close")} disabled={handlers.deleteSubmitting} onClick={handlers.handleCloseLightbox} />
-                </header>
+                </div>
               ) : null}
               {favoriteFailed || externalFavoriteFailed || handlers.mediaGroupFailed || groupFailed ? (
                 <div className="absolute left-3 top-3 z-[5] grid max-w-[min(28rem,calc(100%-6rem))] gap-2">
@@ -355,6 +365,7 @@ function LightboxContent({
                 onImagePointerEnd={mediaControls.handleImagePointerEnd}
               />
               {!videoFullscreen ? <LightboxActionRail
+              visible={activity.visible}
               groupCopyConfirmed={groupCopyConfirmed}
               canCopyMediaGroup={clipboard.canCopyMediaGroup}
               copyMediaGroupTitle={copyMediaGroupTitle}
@@ -375,13 +386,6 @@ function LightboxContent({
                 handlers.handleOpenDeleteConfirm();
               }}
               selected={selected}
-              infoPanelOpen={handlers.infoPanelOpen}
-              onToggleInfo={() => {
-                if (!sidebarOpen) {
-                  openSidebar();
-                  if (!handlers.infoPanelOpen) handlers.handleToggleInfoPanel();
-                } else handlers.handleToggleInfoPanel();
-              }}
               t={t}
               /> : null}
             </div>
@@ -426,6 +430,7 @@ function LightboxContent({
               infoPanelOpen={handlers.infoPanelOpen}
               onToggleInfo={handlers.handleToggleInfoPanel}
               onCloseSidebar={closeSidebar}
+              onCloseLightbox={handlers.handleCloseLightbox}
               groupPending={groupPending}
               deleteConfirmOpen={handlers.deleteConfirmOpen}
               deleteSubmitting={handlers.deleteSubmitting}

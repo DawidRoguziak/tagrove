@@ -92,7 +92,11 @@
     "gifChip": "GIF",
     "groupedChip": "Součást skupiny médií",
     "generatingThumbnails": "Generování náhledů pro {{count}} položek ve frontě.",
-    "noMoreItems": "Žádné další položky k načtení",
+    "endOfResults": "Konec výsledků",
+    "resultCount_one": "{{formattedCount}} položka",
+    "resultCount_few": "{{formattedCount}} položky",
+    "resultCount_many": "{{formattedCount}} položky",
+    "resultCount_other": "{{formattedCount}} položek",
     "loadError": "Načtení knihovny se nezdařilo.",
     "retry": "Znovu"
   },

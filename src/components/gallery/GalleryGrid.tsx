@@ -161,7 +161,7 @@ const GalleryGridContent = memo(function GalleryGridContent({
 
   return (
     <section
-      className={`min-h-0 flex-1 min-w-0 w-full px-3 pb-16 pt-3 sm:px-5 sm:pt-5 ${
+      className={`min-h-0 flex-1 min-w-0 w-full px-3 pt-3 sm:px-5 sm:pt-5 ${
         selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""
       }`}
       ref={galleryRef}
@@ -281,12 +281,12 @@ export const GalleryGrid = memo(function GalleryGrid({
     <div className="relative flex min-w-0 flex-col">
       <GalleryGridContent {...contentProps} />
       {(contentProps.assetCount ?? contentProps.assets.length) > 0 ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0">
+        <div className="pointer-events-none">
           <GalleryStatusFooter
             isGeneratingThumbnails={isGeneratingThumbnails}
             hasMore={contentProps.hasMore}
             generatingLabel={t("gallery.generatingThumbnails", { count: pendingThumbnailCount })}
-            noMoreLabel={t("gallery.noMoreItems")}
+            resultCount={contentProps.assetCount ?? contentProps.assets.length}
           />
         </div>
       ) : null}

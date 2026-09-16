@@ -5,13 +5,12 @@ import { UiIconButton } from "../UI/UiIconButton";
 const DELETE_BUTTON_ID = "lightbox-delete-button";
 
 interface LightboxActionRailProps {
+  visible: boolean;
   selected: SelectedAsset;
   groupCopyConfirmed: boolean;
   canCopyMediaGroup: boolean;
   copyMediaGroupTitle: string;
   isFullscreen: boolean;
-  infoPanelOpen: boolean;
-  onToggleInfo: () => void;
   favoritePending?: boolean;
   onToggleFavorite: () => void;
   onCopyMediaGroup: () => void;
@@ -22,13 +21,12 @@ interface LightboxActionRailProps {
 }
 
 export function LightboxActionRail({
+  visible,
   selected,
   groupCopyConfirmed,
   canCopyMediaGroup,
   copyMediaGroupTitle,
   isFullscreen,
-  infoPanelOpen,
-  onToggleInfo,
   favoritePending,
   onToggleFavorite,
   onCopyMediaGroup,
@@ -38,7 +36,10 @@ export function LightboxActionRail({
   t
 }: LightboxActionRailProps) {
   return (
-    <div className="lightbox-action-row">
+    <div
+      className="lightbox-action-row transition-opacity duration-200 motion-reduce:transition-none"
+      style={{ opacity: visible ? 1 : 0, pointerEvents: visible ? undefined : "none" }}
+    >
       <div className="lightbox-action-island" data-testid="lightbox-action-rail">
         <UiIconButton
           icon="heart"
@@ -81,16 +82,6 @@ export function LightboxActionRail({
           {selected.size_bytes !== null ? <span>{formatBytes(selected.size_bytes)}</span> : null}
           <span>{selected.kind.toUpperCase()}</span>
         </span>
-        <UiIconButton
-          icon="info"
-          iconClassName="h-4 w-4 shrink-0"
-          className="h-8! w-8! min-h-8! justify-self-center"
-          active={infoPanelOpen}
-          aria-expanded={infoPanelOpen}
-          aria-label={t("lightbox.showInfo")}
-          title={infoPanelOpen ? t("lightbox.hideInfo") : t("lightbox.showInfo")}
-          onClick={onToggleInfo}
-        />
         <UiIconButton
           icon="fullscreen"
           iconClassName="h-4 w-4 shrink-0"

@@ -94,6 +94,21 @@ describe("useLightboxKeyboardShortcuts", () => {
     expect(remove.mock.calls.filter(([type]) => type === "keydown")).toHaveLength(0);
   });
 
+  it("consumes fullscreen Escape from form focus and ignores key repeat", () => {
+    const options = createOptions();
+    renderHook(() => useLightboxKeyboardShortcuts({ ...options,
+      selected: { ...options.selected, kind: "video" }, isFullscreen: true }));
+    const input = document.createElement("input");
+    document.body.append(input);
+    try {
+      expect(press("Escape", input).defaultPrevented).toBe(true);
+      const repeat = new KeyboardEvent("keydown", { key: "Escape", repeat: true, bubbles: true, cancelable: true });
+      input.dispatchEvent(repeat);
+      expect(repeat.defaultPrevented).toBe(true);
+      expect(options.onToggleFullscreen).toHaveBeenCalledOnce();
+    } finally { input.remove(); }
+  });
+
   it("cleans up when disabled, closed or unmounted and reopens once in Strict Mode", () => {
     const options = createOptions();
     const initialProps: Parameters<typeof useLightboxKeyboardShortcuts>[0] = options;

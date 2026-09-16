@@ -243,7 +243,7 @@ kind; the existing parent-commit search semantics are preserved. Both rows belon
 full-width, non-scrolling header and can grow when controls wrap, with search on its own
 row below 700px. The gallery scroll viewport fills the remaining height. Ctrl+K / Cmd+K focuses the existing search input without changing or applying its draft. An open modal or inert search field blocks the shortcut. The placeholder gives one valid query; the field tooltip separates further examples onto individual lines.
 The gallery retains square tiles and measured 12px gaps. Bulk selection uses a green
-outline plus a checkmark; neutral, opaque media-kind badges remain readable over thumbnails.
+outline plus a checkmark; opaque Video badges use purple `#6D28D9` and GIF badges use blue `#1D4ED8`, both with white text in either theme. Their bottom and right offsets are 4px; selection checkmarks retain their original position.
 Group backings retain their dedicated `--gallery-group-bg` and `--gallery-group-edge` tokens.
 
 Desktop windows omit native decorations. `WindowControls` adds localized minimize,
@@ -296,9 +296,11 @@ Native controls, translated accessible names, pressed states, listbox suggestion
 
 The layer manager's tabbable selector excludes disabled controls, hidden elements, and inert ancestors, but it does not perform a complete computed-visibility or browser tab-order calculation. Standalone components rendered without the provider receive only fallback Escape handling. Tests that claim focus trapping or nested dismissal must mount the provider.
 
+When the lightbox panel is collapsed, reopen and close controls float at the top right of the media column. An open panel places Close beside its collapse arrow. Floating controls and the bottom action row fade after three seconds of inactivity; the open panel remains visible. Images and GIFs extend underneath them; windowed native video reserves 44px above its surface. Video fullscreen hides the controls and removes that space. Information controls live in the sidebar only.
+
 GTK video controls are native widgets outside the DOM layer manager. Changes to video bounds, fullscreen, or sidebar visibility need desktop verification as well as DOM tests. See [native media presentation](../subsystems/lightbox.md#media-presentation).
 
-Bulk group drag handles support ArrowUp/ArrowDown reordering. The larger group-order modal also supports ArrowLeft/ArrowRight for adjacent positions, with Up/Down moving by grid row. It uses the shared modal layer, keeps changes in a local draft until Save order, and restores the triggering button on close. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
+Bulk ordering lives only in the group-order modal. The sidebar retains its heading and opening button without inline previews, thumbnail requests, or drag listeners. Modal handles support ArrowLeft/ArrowRight for adjacent positions, with Up/Down moving by grid row. It uses the shared modal layer, keeps changes in a local draft until Save order, and restores the triggering button on close. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
 
 ## Safe change checklist
 

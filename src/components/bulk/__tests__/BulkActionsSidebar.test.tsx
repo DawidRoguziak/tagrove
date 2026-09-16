@@ -59,7 +59,6 @@ function createController(
     onToggleSelectionMode: vi.fn(),
     onBulkSelectionInteraction: vi.fn(),
     onGroupKeyDraftChange: vi.fn(),
-    onReorderGroupAsset: vi.fn(),
     onApplyGroup: vi.fn<BulkSelectionController["onApplyGroup"]>(async () => ({ status: "saved" })),
     onAddTag: vi.fn(async () => true),
     onRemoveTag: vi.fn(async () => {}),
@@ -187,59 +186,19 @@ describe("BulkActionsSidebar", () => {
     expect(screen.getByText("Select at least one item")).toBeInTheDocument();
   });
 
-  it("shows conflicts and reorders the compact list from its drag handle", () => {
-    const first = createAsset(1, { media_group_key: "one", media_group_order: 1 });
-    const second = createAsset(2, { media_group_key: "two", media_group_order: 1 });
-    const onReorderGroupAsset = vi.fn();
-    const controller = createController({
-      selectedAssetIds: new Set([1, 2]),
-      selectedAssets: [first, second],
-      orderedAssetIds: [1, 2],
-      groupKeyDraft: "replacement-group",
-      hasConflictingGroups: true,
-      tagMode: "multiple",
-      onReorderGroupAsset
-    });
-
+  it("shows conflicts and offers sorting only in the modal without requesting inline thumbnails", async () => {
+    const queueThumbnailsByIds = vi.fn();
+    const controller = sortingController({ hasConflictingGroups: true, queueThumbnailsByIds });
     render(<BulkActionsSidebar controller={controller} thumbs={{}} renderingThumbnailIds={{}} />);
-
-    expect(screen.getByTestId("bulk-action-panel")).toHaveClass(
-      "bulk-inspector"
-    );
-    expect(screen.getByTestId("bulk-group-order-panel")).toHaveClass(
-      "max-h-[300px]",
-      "min-h-0",
-      "overflow-hidden"
-    );
-    expect(screen.getByTestId("bulk-group-order-list")).toHaveClass(
-      "panel-scroll",
-      "min-h-0",
-      "overflow-y-auto"
-    );
     expect(screen.getByRole("alert")).toHaveTextContent("Multiple group assignments");
-    expect(screen.getByText("1.jpg")).toBeInTheDocument();
-    expect(screen.getByText("2.jpg")).toBeInTheDocument();
-    expect(screen.getByTestId("bulk-group-thumbnail-1")).toHaveClass("h-16", "w-20");
-    const firstTile = screen.getByTestId("bulk-group-tile-1");
-    const firstHandle = screen.getByTestId("bulk-group-drag-handle-1");
-    expect(firstTile).not.toHaveAttribute("draggable");
-    expect(firstHandle).not.toHaveAttribute("draggable");
-    expect(firstHandle).toHaveAttribute("aria-label", "Reorder item 1 with drag or arrow keys");
-    expect(firstHandle).toHaveRole("button");
-
-    fireEvent.pointerDown(firstHandle, { button: 0 });
-    expect(firstTile).toHaveClass("opacity-60", "ring-2");
-    fireEvent.pointerEnter(screen.getByTestId("bulk-group-tile-2"));
-    expect(onReorderGroupAsset).toHaveBeenCalledWith(1, 2);
-    fireEvent.pointerEnter(screen.getByTestId("bulk-group-tile-2"));
-    expect(onReorderGroupAsset).toHaveBeenCalledTimes(1);
-    fireEvent.pointerUp(window);
-    expect(firstTile).not.toHaveClass("opacity-60", "ring-2");
-
-    fireEvent.keyDown(firstHandle, { key: "ArrowDown" });
-    expect(onReorderGroupAsset).toHaveBeenLastCalledWith(1, 2);
-    fireEvent.keyDown(firstHandle, { key: "ArrowUp" });
-    expect(onReorderGroupAsset).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("bulk-group-order-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("bulk-group-order-list")).not.toBeInTheDocument();
+    expect(screen.queryByText("1.jpg")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bulk-group-drag-handle-1")).not.toBeInTheDocument();
+    expect(queueThumbnailsByIds).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Sort in larger view" }));
+    expect(screen.getByRole("dialog", { name: "Sort group order" })).toBeVisible();
+    expect(queueThumbnailsByIds).toHaveBeenCalled();
   });
 
   it("does not expose group ordering until a group key is set", () => {
@@ -475,7 +434,6 @@ describe("bulk group sorting modal", () => {
     fireEvent.keyDown(screen.getByTestId("bulk-order-handle-1"), { key: "ArrowRight" });
     expect(modalOrder()).toEqual([2, 1, 3]);
     expect(screen.getByTestId("bulk-order-handle-1")).toHaveFocus();
-    expect(controller.onReorderGroupAsset).not.toHaveBeenCalled();
     expect(controller.onApplyGroup).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

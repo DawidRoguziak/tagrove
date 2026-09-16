@@ -4,8 +4,8 @@ import { UiIcon, type UiIconName } from "../UI/UiIcon";
 
 const sections = [
   { id: "scan", label: "settings.scan.heading", icon: "folder" },
-  { id: "appearance", label: "settings.appearance.heading", icon: "settings" },
-  { id: "language", label: "settings.language.heading", icon: "settings" },
+  { id: "appearance", label: "settings.appearance.heading", icon: "palette" },
+  { id: "language", label: "settings.language.heading", icon: "languages" },
   { id: "import-export", label: "settings.importExport.heading", icon: "copy" },
   { id: "duplicates", label: "settings.duplicates.heading", icon: "group" },
   { id: "danger", label: "settings.danger.heading", icon: "trash" },

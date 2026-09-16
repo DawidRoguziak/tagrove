@@ -99,7 +99,6 @@ export interface BulkSelectionController {
   onToggleSelectionMode: () => void;
   onBulkSelectionInteraction: BulkSelectionHandler;
   onGroupKeyDraftChange: (value: string) => void;
-  onReorderGroupAsset: (draggedAssetId: number, targetAssetId: number) => void;
   onApplyGroup: (order?: number[]) => Promise<BulkGroupSaveResult>;
   onAddTag: (tag: string) => Promise<boolean>;
   onRemoveTag: (tag: string) => Promise<void>;

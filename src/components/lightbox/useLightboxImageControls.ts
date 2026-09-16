@@ -20,6 +20,7 @@ import {
 
 interface UseLightboxImageControlsOptions {
   keyboardShortcutsEnabled?: boolean;
+  keyboardShortcutsSuspended?: boolean;
   selected: SelectedAsset | null;
   onClose: () => void;
   onNavigatePrevious: () => void;
@@ -60,6 +61,7 @@ function getAssetIntrinsicSize(selected: SelectedAsset | null): MediaDimensions 
 
 export function useLightboxImageControls({
   keyboardShortcutsEnabled = true,
+  keyboardShortcutsSuspended = false,
   selected,
   onClose,
   onNavigatePrevious,
@@ -485,7 +487,7 @@ export function useLightboxImageControls({
   }, [resetZoom, selected?.height, selected?.id, selected?.width, selectedId]);
 
   useLightboxKeyboardShortcuts({
-    enabled: keyboardShortcutsEnabled,
+    enabled: keyboardShortcutsEnabled && (!keyboardShortcutsSuspended || (selectedKind === "video" && isFullscreen)),
     selected,
     isFullscreen,
     onNavigatePrevious,

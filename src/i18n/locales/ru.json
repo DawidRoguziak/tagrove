@@ -92,7 +92,11 @@
     "gifChip": "GIF",
     "groupedChip": "Часть медиагруппы",
     "generatingThumbnails": "Создание миниатюр для {{count}} элементов в очереди.",
-    "noMoreItems": "Больше нет элементов для загрузки",
+    "endOfResults": "Конец результатов",
+    "resultCount_one": "{{formattedCount}} элемент",
+    "resultCount_few": "{{formattedCount}} элемента",
+    "resultCount_many": "{{formattedCount}} элементов",
+    "resultCount_other": "{{formattedCount}} элемента",
     "loadError": "Не удалось загрузить библиотеку.",
     "retry": "Повторить"
   },

@@ -76,6 +76,165 @@ suite("UI redesign desktop review", function () {
     if (root) await fs.rm(root, { recursive: true, force: true });
   });
 
+  it("keeps the end-of-results footer below the last row in both locales and themes", async () => {
+    const footer = '[data-testid="gallery-end-state"]';
+    const samples = [];
+    for (const language of ["en", "pl"]) {
+      for (const theme of ["light", "dark"]) {
+        await browser.setWindowSize(1000, 720);
+        await click('#open-settings-button');
+        await $(`.theme-choice:has(input[value="${theme}"])`).click();
+        await $('.settings-nav a[href="#settings-language"]').click();
+        await $('#settings-language-select').selectByAttribute('value', language);
+        await click(`button[aria-label="${language === "pl" ? "Wstecz" : "Back"}"]`);
+        await galleryReady();
+        for (const bulk of [false, true]) {
+          if (bulk) await click('.workspace-sizing button[aria-pressed="false"]');
+          // Use the stable toolbar control for bulk actions, regardless of locale.
+          if (bulk) await $('[data-testid="bulk-action-panel"]').waitForExist();
+          for (const width of bulk ? [1000, 600] : [1000, 320]) {
+            await browser.setWindowSize(width, 720);
+            await browser.pause(300);
+            await browser.execute((selector) => document.querySelector(selector)?.scrollIntoView({ block: "end" }), footer);
+            await $(footer).waitForDisplayed({ timeout: 20000 });
+            await browser.pause(300);
+            const layout = await browser.execute((selector) => {
+              const footer = document.querySelector(selector);
+              const rect = footer.getBoundingClientRect();
+              const scroller = document.querySelector('.gallery-scroll');
+              const scrollRect = scroller.getBoundingClientRect();
+              const tiles = [...document.querySelectorAll('button[data-asset-id]')];
+              const last = tiles.reduce((a, b) => Number(a.dataset.assetIndex) > Number(b.dataset.assetIndex) ? a : b);
+              const lastRect = last.getBoundingClientRect();
+              const css = getComputedStyle(footer);
+              const heading = getComputedStyle(footer.querySelector('h2'));
+              const count = getComputedStyle(footer.querySelector('p'));
+              return { top: rect.top, bottom: rect.bottom, height: rect.height,
+                left: rect.left, right: rect.right, scrollLeft: scrollRect.left, scrollRight: scrollRect.right,
+                viewportBottom: scrollRect.bottom, lastBottom: lastRect.bottom,
+                lastIndex: Number(last.dataset.assetIndex), text: footer.textContent,
+                position: css.position, headingSize: heading.fontSize, countSize: count.fontSize,
+                countFont: count.fontFamily, scrollTop: scroller.scrollTop };
+            }, footer);
+            assert.equal(layout.lastIndex, 27);
+            assert.ok(layout.top >= layout.lastBottom, JSON.stringify(layout));
+            assert.ok(layout.bottom <= layout.viewportBottom + 1, JSON.stringify(layout));
+            assert.ok(layout.left >= layout.scrollLeft && layout.right <= layout.scrollRight);
+            assert.ok(layout.height >= 120 && layout.height <= 160);
+            assert.equal(layout.position, "static");
+            assert.equal(layout.headingSize, "20px");
+            assert.equal(layout.countSize, "14px");
+            assert.match(layout.countFont, /Mono/);
+            assert.ok(layout.text.includes(language === "pl" ? "28 elementów" : "28 items"));
+            samples.push({ language, theme, bulk, width, ...layout });
+            await capture(`footer-${language}-${theme}-${bulk ? "bulk" : "gallery"}-${width}`);
+            await $('.filter-input').scrollIntoView();
+            await browser.execute(() => { document.querySelector('.gallery-scroll').scrollTop -= 80; });
+            await browser.pause(150);
+            const moved = await browser.execute((selector) => ({
+              top: document.querySelector(selector).getBoundingClientRect().top,
+              scrollTop: document.querySelector('.gallery-scroll').scrollTop
+            }), footer);
+            assert.ok(Math.abs(moved.top - layout.top - (layout.scrollTop - moved.scrollTop)) < 2);
+          }
+        }
+        await browser.setWindowSize(1000, 720);
+        await click('.workspace-sizing button[aria-pressed="true"]');
+      }
+    }
+    await fs.writeFile(path.join(evidence, "footer-layout.json"), JSON.stringify(samples, null, 2));
+    await click('#open-settings-button');
+    await $('.settings-nav a[href="#settings-language"]').click();
+    await $('#settings-language-select').selectByAttribute('value', 'en');
+    await click('button[aria-label="Back"]');
+  });
+
+  it("shows filtered results and empty states in the gallery footer", async () => {
+    const footer = '[data-testid="gallery-end-state"]';
+    await click('.filter-input');
+    await $('.filter-input').setValue('architecture');
+    await click('button=Search');
+    await browser.waitUntil(async () => (await $(`${footer} p`).getText()) === '1 item');
+    await capture('footer-filtered-single-item');
+    await click('.filter-input');
+    await $('.filter-input').setValue('absent-footer-tag');
+    await click('button=Search');
+    await $(footer).waitForExist({ reverse: true });
+    assert.ok((await $('[data-testid="gallery-grid"]').getText()).includes('No results'));
+    await click('button[aria-label="Clear all search filters"]');
+    await galleryReady();
+  });
+
+  it("shows corner badges, floating image controls and modal-only ordering in both themes", async () => {
+    const page = await invoke("list_assets", { offset: 0, limit: 200, tagsAnd: [], tagsNot: [], favoritesOnly: false });
+    const gifId = page.items.find(asset => asset.kind === "gif").id;
+    for (const theme of ["light", "dark"]) {
+      await browser.setWindowSize(1000, 720);
+      await click('#open-settings-button');
+      await $(`.theme-choice:has(input[value="${theme}"])`).click();
+      await click('button[aria-label="Back"]');
+      await galleryReady();
+      for (const kind of ["video", "gif"]) {
+        await $(`#gallery-media-kind label:has(input[value="${kind}"])`).click();
+        await galleryReady();
+        const badge = await browser.execute(() => {
+          const tile = document.querySelector('button[data-asset-id]');
+          const chip = [...tile.querySelectorAll('span')].find(el => el.textContent === "Video" || el.textContent === "GIF");
+          const css = getComputedStyle(chip);
+          return { right: css.right, bottom: css.bottom, color: css.color, background: css.backgroundColor, text: chip.textContent };
+        });
+        assert.equal(badge.right, "4px");
+        assert.equal(badge.bottom, "4px");
+        assert.equal(badge.color, "rgb(255, 255, 255)");
+        assert.equal(badge.background, kind === "video" ? "rgb(109, 40, 217)" : "rgb(29, 78, 216)");
+        await capture(`fixes-${theme}-${kind}-badge`);
+      }
+      await $('#gallery-media-kind label:has(input[value="all"])').click();
+      await galleryReady();
+      for (const id of [imageId, gifId]) {
+        for (const width of [1000, 600, 320]) {
+          await browser.setWindowSize(1000, 720);
+          await $(`button[data-asset-id="${id}"]`).scrollIntoView();
+          await click(`button[data-asset-id="${id}"]`);
+          await browser.setWindowSize(width, 720);
+          await browser.pause(300);
+          assert.equal(await $('.lightbox-media-header').isExisting(), false);
+          assert.equal(await $('[data-testid="lightbox-action-rail"] button[aria-label="Show info"]').isExisting(), false);
+          if (await $('#lightbox-sidebar[aria-hidden="false"]').isExisting()) {
+            await click('button[aria-label="Close asset panel"]');
+            await browser.pause(250);
+          }
+          const layout = await browser.execute(() => {
+            const controls = document.querySelector('.lightbox-media-controls').getBoundingClientRect();
+            const stage = document.querySelector('[data-lightbox-media-stage]').getBoundingClientRect();
+            const column = document.querySelector('.lightbox-media-column');
+            const close = document.querySelector('button[aria-label="Close preview"]').getBoundingClientRect();
+            return { controlsTop: controls.top, stageTop: stage.top, padding: getComputedStyle(column).paddingTop,
+              clickable: document.elementFromPoint(close.x + close.width / 2, close.y + close.height / 2)?.closest('button')?.getAttribute('aria-label') };
+          });
+          assert.equal(layout.padding, "0px");
+          assert.ok(layout.stageTop <= layout.controlsTop);
+          assert.equal(layout.clickable, "Close preview");
+          await capture(`fixes-${theme}-${id === gifId ? "gif" : "image"}-${width}`);
+          await closeLightbox();
+        }
+      }
+      await browser.setWindowSize(1440, 900);
+      await click('button[aria-label="Enable bulk actions"]');
+      const tiles = await $$('button[data-asset-id]');
+      await tiles[0].click();
+      await tiles[1].click();
+      await $('#bulk-group-key-input').setValue('ui-fixes');
+      assert.equal(await $('[data-testid="bulk-group-order-list"]').isExisting(), false);
+      await capture(`fixes-${theme}-bulk`);
+      await click('[data-testid="bulk-open-order-modal"]');
+      await $('[data-testid="bulk-order-modal"]').waitForDisplayed();
+      await capture(`fixes-${theme}-sort-modal`);
+      await click('button=Cancel');
+      await click('button[aria-label="Disable bulk actions"]');
+    }
+  });
+
   for (const theme of ["dark", "light"]) {
     for (const [width, height] of [[1440, 900], [1000, 720]]) {
       it(`keeps ${theme} controls usable at ${width}×${height}`, async () => {
@@ -173,7 +332,7 @@ suite("UI redesign desktop review", function () {
 
         await click(`button[data-asset-id="${imageId}"]`);
         await $('#lightbox-tag-draft-input').waitForEnabled();
-        await click('button[aria-label="Show info"]');
+        await click('button=Information');
         const layout = await browser.execute(() => {
           const stage = document.querySelector('[data-lightbox-media-stage]').getBoundingClientRect();
           const rail = document.querySelector('[data-testid="lightbox-action-rail"]').getBoundingClientRect();
@@ -322,7 +481,8 @@ suite("UI redesign desktop review", function () {
     await $('[data-lightbox-video-player]').waitForDisplayed();
     await capture('native-video-controls');
     await click('button[aria-label="Close asset panel"]');
-    await click('button[aria-label="Show info"]');
+    await click('button[aria-label="Open asset panel"]');
+    await click('button=Information');
     await $('#lightbox-sidebar').waitForDisplayed();
     await browser.waitUntil(() => browser.execute(() => {
       const video = document.querySelector('[data-lightbox-video-player]').getBoundingClientRect();

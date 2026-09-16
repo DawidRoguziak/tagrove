@@ -92,7 +92,11 @@
     "gifChip": "GIF",
     "groupedChip": "Czesc grupy mediow",
     "generatingThumbnails": "Generowanie miniaturek dla {{count}} elementow w kolejce.",
-    "noMoreItems": "Brak kolejnych elementow",
+    "endOfResults": "Koniec wyników",
+    "resultCount_one": "{{formattedCount}} element",
+    "resultCount_few": "{{formattedCount}} elementy",
+    "resultCount_many": "{{formattedCount}} elementów",
+    "resultCount_other": "{{formattedCount}} elementu",
     "loadError": "Nie udało się wczytać biblioteki.",
     "retry": "Ponów"
   },

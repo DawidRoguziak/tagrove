@@ -92,7 +92,11 @@
     "gifChip": "GIF",
     "groupedChip": "Part of a media group",
     "generatingThumbnails": "Generating thumbnails for {{count}} queued items.",
-    "noMoreItems": "No more items to load",
+    "endOfResults": "End of results",
+    "resultCount_one": "{{formattedCount}} item",
+    "resultCount_few": "{{formattedCount}} items",
+    "resultCount_many": "{{formattedCount}} items",
+    "resultCount_other": "{{formattedCount}} items",
     "loadError": "Loading the library failed.",
     "retry": "Retry"
   },

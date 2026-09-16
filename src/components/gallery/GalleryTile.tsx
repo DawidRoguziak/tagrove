@@ -115,12 +115,12 @@ export const GalleryTile = memo(function GalleryTile({
         <UiIcon name="check-square" className="h-4 w-4" />
       </span>
       {asset.kind === "video" ? (
-        <UiChip className="pointer-events-none absolute right-2 bottom-2 shadow-[var(--shadow-chip)]" tone="video">
+        <UiChip className="pointer-events-none absolute right-1 bottom-1 shadow-[var(--shadow-chip)]" tone="video">
           {videoChipLabel}
         </UiChip>
       ) : null}
       {asset.kind === "gif" ? (
-        <UiChip className="pointer-events-none absolute right-2 bottom-2 shadow-[var(--shadow-chip)]" tone="gif">
+        <UiChip className="pointer-events-none absolute right-1 bottom-1 shadow-[var(--shadow-chip)]" tone="gif">
           {gifChipLabel}
         </UiChip>
       ) : null}

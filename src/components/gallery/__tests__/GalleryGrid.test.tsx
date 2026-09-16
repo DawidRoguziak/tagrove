@@ -97,6 +97,41 @@ describe("GalleryGrid", () => {
     vi.stubGlobal("ResizeObserver", originalResizeObserver as typeof ResizeObserver);
   });
 
+  it("counts query results independently of the cached assets and updates after filtering", () => {
+    const props = {
+      assets: [sampleAsset], selectedId: null, thumbs: {}, tileSize: 188,
+      hasMore: false, isLoading: false, isGeneratingThumbnails: false,
+      pendingThumbnailCount: 0, renderingThumbnailIds: {},
+      onReachEnd: vi.fn(), onSelect: vi.fn()
+    };
+    const { getByTestId, rerender, queryByTestId, getByRole } = render(<GalleryGrid {...props} assetCount={30187} />);
+    expect(getByTestId("gallery-end-state")).toHaveTextContent("30,187 items");
+    rerender(<GalleryGrid {...props} assetCount={2} />);
+    expect(getByTestId("gallery-end-state")).toHaveTextContent("2 items");
+    rerender(<GalleryGrid {...props} />);
+    expect(getByTestId("gallery-end-state")).toHaveTextContent("1 item");
+    rerender(<GalleryGrid {...props} assetCount={0} />);
+    expect(queryByTestId("gallery-end-state")).not.toBeInTheDocument();
+    expect(getByRole("heading", { name: "No results" })).toBeInTheDocument();
+  });
+
+  it.each([
+    [false, true], [true, false], [true, true]
+  ])("preserves footer visibility while generating=%s and hasMore=%s", (isGeneratingThumbnails, hasMore) => {
+    const { queryByTestId, queryByRole } = render(<GalleryGrid
+      assets={[sampleAsset]} selectedId={null} thumbs={{}} tileSize={188}
+      hasMore={hasMore} isLoading={false} isGeneratingThumbnails={isGeneratingThumbnails}
+      pendingThumbnailCount={12} renderingThumbnailIds={{}}
+      onReachEnd={vi.fn()} onSelect={vi.fn()}
+    />);
+    expect(queryByTestId("gallery-end-state")).not.toBeInTheDocument();
+    if (isGeneratingThumbnails && hasMore) {
+      expect(queryByRole("status")).toHaveTextContent("Generating thumbnails for 12 queued items.");
+    } else {
+      expect(queryByRole("status")).not.toBeInTheDocument();
+    }
+  });
+
   it("loads more after gallery resize when list still does not scroll", async () => {
     virtualItems = [{ key: 0, index: 0, start: 0 }];
 
@@ -158,7 +193,7 @@ describe("GalleryGrid", () => {
 
     const gifBadge = getByText("GIF");
     expect(gifBadge).toBeInTheDocument();
-    expect(gifBadge).toHaveClass("right-2", "bottom-2");
+    expect(gifBadge).toHaveClass("right-1", "bottom-1");
     expect(gifBadge).not.toHaveClass("left-2");
   });
 

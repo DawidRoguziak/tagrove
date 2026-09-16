@@ -3,6 +3,8 @@ import { useId, type ReactNode, type SVGProps } from "react";
 export type UiIconName =
   | "search"
   | "settings"
+  | "palette"
+  | "languages"
   | "arrow-left"
   | "tag"
   | "group"
@@ -15,6 +17,7 @@ export type UiIconName =
   | "fullscreen"
   | "close"
   | "heart"
+  | "check-circle"
   | "check-square"
   | "bulk-actions"
   | "grip-vertical"
@@ -54,6 +57,27 @@ const ICONS = {
       <>
         <path d="M9.45 3.15 10 5a7.4 7.4 0 0 1 4 0l.55-1.85a1 1 0 0 1 1.32-.66l1.8.67a1 1 0 0 1 .6 1.32L17.6 6a8 8 0 0 1 2 3.45l1.9.22a1 1 0 0 1 .88 1v1.9a1 1 0 0 1-.88 1l-1.9.22A8 8 0 0 1 17.6 17l.67 1.52a1 1 0 0 1-.6 1.32l-1.8.67a1 1 0 0 1-1.32-.66L14 18.95a7.4 7.4 0 0 1-4 0l-.55 1.85a1 1 0 0 1-1.32.66l-1.8-.67a1 1 0 0 1-.6-1.32L6.4 17a8 8 0 0 1-2-3.45l-1.9-.22a1 1 0 0 1-.88-1v-1.9a1 1 0 0 1 .88-1L4.4 9.2A8 8 0 0 1 6.4 5.75l-.67-1.52a1 1 0 0 1 .6-1.32l1.8-.67a1 1 0 0 1 1.32.66Z" />
         <circle cx="12" cy="12" r="2.9" />
+      </>
+    )
+  },
+  palette: {
+    viewBox: "0 0 24 24",
+    content: (
+      <>
+        <path d="M12 3a9 9 0 1 0 0 18h1.4a2.1 2.1 0 0 0 1.5-3.6 1.4 1.4 0 0 1 1-2.4H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z" />
+        <circle cx="7" cy="11" r="1" fill="currentColor" stroke="none" />
+        <circle cx="10" cy="7" r="1" fill="currentColor" stroke="none" />
+        <circle cx="15" cy="7.5" r="1" fill="currentColor" stroke="none" />
+        <circle cx="17.5" cy="11" r="1" fill="currentColor" stroke="none" />
+      </>
+    )
+  },
+  languages: {
+    viewBox: "0 0 24 24",
+    content: (
+      <>
+        <path d="M3 5h12M9 2v3M12 5c-1 5-4 8-9 11M5 8c1.5 3 4 5.5 7 7" />
+        <path d="m13 21 4.5-11L22 21M15 17h5" />
       </>
     )
   },
@@ -151,6 +175,15 @@ const ICONS = {
   heart: {
     viewBox: "0 0 24 24",
     content: <path d="M12 20s-7-4.35-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.65-7 10-7 10Z" />
+  },
+  "check-circle": {
+    viewBox: "0 0 24 24",
+    content: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8 12 2.5 2.5L16 9" />
+      </>
+    )
   },
   "check-square": {
     viewBox: "0 0 24 24",

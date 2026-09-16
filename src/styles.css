@@ -53,10 +53,10 @@
   --color-warning-content: #ffffff;
   --color-error: #b13c38;
   --color-error-content: #ffffff;
-  --media-gif-bg: #303033;
-  --media-gif-content: #f4f6f5;
-  --media-video-bg: #303033;
-  --media-video-content: #f4f6f5;
+  --media-gif-bg: #1D4ED8;
+  --media-gif-content: #ffffff;
+  --media-video-bg: #6D28D9;
+  --media-video-content: #ffffff;
   --radius-selector: 6px;
   --radius-field: 6px;
   --radius-box: 8px;
@@ -91,10 +91,10 @@
   --color-warning-content: #241b0c;
   --color-error: #ee9790;
   --color-error-content: #2b1110;
-  --media-gif-bg: #303033;
-  --media-gif-content: #f4f6f5;
-  --media-video-bg: #303033;
-  --media-video-content: #f4f6f5;
+  --media-gif-bg: #1D4ED8;
+  --media-gif-content: #ffffff;
+  --media-video-bg: #6D28D9;
+  --media-video-content: #ffffff;
   --radius-selector: 6px;
   --radius-field: 6px;
   --radius-box: 8px;
@@ -386,9 +386,8 @@
 .search-shortcut { flex-shrink: 0; border-radius: 3px; padding: 1px 5px; background: var(--surface-raised); color: var(--text-muted); font: 11px var(--font-mono); }
 @media (max-width: 699px) { .search-shortcut { display: none; } }
 
-.lightbox-media-column { background: var(--surface-muted); }
-.lightbox-media-header { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border-soft); color: var(--text-muted); }
-.lightbox-media-header button { width: 32px; height: 32px; min-height: 32px; }
+.lightbox-media-column { background: var(--lightbox-video-surface, var(--surface-muted)); }
+.lightbox-media-controls button { width: 32px; height: 32px; min-height: 32px; }
 .lightbox-action-row { display: flex; justify-content: center; padding: 12px 16px 16px; }
 .lightbox-action-island { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius-panel); background: var(--surface-raised); }
 .lightbox-media-summary { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 4px 12px; border-radius: 4px; background: var(--surface-muted); color: var(--text-muted); font: 11px var(--font-mono); }

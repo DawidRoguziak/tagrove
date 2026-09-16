@@ -92,7 +92,11 @@
     "gifChip": "GIF",
     "groupedChip": "メディアグループの一部",
     "generatingThumbnails": "{{count}} 件のキュー項目のサムネイルを生成中です。",
-    "noMoreItems": "これ以上読み込む項目はありません",
+    "endOfResults": "結果は以上です",
+    "resultCount_one": "{{formattedCount}}件",
+    "resultCount_few": "{{formattedCount}}件",
+    "resultCount_many": "{{formattedCount}}件",
+    "resultCount_other": "{{formattedCount}}件",
     "loadError": "ライブラリの読み込みに失敗しました。",
     "retry": "再試行"
   },

@@ -125,16 +125,18 @@ vi.mock("@tanstack/react-virtual", () => ({
     count: number;
     estimateSize: () => number;
     gap?: number;
-    getItemKey: (index: number) => string | number | bigint;
+    getItemKey?: (index: number) => string | number | bigint;
   }) => {
     const size = estimateSize();
     const items = virtualizerState.renderItems ? Array.from({ length: count }, (_, index) => ({
-      key: getItemKey(index),
+      key: getItemKey?.(index) ?? index,
       index,
       start: index * (size + gap),
       end: index * (size + gap) + size
     })) : [];
     return {
+      measure: vi.fn(),
+      scrollToIndex: vi.fn(),
       getVirtualItems: () => items,
       getTotalSize: () => count * size + Math.max(0, count - 1) * gap,
       isScrolling: false
@@ -426,7 +428,8 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("No more items to load")).toBeInTheDocument();
+    expect(await screen.findByText("End of results")).toBeInTheDocument();
+    expect(screen.getByTestId("gallery-end-state")).toHaveTextContent("1 item");
   });
 
   it("supports bulk selection without exposing a select-all action", async () => {
@@ -442,7 +445,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
 
     const enableSelectionButton = screen.getByRole("button", { name: "Enable bulk actions" });
     await userEvent.click(enableSelectionButton);
@@ -498,7 +501,7 @@ describe("App", () => {
     apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: [] });
     apiMocks.getStartupPopularTags.mockResolvedValue(["travel", "cat"]);
     render(<App />);
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
     selectAssetByPath("C:/media/a.jpg");
     const chips = () => within(screen.getByRole("group", { name: "Most used tags" })).getAllByRole("button");
@@ -529,7 +532,7 @@ describe("App", () => {
     apiMocks.listAssets.mockResolvedValue({ items: [createAsset(1, "C:/media/a.jpg"), createAsset(2, "C:/media/b.jpg")], total: 2 });
     try {
       render(<App />);
-      await screen.findByText("No more items to load");
+      await screen.findByText("End of results");
       await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
       selectAssetByPath("C:/media/a.jpg");
       selectAssetByPath("C:/media/b.jpg");
@@ -557,7 +560,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
     selectAssetByPath("C:/media/a.jpg");
     selectAssetByPath("C:/media/b.jpg");
@@ -583,7 +586,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
     selectAssetByPath("C:/media/a.jpg");
 
@@ -611,7 +614,7 @@ describe("App", () => {
     });
 
     render(<App />);
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     const tile = screen.getByAltText("C:/media/a.jpg").closest("button");
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
@@ -652,7 +655,7 @@ describe("App", () => {
       }));
 
     render(<App />);
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     const tile = screen.getByAltText("C:/media/a.jpg").closest("button");
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
@@ -698,7 +701,7 @@ describe("App", () => {
       }));
 
     render(<App />);
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
     selectAssetByPath("C:/media/a.jpg");
     const bulkInput = await screen.findByLabelText("Add tag");
@@ -749,7 +752,7 @@ describe("App", () => {
     vi.mocked(open).mockReset().mockResolvedValueOnce("C:/tmp/tags.csv");
 
     render(<App />);
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     const tile = screen.getByAltText("C:/media/a.jpg").closest("button");
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
@@ -798,7 +801,7 @@ describe("App", () => {
     vi.mocked(open).mockReset().mockResolvedValueOnce("C:/tmp/partial.csv");
 
     render(<App />);
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     const tile = screen.getByAltText("C:/media/a.jpg").closest("button");
     if (!tile) throw new Error("Missing gallery tile");
     await userEvent.click(tile);
@@ -843,7 +846,7 @@ describe("App", () => {
     });
 
     render(<App />);
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     const oldTile = screen.getByAltText("C:/media/old.jpg").closest("button");
     if (!oldTile) throw new Error("Missing old gallery tile");
     await userEvent.click(oldTile);
@@ -880,7 +883,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findByText("No more items to load");
+    await screen.findByText("End of results");
     await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
     selectAssetByPath("C:/media/a.jpg");
     selectAssetByPath("C:/media/b.jpg");
@@ -889,13 +892,10 @@ describe("App", () => {
 
     await userEvent.type(screen.getByLabelText("Media group key"), "trip-2026");
 
-    const firstHandle = screen.getByTestId("bulk-group-drag-handle-1");
-    const secondTile = screen.getByTestId("bulk-group-tile-2");
-    fireEvent.pointerDown(firstHandle, { button: 0 });
-    fireEvent.pointerEnter(secondTile);
-    fireEvent.pointerUp(window);
-
-    await userEvent.click(screen.getByRole("button", { name: "Apply group" }));
+    expect(screen.queryByTestId("bulk-group-order-list")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Sort in larger view" }));
+    fireEvent.keyDown(screen.getByTestId("bulk-order-handle-1"), { key: "ArrowRight" });
+    await userEvent.click(screen.getByRole("button", { name: "Save order" }));
 
     await waitFor(() => {
       expect(apiMocks.setAssetsMediaGroupBulk).toHaveBeenCalledWith(

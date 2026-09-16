@@ -235,34 +235,22 @@ describe("MediaTagger desktop smoke", () => {
     if ((await groupInput.getValue()) !== "") {
       throw new Error("conflicting selections should start with an empty media group key");
     }
-    if ((await $$('[data-testid^="bulk-group-tile-"]')).length !== 0) {
+    if ((await $$('[data-testid="bulk-open-order-modal"]')).length !== 0) {
       throw new Error("group ordering must stay hidden until a media group key is entered");
     }
     await groupInput.click();
     await groupInput.setValue(uniqueGroup);
 
-    const orderTiles = await $$('[data-testid^="bulk-group-tile-"]');
-    if (orderTiles.length < 2) {
-      throw new Error("bulk group ordering requires at least two indexed assets and a group key");
-    }
-    const firstAssetId = await orderTiles[0].getAttribute("data-asset-id");
-    const firstDragHandle = await orderTiles[0].$('[data-testid^="bulk-group-drag-handle-"]');
-    await firstDragHandle.dragAndDrop(orderTiles[1]);
-    await browser.waitUntil(
-      async () => {
-        const currentFirstTile = await $('[data-testid^="bulk-group-tile-"]');
-        return (await currentFirstTile.getAttribute("data-asset-id")) !== firstAssetId;
-      },
-      {
-        timeout: 10000,
-        timeoutMsg: "bulk group order did not change after dragging its handle"
-      }
-    );
-
-    const applyGroupButton = await $("button=Apply group");
-    await applyGroupButton.waitForEnabled({ timeout: 10000 });
-    await applyGroupButton.click();
-    await applyGroupButton.waitForEnabled({ timeout: 10000 });
+    await $('button=Sort in larger view').click();
+    const orderTiles = await $$('[data-testid^="bulk-order-tile-"]');
+    if (orderTiles.length < 2) throw new Error("sorting requires two selected assets");
+    const firstAssetId = await orderTiles[0].getAttribute("data-sort-asset");
+    await orderTiles[0].$('[data-sort-handle]').click();
+    await browser.keys('ArrowRight');
+    await browser.waitUntil(async () =>
+      (await $('[data-testid^="bulk-order-tile-"]').getAttribute("data-sort-asset")) !== firstAssetId);
+    await $('button=Save order').click();
+    await $('[data-testid="bulk-order-modal"]').waitForExist({ reverse: true });
 
     const refreshedGroupInput = await $("#bulk-group-key-input");
     await refreshedGroupInput.waitForDisplayed({ timeout: 10000 });

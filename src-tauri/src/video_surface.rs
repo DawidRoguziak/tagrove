@@ -856,14 +856,33 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
     menu_keys.set_propagation_phase(gtk::PropagationPhase::Capture);
     {
         let popover = controls.rate_popover.downgrade();
+        let window = window.clone();
+        let player = player.clone();
+        let session_id = Rc::clone(&controls.session_id);
         menu_keys.connect_key_pressed(move |_, key, _, _| {
-            if key == *gtk::gdk::keys::constants::Escape {
-                if let Some(popover) = popover.upgrade().filter(|menu| menu.is_visible()) {
-                    dismiss_rate_menu(&popover);
-                    return true;
-                }
+            if key != *gtk::gdk::keys::constants::Escape {
+                return false;
             }
-            false
+            if let Some(popover) = popover.upgrade().filter(|menu| menu.is_visible()) {
+                dismiss_rate_menu(&popover);
+                return true;
+            }
+            let Some(session_id) = session_id.get() else {
+                return false;
+            };
+            let fullscreen = player
+                .playback_snapshot()
+                .filter(|snapshot| snapshot.session_id == session_id)
+                .is_some_and(|snapshot| snapshot.fullscreen);
+            if !fullscreen {
+                return false;
+            }
+            if let Err(error) =
+                set_fullscreen(&window, &player, session_id, FullscreenAction::Set(false))
+            {
+                player.report_control_error(session_id, error);
+            }
+            true
         });
     }
     {

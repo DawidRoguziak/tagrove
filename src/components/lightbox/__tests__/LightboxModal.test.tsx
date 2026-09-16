@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SelectedAsset } from "../../../types";
 import { LightboxModal } from "../LightboxModal";
+import { UiLayerProvider } from "../../UI/UiLayerProvider";
+import type { MpvVideoEvent } from "../mpvVideoTypes";
 import styles from "../../../styles.css?raw";
 
 const apiMocks = vi.hoisted(() => ({
@@ -202,6 +204,77 @@ describe("LightboxModal", () => {
     expect(overlay).not.toBeInTheDocument();
   });
 
+  it.each([false, true])("places Close in the open panel header and beside reopen when collapsed, narrow=%s", async (narrow) => {
+    stubMatchMedia(narrow);
+    const onClose = vi.fn();
+    render(<LightboxModal selected={selectedAsset} tagEditor={[]} knownTags={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} onNavigatePrevious={vi.fn()}
+      onNavigateNext={vi.fn()} onToggleFavorite={vi.fn()} onClose={onClose} />);
+    if (narrow) await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+    const collapse = screen.getByRole("button", { name: "Close asset panel" });
+    expect(collapse.closest("header")).toContainElement(screen.getByRole("button", { name: "Close preview" }));
+    expect(document.querySelector(".lightbox-media-controls")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Close preview" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await userEvent.click(collapse);
+    const floating = document.querySelector(".lightbox-media-controls");
+    expect(floating).toContainElement(screen.getByRole("button", { name: "Open asset panel" }));
+    expect(floating).toContainElement(screen.getByRole("button", { name: "Close preview" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close preview" }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([false, true])("disables header Close during pending deletion, narrow=%s", async (narrow) => {
+    stubMatchMedia(narrow);
+    let finishDelete: () => void = () => {};
+    const deletion = new Promise<void>((resolve) => { finishDelete = resolve; });
+    const onClose = vi.fn();
+    render(<LightboxModal selected={selectedAsset} tagEditor={[]} knownTags={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} onNavigatePrevious={vi.fn()}
+      onNavigateNext={vi.fn()} onToggleFavorite={vi.fn()} onClose={onClose}
+      onDeleteMedia={() => deletion} />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete media" }));
+    await userEvent.type(screen.getByLabelText(/Type/), "Yes");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const close = screen.getByRole("button", { name: "Close preview" });
+    expect(close).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close asset panel" })).toBeDisabled();
+    await userEvent.click(close);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { finishDelete(); await deletion; });
+  });
+
+  it("fades mounted controls after idle, keeps the panel visible, and executes the first shortcut", () => {
+    vi.useFakeTimers();
+    const onNavigateNext = vi.fn();
+    render(<UiLayerProvider><LightboxModal selected={selectedAsset} tagEditor={[]} knownTags={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} onNavigatePrevious={vi.fn()}
+      onNavigateNext={onNavigateNext} onToggleFavorite={vi.fn()} onClose={vi.fn()} /></UiLayerProvider>);
+    const row = screen.getByTestId("lightbox-action-rail").parentElement;
+    const panel = document.getElementById("lightbox-sidebar");
+    act(() => vi.advanceTimersByTime(2999));
+    expect(row).toHaveStyle({ opacity: "1" });
+    act(() => vi.advanceTimersByTime(1));
+    expect(row).toHaveStyle({ opacity: "0", pointerEvents: "none" });
+    expect(panel).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByRole("button", { name: "Close preview" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
+    act(() => vi.advanceTimersByTime(20));
+    const trigger = screen.getByRole("button", { name: "Open asset panel" });
+    const floating = trigger.parentElement;
+    expect(trigger).toHaveFocus();
+    act(() => vi.advanceTimersByTime(3000));
+    expect(floating).toHaveStyle({ opacity: "0", pointerEvents: "none" });
+    expect(trigger).toHaveFocus();
+    fireEvent.keyDown(trigger, { key: "ArrowRight" });
+    expect(onNavigateNext).toHaveBeenCalledOnce();
+    expect(floating).toHaveStyle({ opacity: "1" });
+    expect(row).toHaveStyle({ opacity: "1" });
+    expect(screen.getByTestId("lightbox-action-rail").parentElement).toBe(row);
+    expect(row).toHaveClass("duration-200", "motion-reduce:transition-none");
+    expect(floating).toHaveClass("duration-200", "motion-reduce:transition-none");
+  });
+
   it("retains collapsed state across media navigation and drafts across toggling", async () => {
     const props = {
       selected: selectedAsset, tagEditor: [], onTagEditorChange: vi.fn(), onSaveTags: vi.fn(),
@@ -380,45 +453,39 @@ it("gives video a 20px viewport gutter and a single visual frame", () => {
     );
   });
 
-  it("uses an immersive shell and hides the lightbox toolbar in video fullscreen", async () => {
-    render(
-      <LightboxModal
-        selected={selectedVideoAsset}
-        tagEditor={[]}
-        onTagEditorChange={() => {}}
-        onSaveTags={() => {}}
-        knownTags={[]}
-        onNavigatePrevious={() => {}}
-        onNavigateNext={() => {}}
-        onToggleFavorite={() => {}}
-        onClose={() => {}}
-      />
-    );
-
-    await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalled());
-    const activeSession = apiMocks.setVideoBounds.mock.calls.at(-1)?.[0] as number;
-    const eventHandler = apiMocks.openVideo.mock.calls.at(-1)?.[4] as
-      | ((event: { session_id: number; type: "fullscreen"; fullscreen: boolean }) => void)
-      | undefined;
-
-    expect(screen.getByRole("button", { name: "Close preview" })).toBeInTheDocument();
-    act(() => {
-      eventHandler?.({ session_id: activeSession, type: "fullscreen", fullscreen: true });
-    });
-
-    expect(screen.getByRole("dialog")).toHaveClass(
-      "h-full",
-      "w-full",
-      "rounded-none",
-      "border-0"
-    );
+  it.each([false, true])("consumes fullscreen Escape and preserves the video session and open sidebar, narrow=%s", async (narrow) => {
+    stubMatchMedia(narrow);
+    const onClose = vi.fn();
+    render(<UiLayerProvider><LightboxModal selected={selectedVideoAsset} tagEditor={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} knownTags={[]}
+      onNavigatePrevious={vi.fn()} onNavigateNext={vi.fn()} onToggleFavorite={vi.fn()}
+      onClose={onClose} /></UiLayerProvider>);
+    await waitFor(() => expect(apiMocks.openVideo).toHaveBeenCalledOnce());
+    const eventHandler: (event: MpvVideoEvent) => void = apiMocks.openVideo.mock.calls[0]![4];
+    const activeSession = 1;
+    if (narrow) await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+    const column = document.querySelector(".lightbox-media-column");
+    const player = document.querySelector("[data-native-video-active]");
+    expect(column).toHaveClass("pt-11");
+    act(() => eventHandler({ session_id: activeSession, type: "fullscreen", fullscreen: true }));
+    expect(column).not.toHaveClass("pt-11");
+    expect(column).not.toHaveAttribute("inert");
     expect(screen.queryByRole("button", { name: "Close preview" })).not.toBeInTheDocument();
-    expect(document.querySelector("[data-native-video-active]")).not.toBeNull();
+    const laterListener = vi.fn();
+    window.addEventListener("keydown", laterListener, true);
+    const escapeEvent = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    act(() => { player?.dispatchEvent(escapeEvent); });
+    window.removeEventListener("keydown", laterListener, true);
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(laterListener).not.toHaveBeenCalled();
+    await waitFor(() => expect(apiMocks.controlVideo).toHaveBeenCalledExactlyOnceWith(activeSession, { type: "toggleFullscreen" }));
+    expect(onClose).not.toHaveBeenCalled();
+    act(() => eventHandler({ session_id: activeSession, type: "fullscreen", fullscreen: false }));
+    expect(column).toHaveClass("pt-11");
+    expect(document.getElementById("lightbox-sidebar-close-button")).toHaveAttribute("aria-expanded", "true");
+    expect(document.querySelector("[data-native-video-active]")).toBe(player);
     expect(apiMocks.openVideo).toHaveBeenCalledOnce();
     expect(apiMocks.closeVideo).not.toHaveBeenCalled();
-    act(() => eventHandler?.({ session_id: activeSession, type: "fullscreen", fullscreen: false }));
-    expect(screen.getByRole("button", { name: "Close preview" })).toBeInTheDocument();
-    expect(apiMocks.openVideo).toHaveBeenCalledOnce();
   });
 
   it("shows a video error when native open fails", async () => {
@@ -812,10 +879,14 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     expect(screen.getByTestId("lightbox-tag-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("lightbox-info-panel")).not.toBeInTheDocument();
 
-    const infoButton = screen.getByRole("button", { name: "Show info" });
+    expect(within(screen.getByTestId("lightbox-action-rail")).queryByRole("button", { name: /info/i })).not.toBeInTheDocument();
+    expect(document.querySelector(".lightbox-media-column")).not.toHaveTextContent(selectedAsset.file_name);
+    expect(screen.getByRole("dialog")).toHaveAccessibleName(/1.jpg/);
+    const infoButton = screen.getByRole("button", { name: "Information" });
     await userEvent.click(infoButton);
     expect(screen.getByTestId("lightbox-info-panel")).toBeInTheDocument();
     expect(infoButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("lightbox-info-panel")).toHaveTextContent(selectedAsset.file_name);
 
     await userEvent.click(infoButton);
     expect(screen.queryByTestId("lightbox-info-panel")).not.toBeInTheDocument();
@@ -850,7 +921,7 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     expect(tags).toHaveClass("border-t");
     expect(tags).not.toHaveClass("mt-auto");
     expect(screen.getByRole("button", { name: "Apply" })).toHaveClass("h-8!", "min-h-8!");
-    expect(within(actionRail).getAllByRole("button")).toHaveLength(6);
+    expect(within(actionRail).getAllByRole("button")).toHaveLength(5);
     expect(actionRail.parentElement).not.toHaveClass("overflow-y-auto");
     expect(upperSection).not.toContainElement(actionRail);
   });
@@ -865,7 +936,8 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     await userEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
     expect(panel).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByRole("button", { name: "Close preview" })).toBeEnabled();
-    await userEvent.click(screen.getByRole("button", { name: "Show info" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+    await userEvent.click(screen.getByRole("button", { name: "Information" }));
     expect(panel).toHaveAttribute("aria-hidden", "false");
     expect(screen.getByTestId("lightbox-info-panel")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Close asset panel" }));
@@ -911,6 +983,40 @@ it("keeps tags inline and info toggleable, off by default", async () => {
     expect(screen.queryByTestId("lightbox-sidebar-scrim")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Open asset panel" })).toHaveFocus());
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("restores keyboard focus only after the narrow video media column returns", async () => {
+    const resizeCallbacks: Array<() => void> = [];
+    window.ResizeObserver = class {
+      constructor(private callback: ResizeObserverCallback) {}
+      observe() { resizeCallbacks.push(() => this.callback([], this)); }
+      unobserve() {}
+      disconnect() {}
+    };
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn((query: string) => ({
+        matches: query === "(max-width: 767px)",
+        addEventListener: vi.fn(), removeEventListener: vi.fn()
+      }))
+    });
+    render(<LightboxModal selected={selectedVideoAsset} tagEditor={[]} knownTags={[]}
+      onTagEditorChange={vi.fn()} onSaveTags={vi.fn()} onNavigatePrevious={vi.fn()}
+      onNavigateNext={vi.fn()} onToggleFavorite={vi.fn()} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Open asset panel" }));
+    act(() => resizeCallbacks.forEach((callback) => callback()));
+    const collapse = await screen.findByRole("button", { name: "Close asset panel" });
+    await waitFor(() => expect(collapse).toHaveFocus());
+    vi.useFakeTimers();
+    fireEvent.click(collapse, { detail: 0 });
+    act(() => vi.advanceTimersByTime(100));
+    const trigger = screen.getByRole("button", { name: "Open asset panel" });
+    expect(trigger.closest(".lightbox-media-column")).toHaveClass("hidden");
+    expect(trigger).not.toHaveFocus();
+    act(() => vi.advanceTimersByTime(100));
+    act(() => vi.advanceTimersByTime(20));
+    expect(trigger.closest(".lightbox-media-column")).not.toHaveClass("hidden");
+    expect(trigger).toHaveFocus();
   });
 
   it("hides the native video stage while the narrow drawer is open", async () => {

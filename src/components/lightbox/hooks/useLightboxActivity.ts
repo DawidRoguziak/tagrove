@@ -28,7 +28,7 @@ export function useLightboxActivity(active: boolean) {
     updateTouch();
     coarse?.addEventListener("change", updateTouch);
     let lastPosition: { x: number; y: number } | null = null;
-    const onMove = (event: MouseEvent) => {
+    const onMove = (event: PointerEvent) => {
       if (lastPosition?.x === event.clientX && lastPosition.y === event.clientY) return;
       lastPosition = { x: event.clientX, y: event.clientY };
       reveal();
@@ -38,14 +38,18 @@ export function useLightboxActivity(active: boolean) {
       reveal();
     };
     reveal();
-    window.addEventListener("mousemove", onMove, { passive: true, capture: true });
+    window.addEventListener("pointermove", onMove, { passive: true, capture: true });
     window.addEventListener("pointerdown", onPointerDown, { passive: true, capture: true });
+    window.addEventListener("wheel", reveal, { passive: true, capture: true });
+    window.addEventListener("scroll", reveal, { passive: true, capture: true });
     window.addEventListener("keydown", reveal, { capture: true });
     return () => {
       if (timer.current !== null) clearTimeout(timer.current);
       coarse?.removeEventListener("change", updateTouch);
-      window.removeEventListener("mousemove", onMove, true);
+      window.removeEventListener("pointermove", onMove, true);
       window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("wheel", reveal, true);
+      window.removeEventListener("scroll", reveal, true);
       window.removeEventListener("keydown", reveal, true);
     };
   }, [active, reveal]);

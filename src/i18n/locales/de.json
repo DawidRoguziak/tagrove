@@ -92,7 +92,11 @@
     "gifChip": "GIF",
     "groupedChip": "Teil einer Mediengruppe",
     "generatingThumbnails": "Erstelle Vorschaubilder für {{count}} Elemente in der Warteschlange.",
-    "noMoreItems": "Keine weiteren Elemente zum Laden",
+    "endOfResults": "Ende der Ergebnisse",
+    "resultCount_one": "{{formattedCount}} Element",
+    "resultCount_few": "{{formattedCount}} Elemente",
+    "resultCount_many": "{{formattedCount}} Elemente",
+    "resultCount_other": "{{formattedCount}} Elemente",
     "loadError": "Laden der Bibliothek ist fehlgeschlagen.",
     "retry": "Wiederholen"
   },

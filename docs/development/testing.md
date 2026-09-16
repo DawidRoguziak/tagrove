@@ -264,6 +264,8 @@ Frame samples and failure screenshots stay in a timestamped `artifacts/animation
 directory. The component tests cover focus trapping, inertness, Escape and restoration;
 they cannot prove desktop scroll geometry.
 
+The `ui.redesign.e2e.js` case selected by `--mochaOpts.grep 'corner badges'` checks the Video/GIF badge colors and offsets, floating image/GIF controls down to 320px, and modal-only bulk ordering in both themes. Use `MEDIATAGGER_UI_REDESIGN=1` and the same isolated desktop setup.
+
 ### Gallery thumbnail fade
 
 `e2e/specs/thumbnail-fade.e2e.js` is opt-in with `MEDIATAGGER_THUMBNAIL_FADE=1`.
@@ -298,6 +300,8 @@ MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri --spec e2e/specs/gallery-
 
 `e2e/specs/video-speed.e2e.js` is opt-in with `MEDIATAGGER_NATIVE_VIDEO=1`. It uses generated MP4s and native XTest pointer/key events through `e2e/native-input.py`. WebDriver reads session snapshots and supplies DOM geometry; it does not click GTK controls. The spec checks outside dismissal over the picture, controls, sidebar and backdrop, trigger toggling, Escape before fullscreen, focus loss, zero bounds, stale bounds, and 30 speed-change/close/reopen cycles across two videos. Some cycles explicitly close the backend session while the menu is open to check teardown.
 
+The bottom-button fullscreen regression runs at 1000px and 600px in both themes with WebView, native play-button, and speed-menu focus. It pauses the short looping fixture to measure position preservation, checks the session and sidebar choice, and clicks the floating reopen/close controls above native video. Run just this case with `--mochaOpts.grep 'bottom-button fullscreen'`.
+
 Each cycle captures two native screenshots and uses `e2e/video-frames.py` to require colored, changing pixels inside the picture, excluding controls and sidebar. Evidence and pixel measurements remain under `artifacts/video-speed/<timestamp>/`. Dependencies beyond the ordinary desktop harness are Python with Pillow and PyGObject, libXtst, and ImageMagick `import`. The focus fixture opens a temporary GTK window in the isolated session.
 
 Use a fresh `/tmp/mediatagger-*` profile and an authenticated private Xvfb display. Set `MEDIATAGGER_NATIVE_DISPLAY` to that display only. The helper refuses ordinary `:0` and `:1` displays. For example, with temporary XDG data/config/cache directories already exported:
@@ -307,6 +311,29 @@ GDK_BACKEND=x11 MEDIATAGGER_NATIVE_VIDEO=1 dbus-run-session -- xvfb-run -a -s '-
 ```
 
 For Wayland, use a private compositor and display its development viewer inside private Xvfb. Run the app with `GDK_BACKEND=wayland`, its private Wayland socket and isolated runtime directory. Native input targets the viewer, which forwards it through the compositor. `MEDIATAGGER_NATIVE_X` and `MEDIATAGGER_NATIVE_Y` account for viewer chrome; verify offsets against screenshots. The GTK controls are measured at scale 1 with the default theme. Record the actual `native video GDK backend` startup line; the host's session type alone does not identify the app backend. A Wayland viewer run does not prove behavior on every compositor or GPU.
+
+### Lightbox controls and inactivity
+
+`e2e/specs/lightbox-activity.e2e.js` is opt-in with `MEDIATAGGER_LIGHTBOX_ACTIVITY=1`.
+It generates PNG, GIF and MP4 fixtures and checks both themes at 1000px and 600px.
+Native clicks and keys verify header Close placement, keyboard collapse/reopen focus,
+the first Enter after idle, computed opacity and pointer hit testing, and unchanged
+media rectangles and native session identity through the fade. The open panel stays visible.
+Samples and private-display screenshots remain under `artifacts/lightbox-activity/`.
+
+Use temporary XDG directories, a private D-Bus session, and authenticated Xvfb as in
+[native speed verification](#native-speed-menu-and-repeated-playback). Set the temporary
+GTK/GSettings animation preference as in [animation geometry](#animation-geometry),
+then run:
+
+```sh
+GDK_BACKEND=x11 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1000x24 -nolisten tcp' sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; bun run test:e2e:tauri --spec e2e/specs/lightbox-activity.e2e.js'
+```
+
+Repeat with the temporary animation preference disabled and `MEDIATAGGER_REDUCED_MOTION=1`.
+Hook tests cover the exact three-second deadline, movement filtering, pointer presses,
+wheel/scroll/keyboard resets, native activity callbacks, touch visibility and cleanup.
+Component tests cover pending-deletion guards and the first navigation shortcut after idle.
 
 ### Persistent desktop control
 

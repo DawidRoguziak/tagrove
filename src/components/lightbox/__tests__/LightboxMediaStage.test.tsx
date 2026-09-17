@@ -83,6 +83,59 @@ describe("LightboxMediaStage", () => {
 
   afterEach(cleanup);
 
+  it.each(["gif", "image"] as const)("replaces only the image on GIF → %s → GIF navigation", (middleKind) => {
+    const first: SelectedAsset = {
+      ...createVideo(1), kind: "gif", file_name: "first.gif", path: "C:/media/first.gif"
+    };
+    const middle: SelectedAsset = {
+      ...createVideo(2), kind: middleKind,
+      file_name: middleKind === "gif" ? "second.gif" : "middle.png",
+      path: middleKind === "gif" ? "C:/media/second.gif" : "C:/media/middle.png"
+    };
+    const props = stageProps(first);
+    const { rerender } = render(<LightboxMediaStage {...props} />);
+    const firstImage = screen.getByRole("img");
+    const viewport = props.mediaViewportRef.current;
+    const imageContainer = firstImage.parentElement;
+
+    rerender(<LightboxMediaStage {...props} selected={middle} />);
+    const middleImage = screen.getByRole("img");
+    expect(middleImage).not.toBe(firstImage);
+    expect(firstImage).not.toBeInTheDocument();
+    expect(props.lightboxImageRef.current).toBe(middleImage);
+    expect(middleImage).toHaveAttribute("src", `media://${middle.path}`);
+
+    rerender(<LightboxMediaStage {...props} selected={first} />);
+    const revisitedImage = screen.getByRole("img");
+    expect(revisitedImage).not.toBe(firstImage);
+    expect(revisitedImage).not.toBe(middleImage);
+    expect(middleImage).not.toBeInTheDocument();
+    expect(revisitedImage).toHaveAttribute("src", `media://${first.path}`);
+    expect(props.lightboxImageRef.current).toBe(revisitedImage);
+    expect(props.mediaViewportRef.current).toBe(viewport);
+    expect(revisitedImage.parentElement).toBe(imageContainer);
+  });
+
+  it("keeps the GIF element through metadata and presentation updates", () => {
+    const selected: SelectedAsset = {
+      ...createVideo(1), kind: "gif", file_name: "first.gif", path: "C:/media/first.gif"
+    };
+    const props = stageProps(selected);
+    const { rerender } = render(<LightboxMediaStage {...props} />);
+    const image = screen.getByRole("img");
+
+    rerender(<LightboxMediaStage {...props} selected={{
+      ...selected, tags: ["edited"], is_favorite: true,
+      media_group_key: "group", media_group_order: 1
+    }} />);
+    expect(screen.getByRole("img")).toBe(image);
+
+    rerender(<LightboxMediaStage {...props} isZoomed isDragging isFullscreen
+      mediaDisplaySize={{ width: 800, height: 600 }} />);
+    expect(screen.getByRole("img")).toBe(image);
+    expect(props.lightboxImageRef.current).toBe(image);
+  });
+
   it("fits video to the complete native player footprint", () => {
     render(<LightboxMediaStage {...stageProps(createVideo(1))} />);
 
@@ -221,9 +274,10 @@ describe("lightbox image zoom rendering", () => {
   it.each(["image", "gif"] as const)("sizes a tall %s from the original and keeps zoom across rerenders", (kind) => {
     const selected = { ...portrait, kind };
     const { rerender } = render(<ImageStage selected={selected} />);
+    const image = imageElement();
     zoomToTen();
 
-    const image = imageElement();
+    expect(imageElement()).toBe(image);
     expect(image.style.width).toBe("calc(120px * var(--lightbox-image-zoom, 1))");
     expect(image.style.height).toBe("calc(600px * var(--lightbox-image-zoom, 1))");
     expect(Number(image.style.getPropertyValue("--lightbox-image-zoom"))).toBeCloseTo(10);
@@ -233,6 +287,7 @@ describe("lightbox image zoom rendering", () => {
 
     rerender(<ImageStage selected={{ ...selected, tags: ["edited"] }} />);
     flushFrame();
+    expect(imageElement()).toBe(image);
     expect(Number(image.style.getPropertyValue("--lightbox-image-zoom"))).toBeCloseTo(10);
 
     fireEvent.keyDown(window, { key: "0" });
@@ -288,9 +343,11 @@ describe("lightbox image zoom rendering", () => {
 
     rerender(<ImageStage selected={{ ...portrait, id: 11, width: 1600, height: 1200 }} />);
     flushFrame();
-    expect(image.style.width).toBe("calc(800px * var(--lightbox-image-zoom, 1))");
-    expect(image.style.getPropertyValue("--lightbox-image-zoom")).toBe("1");
-    expect(image.style.transform).toBe("translate(0px, 0px)");
+    const nextImage = imageElement();
+    expect(nextImage).not.toBe(image);
+    expect(nextImage.style.width).toBe("calc(800px * var(--lightbox-image-zoom, 1))");
+    expect(nextImage.style.getPropertyValue("--lightbox-image-zoom")).toBe("1");
+    expect(nextImage.style.transform).toBe("translate(0px, 0px)");
   });
 
   it("coalesces zoom writes into one frame and cancels pending work on unmount", () => {

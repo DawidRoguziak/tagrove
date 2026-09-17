@@ -188,6 +188,7 @@ export function LightboxMediaStage({
           onLostPointerCapture={onImagePointerEnd}
         >
           <img
+            key={activationGeneration}
             data-testid="lightbox-image"
             ref={(node) => {
               lightboxImageRef.current = node;

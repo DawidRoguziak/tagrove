@@ -1,3 +1,4 @@
+import type { saveLightboxTagsAction } from "../../components/lightbox/services/saveLightboxTagsAction";
 import { useState } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -47,7 +48,7 @@ function asDetails(asset: SelectedAsset, tags: string[]): AssetDetails {
 }
 
 const serviceMocks = vi.hoisted(() => ({
-  saveLightboxTagsAction: vi.fn(),
+  saveLightboxTagsAction: vi.fn<typeof saveLightboxTagsAction>(),
   toggleLightboxFavoriteAction: vi.fn(),
   saveLightboxMediaGroupAction: vi.fn(),
   deleteLightboxAssetAction: vi.fn()
@@ -88,7 +89,7 @@ describe("useSelectionState", () => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
         assets, setAssets, assetTagState, appliedFavoritesOnly: false,
-        refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []), assetCount: 1
+        refresh: vi.fn(async () => {}), refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags: vi.fn(async () => []), assetCount: 1
       });
       return { ...selection, setAssets, assetTagState };
     });
@@ -115,7 +116,7 @@ describe("useSelectionState", () => {
       const [assets, setAssets] = useState<AssetSummary[]>([asset]);
       const selection = useSelectionState({
         assets, setAssets, appliedFavoritesOnly: false,
-        refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []), assetCount: 1
+        refresh: vi.fn(async () => {}), refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags: vi.fn(async () => []), assetCount: 1
       });
       return { ...selection, setAssets };
     });
@@ -162,7 +163,7 @@ describe("useSelectionState", () => {
         setAssets,
         appliedFavoritesOnly: false,
         refresh,
-        refreshKnownTags
+        refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
       })
     );
 
@@ -197,15 +198,15 @@ describe("useSelectionState", () => {
     const pending = deferred<void>();
     serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }) => {
       await pending.promise;
-      onSaved(1, []);
+      onSaved?.(1, []);
       return { asset_id: 1, tags: [], changed: true, revision: 2,
-        query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true } };
+        vocabulary_changed: true, query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true } };
     });
     const oldRefresh = vi.fn(async () => {});
     const nextRefresh = vi.fn(async () => {});
     const { result, rerender } = renderHook(({ filter, refreshQuery }) => useSelectionState({
       assets: [asset], setAssets, appliedFavoritesOnly: false, refresh: refreshQuery,
-      refreshKnownTags, appliedFilterTags: [filter]
+      refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags, appliedFilterTags: [filter]
     }), { initialProps: { filter: before, refreshQuery: oldRefresh } });
     act(() => result.current.setSelected(asset));
     act(() => result.current.saveTags([]));
@@ -237,7 +238,7 @@ describe("useSelectionState", () => {
           setAssets,
           appliedFavoritesOnly: false,
           refresh,
-          refreshKnownTags
+          refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
         }),
       {
         initialProps: {
@@ -271,18 +272,18 @@ describe("useSelectionState", () => {
     const first = createAsset({ id: 1, tags: ["one"] });
     const second = createAsset({ id: 2, tags: ["two"] });
     const firstSave = deferred<void>();
-    serviceMocks.saveLightboxTagsAction.mockImplementation(({ onSaved }, tags: string[]) => {
+    serviceMocks.saveLightboxTagsAction.mockImplementation(({ onSaved }, tags = []) => {
       if (serviceMocks.saveLightboxTagsAction.mock.calls.length === 1) {
         return firstSave.promise.then(() => {
           onSaved?.(1, tags);
-          return { asset_id: 1, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
+          return { asset_id: 1, changed: true, tags, vocabulary_changed: true, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
         });
       }
-      return Promise.resolve({ asset_id: 1, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 3 });
+      return Promise.resolve({ asset_id: 1, changed: true, tags, vocabulary_changed: true, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 3 });
     });
 
     const { result } = renderHook(() => useSelectionState({
-      assets: [first, second], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags
+      assets: [first, second], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
     }));
     act(() => result.current.setSelected(first));
     act(() => result.current.saveTags(["one", "a"]));
@@ -301,19 +302,19 @@ describe("useSelectionState", () => {
     const retrySave = deferred<void>();
     let activeSaves = 0;
     let maxActiveSaves = 0;
-    serviceMocks.saveLightboxTagsAction.mockImplementation((_args, tags: string[]) => {
+    serviceMocks.saveLightboxTagsAction.mockImplementation((_args, tags = []) => {
       activeSaves += 1;
       maxActiveSaves = Math.max(maxActiveSaves, activeSaves);
       const pending = serviceMocks.saveLightboxTagsAction.mock.calls.length === 1
         ? firstSave.promise
         : retrySave.promise;
       return pending.finally(() => { activeSaves -= 1; }).then(() => ({
-        asset_id: 4, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2
+        asset_id: 4, changed: true, tags, vocabulary_changed: true, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2
       }));
     });
 
     const { result } = renderHook(() => useSelectionState({
-      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags
+      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
     }));
     act(() => result.current.setSelected(asset));
     act(() => result.current.saveTags(["cat", "dog"]));
@@ -337,13 +338,13 @@ describe("useSelectionState", () => {
     const asset = createAsset({ id: 5, tags: ["old"] });
     const lateDetails = deferred<AssetDetails>();
     apiMocks.getAssetDetails.mockReturnValueOnce(lateDetails.promise);
-    serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }, tags: string[]) => {
+    serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }, tags = []) => {
       onSaved?.(5, tags);
-      return { asset_id: 5, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
+      return { asset_id: 5, changed: true, tags, vocabulary_changed: true, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
     });
 
     const { result } = renderHook(() => useSelectionState({
-      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags
+      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
     }));
     act(() => result.current.setSelected(asset));
     await waitFor(() => expect(apiMocks.getAssetDetails).toHaveBeenCalledWith(5));
@@ -361,7 +362,7 @@ describe("useSelectionState", () => {
     const details = deferred<AssetDetails | null>();
     apiMocks.getAssetDetails.mockReturnValueOnce(details.promise);
     const { result } = renderHook(() => useSelectionState({
-      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags
+      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
     }));
 
     act(() => result.current.setSelected(asset));
@@ -381,7 +382,7 @@ describe("useSelectionState", () => {
       .mockRejectedValueOnce(new Error("load failed"))
       .mockResolvedValueOnce({ ...asset, tags: ["existing"] });
     const { result } = renderHook(() => useSelectionState({
-      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags
+      assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
     }));
 
     act(() => result.current.setSelected(asset));
@@ -406,7 +407,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
-        assets: [summary], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assets: [summary], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
         assetTagState
       });
       return { assetTagState, selection };
@@ -437,7 +438,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
-        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
         assetTagState
       });
       return { assetTagState, selection };
@@ -463,7 +464,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
-        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
         assetTagState
       });
       return { assetTagState, selection };
@@ -493,7 +494,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
-        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
         assetTagState
       });
       return { assetTagState, selection };
@@ -520,16 +521,16 @@ describe("useSelectionState", () => {
     const lateDetails = deferred<AssetDetails | null>();
     const pendingSave = deferred<void>();
     apiMocks.getAssetDetails.mockReturnValueOnce(lateDetails.promise);
-    serviceMocks.saveLightboxTagsAction.mockImplementation(({ onSaved }, tags: string[]) =>
+    serviceMocks.saveLightboxTagsAction.mockImplementation(({ onSaved }, tags = []) =>
       pendingSave.promise.then(() => {
         onSaved?.(23, tags);
-        return { asset_id: 23, changed: true, tags, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
+        return { asset_id: 23, changed: true, tags, vocabulary_changed: true, query_impact: { type: "tags", changed_tags: ["cat", "dog", "travel"], tag_count_changed: true }, revision: 2 };
       })
     );
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
-        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
         assetTagState
       });
       return { assetTagState, selection };
@@ -553,13 +554,13 @@ describe("useSelectionState", () => {
     const pending = deferred<void>();
     serviceMocks.saveLightboxTagsAction.mockImplementation(async ({ onSaved }) => {
       await pending.promise;
-      expect(onSaved(24, ["new"])).toBe(false);
-      return { asset_id: 24, tags: ["new"], changed: true, revision: 2, query_impact: { type: "all" } };
+      expect(onSaved?.(24, ["new"])).toBe(false);
+      return { asset_id: 24, tags: ["new"], changed: true, revision: 2, vocabulary_changed: true, query_impact: { type: "all" } };
     });
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       return { assetTagState, selection: useSelectionState({
-        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags, assetTagState
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags, assetTagState
       }) };
     });
     act(() => result.current.selection.setSelected(asset));
@@ -580,7 +581,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
-        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
         assetTagState
       });
       return { assetTagState, selection };
@@ -610,7 +611,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const assetTagState = useAssetTagState();
       const selection = useSelectionState({
-        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+        assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
         assetTagState
       });
       return { assetTagState, selection };
@@ -639,7 +640,7 @@ describe("useSelectionState", () => {
       setAssets,
       appliedFavoritesOnly: false,
       refresh,
-      refreshKnownTags,
+      refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
       assetCount: assets.length,
       getAssetAtAsync
     }));
@@ -673,7 +674,7 @@ describe("useSelectionState", () => {
       setAssets,
       appliedFavoritesOnly: false,
       refresh,
-      refreshKnownTags,
+      refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
       assetCount: assets.length,
       getAssetAtAsync
     }));
@@ -703,7 +704,7 @@ describe("useSelectionState", () => {
         setAssets,
         appliedFavoritesOnly: true,
         refresh,
-        refreshKnownTags
+        refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags
       })
     );
 
@@ -721,7 +722,7 @@ describe("useSelectionState", () => {
     expect(serviceMocks.saveLightboxTagsAction).toHaveBeenCalledWith(
       expect.objectContaining({
         selected: first,
-        refreshKnownTags
+        refreshKnownTagsAfterMutation: expect.any(Function)
       }),
       ["new"]
     );
@@ -767,7 +768,7 @@ describe("useSelectionState", () => {
       index === 1 && failNext ? Promise.resolve(undefined) : Promise.resolve(assets[index])
     );
     const { result } = renderHook(() => useSelectionState({
-      assets, setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+      assets, setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
       assetCount: assets.length, getAssetAtAsync
     }));
     act(() => result.current.setSelected(assets[0]!, 0));
@@ -788,7 +789,7 @@ describe("useSelectionState", () => {
     const { result, rerender } = renderHook(
       ({ assets, queryEpoch }: { assets: AssetSummary[]; queryEpoch: number }) =>
         useSelectionState({
-          assets, setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags,
+          assets, setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags,
           assetCount: 3, queryEpoch, getAssetAtAsync
         }),
       { initialProps: { assets: initialAssets, queryEpoch: 1 } }
@@ -811,7 +812,7 @@ describe("useSelectionState", () => {
     const { result, rerender } = renderHook(
       ({ queryEpoch }: { queryEpoch: number }) =>
         useSelectionState({
-          assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTags, queryEpoch
+          assets: [asset], setAssets, appliedFavoritesOnly: false, refresh, refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags, queryEpoch
         }),
       { initialProps: { queryEpoch: 1 } }
     );
@@ -830,7 +831,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const coordinator = useAssetTagState();
       return { coordinator, selection: useSelectionState({ assets: [asset], setAssets: vi.fn(),
-        appliedFavoritesOnly: false, refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []),
+        appliedFavoritesOnly: false, refresh: vi.fn(async () => {}), refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags: vi.fn(async () => []),
         assetTagState: coordinator, assetCount: 1 }) };
     });
     act(() => result.current.selection.selectAsset(asset));
@@ -853,7 +854,7 @@ describe("useSelectionState", () => {
     const { result } = renderHook(() => {
       const [assets, setAssets] = useState<AssetSummary[]>([asset]);
       return useSelectionState({ assets, setAssets, appliedFavoritesOnly: false, assetCount: 1,
-        refresh: vi.fn(async () => {}), refreshKnownTags: vi.fn(async () => []) });
+        refresh: vi.fn(async () => {}), refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags: vi.fn(async () => []) });
     });
     act(() => result.current.selectAsset(asset));
     await act(() => result.current.toggleSelectedFavorite());

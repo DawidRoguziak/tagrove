@@ -988,6 +988,7 @@ mod tests {
 
         let repaired = set_asset_tags_with_revision(&mut conn, 1, &[" CAT ".to_string()]).unwrap();
         assert!(repaired.changed);
+        assert!(repaired.vocabulary_changed);
         assert_eq!(repaired.query_impact, crate::models::TagQueryImpact::All);
         assert_eq!(repaired.tags, vec!["cat".to_string()]);
         assert_eq!(repaired.revision, initial + 1);
@@ -1004,6 +1005,7 @@ mod tests {
 
         let noop = set_asset_tags_with_revision(&mut conn, 1, &["cat".to_string()]).unwrap();
         assert!(!noop.changed);
+        assert!(!noop.vocabulary_changed);
         assert_eq!(noop.revision, repaired.revision);
     }
 
@@ -1096,9 +1098,10 @@ mod tests {
         assert_eq!(first.revision, initial + 1);
         let noop = set_asset_tags_with_revision(&mut conn, 1, &[" CAT ".to_string()]).unwrap();
         assert!(!noop.changed);
+        assert!(!noop.vocabulary_changed);
         assert_eq!(noop.revision, first.revision);
 
-        let (results, revision, _) =
+        let (results, revision, _, vocabulary_changed) =
             merge_asset_tags_bulk_with_revision(&mut conn, &[1, 999, 2], &["travel".to_string()])
                 .unwrap();
         assert_eq!(
@@ -1110,6 +1113,7 @@ mod tests {
         );
         assert!(results.iter().all(|result| result.changed));
         assert_eq!(revision, first.revision + 1);
+        assert!(vocabulary_changed);
     }
 
     #[test]
@@ -1128,15 +1132,17 @@ mod tests {
             .unwrap();
         let initial_revision = current_library_revision(&conn).unwrap();
 
-        let (empty_id_results, empty_id_revision, _) =
+        let (empty_id_results, empty_id_revision, _, empty_vocabulary_changed) =
             merge_asset_tags_bulk_with_revision(&mut conn, &[], &["travel".to_string()]).unwrap();
-        let (blank_tag_results, blank_tag_revision, _) = merge_asset_tags_bulk_with_revision(
-            &mut conn,
-            &[1],
-            &["  ".to_string(), "".to_string()],
-        )
-        .unwrap();
+        let (blank_tag_results, blank_tag_revision, _, blank_vocabulary_changed) =
+            merge_asset_tags_bulk_with_revision(
+                &mut conn,
+                &[1],
+                &["  ".to_string(), "".to_string()],
+            )
+            .unwrap();
 
+        assert!(!empty_vocabulary_changed && !blank_vocabulary_changed);
         assert!(empty_id_results.is_empty());
         assert!(blank_tag_results.is_empty());
         assert_eq!(empty_id_revision, initial_revision);
@@ -1827,7 +1833,7 @@ mod tests {
             }
         );
         set_asset_tags_with_revision(&mut conn, 2, &["cat".into()]).unwrap();
-        let (results, _, impact) =
+        let (results, _, impact, _) =
             merge_asset_tags_bulk_with_revision(&mut conn, &[1, 2, 999], &["żółć|%_:'新".into()])
                 .unwrap();
         assert!(!results[0].changed);
@@ -1841,7 +1847,7 @@ mod tests {
         );
         conn.execute("UPDATE assets SET tag_count = 99 WHERE id = 2", [])
             .unwrap();
-        let (_, _, impact) =
+        let (_, _, impact, _) =
             merge_asset_tags_bulk_with_revision(&mut conn, &[1, 2], &["cat".into()]).unwrap();
         assert_eq!(impact, TagQueryImpact::All);
         for (impact, value) in [

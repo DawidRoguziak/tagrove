@@ -28,7 +28,7 @@ it("group save restores next/previous beyond the refreshed first page in the new
     const [queryEpoch, setQueryEpoch] = useState(1);
     return useSelectionState({
       assets, setAssets, queryEpoch, appliedFavoritesOnly: false, assetCount: 400,
-      refreshKnownTags: async () => [], getAssetAtAsync: lookup, getAssetPosition: position,
+      refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags: async () => [], getAssetAtAsync: lookup, getAssetPosition: position,
       getAssetIndex: (id) => assets.some(item => item.id === id) ? id - 1 : null,
       refresh: async () => { setAssets(firstPage); setQueryEpoch(value => value + 1); }
     });
@@ -59,7 +59,7 @@ it.each(["refresh", "selection", "close"])("ignores late position after another 
   const lookup = vi.fn(async (index: number) => asset(index + 1));
   const { result, rerender } = renderHook(({ epoch, pendingQuery }) => useSelectionState({
     assets: [asset(1)], setAssets: vi.fn(), appliedFavoritesOnly: false, refresh: async () => {},
-    refreshKnownTags: async () => [], assetCount: 400, queryEpoch: epoch, queryPending: pendingQuery,
+    refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags: async () => [], assetCount: 400, queryEpoch: epoch, queryPending: pendingQuery,
     getAssetIndex: () => null, getAssetPosition: position, getAssetAtAsync: lookup
   }), { initialProps: { epoch: 1, pendingQuery: false } });
   act(() => result.current.selectAsset(asset(201), 200));
@@ -90,7 +90,7 @@ it.each([0, 399])("keeps a filtered-out photo open with %s results and retries a
   const lookup = vi.fn(async (index: number) => asset(index + 1));
   const { result, rerender } = renderHook(({ epoch }) => useSelectionState({
     assets: assetCount ? [asset(1)] : [], setAssets: vi.fn(), appliedFavoritesOnly: false, refresh: async () => {},
-    refreshKnownTags: async () => [], assetCount, queryEpoch: epoch,
+    refreshKnownTagsAfterMutation: vi.fn(async () => []), refreshKnownTags: async () => [], assetCount, queryEpoch: epoch,
     getAssetIndex: () => null, getAssetPosition: position, getAssetAtAsync: lookup
   }), { initialProps: { epoch: 1 } });
   act(() => result.current.selectAsset(asset(201), 200));

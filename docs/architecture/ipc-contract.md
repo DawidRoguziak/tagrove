@@ -37,8 +37,8 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `DeleteAssetSummary` / `DeleteAssetSummary` | `removed_assets`, `removed_thumbnails`, `source_status: "deleted" \| "missing" \| "cleanup_pending"`, `revision`, `recovery_path?` |
 | `DuplicateAsset`, `DuplicateGroup`, `DuplicateScanSummary` / same | Asset: `id`, `path`, `record_version`, `size_bytes`; group: `file_name`, `assets`; summary: `groups`, `duplicate_groups`, `duplicate_assets`, `revision` |
 | `DuplicateResolutionBatchSummary` / same | `status: "committed" \| "rolled_back" \| "recovery_required"`, `revision`, `results`, `removed_thumbnails`; each result has `asset_id`, item `status`, `old_path`, `new_path?`, and `recovery_path?` |
-| `SetAssetTagsSummary` / `SetAssetTagsSummary` | `asset_id`, `changed`, `tags`, `revision` |
-| `BulkTagMergeSummary` / `BulkTagMergeSummary` | `processed_assets`, `updated_assets`, `processed_asset_ids`, `updated_asset_ids`, `results`, `revision` |
+| `SetAssetTagsSummary` / `SetAssetTagsSummary` | `asset_id`, `changed`, `tags`, `query_impact`, `vocabulary_changed`, `revision` |
+| `BulkTagMergeSummary` / `BulkTagMergeSummary` | `processed_assets`, `updated_assets`, `processed_asset_ids`, `updated_asset_ids`, `results`, `query_impact`, `vocabulary_changed`, `revision` |
 | `BulkFavoriteSummary` / `BulkFavoriteSummary` | `processed_asset_ids`, `is_favorite`, `revision`; an empty result reports `is_favorite: false` and leaves the revision unchanged |
 | `BulkMediaGroupSummary` / `BulkMediaGroupSummary` | `processed_asset_ids`, `processed_assets`, `updated_assets`, `media_group_key?` |
 | `ThumbnailRenderSummary` / `ThumbnailRenderSummary` | `generated`, `failed`, `skipped_failed`, `processed`, `total`, `cancelled` |
@@ -100,6 +100,13 @@ For both session and legacy queries, tags are trimmed, lowercased, de-duplicated
 | `deleteAsset` / `delete_asset` | `assetId` | `DeleteAssetSummary` | Rejects an unknown ID. An existing source is moved to same-directory staging before one DB/revision transaction; a DB failure restores it. A missing source commits stale metadata removal with `source_status: "missing"`; failed final staged cleanup returns `cleanup_pending` and a recovery path. |
 | `findDuplicateAssets` / `find_duplicate_assets` | none | `DuplicateScanSummary` | Groups database assets by duplicate file name and emits duplicate-scan progress. It does not hash file contents. |
 | `applyDuplicateResolutionBatch` / `apply_duplicate_resolution_batch` | `input: { scanRevision, changes }`; each tagged change includes `assetId`, `expectedPath`, `expectedRecordVersion`, and rename also has `newFileName` | `DuplicateResolutionBatchSummary` | Validates the complete snapshot, IDs, versions, names, filesystem and DB collisions, and touched duplicate groups before mutation. Runs once under combined locks, stages all sources, commits one DB transaction/revision, and returns per-item commit, rollback, or recovery state. Rename targets that are another batch source are rejected. |
+
+Both tag-save summaries require `vocabulary_changed: boolean`. It is true when the
+transaction inserted, deleted, renamed, or merged stored tag names; bulk results OR
+the per-asset flags. Existing-name assignments, shared-name removals, count-only
+repairs, canonical no-ops, and empty/missing-only bulk results return false. This
+flag does not replace `changed`, `query_impact`, or `revision`. Frontend and backend
+ship this required field together.
 
 The single-item favorite and group setters do not validate that an ID affected a row before resolving. Single tag replacement rejects a missing ID; bulk tag merge skips missing IDs and reports processed IDs. See [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md) and [lightbox](../subsystems/lightbox.md) for the user workflows built on these calls.
 

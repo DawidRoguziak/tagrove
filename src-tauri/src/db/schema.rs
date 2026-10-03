@@ -98,6 +98,7 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
         CREATE INDEX IF NOT EXISTS idx_assets_modified_at ON assets(modified_at DESC);
         CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+        CREATE INDEX IF NOT EXISTS idx_tags_normalized_name ON tags(lower(trim(name)));
         CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON asset_tags(tag_id);
         CREATE INDEX IF NOT EXISTS idx_asset_tags_asset ON asset_tags(asset_id);
         CREATE INDEX IF NOT EXISTS idx_thumbnail_failures_last_failed_at ON thumbnail_failures(last_failed_at DESC);

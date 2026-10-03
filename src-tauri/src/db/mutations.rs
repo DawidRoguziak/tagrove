@@ -509,6 +509,7 @@ pub(super) fn canonicalize_tag_rows_in_tx(
 
 pub(crate) struct TagMutationOutcome {
     pub changed: bool,
+    pub vocabulary_changed: bool,
     pub tags: Vec<String>,
     pub query_impact: TagQueryImpact,
 }
@@ -522,7 +523,8 @@ pub(crate) fn set_asset_tags_in_tx(
     let existing = list_asset_tags_in_tx(tx, asset_id)?
         .ok_or_else(|| anyhow::anyhow!("Asset {asset_id} not found"))?;
     let noncanonical = existing != normalize_tags(existing.clone());
-    let canonicalized = canonicalize_tag_rows_in_tx(tx, asset_id)? || noncanonical;
+    let mut vocabulary_changed = canonicalize_tag_rows_in_tx(tx, asset_id)?;
+    let canonicalized = vocabulary_changed || noncanonical;
     let actual_count: i64 = tx.query_row(
         "SELECT COUNT(*) FROM asset_tags WHERE asset_id = ?1",
         params![asset_id],
@@ -546,6 +548,7 @@ pub(crate) fn set_asset_tags_in_tx(
     if existing == comparable {
         return Ok(TagMutationOutcome {
             changed: canonicalized || count_repaired,
+            vocabulary_changed,
             tags: comparable,
             query_impact: if canonicalized || count_repaired {
                 TagQueryImpact::All
@@ -555,20 +558,28 @@ pub(crate) fn set_asset_tags_in_tx(
         });
     }
 
+    // Canonicalization may have merged IDs shared with other assets. Capture the
+    // surviving assignments before replacing them, then exclude retained IDs.
+    let mut removed_candidates = {
+        let mut stmt = tx.prepare("SELECT tag_id FROM asset_tags WHERE asset_id = ?1")?;
+        let rows = stmt.query_map(params![asset_id], |row| row.get::<_, i64>(0))?;
+        rows.collect::<Result<std::collections::BTreeSet<_>, _>>()?
+    };
     tx.execute(
         "DELETE FROM asset_tags WHERE asset_id = ?1",
         params![asset_id],
     )?;
     for tag in &normalized {
-        tx.execute(
+        vocabulary_changed |= tx.execute(
             "INSERT INTO tags(name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
             params![tag],
-        )?;
+        )? > 0;
         let tag_id: i64 = tx.query_row(
             "SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE",
             params![tag],
             |row| row.get(0),
         )?;
+        removed_candidates.remove(&tag_id);
         tx.execute(
             "INSERT OR IGNORE INTO asset_tags(asset_id, tag_id) VALUES (?1, ?2)",
             params![asset_id, tag_id],
@@ -580,6 +591,13 @@ pub(crate) fn set_asset_tags_in_tx(
          ) WHERE id = ?1",
         params![asset_id],
     )?;
+    for tag_id in removed_candidates {
+        vocabulary_changed |= tx.execute(
+            "DELETE FROM tags WHERE id = ?1
+             AND NOT EXISTS (SELECT 1 FROM asset_tags WHERE tag_id = ?1)",
+            params![tag_id],
+        )? > 0;
+    }
     let canonical = list_asset_tags_in_tx(tx, asset_id)?.unwrap_or_default();
     let before: std::collections::BTreeSet<_> = normalize_tags(existing).into_iter().collect();
     let after: std::collections::BTreeSet<_> =
@@ -594,6 +612,7 @@ pub(crate) fn set_asset_tags_in_tx(
     };
     Ok(TagMutationOutcome {
         changed: true,
+        vocabulary_changed,
         tags: canonical,
         query_impact,
     })
@@ -744,7 +763,6 @@ pub fn import_csv_record_batches(
 pub fn set_asset_tags(conn: &Connection, asset_id: i64, tags: &[String]) -> anyhow::Result<()> {
     let tx = conn.unchecked_transaction()?;
     set_asset_tags_in_tx(&tx, asset_id, tags)?;
-    cleanup_orphan_tags(&tx)?;
     tx.commit()?;
     Ok(())
 }
@@ -757,11 +775,11 @@ pub fn set_asset_tags_with_revision(
     let normalized = normalize_and_validate_tags(tags.to_vec())?;
     retry_immediate_transaction(conn, |tx| {
         let outcome = set_asset_tags_in_tx(tx, asset_id, &normalized)?;
-        cleanup_orphan_tags(tx)?;
         let revision = bump_tag_revision(tx, &outcome.query_impact)?;
         Ok(SetAssetTagsSummary {
             asset_id,
             changed: outcome.changed,
+            vocabulary_changed: outcome.vocabulary_changed,
             tags: outcome.tags,
             query_impact: outcome.query_impact,
             revision,
@@ -790,7 +808,6 @@ pub fn merge_asset_tags_bulk(
         let outcome = set_asset_tags_in_tx(&tx, *asset_id, &merged)?;
         updated += usize::from(outcome.changed);
     }
-    cleanup_orphan_tags(&tx)?;
     tx.commit()?;
     Ok((processed, updated))
 }
@@ -799,18 +816,20 @@ pub fn merge_asset_tags_bulk_with_revision(
     conn: &mut Connection,
     asset_ids: &[i64],
     incoming_tags: &[String],
-) -> anyhow::Result<(Vec<AssetTagResult>, i64, TagQueryImpact)> {
+) -> anyhow::Result<(Vec<AssetTagResult>, i64, TagQueryImpact, bool)> {
     let normalized_incoming = normalize_and_validate_tags(incoming_tags.to_vec())?;
     if asset_ids.is_empty() || normalized_incoming.is_empty() {
         return Ok((
             Vec::new(),
             current_library_revision(conn)?,
             TagQueryImpact::None,
+            false,
         ));
     }
     retry_immediate_transaction(conn, |tx| {
         let mut results = Vec::new();
         let mut query_impact = TagQueryImpact::None;
+        let mut vocabulary_changed = false;
         for asset_id in asset_ids {
             let Some(existing) = list_asset_tags_in_tx(tx, *asset_id)? else {
                 continue;
@@ -818,15 +837,15 @@ pub fn merge_asset_tags_bulk_with_revision(
             let merged = merge_tags(&existing, &normalized_incoming);
             let outcome = set_asset_tags_in_tx(tx, *asset_id, &merged)?;
             query_impact.union(outcome.query_impact);
+            vocabulary_changed |= outcome.vocabulary_changed;
             results.push(AssetTagResult {
                 asset_id: *asset_id,
                 changed: outcome.changed,
                 tags: outcome.tags,
             });
         }
-        cleanup_orphan_tags(tx)?;
         let revision = bump_tag_revision(tx, &query_impact)?;
-        Ok((results, revision, query_impact))
+        Ok((results, revision, query_impact, vocabulary_changed))
     })
 }
 

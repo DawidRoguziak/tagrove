@@ -80,7 +80,7 @@ describe("review fix regressions", function () {
   it("navigates in the new group order after a save beyond the first page", async () => {
     const { items } = await list();
     assert.equal(items.length, 400);
-    await invoke("set_assets_media_group_bulk", { mediaGroupKey: "review-group", updates: items.map((item, index) => ({ assetId: item.id, mediaGroupOrder: index })) });
+    await invoke("set_assets_media_group_bulk", { mediaGroupKey: "review-group", updates: items.map((item, index) => ({ assetId: item.id, mediaGroupOrder: (index + 1) * 2 })) });
     await browser.refresh();
     await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
     await scrollToAsset(200);
@@ -92,9 +92,11 @@ describe("review fix regressions", function () {
     await scrollToAsset(0);
     const order = await $("#lightbox-media-group-order-input");
     await order.waitForDisplayed({ timeout: 10000 });
-    await order.setValue("201.5");
+    // Leave integer gaps so item 200 can move between items 201 and 202.
+    await order.setValue("405");
+    assert.equal(await order.getValue(), "405");
     await $("button=Apply").click();
-    await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: items[200].id })).media_group_order === 201.5);
+    await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: items[200].id })).media_group_order === 405);
     await browser.waitUntil(async () => !(await $('[data-navigation-status]').isExisting()) && await $("button=Apply").isEnabled());
     await $('[data-lightbox-kind]').click();
     await browser.keys("ArrowRight");

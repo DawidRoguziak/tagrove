@@ -96,6 +96,7 @@ export function useAppShellController() {
     appliedFavoritesOnly: searchFilters.appliedFavoritesOnly,
     refresh: library.refresh,
     refreshKnownTags: library.refreshKnownTags,
+    refreshKnownTagsAfterMutation: library.refreshKnownTagsAfterMutation,
     assetTagState,
     assetCount: library.assetCount,
     queryEpoch: library.queryEpoch,
@@ -119,7 +120,7 @@ export function useAppShellController() {
     queueThumbnailsByIds: library.queueThumbnailsByIds,
     setAssets: library.setAssets,
     refresh: library.refresh,
-    refreshKnownTags: library.refreshKnownTags,
+    refreshKnownTagsAfterMutation: library.refreshKnownTagsAfterMutation,
     assetTagState,
     onTagMutation,
     appliedFilter: searchFilters.appliedDescriptor

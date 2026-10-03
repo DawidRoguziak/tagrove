@@ -474,7 +474,7 @@ The fixtures contain 1,000 and 10,000 metadata rows and no media collection. The
 
 ## Review fix regressions
 
-`e2e/specs/review-fixes.e2e.js` uses disposable media to verify navigation after a group-order save beyond the first 128-item page, literal tag include/exclude and autocomplete, and thumbnail clearing after a changed-file rescan. It saves screenshots and the clear/regeneration result under `artifacts/app-review/2026-09-06/fix-verification/`. Run it with the isolated desktop harness:
+`e2e/specs/review-fixes.e2e.js` uses disposable media to verify navigation after a group-order save beyond the first 128-item page, literal tag include/exclude and autocomplete, and thumbnail clearing after a changed-file rescan. The order fixture uses positive integers with gaps so a valid integer edit moves an asset between its neighbors. It saves screenshots and the clear/regeneration result under `artifacts/app-review/2026-09-06/fix-verification/`. Run it with the isolated desktop harness:
 
 ```sh
 bun run test:e2e:tauri -- --spec ./e2e/specs/review-fixes.e2e.js
@@ -541,7 +541,91 @@ Behavior checks use the visible editors: native clicks on field padding, keyboar
 submission, suggestion selection and removal. Geometry and computed styles cover
 both editors, both themes, 600px and 1100px widths, height limits, wrapping,
 input visibility and focus feedback. Read-only details calls check persisted writes,
-including a multiple-selection addition, followed by a frontend reload.
+including a multiple-selection addition, followed by a frontend reload. The test also observes real Tauri custom-protocol fetches and cloned responses: existing-name additions and shared-name removals in both editors issue zero vocabulary-page requests, while new/last-reference names issue one page for the small fixture. Multi-selection merges verify both flag values. Counting begins after a rendered
+suggestion proves vocabulary initialization. Assertions wait for the editor to
+finish, then for all observed vocabulary fetches to settle; the cloned save
+response alone is not a completion barrier. The fetch observer is restored after
+the scenario and in cleanup. Both assets are read again after the frontend reload.
+`vocabulary-ipc.json` records requests and canonical responses.
 Evidence remains under `artifacts/tag-editor/<timestamp>/`. The bottom-edge suggestion
 placement limitation remains a separate issue; the popup assertion uses a desktop
 viewport with room below the input.
+
+## Tag-save performance regressions
+
+`src-tauri/tests/tag_vocabulary.rs` uses disposable file-backed databases to verify
+vocabulary flags, shared and last-reference removals, unrelated orphans, retained
+IDs, legacy renames/collisions, count repairs, missing/empty inputs, revisions, and
+rollback after a failed revision write. It checks idempotent index creation on new
+and existing schemas. Query-plan assertions use 1,000 tags, because SQLite may
+prefer a scan on a tiny table, and require indexed normalization and candidate
+lookups. Existing `db.rs` tests also cover query impact and shared mapping repairs.
+
+`useLibraryKnownTags.test.ts` covers complete pagination, stable array identity,
+changed publication, overlapping changes, unchanged saves joining an active pass,
+failed-refresh retry, reset, and unmount. API and save-path tests cover both flag
+values. Save mocks and deferred responses in `App.test.tsx` and the affected service
+and controller tests derive their types from the API or action signatures, so
+missing required fields fail `bun run typecheck`. The App bulk cases wait for the
+lazy editor to mount and enable, then defer save completion and assert exactly
+zero or one vocabulary page for existing and new names. `SuggestionClient.test.ts` composes the real vocabulary hook and worker
+client with a controlled worker: twenty unchanged saves after hydration add zero
+page requests and zero worker vocabulary messages.
+
+Run the focused file-backed tests and the diagnostic benchmark with:
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml --locked --test tag_vocabulary
+cargo test --manifest-path src-tauri/Cargo.toml --locked --test tag_save_benchmark -- --ignored --nocapture
+```
+
+The benchmark calls the real revision-aware single and bulk helpers on disposable
+WAL databases. It crosses 1,000/10,000/50,000 vocabulary names with 1/15/30 initial
+tags per target asset and 1/4/16 background assignments per vocabulary name. Each
+row reports the mean of twelve calls in microseconds, excluding fixture creation.
+Bulk calls process ten assets. Existing-name additions increase target counts over
+the twelve calls. All vocabulary names remain referenced by background assets.
+There are no timing thresholds. Keep build profile and host conditions the same
+when comparing revisions. See [recorded results](tag-save-benchmark.md).
+
+### Tag-save verification on 2026-10-03
+
+`bun run test:all` completed with exit 0 on Arch-based Linux using a private Xvfb
+and D-Bus session, disposable XDG directories and `MEDIATAGGER_TAG_EDITOR=1`.
+Quality checks, 699 frontend tests, 206 Rust tests and 28 desktop tests passed.
+The desktop runner discovered 16 spec files; 77 cases behind other opt-in flags
+were skipped. Two Rust diagnostics were ignored in the full suite; the tag-save
+benchmark runs separately as described in [the benchmark report](tag-save-benchmark.md).
+The configured RustSec exclusions and allowed warnings were unchanged.
+
+The tag-editor scenario observed 18 successful saves: thirteen responses with
+`vocabulary_changed=false` caused zero extra vocabulary pages; five responses with
+`true` caused exactly one page each. The final observer state recorded five pages,
+eighteen responses and zero pending pages. Both assets retained the multi-selection
+tag after frontend reload. The five tag-editor cases also passed independently.
+
+The desktop run exposed two issues corrected before the successful full rerun.
+Bulk save focus restoration now prevents parent scrolling while `TagEditor`
+reveals the input inside the field. The group-navigation regression now uses
+spaced integer orders, matching the current editor validation, while retaining
+the same neighbor-navigation assertions beyond the first page.
+
+To reproduce from the repository root, with the prerequisites above installed:
+
+```sh
+scratch=$(mktemp -d /tmp/mediatagger-tag-save-XXXXXX)
+export XDG_DATA_HOME="$scratch/data" XDG_CONFIG_HOME="$scratch/config"
+export XDG_CACHE_HOME="$scratch/cache" XDG_RUNTIME_DIR="$scratch/runtime"
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+unset WAYLAND_DISPLAY
+export GDK_BACKEND=x11 LANG=C.UTF-8 LC_ALL=C.UTF-8 MEDIATAGGER_TAG_EDITOR=1
+dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
+  sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; bun run test:all'
+```
+
+The spec removes its synthetic media roots. After the desktop processes exit,
+unmount any session-owned FUSE mounts below `$scratch/runtime/doc` and
+`$scratch/runtime/gvfs` before removing the scratch directory. Desktop screenshots and IPC evidence stay local under
+`artifacts/`; keep redirected command logs local as well. No media or raw desktop
+artifacts accompany this report.

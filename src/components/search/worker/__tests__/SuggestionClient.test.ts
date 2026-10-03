@@ -1,3 +1,5 @@
+import { act, renderHook } from "@testing-library/react";
+import { useLibraryKnownTags } from "../../../../hooks/useLibraryKnownTags";
 import { describe, expect, it, vi } from "vitest";
 import { SuggestionClient } from "../SuggestionClient";
 import type { SuggestionRequest, SuggestionResponse } from "../protocol";
@@ -73,4 +75,37 @@ describe("SuggestionClient", () => {
     worker.reply(1, 1, "late");
     expect(worker.messages.filter((message) => message.type === "search")).toHaveLength(1);
   });
+});
+
+const apiMocks = vi.hoisted(() => ({ listTags: vi.fn() }));
+vi.mock("../../../../api", () => apiMocks);
+
+it("does not send worker vocabulary messages after repeated existing-tag saves", async () => {
+  apiMocks.listTags.mockResolvedValue({ items: ["cat", "dog"], total: 2 });
+  const { result } = renderHook(() => useLibraryKnownTags());
+  const worker = new ControlledWorker();
+  const client = new SuggestionClient(() => worker);
+  const search = async () => {
+    const pending = client.search("editor", result.current.knownTags, token, []);
+    const message = worker.messages.at(-1);
+    if (message?.type !== "search") throw new Error("Expected worker search");
+    worker.reply(message.requestId, message.version, "cat");
+    await pending;
+  };
+  await act(() => result.current.hydrateKnownTags());
+  await search();
+  for (let i = 0; i < 20; i++) {
+    await act(() => result.current.refreshKnownTagsAfterMutation(false));
+    await search();
+  }
+  expect(apiMocks.listTags).toHaveBeenCalledOnce();
+  expect(worker.messages.filter(message => message.type === "vocabulary")).toHaveLength(1);
+  await act(() => result.current.refreshKnownTagsAfterMutation(true));
+  await search();
+  expect(worker.messages.filter(message => message.type === "vocabulary")).toHaveLength(1);
+  apiMocks.listTags.mockResolvedValue({ items: ["cat", "new"], total: 2 });
+  await act(() => result.current.refreshKnownTagsAfterMutation(true));
+  await search();
+  expect(worker.messages.filter(message => message.type === "vocabulary")).toHaveLength(2);
+  client.dispose();
 });

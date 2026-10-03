@@ -68,7 +68,7 @@ interface UseBulkSelectionControllerOptions {
   queueThumbnailsByIds: (assetIds: number[]) => void;
   setAssets: Dispatch<SetStateAction<AssetSummary[]>>;
   refresh: () => Promise<void>;
-  refreshKnownTags: () => Promise<string[]>;
+  refreshKnownTagsAfterMutation: (vocabularyChanged: boolean) => Promise<string[]>;
   assetTagState?: AssetTagStateController;
   onTagMutation?: OnTagMutation;
   appliedFilter?: FilterDescriptor;
@@ -92,7 +92,7 @@ export function useBulkSelectionController({
   queueThumbnailsByIds,
   setAssets,
   refresh: refreshQuery,
-  refreshKnownTags,
+  refreshKnownTagsAfterMutation,
   assetTagState: sharedAssetTagState,
   appliedFavoritesOnly = false,
   onFavoritesChanged,
@@ -602,7 +602,7 @@ export function useBulkSelectionController({
             );
           }
           if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
-          void refreshKnownTags().catch(() => []);
+          void refreshKnownTagsAfterMutation(result.vocabulary_changed).catch(() => []);
           onTagMutation(result.query_impact);
           return true;
         } catch {
@@ -635,7 +635,7 @@ export function useBulkSelectionController({
         mutationTokens.set(assetId, token);
       }
       try {
-        const result = await applyBulkTagsAction({ assetIds, tags: [tag], refreshKnownTags });
+        const result = await applyBulkTagsAction({ assetIds, tags: [tag], refreshKnownTagsAfterMutation });
         if (!result || result.processed_assets === 0) {
           let accepted = false;
           for (const token of mutationTokens.values()) accepted = assetTagState.settleMutation(token) || accepted;
@@ -686,7 +686,7 @@ export function useBulkSelectionController({
         }
       }
     },
-    [onTagMutation, assetTagState, refresh, refreshKnownTags, selectionIds, selectionKey]
+    [onTagMutation, assetTagState, refresh, refreshKnownTagsAfterMutation, selectionIds, selectionKey]
   );
 
   const onRemoveTag = useCallback(
@@ -725,7 +725,7 @@ export function useBulkSelectionController({
           );
         }
         if (selectionKeyRef.current === capturedSelectionKey) setSingleAssetTags(result.tags);
-        void refreshKnownTags().catch(() => []);
+        void refreshKnownTagsAfterMutation(result.vocabulary_changed).catch(() => []);
         onTagMutation(result.query_impact);
       } catch {
         assetTagState.settleMutation(mutationToken);
@@ -737,7 +737,7 @@ export function useBulkSelectionController({
         }
       }
     },
-    [onTagMutation, assetTagState, refreshKnownTags, selectionIds, selectionKey]
+    [onTagMutation, assetTagState, refreshKnownTagsAfterMutation, selectionIds, selectionKey]
   );
 
   const onRetryTagDetails = useCallback(() => {

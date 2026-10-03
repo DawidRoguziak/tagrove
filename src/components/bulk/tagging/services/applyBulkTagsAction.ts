@@ -5,18 +5,18 @@ import { normalizeBulkTagList } from "./bulkTagMergeService";
 interface ApplyBulkTagsActionArgs {
   assetIds: number[];
   tags: string[];
-  refreshKnownTags: () => Promise<string[]>;
+  refreshKnownTagsAfterMutation: (vocabularyChanged: boolean) => Promise<string[]>;
 }
 
 export async function applyBulkTagsAction({
   assetIds,
   tags,
-  refreshKnownTags
+  refreshKnownTagsAfterMutation
 }: ApplyBulkTagsActionArgs): Promise<BulkTagMergeSummary | null> {
   const normalizedAssetIds = Array.from(new Set(assetIds.filter((id) => Number.isInteger(id) && id > 0)));
   const normalizedTags = normalizeBulkTagList(tags);
   if (!normalizedAssetIds.length || !normalizedTags.length) return null;
   const result = await mergeAssetTagsBulk(normalizedAssetIds, normalizedTags);
-  void refreshKnownTags().catch(() => []);
+  void refreshKnownTagsAfterMutation(result.vocabulary_changed).catch(() => []);
   return result;
 }

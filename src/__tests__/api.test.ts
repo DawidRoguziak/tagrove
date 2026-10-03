@@ -97,14 +97,14 @@ describe("api contract", () => {
     });
   });
 
-  it("maps tag mutation payloads and returns canonical backend summaries", async () => {
-    const single = { query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true }, asset_id: 7, changed: true, tags: ["cat"], revision: 4 };
-    const bulk = {
+  it.each([false, true])("maps tag mutation summaries with vocabulary_changed=%s", async (vocabularyChanged) => {
+    const single: Awaited<ReturnType<typeof setAssetTags>> = { vocabulary_changed: vocabularyChanged, query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true }, asset_id: 7, changed: true, tags: ["cat"], revision: 4 };
+    const bulk: Awaited<ReturnType<typeof mergeAssetTagsBulk>> = {
       processed_assets: 1,
       updated_assets: 1,
       processed_asset_ids: [7],
       updated_asset_ids: [7],
-      query_impact: { type: "tags", changed_tags: ["travel"], tag_count_changed: true },
+      vocabulary_changed: vocabularyChanged, query_impact: { type: "tags", changed_tags: ["travel"], tag_count_changed: true },
       results: [{ asset_id: 7, changed: true, tags: ["cat", "travel"] }],
       revision: 5
     };

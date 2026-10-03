@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
+import type { setAssetTags, mergeAssetTagsBulk } from "../api";
 import type { MediaKind } from "../types";
 
 type LegacyAssetRow = {
@@ -65,7 +66,8 @@ function selectAssetByPath(path: string) {
 }
 
 async function typeAssetTag(tag: string) {
-  const input = screen.getByLabelText("Add tag");
+  const input = await screen.findByLabelText("Add tag");
+  await waitFor(() => expect(input).toBeEnabled());
   await userEvent.click(input);
   await userEvent.type(input, `${tag}{Enter}`);
 }
@@ -95,7 +97,7 @@ const apiMocks = vi.hoisted(() => {
     setScanRootAutoScan: vi.fn(),
     listTags: vi.fn(),
     getStartupPopularTags: vi.fn(),
-    mergeAssetTagsBulk: vi.fn(),
+    mergeAssetTagsBulk: vi.fn<typeof mergeAssetTagsBulk>(),
     setAssetsMediaGroupBulk: vi.fn(),
     removeScanRoot: vi.fn(),
     renderAllThumbnails: vi.fn(),
@@ -104,7 +106,7 @@ const apiMocks = vi.hoisted(() => {
     rescanAllRoots: vi.fn(),
     setAssetFavorite: vi.fn(),
     toggleAssetsFavoriteBulk: vi.fn(),
-    setAssetTags: vi.fn(),
+    setAssetTags: vi.fn<typeof setAssetTags>(),
     toMediaSrc: vi.fn((path: string) => `media://${path}`)
   };
 });
@@ -203,9 +205,9 @@ describe("App", () => {
       processed_asset_ids: assetIds,
       updated_asset_ids: assetIds,
       results: assetIds.map((assetId) => ({ asset_id: assetId, changed: true, tags })),
-      revision: 2
+      vocabulary_changed: true, query_impact: { type: "all" }, revision: 2
     }));
-    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({ asset_id: assetId, changed: true, tags, revision: 2 }));
+    apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => ({ asset_id: assetId, changed: true, tags, vocabulary_changed: true, query_impact: { type: "all" }, revision: 2 }));
     apiMocks.setAssetsMediaGroupBulk.mockImplementation(async (updates: { assetId: number }[], key: string | null) => ({
       processed_assets: updates.length, updated_assets: updates.length,
       processed_asset_ids: updates.map(update => update.assetId), media_group_key: key
@@ -545,37 +547,50 @@ describe("App", () => {
     }
   });
 
-  it("applies bulk tag merge for selected assets", async () => {
+  it.each([false, true])("applies bulk tags and refreshes vocabulary only when changed=%s", async (vocabularyChanged) => {
     virtualizerState.renderItems = true;
     apiMocks.listAssets.mockResolvedValue({
-      items: [
-        createAsset(1, "C:/media/a.jpg"),
-        createAsset(2, "C:/media/b.jpg")
-      ],
-      total: 2
+      items: [createAsset(1, "C:/media/a.jpg"), createAsset(2, "C:/media/b.jpg")], total: 2
     });
-    apiMocks.listTags
-      .mockResolvedValueOnce(createTagListPage())
-      .mockResolvedValue(createTagListPage(["cat", "travel"]));
+    apiMocks.listTags.mockResolvedValue(createTagListPage(["cat", "travel"]));
+    const pendingSave = deferred<Awaited<ReturnType<typeof mergeAssetTagsBulk>>>();
+    apiMocks.mergeAssetTagsBulk.mockReturnValueOnce(pendingSave.promise);
+    const tag = vocabularyChanged ? "new-tag" : "travel";
 
     render(<App />);
-
     await screen.findByText("End of results");
     await userEvent.click(screen.getByRole("button", { name: "Enable bulk actions" }));
     selectAssetByPath("C:/media/a.jpg");
     selectAssetByPath("C:/media/b.jpg");
 
-    const input = screen.getByLabelText("Add tag");
-    const listTagsCallsBeforeApply = apiMocks.listTags.mock.calls.length;
-    await userEvent.type(input, "travel{Enter}");
+    const input = await screen.findByLabelText("Add tag");
+    await waitFor(() => expect(input).toBeEnabled());
+    // A visible suggestion proves that startup hydration published its vocabulary.
+    await userEvent.type(input, "trav");
+    expect(await screen.findByRole("option")).toHaveTextContent("travel");
+    await userEvent.clear(input);
+    const pagesBefore = apiMocks.listTags.mock.calls.length;
+    await userEvent.type(input, `${tag}{Enter}`);
+    await waitFor(() => expect(apiMocks.mergeAssetTagsBulk).toHaveBeenCalledWith([1, 2], [tag]));
+    expect(input).toBeDisabled();
+    expect(apiMocks.listTags).toHaveBeenCalledTimes(pagesBefore);
 
-    await waitFor(() => {
-      expect(apiMocks.mergeAssetTagsBulk).toHaveBeenCalledWith([1, 2], ["travel"]);
+    apiMocks.listTags.mockResolvedValue(createTagListPage(["cat", "travel", ...(vocabularyChanged ? [tag] : [])]));
+    await act(async () => {
+      pendingSave.resolve({
+        processed_assets: 2, updated_assets: 2, processed_asset_ids: [1, 2], updated_asset_ids: [1, 2],
+        results: [1, 2].map(asset_id => ({ asset_id, changed: true, tags: [tag] })),
+        vocabulary_changed: vocabularyChanged,
+        query_impact: { type: "tags", changed_tags: [tag], tag_count_changed: true }, revision: 2
+      });
+      await pendingSave.promise;
     });
-    expect(await screen.findByText("travel")).toBeInTheDocument();
     await waitFor(() => {
-      expect(apiMocks.listTags.mock.calls.length).toBeGreaterThan(listTagsCallsBeforeApply);
+      expect(input).toBeEnabled();
+      expect(input).toHaveValue("");
     });
+    expect(screen.getByText(tag)).toBeInTheDocument();
+    expect(apiMocks.listTags).toHaveBeenCalledTimes(pagesBefore + Number(vocabularyChanged));
   });
 
   it("loads, removes, and automatically adds tags for one selected asset", async () => {
@@ -610,7 +625,7 @@ describe("App", () => {
     apiMocks.getAssetDetails.mockImplementation(async () => ({ ...asset, tags: persistedTags }));
     apiMocks.setAssetTags.mockImplementation(async (assetId: number, tags: string[]) => {
       persistedTags = tags;
-      return { asset_id: assetId, changed: true, tags, revision: 2 };
+      return { asset_id: assetId, changed: true, tags, vocabulary_changed: true, query_impact: { type: "all" }, revision: 2 };
     });
 
     render(<App />);
@@ -642,16 +657,14 @@ describe("App", () => {
   it("prevents bulk IPC while a lightbox tag write owns the shared asset lock", async () => {
     virtualizerState.renderItems = true;
     const asset = createAsset(1, "C:/media/a.jpg");
-    const pendingLightboxSave = deferred<{
-      asset_id: number; changed: boolean; tags: string[]; revision: number;
-    }>();
+    const pendingLightboxSave = deferred<Awaited<ReturnType<typeof setAssetTags>>>();
     apiMocks.listAssets.mockResolvedValue({ items: [asset], total: 1 });
     apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: ["cat"] });
     apiMocks.setAssetTags.mockClear();
     apiMocks.setAssetTags
       .mockReturnValueOnce(pendingLightboxSave.promise)
       .mockImplementation(async (assetId: number, tags: string[]) => ({
-        asset_id: assetId, changed: true, tags, revision: 3
+        asset_id: assetId, changed: true, tags, vocabulary_changed: true, query_impact: { type: "all" }, revision: 3
       }));
 
     render(<App />);
@@ -673,7 +686,7 @@ describe("App", () => {
 
     await act(async () => {
       pendingLightboxSave.resolve({
-        asset_id: 1, changed: true, tags: ["cat", "dog"], revision: 2
+        asset_id: 1, changed: true, tags: ["cat", "dog"], vocabulary_changed: true, query_impact: { type: "all" }, revision: 2
       });
       await pendingLightboxSave.promise;
     });
@@ -688,16 +701,14 @@ describe("App", () => {
   it("prevents lightbox IPC while a bulk tag write owns the shared asset lock", async () => {
     virtualizerState.renderItems = true;
     const asset = createAsset(1, "C:/media/a.jpg");
-    const pendingBulkSave = deferred<{
-      asset_id: number; changed: boolean; tags: string[]; revision: number;
-    }>();
+    const pendingBulkSave = deferred<Awaited<ReturnType<typeof setAssetTags>>>();
     apiMocks.listAssets.mockResolvedValue({ items: [asset], total: 1 });
     apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: ["cat"] });
     apiMocks.setAssetTags.mockClear();
     apiMocks.setAssetTags
       .mockReturnValueOnce(pendingBulkSave.promise)
       .mockImplementation(async (assetId: number, tags: string[]) => ({
-        asset_id: assetId, changed: true, tags, revision: 3
+        asset_id: assetId, changed: true, tags, vocabulary_changed: true, query_impact: { type: "all" }, revision: 3
       }));
 
     render(<App />);
@@ -720,7 +731,7 @@ describe("App", () => {
     apiMocks.getAssetDetails.mockResolvedValue({ ...asset, tags: ["cat", "dog"] });
     await act(async () => {
       pendingBulkSave.resolve({
-        asset_id: 1, changed: true, tags: ["cat", "dog"], revision: 2
+        asset_id: 1, changed: true, tags: ["cat", "dog"], vocabulary_changed: true, query_impact: { type: "all" }, revision: 2
       });
       await pendingBulkSave.promise;
     });
@@ -740,9 +751,7 @@ describe("App", () => {
     apiMocks.getAssetDetails
       .mockResolvedValueOnce({ ...asset, tags: ["old"] })
       .mockResolvedValueOnce({ ...asset, tags: ["old", "local", "imported"] });
-    const pendingSave = deferred<{
-      asset_id: number; changed: boolean; tags: string[]; revision: number;
-    }>();
+    const pendingSave = deferred<Awaited<ReturnType<typeof setAssetTags>>>();
     apiMocks.importTagsCsv.mockClear();
     apiMocks.importTagsCsv.mockResolvedValueOnce({
       rows_read: 1, rows_applied: 1, assets_matched: 1, assets_updated: 1
@@ -766,7 +775,7 @@ describe("App", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Import tags CSV" }));
     await Promise.resolve();
     expect(apiMocks.importTagsCsv).not.toHaveBeenCalled();
-    pendingSave.resolve({ asset_id: 1, changed: true, tags: ["old", "local"], revision: 2 });
+    pendingSave.resolve({ asset_id: 1, changed: true, tags: ["old", "local"], vocabulary_changed: true, query_impact: { type: "all" }, revision: 2 });
     await waitFor(() => expect(apiMocks.importTagsCsv).toHaveBeenCalledWith("C:/tmp/tags.csv"));
     await waitFor(() => expect(screen.getByText(/CSV imported\. Rows read: 1/i)).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
@@ -791,9 +800,7 @@ describe("App", () => {
     apiMocks.getAssetDetails
       .mockResolvedValueOnce({ ...asset, tags: ["old"] })
       .mockResolvedValueOnce({ ...asset, tags: ["old", "local", "partially-imported"] });
-    const pendingSave = deferred<{
-      asset_id: number; changed: boolean; tags: string[]; revision: number;
-    }>();
+    const pendingSave = deferred<Awaited<ReturnType<typeof setAssetTags>>>();
     apiMocks.importTagsCsv.mockClear();
     apiMocks.importTagsCsv.mockRejectedValueOnce(new Error("malformed later row"));
     apiMocks.setAssetTags.mockClear();
@@ -815,7 +822,7 @@ describe("App", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Import tags CSV" }));
     await Promise.resolve();
     expect(apiMocks.importTagsCsv).not.toHaveBeenCalled();
-    pendingSave.resolve({ asset_id: 1, changed: true, tags: ["old", "local"], revision: 2 });
+    pendingSave.resolve({ asset_id: 1, changed: true, tags: ["old", "local"], vocabulary_changed: true, query_impact: { type: "all" }, revision: 2 });
     await waitFor(() => expect(apiMocks.importTagsCsv).toHaveBeenCalledWith("C:/tmp/partial.csv"));
     await waitFor(() => expect(screen.getByText(/malformed later row/i)).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Back" }));

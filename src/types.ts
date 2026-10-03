@@ -173,11 +173,13 @@ export type TagQueryImpact =
   | { type: "all" };
 
 export interface SetAssetTagsSummary extends AssetTagResult {
+  vocabulary_changed: boolean;
   query_impact: TagQueryImpact;
   revision: number;
 }
 
 export interface BulkTagMergeSummary {
+  vocabulary_changed: boolean;
   query_impact: TagQueryImpact;
   processed_assets: number;
   updated_assets: number;

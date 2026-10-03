@@ -322,11 +322,12 @@ fn merge_asset_tags_bulk_service(
             .collect::<Vec<_>>();
         let normalized_tags = normalize_and_validate_tags(tags)?;
 
-        let (results, revision, query_impact) = db::merge_asset_tags_bulk_with_revision(
-            &mut conn,
-            &normalized_asset_ids,
-            &normalized_tags,
-        )?;
+        let (results, revision, query_impact, vocabulary_changed) =
+            db::merge_asset_tags_bulk_with_revision(
+                &mut conn,
+                &normalized_asset_ids,
+                &normalized_tags,
+            )?;
         let processed_asset_ids = results
             .iter()
             .map(|result| result.asset_id)
@@ -338,6 +339,7 @@ fn merge_asset_tags_bulk_service(
             .collect::<Vec<_>>();
 
         Ok(BulkTagMergeSummary {
+            vocabulary_changed,
             query_impact,
             processed_assets: processed_asset_ids.len(),
             updated_assets: updated_asset_ids.len(),

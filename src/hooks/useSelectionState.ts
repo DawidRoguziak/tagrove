@@ -24,6 +24,7 @@ interface UseSelectionStateArgs {
   appliedFavoritesOnly: boolean;
   refresh: () => Promise<void>;
   refreshKnownTags: () => Promise<string[]>;
+  refreshKnownTagsAfterMutation: (vocabularyChanged: boolean) => Promise<string[]>;
   assetTagState?: AssetTagStateController;
   assetCount?: number;
   queryEpoch?: number;
@@ -92,6 +93,7 @@ export function useSelectionState({
   appliedFavoritesOnly,
   refresh: refreshQuery,
   refreshKnownTags,
+  refreshKnownTagsAfterMutation,
   assetTagState: sharedAssetTagState,
   assetCount = assets.length,
   queryEpoch = 0,
@@ -282,7 +284,7 @@ export function useSelectionState({
         selected: selectedSnapshot,
         tagEditor: requestedTags,
         setSelected: setSelectedState,
-        refreshKnownTags,
+        refreshKnownTagsAfterMutation,
         onSaved: (savedAssetId, tags) => {
           const accepted = assetTagState.settleMutation(mutationToken, tags);
           mutationSettled = accepted;
@@ -325,7 +327,7 @@ export function useSelectionState({
       });
   }, [
     onTagMutation, assetTagState, assets, getCachedDetails, putCachedDetails,
-    refreshKnownTags, syncVisibleTagMutationState
+    refreshKnownTagsAfterMutation, syncVisibleTagMutationState
   ]);
 
   const saveTags = useCallback((nextTags?: string[]) => {

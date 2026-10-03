@@ -12,12 +12,12 @@ interface SaveLightboxTagsActionArgs {
   selected: SelectedAsset | null;
   tagEditor: string[];
   setSelected: SetSelected;
-  refreshKnownTags: () => Promise<string[]>;
+  refreshKnownTagsAfterMutation: (vocabularyChanged: boolean) => Promise<string[]>;
   onSaved?: (assetId: number, tags: string[]) => boolean | void;
 }
 
 export async function saveLightboxTagsAction(
-  { selected, tagEditor, setSelected, refreshKnownTags, onSaved }: SaveLightboxTagsActionArgs,
+  { selected, tagEditor, setSelected, refreshKnownTagsAfterMutation, onSaved }: SaveLightboxTagsActionArgs,
   nextTags?: string[]
 ) {
   if (!selected) {
@@ -31,6 +31,6 @@ export async function saveLightboxTagsAction(
   const accepted = onSaved?.(assetId, result.tags);
   if (accepted === false) return result;
   setSelected((previous) => updateSelectedTagsIfMatchingAsset(previous, assetId, result.tags));
-  void refreshKnownTags().catch(() => []);
+  void refreshKnownTagsAfterMutation(result.vocabulary_changed).catch(() => []);
   return result;
 }

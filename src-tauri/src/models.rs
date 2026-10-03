@@ -297,6 +297,7 @@ impl TagQueryImpact {
 
 #[derive(Debug, Serialize)]
 pub struct SetAssetTagsSummary {
+    pub vocabulary_changed: bool,
     pub query_impact: TagQueryImpact,
     pub asset_id: i64,
     pub changed: bool,
@@ -306,6 +307,7 @@ pub struct SetAssetTagsSummary {
 
 #[derive(Debug, Serialize)]
 pub struct BulkTagMergeSummary {
+    pub vocabulary_changed: bool,
     pub query_impact: TagQueryImpact,
     pub processed_assets: usize,
     pub updated_assets: usize,

@@ -64,9 +64,9 @@ export function BulkActionsSidebar({
       return;
     }
     if (tagControlsDisabled) return;
-    // Focus only after React has committed the enabled input.
+    // Focus after React enables the input; TagEditor reveals it inside its own field.
     const frame = requestAnimationFrame(() => {
-      tagInputRef.current?.focus();
+      tagInputRef.current?.focus({ preventScroll: true });
       setPendingTagFocus(null);
     });
     return () => cancelAnimationFrame(frame);

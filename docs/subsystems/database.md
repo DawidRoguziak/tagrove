@@ -48,7 +48,7 @@ The remaining tables are:
 | `library_metadata` | Integer values keyed by text. The reserved dependency namespace is `query_revision:`, described below. Other reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `3`). It has no foreign-key relationships. SQLite `application_id` and `user_version` separately identify the application and complete schema generation; neither replaces these runtime/backfill rows. |
 | `pending_file_operations` | Durable source-file recovery journal keyed by `(operation_id, asset_id)`, storing action, original/staging/final paths, and a `committed` flag set in the same transaction as asset mutation/revision. It deliberately survives asset deletion and is reconciled at startup. |
 
-Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_roots`. Deleting a `scan_roots` row automatically removes its root mappings. Tags are not deleted by cascade when their final asset mapping disappears; asset/tag mutation and asset-removal helpers explicitly call orphan-tag cleanup. Thumbnail failures likewise require explicit cleanup because they are not foreign-keyed.
+Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_roots`. Deleting a `scan_roots` row automatically removes its root mappings. Tags are not deleted by cascade when their final asset mapping disappears; tag replacement deletes only removed candidate IDs that have no remaining asset references. Asset removal, imports, and maintenance retain global orphan-tag cleanup. Thumbnail failures likewise require explicit cleanup because they are not foreign-keyed.
 
 Schema version 2 adds the startup-scan preference to `scan_roots`. Initialization adds the column to older schemas with false for all existing roots and preserves values on repeated initialization. Preference writes neither scan nor bump the library revision. Root insertion uses conflict-do-nothing, preserving the existing flag; removing and adding a root again restores the false default.
 
@@ -63,6 +63,7 @@ In addition to primary-key and unique indexes created by SQLite, initialization 
 | `idx_assets_kind` | `assets(kind)` |
 | `idx_assets_modified_at` | `assets(modified_at DESC)` |
 | `idx_tags_name` | `tags(name)`; additional to the unique constraint-backed index. |
+| `idx_tags_normalized_name` | Non-unique `tags(lower(trim(name)))`; bounds legacy canonicalization lookups to matching rows. Created on every initialization when absent, including existing databases, without changing schema or backup versions. |
 | `idx_asset_tags_tag` | `asset_tags(tag_id)` |
 | `idx_asset_tags_asset` | `asset_tags(asset_id)` |
 | `idx_thumbnail_failures_last_failed_at` | `thumbnail_failures(last_failed_at DESC)` |
@@ -94,13 +95,27 @@ Application-mediated writes maintain these invariants:
 
 - `file_name` is the final non-empty segment of `path`, accepting both slash styles. `file_name_key` uses Rust Unicode lowercase. Asset upsert, rename, mapped bundle import, duplicate lookup, and CSV import share that key; they do not compare full paths or file contents.
 - `media_group_key` preserves trimmed display spelling. Its normalized lookup key is `lower(trim(media_group_key))`, or null for a blank/missing key. Single and bulk setters update both fields.
-- Tag boundaries trim, Unicode-lowercase, remove empty values, and deduplicate in first-seen order. Whitespace, comma, semicolon, and control characters are invalid inside one tag. Replacement validates the asset, repairs mappings/counts and legacy spelling, cleans orphan tags, and conditionally bumps revision in one IMMEDIATE transaction with bounded busy retry.
+- Tag boundaries trim, Unicode-lowercase, remove empty values, and deduplicate in first-seen order. Whitespace, comma, semicolon, and control characters are invalid inside one tag. Replacement validates the asset, repairs mappings/counts and legacy spelling, cleans removed orphan candidates, and conditionally bumps revision in one IMMEDIATE transaction with bounded busy retry.
 - `tag_count` is the number of assigned normalized tags. Query count filters read it directly; startup backfills repair older data from the mappings.
 - `upsert_scanned_asset` clears a thumbnail reference when the precise fingerprint changes, including same-second edits. The same write increments `record_version`; thumbnail failures compare that source record version. See [thumbnail identity and limits](thumbnails.md#source-versions-cache-and-target-identity).
 
 Root-prefix SQL escapes `%`, `_`, and `^` before using `LIKE ... ESCAPE '^'`. On Unix, discovery skips non-UTF-8 paths rather than storing a lossy identity.
 
 These are code invariants, not SQLite generated columns, checks, or triggers. Callers that issue ad hoc SQL or call low-level helpers with unnormalized values can violate them.
+
+## Tag vocabulary changes
+
+The shared tag mutation captures assigned tag IDs after canonicalization and before
+replacing mappings. Retained IDs leave the candidate set. Each remaining candidate
+is deleted by primary key only when an indexed `asset_tags(tag_id)` lookup finds no
+references. Ordinary single and bulk saves leave unrelated orphan tags alone.
+
+`vocabulary_changed` tracks actual tag inserts, canonicalization renames/merges,
+and candidate deletions inside the transaction. Bulk saves OR those flags. No
+whole-vocabulary snapshot or count is needed. Assigning an existing name, removing
+a still-shared name, count-only repairs, and canonical no-ops return false.
+`changed`, query impact, and revision rules remain independent: a count repair still
+invalidates all queries and increments revision without changing vocabulary.
 
 ## Filter semantics
 

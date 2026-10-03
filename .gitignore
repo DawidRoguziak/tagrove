@@ -66,3 +66,6 @@ Desktop.ini
 *.tgz
 /.release-source/
 **/__pycache__/
+
+# Local multi-agent review reports and evidence
+/raports/

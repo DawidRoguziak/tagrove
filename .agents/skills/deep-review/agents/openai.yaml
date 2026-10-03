@@ -1,0 +1,6 @@
+interface:
+  display_name: "Deep review"
+  short_description: "Explicit MediaTagger review with independent evidence"
+  default_prompt: "Use $deep-review to review current changes and save the evidence under raports/."
+policy:
+  allow_implicit_invocation: false

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Review team"
-  short_description: "Specialist reviews with independent confirmation"
-  default_prompt: "Use $review-team to review this project and save evidence and coverage reports under docs/review/."

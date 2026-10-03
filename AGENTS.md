@@ -28,7 +28,7 @@ Use `bun run tauri:dev` for desktop development. Dev, E2E, and release have sepa
 
 ## Documentation
 
-For ordinary project code-review requests, use [review-team](.agents/skills/review-team/SKILL.md). It coordinates specialist subagents and independent confirmation, then saves reports under `docs/review/`. Explicit requests for another review skill, such as `interrogate`, keep that skill's workflow. Delegated reviewers follow their assigned role and do not start another review team.
+Use [deep-review](.agents/skills/deep-review/SKILL.md) only when explicitly requested, such as `$deep-review current changes`, `$deep-review src/components/lightbox`, or `$deep-review whole project`. Ordinary review requests do not automatically invoke a multi-agent workflow. Deep review saves generated reports and evidence under the ignored repository-root `raports/` folder. Explicit requests for other review skills retain their workflow. Delegated reviewers follow their assigned role and do not spawn agents.
 
 Select the documentation relevant to the current task from the table below and read only those files.
 

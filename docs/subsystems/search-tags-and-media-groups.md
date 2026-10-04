@@ -23,8 +23,24 @@ can explicitly retry instead of immediately repeating the failed request.
 `features/gallery/createSelection.ts` retains selected IDs across cache eviction and query
 changes, resolves ranges in 128-index windows and preserves the prior selection on failure.
 Query changes cancel pending ranges and clear the index anchor; identity resets clear IDs.
-The Solid inspector currently provides the selection count and Clear. Tag, favorite and group
-editing follow in stage 5. Existing React editors and their tests remain the reference.
+`features/bulk/createBulk.ts` owns bulk metadata and group drafts under the application
+runtime. `createSelectedSummaries` retains only selected records, hydrates missing summaries
+in batches of 256 with four requests in flight, and overlays committed metadata on older
+responses. Missing records and failed reads require explicit retry. Query changes preserve
+selected IDs and drafts; library identity changes clear them.
+
+`features/tagging/TagEditor.tsx` shares the application suggestion client. The Solid bulk
+sidebar uses it for complete single-asset tags and add-only multi-selection feedback.
+`library/metadata/createMutations.ts` owns admission, canonical publication and refreshes.
+Single replacements require a complete canonical base; multi-selection merges use the
+backend's complete lists. Synchronous operation locks reject repeated same-turn commands.
+Obsolete selections cannot publish editor feedback or restore focus to a new draft.
+
+`features/bulk/GroupOrderModal.tsx` keeps an isolated order draft, virtualizes rows through
+virtual-core, and supports pointer and keyboard ordering. Failure or partial success retains
+the draft. Logical close releases interaction ownership while the closing frame retains its
+rows and metadata. The runtime loads the startup popular-tag snapshot once. React editors
+and tests remain the reference until cutover.
 
 ## Workspace presentation
 

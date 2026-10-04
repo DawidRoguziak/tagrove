@@ -244,70 +244,78 @@ suite("shared inline tag editor", function () {
     }
   }
 
-  it("persists lightbox and bulk writes and places suggestions outside the scroll field", async () => {
-    await browser.refresh();
-    await browser.setWindowSize(1100, 1000);
-    await $("button[data-asset-id]").waitForDisplayed();
-    for (const kind of ["lightbox", "bulk"]) {
-      await openEditor(kind);
-      const selector = `#${kind}-tag-draft-input`;
-      await nativeFocus(selector);
-      await $(selector).setValue("suggestion");
-      await nativeFocus(selector);
-      await $('[role="option"]').waitForDisplayed();
-      const popup = await browser.execute(selector => {
-        const list = document.querySelector('[role="listbox"]');
-        const input = document.querySelector(selector);
-        const r = list.getBoundingClientRect();
-        return { portal: list.parentElement === document.body, top: r.top, bottom: r.bottom,
-          inputBottom: input.getBoundingClientRect().bottom, viewport: innerHeight };
-      }, selector);
-      assert.ok(popup.portal && popup.top >= popup.inputBottom && popup.bottom <= popup.viewport);
-      // Suggestions are published only after the complete startup vocabulary has
-      // loaded. Start counting after that barrier, not merely after gallery load.
-      if (kind === "lightbox") await monitorTagIpc();
-      let before = await ipcSnapshot();
-      await browser.keys(["ArrowDown", "Enter"]);
-      await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes("suggestion-only"));
-      before = await assertVocabularySave(before, false);
-      await $('button[aria-label="Remove tag suggestion-only"]').click();
-      await browser.waitUntil(async () => !(await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes("suggestion-only"));
-      before = await assertVocabularySave(before, false);
-      for (let repeat = 0; repeat < 2; repeat++) {
-        await $(selector).setValue("suggestion-only");
-        await browser.keys("Enter");
+  for (const kinds of [["lightbox", "bulk"], ["bulk"]]) {
+    it(`persists ${kinds.join(" and ")} writes and places suggestions outside the scroll field`, async () => {
+      for (const assetId of assetIds) {
+        const details = await invoke("get_asset_details", { assetId });
+        await invoke("set_asset_tags", { assetId, tags: details.tags.filter(tag => tag !== "multi-proof") });
+      }
+      await browser.refresh();
+      await browser.setWindowSize(1100, 1000);
+      await $("button[data-asset-id]").waitForDisplayed();
+      for (const kind of kinds) {
+        await openEditor(kind);
+        const selector = `#${kind}-tag-draft-input`;
+        await nativeFocus(selector);
+        await $(selector).setValue("suggestion");
+        await nativeFocus(selector);
+        await $('[role="option"]').waitForDisplayed();
+        const popup = await browser.execute(selector => {
+          const list = document.querySelector('[role="listbox"]');
+          const input = document.querySelector(selector);
+          const r = list.getBoundingClientRect();
+          return { portal: list.parentElement === document.body, top: r.top, bottom: r.bottom,
+            inputBottom: input.getBoundingClientRect().bottom, viewport: innerHeight };
+        }, selector);
+        assert.ok(popup.portal && popup.top >= popup.inputBottom && popup.bottom <= popup.viewport);
+        // Suggestions are published only after the complete startup vocabulary has
+        // loaded. Start counting after that barrier, not merely after gallery load.
+        if (kind === kinds[0]) await monitorTagIpc();
+        let before = await ipcSnapshot();
+        await browser.keys(["ArrowDown", "Enter"]);
+        await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes("suggestion-only"));
         before = await assertVocabularySave(before, false);
         await $('button[aria-label="Remove tag suggestion-only"]').click();
+        await browser.waitUntil(async () => !(await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes("suggestion-only"));
         before = await assertVocabularySave(before, false);
+        for (let repeat = 0; repeat < 2; repeat++) {
+          await $(selector).setValue("suggestion-only");
+          await browser.keys("Enter");
+          before = await assertVocabularySave(before, false);
+          await $('button[aria-label="Remove tag suggestion-only"]').click();
+          before = await assertVocabularySave(before, false);
+        }
+        const newTag = `vocabulary-proof-${kind}`;
+        await $(selector).setValue(newTag);
+        await browser.keys("Enter");
+        before = await assertVocabularySave(before, true);
+        assert.ok((await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes(newTag));
+        await $(`button[aria-label="Remove tag ${newTag}"]`).click();
+        await assertVocabularySave(before, true);
+        assert.ok(!(await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes(newTag));
+        if (kind === "lightbox") await $('button[aria-label="Close preview"]').click();
       }
-      const newTag = `vocabulary-proof-${kind}`;
-      await $(selector).setValue(newTag);
+      await $(`button[data-asset-id="${assetIds[1]}"]`).click();
+      let before = await ipcSnapshot();
+      await $("#bulk-tag-draft-input").setValue("suggestion-only");
       await browser.keys("Enter");
-      before = await assertVocabularySave(before, true);
-      assert.ok((await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes(newTag));
-      await $(`button[aria-label="Remove tag ${newTag}"]`).click();
+      before = await assertVocabularySave(before, false);
+      await $("#bulk-tag-draft-input").setValue("multi-proof");
+      await browser.keys("Enter");
+      await browser.waitUntil(async () => (await Promise.all(assetIds.map(assetId => invoke("get_asset_details", { assetId })))).every(asset => asset.tags.includes("multi-proof")));
       await assertVocabularySave(before, true);
-      assert.ok(!(await invoke("get_asset_details", { assetId: assetIds[0] })).tags.includes(newTag));
-      if (kind === "lightbox") await $('button[aria-label="Close preview"]').click();
-    }
-    await $(`button[data-asset-id="${assetIds[1]}"]`).click();
-    let before = await ipcSnapshot();
-    await $("#bulk-tag-draft-input").setValue("suggestion-only");
-    await browser.keys("Enter");
-    before = await assertVocabularySave(before, false);
-    await $("#bulk-tag-draft-input").setValue("multi-proof");
-    await browser.keys("Enter");
-    await browser.waitUntil(async () => (await Promise.all(assetIds.map(assetId => invoke("get_asset_details", { assetId })))).every(asset => asset.tags.includes("multi-proof")));
-    await assertVocabularySave(before, true);
-    await fs.writeFile(path.join(evidence, "vocabulary-ipc.json"), JSON.stringify(await ipcSnapshot(), null, 2));
-    assert.equal(await $('[data-ui="tag-editor"] button').isExisting(), false);
-    await browser.execute(() => window.restoreTagFetch());
-    await browser.refresh();
-    await $("button[data-asset-id]").waitForDisplayed();
-    for (const assetId of assetIds) {
-      assert.ok((await invoke("get_asset_details", { assetId })).tags.includes("multi-proof"));
-    }
-    await $(`button[data-asset-id="${assetIds[0]}"]`).click();
-    assert.ok((await $('[data-ui="tag-editor"]').getText()).includes("multi-proof"));
-  });
+      await fs.writeFile(path.join(evidence, "vocabulary-ipc.json"), JSON.stringify(await ipcSnapshot(), null, 2));
+      assert.equal(await $('[data-ui="tag-editor"] button').isExisting(), false);
+      await browser.execute(() => window.restoreTagFetch());
+      await browser.refresh();
+      await $("button[data-asset-id]").waitForDisplayed();
+      for (const assetId of assetIds) {
+        assert.ok((await invoke("get_asset_details", { assetId })).tags.includes("multi-proof"));
+      }
+      if (kinds.length === 1) await $('button[aria-label="Enable bulk actions"]').click();
+      await $(`button[data-asset-id="${assetIds[0]}"]`).click();
+      await browser.waitUntil(async () => (await $('[data-ui="tag-editor"]').getText()).includes("multi-proof"),
+        { timeoutMsg: "Reloaded editor did not show persisted tags" });
+    });
+  }
 });

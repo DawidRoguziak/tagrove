@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 4 is complete. React remains the default and functional reference.
-Solid now browses and searches the real library with a virtual gallery, range selection,
-autocomplete and tag discovery. Shared tag editing and bulk actions are next.
+Stage 5 is complete. React remains the default and functional reference.
+Solid now includes shared tag editing, bulk favorites, media groups and group ordering.
+Lightbox selection and image behavior are next.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 5](05-tagging-and-bulk.md).
+- Next implementation task: [stage 6](06-lightbox-and-images.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -23,8 +23,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | [1. Reference and toolchains](01-reference-and-toolchains.md) | Complete | 703 frontend, 206 Rust, both builds, desktop and packaging verified | Findings fixed and rechecked | `build: add isolated Solid 2 migration setup`; `4af0ff4` |
 | [2. Platform and shell](02-platform-and-shell.md) | Complete | 734 frontend, 206 Rust, both builds, desktop shell comparison | Findings fixed and rechecked | `refactor: establish Solid shell and platform boundaries`; `aa7c933` |
 | [3. Library state](03-library-state.md) | Complete | 822 frontend, 206 Rust, both builds; query follow-up passed | Findings fixed and rechecked | `feat: implement Solid library state and mutation coordination`; `64e7ac1` |
-| [4. Gallery and search](04-gallery-and-search.md) | Complete | 931 frontend, 206 Rust, both builds; desktop comparison and reduced motion passed | Findings fixed and rechecked | `feat: migrate gallery and search to Solid`; record hash in stage 5 |
-| [5. Tagging and bulk](05-tagging-and-bulk.md) | Not started | Not run | Pending | None |
+| [4. Gallery and search](04-gallery-and-search.md) | Complete | 931 frontend, 206 Rust, both builds; desktop comparison and reduced motion passed | Findings fixed and rechecked | `feat: migrate gallery and search to Solid`; `9a87d96` |
+| [5. Tagging and bulk](05-tagging-and-bulk.md) | Complete | 1008 frontend, 206 Rust, both builds; 7 desktop cases per renderer and matching editor geometry | Findings fixed and rechecked | `feat: migrate tag editing and bulk actions to Solid`; record hash in stage 6 |
 | [6. Lightbox and images](06-lightbox-and-images.md) | Not started | Not run | Pending | None |
 | [7. Native video](07-native-video.md) | Not started | Not run | Pending | None |
 | [8. Settings and maintenance](08-settings-and-maintenance.md) | Not started | Not run | Pending | None |
@@ -441,7 +441,7 @@ Next stage: [gallery, search and tag discovery](04-gallery-and-search.md).
 
 Date: 4 October 2026. Starting commit: `64e7ac1`.
 Local commit subject: `feat: migrate gallery and search to Solid`.
-Record its hash when opening stage 5.
+Local commit hash: `9a87d96`.
 
 Implemented behavior:
 
@@ -580,3 +580,119 @@ parity claim is made; two existing Rust diagnostics remain ignored. No required 
 check remains unavailable.
 
 Next stage: [shared tag editing and bulk actions](05-tagging-and-bulk.md).
+
+
+## Stage 5 evidence
+
+Date: 4 October 2026. Starting commit: `9a87d96`.
+Local commit subject: `feat: migrate tag editing and bulk actions to Solid`.
+Record its hash when opening stage 6.
+
+Implemented behavior:
+
+- `features/tagging/TagEditor.tsx` preserves wrapping chips, a controlled input, disabled and
+  loading states, IME and suggestion behavior, viewport suggestions and field-only scrolling.
+  Search and tag editors use the same application-owned suggestion worker.
+- The runtime owns `createBulk` and loads popular tags once at startup. Selected summaries
+  outlive gallery-page eviction and hydrate in 256-ID batches with four requests in flight.
+  Failed or omitted summaries remain retryable. Committed metadata overlays older reads.
+- Single-asset replacements require complete canonical tags. Multi-selection uses backend
+  merges. Shared library mutations retain admission, canonical publication, query impact,
+  vocabulary refresh, maintenance draining, partial results and identity invalidation.
+  Command snapshots and operation locks are synchronous under Solid batching.
+- Sidebar drafts, card errors and focus follow selection identity. A retired save cannot
+  clear a new draft or focus its input. The 360px inspector and narrow placement use the
+  existing CSS. Group initialization preserves a draft typed before metadata arrives.
+- The group-order modal owns its draft and real virtual-core instance. Pointer capture,
+  edge scrolling, keyboard ordering, announcements, thumbnail subscriptions and exact-order
+  submission retain the reference behavior. Partial or failed saves preserve the draft;
+  closing retains the final frame while releasing interaction ownership.
+
+Tests ported or added:
+
+- All 699 React/shared reference tests remain. Stage 5 adds 77 Solid tests across the editor,
+  sidebar/modal and bulk model suites. Stage-4 selection and stage-3 metadata suites continue
+  covering shared coordination. Pure merge/order helpers and their tests remain shared.
+- Deferred reads and writes cover contention, duplicate commands, missing and offscreen IDs,
+  partial merges, failed refreshes, stale selection/identity results, disposal and late summary
+  hydration. Group tests cover exact orders, single-asset order preservation, failure/retry,
+  cancellation, closing frames and a thousand-item DOM/request bound.
+- Desktop tag-editor persistence now runs independently for bulk, alongside the original
+  combined lightbox/bulk case. It retains canonical tag reads after reload and both unchanged
+  and changed vocabulary IPC assertions. The short-gallery gesture starts in the measured
+  gallery section, with its original selection assertions intact.
+
+Verification, with logs under `artifacts/solid2/stage5/`:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `bun run test` | 114 files, 1008 passed | `frontend-final.log` |
+| `bun run typecheck` | All three contexts pass | `types-final.log` |
+| `bun run test:frontends` | Both builds and renderer/entry isolation pass; React assets restored in `dist` | `builds-final.log`, `react-modules.json`, `solid-modules.json` |
+| `bun run test:backend` | 206 passed; 2 existing diagnostics ignored | `backend.log` |
+| `bun run lint` | Passed | `lint-final.log` |
+| `bun run format:check` | Passed | `format.log` |
+| `bun run locale:check` | All 11 languages valid | `locales.log` |
+| `PATH="/tmp/solid2-tools:$PATH" bun run privacy:check` | Passed before and after staging | `privacy.log`, `privacy-staged.log` |
+| `git diff --check` / `git diff --cached --check` | Passed | Working/staged diff review |
+| `python3 artifacts/solid2/stage5/compare-geometry.py` | All four editor geometry comparisons match exactly | `geometry-parity.log` |
+
+Desktop comparison uses the existing private Xvfb/D-Bus wrapper, fresh temporary profiles,
+synthetic files and serial renderer builds:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_TAG_EDITOR=1 MEDIATAGGER_GALLERY_SELECTION=1 MEDIATAGGER_GROUP_ORDER=1 bash artifacts/solid2/stage2/run-desktop.sh \
+    --spec e2e/specs/tag-editor.e2e.js \
+    --spec e2e/specs/gallery-selection.e2e.js \
+    --spec e2e/specs/group-order.e2e.js \
+    --mochaOpts.grep 'keeps bulk|persists bulk|ignores accidental|autoscrolls and resolves|preserves selection on empty|drags, cancels'
+done
+```
+
+Both renderers passed seven cases, recorded in `desktop-solid-final.log` and
+`desktop-react-final.log`. These exercised both themes, 1100px and 600px tag fields, field-only scrolling and focus, persisted tags, vocabulary IPC counts, selection of
+2,051 IDs, short-gallery empty space, pointer/keyboard group ordering, cancellation, edge
+scrolling and persisted order. Screenshots and geometry JSON remain under `artifacts/tag-editor/`
+and `artifacts/group-order/`. Inspected Solid light/1100px and dark/600px screenshots and the
+React light/1100px reference. Field/input rectangles, client sizes and scroll sizes match
+exactly across both themes and both widths in the final captured geometry JSON.
+
+Self-review findings and fixes:
+
+- Solid requires returning cleanup from `onSettled`. The first editor test run rejected an
+  `onCleanup` registration there; the observer now returns its cleanup.
+- A props refresh with unchanged selected IDs cancelled pending focus. Sidebar reset now
+  compares the actual selected-set identity. Disabled-input keyboard submission is guarded,
+  and clicking an enabled field reopens current suggestions. Ported regression tests pass.
+- A late offscreen summary could overwrite a durable favorite change. Selected metadata
+  retains committed patches for the selected IDs and overlays them on older reads. Unrelated
+  deletion notifications do not create errors or retained tombstones in the selection model.
+- Modal initialization followed metadata updates even while it remained open, discarding the
+  draft during acknowledgement. A memo of logical open state now owns initialization and
+  listener lifetime. The added deferred-save regression failed before the fix and passes now.
+- Disabling virtual-core on close removed the visible rows before the exit fade. A modal
+  snapshot retains rows, total size and display metadata until the presence owner removes DOM.
+- Removed copied ref-holder objects from the Solid modal, replaced mapped JSX with owned
+  `For` lists, and replaced quadratic selected-ID lookup with a memoized set. Reviewed
+  synchronous admission, selection identity, canonical ownership, listeners, pointer capture,
+  frames, observers, virtualizer disposal, thumbnails and renderer dependency direction.
+  Canonical tags published by another owner also enable an editor whose older details read
+  is still pending; a deferred regression verifies that the old read cannot replace them.
+- The initial short-gallery desktop case failed in both renderers because viewport-based
+  coordinates landed on the footer. It now measures the gallery section and asserts that
+  the starting point is below the tiles. A reload assertion also needed to await detail
+  hydration; it now waits for the same persisted tag text instead of reading a loading frame.
+  Earlier failure logs remain local and are not counted as passes.
+- The first sandbox desktop launch could not bind D-Bus. Approved local socket access allowed
+  the isolated wrapper to run. Temporary profiles were removed by its existing cleanup guard.
+
+Remaining limits: Solid lightbox activation and image behavior remain stage 6, native video
+stage 7, and complete settings/maintenance stage 8. The shared editor is tested with its
+lightbox-ready contract, but native lightbox integration is not claimed. This stage does not
+establish cross-platform or packaging parity. Two pre-existing Rust diagnostic tests remain
+ignored. No required stage-5 check remains unavailable. Reviewed staged source, synthetic
+fixtures and documentation for scope and private content. Raw logs, media, screenshots and
+databases remain ignored; no backend, IPC or native profile contract changed.
+
+Next stage: [lightbox selection and images](06-lightbox-and-images.md).

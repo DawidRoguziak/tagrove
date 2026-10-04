@@ -22,7 +22,7 @@ async function geometry() {
     const rect = tile.getBoundingClientRect();
     const viewport = document.querySelector(".gallery-scroll").getBoundingClientRect();
     return { left: Math.round(grid.left), top: Math.round(grid.top), right: Math.floor(grid.right),
-      size: rect.width, bottom: Math.floor(viewport.bottom), viewportTop: Math.ceil(viewport.top) };
+      size: rect.width, selectionBottom: Math.floor(tile.closest('[data-testid="gallery-grid"]').getBoundingClientRect().bottom), bottom: Math.floor(viewport.bottom), viewportTop: Math.ceil(viewport.top) };
   });
 }
 async function count(expected) {
@@ -203,11 +203,13 @@ suite("gallery additive clicks and rectangle selection", function () {
     await $('#bulk-group-key-input').click(); await count(1);
     await $('.filter-input').click(); await count(1);
     const g = await geometry();
-    await pointer([{ type: "pointerMove", duration: 0, x: g.left + 20, y: g.bottom - 25 },
+    await pointer([{ type: "pointerMove", duration: 0, x: g.left + 20, y: g.selectionBottom - 25 },
       { type: "pointerDown", button: 0 }, { type: "pointerUp", button: 0 }]);
     await count(1);
     await clear();
-    await dragStart(g.left + 20, g.bottom - 80, g.left + 40, g.top + 20);
+    // Start in the empty gallery section. The viewport bottom includes the footer.
+    assert.ok(g.selectionBottom - 80 > g.top + g.size, "Fixture needs empty space below tiles");
+    await dragStart(g.left + 20, g.selectionBottom - 80, g.left + 40, g.top + 20);
     await release(); await count(1);
     await browser.saveScreenshot(path.join(output, "short-gallery.png"));
     await $('button[aria-label="Disable bulk actions"]').click();

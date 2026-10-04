@@ -1,4 +1,4 @@
-import { UiButton } from "../ui/controls/UiButton";
+import { BulkActionsSidebar } from "../features/bulk/BulkActionsSidebar";
 import { createSignal } from "solid-js";
 import { useAppRuntime } from "./AppRuntimeContext";
 import { useLanguage } from "../i18n/solid";
@@ -113,33 +113,12 @@ export function AppGalleryView() {
               pageFailureEpoch={library.query.pageFailureEpoch}
             />
             {selection.enabled ? (
-              <aside
-                class="bulk-inspector panel-scroll"
-                data-testid="bulk-action-panel"
-                aria-label={t("bulk.panel.ariaLabel")}
-              >
-                <header
-                  class="flex flex-wrap items-center justify-between gap-2 bg-[var(--surface-solid)]"
-                  data-testid="bulk-header-panel"
-                >
-                  <div class="grid gap-0.5" aria-live="polite">
-                    <h2 class="m-0 text-lg">{t("bulk.panel.heading")}</h2>
-                    <span class="font-mono text-xs text-primary-text">
-                      {t("bulk.panel.selectedItems", { count: selection.ids.size })}
-                    </span>
-                  </div>
-                  {selection.ids.size > 0 ? (
-                    <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
-                      <UiButton className="h-8! min-h-8! text-xs" onClick={selection.clear}>
-                        {t("bulk.panel.clearSelection")}
-                      </UiButton>
-                      <span class="text-xs text-[var(--text-muted)]">
-                        {t("bulk.panel.clearSelectionHint")}
-                      </span>
-                    </div>
-                  ) : null}
-                </header>
-              </aside>
+              <BulkActionsSidebar
+                controller={runtime.bulk}
+                client={runtime.suggestions}
+                popularTags={runtime.popularTags()}
+                thumbnailStore={library.thumbnails.thumbnailStore}
+              />
             ) : null}
           </div>
         </section>

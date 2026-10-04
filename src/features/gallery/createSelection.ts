@@ -8,6 +8,7 @@ export function createSelection(options: {
   getIdsRange: (start: number, end: number) => Promise<number[]>;
 }) {
   let enabled = false;
+  let resolving = false;
   let ids = new Set<number>();
   let anchor: number | null = null;
   let generation = 0;
@@ -22,6 +23,7 @@ export function createSelection(options: {
   };
   function cancel() {
     generation++;
+    resolving = false;
     retry = null;
     setBusy(false);
     setError(null);
@@ -44,6 +46,7 @@ export function createSelection(options: {
     const request = generation;
     const epoch = options.queryEpoch();
     const current = () => request === generation && epoch === options.queryEpoch();
+    resolving = true;
     setBusy(true);
     try {
       const resolved = new Set<number>();
@@ -71,7 +74,10 @@ export function createSelection(options: {
         retry = () => resolve(ranges, additive, clearAnchor);
       }
     } finally {
-      if (current()) setBusy(false);
+      if (current()) {
+        resolving = false;
+        setBusy(false);
+      }
     }
   }
   function interact(interaction: BulkSelectionInteraction): void | Promise<void> {
@@ -81,6 +87,7 @@ export function createSelection(options: {
       case "clear":
         return clear();
       case "rectangle-start":
+        resolving = true;
         setBusy(true);
         return;
       case "rectangle-cancel":
@@ -126,6 +133,14 @@ export function createSelection(options: {
       enabled = !enabled;
       setMode(enabled);
       if (!enabled) clear();
+    },
+    capture: (): { ids: ReadonlySet<number>; enabled: boolean; busy: boolean } => ({
+      ids,
+      enabled,
+      busy: resolving
+    }),
+    remove(idsToRemove: ReadonlySet<number>) {
+      publish(new Set([...ids].filter((id) => !idsToRemove.has(id))));
     },
     clear,
     cancel,

@@ -17,7 +17,7 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/platform/tauri/__tests__/api.test.ts` | shared | 2, `platform/tauri` command contracts | Moved, all assertions retained |
 | `src/components/UI/__tests__/LazyErrorBoundary.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/app/__tests__/shell.test.tsx` |
 | `src/components/UI/__tests__/ModalPresence.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx`, feature confirmations remain for stage 8 |
-| `src/components/UI/__tests__/TagEditor.test.tsx` | react | 5, `features/tagging` | Retained, all assertions |
+| `src/components/UI/__tests__/TagEditor.test.tsx` | react | 5, `features/tagging` | React reference retained; Solid counterpart in `src/features/tagging/__tests__/TagEditor.test.tsx` |
 | `src/components/UI/__tests__/ThumbnailImage.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/ui/controls/__tests__/ThumbnailImage.test.tsx` |
 | `src/components/UI/__tests__/UiAlert.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
 | `src/components/UI/__tests__/UiModal.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx` |
@@ -25,15 +25,15 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/app/__tests__/WindowControls.test.tsx` | react | 2, `app/WindowControls` | React assertions retained; Solid counterpart in `src/app/__tests__/WindowControls.test.tsx` |
 | `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` | react | 4, `features/search` | React reference retained; Solid coverage in `src/features/search/__tests__/createSearch.test.ts` and app gallery integration |
 | `src/components/app/hooks/__tests__/useAssetTagState.test.ts` | react | 3, `library/metadata` | React assertions retained; Solid counterpart in `src/library/metadata/__tests__/createAssetTagState.test.ts` |
-| `src/components/app/hooks/__tests__/useBulkFavorites.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
-| `src/components/app/hooks/__tests__/useBulkSelectionController.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
-| `src/components/app/hooks/__tests__/useSelectedSummaries.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
+| `src/components/app/hooks/__tests__/useBulkFavorites.test.ts` | react | 5, `features/bulk` selection and metadata | React reference retained; Solid coverage in `src/features/bulk/__tests__/createBulk.test.ts`, stage-4 selection and stage-3 metadata suites |
+| `src/components/app/hooks/__tests__/useBulkSelectionController.test.ts` | react | 5, `features/bulk` selection and metadata | React reference retained; Solid coverage in `src/features/bulk/__tests__/createBulk.test.ts`, stage-4 selection and stage-3 metadata suites |
+| `src/components/app/hooks/__tests__/useSelectedSummaries.test.ts` | react | 5, `features/bulk` selection and metadata | React reference retained; Solid coverage in `src/features/bulk/__tests__/createBulk.test.ts`, stage-4 selection and stage-3 metadata suites |
 | `src/components/app/services/__tests__/assetMutationService.test.ts` | shared | 3, `library/metadata` | Retained, all assertions |
 | `src/components/app/services/__tests__/filterService.test.ts` | shared | 4, `features/search` | Retained, all assertions |
 | `src/components/app/services/__tests__/libraryInvalidationService.test.ts` | shared | 3, `library/metadata` | Retained, all assertions |
 | `src/ui/dom/__tests__/theme.test.ts` | shared | 2, shared theme persistence | Moved, all assertions retained |
 | `src/components/app/services/__tests__/tileSizeService.test.ts` | shared | 4, gallery sizing | Retained, all assertions |
-| `src/components/bulk/__tests__/BulkActionsSidebar.test.tsx` | react | 5, `features/bulk` | Retained, all assertions |
+| `src/components/bulk/__tests__/BulkActionsSidebar.test.tsx` | react | 5, `features/bulk` | React reference retained; Solid counterpart in `src/features/bulk/__tests__/BulkActionsSidebar.test.tsx` |
 | `src/components/bulk/grouping/services/__tests__/applyBulkMediaGroupAction.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
 | `src/components/bulk/grouping/services/__tests__/bulkGroupOrderService.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
 | `src/components/bulk/tagging/services/__tests__/applyBulkTagsAction.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
@@ -123,3 +123,19 @@ geometry suites still execute once in `shared`. Full React suites remain unchang
 Solid bootstrap expectations now target the implemented gallery instead of the shell text.
 Native evidence covers the stage-4 portions listed in PROGRESS; bulk mutation and lightbox
 assertions in combined desktop scenarios remain for their respective later stages.
+
+
+Stage 5 adds 77 Solid cases across three suites. TagEditor and sidebar/modal suites retain
+controlled draft, disabled/loading, suggestion, keyboard, stale-completion, focus and
+closing-frame assertions. Real virtual-core bounds the thousand-item order dialog.
+Bulk model tests cover complete canonical tags, contention, duplicate writes, partial
+publication, failed refreshes, identity resets, eviction, missing IDs, favorite toggles,
+exact group ordering, and disposal. Hydration tests enforce 256-ID batches and four requests,
+and prove that late summaries cannot replace already committed metadata. The shared pure
+merge/order helpers and their existing suites still run once.
+
+Desktop tag-editor coverage now includes an independent bulk persistence/vocabulary scenario
+that runs before the lightbox is ported. The original combined lightbox/bulk scenario remains.
+The short-gallery selection test starts its drag inside the measured gallery section; its
+old viewport-based point landed on the footer in both renderers. Selection assertions remain
+unchanged. Stage-6 lightbox assertions remain for that stage.

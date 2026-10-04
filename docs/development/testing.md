@@ -707,3 +707,33 @@ selection/performance cases continue into lightbox or bulk editing, which belong
 stages. Keep those full reference tests unchanged. Exact selected commands and outcomes are
 in [PROGRESS.md](../solid2/PROGRESS.md). Repeat thumbnail fading with the isolated GTK/GSettings
 reduced-motion configuration described in the animation recipe.
+
+
+### Solid bulk editing verification
+
+During migration, run the shared tag editor, bulk controller and order dialog tests with:
+
+```sh
+bun run test --project solid src/features/tagging src/features/bulk
+```
+
+The model tests use deferred IPC responses for selection replacement, canonical publication,
+metadata contention, missing IDs, partial results and disposal. The sidebar suite uses real
+virtual-core with synthetic DOM measurements; native layout still requires desktop E2E.
+
+For either renderer, use an isolated E2E profile and private display, then run:
+
+```sh
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_TAG_EDITOR=1 MEDIATAGGER_GALLERY_SELECTION=1 MEDIATAGGER_GROUP_ORDER=1 bun run test:e2e:tauri \
+  --spec e2e/specs/tag-editor.e2e.js \
+  --spec e2e/specs/gallery-selection.e2e.js \
+  --spec e2e/specs/group-order.e2e.js \
+  --mochaOpts.grep 'keeps bulk|persists bulk|ignores accidental|autoscrolls and resolves|preserves selection on empty|drags, cancels'
+```
+
+Repeat serially with `MEDIATAGGER_FRONTEND=react`. These seven cases cover both themes,
+1100px/600px tag fields, focus, persisted tags after reload, vocabulary IPC counts, 2,051-ID
+selection across evicted pages, and pointer/keyboard group ordering with persisted results.
+The complete tag-editor and gallery-selection suites also exercise the lightbox; those Solid
+scenarios remain part of stage 6. See [migration evidence](../solid2/PROGRESS.md) for commands,
+results and local artifact locations.

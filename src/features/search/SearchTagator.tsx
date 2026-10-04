@@ -116,6 +116,7 @@ export function SearchTagator(props: {
   }
   const updateCaret = () => setCaret(input()?.selectionStart ?? props.value.length);
   function keydown(event: KeyboardEvent) {
+    if (props.disabled) return;
     if (event.isComposing || event.keyCode === 229) return;
     const items = suggestions.items;
     if (open() && items.length > 0) {
@@ -178,7 +179,10 @@ export function SearchTagator(props: {
           updateCaret();
           setOpen(!!props.value.trim());
         }}
-        onClick={updateCaret}
+        onClick={() => {
+          updateCaret();
+          if (!props.disabled) setOpen(!!props.value.trim());
+        }}
         onSelect={updateCaret}
         onInput={(event) => {
           const value = event.currentTarget.value;

@@ -46,7 +46,11 @@ worker. Gallery/Settings switching remounts the gallery DOM and resets scroll wh
 those models. `features/gallery` owns virtual-core, geometry observers, pointer capture and
 selection preview; `features/search` owns the input, suggestions and tag-list modal. Virtual
 slots are keyed by global index, so overlapping rows keep their DOM while placeholder
-replacement and current asset identity remain reactive. Bulk action editors follow in stage 5.
+replacement and current asset identity remain reactive. `features/bulk/createBulk.ts` owns
+selected metadata and group drafts across view changes. `features/tagging/TagEditor.tsx`
+shares the suggestion worker with search. The mounted bulk sidebar owns its tag input draft,
+focus restoration and group-order dialog. The dialog uses virtual-core and per-asset thumbnail
+subscriptions; its closing frame retains the last visible rows.
 
 ## Bootstrap and shell composition
 

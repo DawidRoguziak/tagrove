@@ -1,3 +1,5 @@
+import { createBulk } from "../features/bulk/createBulk";
+import { getStartupPopularTags } from "../platform/tauri/tags";
 import { createSearch } from "../features/search/createSearch";
 import { createSelection } from "../features/gallery/createSelection";
 import { SuggestionClient } from "../components/search/worker/SuggestionClient";
@@ -21,6 +23,8 @@ export function createAppRuntime() {
     identityEpoch: () => library.tags.epoch,
     getIdsRange: library.query.getIdsRangeAsync
   });
+  const bulk = createBulk(library, selection, () => view() === "settings");
+  const [popularTags, setPopularTags] = createSignal<string[]>([]);
   const suggestions = new SuggestionClient();
   let disposed = false;
   let started = false;
@@ -36,6 +40,8 @@ export function createAppRuntime() {
     suggestions.dispose();
   });
   return {
+    bulk,
+    popularTags,
     search,
     selection,
     suggestions,
@@ -46,6 +52,11 @@ export function createAppRuntime() {
     start() {
       if (started) return;
       started = true;
+      void getStartupPopularTags()
+        .then((tags) => {
+          if (!disposed) setPopularTags(tags);
+        })
+        .catch(() => {});
       void library.refreshLibrary().catch(() => {});
       void listScanRoots()
         .then((roots) => {

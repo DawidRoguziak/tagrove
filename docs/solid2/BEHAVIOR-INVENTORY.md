@@ -42,19 +42,19 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/gallery/hooks/__tests__/useGalleryGridHandlers.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/createGridHandlers.test.tsx` |
 | `src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/createVirtualGrid.test.tsx` plus real DOM/cache integration |
 | `src/components/gallery/services/__tests__/selectionGeometry.test.ts` | shared | 4, `features/gallery` | Retained, all assertions |
-| `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/__tests__/LightboxModal.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/__tests__/MediaGroupSetter.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
+| `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx |
+| `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid imageControls.test.tsx and LightboxModal.test.tsx; native-video cases remain stage 7 |
+| `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts and LightboxModal.test.tsx |
+| `src/components/lightbox/__tests__/LightboxModal.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx; native-video cases remain stage 7 |
+| `src/components/lightbox/__tests__/MediaGroupSetter.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid MediaGroupSetter.test.tsx |
 | `src/components/lightbox/__tests__/nativeVideoLayout.test.ts` | shared | 7, `features/lightbox/video` | Retained, all assertions |
-| `src/components/lightbox/__tests__/useLightboxImageControls.test.ts` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/__tests__/useLightboxTagging.test.ts` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
+| `src/components/lightbox/__tests__/useLightboxImageControls.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid imageControls.test.tsx |
+| `src/components/lightbox/__tests__/useLightboxTagging.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx |
 | `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx` | react | 7, `features/lightbox/video` | Retained, all assertions |
-| `src/components/lightbox/hooks/__tests__/useLightboxActivity.test.ts` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/hooks/__tests__/useLightboxModalHandlers.test.ts` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/hooks/__tests__/useLightboxSidebar.test.ts` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
+| `src/components/lightbox/hooks/__tests__/useLightboxActivity.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts |
+| `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx and imageControls.test.tsx |
+| `src/components/lightbox/hooks/__tests__/useLightboxModalHandlers.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx and createLightbox.test.ts |
+| `src/components/lightbox/hooks/__tests__/useLightboxSidebar.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts and LightboxModal.test.tsx |
 | `src/components/lightbox/services/__tests__/deleteLightboxAssetAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
 | `src/components/lightbox/services/__tests__/saveLightboxMediaGroupAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
 | `src/components/lightbox/services/__tests__/saveLightboxTagsAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
@@ -86,11 +86,11 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/settings/services/__tests__/progressService.test.ts` | shared | 8, `features/settings` | Retained, all assertions |
 | `src/components/tag-list/__tests__/TagListModal.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/tag-list/__tests__/TagListModal.test.tsx` and pagination races |
 | `src/components/tag-list/__tests__/TagListSearchLauncher.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in toolbar/modal integration and native literal-tag scenario |
-| `src/hooks/__tests__/queryRefreshNavigation.test.tsx` | react | 6, `features/lightbox` selection and navigation | Retained, all assertions |
+| `src/hooks/__tests__/queryRefreshNavigation.test.tsx` | react | 6, `features/lightbox` selection and navigation | React reference retained; Solid coverage in `src/features/lightbox/__tests__/createLightbox.test.ts` |
 | `src/hooks/__tests__/useLibraryAssets.test.tsx` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/query/__tests__/createAssetQuery.test.ts` |
 | `src/hooks/__tests__/useLibraryBrowser.test.ts` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/__tests__/createLibrary.test.ts` |
 | `src/hooks/__tests__/useLibraryKnownTags.test.ts` | react | 3, `library/vocabulary` | React assertions retained; Solid counterpart in `src/library/vocabulary/__tests__/createKnownTags.test.ts` |
-| `src/hooks/__tests__/useSelectionState.test.ts` | react | 6, `features/lightbox` selection and navigation | Retained, all assertions |
+| `src/hooks/__tests__/useSelectionState.test.ts` | react | 6, `features/lightbox` selection and navigation | React reference retained; Solid coverage in `src/features/lightbox/__tests__/createLightbox.test.ts` |
 | `src/hooks/__tests__/useSettingsActions.test.ts` | react | 8, `features/settings` | Retained, all assertions |
 | `src/hooks/__tests__/useSettingsActionsConfirmFlow.test.ts` | react | 8, `features/settings` | Retained, all assertions |
 | `src/hooks/__tests__/useThumbnailQueue.test.ts` | react | 3, `library/thumbnails` | React assertions retained; Solid counterpart in `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` |
@@ -139,3 +139,15 @@ that runs before the lightbox is ported. The original combined lightbox/bulk sce
 The short-gallery selection test starts its drag inside the measured gallery section; its
 old viewport-based point landed on the footer in both renderers. Selection assertions remain
 unchanged. Stage-6 lightbox assertions remain for that stage.
+
+Stage 6 adds Solid selection/mutation, image controls, modal, group-order input and presentation
+suites. They cover canonical authority, coalescing, contention/retry, stale reads, query reorder,
+page boundaries, identity reuse, dirty drafts, deletion, image/GIF identity, fit/zoom/pan,
+clipboard, keyboard priority, sidebar lifetime and modal close/reopen. React assertions and
+shared pure helper suites remain enabled. Native-player behavior remains assigned to stage 7.
+
+The native animation lifecycle now runs as one case per media kind, preserving every prior
+assertion so image/GIF checks can run before the Solid video port. Sidebar geometry checks wait
+for the actual drawer translate transition to settle before asserting exact button dimensions. The new
+image comparison suite captures both themes and languages at three widths and verifies
+suggestion dismissal and gallery focus restoration through the real window.

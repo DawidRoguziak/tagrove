@@ -15,9 +15,33 @@ Related documentation:
 
 The tagging panel uses the shared `TagEditor` with chips and input inside one border. It retains the 200px scrolling limit, wraps long names, and keeps the focused input visible. The input has an accessible Add tag name without a separate visible label. Empty editable fields show the existing placeholder; details-loading status and retry controls remain outside the field. Autosave and draft ownership remain in the lightbox tagging hook.
 
+## Solid image lightbox during migration
+
+`src/features/lightbox/createLightbox.ts` owns selection, position recovery, tag-save intents
+and group drafts at application lifetime. It consumes the shared library's bounded details
+cache and mutation coordinator. Rapid navigation advances a synchronous global target;
+query refresh resolves the current ID in the new session without walking intervening pages.
+A changed metadata generation causes a current detail read to wait for writes and refetch.
+Identity reset closes the selection and discards retained save intents.
+
+`LightboxModal.tsx` owns the mounted image/GIF presentation, inline confirmation, tag input,
+clipboard feedback, sidebar choice and activity timer. It uses the shared tag editor and
+layer manager. The presence owner retains all displayed model values during exit, while
+logical close releases keyboard and background locks. Navigation retains the shell and
+opening animation; closing and reopening starts a fresh presentation owner. The application
+captures the gallery focus target before loading the lazy view.
+
+`image/createImageControls.ts` shares the reference fit, zoom and pan calculations. It
+measures the viewport, coalesces transform writes per frame, and releases pointer capture,
+observers, listeners and frames with its owner. Metadata-only updates retain image/GIF DOM
+and zoom. `LightboxMediaStage.tsx` accepts the future native player at a presentation boundary;
+Solid native video playback remains stage 7. React remains the default complete application.
+
+The sections below describe the React reference unless they explicitly name Solid.
+
 ## Ownership and composition
 
-`useAppShellController` creates `useLibraryBrowser` and passes its loaded assets, total result count, global lookup functions, refresh functions, and cache setter to `useSelectionState`. It exposes the returned selection state as the `lightbox` props. `App` lazy-loads and renders `LightboxModal` only while `selected` is non-null.
+`useAppShellController` creates `useLibraryBrowser` and passes its loaded assets, total result count, global lookup functions, refresh functions, and cache setter to `useSelectionState`. It exposes the returned selection state as the `lightbox` props. `App` activates the lazy `LightboxModal` on first selection and keeps its presence owner mounted so closing fades can finish.
 
 The runtime path is:
 
@@ -46,7 +70,7 @@ Complete detail responses and adjacent prefetches must pass metadata-generation 
 
 ## Summary-to-details selection lifecycle
 
-The query cache stores `AssetSummary` objects verbatim. Selecting a tile builds a `SelectedAsset` view: `path` starts as the summary's `preview_path` (a valid source for GIF and video; null for ordinary images), `size_bytes` starts as null, and tags are empty. Kind, dimensions, duration, favorite state, media group, and thumbnail fields come from the summary. The media stage never guesses a source from the file name: until details arrive it renders a loading placeholder, and a failed detail read renders a failure notice instead of media. The empty tag list is never authoritative; while the complete tag base is unknown the tag input and chip removal are disabled. A null or rejected `getAssetDetails` result shows the loading error and Retry action; successful Retry, or a canonical mutation published by bulk, unlocks editing.
+The query cache stores `AssetSummary` objects verbatim. Selecting a tile builds a `SelectedAsset` view: `path` starts as the summary's `preview_path` (a valid source for GIF and video; null for ordinary images), `size_bytes` starts as null, and tags are empty. Kind, dimensions, duration, favorite state, media group, and thumbnail fields come from the summary. The media stage never guesses a source from the file name. It renders a loading placeholder while the view has no verified path, and a failed detail read then renders a failure notice. GIF/video summaries already carry a verified preview path, so the reference can present that source before complete details arrive; a later detail failure appears alongside the media. The empty tag list is never authoritative; while the complete tag base is unknown the tag input and chip removal are disabled. A null or rejected `getAssetDetails` result shows the loading error and Retry action; successful Retry, or a canonical mutation published by bulk, unlocks editing.
 
 Every `selectAsset` call, including close, increments `selectionRequestRef`. A detail response may replace `selected` only when its captured request ID still equals the current request ID. Consequently, a slow response for A cannot replace B or reopen a closed lightbox. The request is not cancelled at the transport layer.
 

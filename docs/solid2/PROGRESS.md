@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 5 is complete. React remains the default and functional reference.
-Solid now includes shared tag editing, bulk favorites, media groups and group ordering.
-Lightbox selection and image behavior are next.
+Stage 6 is complete. React remains the default and functional reference.
+Solid now opens image/GIF lightboxes with shared metadata editing, global navigation,
+responsive panels and deletion. Native video integration is next.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 6](06-lightbox-and-images.md).
+- Next implementation task: [stage 7](07-native-video.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -24,8 +24,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | [2. Platform and shell](02-platform-and-shell.md) | Complete | 734 frontend, 206 Rust, both builds, desktop shell comparison | Findings fixed and rechecked | `refactor: establish Solid shell and platform boundaries`; `aa7c933` |
 | [3. Library state](03-library-state.md) | Complete | 822 frontend, 206 Rust, both builds; query follow-up passed | Findings fixed and rechecked | `feat: implement Solid library state and mutation coordination`; `64e7ac1` |
 | [4. Gallery and search](04-gallery-and-search.md) | Complete | 931 frontend, 206 Rust, both builds; desktop comparison and reduced motion passed | Findings fixed and rechecked | `feat: migrate gallery and search to Solid`; `9a87d96` |
-| [5. Tagging and bulk](05-tagging-and-bulk.md) | Complete | 1008 frontend, 206 Rust, both builds; 7 desktop cases per renderer and matching editor geometry | Findings fixed and rechecked | `feat: migrate tag editing and bulk actions to Solid`; record hash in stage 6 |
-| [6. Lightbox and images](06-lightbox-and-images.md) | Not started | Not run | Pending | None |
+| [5. Tagging and bulk](05-tagging-and-bulk.md) | Complete | 1008 frontend, 206 Rust, both builds; 7 desktop cases per renderer and matching editor geometry | Findings fixed and rechecked | `feat: migrate tag editing and bulk actions to Solid`; `6eb9add` |
+| [6. Lightbox and images](06-lightbox-and-images.md) | Complete | 1101 frontend, 206 Rust, both builds; desktop comparison, reduced motion and 12 matching layouts | Findings fixed and rechecked | `feat: migrate lightbox and image interactions to Solid`; record hash when opening stage 7 |
 | [7. Native video](07-native-video.md) | Not started | Not run | Pending | None |
 | [8. Settings and maintenance](08-settings-and-maintenance.md) | Not started | Not run | Pending | None |
 | [9. Parity and cutover](09-parity-and-cutover.md) | Not started | Not run | Pending | None |
@@ -586,7 +586,7 @@ Next stage: [shared tag editing and bulk actions](05-tagging-and-bulk.md).
 
 Date: 4 October 2026. Starting commit: `9a87d96`.
 Local commit subject: `feat: migrate tag editing and bulk actions to Solid`.
-Record its hash when opening stage 6.
+Local commit hash: `6eb9add`.
 
 Implemented behavior:
 
@@ -696,3 +696,163 @@ fixtures and documentation for scope and private content. Raw logs, media, scree
 databases remain ignored; no backend, IPC or native profile contract changed.
 
 Next stage: [lightbox selection and images](06-lightbox-and-images.md).
+
+## Stage 6 evidence
+
+Date: 4 October 2026. Starting commit: `6eb9add`.
+Local commit subject: `feat: migrate lightbox and image interactions to Solid`.
+Local commit hash: record when opening stage 7.
+
+Implemented behavior:
+
+- `features/lightbox/createLightbox.ts` owns selection and editors under the application.
+  Global navigation accumulates rapid commands, wraps across pages, rejects retired lookups
+  and resolves the selected ID after query reorder. The query exposes a synchronous navigation
+  snapshot, independently of batched reactive publication.
+- Shared complete details retain the existing 256-entry bound and generation validation.
+  Current reads wait for metadata writes and refetch stale records. Adjacent prefetch, query
+  invalidation, missing/failed positions, independent details/save retry and reused IDs are
+  covered. Summaries never become an authoritative tag base.
+- Tag replacements serialize and coalesce per ID across selection changes and close/reopen.
+  Busy or failed saves retain intent; Retry rebases it onto an external canonical winner.
+  Favorite, group and deletion actions use the shared backend-first mutation coordinator.
+  Dirty group fields survive hydration and unrelated metadata publications.
+- The lazy image/GIF modal preserves the existing CSS, shared tag editor, sidebar/drawer,
+  action rail, info and clipboard controls, fullscreen, idle behavior, delete confirmation,
+  shortcuts and focus priority. Image/GIF DOM and zoom survive metadata-only updates.
+  Pointer capture, frames, observers and listeners follow the mounted presentation owner.
+- Logical close releases modality immediately. The exit frame retains all displayed model
+  values and sidebar choice. Asset navigation retains the shell; close/reopen creates a new
+  presentation owner. The app captures the gallery focus target before lazy loading.
+- Native video has a presentation boundary but remains stage 7. React stays the default.
+  Command names, backend behavior, database schema and app-data profiles are unchanged.
+
+Tests ported or added:
+
+- 93 Solid cases across five suites observe selection/mutations, modal interactions, fitted
+  image rendering, group input validation and presentation lifetime. The original 699
+  React/shared cases remain enabled. Library tests continue proving cache bounds and shared
+  coordination; pure fit/pan, tag and group helpers remain shared.
+- Native image/GIF animation cases now run independently for each media kind with their
+  original assertions. The video case remains enabled for stage 7. The image comparison
+  suite records both themes and English/Polish at 320, 600 and 1000px, and checks suggestion
+  Escape and gallery focus restoration. All fixtures are synthetic and disposable.
+
+Self-review findings and fixes:
+
+- Reading reactive query getters immediately after refresh still observed the old session.
+  A regression failed before the new synchronous navigation snapshot and passes after it.
+  No forced frontend flush was added to production code.
+- An image-control effect reset zoom for every metadata object. A memo now compares only
+  ID and intrinsic dimensions. Both image and GIF reference regressions failed before the
+  fix and pass while retaining the actual image node and original-resolution sizing.
+- Exit state now snapshots all displayed model values, including failed save feedback.
+  The sidebar keeps its explicit choice until its presentation owner exits. The regression
+  checks collapsed state, unsaved chips and Retry during the fade.
+- Tag admission reuses `isValidTag`, including control-character and duplicate rejection.
+  Focus restoration covers the lazy loading dialog and loaded media view. Clipboard
+  acknowledgements cannot mark another selection as copied.
+- Native sidebar measurements initially caught fractional button bounds during the drawer
+  animation. The test waits for the actual CSS `translate` property and running animations;
+  a `transform`-only wait was insufficient. Exact dimension assertions remain unchanged.
+- The new suggestion fixture initially assigned every known tag to the selected image, so
+  its expected suggestion was correctly absent. A second synthetic image supplies a known,
+  unassigned tag. The geometry fixture explicitly selects one filename across renderers.
+- Initial component test failures came from missing `matchMedia`, exact translated labels,
+  combobox roles and highlighted accessible names. Corrected the test setup and queries;
+  the final suite has no skipped cases or suppressed Solid diagnostics.
+- Reviewed callers, canonical publication, query/session changes, same-turn admission,
+  stale async completion, owner cleanup, GIF identity, modal presence and dependency direction.
+  The lightbox docs incorrectly claimed all media waited for complete details. The reference
+  accepts verified GIF/video preview paths while full tags load; owning docs now say so.
+
+Verification, with local evidence under `artifacts/solid2/stage6/`:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `bun run test` | 119 files, 1101 passed | `frontend-final.log` |
+| `bun run typecheck` | All three contexts pass | `types-final.log` |
+| `bun run test:backend` | 206 passed; 2 existing diagnostics ignored | `backend-final.log` |
+| `bun run lint` / `bun run format:check` | Passed | `lint-final.log`, `format-final.log` |
+| `bun run locale:check` | All 11 languages valid | `locales-final.log` |
+| `bun run test:frontends` | Both builds and renderer/entry isolation pass; React assets restored in `dist` | `builds-final.log`, `react-modules.json`, `solid-modules.json` |
+| `python3 artifacts/solid2/stage6/compare-geometry.py` | All 12 layout measurements match exactly | `geometry-parity.log` |
+| `PATH="/tmp/solid2-tools:$PATH" bun run privacy:check` | Passed before and after staging | `privacy-final.log`, `privacy-staged.log` |
+| `git diff --check` / `git diff --cached --check` | Passed | Working/staged diff review |
+
+Desktop checks used the existing private Xvfb/D-Bus wrappers, temporary XDG profiles,
+synthetic files, guarded cleanup and serial renderer builds. The broad comparison command was:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_TAG_EDITOR=1 MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 MEDIATAGGER_LIGHTBOX_IMAGES=1 bash artifacts/solid2/stage2/run-desktop.sh \
+    --spec e2e/specs/tag-editor.e2e.js \
+    --spec e2e/specs/review-fixes.e2e.js \
+    --spec e2e/specs/app.workflows.e2e.js \
+    --spec e2e/specs/animations.e2e.js \
+    --spec e2e/specs/lightbox-activity.e2e.js \
+    --spec e2e/specs/lightbox-images.e2e.js \
+    --mochaOpts.grep 'keeps lightbox|persists lightbox|navigates in the new group|keeps lightbox panels|uses a drawer|supports lightbox tagging|modal media lifecycle (image|gif)|keeps the bottom box|fades controls and restores focus without resizing (image|gif)|image lightbox parity'
+done
+```
+
+React passed all 21 cases in `desktop-react-final.log`. The Solid broad run passed 19 and
+failed two test-setup cases, recorded in `desktop-solid-review.log`. After the drawer wait
+and suggestion-fixture fixes described above, this final Solid recheck passed all eight cases:
+
+```sh
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_TAG_EDITOR=1 MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 MEDIATAGGER_LIGHTBOX_IMAGES=1 bash artifacts/solid2/stage2/run-desktop.sh \
+  --spec e2e/specs/tag-editor.e2e.js \
+  --spec e2e/specs/animations.e2e.js \
+  --spec e2e/specs/lightbox-activity.e2e.js \
+  --spec e2e/specs/lightbox-images.e2e.js \
+  --mochaOpts.grep 'keeps lightbox|persists lightbox|modal media lifecycle (image|gif)|keeps the bottom box.*600px|image lightbox parity'
+```
+
+`desktop-solid-final.log` records the recheck. Together the runs cover all 21 distinct cases
+for Solid, including persisted tags/groups and deletion, navigation after a group reorder
+beyond page one, responsive panels, focus, fullscreen, image/GIF animation and idle controls.
+Earlier failures remain in local logs and are not counted as successful runs.
+
+Actual reduced-motion checks ran separately:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 MEDIATAGGER_REDUCED_MOTION=1 bash artifacts/solid2/stage4/run-reduced.sh \
+    --spec e2e/specs/animations.e2e.js \
+    --spec e2e/specs/lightbox-activity.e2e.js \
+    --mochaOpts.grep 'modal media lifecycle (image|gif)|fades controls and restores focus without resizing (image, light, 600px|gif, dark, 1000px)'
+done
+```
+
+Each renderer passed four cases, recorded in `reduced-solid.log` and `reduced-react.log`.
+The wrapper disables GTK animations in the temporary profile; the tests assert the actual
+media preference. Image/GIF lifecycle, fullscreen, idle controls and focus passed.
+
+The first geometry comparison found one cached drawer scroll extent in React after its
+translate animation. The test now also waits for the layout's scroll extent to settle.
+It keeps the exact rectangle and overflow assertions. Both renderers then passed both
+image comparison cases again:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_LIGHTBOX_IMAGES=1 bash artifacts/solid2/stage2/run-desktop.sh --spec e2e/specs/lightbox-images.e2e.js
+done
+```
+
+`geometry-solid-final.log` and `geometry-react-final.log` record these runs. The comparison
+script reads all 12 samples from `images-solid/geometry.json` and `images-react/geometry.json`.
+Every rectangle, client size, scroll width and document-overflow flag agrees exactly across
+English/Polish, light/dark and 320/600/1000px. Inspected actual Solid desktop and narrow Polish
+screenshots and the React desktop reference. Timing remains diagnostic on this Linux host.
+
+Reviewed staged source, test fixtures and documentation for scope and private content.
+Raw logs, screenshots, media and disposable databases remain ignored. No backend, wire
+payload, dependency or app-data-profile change is included.
+
+Remaining limits: Solid native video playback is stage 7; full settings/maintenance is stage 8.
+React remains the default complete application. This stage does not establish cross-platform
+or packaging parity. Two pre-existing Rust diagnostics remain ignored. No required stage-6
+check remains unavailable.
+
+Next stage: [native video integration](07-native-video.md).

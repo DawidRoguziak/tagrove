@@ -1,4 +1,4 @@
-import { lazy, Loading, onCleanup, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, lazy, Loading, onCleanup, onSettled, Show } from "solid-js";
 import { AppGalleryView } from "./AppGalleryView";
 import { LanguageProvider, useLanguage } from "../i18n/solid";
 import { UiLayerProvider, createUiLayer } from "../ui/overlays/UiLayerProvider";
@@ -7,6 +7,8 @@ import { UiAlert } from "../ui/controls/UiAlert";
 import { UiButton } from "../ui/controls/UiButton";
 import { AppRuntimeProvider, useAppRuntime } from "./AppRuntimeContext";
 
+import LightboxBoundary from "./LightboxBoundary";
+const Lightbox = lazy(() => import("../features/lightbox/LightboxModal"));
 const Settings = lazy(() => import("./AppSettingsView"));
 function SettingsView() {
   const runtime = useAppRuntime();
@@ -57,23 +59,54 @@ function SettingsView() {
 }
 function AppContent() {
   const runtime = useAppRuntime();
+  const lightboxActive = createMemo(() => runtime.lightbox.selected !== null);
+  let restoreFocus: HTMLElement | null = null;
+  createEffect(lightboxActive, (active) => {
+    if (active)
+      restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  });
+  const getRestoreFocus = () => restoreFocus;
+  const lightboxLoaded = createMemo<boolean>(
+    (previous) => previous || runtime.lightbox.selected !== null
+  );
   onSettled(runtime.start);
   const prefetch = setTimeout(() => {
-    void Promise.allSettled([import("./AppSettingsView"), import("./LightboxBoundary")]);
+    void Promise.allSettled([
+      import("./AppSettingsView"),
+      import("../features/lightbox/LightboxModal")
+    ]);
   }, 1500);
   onCleanup(() => clearTimeout(prefetch));
   return (
-    <main
-      class={
-        runtime.view() === "settings"
-          ? "gallery-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto"
-          : "flex h-full min-h-0 flex-col overflow-hidden"
-      }
-    >
-      <Show when={runtime.view() === "settings"} fallback={<AppGalleryView />}>
-        <SettingsView />
+    <>
+      <main
+        class={
+          runtime.view() === "settings"
+            ? "gallery-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto"
+            : "flex h-full min-h-0 flex-col overflow-hidden"
+        }
+      >
+        <Show when={runtime.view() === "settings"} fallback={<AppGalleryView />}>
+          <SettingsView />
+        </Show>
+      </main>
+      <Show when={lightboxLoaded()}>
+        <LightboxBoundary
+          open={lightboxActive()}
+          name={runtime.lightbox.selected?.file_name ?? ""}
+          resetKey={0}
+          getRestoreFocus={getRestoreFocus}
+          onClose={runtime.lightbox.close}
+        >
+          <Lightbox
+            getRestoreFocus={getRestoreFocus}
+            model={runtime.lightbox}
+            client={runtime.suggestions}
+            knownTags={runtime.library.vocabulary.knownTags}
+          />
+        </LightboxBoundary>
       </Show>
-    </main>
+    </>
   );
 }
 export default function App() {

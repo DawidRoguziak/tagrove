@@ -20,9 +20,12 @@ React remains the default entry. `MEDIATAGGER_FRONTEND=solid` selects `src/app/m
 Its `mountApplication` applies the stored theme before rendering, waits for i18next,
 and owns context-menu suppression and optional performance observation. Disposal also
 cancels a pending mount. `createAppRuntime` owns theme and view selection across remounts;
-library models join it in stage 3. `LanguageProvider` owns one i18next subscription for
-its tree. Settings and the lightbox boundary prefetch after 1,500 ms, with timer cleanup.
-The lightbox boundary is ready for stage 6's lazy media view; it does not open media yet.
+it also owns the library, search, bulk and lightbox models. `LanguageProvider` owns one i18next subscription for
+its tree. Settings and the lightbox view prefetch after 1,500 ms, with timer cleanup.
+Gallery activation opens the lazy image/GIF lightbox. Its presence owner remains mounted
+after first activation, retains closing values, and releases modality on logical close.
+The application preserves the gallery focus target across lazy loading. Native video
+playback follows in stage 7.
 
 Solid controls live under `src/ui/controls`, overlays under `src/ui/overlays`.
 Both renderers share theme persistence, modal animation, and segmented-control measurement

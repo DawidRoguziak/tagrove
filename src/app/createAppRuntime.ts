@@ -1,3 +1,4 @@
+import { createLightbox } from "../features/lightbox/createLightbox";
 import { createBulk } from "../features/bulk/createBulk";
 import { getStartupPopularTags } from "../platform/tauri/tags";
 import { createSearch } from "../features/search/createSearch";
@@ -17,6 +18,7 @@ export function createAppRuntime() {
   const [view, setView] = createSignal<"gallery" | "settings">("gallery");
   const [theme, setTheme] = createSignal(readInitialTheme());
   const library = createLibrary();
+  const lightbox = createLightbox(library);
   const search = createSearch(library.applyFilters);
   const selection = createSelection({
     queryEpoch: () => library.query.queryEpoch,
@@ -40,6 +42,7 @@ export function createAppRuntime() {
     suggestions.dispose();
   });
   return {
+    lightbox,
     bulk,
     popularTags,
     search,

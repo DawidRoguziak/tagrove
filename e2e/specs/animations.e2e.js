@@ -398,12 +398,12 @@ suite("animation scroll geometry", function () {
     await invoke("clear_library_data");
     if (root) await fs.rm(root, { recursive: true, force: true });
   });
-  it(`modal media lifecycle, reduced motion ${reduced}`, async () => {
-    await createPlayableFixtures(root, "presence");
-    await invoke("rescan_all_roots");
-    await browser.setWindowSize(1000, 720);
-    const evidence = {};
-    for (const kind of ["image", "gif", "video"]) {
+  for (const kind of ["image", "gif", "video"]) {
+    it(`modal media lifecycle ${kind}, reduced motion ${reduced}`, async () => {
+      await createPlayableFixtures(root, "presence");
+      await invoke("rescan_all_roots");
+      await browser.setWindowSize(1000, 720);
+      const evidence = {};
       await browser.refresh();
       await $('#gallery-media-kind').waitForExist();
       await click(`#gallery-media-kind input[value="${kind}"]`);
@@ -447,12 +447,12 @@ suite("animation scroll geometry", function () {
       } else fullscreenClosed = await sample(() => click('button[aria-label="Close preview"]'));
       fades(fullscreenClosed, "close");
       evidence[kind] = { opened, navigation, closed, fullscreenClosed };
-    }
-    await fs.writeFile(path.join(output, "modal-media.json"), JSON.stringify(evidence));
-    await fs.rm(path.join(root, "presence.gif"));
-    for (const number of [1, 2]) await fs.rm(path.join(root, `presence-${number}.mp4`));
-    await invoke("rescan_all_roots");
-  });
+      await fs.writeFile(path.join(output, `modal-media-${kind}.json`), JSON.stringify(evidence));
+      await fs.rm(path.join(root, "presence.gif"));
+      for (const number of [1, 2]) await fs.rm(path.join(root, `presence-${number}.mp4`));
+      await invoke("rescan_all_roots");
+    });
+  }
   for (const theme of ["dark", "light"]) {
     for (const language of ["en", "pl"]) {
       for (const width of [320, 699, 1000]) {

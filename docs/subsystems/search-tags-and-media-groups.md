@@ -176,9 +176,10 @@ through its existing service export; its shared tests still run once.
 `src/library/vocabulary/createKnownTags.ts` retains complete pagination, latest-generation
 refresh draining, unchanged-save reuse and dirty retry behavior. `createLibrary.runMaintenance`
 resets metadata or the whole library before releasing the barrier, on success and failure.
-The settings workflow will own subsequent refresh and user feedback in stage 8. Solid tag
-editors and bulk selection will consume these commands in stage 5; editor draft/retry UI
-still belongs to those feature models.
+The settings workflow will own subsequent refresh and user feedback in stage 8. Solid bulk
+and lightbox editors consume these commands; their feature models retain
+editor drafts and retry intent. The lightbox serializes/coalesces replacements per ID and
+rebases failed add/remove intent onto an external writer's canonical tags before retry.
 
 ## Tag mutations
 

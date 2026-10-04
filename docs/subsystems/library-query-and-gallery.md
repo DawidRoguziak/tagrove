@@ -13,19 +13,21 @@ React remains the default. `src/library/createLibrary.ts` composes the Solid mod
 `query/createAssetQuery.ts` preserves 128-item pages, sparse positions, a 12-page cache,
 failed offsets, explicit retry, patch-counter rereads and stale-session recovery.
 Operational state changes synchronously, while getters publish through Solid. Separate
-memos prevent loading-only changes from republishing the cached asset array.
+memos prevent loading-only changes from republishing the cached asset array. Lightbox commands
+use `navigationSnapshot()` for the synchronous epoch, pending state and total, so a key press
+in the same batch as refresh cannot use the previous session.
 
 Viewport or query-epoch changes request pages. Page arrivals update thumbnail demand for
 the current viewport without requesting evicted pages again. This keeps oversized ranges
 from continuously reloading pages beyond the cache bound. Metadata patches preserve page
 positions, including holes after deletion, until a new query replaces the snapshot.
 
-`metadata/createDetailsCache.ts` shares at most 256 complete details across future Solid
+`metadata/createDetailsCache.ts` shares at most 256 complete details across Solid
 consumers. It deduplicates reads, pins pending identities, validates metadata generations,
 and discards replies after query changes, identity resets or disposal. Query changes clear
 details without resetting canonical tags. Restore and clear invalidate both. The Solid gallery
 now consumes these models through `app/AppGalleryView.tsx`.
-Lightbox details presentation remains stage 6 work.
+The application-owned lightbox also consumes the details cache, canonical tags and mutations.
 
 `features/gallery/createVirtualGrid.ts` adapts the same installed virtual-core version as
 React, now also pinned as a direct dependency. It waits for measured grid width before
@@ -105,11 +107,11 @@ Only one request per page offset is started at a time. A ref-backed Promise map 
 
 ## Summary rows and the details boundary
 
-Sessions materialize `AssetSummary`, which carries display/order metadata and thumbnail/group fields but no byte size or tags. `preview_path` is populated for GIF/video summaries. Gallery tiles do not load original GIFs; the lightbox waits for complete details before presenting any media.
+Sessions materialize `AssetSummary`, which carries display/order metadata and thumbnail/group fields but no byte size or tags. `preview_path` is populated for GIF/video summaries. Gallery tiles do not load original GIFs. The lightbox presents media only from a verified path, including a GIF/video summary preview path. Ordinary image summaries have no path and wait for complete details.
 
 The page cache stores `AssetSummary` objects verbatim: nothing fabricates a path, byte size, or tag list, so a cache entry can never masquerade as a complete record. Gallery tiles read only summary fields (`file_name`, `preview_path`, thumbnail state, kind, media-group fields).
 
-Selecting a tile opens the lightbox with a `SelectedAsset` view built from the summary: `path` starts as the summary's `preview_path` (a valid source for GIF/video; null for ordinary images), and `size_bytes` starts as null. The lightbox media stage renders a loading placeholder until details arrive, or a failure notice when the detail read fails, so no operation consumes an invented path. `useSelectionState` then calls `getAssetDetails`; a successful `AssetDetails` replaces the view with the full path, size, and tags. Selection-request IDs prevent a late detail response from replacing a newer selection. Details for the previous and next global indices are also prefetched, using `getAssetAtAsync` when their pages are absent. A missing detail row or failed detail request leaves the summary view usable. See [lightbox](lightbox.md) for the editing and navigation behavior built on this boundary.
+Selecting a tile opens the lightbox with a `SelectedAsset` view built from the summary: `path` starts as the summary's `preview_path` (a valid source for GIF/video; null for ordinary images), and `size_bytes` starts as null. When that path is null, the media stage renders a loading placeholder until details arrive, or a failure notice when the detail read fails. Existing GIF/video preview paths remain usable while complete details and tags load. `useSelectionState` then calls `getAssetDetails`; a successful `AssetDetails` replaces the view with the full path, size, and tags. Selection-request IDs prevent a late detail response from replacing a newer selection. Details for the previous and next global indices are also prefetched, using `getAssetAtAsync` when their pages are absent. A missing detail row or failed detail request leaves the summary view usable. See [lightbox](lightbox.md) for the editing and navigation behavior built on this boundary.
 
 ## Virtual range loading and thumbnail prefetch
 

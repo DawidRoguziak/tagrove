@@ -391,6 +391,12 @@ export function createAssetQuery({
   };
 
   return {
+    // Commands need the session immediately, before batched reactive publication.
+    navigationSnapshot: () => ({
+      epoch: state.queryEpoch,
+      pending: state.queryPending,
+      total: state.total
+    }),
     get assets() {
       return assets();
     },

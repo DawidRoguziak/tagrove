@@ -101,7 +101,7 @@ export function AppGalleryView() {
               onReachEnd={library.query.handleReachEnd}
               onVirtualRangeChange={library.handleVirtualRangeChange}
               onCtrlWheelZoom={runtime.zoom}
-              onSelect={() => {}}
+              onSelect={runtime.lightbox.select}
               hasScanRoots={runtime.hasScanRoots()}
               onAddFirstFolder={runtime.openSettings}
               selectionModeEnabled={selection.enabled}

@@ -6,7 +6,7 @@ import { LazyErrorBoundary } from "../ui/overlays/LazyErrorBoundary";
 import { UiAlert } from "../ui/controls/UiAlert";
 import { UiButton } from "../ui/controls/UiButton";
 
-// Stage 6 supplies the lazy media view. Keep loading and failure modality here.
+// Loading and import failure share the media view's focus restoration target.
 export default function LightboxBoundary(props: {
   open: boolean;
   name: string;
@@ -44,6 +44,7 @@ export default function LightboxBoundary(props: {
           <UiModal
             open={props.open}
             onClose={props.onClose}
+            getRestoreFocus={props.getRestoreFocus}
             ariaLabel={t("lightbox.previewDialog", { name: props.name })}
             size="small"
           >

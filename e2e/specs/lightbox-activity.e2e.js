@@ -106,6 +106,11 @@ suite("lightbox activity desktop", function () {
       await click(`button[data-asset-id="${id}"]`);
       await browser.waitUntil(() => browser.execute(() => document.querySelector('[data-testid="lightbox-image"]')?.naturalWidth > 0));
       if (width < 768) await click('#lightbox-sidebar-trigger-button');
+      await browser.waitUntil(() => browser.execute(() => {
+        const sidebar = document.getElementById('lightbox-sidebar');
+        return ['none', '0px', '0px 0px'].includes(getComputedStyle(sidebar).translate)
+          && sidebar.getAnimations().every(animation => animation.playState !== 'running');
+      }), { timeoutMsg: 'Sidebar transition settles before measuring copy controls' });
       const input = await $('#lightbox-media-group-key-input');
       await input.setValue('  synthetic-hover-group  ');
       const placement = await browser.execute(() => {

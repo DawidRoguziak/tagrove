@@ -33,6 +33,12 @@ The shell includes the existing Appearance/Language markup and settings geometry
 settings workflows remain for stage 8. The sections below describe the React reference
 unless they explicitly name a Solid module.
 
+The Solid runtime now owns `createLibrary` from `src/library/createLibrary.ts`. Its query,
+canonical metadata, details cache, vocabulary and thumbnail models survive view changes.
+Commands keep admission locks and generations synchronous; read-only getters expose Solid
+signals and memos. `applyFilters` captures plain values before starting IPC. No frontend
+flush is needed in production. Gallery startup and search wiring remain stage 4 work.
+
 ## Bootstrap and shell composition
 
 The gallery header displays Tagrove with the Obsidian Grove SVG from `public/tagrove.svg`. The image supplies the accessible app name; the adjacent visible wordmark is hidden from assistive technology to avoid repeating it. The same SVG is the HTML favicon and the source for native PNG icons. See [branding assets](../development/setup-and-build.md#branding-assets) for regeneration and desktop metadata.

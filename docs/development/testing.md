@@ -56,6 +56,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration test_
 
 There is no numeric coverage threshold. Run the frontend and backend suites explicitly; they are not CI merge gates.
 
+Solid library model tests live beside `src/library` owners and run with `--project solid`.
+They use Solid Testing Library's owned `renderHook` and `src/test/settle.ts` for explicit
+batch boundaries. Deferred promises control races; queue tests use fake timers. The model
+integration suites cover mutation admission/draining, canonical publication, query and
+identity invalidation, cache bounds and per-asset subscription cleanup. They mock platform
+IPC and do not establish native-bridge or desktop feature parity.
+
 ## Continuous integration
 
 `.github/workflows/privacy.yml` is the only GitHub Actions workflow. It runs the `privacy` job on pull requests and pushes to `main`, using `ubuntu-24.04`. It fetches full history, installs checksum-pinned Gitleaks 8.30.1, scans publication data, and runs the privacy regression tests. It does not upload artifacts or use an Actions cache.

@@ -110,6 +110,15 @@ As ready, stale, and failed messages arrive, the hook batches store publications
 
 `ThumbnailStore` owns thumbnail paths and rendering IDs, with subscriptions keyed by asset ID. Gallery tiles, bulk ordering previews, and duplicate previews consume per-item updates. Paths are retained for cached gallery pages and mounted preview subscribers; inactive paths and their versions are released on eviction or unsubscribe. Each changed asset gets a monotonically increasing in-memory version and only its listeners are notified. `GalleryTile` consumes that version with `useSyncExternalStore`, reads its effective path/rendering state directly, and can update a tile without rerendering the entire virtual grid. Subscriptions are stable across tile rerenders. Versions are released when an asset has no stored path, rendering state, or listeners, and a store-wide increasing counter prevents reused versions after resubscription. A tile shows the transparent placeholder on absence or image-load error and shows a spinner only while rendering with no ready path. Static GIF previews and other gallery presentation rules are covered in [library query and gallery](library-query-and-gallery.md).
 
+The Solid entry reuses the same `ThumbnailStore` and queue constants. Its application-owned
+`src/library/thumbnails/createThumbnailQueue.ts` keeps viewport demand replaceable and other
+consumers additive, with the same batches, priorities, failure suppression, generation
+cancellation and stream-completion flushing. Queue disposal cancels timers and rejects late
+events. `createAssetThumbnail.ts` owns one subscription for each mounted asset, follows
+virtual-slot identity changes, and publishes path/rendering together. Its tests verify that
+completing one asset leaves unrelated subscribers untouched and disposal releases retained
+paths. Solid gallery tiles will consume this binding in stage 4.
+
 ## Locks, progress, cleanup, and database consistency
 
 Generation, demand, bulk retry, and cancellation commands take the thumbnail read lock. `clear_all_thumbnails` takes the write lock, so it waits for active readers and excludes new ones while it clears. Root removal, asset delete/rename, database bundle operations, and library clearing use the combined scan lock then thumbnail write lock where they touch thumbnail ownership. The lock ordering and process isolation are defined in the [system overview](../architecture/system-overview.md).

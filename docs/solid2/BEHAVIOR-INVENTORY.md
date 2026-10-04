@@ -24,7 +24,7 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/UI/__tests__/UiSegmentedControl.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
 | `src/components/app/__tests__/WindowControls.test.tsx` | react | 2, `app/WindowControls` | React assertions retained; Solid counterpart in `src/app/__tests__/WindowControls.test.tsx` |
 | `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` | react | 4, `features/search` | Retained, all assertions |
-| `src/components/app/hooks/__tests__/useAssetTagState.test.ts` | react | 3, `library/metadata` | Retained, all assertions |
+| `src/components/app/hooks/__tests__/useAssetTagState.test.ts` | react | 3, `library/metadata` | React assertions retained; Solid counterpart in `src/library/metadata/__tests__/createAssetTagState.test.ts` |
 | `src/components/app/hooks/__tests__/useBulkFavorites.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
 | `src/components/app/hooks/__tests__/useBulkSelectionController.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
 | `src/components/app/hooks/__tests__/useSelectedSummaries.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
@@ -87,13 +87,13 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/tag-list/__tests__/TagListModal.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
 | `src/components/tag-list/__tests__/TagListSearchLauncher.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
 | `src/hooks/__tests__/queryRefreshNavigation.test.tsx` | react | 6, `features/lightbox` selection and navigation | Retained, all assertions |
-| `src/hooks/__tests__/useLibraryAssets.test.tsx` | react | 3, `library/query` | Retained, all assertions |
-| `src/hooks/__tests__/useLibraryBrowser.test.ts` | react | 3, `library/query` | Retained, all assertions |
-| `src/hooks/__tests__/useLibraryKnownTags.test.ts` | react | 3, `library/vocabulary` | Retained, all assertions |
+| `src/hooks/__tests__/useLibraryAssets.test.tsx` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/query/__tests__/createAssetQuery.test.ts` |
+| `src/hooks/__tests__/useLibraryBrowser.test.ts` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/__tests__/createLibrary.test.ts` |
+| `src/hooks/__tests__/useLibraryKnownTags.test.ts` | react | 3, `library/vocabulary` | React assertions retained; Solid counterpart in `src/library/vocabulary/__tests__/createKnownTags.test.ts` |
 | `src/hooks/__tests__/useSelectionState.test.ts` | react | 6, `features/lightbox` selection and navigation | Retained, all assertions |
 | `src/hooks/__tests__/useSettingsActions.test.ts` | react | 8, `features/settings` | Retained, all assertions |
 | `src/hooks/__tests__/useSettingsActionsConfirmFlow.test.ts` | react | 8, `features/settings` | Retained, all assertions |
-| `src/hooks/__tests__/useThumbnailQueue.test.ts` | react | 3, `library/thumbnails` | Retained, all assertions |
+| `src/hooks/__tests__/useThumbnailQueue.test.ts` | react | 3, `library/thumbnails` | React assertions retained; Solid counterpart in `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` |
 | `src/hooks/services/__tests__/thumbnailStore.test.ts` | shared | 3, `library/thumbnails` | Retained, all assertions |
 | `src/utils/__tests__/literalTagSearch.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
 | `src/utils/__tests__/media.test.ts` | shared | 6, framework-independent media helpers | Retained, all assertions |
@@ -102,3 +102,10 @@ Stage 2 adds shell mount/disposal, all 11 live translations, theme persistence/n
 settings remounts, lazy loading/failure, optional performance cleanup, stale native-window
 reads and controlled-input tests. React StrictMode presence coverage remains in the reference;
 Solid tests prove cancellation, rapid reopen, disposal and subscription cleanup instead.
+
+Stage 3 adds query-race, details-cache and mutation integration tests, plus Solid per-asset
+thumbnail subscription tests. The browser tests now exercise library composition and its
+shared mutation commands. Queue assertions read the real per-asset store instead of the
+optional React global mirror. Vocabulary fixtures hydrate through public commands instead
+of exported setters. Pure thumbnail-store, mutation-helper and query-impact suites remain
+shared and execute once. React selection/draft/navigation coverage remains until stage 6.

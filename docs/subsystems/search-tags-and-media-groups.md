@@ -124,6 +124,26 @@ failed drafts, and focus restoration. Buttons share the input's disabled conditi
 All startup buttons remain visible after applying them, including tags already assigned
 to a single selected asset. An empty snapshot hides the section.
 
+## Solid metadata models during migration
+
+`src/library/metadata/createAssetTagState.ts` owns canonical tags, exclusive per-asset
+mutation tokens, identity epochs, tombstones, pins and the 512-entry inactive-record limit.
+Maintenance admission blocks new writes immediately and drains already-dispatched work.
+Disposal releases drain waiters; queued maintenance rejects before running its operation.
+
+`createMutations.ts` centralizes Solid tag, favorite, group and deletion commands. Bulk
+admission is all-or-none. Backend acknowledgements publish only accepted identities, patch
+cached details and summaries, notify consumers, and evaluate the current query's refresh
+rules. Summary rows never gain detail-only tags. `queryImpact.ts` is shared with React
+through its existing service export; its shared tests still run once.
+
+`src/library/vocabulary/createKnownTags.ts` retains complete pagination, latest-generation
+refresh draining, unchanged-save reuse and dirty retry behavior. `createLibrary.runMaintenance`
+resets metadata or the whole library before releasing the barrier, on success and failure.
+The settings workflow will own subsequent refresh and user feedback in stage 8. Solid tag
+editors and bulk selection will consume these commands in stage 5; editor draft/retry UI
+still belongs to those feature models.
+
 ## Tag mutations
 
 One tag cannot contain whitespace, comma, semicolon, or a control character. Lightbox, bulk, normal search, CSV, and backend command boundaries apply this rule; the backend remains authoritative. Replacements are serialized per asset by the shell-lived selection owner and rapid edits coalesce to the latest desired complete array. Both lightbox and bulk consume shell-owned `useAssetTagState`, which records whether each complete tag base is known. Every affected ID must acquire an exclusive mutation-start generation before IPC. A second writer for the same ID sends no command. Multi-asset bulk is all-or-none at lock acquisition: if any selected ID is busy, already-acquired tokens are released and the command is not sent with a reduced subset. Favorite and group writes acquire the same ownership so CSV maintenance can drain every field it may overwrite. Pending writes block detail publication, and settlement advances the generation again so reads started before or during the mutation stay invalid even after failure. A summary-derived editor placeholder is never accepted as a complete tag base. The backend normalizes again, validates the asset, replaces mappings when needed, repairs `tag_count`, canonicalizes legacy tag spelling, removes orphan rows, and conditionally bumps the library revision in the same transaction. After backend success the frontend publishes canonical response tags, patches loaded/detail state, and refreshes known tags best-effort.

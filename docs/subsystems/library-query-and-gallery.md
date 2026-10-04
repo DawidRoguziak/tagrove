@@ -6,6 +6,27 @@ This page owns query-session caching, frontend page loading/invalidation, and vi
 
 The transport shapes and command-registration rules are in the [IPC contract](../architecture/ipc-contract.md). SQL filters, grouped ordering, and the library revision are described in [database](database.md). Related user workflows belong in [search, tags, and media groups](search-tags-and-media-groups.md), [thumbnails](thumbnails.md), and [lightbox](lightbox.md).
 
+## Solid library during migration
+
+React remains the default. `src/library/createLibrary.ts` composes the Solid models under
+`createAppRuntime`; feature views do not construct separate library owners.
+`query/createAssetQuery.ts` preserves 128-item pages, sparse positions, a 12-page cache,
+failed offsets, explicit retry, patch-counter rereads and stale-session recovery.
+Operational state changes synchronously, while getters publish through Solid. Separate
+memos prevent loading-only changes from republishing the cached asset array.
+
+Viewport or query-epoch changes request pages. Page arrivals update thumbnail demand for
+the current viewport without requesting evicted pages again. This keeps oversized ranges
+from continuously reloading pages beyond the cache bound. Metadata patches preserve page
+positions, including holes after deletion, until a new query replaces the snapshot.
+
+`metadata/createDetailsCache.ts` shares at most 256 complete details across future Solid
+consumers. It deduplicates reads, pins pending identities, validates metadata generations,
+and discards replies after query changes, identity resets or disposal. Query changes clear
+details without resetting canonical tags. Restore and clear invalidate both. Solid gallery
+and lightbox presentation remain later migration stages; these models currently have
+frontend tests with mocked IPC, not desktop feature-parity evidence.
+
 ## From applied filters to a session
 
 The top bar has editable filter state and separate applied filter state. A valid submit copies the input, media kind, and favorites flag into the applied state. `useAppShellController` refreshes the asset query when the applied include tags, exclude tags, meta-filter key, media kind, or favorites flag changes. Submitting values that are already applied explicitly refreshes instead. Invalid search metatags do not change the applied state or start a query.

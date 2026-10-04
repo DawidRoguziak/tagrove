@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 2 is complete. React remains the default and functional reference.
-Solid now has the platform boundary, window shell, Appearance/Language settings, shared
-controls, modal ownership and lazy loading boundaries. Feature workflows follow in stage 3.
+Stage 3 is complete. React remains the default and functional reference.
+Solid has application-owned query, metadata, vocabulary and thumbnail models.
+Gallery and search UI integration follows in stage 4.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 3](03-library-state.md).
+- Next implementation task: [stage 4](04-gallery-and-search.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -21,8 +21,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | Stage | Status | Tests | Self-review | Local commit |
 | --- | --- | --- | --- | --- |
 | [1. Reference and toolchains](01-reference-and-toolchains.md) | Complete | 703 frontend, 206 Rust, both builds, desktop and packaging verified | Findings fixed and rechecked | `build: add isolated Solid 2 migration setup`; `4af0ff4` |
-| [2. Platform and shell](02-platform-and-shell.md) | Complete | 734 frontend, 206 Rust, both builds, desktop shell comparison | Findings fixed and rechecked | `refactor: establish Solid shell and platform boundaries` |
-| [3. Library state](03-library-state.md) | Not started | Not run | Pending | None |
+| [2. Platform and shell](02-platform-and-shell.md) | Complete | 734 frontend, 206 Rust, both builds, desktop shell comparison | Findings fixed and rechecked | `refactor: establish Solid shell and platform boundaries`; `aa7c933` |
+| [3. Library state](03-library-state.md) | Complete | 822 frontend, 206 Rust, both builds; query follow-up passed | Findings fixed and rechecked | `feat: implement Solid library state and mutation coordination` |
 | [4. Gallery and search](04-gallery-and-search.md) | Not started | Not run | Pending | None |
 | [5. Tagging and bulk](05-tagging-and-bulk.md) | Not started | Not run | Pending | None |
 | [6. Lightbox and images](06-lightbox-and-images.md) | Not started | Not run | Pending | None |
@@ -235,7 +235,7 @@ Next stage: [platform boundaries and Solid shell](02-platform-and-shell.md).
 
 Date: 4 October 2026. Starting commit: `4af0ff4`.
 Local commit subject: `refactor: establish Solid shell and platform boundaries`.
-Record its hash when opening stage 3.
+Local commit hash: `aa7c933`.
 
 Implemented behavior:
 
@@ -341,3 +341,97 @@ ignored. Shared library state starts at stage 3, gallery/search at stage 4, ligh
 at stage 6, and remaining settings workflows at stage 8.
 
 Next stage: [shared library state](03-library-state.md).
+
+## Stage 3 evidence
+
+Date: 4 October 2026. Starting commit: `aa7c933`.
+Local commit subject: `feat: implement Solid library state and mutation coordination`.
+Record its hash when opening stage 4.
+
+Implemented behavior:
+
+- `createAppRuntime` owns one `createLibrary`, retained across Gallery/Settings navigation.
+  The runtime constructs models without starting feature queries; stage 4 owns startup
+  and search UI wiring. Models expose reactive getters and explicit commands.
+- Query sessions retain 128-item pages, sparse global positions, the exact 12-page bound,
+  viewport protection, per-offset deduplication, failed offsets, explicit retry, old results
+  during refresh, superseded/stale handling, patch-counter rereads and disposal guards.
+  Operational snapshots, generations and request registries update synchronously.
+- One shared details cache retains at most 256 records, deduplicates reads, pins pending
+  identities and checks metadata generations. Query changes invalidate details; identity
+  reset, restore and clear invalidate details and canonical tags.
+- Canonical tags retain per-asset ownership, tombstones, identity epochs, pins and the
+  512-entry inactive bound. Maintenance admission is synchronous, drains dispatched writes,
+  serializes operations and releases waiters on disposal. Rejected maintenance still resets
+  the appropriate caches before releasing its barrier. Settings refresh/feedback follows
+  in stage 8.
+- Shared mutation commands publish backend-acknowledged tags, favorites, groups and deletion.
+  Bulk admission is all-or-none. Stale identities cannot publish; partial results patch
+  acknowledged IDs only. Current filters govern query impact. Pure query-impact predicates
+  now live under library metadata and remain available through React's compatibility export.
+- Vocabulary preserves pagination, stable equal snapshots, overlapping refresh draining,
+  unchanged-save reuse and dirty retry. Thumbnail models reuse the pure store/constants,
+  retain visible/additive priority and stream semantics, and own per-asset subscriptions.
+  No React global thumbnail mirror is required by Solid.
+
+Tests ported or added:
+
+- Retained every React reference suite. Ported 62 cases from library-assets, library-browser,
+  known-tags, tag-coordinator and thumbnail-queue suites. Solid queue assertions observe the
+  real per-asset store; vocabulary setup hydrates through commands. Explicit Solid flushes
+  replace React `act` only in test support. Pure service suites continue running once.
+- Added 26 cases covering details eviction/reload and deduplication, stale identity/query
+  reads, canonical mutation publication, same-turn exclusion, bulk admission/partial results,
+  maintenance failure/disposal, latest-filter decisions, default page size, runtime lifetime,
+  oversized range bounds, replaced request finalizers, sparse deletion positions, reactive
+  asset-array stability, late page thumbnail demand and per-asset subscription cleanup.
+- Solid now has 123 cases including the 35 shell/bootstrap cases from stages 1 and 2.
+
+Verification, with logs under `artifacts/solid2/stage3/`:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `bun run test` | 97 files, 822 passed | `frontend-final.log` |
+| `bun run test --project solid` | 13 files, 123 passed | `solid-final.log` |
+| `bun run test --project solid src/library/query` | 2 files, 24 passed after the final deleted-index guard | `query-final.log` |
+| `bun run typecheck` | All three TypeScript contexts pass | `types.log` |
+| `bun run test:frontends` | Both builds and renderer/entry separation pass; React assets restored in `dist` | `builds-final.log`, `react-modules.json`, `solid-modules.json` |
+| `bun run test:backend` | 206 passed; 2 pre-existing diagnostic tests ignored | `backend.log` |
+| `bun run lint` | Passed | `lint-final.log` |
+| `bun run format:check` | Passed | `format.log` |
+| `bun run locale:check` | All 11 languages valid | `locales.log` |
+| `PATH="/tmp/solid2-tools:$PATH" bun run privacy:check` | Passed for history and tracked files; repeated after staging | `privacy.log`, `privacy-staged.log` |
+| `git diff --check` | Passed | Working/staged diff review |
+
+Self-review findings and fixes:
+
+- A cleanup rename shadowed captured query/thumbnail generations and the coordinator epoch.
+  Typechecking and race tests rejected it. Explicit current/captured names restore the
+  guards; full frontend verification passed afterward. Initial failed logs are retained.
+- Removing an item from a page's ID array would shift later global positions before refresh.
+  Metadata patches now retain the snapshot IDs with an absent summary at the deleted slot.
+  Cached range reads reject incomplete pages and index lookup rejects deleted summaries.
+- A range larger than the cache can continuously reload evicted pages if every cache update
+  repeats page demand. Range/query-epoch changes now drive page reads; page arrivals only
+  update thumbnail demand. A 30-page integration case proves exactly 29 subsequent requests
+  and 12 retained pages. Separate read memos prevent loading-only updates from repeating work.
+- Initial per-tile subscription setup published an equal snapshot twice. Comparing ID, path
+  and rendering state removes the duplicate update. Tests prove atomic completion, unrelated
+  subscriber isolation, slot identity changes and retained-path release on disposal.
+- The final caller review found that single-favorite saves await query refresh and deletion
+  waits for both refreshes to settle. Shared commands now retain those completion rules;
+  a deferred refresh regression verifies failure propagation after durable publication.
+- Removed the temporary queue callback indirection and React setter/ref contracts. Reviewed
+  actual callers, imports, cache bounds, synchronous admission, canonical publication,
+  disposal and generation guards. Library production modules import no React or feature
+  components; no production forced flushes were added.
+- Reviewed staged source, test fixtures and documentation for scope and private content.
+  Fixtures are synthetic; raw logs and compiled module lists remain ignored.
+
+Remaining limits: no desktop run, packaging rebuild or cross-platform claim for this model
+stage. Mocked IPC tests prove frontend coordination, not a live bridge or Solid gallery,
+editor, lightbox or settings parity. Rust/IPC schemas, native profiles and backend behavior
+are unchanged. Those feature integrations remain in their planned stages. No required
+stage-3 check remains unavailable.
+
+Next stage: [gallery, search and tag discovery](04-gallery-and-search.md).

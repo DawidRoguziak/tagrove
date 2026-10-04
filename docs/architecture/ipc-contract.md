@@ -1,6 +1,6 @@
 # IPC contract
 
-Implementation entry points: [registered commands](../../src-tauri/src/lib.rs), [frontend wrappers](../../src/api.ts), [Rust models](../../src-tauri/src/models.rs), [TypeScript payloads](../../src/types.ts), [video payloads](../../src/components/lightbox/mpvVideoTypes.ts).
+Implementation entry points: [registered commands](../../src-tauri/src/lib.rs), [frontend wrappers](../../src/platform/tauri), [Rust models](../../src-tauri/src/models.rs), [TypeScript payloads](../../src/platform/tauri/contracts), [video payloads](../../src/platform/tauri/contracts/video.ts).
 
 This page owns frontend/backend command names, payloads, result states, channels, and events. Rust functions absent from the registration list are internal helpers, not callable IPC commands.
 
@@ -8,19 +8,22 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 
 ## Invocation and serialization rules
 
-- Frontend code calls the typed functions in `src/api.ts`; those functions call the snake-case command names registered by `tauri::generate_handler!`.
+- Frontend code calls typed functions in `src/platform/tauri`, split into assets, tags, scanning, thumbnails, maintenance, video, and window modules. `src/api.ts` temporarily re-exports them for React. The functions call the snake-case command names registered by `tauri::generate_handler!`. Dialogs, events, the system opener, and native window access also enter through this directory.
 - Invoke argument keys are camelCase (`assetId`, `tagsAnd`, `pageSize`, `onEvent`), while the corresponding Rust parameters are snake_case (`asset_id`, `tags_and`, `page_size`, `on_event`). Nested inputs opt into or explicitly define camelCase where needed: `BulkMediaGroupUpdateInput` uses `rename_all = "camelCase"`, and `AssetMetaFilterInput` uses `type`, `hasNoTags`/`groupName`, `tagCount`, and `groupName`.
-- Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/types.ts`, including `session_id`, `thumb_path`, `removed_assets`, and similar fields.
+- Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/platform/tauri/contracts`, including `session_id`, `thumb_path`, `removed_assets`, and similar fields.
 - Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; thumbnail channel messages use `{ event: "ready" | "failed" | "done", data: ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case.
 - Native video events use a `type` discriminant and include `session_id`. Video controls use camelCase discriminants and fields because their Rust enum has both `rename_all = "camelCase"` and `rename_all_fields = "camelCase"`.
 - Rust `Option<T>` becomes `T | null` over IPC. The wrappers explicitly send `null` for media kind `"all"`, an absent search meta-filter, and nullable media-group values. `get_asset_details` also uses `null` for a missing row. Rust `()` is exposed as `Promise<void>`.
 - Rust `i64`, `u64`, and `usize` values are represented as JavaScript `number`. Current IDs, counts, revisions, offsets, and session IDs are expected to remain within JavaScript's safe-integer range; the type layer does not enforce that bound.
-- `src/types.ts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
+- `src/platform/tauri/contracts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
 - All registered command failures reject the invoke promise with text. Command boundaries return `Result<_, String>` and flatten `AppError`, worker-join failures, validation failures, and platform errors to a message; there is no structured IPC error code or error payload.
+
+`src/types.ts` and the old lightbox video-types module retain compatibility re-exports.
+`SelectedAsset` remains frontend view state in `src/types.ts`, outside the wire contracts.
 
 ## Shared response shapes
 
-The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the TypeScript declarations in `src/types.ts` accept them. A `?` suffix below means that the field value is nullable, not that the field is omitted.
+The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the TypeScript declarations in `src/platform/tauri/contracts` accept them. A `?` suffix below means that the field value is nullable, not that the field is omitted.
 
 | Rust / TypeScript model | Serialized fields |
 | --- | --- |
@@ -258,7 +261,7 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 - `process-progress` is a shared broadcast with free-form `phase` and human-readable `message`; it has no request ID, sequence number, or version.
 - Favorite and media-group setters resolve even if an unknown asset ID changed zero rows. Tag replacement, delete, and rename reject unknown IDs; bulk tag/group operations skip missing IDs and report processed counts or IDs.
 - Runtime validation is uneven: unsupported query kinds degrade to no filter and non-finite group order degrades to `null`.
-- `src/__tests__/api.test.ts` covers legacy `listAssets`, tag mutation, native video session/channel payloads, and media-path conversion, but it does not exhaustively lock down every wrapper, response shape, or event.
+- `src/platform/tauri/__tests__/api.test.ts` covers legacy `listAssets`, tag mutation, native video session/channel payloads, and media-path conversion, but it does not exhaustively lock down every wrapper, response shape, or event.
 
 ## Safe contract-change checklist
 
@@ -277,7 +280,7 @@ When changing IPC:
 
 ### Relevant tests
 
-- `src/__tests__/api.test.ts` checks selected invoke payloads, native video channel delivery, and media-path conversion.
+- `src/platform/tauri/__tests__/api.test.ts` checks selected invoke payloads, native video channel delivery, and media-path conversion.
 - `src/hooks/__tests__/useLibraryBrowser.test.ts` exercises the session-query wrapper contract through the library hooks, including filters and pagination.
 - `src/hooks/__tests__/useThumbnailQueue.test.ts` exercises streamed ready/failed handling, batching, and ignoring messages after the frontend generation changes.
 - `src/components/settings/services/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings hook tests cover subscription lifetimes and command workflows.

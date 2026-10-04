@@ -11,7 +11,7 @@ For narrower contracts, use the canonical pages for [frontend architecture](../f
 ```mermaid
 flowchart LR
     UI["React components and hooks"]
-    API["src/api.ts"]
+    API["src/platform/tauri"]
     IPC["Tauri invoke, Channel, and events"]
     CMD["commands/*"]
     SVC["services/*"]
@@ -37,13 +37,16 @@ flowchart LR
 
 During the [Solid 2 migration](../solid2/README.md), React remains the default.
 `MEDIATAGGER_FRONTEND=solid` selects a separate bootstrap entry at `src/app/main.tsx`.
-It currently renders a status screen only; the flow below describes the functional React app.
+It renders the window shell, Appearance and Language settings, with shared controls and
+modal/lazy boundaries. Gallery and media workflows still use the React reference.
+Both entries call `src/platform/tauri`; `src/api.ts` remains a React compatibility export.
+The flow below describes the functional React app.
 
 The normal request path is:
 
 1. `src/main.tsx` loads i18n and styles, applies the persisted theme before rendering, and mounts `App` under React `StrictMode`. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.
 2. `App.tsx` mounts `UiLayerProvider` and delegates application state and actions to `useAppShellController`. Settings and lightbox are lazy-loaded and prefetched after 1.5 seconds; the gallery and bulk sidebar are eagerly imported. See [frontend composition](../frontend/architecture-and-ui-conventions.md#lazy-loading-and-delayed-prefetch) for loading and failure UI.
-3. Feature hooks call typed wrappers in `src/api.ts`. Those wrappers translate UI concepts into Tauri command names and payloads, create IPC channels for thumbnail and video events, and use `convertFileSrc` for image/GIF URLs.
+3. Feature hooks call typed wrappers in `src/api.ts`. The subsystem modules behind that compatibility export translate UI concepts into Tauri command names and payloads, create IPC channels for thumbnail and video events, and use `convertFileSrc` for image/GIF URLs.
 4. Tauri dispatches the request to a function registered by `tauri::generate_handler!` in `src-tauri/src/lib.rs`. Command functions validate or normalize inputs, obtain `AppState`, acquire a workflow lock where required, and either perform a small operation or delegate to a service.
 5. Services coordinate scanning, query sessions, backups, progress, and thumbnail scheduling. `db.rs` owns SQL; `indexer.rs` discovers and inspects media; `thumbs.rs` performs image/video probing and rendering; filesystem mutations occur in the command or service responsible for that workflow.
 6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; on-demand thumbnail batches and native video sessions use channels.

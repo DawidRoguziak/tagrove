@@ -2,7 +2,7 @@
 
 Reference source commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 Stage 1 started at documentation commit `0e1cc02`. All 84 suites and 699 tests
-remain unchanged. The table assigns each suite to one Vitest project and a future
+retain their assertions. Stage 2 moves the API and theme suites without changing their assertions. The table assigns each suite to one Vitest project and a future
 owner; it does not claim those owners are implemented. Update individual rows when
 porting assertions. Pure helpers may remain shared at their current path until moved.
 
@@ -14,15 +14,15 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | Existing suite | Current project | Future stage and owner | Assertion status |
 | --- | --- | --- | --- |
 | `src/__tests__/App.test.tsx` | react | 2–8, `app` composition and feature integration | Retained, all assertions |
-| `src/__tests__/api.test.ts` | shared | 2, `platform/tauri` command contracts | Retained, all assertions |
-| `src/components/UI/__tests__/LazyErrorBoundary.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | Retained, all assertions |
-| `src/components/UI/__tests__/ModalPresence.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | Retained, all assertions |
+| `src/platform/tauri/__tests__/api.test.ts` | shared | 2, `platform/tauri` command contracts | Moved, all assertions retained |
+| `src/components/UI/__tests__/LazyErrorBoundary.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/app/__tests__/shell.test.tsx` |
+| `src/components/UI/__tests__/ModalPresence.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx`, feature confirmations remain for stage 8 |
 | `src/components/UI/__tests__/TagEditor.test.tsx` | react | 5, `features/tagging` | Retained, all assertions |
 | `src/components/UI/__tests__/ThumbnailImage.test.tsx` | react | 4, `features/gallery` | Retained, all assertions |
-| `src/components/UI/__tests__/UiAlert.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | Retained, all assertions |
-| `src/components/UI/__tests__/UiModal.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | Retained, all assertions |
-| `src/components/UI/__tests__/UiSegmentedControl.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | Retained, all assertions |
-| `src/components/app/__tests__/WindowControls.test.tsx` | react | 2, `app/WindowControls` | Retained, all assertions |
+| `src/components/UI/__tests__/UiAlert.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
+| `src/components/UI/__tests__/UiModal.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx` |
+| `src/components/UI/__tests__/UiSegmentedControl.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
+| `src/components/app/__tests__/WindowControls.test.tsx` | react | 2, `app/WindowControls` | React assertions retained; Solid counterpart in `src/app/__tests__/WindowControls.test.tsx` |
 | `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` | react | 4, `features/search` | Retained, all assertions |
 | `src/components/app/hooks/__tests__/useAssetTagState.test.ts` | react | 3, `library/metadata` | Retained, all assertions |
 | `src/components/app/hooks/__tests__/useBulkFavorites.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
@@ -31,8 +31,8 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/app/services/__tests__/assetMutationService.test.ts` | shared | 3, `library/metadata` | Retained, all assertions |
 | `src/components/app/services/__tests__/filterService.test.ts` | shared | 4, `features/search` | Retained, all assertions |
 | `src/components/app/services/__tests__/libraryInvalidationService.test.ts` | shared | 3, `library/metadata` | Retained, all assertions |
-| `src/components/app/services/__tests__/themeService.test.ts` | shared | 2, `app` persistence | Retained, all assertions |
-| `src/components/app/services/__tests__/tileSizeService.test.ts` | shared | 2, `app` persistence | Retained, all assertions |
+| `src/ui/dom/__tests__/theme.test.ts` | shared | 2, shared theme persistence | Moved, all assertions retained |
+| `src/components/app/services/__tests__/tileSizeService.test.ts` | shared | 4, gallery sizing | Retained, all assertions |
 | `src/components/bulk/__tests__/BulkActionsSidebar.test.tsx` | react | 5, `features/bulk` | Retained, all assertions |
 | `src/components/bulk/grouping/services/__tests__/applyBulkMediaGroupAction.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
 | `src/components/bulk/grouping/services/__tests__/bulkGroupOrderService.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
@@ -97,3 +97,8 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/hooks/services/__tests__/thumbnailStore.test.ts` | shared | 3, `library/thumbnails` | Retained, all assertions |
 | `src/utils/__tests__/literalTagSearch.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
 | `src/utils/__tests__/media.test.ts` | shared | 6, framework-independent media helpers | Retained, all assertions |
+
+Stage 2 adds shell mount/disposal, all 11 live translations, theme persistence/native sync,
+settings remounts, lazy loading/failure, optional performance cleanup, stale native-window
+reads and controlled-input tests. React StrictMode presence coverage remains in the reference;
+Solid tests prove cancellation, rapid reopen, disposal and subscription cleanup instead.

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isTauri } from "../../platform/tauri/window";
+import { getCurrentWindow } from "../../platform/tauri/window";
 import { useTranslation } from "react-i18next";
 import { UiButton } from "../UI/UiButton";
 import { UiIcon } from "../UI/UiIcon";

@@ -7,7 +7,8 @@ const sharedTests = [
   "src/components/**/services/__tests__/*.test.ts",
   "src/hooks/services/__tests__/*.test.ts",
   "src/utils/__tests__/*.test.ts",
-  "src/__tests__/api.test.ts",
+  "src/platform/tauri/__tests__/api.test.ts",
+  "src/ui/dom/__tests__/*.test.ts",
   "src/components/lightbox/__tests__/nativeVideoLayout.test.ts"
 ];
 const solidTests = ["src/{app,platform,library,features,ui}/**/*.{test,spec}.{ts,tsx}"];
@@ -48,6 +49,7 @@ export default defineConfig({
           ...common,
           name: "solid",
           include: solidTests,
+          exclude: sharedTests,
           setupFiles: "./src/test/setup-solid.ts",
           server: { deps: { inline: [/solid-js/, /@solidjs\//] } }
         }

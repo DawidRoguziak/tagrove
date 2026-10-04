@@ -29,6 +29,7 @@
     "src/library",
     "src/features",
     "src/ui",
-    "src/test/setup-solid.ts"
+    "src/test/setup-solid.ts",
+    "src/i18n/solid.tsx"
   ]
 }

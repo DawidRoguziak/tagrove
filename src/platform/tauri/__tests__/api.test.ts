@@ -19,7 +19,7 @@ import {
   setVideoBounds,
   toMediaSrc,
   toggleAssetsFavoriteBulk
-} from "../api";
+} from "../../../api";
 
 const coreMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -45,10 +45,17 @@ describe("api contract", () => {
     await expect(getStartupPopularTags()).resolves.toEqual(["travel", "cat"]);
     expect(coreMocks.invoke).toHaveBeenCalledWith("get_startup_popular_tags");
   });
-  it.each([{ status: "resolved", index: 201 }, { status: "missing" }, { status: "stale" }])("looks up query position through IPC: %j", async response => {
+  it.each([
+    { status: "resolved", index: 201 },
+    { status: "missing" },
+    { status: "stale" }
+  ])("looks up query position through IPC: %j", async (response) => {
     coreMocks.invoke.mockResolvedValueOnce(response);
     await expect(getAssetQueryPosition(7, 202)).resolves.toEqual(response);
-    expect(coreMocks.invoke).toHaveBeenCalledWith("get_asset_query_position", { sessionId: 7, assetId: 202 });
+    expect(coreMocks.invoke).toHaveBeenCalledWith("get_asset_query_position", {
+      sessionId: 7,
+      assetId: 202
+    });
   });
   it("uses the scan root preference and startup command contracts", async () => {
     const roots = [{ path: "/media", auto_scan_on_startup: true }];
@@ -56,7 +63,10 @@ describe("api contract", () => {
     await expect(listScanRoots()).resolves.toEqual(roots);
     expect(coreMocks.invoke).toHaveBeenLastCalledWith("list_scan_roots");
     await setScanRootAutoScan("/media", true);
-    expect(coreMocks.invoke).toHaveBeenLastCalledWith("set_scan_root_auto_scan", { path: "/media", enabled: true });
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("set_scan_root_auto_scan", {
+      path: "/media",
+      enabled: true
+    });
     coreMocks.invoke.mockResolvedValueOnce(null);
     await expect(scanStartupRoots()).resolves.toBeNull();
     expect(coreMocks.invoke).toHaveBeenLastCalledWith("scan_startup_roots");
@@ -65,7 +75,9 @@ describe("api contract", () => {
     const summary = { processed_asset_ids: [1, 2], is_favorite: true, revision: 3 };
     coreMocks.invoke.mockResolvedValueOnce(summary);
     await expect(toggleAssetsFavoriteBulk([1, 2])).resolves.toEqual(summary);
-    expect(coreMocks.invoke).toHaveBeenCalledWith("toggle_assets_favorite_bulk", { assetIds: [1, 2] });
+    expect(coreMocks.invoke).toHaveBeenCalledWith("toggle_assets_favorite_bulk", {
+      assetIds: [1, 2]
+    });
   });
 
   beforeEach(() => {
@@ -97,14 +109,25 @@ describe("api contract", () => {
     });
   });
 
-  it.each([false, true])("maps tag mutation summaries with vocabulary_changed=%s", async (vocabularyChanged) => {
-    const single: Awaited<ReturnType<typeof setAssetTags>> = { vocabulary_changed: vocabularyChanged, query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true }, asset_id: 7, changed: true, tags: ["cat"], revision: 4 };
+  it.each([
+    false,
+    true
+  ])("maps tag mutation summaries with vocabulary_changed=%s", async (vocabularyChanged) => {
+    const single: Awaited<ReturnType<typeof setAssetTags>> = {
+      vocabulary_changed: vocabularyChanged,
+      query_impact: { type: "tags", changed_tags: ["cat"], tag_count_changed: true },
+      asset_id: 7,
+      changed: true,
+      tags: ["cat"],
+      revision: 4
+    };
     const bulk: Awaited<ReturnType<typeof mergeAssetTagsBulk>> = {
       processed_assets: 1,
       updated_assets: 1,
       processed_asset_ids: [7],
       updated_asset_ids: [7],
-      vocabulary_changed: vocabularyChanged, query_impact: { type: "tags", changed_tags: ["travel"], tag_count_changed: true },
+      vocabulary_changed: vocabularyChanged,
+      query_impact: { type: "tags", changed_tags: ["travel"], tag_count_changed: true },
       results: [{ asset_id: 7, changed: true, tags: ["cat", "travel"] }],
       revision: 5
     };
@@ -171,11 +194,13 @@ describe("api contract", () => {
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(4, "close_video", { sessionId: 17 });
     await controlVideo(17, { type: "togglePause" });
     expect(coreMocks.invoke).toHaveBeenLastCalledWith("control_video", {
-      sessionId: 17, command: { type: "togglePause" }
+      sessionId: 17,
+      command: { type: "togglePause" }
     });
     await controlVideo(17, { type: "seekRelative", seconds: -5 });
     expect(coreMocks.invoke).toHaveBeenLastCalledWith("control_video", {
-      sessionId: 17, command: { type: "seekRelative", seconds: -5 }
+      sessionId: 17,
+      command: { type: "seekRelative", seconds: -5 }
     });
     coreMocks.invoke.mockResolvedValueOnce(21);
     await expect(beginVideoOpen()).resolves.toBe(21);
@@ -183,15 +208,27 @@ describe("api contract", () => {
     await setVideoControlLabels(17, controlLabels);
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(7, "begin_video_open");
     expect(coreMocks.invoke).toHaveBeenNthCalledWith(8, "cancel_video_open", { requestId: 21 });
-    expect(coreMocks.invoke).toHaveBeenNthCalledWith(9, "set_video_control_labels", { sessionId: 17, controlLabels });
+    expect(coreMocks.invoke).toHaveBeenNthCalledWith(9, "set_video_control_labels", {
+      sessionId: 17,
+      controlLabels
+    });
   });
 
   it("uses the selection summary and processed group ID contracts", async () => {
     coreMocks.invoke.mockResolvedValueOnce([]);
     await expect(getAssetSummariesByIds([3, 1, 999])).resolves.toEqual([]);
-    expect(coreMocks.invoke).toHaveBeenLastCalledWith("get_asset_summaries_by_ids", { assetIds: [3, 1, 999] });
-    const result = { processed_assets: 1, processed_asset_ids: [3], updated_assets: 1, media_group_key: "trip" };
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("get_asset_summaries_by_ids", {
+      assetIds: [3, 1, 999]
+    });
+    const result = {
+      processed_assets: 1,
+      processed_asset_ids: [3],
+      updated_assets: 1,
+      media_group_key: "trip"
+    };
     coreMocks.invoke.mockResolvedValueOnce(result);
-    await expect(setAssetsMediaGroupBulk([{ assetId: 3, mediaGroupOrder: 1 }], "trip")).resolves.toEqual(result);
+    await expect(
+      setAssetsMediaGroupBulk([{ assetId: 3, mediaGroupOrder: 1 }], "trip")
+    ).resolves.toEqual(result);
   });
 });

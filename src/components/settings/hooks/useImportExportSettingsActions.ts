@@ -1,6 +1,6 @@
 import type { ScanRoot } from "../../../types";
 import { useCallback, useMemo, useState } from "react";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "../../../platform/tauri/dialogs";
 import { useTranslation } from "react-i18next";
 import {
   exportDbBundle,

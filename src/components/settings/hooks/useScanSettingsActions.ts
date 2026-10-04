@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "../../../platform/tauri/dialogs";
 import { useTranslation } from "react-i18next";
 import {
   addScanRoot,

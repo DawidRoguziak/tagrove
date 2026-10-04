@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "../../../platform/tauri/dialogs";
 import { version, license } from "../../../../package.json";
 import { developerName, repository } from "../../../../packaging/flatpak/publisher.json";
 import licenseText from "../../../../LICENSE?raw";

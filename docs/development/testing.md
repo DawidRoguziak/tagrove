@@ -655,3 +655,18 @@ latency for reproducible capture; it does not measure backend latency.
 The settings-language spec restores English and desktop size after its locale matrix,
 so subsequent English-selector scenarios remain independent. Its geometry assertion
 matches the current stacked selector at every width.
+
+## Solid shell verification
+
+Stage 2 retains React behavioral suites and adds Solid window, shared-control, modal,
+lazy-boundary, language/theme, and bootstrap-lifetime tests. The API suite now lives at
+`src/platform/tauri/__tests__/api.test.ts`; the theme suite lives at
+`src/ui/dom/__tests__/theme.test.ts`. Both run once in the shared project.
+
+`MEDIATAGGER_SOLID_SHELL=1` enables `e2e/specs/solid-bootstrap.e2e.js` comparisons for
+either renderer. Select it with `--spec e2e/specs/solid-bootstrap.e2e.js` for React; the
+Solid harness already selects that file. It measures and screenshots both themes and
+English/Polish at 1440, 600 and 320 pixels, exercises persistence and Escape restoration,
+and stores synthetic evidence under `artifacts/solid2/stage2/<renderer>/`. Each renderer
+must run serially in its own fresh E2E profile. This verifies shell controls, not gallery,
+maintenance or native-video parity. See [stage 2 evidence](../solid2/PROGRESS.md).

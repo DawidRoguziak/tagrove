@@ -10,13 +10,17 @@ describe("Solid browser toolchain", () => {
     expect(isServer).toBe(false);
     render(() => <App />);
     expect(screen.getByRole("heading", { name: "Tagrove" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Solid 2 bootstrap ready");
+    expect(screen.getByRole("status")).toHaveTextContent("Solid 2 shell ready");
   });
 
   it("updates the DOM after an interaction", async () => {
     function Counter() {
       const [count, setCount] = createSignal(0);
-      return <button type="button" onClick={() => setCount(count() + 1)}>Count {count()}</button>;
+      return (
+        <button type="button" onClick={() => setCount(count() + 1)}>
+          Count {count()}
+        </button>
+      );
     }
     render(() => <Counter />);
     const button = screen.getByRole("button", { name: "Count 0" });
@@ -26,7 +30,9 @@ describe("Solid browser toolchain", () => {
 
   it("publishes deferred completion and removes owned listeners on disposal", async () => {
     let complete = (_value: string) => {};
-    const completion = new Promise<string>((resolve) => { complete = resolve; });
+    const completion = new Promise<string>((resolve) => {
+      complete = resolve;
+    });
     const received = vi.fn();
     const disposed = vi.fn();
     function Deferred() {

@@ -14,6 +14,25 @@ Feature behavior belongs in the narrower canonical guides:
 - [localization](../development/localization.md)
 - [testing](../development/testing.md) and [setup and build](../development/setup-and-build.md)
 
+## Solid shell during migration
+
+React remains the default entry. `MEDIATAGGER_FRONTEND=solid` selects `src/app/main.tsx`.
+Its `mountApplication` applies the stored theme before rendering, waits for i18next,
+and owns context-menu suppression and optional performance observation. Disposal also
+cancels a pending mount. `createAppRuntime` owns theme and view selection across remounts;
+library models join it in stage 3. `LanguageProvider` owns one i18next subscription for
+its tree. Settings and the lightbox boundary prefetch after 1,500 ms, with timer cleanup.
+The lightbox boundary is ready for stage 6's lazy media view; it does not open media yet.
+
+Solid controls live under `src/ui/controls`, overlays under `src/ui/overlays`.
+Both renderers share theme persistence, modal animation, and segmented-control measurement
+under `src/ui/dom`. Solid modal registration ends on logical close while presence retains
+the pointer shield through exit. Feature views that clear drafts on close must retain their
+visible values with `createModalSnapshot`, since mounted Solid children remain reactive.
+The shell includes the existing Appearance/Language markup and settings geometry. Other
+settings workflows remain for stage 8. The sections below describe the React reference
+unless they explicitly name a Solid module.
+
 ## Bootstrap and shell composition
 
 The gallery header displays Tagrove with the Obsidian Grove SVG from `public/tagrove.svg`. The image supplies the accessible app name; the adjacent visible wordmark is hidden from assistive technology to avoid repeating it. The same SVG is the HTML favicon and the source for native PNG icons. See [branding assets](../development/setup-and-build.md#branding-assets) for regeneration and desktop metadata.
@@ -97,7 +116,7 @@ Some feature `services` are action services rather than pure functions. They seq
 
 ### API wrapper
 
-[`src/api.ts`](../../src/api.ts) is the frontend boundary for Tauri commands, channels, and media-source conversion. Hooks and action services call these typed wrappers; components should not call `invoke` or construct command payloads. Any command name, payload, result, event, or serialization change must follow the [IPC contract guide](../architecture/ipc-contract.md).
+[`src/platform/tauri`](../../src/platform/tauri) owns Tauri commands, channels, events, dialogs, window access, and media-source conversion. `src/api.ts` re-exports its command functions for the React reference. Hooks and action services call these typed wrappers; components should not call `invoke` or construct command payloads. Any command name, payload, result, event, or serialization change must follow the [IPC contract guide](../architecture/ipc-contract.md).
 
 ## Successful mutations and local patches
 

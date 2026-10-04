@@ -1,6 +1,6 @@
 # Localization
 
-Implementation entry points: [language registry](../../src/i18n/languages.ts), [runtime initialization](../../src/i18n/index.ts), [English resource](../../src/i18n/locales/en.json), [locale validator](../../scripts/validate-locales.mjs), [generator](../../scripts/generate-locales.mjs).
+Implementation entry points: [language registry](../../src/i18n/languages.ts), [runtime initialization](../../src/i18n/core.ts), [English resource](../../src/i18n/locales/en.json), [locale validator](../../scripts/validate-locales.mjs), [generator](../../scripts/generate-locales.mjs).
 
 MediaTagger uses i18next and react-i18next for frontend localization. English is the fallback language and the canonical translation tree. Locale data is bundled with the frontend; changing language does not require a network request.
 
@@ -26,16 +26,21 @@ There is deliberately more than one source that must stay synchronized:
 
 - `APP_LANGUAGES` in `src/i18n/languages.ts` is the ordered runtime allowlist. It controls selector order and language normalization. `AppLanguage` is derived from this tuple and re-exported by `src/components/app/types.ts` for application and settings props.
 - `APP_LANGUAGE_NATIVE_LABELS` in the same file is the source for labels displayed by `LanguageSection`. The `settings.language.*` resource keys supply the card heading, description, and accessible selector label; they do not define its options.
-- Imports and the `resources` object in `src/i18n/index.ts` register the translation tree that i18next can load for each code.
+- Imports and the `resources` object in `src/i18n/core.ts` register the translation tree that i18next can load for each code.
 - `src/i18n/locales/<code>.json` supplies the actual resource. `en.json` defines the canonical keys, value shapes, and interpolation placeholders.
 
 `useAppLanguage` exposes the normalized active language and delegates changes to i18next. Its call to `useTranslation()` subscribes the owning React component to language changes. `LanguageSection` builds its options from `APP_LANGUAGES` and `APP_LANGUAGE_NATIVE_LABELS`, so a resource alone does not make a language selectable.
+
+`src/i18n/index.ts` adds the React binding to the shared core. Solid imports `core.ts`
+and uses the application-owned `LanguageProvider` in `src/i18n/solid.tsx`; leaf consumers
+share its reactive translator and normalized language accessor. Disposal removes the
+subscription, and HMR removes the core persistence listener before replacing that module.
 
 Language has its own settings card and `settings-language` navigation destination directly below Appearance. The panel passes language and change callbacks from its existing `appearance` controller to `LanguageSection`.
 
 ## Initial selection, changes, and persistence
 
-`src/i18n/index.ts` initializes i18next when the module is imported. The initial language is resolved in this order:
+`src/i18n/core.ts` initializes i18next when the module is imported. The initial language is resolved in this order:
 
 1. Normalize the value stored at `localStorage["media-tagger.language"]` and use it when supported.
 2. Otherwise normalize `window.navigator.language` and use it when supported. `navigator.languages` is not consulted.
@@ -79,7 +84,7 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 1. Add the code at the intended selector position in `APP_LANGUAGES`; the `AppLanguage` type is derived from this tuple.
 2. Add its native-language label to `APP_LANGUAGE_NATIVE_LABELS` in `src/i18n/languages.ts`.
 3. Create `src/i18n/locales/<code>.json` by copying the complete English tree, then translate every leaf while preserving placeholders and types.
-4. Import the JSON and add `{ translation: <import> }` under the same code in the `resources` object in `src/i18n/index.ts`.
+4. Import the JSON and add `{ translation: <import> }` under the same code in the `resources` object in `src/i18n/core.ts`.
 5. Choose and test `lightbox.deleteConfirm.confirmWord`, `typeYesLabel`, and `typeYesPlaceholder` explicitly.
 6. Extend `LanguageSection.test.tsx` to select the new value. Add runtime coverage for normalization/persistence if the new code introduces a region or script concern.
 7. Run parity, focused tests, a build, and the manual selector/reload checklist. Updating `scripts/generate-locales.mjs` is a separate decision and does not replace any of the preceding registration steps.
@@ -98,7 +103,7 @@ Runtime tests for initial language resolution and persistence remain separate fr
 
 ## Locale generator
 
-`bun run locale:generate` reads `en.json` directly and processes every non-English `AppLanguage`, including Polish and Czech. It never parses or executes `src/i18n/index.ts`. By default it translates only canonical leaves that are absent from a locale and preserves every existing value. A complete locale therefore causes no network calls and no file write.
+`bun run locale:generate` reads `en.json` directly and processes every non-English `AppLanguage`, including Polish and Czech. It never parses or executes `src/i18n/core.ts`. By default it translates only canonical leaves that are absent from a locale and preserves every existing value. A complete locale therefore causes no network calls and no file write.
 
 Pass `--overwrite` only for an intentional full machine-translation draft:
 

@@ -1,0 +1,108 @@
+export type MediaKind = "image" | "gif" | "video";
+
+export type SearchMetaFilter =
+  | {
+      type: "hasNoTags";
+      tagCount: number;
+    }
+  | {
+      type: "groupName";
+      groupName: string;
+    };
+
+export interface AssetSummary {
+  id: number;
+  file_name: string;
+  preview_path: string | null;
+  kind: MediaKind;
+  modified_at: number;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+  thumb_path: string | null;
+  is_favorite: boolean;
+  media_group_key: string | null;
+  media_group_order: number | null;
+}
+
+export interface AssetDetails extends AssetSummary {
+  path: string;
+  size_bytes: number;
+  tags: string[];
+}
+
+export interface LegacyAsset {
+  id: number;
+  path: string;
+  kind: MediaKind;
+  size_bytes: number;
+  modified_at: number;
+  width: number | null;
+  height: number | null;
+  duration_ms: number | null;
+  thumb_path: string | null;
+  is_favorite: boolean;
+  media_group_key: string | null;
+  media_group_order: number | null;
+  tags: string[];
+}
+
+export interface AssetQueryFilters {
+  tags_and: string[];
+  tags_not: string[];
+  kind: MediaKind | null;
+  favorites_only: boolean;
+  meta_filter: SearchMetaFilter | null;
+}
+
+export interface AssetQueryReady {
+  status: "ready";
+  session_id: number;
+  revision: number;
+  total: number;
+  offset: number;
+  items: AssetSummary[];
+}
+
+export interface AssetQueryStale {
+  status: "stale";
+}
+
+export interface AssetQuerySuperseded {
+  status: "superseded";
+}
+
+export type StartAssetQueryResult = AssetQueryReady | AssetQuerySuperseded;
+
+export type AssetQueryPageResult = AssetQueryReady | AssetQueryStale;
+
+export interface DeleteAssetSummary {
+  removed_assets: number;
+  removed_thumbnails: number;
+  source_status: "deleted" | "missing" | "cleanup_pending";
+  revision: number;
+  recovery_path: string | null;
+}
+
+export interface BulkFavoriteSummary {
+  processed_asset_ids: number[];
+  is_favorite: boolean;
+  revision: number;
+}
+
+export interface BulkMediaGroupSummary {
+  processed_asset_ids: number[];
+  processed_assets: number;
+  updated_assets: number;
+  media_group_key: string | null;
+}
+
+export interface AssetPage {
+  items: LegacyAsset[];
+  total: number;
+}
+
+export type AssetQueryPositionResult =
+  | { status: "resolved"; index: number }
+  | { status: "missing" }
+  | { status: "stale" };

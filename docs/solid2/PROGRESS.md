@@ -2,13 +2,14 @@
 
 ## Current state
 
-Stage 1 is complete. React remains the default and functional reference.
-Solid has its own entry, compiler, TypeScript context, and browser-runtime test project.
+Stage 2 is complete. React remains the default and functional reference.
+Solid now has the platform boundary, window shell, Appearance/Language settings, shared
+controls, modal ownership and lazy loading boundaries. Feature workflows follow in stage 3.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 2](02-platform-and-shell.md).
+- Next implementation task: [stage 3](03-library-state.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -19,8 +20,8 @@ Use this table as the status source of truth; the stage files describe planned w
 
 | Stage | Status | Tests | Self-review | Local commit |
 | --- | --- | --- | --- | --- |
-| [1. Reference and toolchains](01-reference-and-toolchains.md) | Complete | 703 frontend, 206 Rust, both builds, desktop and packaging verified | Findings fixed and rechecked | `build: add isolated Solid 2 migration setup`; hash recorded at stage 2 |
-| [2. Platform and shell](02-platform-and-shell.md) | Not started | Not run | Pending | None |
+| [1. Reference and toolchains](01-reference-and-toolchains.md) | Complete | 703 frontend, 206 Rust, both builds, desktop and packaging verified | Findings fixed and rechecked | `build: add isolated Solid 2 migration setup`; `4af0ff4` |
+| [2. Platform and shell](02-platform-and-shell.md) | Complete | 734 frontend, 206 Rust, both builds, desktop shell comparison | Findings fixed and rechecked | `refactor: establish Solid shell and platform boundaries` |
 | [3. Library state](03-library-state.md) | Not started | Not run | Pending | None |
 | [4. Gallery and search](04-gallery-and-search.md) | Not started | Not run | Pending | None |
 | [5. Tagging and bulk](05-tagging-and-bulk.md) | Not started | Not run | Pending | None |
@@ -97,7 +98,7 @@ Next stage:
 
 Date: 4 October 2026. Starting commit: `0e1cc02`.
 Local commit subject: `build: add isolated Solid 2 migration setup`.
-The next stage should record the resulting hash here.
+Local commit hash: `4af0ff4`.
 
 Implemented behavior:
 
@@ -229,3 +230,114 @@ passed; native video pixel quality is not established by them. Two Rust diagnost
 remain ignored as in the baseline. There are no outstanding required stage-1 checks.
 
 Next stage: [platform boundaries and Solid shell](02-platform-and-shell.md).
+
+## Stage 2 evidence
+
+Date: 4 October 2026. Starting commit: `4af0ff4`.
+Local commit subject: `refactor: establish Solid shell and platform boundaries`.
+Record its hash when opening stage 3.
+
+Implemented behavior:
+
+- Split all 45 API functions and transport declarations into `src/platform/tauri` subsystem
+  modules. Kept React compatibility exports and moved video contracts out of the lightbox.
+  `SelectedAsset` remains view state. Every production Tauri import now enters through the
+  platform directory, including events, dialogs, the system opener and native windows.
+- Split shared i18next setup/resources/persistence from its React binding. Solid owns one
+  language subscription per application tree, with live translation and disposal. All 11
+  languages, prefix normalization, fallback and storage/document behavior remain intact.
+- Added the Solid shell/runtime and settings navigation for Appearance and Language. Theme
+  applies before rendering and syncs to the native window. Bootstrap owns context-menu and
+  optional performance listeners, cancels late mounting on disposal, and supports HMR.
+- Ported window controls, buttons, icons, chips, alerts, progress, sliders and segmented
+  radios with existing markup/classes and controlled updates. Native window reads discard
+  stale completions and late listener registration unlistens after disposal.
+- Added portal layers, nested Escape ordering, focus wrapping/restoration, inert background,
+  scroll locking, retained exit presence and live reduced motion. Closing releases modality
+  immediately. `createModalSnapshot` lets future feature models retain cleared draft values
+  during exit; mounted Solid children continue reacting unless their values use that helper.
+- Added settings loading/failure recovery and the lightbox loading/error boundary for stage
+  6's media view. Settings and the lightbox boundary prefetch after 1,500 ms. Cleanup cancels
+  the timer; rejected chunks retain reload/Back/Close presentations.
+- Shared framework-independent theme, modal animation and segmented-highlight measurement
+  with React. Corrected owning architecture, IPC, localization and test documentation.
+
+Tests moved or added:
+
+- API and theme suites moved with their assertions intact. All 699 reference tests remain.
+- Solid has 35 tests, including the four stage-1 bootstrap checks. New coverage exercises
+  window actions, late registration and stale reads; reactive control attributes and icons;
+  radio keyboard/geometry behavior; rejected controlled input; nested/locked dialogs;
+  focus and root-attribute restoration; exit snapshots, cancellation and reduced motion;
+  lazy success/failure/reset; all languages; theme persistence; settings remounts; context
+  menus, delayed prefetch and performance-observer cleanup.
+- React presence/StrictMode tests still run against the shared animation helper. Solid
+  verifies ownership and disposal directly. Feature-specific confirmation tests remain
+  with React until their planned migration stages.
+- Desktop shell comparisons now run serially for either selected renderer using the
+  existing isolated harness. They cover both themes, English/Polish, three widths,
+  persisted reloads, native control geometry and Escape focus restoration.
+
+Verification, with evidence under `artifacts/solid2/stage2/`:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `bun run test` | 89 files, 734 passed | `frontend-final.log` |
+| `node node_modules/vitest/vitest.mjs list --json` | 577 React, 122 shared, 35 Solid; no duplicated moved suites | `discovery.json` |
+| `bun run test --project solid` | 5 files, 35 passed | `solid-final.log` |
+| `bun run typecheck` | All three contexts pass | `types.log` |
+| `bun run test:frontends` | Both builds and renderer/module-entry separation pass; leaves React assets in `dist` | `builds-final.log`, `react-modules.json`, `solid-modules.json` |
+| `bun run test:backend` | 206 passed, 2 pre-existing diagnostic tests ignored | `backend.log` |
+| `bun run lint` / `bun run format:check` / `bun run locale:check` | Passed; all 11 locales valid | `lint.log`, `format.log`, `locales.log` |
+| `python3 artifacts/solid2/stage2/check-extraction.py` | 45 API signatures/bodies and 48 declarations match stage 1 after whitespace/leading-union normalization | `extraction.log` |
+| `python3 artifacts/solid2/stage2/compare-controls.py` | All 12 React/Solid samples match for dimensions, fonts, colors, radius, viewport fit and persisted values | `control-parity.log` |
+| `PATH="/tmp/solid2-tools:$PATH" bun run privacy:check` | Passed for existing history and tracked working files; repeated after staging | `privacy.log`, `privacy-staged.log` |
+| `git diff --check` | Passed | Working/staged diff review |
+
+Desktop commands use a private Xvfb/D-Bus session and fresh XDG directories under `/tmp`.
+The ignored wrapper is `artifacts/solid2/stage2/run-desktop.sh`.
+
+```sh
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_SOLID_SHELL=1 bash artifacts/solid2/stage2/run-desktop.sh
+MEDIATAGGER_FRONTEND=react MEDIATAGGER_SOLID_SHELL=1 bash artifacts/solid2/stage2/run-desktop.sh --spec e2e/specs/solid-bootstrap.e2e.js
+```
+
+Solid passed 13 desktop cases. React passed the 12 shared cases and skipped the Solid-only
+bootstrap case. Final logs are `desktop-solid-final.log` and `desktop-react-final.log`.
+Screenshots and measurements are in `solid/` and `react/`. Inspected actual English/light
+and Polish/dark Solid pixels, including 320px, and the React English/light reference.
+Only shell controls are compared: Solid intentionally has no library results or remaining
+settings sections yet. Screenshot positions differ where React contains those sections.
+
+Self-review findings and fixes:
+
+- Solid 2 disallows `onCleanup` inside `onSettled`. Native window registration now returns
+  its cleanup directly; the late-registration test verifies it still releases listeners.
+- Native radio and range inputs can change without the parent accepting a value. Controls
+  restore the committed value while awaiting the batched parent update; tests cover both
+  rejected and accepted input, external updates, and native radio keyboard behavior.
+- Overlapping native window reads could publish an older maximized/fullscreen result.
+  A synchronous generation guard rejects that completion; a deferred-promise test proves it.
+- Animation and highlight measurement were initially duplicated. Both renderers now call
+  shared DOM helpers. The complete frontend suite passed after extraction.
+- The first React desktop comparison had 4 passes and 8 failures because WebDriver scrolled
+  the narrow reference navigation beneath its sticky header. The test now returns the main
+  scroller to the top before clicking section links. Application navigation is unchanged.
+  `desktop-react-initial.log` retains the failed run; the corrected comparison passed.
+- The initial sandbox could not bind the private D-Bus socket. Desktop checks then ran with
+  approved local socket access. Early wrappers hit portal FUSE mounts during cleanup after
+  successful WDIO runs. The wrapper now retries removal after session exit. Old temporary
+  profiles were removed separately; final runs check cleanup as part of their exit status.
+
+Review covered the actual diff, unchanged command serialization, React compatibility,
+reactive props and event behavior, ownership, late completion, focus/layer cleanup, module
+boundaries, test discovery and compiled renderer graphs. Staged content was reviewed for
+scope and privacy before the local commit; raw logs, screenshots and runtime profiles
+remain untracked.
+
+Remaining limits: no full feature parity, native-video playback or cross-platform claim;
+no packaging rebuild for this frontend-only stage. The original two Rust diagnostics remain
+ignored. Shared library state starts at stage 3, gallery/search at stage 4, lightbox media
+at stage 6, and remaining settings workflows at stage 8.
+
+Next stage: [shared library state](03-library-state.md).

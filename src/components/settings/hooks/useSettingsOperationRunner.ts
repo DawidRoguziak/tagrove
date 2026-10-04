@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../../../platform/tauri/events";
 import { useTranslation } from "react-i18next";
 import {
   createSectionOperationState

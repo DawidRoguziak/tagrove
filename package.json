@@ -6,13 +6,13 @@
   "type": "module",
   "packageManager": "bun@1.4.0",
   "engines": {
-    "node": ">=20.19 <21 || >=22.12"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "icons:generate": "tauri icon public/tagrove.svg --output src-tauri/icons --png 16 --png 32 --png 64 --png 128 --png 256 --png 512",
     "dev": "vite",
     "build": "bun run typecheck && vite build",
-    "typecheck": "tsc --noEmit --project tsconfig.json --pretty false && tsc --noEmit --project tsconfig.node.json --pretty false",
+    "typecheck": "tsc --noEmit --project tsconfig.json --pretty false && tsc --noEmit --project tsconfig.solid.json --pretty false && tsc --noEmit --project tsconfig.node.json --pretty false",
     "lint": "biome lint .",
     "format:check": "biome format scripts vite.config.ts vitest.config.ts",
     "locale:check": "node scripts/validate-locales.mjs",
@@ -42,9 +42,12 @@
     "tauri": "tauri",
     "test:packaging": "python3 -m unittest discover -s packaging/tests -v",
     "privacy:check": "python3 scripts/privacy-check.py",
-    "test:privacy": "python3 -m unittest discover -s scripts -p \"test_privacy.py\" -v"
+    "test:privacy": "python3 -m unittest discover -s scripts -p \"test_privacy.py\" -v",
+    "test:frontends": "node scripts/check-frontends.mjs",
+    "test:e2e-build": "node --test e2e/build-e2e.test.js"
   },
   "dependencies": {
+    "@solidjs/web": "2.0.0-rc.13",
     "@tanstack/react-virtual": "^3.14.10",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
@@ -54,10 +57,14 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^16.6.6",
+    "solid-js": "2.0.0-rc.13",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.13",
+    "@solidjs/compiler": "2.0.0-rc.13",
+    "@solidjs/testing-library": "1.0.0-beta.3",
+    "@solidjs/vite-plugin": "3.0.0-next.47",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^6.10.0",

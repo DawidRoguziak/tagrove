@@ -5,7 +5,12 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowSyntheticDefaultImports": true,
-    "noEmit": true
+    "noEmit": true,
+    "allowJs": true
   },
-  "include": ["vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "scripts/frontend.mjs"
+  ]
 }

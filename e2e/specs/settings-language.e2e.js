@@ -18,6 +18,12 @@ suite("Separate language settings card", function () {
     await browser.refresh();
   });
 
+  after(async () => {
+    await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
+    await browser.refresh();
+    await browser.setWindowSize(1440, 900);
+  });
+
   for (const language of ["en", "pl"]) {
     for (const width of [1440, 600, 320]) {
       it(`lays out both cards and persists ${language} at ${width}px`, async () => {
@@ -54,7 +60,6 @@ suite("Separate language settings card", function () {
             adjacent: appearance.nextElementSibling === language,
             themeHasSelect: !!appearance.querySelector("select"),
             stacked: select.top >= text.bottom,
-            sideBySide: select.left >= text.right,
             previewHeights: [...appearance.querySelectorAll(".theme-preview")].map(element => element.getBoundingClientRect().height),
             fits: [...document.querySelectorAll("#settings-appearance, #settings-language, #settings-language-select, .window-controls")].every(element => {
               const rect = element.getBoundingClientRect();
@@ -67,7 +72,8 @@ suite("Separate language settings card", function () {
         });
         assert.equal(geometry.adjacent, true);
         assert.equal(geometry.themeHasSelect, false);
-        assert.equal(width >= 1024 ? geometry.sideBySide : geometry.stacked, true);
+        // LanguageSection keeps the select below its description at every width.
+        assert.equal(geometry.stacked, true);
         assert.deepEqual(geometry.previewHeights, [64, 64]);
         assert.equal(geometry.fits, true, JSON.stringify(geometry.bounds));
         assert.equal(geometry.stored, language);

@@ -10,6 +10,17 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
 
+# Bun 1.4.0 hashes prerelease tags in cache directory names. Keep support
+# limited to the reviewed Solid toolchain; verify new pins with an offline install.
+# See docs/development/linux-packaging.md, "Offline Bun prereleases".
+BUN_PRERELEASE_CACHE_VERSIONS = {
+    "2.0.0-rc.13": "2.0.0-98a7d2f7a9c83bb0",
+    "3.0.0-next.47": "3.0.0-8cbfe09f91d6122d",
+    "1.0.0-beta.2": "1.0.0-4049f5e8f1219d89",
+    "1.0.0-beta.3": "1.0.0-7b1dbbf11ca1d290",
+}
+
+
 def read_bun_lock(path):
     # Bun's text lockfile is JSON with trailing commas. Preserve string contents.
     text = re.sub(r'("(?:\\.|[^"\\])*")|,\s*(?=[}\]])',
@@ -35,7 +46,8 @@ def dependency_sources(root):
         seen.add(locator)
         if registry or not re.fullmatch(r"(?:@[\w.-]+/)?[\w.-]+", name):
             raise ValueError(f"Unsupported non-registry Bun dependency: {locator}")
-        if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        cache_version = BUN_PRERELEASE_CACHE_VERSIONS.get(version, version)
+        if cache_version == version and not re.fullmatch(r"\d+\.\d+\.\d+", version):
             raise ValueError(f"Bun cache naming needs explicit support for {locator}")
         algorithm, digest = integrity.split("-", 1)
         if algorithm not in ("sha512", "sha256"):
@@ -44,7 +56,7 @@ def dependency_sources(root):
             "type": "archive",
             "url": f"https://registry.npmjs.org/{name}/-/{name.split('/')[-1]}-{version}.tgz",
             algorithm: base64.b64decode(digest, validate=True).hex(),
-            "dest": f"bun-cache/{name}@{version}@@@1",
+            "dest": f"bun-cache/{name}@{cache_version}@@@1",
         })
     lock = tomllib.loads((root / "src-tauri/Cargo.lock").read_text())
     for package in lock["package"]:

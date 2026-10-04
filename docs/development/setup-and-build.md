@@ -8,7 +8,7 @@ This page describes the setup and build behavior implemented by the current repo
 
 Linux packages target x86_64. The Docker workflow builds Flatpak against GNOME 50 and AppImage on Debian 12. The Arch-native executable remains an explicit build option. The host needs Docker, Bash, GNU file/coreutils/findutils/diffutils, `flock`, Python 3.12 or later, and Gitleaks 8.30.1. Bun, Node, Rust, and media libraries are installed inside Docker. Install the checksum-pinned scanner with `bash scripts/install-gitleaks.sh /path/to/tools` and add that directory to `PATH`. Package privacy inspection also needs binutils, Flatpak and OSTree.
 
-Toolchains remain Bun `1.4.0`, Node `22.22.0`, and Rust `1.98.0`. Portable builds verify the checksums in [toolchains.json](../../packaging/linux/toolchains.json). Keep `.nvmrc`, `packageManager`, `rust-toolchain.toml`, `Cargo.toml`, and packaging pins aligned when updating a toolchain. Lockfiles change only when dependency resolution changes.
+Node must satisfy `>=22.12.0`. Toolchains remain Bun `1.4.0`, Node `22.22.0`, and Rust `1.98.0`. Portable builds verify the checksums in [toolchains.json](../../packaging/linux/toolchains.json). Keep `.nvmrc`, `packageManager`, `rust-toolchain.toml`, `Cargo.toml`, and packaging pins aligned when updating a toolchain. Lockfiles change only when dependency resolution changes.
 
 ### Docker packages
 
@@ -92,13 +92,13 @@ Build and development entry points are listed below. [Testing and quality comman
 | Command | What it does |
 | --- | --- |
 | `bun run dev` | Starts only the Vite development server. It does not compile or launch the Rust/Tauri application. |
-| `bun run build` | Runs both no-emit TypeScript checks, including Vite/Vitest configuration, then `vite build`. |
+| `bun run build` | Checks React, Solid, and Vite/Vitest TypeScript contexts, then builds the selected frontend. |
 | `bun run icons:generate` | Rasterizes the Obsidian Grove SVG master into the checked-in native PNG icon sizes using the local Tauri CLI. |
 | `bun run preview` | Serves an existing Vite production build for browser inspection. It does not build first and does not launch Tauri. |
 | `bun run tauri:dev` | Runs `tauri dev --config src-tauri/tauri.conf.dev.json`. This is the canonical desktop development command and selects the isolated development identifier and title. Tauri starts `bun run dev` through `beforeDevCommand`. |
 | `bun run tauri:build:release` | Runs `tauri build` for the supported Linux target. The Docker release command below is preferred for artifact production. |
 | `bun run tauri:build:linux` | Creates the unbundled native Linux release executable. This is the inner container command; use `./scripts/build-linux-docker.sh` from the host. |
-| `bun run tauri:build:e2e` | Runs `node ./e2e/build-e2e.js`, validates the E2E identifier/title/target, and creates an unbundled debug executable in `src-tauri/target-e2e/debug/`. It does not build the frontend itself. |
+| `bun run tauri:build:e2e` | Runs `node ./e2e/build-e2e.js`, validates the E2E identifier/title/target, and creates an unbundled debug executable in `src-tauri/target-e2e/debug/`. It first builds the selected frontend into `dist/`. |
 | `bun run build:linux:docker` | Convenience wrapper for `scripts/build-linux-docker.sh`; requires Bun on the host, unlike invoking the shell script directly. |
 | `bun run tauri` | Exposes the local Tauri CLI directly for explicit subcommands. It does not select the safe development overlay on its own. |
 
@@ -106,9 +106,30 @@ Build and development entry points are listed below. [Testing and quality comman
 
 ### Vite-only browser development
 
-Use `bun run dev` when work only needs the frontend development server. `vite.config.ts` fixes the server to port `1420`, sets `strictPort: true`, and disables screen clearing. If port 1420 is occupied, startup fails instead of silently choosing a different port. The React and Tailwind Vite plugins are enabled.
+Use `bun run dev` when work only needs the frontend development server. `vite.config.ts` fixes the server to port `1420`, sets `strictPort: true`, and disables screen clearing. If port 1420 is occupied, startup fails instead of silently choosing a different port. Tailwind and the selected renderer plugin are enabled.
 
 Vite-only mode is not a complete application runtime. Code paths that invoke Tauri commands, use Tauri dialogs, or load files through the Tauri asset protocol need a desktop process and will not behave like the packaged app in an ordinary browser.
+
+### Temporary Solid 2 selection
+
+During the [migration](../solid2/README.md), `MEDIATAGGER_FRONTEND=react|solid`
+selects one entry and compiler before bundling. Unset means React; any other value,
+including an empty string, fails. Both entries use `index.html`, `dist/`, and port 1420.
+Solid currently contains only a bootstrap screen. The functional reference remains React.
+
+```sh
+MEDIATAGGER_FRONTEND=solid bun run build
+MEDIATAGGER_FRONTEND=solid bun run tauri:dev
+MEDIATAGGER_FRONTEND=solid bun run test:e2e:tauri
+bun run test:frontends
+```
+
+The last command builds Solid then React and checks the actual module graphs for renderer
+separation. It leaves the default React assets in `dist/` and saves module lists under
+ignored `artifacts/solid2/stage1/`. Renderer comparisons must run serially because they
+share `dist/` and the E2E target. All native profiles and cleanup guards remain in force.
+The persistent controller currently requires the functional React UI for fixture setup;
+use the WDIO bootstrap spec to launch Solid until that UI has been ported.
 
 ### Canonical Tauri development
 
@@ -128,7 +149,7 @@ Do not use an unqualified debug Tauri launch with the base configuration. In deb
 
 `bun run build` runs `bun run typecheck && vite build`:
 
-1. Two no-emit `tsc` passes read `tsconfig.json` and `tsconfig.node.json`. They type-check `src/`, `vite.config.ts`, and `vitest.config.ts`. The application configuration is strict and rejects unused locals, unused parameters, and switch fallthrough.
+1. Three no-emit `tsc` passes read `tsconfig.json`, `tsconfig.solid.json`, and `tsconfig.node.json`. They separately check React sources, Solid sources, and Vite/Vitest configuration. The application configuration is strict and rejects unused locals, unused parameters, and switch fallthrough.
 2. `vite build` bundles the frontend into `dist/`, Vite's default output directory. The base Tauri configuration points `frontendDist` at `../dist` relative to `src-tauri/`.
 
 `bun run typecheck` exposes the TypeScript pass separately. Vite development transpiles modules but is not a substitute for this gate.
@@ -137,7 +158,7 @@ Do not use an unqualified debug Tauri launch with the base configuration. In deb
 
 The [architecture profile table](../architecture/system-overview.md#profiles-identifiers-and-data-isolation) owns identifiers, names, and app-data boundaries. Use `bun run tauri:dev` for development; a debug launch with the production identifier is rejected.
 
-The standalone `bun run tauri:build:e2e` consumes existing `dist/` because its overlay disables the frontend build. Run `bun run build` first or use `bun run test:e2e:tauri`, which builds the frontend automatically. The [desktop test guide](testing.md#real-desktop-e2e) owns target/title assertions, cleanup guards, and driver setup.
+Both standalone `bun run tauri:build:e2e` and `bun run test:e2e:tauri` use the shared helper to build fresh selected frontend assets before the native executable. The overlay disables the redundant Tauri build hook. The [desktop test guide](testing.md#real-desktop-e2e) owns target/title assertions, cleanup guards, and driver setup.
 
 ## Configuration ownership
 
@@ -145,12 +166,13 @@ The standalone `bun run tauri:build:e2e` consumes existing `dist/` because its o
 | --- | --- |
 | `package.json` | Node compatibility, JavaScript dependency ranges, and command entry points. |
 | `bunfig.toml` / `bun.lock` | Bun install policy and exact resolved JavaScript dependency graph. |
-| `tsconfig.json` | Frontend language target, strictness, module resolution, included source, and no-emit type checking. |
+| `tsconfig.json` | Shared language target/strictness and React source/JSX context. |
+| `tsconfig.solid.json` | Solid source directories and the `@solidjs/web` JSX context. |
 | `tsconfig.node.json` | TypeScript project settings for `vite.config.ts` and `vitest.config.ts`. |
 | `.nvmrc` / `package.json` / `rust-toolchain.toml` | Exact development/release Node, Bun, and Rust versions plus the Node compatibility range. |
 | `biome.json` | JavaScript/TypeScript lint rules and formatting policy for configuration and quality scripts. |
 | `.github/workflows/privacy.yml` | Full-history privacy scan and privacy regression tests on pull requests and pushes to `main`. |
-| `vite.config.ts` | React/Tailwind integration and the fixed, strict development port. Vite defaults own `dist/` and the preview port because they are not overridden. |
+| `vite.config.ts` | Renderer selection, React or Solid compilation, Tailwind, and the fixed, strict development port. Vite defaults own `dist/` and the preview port because they are not overridden. |
 | `src-tauri/tauri.conf.json` | Shared product metadata, frontend hooks/locations, release window/security settings, and icons. |
 | `src-tauri/tauri.linux.conf.json` | Disables bundling for ordinary native Linux builds. |
 | `src-tauri/tauri.appimage.conf.json` / `tauri.flatpak.conf.json` | Package-specific bundling, resources and installation configuration; the Flatpak generator supplies the configured release identity. |
@@ -208,7 +230,6 @@ Run `bun install` for intentional JavaScript updates and an appropriate Cargo up
 - the rolling `archlinux:base-devel` image and system packages are not digest/version pinned, so a later clean container build can use newer native dependencies;
 - compatible-range manifests mean lockfiles must be preserved for repeatable resolution;
 - the debug guard permits only the established dev/E2E identifiers; custom debug profiles require an explicit isolation review and allowlist change;
-- a standalone E2E build can package stale or missing frontend assets because its automatic frontend build is disabled;
 - Vite-only development cannot validate native IPC, dialogs, asset-protocol loading, app-data paths, or packaged resource layout;
 - unbundled E2E builds do not prove the release artifact's exact shared-library environment.
 
@@ -237,7 +258,7 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **The app appears to have an empty library.** Check the selected identifier/profile before changing files. Release, dev, and E2E intentionally use different app-data directories.
 
-**`tauri:build:e2e` has missing or stale UI assets.** Run `bun run build` first. The E2E overlay deliberately disables `beforeBuildCommand`; only the full desktop E2E test orchestration builds the frontend automatically.
+**`tauri:build:e2e` fails before compiling Rust.** Check the frontend build output and `MEDIATAGGER_FRONTEND`. The build helper produces fresh frontend assets before invoking Tauri; the overlay disables the redundant Tauri `beforeBuildCommand`.
 
 **Video probing or thumbnails fail while images still work.** Confirm `ffmpeg` and `ffprobe` are on `PATH`. Application startup succeeding does not prove that both tools were found.
 

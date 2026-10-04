@@ -271,6 +271,7 @@ scrolls to the corresponding section without changing the URL or unmounting oper
 The active marker follows the scroll position; settings section choice is not persisted.
 Sections appear in scan, appearance, language, import/export, duplicates, and danger-zone order.
 Operations pair descriptions with actions in compact rows, stacking below 700px.
+Language keeps its selector below the description at every viewport width.
 Appearance uses native light/dark radio choices with decorative CSS previews. Only the
 selected choice is a Tab stop; arrow keys select the adjacent choice. The preference values,
 dark default, storage service and native theme synchronization are unchanged.

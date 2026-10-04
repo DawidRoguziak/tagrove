@@ -6,9 +6,9 @@ Rewrite the frontend using Solid 2 while preserving the current appearance, inte
 accessibility, persistence, and backend behavior. The working React application is the
 behavioral reference. Its directory structure does not constrain the new implementation.
 
-This directory contains a plan only. No migration stage has started. The planning session
-is limited to Markdown changes and the user-authorized local commit of these documents.
-Track subsequent implementation in [PROGRESS.md](PROGRESS.md).
+Implementation started with stage 1. React remains the functional reference and default
+entry; Solid has a separately compiled bootstrap. Track verification and completion in
+[PROGRESS.md](PROGRESS.md), and test ownership in [BEHAVIOR-INVENTORY.md](BEHAVIOR-INVENTORY.md).
 
 The planning baseline is commit `f11126dfafd40f877ecf5e496abc37d77a435e78` on
 `feature/rewrite-react-to-solid2`. During planning, all 699 frontend tests across 84 files

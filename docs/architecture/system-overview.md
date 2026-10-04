@@ -35,6 +35,10 @@ flowchart LR
     IPC -. "promise, event, or Channel message" .-> UI
 ```
 
+During the [Solid 2 migration](../solid2/README.md), React remains the default.
+`MEDIATAGGER_FRONTEND=solid` selects a separate bootstrap entry at `src/app/main.tsx`.
+It currently renders a status screen only; the flow below describes the functional React app.
+
 The normal request path is:
 
 1. `src/main.tsx` loads i18n and styles, applies the persisted theme before rendering, and mounts `App` under React `StrictMode`. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.

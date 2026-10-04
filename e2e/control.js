@@ -443,7 +443,6 @@ async function start() {
     ])
       await run(command, args);
     console.log(`BUILD ${id}; output: ${evidence}/process.log`);
-    await run("bun", ["run", "build"]);
     await run("bun", ["run", "tauri:build:e2e"]);
     // Apply isolation to runtime children, not build tools or the user's shell.
     env = {

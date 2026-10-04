@@ -1,8 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { selectFrontend } from "../scripts/frontend.mjs";
 import {
   buildE2eApp,
   e2eAppIdentifier,
@@ -12,8 +12,8 @@ import {
   validateE2eBuildConfiguration
 } from "./build-e2e.js";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const projectRoot = path.resolve(__dirname, "..");
+
+const frontend = selectFrontend();
 
 let tauriDriver;
 let shuttingDown = false;
@@ -33,18 +33,6 @@ function resolveTauriDriverPath() {
 
 function resolveNativeDriverPath() {
   return process.env.WEBKIT_WEBDRIVER_PATH ?? "/usr/bin/WebKitWebDriver";
-}
-
-function runOrFail(command, args, cwd) {
-  const result = spawnSync(command, args, {
-    cwd,
-    stdio: "inherit",
-    shell: true
-  });
-
-  if (result.status !== 0) {
-    throw new Error(`Command failed: ${command} ${args.join(" ")}`);
-  }
 }
 
 function resolveAppDataRoot() {
@@ -135,7 +123,7 @@ function onShutdown(fn) {
 export const config = {
   host: "127.0.0.1",
   port: 4444,
-  specs: ["./specs/**/*.e2e.js"],
+  specs: frontend === "solid" ? ["./specs/solid-bootstrap.e2e.js"] : ["./specs/**/*.e2e.js"],
   maxInstances: 1,
   capabilities: [
     {
@@ -154,11 +142,16 @@ export const config = {
   onPrepare: () => {
     e2eStartedAt = Date.now();
     console.log("[E2E] START Preparing MediaTagger desktop suite");
-    validateE2eBuildConfiguration();
-    fs.rmSync(e2eBinaryPath, { force: true });
-    clearE2eAppDataDir();
-    runOrFail("bun", ["run", "build"], projectRoot);
-    buildE2eApp();
+    try {
+      validateE2eBuildConfiguration();
+      fs.rmSync(e2eBinaryPath, { force: true });
+      clearE2eAppDataDir();
+      buildE2eApp();
+    } catch (error) {
+      // WDIO logs a rejected onPrepare hook but still starts workers.
+      console.error(error);
+      process.exit(1);
+    }
     console.log("[E2E] READY Desktop application build completed");
   },
   beforeSession: () => {

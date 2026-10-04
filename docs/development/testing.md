@@ -8,7 +8,7 @@ MediaTagger has four test layers. Use the lowest layer that can prove the behavi
 
 | Layer | Location | Runner and command | What it exercises | What it does not prove |
 | --- | --- | --- | --- | --- |
-| Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx`, and `src/__tests__/` | Vitest with `bun run test` | TypeScript services, hooks, React rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
+| Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx`, and `src/__tests__/` | Vitest with `bun run test` | TypeScript services, hooks, React/Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
 | Rust unit | `#[cfg(test)]` modules beside backend code in `src-tauri/src/` | Cargo through `bun run test:backend` | Isolated database helpers, validation, scanning/indexing helpers, thumbnail scheduling and parsing, backup helpers, and command/service logic | A JavaScript caller, desktop window, packaged resources, or a complete application workflow |
 | Rust integration and backend workflow | `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` | Cargo through `bun run test:backend`, or the focused package scripts below | File-backed SQLite and temporary-filesystem behavior across multiple backend modules | Tauri startup, IPC serialization, WebDriver, UI, profile isolation, or packaging |
 | Desktop E2E | `e2e/specs/*.e2e.js` | WebdriverIO, `tauri-driver`, and WebKitWebDriver on Linux | A real unbundled debug Tauri window, the JavaScript-to-Rust invoke bridge, selected UI workflows, and E2E profile/build isolation | Production app data, all native dialogs, or all locales |
@@ -28,9 +28,10 @@ Run commands from the repository root.
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
 | `bun run app:control` | Keeps an isolated desktop E2E session open on a private Xvfb display for UI interaction, screenshots, and console inspection; see persistent desktop control below. |
+| `bun run test:e2e-build` | Checks selected-frontend build order, profile/selection rejection, and WDIO failure exit with fake build tools in a disposable project. |
 | `bun run test:app-control` | Runs Node tests for controller input validation, local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Checks both MP4s with ffprobe for video and zero audio streams. Requires Linux local sockets, ffmpeg, and ffprobe. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
-| `bun run typecheck` | Runs no-emit checks for application code and Vite/Vitest configuration. |
+| `bun run typecheck` | Runs separate no-emit checks for React, Solid, and Vite/Vitest configuration. |
 | `bun run lint` | Runs Biome lint across its configured source, E2E, and script includes. |
 | `bun run format:check` | Checks formatting in `scripts`, `vite.config.ts`, and `vitest.config.ts`; it does not format application source or Markdown. |
 | `bun run locale:check` | Checks language resources and placeholder parity offline; see [localization](localization.md#automated-locale-contract). |
@@ -42,7 +43,7 @@ Run commands from the repository root.
 | `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with the explicit advisory exclusions in `audit:rust`. |
 | `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, and desktop E2E. It stops at the first failed layer. |
 
-`bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It deliberately does not run `bun run build`, so its Tauri overlay disables `beforeBuildCommand` and it consumes the `dist/` already on disk.
+`bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It runs `bun run build` for the selected renderer before invoking Tauri. Its overlay disables the redundant `beforeBuildCommand`.
 
 Focused examples:
 
@@ -63,10 +64,18 @@ Frontend checks, Rust checks, application tests, and Linux packaging are run exp
 
 ## Frontend tests and Vitest
 
+`vitest.config.ts` defines three projects. `shared` runs framework-independent suites
+once; `react` retains renderer-dependent reference tests; `solid` compiles the new target
+directories with the Solid plugin, browser export conditions, and inlined Solid dependencies.
+See the [suite inventory](../solid2/BEHAVIOR-INVENTORY.md) for ownership. Use
+`bun run test -- --project solid` or `--project react` for focused runs; `bun run test`
+runs all three. TypeScript uses separate JSX contexts in `tsconfig.json` and
+`tsconfig.solid.json`.
+
 `vitest.config.ts` is part of the test contract:
 
 - `environment: "jsdom"` provides a browser-like DOM, but it is not WebKitGTK or a Tauri runtime.
-- `setupFiles: "./src/test/setup.ts"` loads Testing Library's jest-dom matchers, stubs `IntersectionObserver` and `ResizeObserver`, supplies `requestAnimationFrame`/`cancelAnimationFrame` fallbacks, and changes i18next to English.
+- All projects share `src/test/setup-dom.ts` for jest-dom matchers, observers, animation-frame fallbacks, storage and the controlled suggestion worker. React setup additionally awaits i18next English selection. Solid setup explicitly disposes mounted roots after each test.
 - `globals: false` means every test imports `describe`, `it`, `expect`, `vi`, and other Vitest APIs explicitly.
 - `css: true` makes Vitest process imported CSS instead of replacing every stylesheet with an empty stub.
 - `pool: "forks"` runs tests in child-process workers. `maxWorkers: 2` limits concurrency because the suite is memory-heavy.
@@ -74,7 +83,7 @@ Frontend checks, Rust checks, application tests, and Linux packaging are run exp
 
 Keep frontend tests next to the owning module in `__tests__`, using the existing `.test.ts`/`.test.tsx` naming. Pure services should use direct inputs and outputs. Hooks should use `renderHook`; components should use Testing Library queries and `userEvent` where user behavior matters. Mock Tauri APIs and repository API modules explicitly with `vi.mock`, reset mock implementations and timers in `beforeEach`/`afterEach`, and clear storage when a test changes persistent browser state. Do not treat a mocked `invoke` assertion as proof that Rust accepts the payload; that requires a Rust contract test or desktop E2E.
 
-The global setup changes i18n to English asynchronously with `void i18n.changeLanguage("en")`. Tests that change language or rely on persisted language must restore their state; the setup is not rerun before every individual test.
+The React setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely on persisted language must restore their state; the setup is not rerun before every individual test.
 
 ## Rust unit and integration tests
 
@@ -124,14 +133,19 @@ Release production is documented in [setup and builds](setup-and-build.md#docker
 
 The harness runs `media_tagger` with WebKitWebDriver. When running the suite through Xvfb from a Wayland session, unset `WAYLAND_DISPLAY` and set `GDK_BACKEND=x11`; setting `DISPLAY` alone does not force GTK onto the private display. Only the E2E window profile permits resizing down to 320 × 240 so responsive lightbox behavior can be tested; dev and release retain their 1000 × 720 minimum.
 
+With `MEDIATAGGER_FRONTEND=solid`, the desktop harness selects only
+`solid-bootstrap.e2e.js`, which checks mount and reload in the live native window.
+The default React selection keeps the existing workflow suite. Explicit `--spec` flags
+still override discovery. Run renderer comparisons serially with fresh temporary profiles.
+
 ### Build, driver, and session order
 
 `bun run test:e2e:tauri` performs these steps in order:
 
 1. WebdriverIO `onPrepare` records the start time and validates the E2E build configuration.
 2. It removes only the expected old E2E executable and calls the guarded E2E app-data cleanup.
-3. It runs `bun run build`, producing a fresh frontend `dist/`.
-4. `buildE2eApp()` validates again, removes only the expected executable, sets `CARGO_TARGET_DIR` to the isolated target, and runs `tauri build --debug --no-bundle --config src-tauri/tauri.conf.e2e.json -- --locked`.
+3. `buildE2eApp()` validates again and runs `bun run build`, producing a fresh selected frontend in `dist/`. A failed build stops WDIO before starting workers.
+4. The helper removes only the expected executable, sets `CARGO_TARGET_DIR` to the isolated target, and runs `tauri build --debug --no-bundle --config src-tauri/tauri.conf.e2e.json -- --locked`.
 5. The build helper verifies that the expected executable exists.
 6. WebdriverIO `beforeSession` starts `tauri-driver` with `--native-driver <WEBKIT_WEBDRIVER_PATH>`.
 7. WebdriverIO opens one session for the isolated application. `maxInstances: 1` keeps the shared desktop state serial.
@@ -629,3 +643,15 @@ unmount any session-owned FUSE mounts below `$scratch/runtime/doc` and
 `$scratch/runtime/gvfs` before removing the scratch directory. Desktop screenshots and IPC evidence stay local under
 `artifacts/`; keep redirected command logs local as well. No media or raw desktop
 artifacts accompany this report.
+
+## Solid migration reference capture
+
+`MEDIATAGGER_SOLID_REFERENCE=1` enables `solid-reference.e2e.js` for React. It indexes
+one disposable PNG, holds a real details response at the fetch boundary, captures the
+disabled tag editor and loading state, then releases the response and checks the enabled
+editor. Screenshots remain under ignored `artifacts/solid2/stage1/`. This is controlled
+latency for reproducible capture; it does not measure backend latency.
+
+The settings-language spec restores English and desktop size after its locale matrix,
+so subsequent English-selector scenarios remain independent. Its geometry assertion
+matches the current stacked selector at every width.

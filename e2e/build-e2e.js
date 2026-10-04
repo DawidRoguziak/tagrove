@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { selectFrontend } from "../scripts/frontend.mjs";
 
 const currentFile = fileURLToPath(import.meta.url);
 const e2eDir = path.dirname(currentFile);
@@ -35,7 +36,14 @@ export function validateE2eBuildConfiguration() {
 }
 
 export function buildE2eApp() {
+  const frontend = selectFrontend();
   validateE2eBuildConfiguration();
+  const frontendBuild = spawnSync("bun", ["run", "build"], {
+    cwd: projectRoot,
+    stdio: "inherit",
+    env: { ...process.env, MEDIATAGGER_FRONTEND: frontend }
+  });
+  if (frontendBuild.status !== 0) throw new Error("E2E frontend build failed");
   fs.rmSync(e2eBinaryPath, { force: true });
 
   const result = spawnSync(

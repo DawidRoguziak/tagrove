@@ -61,6 +61,33 @@ class ManifestTests(unittest.TestCase):
     def setUp(self):
         self.publisher = json.loads((ROOT / 'packaging/flatpak/publisher.json').read_text())
 
+    def test_prerelease_cache_destinations_install_offline_with_pinned_bun(self):
+        self.assertEqual(subprocess.check_output(['bun', '--version'], text=True).strip(),
+                         json.loads((ROOT / 'package.json').read_text())['packageManager'].split('@')[1])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'src-tauri').mkdir()
+            (root / 'src-tauri/Cargo.lock').write_text('version = 4\npackage = []\n')
+            versions = ['2.0.0-rc.13', '3.0.0-next.47', '1.0.0-beta.3', '1.0.0-beta.2']
+            dependencies = {f'@fixture/pre{index}': version for index, version in enumerate(versions)}
+            (root / 'package.json').write_text(json.dumps({'dependencies': dependencies}))
+            packages = {name: [f'{name}@{version}', '', {}, 'sha512-' + 'AA==' ]
+                        for name, version in dependencies.items()}
+            (root / 'bun.lock').write_text(json.dumps({'lockfileVersion': 1,
+                'workspaces': {'': {'dependencies': dependencies}}, 'packages': packages}))
+            for source in generate.dependency_sources(root):
+                if source['type'] != 'archive':
+                    continue
+                folder = root / source['dest']
+                folder.mkdir(parents=True)
+                name = source['url'].split('/-/')[0].removeprefix('https://registry.npmjs.org/')
+                (folder / 'package.json').write_text(json.dumps({'name': name, 'version': dependencies[name]}))
+            subprocess.run(['bun', 'install', '--offline', '--frozen-lockfile', '--ignore-scripts',
+                            '--cache-dir', str(root / 'bun-cache')], cwd=root, check=True,
+                           capture_output=True, text=True)
+            for name, version in dependencies.items():
+                self.assertEqual(json.loads((root / 'node_modules' / name / 'package.json').read_text())['version'], version)
+
     def test_sources_match_lockfile_integrity_and_offline_build(self):
         manifest = generate.generate(ROOT, self.publisher)
         sources = manifest['modules'][-1]['sources']

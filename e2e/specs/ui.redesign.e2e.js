@@ -204,6 +204,10 @@ suite("UI redesign desktop review", function () {
             await click('button[aria-label="Close asset panel"]');
             await browser.pause(250);
           }
+          // Missing-element probes can outlast the three-second idle timeout.
+          // Reveal controls through user input before checking their hit targets.
+          await browser.keys("Shift");
+          await $('button[aria-label="Close preview"]').waitForClickable();
           const layout = await browser.execute(() => {
             const controls = document.querySelector('.lightbox-media-controls').getBoundingClientRect();
             const stage = document.querySelector('[data-lightbox-media-stage]').getBoundingClientRect();

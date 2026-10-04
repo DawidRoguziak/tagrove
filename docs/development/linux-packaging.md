@@ -70,6 +70,18 @@ Flatpak compilation runs with Docker `--network none`, Flatpak `--unshare=networ
 
 AppImage uses Debian 12, a pinned Bun/Node/Rust toolchain and checksum-pinned linuxdeploy, launcher, GTK/GStreamer plugins and AppImage output plugin. The compiler/bundler runs in a separate Docker container with no network access. Debian security packages can change; the output records their versions and source package names. The optional native target retains its rolling Arch base and runtime requirements.
 
+### Offline Bun prereleases
+
+The migration pins Solid prereleases. Bun 1.4.0 replaces their prerelease tags with
+hashes in cache directory names. `packaging/flatpak/generate.py` supports the four
+reviewed versions explicitly and continues to reject unknown prereleases and build
+metadata. Tarball URLs and integrity digests still come from `bun.lock`.
+The formatter is in [Bun's pinned cache implementation](https://github.com/oven-sh/bun/blob/bun-v1.4.0/src/install/PackageManager/PackageManagerDirectories.rs).
+`test_prerelease_cache_destinations_install_offline_with_pinned_bun` populates generated
+cache paths with synthetic packages, then runs a frozen offline install using the pinned
+Bun executable. A later RC or Bun upgrade must reverify these paths. This test does not
+replace a full Flatpak build.
+
 ## Verification
 
 With the pinned Gitleaks on `PATH`, run `bun run test:privacy` for synthetic secrets, staged/history-only leaks, nested private files, shallow histories and exact source archives. Run `bun run test:packaging` or `python3 -m unittest discover -s packaging/tests -v` for source generation, publication validation, checksum inventory, duplicate-bundle rejection, failed-build preservation, and rollback after a later format fails to publish. Test fixtures use temporary directories.

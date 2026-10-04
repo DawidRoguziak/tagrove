@@ -2,10 +2,10 @@ import { createEffect, createMemo, createSignal } from "solid-js";
 import {
   getFileNameFromPath,
   validateDuplicateResolutionChanges
-} from "../../components/settings/services/duplicateValidationService";
+} from "./duplicateValidationService";
 import { useLanguage } from "../../i18n/solid";
-import type { DuplicateGroup } from "../../types";
-import type { DuplicateResolutionChange } from "../../components/settings/types";
+import type { DuplicateGroup } from "../../platform/tauri/contracts/maintenance";
+import type { DuplicateResolutionChange } from "./types";
 
 export function createDuplicateResolver(options: {
   open: boolean;

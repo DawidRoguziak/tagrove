@@ -4,7 +4,7 @@ import {
   DEFAULT_SEARCH_FILTERS,
   buildFilterDescriptor,
   serializeFilterDescriptor
-} from "../../components/app/services/filterService";
+} from "./filterService";
 import type { LibraryFilters } from "../../library/query/createAssetQuery";
 
 type Filters = typeof DEFAULT_SEARCH_FILTERS;

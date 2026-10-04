@@ -7,7 +7,7 @@ import {
 } from "@tanstack/virtual-core";
 import { useLanguage } from "../../i18n/solid";
 import type { BulkController, BulkGroupSaveResult } from "./createBulk";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 import { createAssetThumbnail } from "../../library/thumbnails/createAssetThumbnail";
 import { toMediaSrc } from "../../platform/tauri/assets";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../../ui/controls/ThumbnailImage";
@@ -16,7 +16,7 @@ import { UiButton } from "../../ui/controls/UiButton";
 import { UiIcon } from "../../ui/controls/UiIcon";
 import { createModalSnapshot } from "../../ui/overlays/createModalPresence";
 import { UiModal } from "../../ui/overlays/UiModal";
-import { reorderAssetIdsByDrop } from "../../components/bulk/grouping/services/bulkGroupOrderService";
+import { reorderAssetIdsByDrop } from "./bulkGroupOrderService";
 function OrderThumbnail(props: { id: number; store: ThumbnailStore }) {
   const current = createAssetThumbnail(
     untrack(() => props.store),

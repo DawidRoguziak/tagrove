@@ -1,14 +1,14 @@
 import { For } from "solid-js";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 type ChangeEvent<T> = Event & {
   currentTarget: T;
 };
 type ButtonEvent<T> = MouseEvent & {
   currentTarget: T;
 };
-import { isDuplicateGroupResolved } from "../../components/settings/services/duplicateValidationService";
-import type { DuplicateAsset, DuplicateGroup } from "../../types";
-import type { DuplicateResolutionChange } from "../../components/settings/types";
+import { isDuplicateGroupResolved } from "./duplicateValidationService";
+import type { DuplicateAsset, DuplicateGroup } from "../../platform/tauri/contracts/maintenance";
+import type { DuplicateResolutionChange } from "./types";
 import { DuplicateAssetCard } from "./DuplicateAssetCard";
 interface DuplicateGroupCardProps {
   group: DuplicateGroup;

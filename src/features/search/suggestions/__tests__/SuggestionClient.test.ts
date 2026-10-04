@@ -2,12 +2,12 @@ import { renderHook } from "@solidjs/testing-library";
 import { settle as act } from "../../../../test/settle";
 import { createKnownTags } from "../../../../library/vocabulary/createKnownTags";
 import { describe, expect, it, vi } from "vitest";
-import { SuggestionClient } from "../../../../components/search/worker/SuggestionClient";
+import { SuggestionClient } from "../SuggestionClient";
 import type {
   SuggestionRequest,
   SuggestionResponse
-} from "../../../../components/search/worker/protocol";
-import { readActiveToken } from "../../../../components/search/services/tokenService";
+} from "../protocol";
+import { readActiveToken } from "../tokenService";
 class ControlledWorker extends EventTarget implements Worker {
   onmessage: Worker["onmessage"] = null;
   onmessageerror: Worker["onmessageerror"] = null;

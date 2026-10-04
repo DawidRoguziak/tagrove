@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { Portal } from "@solidjs/web";
 import { useLanguage } from "../../i18n/solid";
-import type { SuggestionClient } from "../../components/search/worker/SuggestionClient";
+import type { SuggestionClient } from "../search/suggestions/SuggestionClient";
 import { createModalPresence, createModalSnapshot } from "../../ui/overlays/createModalPresence";
 import { createUiLayer } from "../../ui/overlays/UiLayerProvider";
 import { UiAlert } from "../../ui/controls/UiAlert";
@@ -18,7 +18,7 @@ import {
 } from "./createLightboxPresentation";
 import type { LightboxModel } from "./createLightbox";
 import type { VideoBounds } from "../../platform/tauri/contracts/video";
-import type { SelectedAsset } from "../../types";
+import type { SelectedAsset } from "./types";
 
 const TRIGGER_ID = "lightbox-sidebar-trigger-button";
 interface Props {

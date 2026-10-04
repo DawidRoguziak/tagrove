@@ -248,7 +248,7 @@ suite("shared inline tag editor", function () {
     it(`persists ${kinds.join(" and ")} writes and places suggestions outside the scroll field`, async () => {
       for (const assetId of assetIds) {
         const details = await invoke("get_asset_details", { assetId });
-        await invoke("set_asset_tags", { assetId, tags: details.tags.filter(tag => tag !== "multi-proof") });
+        await invoke("set_asset_tags", { assetId, tags: details.tags.filter(tag => tag !== "multi-proof" && (assetId !== assetIds[0] || tag !== "suggestion-only")) });
       }
       await browser.refresh();
       await browser.setWindowSize(1100, 1000);

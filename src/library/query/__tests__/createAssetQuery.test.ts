@@ -1,7 +1,7 @@
 import { settle } from "../../../test/settle";
 import { renderHook, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssetSummary } from "../../../types";
+import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
 import { createAssetQuery } from "../createAssetQuery";
 
 const apiMocks = vi.hoisted(() => ({

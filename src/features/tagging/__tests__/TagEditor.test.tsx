@@ -2,7 +2,7 @@ import { cleanup, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal, onCleanup } from "solid-js";
 import { renderSolid } from "../../../test/renderSolid";
-import { SuggestionClient } from "../../../components/search/worker/SuggestionClient";
+import { SuggestionClient } from "../../search/suggestions/SuggestionClient";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TagEditor } from "../TagEditor";
 

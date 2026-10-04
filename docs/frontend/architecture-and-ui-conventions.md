@@ -1,8 +1,10 @@
 # Frontend architecture and UI conventions
 
-Implementation entry points: [app composition](../../src/App.tsx), [shell controller](../../src/components/app/hooks/useAppShellController.ts), [UI layer manager](../../src/components/UI/UiLayerProvider.tsx), [styles](../../src/styles.css).
+Implementation entry points: [app composition](../../src/app/App.tsx), [application runtime](../../src/app/createAppRuntime.ts), [UI layer manager](../../src/ui/overlays/UiLayerProvider.tsx), [styles](../../src/styles.css).
 
-This document describes the frontend structure that exists today. The React code and its tests are authoritative; this guide is a map for making compatible changes, not a proposal for a new framework.
+Solid 2 is the only frontend after stage 9. The current ownership summary below and source code
+are authoritative. The remaining detailed React-era sections are historical until the stage-10
+documentation rewrite; their old paths refer to Git history.
 
 Feature behavior belongs in the narrower canonical guides:
 
@@ -14,9 +16,9 @@ Feature behavior belongs in the narrower canonical guides:
 - [localization](../development/localization.md)
 - [testing](../development/testing.md) and [setup and build](../development/setup-and-build.md)
 
-## Solid shell during migration
+## Current Solid ownership
 
-React remains the default entry. `MEDIATAGGER_FRONTEND=solid` selects `src/app/main.tsx`.
+The normal HTML entry loads `src/app/main.tsx`; no renderer switch remains.
 Its `mountApplication` applies the stored theme before rendering, waits for i18next,
 and owns context-menu suppression and optional performance observation. Disposal also
 cancels a pending mount. `createAppRuntime` owns theme and view selection across remounts;
@@ -29,14 +31,14 @@ belong to the active media presentation and end on logical close. Their acknowle
 control sidebar visibility and focus; fullscreen retains the active player and session.
 
 Solid controls live under `src/ui/controls`, overlays under `src/ui/overlays`.
-Both renderers share theme persistence, modal animation, and segmented-control measurement
-under `src/ui/dom`. Solid modal registration ends on logical close while presence retains
+Theme persistence, modal animation, and segmented-control measurement live
+under `src/ui/dom`. Modal registration ends on logical close while presence retains
 the pointer shield through exit. Feature views that clear drafts on close must retain their
 visible values with `createModalSnapshot`, since mounted Solid children remain reactive.
 The settings view includes scanning, appearance, language, import/export, duplicates,
 clear-library and About. Its application-owned models preserve operations across navigation;
 the shell dispatches the process-guarded startup scan once. See the
-[settings guide](../subsystems/settings-operations.md#solid-implementation-during-migration). The sections below describe the React reference
+[settings guide](../subsystems/settings-operations.md#solid-implementation-during-migration). The sections below the current ownership summary describe the historical React reference
 unless they explicitly name a Solid module.
 
 The Solid runtime now owns `createLibrary` from `src/library/createLibrary.ts`. Its query,
@@ -354,7 +356,7 @@ Before changing frontend structure or UI behavior:
 
 1. Choose the lowest stable state owner and document whether the state survives view switches, component close/reopen, and app restart.
 2. Keep `App` declarative. Add feature orchestration to a focused hook/service and expose only the typed prop group the view needs.
-3. Keep components free of raw Tauri `invoke` calls; update `src/api.ts` and follow the IPC contract for boundary changes.
+3. Keep components free of raw Tauri `invoke` calls; update `src/platform/tauri` and follow the IPC contract for boundary changes.
 4. For mutations, await backend success before applying local patches. Update every in-memory representation, and refresh tags or query membership when affected.
 5. Make effects Strict-Mode-safe: unregister listeners/observers, cancel timers/frames, and ignore stale async responses.
 6. Preserve lazy boundaries, visible loading states, and failure recovery for settings and lightbox. Test a rejected chunk as well as a delayed one.

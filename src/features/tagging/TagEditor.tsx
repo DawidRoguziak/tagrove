@@ -1,5 +1,5 @@
 import { createEffect, onSettled, For } from "solid-js";
-import type { SuggestionClient } from "../../components/search/worker/SuggestionClient";
+import type { SuggestionClient } from "../search/suggestions/SuggestionClient";
 import { SearchTagator } from "../search/SearchTagator";
 import { UiIcon } from "../../ui/controls/UiIcon";
 

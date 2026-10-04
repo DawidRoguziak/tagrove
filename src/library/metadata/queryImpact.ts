@@ -8,7 +8,7 @@ type FilterDescriptor = {
 
 export function tagMutationRequiresRefresh(
   impact: TagQueryImpact,
-  filter: FilterDescriptor | string[]
+  filter: FilterDescriptor
 ): boolean {
   switch (impact.type) {
     case "none":
@@ -16,13 +16,9 @@ export function tagMutationRequiresRefresh(
     case "all":
       return true;
     case "tags": {
-      if (
-        !Array.isArray(filter) &&
-        filter.metaFilter?.type === "hasNoTags" &&
-        impact.tag_count_changed
-      )
+      if (filter.metaFilter?.type === "hasNoTags" && impact.tag_count_changed)
         return true;
-      const tags = Array.isArray(filter) ? filter : [...filter.include, ...filter.exclude];
+      const tags = [...filter.include, ...filter.exclude];
       const applied = new Set(tags.map((tag) => tag.trim().toLowerCase()));
       return impact.changed_tags.some((tag) => applied.has(tag));
     }

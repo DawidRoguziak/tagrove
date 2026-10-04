@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { createSettings } from "../createSettings";
 import { SettingsPanel } from "../SettingsPanel";
-import { ThumbnailStore } from "../../../hooks/services/thumbnailStore";
+import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import { renderSettings } from "./renderSettings";
 import { settle } from "../../../test/settle";
 const api = vi.hoisted(() => ({

@@ -5,7 +5,7 @@ import { SectionOperationStatus } from "../SectionOperationStatus";
 import type {
   SectionOperationState,
   ScanSettingsController
-} from "../../../components/settings/types";
+} from "../types";
 import { useLanguage } from "../../../i18n/solid";
 interface ScanSettingsSectionProps {
   highlighted?: boolean;

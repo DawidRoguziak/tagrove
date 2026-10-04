@@ -4,7 +4,7 @@ import { createLibrary } from "../../../../library/createLibrary";
 import { createLightbox } from "../../createLightbox";
 import LightboxModal from "../../LightboxModal";
 import { UiLayerProvider } from "../../../../ui/overlays/UiLayerProvider";
-import { SuggestionClient } from "../../../../components/search/worker/SuggestionClient";
+import { SuggestionClient } from "../../../search/suggestions/SuggestionClient";
 import { renderSolid } from "../../../../test/renderSolid";
 import { settle as act } from "../../../../test/settle";
 import { asset, summary, deferred } from "../../__tests__/fixtures";

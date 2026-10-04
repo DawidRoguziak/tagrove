@@ -1,12 +1,12 @@
 import { createSignal } from "solid-js";
 import { settle } from "../../../test/settle";
 import { renderSettings as render } from "./renderSettings";
-import { ThumbnailStore } from "../../../hooks/services/thumbnailStore";
+import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import { cleanup, fireEvent, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DuplicateGroup } from "../../../types";
-import { createSectionOperationState } from "../../../components/settings/services/operationStateService";
+import type { DuplicateGroup } from "../../../platform/tauri/contracts/maintenance";
+import { createSectionOperationState } from "../operationStateService";
 import { DuplicateResolverDialog } from "../DuplicateResolverDialog";
 function makeGroups(): DuplicateGroup[] {
   return [

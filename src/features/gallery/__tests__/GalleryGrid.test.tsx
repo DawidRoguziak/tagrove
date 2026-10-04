@@ -4,8 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createLibrary } from "../../../library/createLibrary";
 import { GalleryGrid } from "../GalleryGrid";
 import { LanguageProvider } from "../../../i18n/solid";
-import { ThumbnailStore } from "../../../hooks/services/thumbnailStore";
-import type { AssetSummary } from "../../../types";
+import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
+import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),

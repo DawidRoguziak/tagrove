@@ -10,7 +10,7 @@ import {
   applySingleSelectionAction,
   applyDoubleSelectionAction,
   type TagSelections
-} from "../../../components/tag-list/services/tagListSelectionService";
+} from "./tagListSelectionService";
 const EMPTY_TAGS: string[] = [];
 interface TagListModalProps {
   open: boolean;

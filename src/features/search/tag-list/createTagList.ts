@@ -4,8 +4,8 @@ import {
   createFallbackPage,
   dedupeKnownTags,
   mergeTagPages
-} from "../../../components/tag-list/services/tagListSelectionService";
-import type { TagListPage } from "../../../types";
+} from "./tagListSelectionService";
+import type { TagListPage } from "../../../platform/tauri/contracts/tags";
 const PAGE_SIZE = 100;
 export function createTagList(options: {
   open: () => boolean;

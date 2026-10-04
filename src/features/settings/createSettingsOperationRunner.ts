@@ -1,13 +1,13 @@
 import { createSignal, onCleanup } from "solid-js";
 import { listen } from "../../platform/tauri/events";
 import { useLanguage } from "../../i18n/solid";
-import { createSectionOperationState } from "../../components/settings/services/operationStateService";
-import { translateProgressMessage } from "../../components/settings/services/progressService";
-import type { ScanProgress } from "../../types";
+import { createSectionOperationState } from "./operationStateService";
+import { translateProgressMessage } from "./progressService";
+import type { ScanProgress } from "../../platform/tauri/contracts/scanning";
 import type {
   SectionOperationState,
   SettingsOperationSection
-} from "../../components/settings/types";
+} from "./types";
 
 interface OperationOptions {
   section: SettingsOperationSection;

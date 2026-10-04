@@ -17,7 +17,7 @@ export function renderSettings(element: () => JSX.Element) {
 
 import { createSettings } from "../createSettings";
 import { SettingsPanel } from "../SettingsPanel";
-import { ThumbnailStore } from "../../../hooks/services/thumbnailStore";
+import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 export function TestSettingsPanel() {
   const settings = createSettings({
     setLoading: () => {},

@@ -1,5 +1,5 @@
 import { createEffect, createSignal, untrack } from "solid-js";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import type { ThumbnailStore } from "./thumbnailStore";
 
 /** A tile owns one subscription, including when a virtual slot changes identity. */
 export function createAssetThumbnail(store: ThumbnailStore, assetId: () => number) {

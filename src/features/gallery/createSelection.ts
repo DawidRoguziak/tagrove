@@ -1,6 +1,6 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
-import type { BulkSelectionInteraction, SelectionRange } from "../../components/gallery/selection";
-import { containsIndex } from "../../components/gallery/services/selectionGeometry";
+import type { BulkSelectionInteraction, SelectionRange } from "./selection";
+import { containsIndex } from "./selectionGeometry";
 
 export function createSelection(options: {
   queryEpoch: () => number;

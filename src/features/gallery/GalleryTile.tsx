@@ -1,8 +1,8 @@
 import { untrack } from "solid-js";
 import { toMediaSrc } from "../../platform/tauri/assets";
 import { createAssetThumbnail } from "../../library/thumbnails/createAssetThumbnail";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
-import type { AssetSummary } from "../../types";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
+import type { AssetSummary } from "../../platform/tauri/contracts/assets";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../../ui/controls/ThumbnailImage";
 import { UiIcon } from "../../ui/controls/UiIcon";
 import { UiChip } from "../../ui/controls/UiChip";

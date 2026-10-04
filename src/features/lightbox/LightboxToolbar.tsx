@@ -3,8 +3,8 @@ import { LightboxInfoPanel } from "./LightboxInfoPanel";
 import { LightboxTagPanel } from "./LightboxTagPanel";
 import { LightboxDeleteConfirmDialog } from "./LightboxDeleteConfirmDialog";
 import { MediaGroupSetter } from "./MediaGroupSetter";
-import type { SelectedAsset } from "../../types";
-import type { SuggestionClient } from "../../components/search/worker/SuggestionClient";
+import type { SelectedAsset } from "./types";
+import type { SuggestionClient } from "../search/suggestions/SuggestionClient";
 
 export const SIDEBAR_CLOSE_BUTTON_ID = "lightbox-sidebar-close-button";
 

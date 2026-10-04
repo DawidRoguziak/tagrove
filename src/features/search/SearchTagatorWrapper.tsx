@@ -9,7 +9,7 @@ import { useLanguage } from "../../i18n/solid";
 import { TagListSearchLauncher } from "./tag-list/TagListSearchLauncher";
 import { SearchTagator } from "./SearchTagator";
 import type { SearchFilterValidationError } from "../../utils/media";
-import type { SuggestionClient } from "../../components/search/worker/SuggestionClient";
+import type { SuggestionClient } from "./suggestions/SuggestionClient";
 type SearchMediaKind = "all" | "image" | "gif" | "video";
 interface SearchTagatorWrapperProps {
   client: SuggestionClient;

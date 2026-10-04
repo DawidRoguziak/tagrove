@@ -1,4 +1,4 @@
-import type { AssetDetails, AssetSummary } from "../../../types";
+import type { AssetDetails, AssetSummary } from "../../../platform/tauri/contracts/assets";
 export function asset(id: number, changes: Partial<AssetDetails> = {}): AssetDetails {
   return {
     id,

@@ -2,7 +2,7 @@ import { renderSettings as render } from "./renderSettings";
 import { cleanup, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSectionOperationState } from "../../../components/settings/services/operationStateService";
+import { createSectionOperationState } from "../operationStateService";
 import { ScanSettingsSection } from "../sections/ScanSettingsSection";
 const originalMatchMedia = window.matchMedia;
 describe("ScanSettingsSection", () => {

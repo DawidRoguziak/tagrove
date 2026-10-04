@@ -1,7 +1,7 @@
 import { renderSettings as render } from "./renderSettings";
 import { cleanup, screen } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it } from "vitest";
-import type { SectionOperationState } from "../../../components/settings/types";
+import type { SectionOperationState } from "../types";
 import { SectionOperationStatus } from "../SectionOperationStatus";
 describe("SectionOperationStatus", () => {
   afterEach(() => {

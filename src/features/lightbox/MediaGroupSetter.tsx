@@ -2,7 +2,7 @@ import { UiButton } from "../../ui/controls/UiButton";
 import { UiIconButton } from "../../ui/controls/UiIconButton";
 import { useLanguage } from "../../i18n/solid";
 
-import { parseMediaGroupOrder } from "../../components/lightbox/services/parseMediaGroupOrder";
+import { parseMediaGroupOrder } from "./parseMediaGroupOrder";
 
 interface MediaGroupSetterProps {
   pending?: boolean;

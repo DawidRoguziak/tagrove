@@ -1,4 +1,4 @@
-import type { SuggestionClient } from "../../components/search/worker/SuggestionClient";
+import type { SuggestionClient } from "../search/suggestions/SuggestionClient";
 import { TagEditor } from "../tagging/TagEditor";
 import { UiAlert } from "../../ui/controls/UiAlert";
 import { UiButton } from "../../ui/controls/UiButton";

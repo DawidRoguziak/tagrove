@@ -1,6 +1,6 @@
 import { createEffect, createSignal, For } from "solid-js";
 import { Portal, type JSX } from "@solidjs/web";
-import type { TagSuggestion } from "../../../components/search/types";
+import type { TagSuggestion } from "./types";
 import { SearchSuggestionOption } from "./SearchSuggestionOption";
 const VIEWPORT_EDGE_GAP = 12;
 const INPUT_LIST_GAP = 8;

@@ -2,7 +2,6 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
-import { selectFrontend } from "../scripts/frontend.mjs";
 import {
   buildE2eApp,
   e2eAppIdentifier,
@@ -13,7 +12,6 @@ import {
 } from "./build-e2e.js";
 
 
-const frontend = selectFrontend();
 
 let tauriDriver;
 let shuttingDown = false;
@@ -123,7 +121,7 @@ function onShutdown(fn) {
 export const config = {
   host: "127.0.0.1",
   port: 4444,
-  specs: frontend === "solid" ? ["./specs/solid-bootstrap.e2e.js"] : ["./specs/**/*.e2e.js"],
+  specs: ["./specs/**/*.e2e.js"],
   maxInstances: 1,
   capabilities: [
     {
@@ -188,6 +186,12 @@ export const config = {
         `Refusing destructive E2E suite for unexpected application window: ${windowTitle}`
       );
     }
+    // Each spec starts from the same preferences. Reloads within a spec retain them.
+    await browser.execute(() => {
+      localStorage.setItem("media-tagger.language", "en");
+      localStorage.setItem("media-tagger.theme", "dark");
+    });
+    await browser.refresh();
   },
   afterSession: () => {
     closeTauriDriver();

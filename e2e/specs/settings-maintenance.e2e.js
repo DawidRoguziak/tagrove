@@ -6,10 +6,7 @@ import { copyPngFixtures } from "../fixtures.js";
 import { e2eWindowTitle } from "../build-e2e.js";
 
 const suite = process.env.MEDIATAGGER_SETTINGS_MAINTENANCE === "1" ? describe : describe.skip;
-const evidence = path.resolve(
-  "artifacts/solid2/stage8",
-  `maintenance-${process.env.MEDIATAGGER_FRONTEND ?? "react"}`
-);
+const evidence = path.resolve("artifacts/settings-maintenance");
 async function invoke(command, args = {}) {
   const result = await browser.executeAsync(
     (name, payload, done) => {

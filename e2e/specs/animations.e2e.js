@@ -23,7 +23,13 @@ async function click(selector) {
       getComputedStyle(document.getElementById("lightbox-sidebar-trigger-button")).opacity === "1"
     ));
   }
-  await (await $(selector)).click();
+  const element = await $(selector);
+  if (selector === "#lightbox-delete-button") {
+    // Returning from the drawer can leave the floating rail faded by inactivity.
+    await element.moveTo();
+    await browser.waitUntil(() => element.isClickable());
+  }
+  await element.click();
 }
 
 async function invoke(command, payload = {}) {
@@ -257,10 +263,34 @@ async function exercise(theme, disabled) {
   await browser.keys(["Control", "a"]);
   await browser.keys("Backspace");
   await browser.keys("Escape");
-  const modal = await check("dialog open", async () => {
-    await click('button[aria-label="Open tag list"]');
-    await $('#tag-list-filter-input').waitForDisplayed();
+  // Deliver the real tag response after the entrance sample. Otherwise a data
+  // arrival can change the dialog height during the geometry measurement.
+  await browser.execute(() => {
+    const native = window.__TAURI_INTERNALS__.invoke;
+    let release;
+    const ready = new Promise(resolve => { release = resolve; });
+    window.__releaseTagPage = () => {
+      window.__TAURI_INTERNALS__.invoke = native;
+      release();
+      delete window.__releaseTagPage;
+    };
+    window.__TAURI_INTERNALS__.invoke = function (command, ...args) {
+      const response = native.call(this, command, ...args);
+      return command === "list_tags" ? response.then(async value => { await ready; return value; }) : response;
+    };
   });
+  let modal;
+  try {
+    modal = await check("dialog open", async () => {
+      await click('button[aria-label="Open tag list"]');
+      await $('#tag-list-filter-input').waitForDisplayed();
+    });
+  } finally {
+    await browser.execute(() => window.__releaseTagPage?.());
+  }
+  await browser.waitUntil(() => browser.execute(() =>
+    document.querySelector('[role="dialog"]')?.textContent.includes("motion-example")
+  ));
   fades(modal, "open", disabled);
   if (!disabled) await browser.saveScreenshot(path.join(output, `dialog-${theme}-${await browser.execute(() => innerWidth)}.png`));
   fades(await check("dialog close", async () => browser.keys("Escape")), "close", disabled);

@@ -1,25 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  getStartupPopularTags,
-  getAssetSummariesByIds,
-  getAssetQueryPosition,
-  setAssetsMediaGroupBulk,
-  beginVideoOpen,
-  listScanRoots,
-  setScanRootAutoScan,
-  scanStartupRoots,
-  cancelVideoOpen,
-  setVideoControlLabels,
-  closeVideo,
-  controlVideo,
-  listAssets,
-  mergeAssetTagsBulk,
-  openVideo,
-  setAssetTags,
-  setVideoBounds,
-  toMediaSrc,
-  toggleAssetsFavoriteBulk
-} from "../../../api";
+import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
+import { getAssetSummariesByIds, getAssetQueryPosition, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
+import { listScanRoots, setScanRootAutoScan, scanStartupRoots } from "../scanning";
+import { beginVideoOpen, cancelVideoOpen, setVideoControlLabels, closeVideo, controlVideo, openVideo, setVideoBounds } from "../video";
 
 const coreMocks = vi.hoisted(() => ({
   invoke: vi.fn(),

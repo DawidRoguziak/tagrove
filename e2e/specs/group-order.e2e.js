@@ -137,6 +137,19 @@ describe("large group order modal", function () {
     await browser.refresh();
     await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
     await $('button[aria-label="Enable bulk actions"]').click();
+    // The lazy bulk panel changes the gallery width when it mounts. Wait for
+    // that layout before WebDriver sends pointer down/up at the first tile.
+    await $('[data-testid="bulk-header-panel"]').waitForDisplayed();
+    await browser.waitUntil(() => browser.executeAsync(done => {
+      const tile = document.querySelector('button[data-asset-index="0"]');
+      const before = tile?.getBoundingClientRect();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const after = tile?.getBoundingClientRect();
+        done(Boolean(tile?.isConnected && before && after && before.width > 0 &&
+          before.x === after.x && before.y === after.y && before.width === after.width &&
+          before.height === after.height));
+      }));
+    }));
     await $('button[data-asset-index="0"]').click();
     await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes("Selected: 1"));
     await browser.execute(() => {

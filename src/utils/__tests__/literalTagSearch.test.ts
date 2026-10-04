@@ -1,11 +1,11 @@
 import { expect, it } from "vitest";
 import { parseSearchFilter } from "../media";
 import { serializeTagToken } from "../searchTokens";
-import { buildFilterInput, putTagInMode } from "../../components/tag-list/services/tagListSelectionService";
-import { applySuggestionToValue } from "../../components/search/services/inputService";
-import { collectUsedTags, readActiveToken } from "../../components/search/services/tokenService";
-import { buildTagSuggestions, createTagFuse } from "../../components/search/services/suggestionService";
-import { buildFilterDescriptor } from "../../components/app/services/filterService";
+import { buildFilterInput, putTagInMode } from "../../features/search/tag-list/tagListSelectionService";
+import { applySuggestionToValue } from "../../features/search/suggestions/inputService";
+import { collectUsedTags, readActiveToken } from "../../features/search/suggestions/tokenService";
+import { buildTagSuggestions, createTagFuse } from "../../features/search/suggestions/suggestionService";
+import { buildFilterDescriptor } from "../../features/search/filterService";
 
 const names = ["tags", "tags:3", "gn:trip", "-holiday", "-", 'say"hello', "path\\photo", '"', "\\", "normal"];
 it.each(names)("round trips stored tag %s through Tag list, typed search and suggestion replacement", name => {

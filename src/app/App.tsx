@@ -60,6 +60,13 @@ function SettingsView() {
 function AppContent() {
   const runtime = useAppRuntime();
   const lightboxActive = createMemo(() => runtime.lightbox.selected !== null);
+  const lightboxActivation = createMemo<{ id: number | null; key: number }>((previous) => {
+    const id = runtime.lightbox.selected?.id ?? null;
+    return {
+      id,
+      key: (previous?.key ?? 0) + (id !== null && id !== previous?.id ? 1 : 0)
+    };
+  });
   let restoreFocus: HTMLElement | null = null;
   createEffect(lightboxActive, (active) => {
     if (active)
@@ -94,7 +101,7 @@ function AppContent() {
         <LightboxBoundary
           open={lightboxActive()}
           name={runtime.lightbox.selected?.file_name ?? ""}
-          resetKey={0}
+          resetKey={lightboxActivation().key}
           getRestoreFocus={getRestoreFocus}
           onClose={runtime.lightbox.close}
         >

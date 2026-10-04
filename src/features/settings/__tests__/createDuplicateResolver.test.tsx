@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LanguageProvider } from "../../../i18n/solid";
 import { settle } from "../../../test/settle";
 import { createDuplicateResolver } from "../createDuplicateResolver";
-import type { DuplicateGroup } from "../../../types";
+import type { DuplicateGroup } from "../../../platform/tauri/contracts/maintenance";
 const groups: DuplicateGroup[] = [
   {
     file_name: "same.jpg",

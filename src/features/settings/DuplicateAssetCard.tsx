@@ -1,6 +1,6 @@
 import { untrack } from "solid-js";
 import { createAssetThumbnail } from "../../library/thumbnails/createAssetThumbnail";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 type ChangeEvent<T> = Event & {
   currentTarget: T;
 };
@@ -9,11 +9,10 @@ type ButtonEvent<T> = MouseEvent & {
 };
 import { UiButton } from "../../ui/controls/UiButton";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../../ui/controls/ThumbnailImage";
-import { browserAssistDisabledProps } from "../../components/UI/inputBehavior";
-import { getFileNameFromPath } from "../../components/settings/services/duplicateValidationService";
-import type { DuplicateResolutionChange } from "../../components/settings/types";
+import { getFileNameFromPath } from "./duplicateValidationService";
+import type { DuplicateResolutionChange } from "./types";
 import { toMediaSrc } from "../../platform/tauri/assets";
-import type { DuplicateAsset } from "../../types";
+import type { DuplicateAsset } from "../../platform/tauri/contracts/maintenance";
 interface DuplicateAssetCardProps {
   asset: DuplicateAsset;
   renameValue: string;
@@ -69,7 +68,10 @@ export function DuplicateAssetCard(props: DuplicateAssetCardProps) {
         <input
           data-asset-id={props.asset.id}
           value={props.renameValue}
-          {...browserAssistDisabledProps}
+          autocomplete="off"
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck={false}
           onInput={props.onRenameValueChange}
           class="input input-sm h-10 w-full rounded-[var(--radius-control)] border border-base-content/20 bg-base-100/70"
           placeholder={props.t("settings.duplicates.renamePlaceholder")}

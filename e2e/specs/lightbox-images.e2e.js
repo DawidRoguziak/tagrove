@@ -5,8 +5,7 @@ import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
 
 const suite = process.env.MEDIATAGGER_LIGHTBOX_IMAGES === "1" ? describe : describe.skip;
-const renderer = process.env.MEDIATAGGER_FRONTEND ?? "react";
-const output = path.resolve("artifacts/solid2/stage6", `images-${renderer}`);
+const output = path.resolve("artifacts/lightbox-images");
 let root;
 let previewAssetId;
 async function invoke(command, payload = {}) {

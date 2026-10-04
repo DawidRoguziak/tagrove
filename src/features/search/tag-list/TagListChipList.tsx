@@ -2,7 +2,7 @@ import { For } from "solid-js";
 import {
   getTagMode,
   type TagSelections
-} from "../../../components/tag-list/services/tagListSelectionService";
+} from "./tagListSelectionService";
 interface TagListChipListProps {
   tags: string[];
   selections: TagSelections;

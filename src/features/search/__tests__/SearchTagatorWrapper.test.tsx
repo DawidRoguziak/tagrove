@@ -3,7 +3,7 @@ import { flush } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import { renderSolid } from "../../../test/renderSolid";
 import { SearchTagatorWrapper } from "../SearchTagatorWrapper";
-import { SuggestionClient } from "../../../components/search/worker/SuggestionClient";
+import { SuggestionClient } from "../suggestions/SuggestionClient";
 vi.mock("../../../platform/tauri/tags", () => ({
   listTags: vi.fn().mockResolvedValue({ items: [], total: 0 })
 }));

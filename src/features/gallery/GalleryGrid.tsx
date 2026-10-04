@@ -1,8 +1,8 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { Portal } from "@solidjs/web";
-import type { AssetSummary } from "../../types";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
-import type { BulkSelectionHandler } from "../../components/gallery/selection";
+import type { AssetSummary } from "../../platform/tauri/contracts/assets";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
+import type { BulkSelectionHandler } from "./selection";
 import type { LibraryRange } from "../../library/createLibrary";
 import { useLanguage } from "../../i18n/solid";
 import { GalleryEmptyState } from "./GalleryEmptyState";

@@ -1,4 +1,4 @@
-import type { ScanRoot } from "../../types";
+import type { ScanRoot } from "../../platform/tauri/contracts/scanning";
 import { createSignal } from "solid-js";
 import { open, save } from "../../platform/tauri/dialogs";
 import { useLanguage } from "../../i18n/solid";
@@ -9,8 +9,8 @@ import {
   importTagsCsv,
   inspectDbBundle
 } from "../../platform/tauri/maintenance";
-import type { DbRootMapping } from "../../types";
-import type { ImportExportSettingsController } from "../../components/settings/types";
+import type { DbRootMapping } from "../../platform/tauri/contracts/maintenance";
+import type { ImportExportSettingsController } from "./types";
 import type { createSettingsOperationRunner } from "./createSettingsOperationRunner";
 function formatExportTimestamp(date: Date): string {
   const year = String(date.getFullYear());

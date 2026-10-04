@@ -1,7 +1,7 @@
 import { createEffect, createSignal, untrack } from "solid-js";
 import { createUiLayer } from "../../ui/overlays/UiLayerProvider";
-import type { AssetSummary } from "../../types";
-import type { BulkSelectionHandler, SelectionRange } from "../../components/gallery/selection";
+import type { AssetSummary } from "../../platform/tauri/contracts/assets";
+import type { BulkSelectionHandler, SelectionRange } from "./selection";
 import {
   containsIndex,
   edgeScrollSpeed,
@@ -10,7 +10,7 @@ import {
   type GridGeometry,
   type Point,
   type SelectionRectangle
-} from "../../components/gallery/services/selectionGeometry";
+} from "./selectionGeometry";
 interface Options extends GridGeometry {
   assets: AssetSummary[];
   getAssetAt?: (index: number) => AssetSummary | undefined;

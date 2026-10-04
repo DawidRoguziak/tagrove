@@ -2,7 +2,7 @@ import { renderHook } from "@solidjs/testing-library";
 import { createSignal, flush } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { createTagList } from "../createTagList";
-import type { TagListPage } from "../../../../types";
+import type { TagListPage } from "../../../../platform/tauri/contracts/tags";
 const api = vi.hoisted(() => ({ listTags: vi.fn() }));
 vi.mock("../../../../platform/tauri/tags", () => api);
 it("rejects old queries and finalizers, deduplicates same-turn page requests and stops on close", async () => {

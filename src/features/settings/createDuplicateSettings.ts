@@ -4,13 +4,13 @@ import {
   applyDuplicateResolutionBatch,
   findDuplicateAssets
 } from "../../platform/tauri/maintenance";
-import type { DuplicateScanSummary, DuplicateResolutionBatchChange } from "../../types";
-import { isDuplicateScanProgressPhase } from "../../components/settings/services/progressService";
+import type { DuplicateScanSummary, DuplicateResolutionBatchChange } from "../../platform/tauri/contracts/maintenance";
+import { isDuplicateScanProgressPhase } from "./progressService";
 import type {
   DuplicatesSettingsController,
   DuplicateResolutionChange,
   PendingDuplicateDeleteConfirm
-} from "../../components/settings/types";
+} from "./types";
 import type { createSettingsOperationRunner } from "./createSettingsOperationRunner";
 interface Options {
   runner: ReturnType<typeof createSettingsOperationRunner>;

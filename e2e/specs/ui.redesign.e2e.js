@@ -22,6 +22,10 @@ async function invoke(command, payload = {}) {
   return result.value;
 }
 async function click(selector) {
+  if (selector === 'button[aria-label="Close preview"]' || selector === "#lightbox-delete-button") {
+    // Native screenshot capture may outlast the floating controls' idle timer.
+    await browser.keys("Shift");
+  }
   const element = await $(selector);
   await element.waitForDisplayed({ timeout: 10000 });
   await element.click();

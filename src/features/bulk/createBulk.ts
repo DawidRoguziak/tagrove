@@ -5,11 +5,11 @@ import { createSelectedSummaries } from "./createSelectedSummaries";
 import {
   deriveBulkGroupSelectionState,
   normalizeGroupKey
-} from "../../components/bulk/grouping/services/bulkGroupOrderService";
+} from "./bulkGroupOrderService";
 import {
   mergeTagLists,
   normalizeBulkTag
-} from "../../components/bulk/tagging/services/bulkTagMergeService";
+} from "./bulkTagMergeService";
 
 export type BulkGroupSaveResult =
   | { status: "saved" | "failed" | "ignored" }

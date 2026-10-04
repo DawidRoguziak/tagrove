@@ -1,6 +1,6 @@
 import { UiButton } from "../../../ui/controls/UiButton";
 import { SectionOperationStatus } from "../SectionOperationStatus";
-import type { SectionOperationState } from "../../../components/settings/types";
+import type { SectionOperationState } from "../types";
 import { useLanguage } from "../../../i18n/solid";
 interface DuplicatesSectionProps {
   isOperationLocked: boolean;

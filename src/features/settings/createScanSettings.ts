@@ -20,9 +20,9 @@ import {
   formatThumbnailSummary,
   isScanProgressPhase,
   isThumbnailProgressPhase
-} from "../../components/settings/services/progressService";
-import type { ScanRoot, ScanSummary } from "../../types";
-import type { ScanSettingsController } from "../../components/settings/types";
+} from "./progressService";
+import type { ScanRoot, ScanSummary } from "../../platform/tauri/contracts/scanning";
+import type { ScanSettingsController } from "./types";
 import type { createSettingsOperationRunner } from "./createSettingsOperationRunner";
 function normalizeFolderSelection(selection: string | string[] | null): string[] | null {
   if (typeof selection === "string") {

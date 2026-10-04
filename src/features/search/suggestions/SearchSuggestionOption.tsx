@@ -1,5 +1,5 @@
 import { renderHighlightedMatch } from "./renderHighlightedMatch";
-import type { TagSuggestion } from "../../../components/search/types";
+import type { TagSuggestion } from "./types";
 interface SearchSuggestionOptionProps {
   id: string;
   suggestion: TagSuggestion;

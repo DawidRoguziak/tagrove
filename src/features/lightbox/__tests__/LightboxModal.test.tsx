@@ -7,11 +7,11 @@ import { createLightbox } from "../createLightbox";
 import LightboxModal from "../LightboxModal";
 import { UiModal } from "../../../ui/overlays/UiModal";
 import { UiLayerProvider } from "../../../ui/overlays/UiLayerProvider";
-import { SuggestionClient } from "../../../components/search/worker/SuggestionClient";
+import { SuggestionClient } from "../../search/suggestions/SuggestionClient";
 import { renderSolid } from "../../../test/renderSolid";
 import { settle } from "../../../test/settle";
 import { asset, summary, deferred, saved } from "./fixtures";
-import type { AssetDetails } from "../../../types";
+import type { AssetDetails } from "../../../platform/tauri/contracts/assets";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetDetails: vi.fn(),

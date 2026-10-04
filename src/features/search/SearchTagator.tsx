@@ -7,9 +7,9 @@ import {
   untrack
 } from "solid-js";
 import { useLanguage } from "../../i18n/solid";
-import type { SuggestionClient } from "../../components/search/worker/SuggestionClient";
-import { collectUsedTags, readActiveToken } from "../../components/search/services/tokenService";
-import { applySuggestionToValue } from "../../components/search/services/inputService";
+import type { SuggestionClient } from "./suggestions/SuggestionClient";
+import { collectUsedTags, readActiveToken } from "./suggestions/tokenService";
+import { applySuggestionToValue } from "./suggestions/inputService";
 import { createSuggestions } from "./suggestions/createSuggestions";
 import { SearchSuggestionsList } from "./suggestions/SearchSuggestionsList";
 const EMPTY: string[] = [];

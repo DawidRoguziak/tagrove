@@ -11,7 +11,7 @@ import {
   TILE_SIZE_MIN,
   TILE_SIZE_MAX,
   TILE_SIZE_STEP
-} from "../components/app/services/tileSizeService";
+} from "../features/gallery/tileSizeService";
 export function AppGalleryView() {
   const runtime = useAppRuntime();
   const { search, library, selection } = runtime;

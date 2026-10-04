@@ -1,8 +1,8 @@
 import { settle } from "../../test/settle";
-import { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import { ThumbnailStore } from "../thumbnails/thumbnailStore";
 import { renderHook, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssetSummary } from "../../types";
+import type { AssetSummary } from "../../platform/tauri/contracts/assets";
 import { createLibrary } from "../createLibrary";
 
 function deferred<T>() {

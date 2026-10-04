@@ -2,13 +2,13 @@ import { UiLayerProvider } from "../../../ui/overlays/UiLayerProvider";
 import { cleanup, fireEvent, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssetSummary } from "../../../types";
+import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
 import type { BulkController } from "../createBulk";
 type BulkSelectionController = BulkController & { startupPopularTags: string[] };
 import { settle as act } from "../../../test/settle";
 import { renderSolid } from "../../../test/renderSolid";
-import { SuggestionClient } from "../../../components/search/worker/SuggestionClient";
-import { ThumbnailStore } from "../../../hooks/services/thumbnailStore";
+import { SuggestionClient } from "../../search/suggestions/SuggestionClient";
+import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import { onCleanup } from "solid-js";
 import { BulkActionsSidebar } from "../BulkActionsSidebar";
 

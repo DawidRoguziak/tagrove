@@ -1,4 +1,4 @@
-import type { SelectedAsset } from "../../types";
+import type { SelectedAsset } from "./types";
 import { formatBytes, formatDuration } from "../../utils/media";
 import { useLanguage } from "../../i18n/solid";
 

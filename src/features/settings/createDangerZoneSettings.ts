@@ -1,9 +1,9 @@
-import type { ScanRoot } from "../../types";
+import type { ScanRoot } from "../../platform/tauri/contracts/scanning";
 import { createSignal } from "solid-js";
 import { useLanguage } from "../../i18n/solid";
 import { clearLibraryData } from "../../platform/tauri/maintenance";
-import { isLibraryClearProgressPhase } from "../../components/settings/services/progressService";
-import type { DangerZoneSettingsController } from "../../components/settings/types";
+import { isLibraryClearProgressPhase } from "./progressService";
+import type { DangerZoneSettingsController } from "./types";
 import type { createSettingsOperationRunner } from "./createSettingsOperationRunner";
 interface Options {
   runner: ReturnType<typeof createSettingsOperationRunner>;

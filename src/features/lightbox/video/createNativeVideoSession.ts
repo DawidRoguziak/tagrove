@@ -8,7 +8,7 @@ import {
   setVideoBounds,
   setVideoControlLabels
 } from "../../../platform/tauri/video";
-import { measureNativeVideoBounds } from "../../../components/lightbox/nativeVideoLayout";
+import { measureNativeVideoBounds } from "./nativeVideoLayout";
 import type {
   MpvVideoEvent,
   NativeVideoControlLabels,

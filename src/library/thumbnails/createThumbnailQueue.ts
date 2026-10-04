@@ -1,11 +1,10 @@
 import { createSignal, onCleanup } from "solid-js";
 import { ensureThumbnailsStream } from "../../platform/tauri/thumbnails";
-import {
-  QUEUE_PROCESS_DELAY_MS,
-  THUMBNAIL_BATCH_SIZE,
-  UI_FLUSH_DELAY_MS
-} from "../../hooks/services/thumbnailQueueService";
-import { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import { ThumbnailStore } from "./thumbnailStore";
+
+const UI_FLUSH_DELAY_MS = 24;
+const QUEUE_PROCESS_DELAY_MS = 36;
+const THUMBNAIL_BATCH_SIZE = 64;
 
 export function createThumbnailQueue() {
   const thumbnailStore = new ThumbnailStore();

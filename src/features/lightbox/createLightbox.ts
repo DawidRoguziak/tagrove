@@ -1,8 +1,9 @@
 import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import type { createLibrary } from "../../library/createLibrary";
-import type { AssetSummary, SelectedAsset } from "../../types";
+import type { AssetSummary } from "../../platform/tauri/contracts/assets";
+import type { SelectedAsset } from "./types";
 import { normalizeTags } from "../../utils/media";
-import { parseMediaGroupOrder } from "../../components/lightbox/services/parseMediaGroupOrder";
+import { parseMediaGroupOrder } from "./parseMediaGroupOrder";
 
 type Navigation = "ready" | "resolving" | "missing" | "failed";
 type WriteState = "idle" | "pending" | "failed";

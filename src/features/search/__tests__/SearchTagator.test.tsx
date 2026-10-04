@@ -2,7 +2,7 @@ import { renderSolid } from "../../../test/renderSolid";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal, flush } from "solid-js";
-import { SuggestionClient } from "../../../components/search/worker/SuggestionClient";
+import { SuggestionClient } from "../suggestions/SuggestionClient";
 import { LanguageProvider } from "../../../i18n/solid";
 import { UiLayerProvider } from "../../../ui/overlays/UiLayerProvider";
 const client = new SuggestionClient();

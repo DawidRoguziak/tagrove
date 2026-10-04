@@ -1,5 +1,5 @@
 import { readTagToken } from "./searchTokens";
-import type { AssetSummary, SearchMetaFilter } from "../types";
+import type { AssetSummary, SearchMetaFilter } from "../platform/tauri/contracts/assets";
 
 export interface ParsedFilterTags {
   include: string[];

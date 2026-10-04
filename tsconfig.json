@@ -14,23 +14,17 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "jsxImportSource": "@solidjs/web",
+    "types": [
+      "vite/client"
+    ]
   },
   "include": [
     "src"
-  ],
-  "exclude": [
-    "src/app",
-    "src/platform",
-    "src/library",
-    "src/features",
-    "src/ui",
-    "src/test/setup-solid.ts",
-    "src/i18n/solid.tsx",
-    "src/test/renderSolid.tsx"
   ]
 }

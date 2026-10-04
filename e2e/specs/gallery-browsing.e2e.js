@@ -5,8 +5,7 @@ import path from "node:path";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 
 const suite = process.env.MEDIATAGGER_GALLERY_BROWSING === "1" ? describe : describe.skip;
-const renderer = process.env.MEDIATAGGER_FRONTEND ?? "react";
-const output = path.resolve("artifacts/solid2/stage4", renderer);
+const output = path.resolve("artifacts/gallery-browsing");
 let root;
 async function invoke(command, payload = {}) {
   const result = await browser.executeAsync(

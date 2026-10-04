@@ -3,8 +3,8 @@ import { settle as act } from "../../../../test/settle";
 import { flush } from "solid-js";
 import { cleanup, fireEvent, screen, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TagListPage } from "../../../../types";
-import * as tagListSelection from "../../../../components/tag-list/services/tagListSelectionService";
+import type { TagListPage } from "../../../../platform/tauri/contracts/tags";
+import * as tagListSelection from "../tagListSelectionService";
 const apiMocks = vi.hoisted(() => ({
   listTags: vi.fn()
 }));

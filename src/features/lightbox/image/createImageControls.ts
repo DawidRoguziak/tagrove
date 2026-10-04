@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
-import type { SelectedAsset } from "../../../types";
+import type { SelectedAsset } from "../types";
 import type { JSX } from "@solidjs/web";
 import {
   calculateFittedMediaSize,
@@ -7,7 +7,7 @@ import {
   clampZoomFactor,
   getNextZoomFactor,
   type MediaDimensions
-} from "../../../components/lightbox/services/lightboxPanZoomService";
+} from "./lightboxPanZoomService";
 
 import type { LightboxVideoPlayerHandle } from "../video/LightboxVideoPlayer";
 

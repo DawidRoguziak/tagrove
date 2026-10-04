@@ -1,5 +1,5 @@
 import { createSignal, createEffect } from "solid-js";
-import type { SelectedAsset } from "../../types";
+import type { SelectedAsset } from "./types";
 import { formatBytes } from "../../utils/media";
 import { UiIconButton } from "../../ui/controls/UiIconButton";
 

@@ -2,8 +2,8 @@ import Fuse from "fuse.js";
 import {
   createTagFuse,
   buildTagSuggestions
-} from "../components/search/services/suggestionService";
-import type { SuggestionRequest, SuggestionResponse } from "../components/search/worker/protocol";
+} from "../features/search/suggestions/suggestionService";
+import type { SuggestionRequest, SuggestionResponse } from "../features/search/suggestions/protocol";
 /** In-process transport for DOM tests; worker lifecycle is tested separately. */
 export class SuggestionWorker {
   onmessage: ((event: MessageEvent<SuggestionResponse>) => void) | null = null;

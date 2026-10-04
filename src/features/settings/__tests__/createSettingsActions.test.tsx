@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@solidjs/testing-library";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ScanProgress } from "../../../types";
+import type { ScanProgress } from "../../../platform/tauri/contracts/scanning";
 import { createSettings } from "../createSettings";
 import { LanguageProvider } from "../../../i18n/solid";
 import { settle as act } from "../../../test/settle";
@@ -634,6 +634,17 @@ describe("useSettingsActions", () => {
     expect(onTagCacheInvalidated).toHaveBeenCalledTimes(1);
     expect(refreshLibrary).toHaveBeenCalledTimes(1);
     expect(result.importExport.operationState.message).toContain("malformed later row");
+  });
+  it.each([
+    ["onExportCsv", "Export tags CSV", /^tags-export-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.csv$/, "CSV", "csv"],
+    ["onExportDbBundle", "Export DB backup archive", /^media-backup-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\.zip$/, "ZIP", "zip"]
+  ] as const)("preserves the timestamped filename and dialog contract for %s", async (action, title, pattern, name, extension) => {
+    vi.mocked(save).mockResolvedValueOnce(null);
+    const { result } = renderHook(() => settings({ setLoading, refreshLibrary, onRootRemoved, onImportDbRestored, onLibraryCleared }), { wrapper: LanguageProvider });
+    await act(() => result.importExport[action]());
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      title, defaultPath: expect.stringMatching(pattern), filters: [{ name, extensions: [extension] }]
+    }));
   });
   it("exports database bundle and reports copied files summary", async () => {
     vi.mocked(save).mockResolvedValueOnce("C:/tmp/backup.zip");

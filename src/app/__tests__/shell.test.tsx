@@ -65,7 +65,19 @@ describe("Solid shell", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Open settings" }));
     const language = await screen.findByRole("combobox");
-    expect(language.querySelectorAll("option")).toHaveLength(11);
+    expect([...language.querySelectorAll("option")].map(option => ({ value: option.value, label: option.textContent }))).toEqual([
+      { value: "en", label: "English" },
+      { value: "pl", label: "Polski" },
+      { value: "fr", label: "Français" },
+      { value: "de", label: "Deutsch" },
+      { value: "it", label: "Italiano" },
+      { value: "es", label: "Español" },
+      { value: "ru", label: "Русский" },
+      { value: "zh", label: "中文（简体）" },
+      { value: "ja", label: "日本語" },
+      { value: "ko", label: "한국어" },
+      { value: "cs", label: "Čeština" }
+    ]);
     await user.click(screen.getByRole("radio", { name: "Light" }));
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
@@ -229,6 +241,20 @@ describe("Solid shell", () => {
     flush();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText("Recovered")).toBeInTheDocument();
+  });
+  it("keeps a healthy lazy view mounted when the reset key changes", () => {
+    const [key, setKey] = createSignal(1);
+    const mounts = vi.fn();
+    function Media() {
+      mounts();
+      return <span>Healthy media</span>;
+    }
+    render(() => <LazyErrorBoundary resetKey={key()} fallback={<p>Failed</p>}><Media /></LazyErrorBoundary>);
+    const media = screen.getByText("Healthy media");
+    setKey(2);
+    flush();
+    expect(screen.getByText("Healthy media")).toBe(media);
+    expect(mounts).toHaveBeenCalledTimes(1);
   });
   it("uses a named dialog while a lazy lightbox loads, then releases it", async () => {
     let complete: (module: { default: () => JSX.Element }) => void = () => {};

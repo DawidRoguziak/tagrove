@@ -5,7 +5,7 @@ import { createSettings } from "../createSettings";
 import { createAssetTagState } from "../../../library/metadata/createAssetTagState";
 import { LanguageProvider } from "../../../i18n/solid";
 import { settle } from "../../../test/settle";
-import type { ScanProgress } from "../../../types";
+import type { ScanProgress } from "../../../platform/tauri/contracts/scanning";
 const api = vi.hoisted(() => ({
   listen: vi.fn(),
   open: vi.fn(),

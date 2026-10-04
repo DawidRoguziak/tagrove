@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 8 is complete. React remains the default and functional reference.
-Solid now includes settings, startup scanning, maintenance operations and duplicate resolution
-alongside the gallery, tagging and lightbox. Parity verification and cutover are next.
+Stage 9 is complete. Solid is the normal entry and React has been removed after
+parity verification. Final Solid-only checks and review pass.
+The canonical documentation rewrite is stage 10.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 9](09-parity-and-cutover.md).
+- Next implementation task: [stage 10](10-documentation.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -27,8 +27,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | [5. Tagging and bulk](05-tagging-and-bulk.md) | Complete | 1008 frontend, 206 Rust, both builds; 7 desktop cases per renderer and matching editor geometry | Findings fixed and rechecked | `feat: migrate tag editing and bulk actions to Solid`; `6eb9add` |
 | [6. Lightbox and images](06-lightbox-and-images.md) | Complete | 1101 frontend, 206 Rust, both builds; desktop comparison, reduced motion and 12 matching layouts | Findings fixed and rechecked | `feat: migrate lightbox and image interactions to Solid`; `71943b0` |
 | [7. Native video](07-native-video.md) | Complete | 1124 frontend, 206 Rust, both builds; 18 desktop cases per renderer and 30 native reopen cycles each | Findings fixed and rechecked | `feat: migrate native video lifecycle to Solid`; `cf59a58` |
-| [8. Settings and maintenance](08-settings-and-maintenance.md) | Complete | 1205 frontend, 206 Rust, both isolated builds; 17 desktop cases and 3 reduced-motion cases per renderer | Findings fixed and rechecked | `feat: migrate settings and maintenance workflows to Solid`; record hash when opening stage 9 |
-| [9. Parity and cutover](09-parity-and-cutover.md) | Not started | Not run | Pending | None |
+| [8. Settings and maintenance](08-settings-and-maintenance.md) | Complete | 1205 frontend, 206 Rust, both isolated builds; 17 desktop cases and 3 reduced-motion cases per renderer | Findings fixed and rechecked | `feat: migrate settings and maintenance workflows to Solid`; `b401770` |
+| [9. Parity and cutover](09-parity-and-cutover.md) | Complete | 622 final frontend, 206 Rust, final test:all with 39 desktop cases; 117 normal + 46 reduced-motion cases per renderer before cutover | Findings fixed and rechecked | `refactor: complete Solid migration and remove React` |
 | [10. Documentation](10-documentation.md) | Not started | Not run | Pending | None |
 
 ## Planning baseline evidence
@@ -1041,7 +1041,7 @@ Next stage: [settings and maintenance workflows](08-settings-and-maintenance.md)
 
 Date: 4 October 2026. Starting commit: `cf59a58`.
 Local commit subject: `feat: migrate settings and maintenance workflows to Solid`.
-Local commit hash: record when opening stage 9.
+Local commit hash: `b401770`.
 
 Implemented behavior:
 
@@ -1175,3 +1175,139 @@ in `privacy-staged.log`; no media, databases, logs or screenshots are included i
 No backend, wire payload, dependency version or profile change is included.
 
 Next stage: [parity, cutover, and React removal](09-parity-and-cutover.md).
+
+## Stage 9 evidence
+
+Date: 4 October 2026. Starting commit: `b401770`.
+Decision trail: [STAGE9-DECISIONS.tsv](STAGE9-DECISIONS.tsv).
+All raw logs, timing samples and screenshots below are ignored under
+`artifacts/solid2/stage9/`, unless another artifact path is named.
+
+Solid is the normal entry. React sources, adapters, compiler selection, compatibility
+API/type exports and obsolete test setup are removed. Shared pure helpers and their tests
+now live beside their final owners. Transport types are imported from their contract modules;
+`SelectedAsset` belongs to the lightbox. The behavior inventory maps all 84 reference suites
+to final tests, including replacement ownership/disposal checks.
+
+Before cutover, both production builds passed entry/renderer isolation: 194 Solid and
+216 React modules in `builds-precutover-final.log`. The full dual-renderer frontend run passed
+141 files and 1224 cases after helper relocation and review fixes,
+`frontend-precutover-final.log`.
+React stayed runnable throughout the desktop comparisons.
+
+The normal desktop comparison enables every relevant opt-in suite and runs the same
+19 spec files serially for each renderer with fresh synthetic fixtures and disposable XDG
+profiles. The migration-only shell/reference specs are excluded. Flags are
+`MEDIATAGGER_GALLERY_PERF`, `MEDIATAGGER_GALLERY_SELECTION`, `MEDIATAGGER_GALLERY_BROWSING`,
+`MEDIATAGGER_THUMBNAIL_FADE`, `MEDIATAGGER_UI_REDESIGN`, `MEDIATAGGER_TAG_EDITOR`,
+`MEDIATAGGER_NATIVE_VIDEO`, `MEDIATAGGER_LIGHTBOX_IMAGES`, `MEDIATAGGER_LIGHTBOX_ACTIVITY`,
+`MEDIATAGGER_ANIMATIONS`, `MEDIATAGGER_SETTINGS_LANGUAGE`, `MEDIATAGGER_SETTINGS_MAINTENANCE`
+and `MEDIATAGGER_ABOUT`, all set to `1`.
+
+Normal comparison: 117 distinct matching scenarios per renderer have passing latest results.
+`desktop-react.log` had six failures, followed by `desktop-react-recheck.log` and
+`desktop-react-animation-final.log`. `desktop-solid.log` had two idle-control UI timeouts.
+The complete UI suite plus the narrow animation case then passed for both renderers in
+`desktop-react-ui-recheck.log` and `desktop-solid-recheck.log`, 13 cases each.
+`react-coverage.json`, `solid-coverage.json` and `coverage-parity.json` check exact case-name
+sets and use the latest result of each case. The original failed invocations remain failures.
+
+Reduced-motion comparison: 46 matching expected cases pass per renderer. Solid passed all
+46 in one invocation, `reduced-solid.log`. React passed 45/46 in `reduced-react.log`; the unchanged
+single-case fresh-profile recheck passed in `reduced-react-recheck.log`. The timeout was a
+native Shift control-reveal sample; its cause has not been established. It remains an
+intermittent verification limitation, not a claimed application fix.
+
+The exact geometry matches in 12 gallery and 12 image-lightbox states across English/Polish,
+light/dark themes and three widths. Query starts, page-request counts and scroll anchors
+also match. `parity-comparison.json` records both sides; `react-evidence/` and `solid-evidence/`
+retain the raw measurements and screenshots. Mounted gallery tiles remain bounded through
+16 pages, eviction and return. Existing vocabulary, selection and measurement limits remain
+asserted by the desktop and real virtual-core/model tests.
+
+Same-host performance samples include WebDriver overhead and are diagnostic. React cold/warm
+frame p95 was 49/28 ms and thumbnail p95 429/188 ms; Solid was 40/21 ms and 440/461 ms.
+These samples do not establish a general speedup or a thumbnail regression. Deterministic
+request, cache, DOM and measurement assertions remain the acceptance criteria.
+
+Self-review and fixes:
+
+- Restored startup popular-tag error logging. Runtime tests cover one fetch across repeated
+  starts/view changes, failure, and ignored completion after disposal.
+- Fixed lightbox runtime-error recovery. A new activation advances its error reset key;
+  only failed views reset, so healthy navigation retains the media owner. The real-App
+  regression verifies same-ID reopen, closing content and healthy navigation. Its initial
+  incorrect aria-hidden assertion and corrected passing run remain in the evidence.
+- Added no-selection mutation checks through the real lightbox model before removing the
+  obsolete action-wrapper tests.
+- About left Polish preferences for the next E2E spec. Preferences now reset after the
+  native E2E window-title guard, while reloads within a spec retain preferences. A tooling
+  test proves unexpected titles cannot mutate storage and unrelated keys remain intact.
+- Real tag-page arrival changed dialog height during the animation sample. A proposed
+  text-keyed comparison was rejected by cross-model audit because it could hide moving
+  geometry. The original bounds assertion remains. The test delays delivery of the real
+  response until after opening, restores invoke in finally, then waits for fixture content
+  before closing. No tag data is mocked.
+- Tag-editor fixture setup now removes a suggestion already assigned by the preceding
+  scenario, retaining it on another asset to keep the vocabulary realistic.
+- Animation/UI screenshot tests reveal idle floating controls through pointer/keyboard
+  input before clicking. Their appearance, hit-target, duration and geometry assertions
+  remain unchanged. Original failures and serial rechecks are retained.
+- Cross-model review found reference assertions missing from the planned replacements.
+  Restored exact ordered language options and five keyboard ownership/idle/fullscreen cases.
+  Added five actual-runtime tests for CSV success/partial failure draining pending edits,
+  cache invalidation, cleared-library ID reuse and bidirectional lightbox/bulk lock sharing.
+  Retained CSV/ZIP export filename, title and filter contracts. The focused groups passed
+  17 and 23 tests, followed by the full 1224-test dual-renderer run.
+- Deferred narrowing the old array-or-descriptor filter signature until React removal,
+  after the retained React caller correctly failed TypeScript. The final signature accepts
+  the descriptor used by Solid.
+
+Final verification:
+
+- `MEDIATAGGER_UI_REDESIGN=1 MEDIATAGGER_GALLERY_BROWSING=1 MEDIATAGGER_LIGHTBOX_IMAGES=1 bash artifacts/solid2/stage9/run-all.sh --logLevel warn`:
+  `bun run test:all` passed with exit 0. Quality includes all 11 locales, tooling tests,
+  types, lint, formatting, rustfmt, Clippy and dependency audits. Frontend: 74 files and
+  622 tests. Rust: 206 passed, two existing diagnostics ignored. Desktop: 39 passed cases,
+  19 spec files without failures; other opt-ins were covered by the pre-cutover matrices.
+  `test-all-final-recheck.log` and `final-suite.json`.
+- The first final invocation, `test-all-final.log`, passed quality/frontend/Rust but had a
+  group-order setup-hook timeout. Setup now waits for the lazy bulk panel and two stable
+  animation frames before the real click. The focused recheck passed and then the complete
+  pipeline passed. All selection, drag, persisted order and geometry assertions remain.
+- `bun run test:build`: 193 production modules, Solid entry, no React or legacy feature
+  trees. `build-final.log` and `artifacts/build/modules.json`.
+- `PATH="$PWD/artifacts/tools:$PATH" bun run test:packaging`: 18 passed, `packaging-final.log`.
+- `node --test --test-isolation=none e2e/build-e2e.test.js`: four passed,
+  `e2e-build-final-explicit.log`. Default Node 26 output reported one file-level pass;
+  the explicit run reports each build-order/profile/failure/preference assertion group.
+- `node --test --test-isolation=none e2e/control-support.test.js`: six passed,
+  `control-final.log`. This includes local sockets and owned-process cleanup.
+- `PATH="$PWD/artifacts/tools:$PATH" bun run privacy:check`: passed for full history,
+  staged objects and tracked working files, `privacy-staged.log` and `privacy-final.log`.
+  The refreshed index and final working files pass.
+- `git diff --cached --check`: passed after preserving existing line endings and removing
+  stray carriage returns from changed import lines.
+
+The lockfile removes packages only. Test-tooling transitive `react-is` packages remain under
+Testing Library/WebdriverIO formatters; they are absent from the production module graph.
+Final production gallery/lightbox geometry exactly matches all 24 pre-cutover states,
+`final-geometry.json`. The final screenshots were inspected. Owned desktop processes exited.
+
+Desktop evidence establishes Linux X11/WebKit behavior on this host with software-rendered
+libmpv. It does not establish other operating systems, hardware decoding, audible output,
+or a published release package. Native file chooser interactions remain covered through
+mocked frontend boundaries; desktop CSV/bundle tests use the real commands directly.
+The two existing Rust diagnostic tests remain ignored. Rust advisory exclusions are unchanged.
+
+Staged source, tests, configuration and documentation were reviewed for scope and private
+content. No media, screenshots, raw logs, databases or generated bundles are staged.
+Cross-model review by `gpt-6-astra` found the coverage and setup issues recorded above;
+all findings were fixed and rechecked. Same-host timing samples and the isolated React
+reduced-motion timeout remain limitations, not performance or cross-platform guarantees.
+
+Local commit subject: `refactor: complete Solid migration and remove React`.
+Local commit hash: recorded when stage 10 starts.
+
+Next stage: [documentation](10-documentation.md). Current build, entry and IPC guidance is
+corrected here; the full canonical frontend/subsystem documentation rewrite belongs to stage 10.

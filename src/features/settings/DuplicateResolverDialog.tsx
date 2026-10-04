@@ -11,12 +11,12 @@ import { UiModal } from "../../ui/overlays/UiModal";
 import { DuplicateGroupCard } from "./DuplicateGroupCard";
 import { createDuplicateResolver } from "./createDuplicateResolver";
 import { SectionOperationStatus } from "./SectionOperationStatus";
-import type { DuplicateGroup } from "../../types";
+import type { DuplicateGroup } from "../../platform/tauri/contracts/maintenance";
 import type {
   DuplicateResolutionChange,
   SectionOperationState
-} from "../../components/settings/types";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+} from "./types";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 
 interface Props {
   open: boolean;

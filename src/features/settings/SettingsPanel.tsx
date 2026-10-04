@@ -1,4 +1,4 @@
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 import { AboutSection } from "./sections/AboutSection";
 import { SettingsNavigation } from "./SettingsNavigation";
 import { ClearLibraryConfirmDialog } from "./ClearLibraryConfirmDialog";
@@ -18,7 +18,7 @@ import type {
   ImportExportSettingsController,
   ScanSettingsController,
   SettingsAppearanceController
-} from "../../components/settings/types";
+} from "./types";
 
 interface Props {
   highlightScanSection: boolean;

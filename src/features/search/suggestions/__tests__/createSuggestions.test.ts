@@ -2,9 +2,9 @@ import { renderHook, waitFor } from "@solidjs/testing-library";
 import { createSignal, flush } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import { createSuggestions } from "../createSuggestions";
-import { SuggestionClient } from "../../../../components/search/worker/SuggestionClient";
-import { readActiveToken } from "../../../../components/search/services/tokenService";
-import type { TagSuggestion } from "../../../../components/search/types";
+import { SuggestionClient } from "../SuggestionClient";
+import { readActiveToken } from "../tokenService";
+import type { TagSuggestion } from "../types";
 afterEach(() => vi.restoreAllMocks());
 it("rejects obsolete results, stops blurred reads and cancels on disposal", async () => {
   const pending: ((items: TagSuggestion[]) => void)[] = [];

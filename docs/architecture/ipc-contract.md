@@ -8,7 +8,7 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 
 ## Invocation and serialization rules
 
-- Frontend code calls typed functions in `src/platform/tauri`, split into assets, tags, scanning, thumbnails, maintenance, video, and window modules. `src/api.ts` temporarily re-exports them for React. The functions call the snake-case command names registered by `tauri::generate_handler!`. Dialogs, events, the system opener, and native window access also enter through this directory.
+- Frontend code calls typed functions in `src/platform/tauri`, split into assets, tags, scanning, thumbnails, maintenance, video, and window modules. The functions call the snake-case command names registered by `tauri::generate_handler!`. Dialogs, events, the system opener, and native window access also enter through this directory.
 - Invoke argument keys are camelCase (`assetId`, `tagsAnd`, `pageSize`, `onEvent`), while the corresponding Rust parameters are snake_case (`asset_id`, `tags_and`, `page_size`, `on_event`). Nested inputs opt into or explicitly define camelCase where needed: `BulkMediaGroupUpdateInput` uses `rename_all = "camelCase"`, and `AssetMetaFilterInput` uses `type`, `hasNoTags`/`groupName`, `tagCount`, and `groupName`.
 - Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/platform/tauri/contracts`, including `session_id`, `thumb_path`, `removed_assets`, and similar fields.
 - Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; thumbnail channel messages use `{ event: "ready" | "failed" | "done", data: ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case.
@@ -18,8 +18,9 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 - `src/platform/tauri/contracts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
 - All registered command failures reject the invoke promise with text. Command boundaries return `Result<_, String>` and flatten `AppError`, worker-join failures, validation failures, and platform errors to a message; there is no structured IPC error code or error payload.
 
-`src/types.ts` and the old lightbox video-types module retain compatibility re-exports.
-`SelectedAsset` remains frontend view state in `src/types.ts`, outside the wire contracts.
+Consumers import payloads from their owning contract module directly. The temporary React
+API and type re-exports were removed at cutover. `SelectedAsset` is frontend view state in
+`src/features/lightbox/types.ts`, outside the wire contracts.
 
 ## Shared response shapes
 
@@ -153,7 +154,7 @@ Root normalization trims whitespace and removes trailing `/` except for the file
 | `cancelRenderAllThumbnails` / `cancel_render_all_thumbnails` | none | `boolean` | Returns `true` and sets the cancellation flag only while either bulk mode is running; already completed ready results are retained. |
 | `clearAllThumbnails` / `clear_all_thumbnails` | none | `number` | Clears database thumbnail paths and failure markers, exclusively blocks thumbnail readers, best-effort deletes referenced and obsolete files below the owned thumbnail directory, emits progress, and returns the number of files actually removed. |
 
-The channel is created in `src/api.ts`; `onEvent` is not JSON data. Its serialized messages are:
+The channel is created in `src/platform/tauri/thumbnails.ts`; `onEvent` is not JSON data. Its serialized messages are:
 
 ```ts
 type ThumbnailStreamEvent =
@@ -267,7 +268,7 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 
 When changing IPC:
 
-1. Update the Rust command signature/model and the matching `src/api.ts` wrapper and `src/types.ts` type in the same change. Confirm command argument casing, nested serde casing, optional/null behavior, enum tags, and all numeric types.
+1. Update the Rust command signature/model and the matching `src/platform/tauri` wrapper and `contracts` type in the same change. Confirm command argument casing, nested serde casing, optional/null behavior, enum tags, and all numeric types.
 2. If adding or removing a command, update the `tauri::generate_handler!` registration in `src-tauri/src/lib.rs`. Search for direct `invoke` calls so the wrapper remains the single frontend seam.
 3. Preserve existing command names and payload fields when compatibility is required. For a migration, add the replacement first, move consumers and tests, then explicitly remove the legacy command/event in a later breaking change. Do not silently repurpose ignored compatibility fields.
 4. For query-visible writes, decide when to bump the library revision and test the resulting `ready`/`stale` behavior. Test cache reuse, expiry/eviction assumptions, limit/offset clamps, concurrent starts, and frontend generation rejection if those semantics change.
@@ -281,9 +282,9 @@ When changing IPC:
 ### Relevant tests
 
 - `src/platform/tauri/__tests__/api.test.ts` checks selected invoke payloads, native video channel delivery, and media-path conversion.
-- `src/hooks/__tests__/useLibraryBrowser.test.ts` exercises the session-query wrapper contract through the library hooks, including filters and pagination.
-- `src/hooks/__tests__/useThumbnailQueue.test.ts` exercises streamed ready/failed handling, batching, and ignoring messages after the frontend generation changes.
-- `src/components/settings/services/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings hook tests cover subscription lifetimes and command workflows.
+- `src/library/__tests__/createLibrary.test.ts` exercises the session-query contract through the library model, including filters and pagination.
+- `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` exercises streamed ready/failed handling, batching, and ignoring messages after the frontend generation changes.
+- `src/features/settings/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings model tests cover subscription lifetimes and command workflows.
 - Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, `video.rs`, and `import_export.rs` cover filename/root/CSV/video validation and cancellation behavior.
 - Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, `asset_query_service.rs`, `video_source_service.rs`, and `video_player_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive and video-source safety, query/session semantics, and persistence behavior.
 - `src-tauri/tests/backend_integration.rs` and `backend_e2e.rs` cover file-backed cross-layer mutation/import workflows but do not exercise JavaScript serialization.

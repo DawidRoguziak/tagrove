@@ -1,7 +1,7 @@
 import { renderHook } from "@solidjs/testing-library";
 import { createEffect, createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
-import { ThumbnailStore } from "../../../hooks/services/thumbnailStore";
+import { ThumbnailStore } from "../thumbnailStore";
 import { settle } from "../../../test/settle";
 import { createAssetThumbnail } from "../createAssetThumbnail";
 

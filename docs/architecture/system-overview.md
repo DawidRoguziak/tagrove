@@ -10,7 +10,7 @@ For narrower contracts, use the canonical pages for [frontend architecture](../f
 
 ```mermaid
 flowchart LR
-    UI["React components and hooks"]
+    UI["Solid components and models"]
     API["src/platform/tauri"]
     IPC["Tauri invoke, Channel, and events"]
     CMD["commands/*"]
@@ -35,19 +35,12 @@ flowchart LR
     IPC -. "promise, event, or Channel message" .-> UI
 ```
 
-During the [Solid 2 migration](../solid2/README.md), React remains the default.
-`MEDIATAGGER_FRONTEND=solid` selects a separate bootstrap entry at `src/app/main.tsx`.
-It renders the virtual gallery, search, tag discovery and selection, plus Appearance and
-Language settings. Shared controls and modal/lazy boundaries use Solid ownership.
-Bulk editing, lightbox media and the remaining settings workflows still use the React reference.
-Both entries call `src/platform/tauri`; `src/api.ts` remains a React compatibility export.
-The flow below describes the functional React app.
-
+Solid 2 is the only frontend after [migration stage 9](../solid2/09-parity-and-cutover.md).
 The normal request path is:
 
-1. `src/main.tsx` loads i18n and styles, applies the persisted theme before rendering, and mounts `App` under React `StrictMode`. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.
-2. `App.tsx` mounts `UiLayerProvider` and delegates application state and actions to `useAppShellController`. Settings and lightbox are lazy-loaded and prefetched after 1.5 seconds; the gallery and bulk sidebar are eagerly imported. See [frontend composition](../frontend/architecture-and-ui-conventions.md#lazy-loading-and-delayed-prefetch) for loading and failure UI.
-3. Feature hooks call typed wrappers in `src/api.ts`. The subsystem modules behind that compatibility export translate UI concepts into Tauri command names and payloads, create IPC channels for thumbnail and video events, and use `convertFileSrc` for image/GIF URLs.
+1. `src/app/main.tsx` calls `mountApplication`, which applies the persisted theme, loads i18next and mounts the application. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.
+2. `src/app/App.tsx` composes language, runtime and UI-layer owners. `createAppRuntime` owns library, search, selection, bulk, lightbox and settings models across view changes. Settings and lightbox are lazy-loaded and prefetched after 1.5 seconds; the gallery is eagerly imported.
+3. Feature and library models call typed functions in `src/platform/tauri`. Its subsystem modules construct command payloads, thumbnail/video channels and image/GIF URLs.
 4. Tauri dispatches the request to a function registered by `tauri::generate_handler!` in `src-tauri/src/lib.rs`. Command functions validate or normalize inputs, obtain `AppState`, acquire a workflow lock where required, and either perform a small operation or delegate to a service.
 5. Services coordinate scanning, query sessions, backups, progress, and thumbnail scheduling. `db.rs` owns SQL; `indexer.rs` discovers and inspects media; `thumbs.rs` performs image/video probing and rendering; filesystem mutations occur in the command or service responsible for that workflow.
 6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; on-demand thumbnail batches and native video sessions use channels.
@@ -158,7 +151,7 @@ Command-level workflow locks have the following matrix:
 
 Whenever both ordinary workflow locks are needed, `with_scan_and_thumb_lock` acquires one operation permit, `scan_lock`, and then the thumbnail write lock. Maintenance uses `with_database_maintenance`, which closes admission, drains admitted operations, closes idle connections, and clears query sessions before taking `scan_lock` and the thumbnail write lock. Preserve these orders; acquiring lower locks before entering maintenance can deadlock. `ThumbnailScheduler`, the query cache, and the database connection pool have their own internal synchronization and are not substitutes for these workflow locks.
 
-The React settings runner also suppresses concurrent settings operations in one mounted frontend, but that is a user-interface convenience, not a backend safety boundary. Direct IPC callers can still invoke commands concurrently.
+The settings operation runner also suppresses concurrent settings operations in one mounted frontend, but that is a user-interface convenience, not a backend safety boundary. Direct IPC callers can still invoke commands concurrently.
 
 ## Native media dependencies
 
@@ -199,8 +192,8 @@ This split is deliberate. Changing the Tauri identifier changes the app-data dir
 
 Before merging an architectural change:
 
-- Trace the complete path from the calling hook/component through `src/api.ts`, the registered Tauri command, service/core code, and every SQLite/filesystem effect. Update the [IPC contract](ipc-contract.md) if names, payloads, channels, events, or error semantics change.
-- If adding a command, register it in `lib.rs`, expose it through `src/api.ts`, validate at the command boundary, and prefer orchestration in the appropriate service.
+- Trace the complete path from the calling model/component through `src/platform/tauri`, the registered Tauri command, service/core code, and every SQLite/filesystem effect. Update the [IPC contract](ipc-contract.md) if names, payloads, channels, events, or error semantics change.
+- If adding a command, register it in `lib.rs`, expose it through `src/platform/tauri`, validate at the command boundary, and prefer orchestration in the appropriate service.
 - Classify the operation in the lock matrix. Use the shared helpers; if both locks are needed, acquire scan before the exclusive thumbnail lock. Consider direct IPC concurrency, not only UI button state.
 - For `AppState` changes, update bootstrap construction and all test fixtures. Decide whether the value truly belongs in managed state or in a focused service.
 - For database writes, use transactions where a workflow must be atomic, bump the library revision when query-visible state changes, and invalidate process caches/pools when replacing the database. Follow [database](../subsystems/database.md) and [data safety](../subsystems/data-safety-and-portability.md) guidance.
@@ -215,7 +208,7 @@ Before merging an architectural change:
 Use [testing](../development/testing.md) for the full test workflow. The most relevant existing checks are:
 
 - `src/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
-- Frontend hook/component tests under `src/hooks/**/__tests__` and `src/components/**/__tests__`: query lifecycle, thumbnail queues, settings progress, mutation refreshes, and UI behavior.
+- Frontend model/component tests under `src/library/**/__tests__` and `src/features/**/__tests__`: query lifecycle, thumbnail queues, settings progress, mutation refreshes, and UI behavior.
 - Rust unit tests in `db.rs`, `commands/*`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.

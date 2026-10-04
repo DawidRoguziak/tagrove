@@ -1,11 +1,11 @@
-import type { AssetSummary } from "../../../types";
+import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
 import { cleanup, fireEvent as domEvent, screen } from "@solidjs/testing-library";
 import { settle as act } from "../../../test/settle";
 import { renderSolid } from "../../../test/renderSolid";
 import { createSignal, createEffect, flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UiLayerProvider, createUiLayer } from "../../../ui/overlays/UiLayerProvider";
-import type { BulkSelectionHandler } from "../../../components/gallery/selection";
+import type { BulkSelectionHandler } from "../selection";
 import { createGridHandlers } from "../createGridHandlers";
 
 class TestPointerEvent extends MouseEvent {

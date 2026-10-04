@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import type { SuggestionClient } from "../../../components/search/worker/SuggestionClient";
-import type { ActiveToken, TagSuggestion } from "../../../components/search/types";
+import type { SuggestionClient } from "./SuggestionClient";
+import type { ActiveToken, TagSuggestion } from "./types";
 let editorId = 0;
 const EMPTY: TagSuggestion[] = [];
 export function createSuggestions(

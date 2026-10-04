@@ -1,102 +1,103 @@
-# React behavior inventory
+# Migration behavior inventory
 
 Reference source commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
-Stage 1 started at documentation commit `0e1cc02`. All 84 suites and 699 tests
-retain their assertions. Stage 2 moves the API and theme suites without changing their assertions. The table assigns each suite to one Vitest project and a future
-owner; it does not claim those owners are implemented. Update individual rows when
-porting assertions. Pure helpers may remain shared at their current path until moved.
+The original 84 suites and 699 tests are mapped below to their final owners.
+The old paths identify reference suites in Git history, not files in the final checkout.
+React lifecycle and setter-spy assertions are replaced by Solid ownership, disposal,
+canonical publication and user-visible behavior checks. Removed action wrappers are
+covered through the actual library mutations and feature models that replaced them.
 
-React render-count and StrictMode assertions stay in the reference suites. Their Solid
-replacements must check update isolation and owned disposal before removing the originals.
-`SuggestionClient.test.ts` remains in React because it also mounts the vocabulary hook.
-Shared tests use DOM mocks without importing the React i18n binding.
+| Reference suite | Final test owner | Resolution |
+| --- | --- | --- |
+| `src/__tests__/App.test.tsx` | `src/app/__tests__/runtimeIntegration.test.ts`; `src/features/settings/__tests__/createSettingsActions.test.tsx`; `src/app/__tests__/gallery.test.tsx`; `src/app/__tests__/runtime.test.ts`; `src/app/__tests__/shell.test.tsx`; `src/library/metadata/__tests__/mutations.test.ts`; `src/features/settings/__tests__/operationSafety.test.tsx` | Replaced by model/component behavior assertions |
+| `src/platform/tauri/__tests__/api.test.ts` | `src/platform/tauri/__tests__/api.test.ts` | Retained |
+| `src/components/UI/__tests__/LazyErrorBoundary.test.tsx` | `src/app/__tests__/shell.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/UI/__tests__/ModalPresence.test.tsx` | `src/ui/overlays/__tests__/UiModal.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/UI/__tests__/TagEditor.test.tsx` | `src/features/tagging/__tests__/TagEditor.test.tsx` | Ported behavior assertions |
+| `src/components/UI/__tests__/ThumbnailImage.test.tsx` | `src/ui/controls/__tests__/ThumbnailImage.test.tsx` | Ported behavior assertions |
+| `src/components/UI/__tests__/UiAlert.test.tsx` | `src/ui/controls/__tests__/controls.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/UI/__tests__/UiModal.test.tsx` | `src/ui/overlays/__tests__/UiModal.test.tsx` | Ported behavior assertions |
+| `src/components/UI/__tests__/UiSegmentedControl.test.tsx` | `src/ui/controls/__tests__/controls.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/app/__tests__/WindowControls.test.tsx` | `src/app/__tests__/WindowControls.test.tsx` | Ported behavior assertions |
+| `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` | `src/features/search/__tests__/createSearch.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/app/hooks/__tests__/useAssetTagState.test.ts` | `src/library/metadata/__tests__/createAssetTagState.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/app/hooks/__tests__/useBulkFavorites.test.ts` | `src/features/bulk/__tests__/createBulk.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/app/hooks/__tests__/useBulkSelectionController.test.ts` | `src/features/bulk/__tests__/createBulk.test.ts`; `src/features/gallery/__tests__/createSelection.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/app/hooks/__tests__/useSelectedSummaries.test.ts` | `src/features/bulk/__tests__/createBulk.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/app/services/__tests__/assetMutationService.test.ts` | `src/library/metadata/__tests__/mutations.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/app/services/__tests__/filterService.test.ts` | `src/features/search/__tests__/filterService.test.ts` | Moved with its assertions |
+| `src/components/app/services/__tests__/libraryInvalidationService.test.ts` | `src/library/metadata/__tests__/queryImpact.test.ts` | Moved with its assertions |
+| `src/ui/dom/__tests__/theme.test.ts` | `src/ui/dom/__tests__/theme.test.ts` | Retained |
+| `src/components/app/services/__tests__/tileSizeService.test.ts` | `src/features/gallery/__tests__/tileSizeService.test.ts` | Moved with its assertions |
+| `src/components/bulk/__tests__/BulkActionsSidebar.test.tsx` | `src/features/bulk/__tests__/BulkActionsSidebar.test.tsx` | Ported behavior assertions |
+| `src/components/bulk/grouping/services/__tests__/applyBulkMediaGroupAction.test.ts` | `src/features/bulk/__tests__/createBulk.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/bulk/grouping/services/__tests__/bulkGroupOrderService.test.ts` | `src/features/bulk/__tests__/bulkGroupOrderService.test.ts` | Moved with its assertions |
+| `src/components/bulk/tagging/services/__tests__/applyBulkTagsAction.test.ts` | `src/features/bulk/__tests__/createBulk.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/gallery/__tests__/GalleryGrid.test.tsx` | `src/features/gallery/__tests__/GalleryGrid.test.tsx` | Ported behavior assertions |
+| `src/components/gallery/__tests__/GalleryStatusFooter.test.tsx` | `src/features/gallery/__tests__/GalleryStatusFooter.test.tsx` | Ported behavior assertions |
+| `src/components/gallery/hooks/__tests__/useGalleryGridHandlers.test.tsx` | `src/features/gallery/__tests__/createGridHandlers.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` | `src/features/gallery/__tests__/createVirtualGrid.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/gallery/services/__tests__/selectionGeometry.test.ts` | `src/features/gallery/__tests__/selectionGeometry.test.ts` | Moved with its assertions |
+| `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` | `src/features/lightbox/__tests__/LightboxModal.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx` | `src/features/lightbox/__tests__/imageControls.test.tsx`; `src/features/lightbox/video/__tests__/LightboxVideo.test.tsx`; `src/features/lightbox/__tests__/LightboxModal.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx` | `src/features/lightbox/__tests__/presentation.test.ts`; `src/features/lightbox/__tests__/LightboxModal.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/__tests__/LightboxModal.test.tsx` | `src/features/lightbox/__tests__/LightboxModal.test.tsx` | Ported behavior assertions |
+| `src/components/lightbox/__tests__/MediaGroupSetter.test.tsx` | `src/features/lightbox/__tests__/MediaGroupSetter.test.tsx` | Ported behavior assertions |
+| `src/components/lightbox/__tests__/nativeVideoLayout.test.ts` | `src/features/lightbox/video/__tests__/nativeVideoLayout.test.ts` | Moved with its assertions |
+| `src/components/lightbox/__tests__/useLightboxImageControls.test.ts` | `src/features/lightbox/__tests__/imageControls.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/__tests__/useLightboxTagging.test.ts` | `src/features/lightbox/__tests__/LightboxModal.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx` | `src/features/lightbox/video/__tests__/createNativeVideoSession.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/hooks/__tests__/useLightboxActivity.test.ts` | `src/features/lightbox/__tests__/presentation.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts` | `src/features/lightbox/__tests__/keyboard.test.tsx`; `src/features/lightbox/__tests__/imageControls.test.tsx`; `src/features/lightbox/video/__tests__/LightboxVideo.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/hooks/__tests__/useLightboxModalHandlers.test.ts` | `src/features/lightbox/__tests__/createLightbox.test.ts`; `src/features/lightbox/__tests__/LightboxModal.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/hooks/__tests__/useLightboxSidebar.test.ts` | `src/features/lightbox/__tests__/presentation.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/services/__tests__/deleteLightboxAssetAction.test.ts` | `src/features/lightbox/__tests__/createLightbox.test.ts`; `src/library/metadata/__tests__/mutations.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/services/__tests__/saveLightboxMediaGroupAction.test.ts` | `src/features/lightbox/__tests__/createLightbox.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/services/__tests__/saveLightboxTagsAction.test.ts` | `src/features/lightbox/__tests__/createLightbox.test.ts`; `src/library/metadata/__tests__/mutations.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/lightbox/services/__tests__/toggleLightboxFavoriteAction.test.ts` | `src/library/metadata/__tests__/mutations.test.ts`; `src/features/lightbox/__tests__/createLightbox.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/search/__tests__/SearchTagator.test.tsx` | `src/features/search/__tests__/SearchTagator.test.tsx` | Ported behavior assertions |
+| `src/components/search/__tests__/SearchTagatorWrapper.test.tsx` | `src/features/search/__tests__/SearchTagatorWrapper.test.tsx` | Ported behavior assertions |
+| `src/components/search/hooks/__tests__/useSearchTagatorHandlers.test.ts` | `src/features/search/__tests__/SearchTagator.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/search/services/__tests__/inputService.test.ts` | `src/features/search/suggestions/__tests__/inputService.test.ts` | Moved with its assertions |
+| `src/components/search/services/__tests__/suggestionService.test.ts` | `src/features/search/suggestions/__tests__/suggestionService.test.ts` | Moved with its assertions |
+| `src/components/search/services/__tests__/tokenService.test.ts` | `src/features/search/suggestions/__tests__/tokenService.test.ts` | Moved with its assertions |
+| `src/components/search/worker/__tests__/SuggestionClient.test.ts` | `src/features/search/suggestions/__tests__/SuggestionClient.test.ts` | Ported behavior assertions |
+| `src/components/search/worker/__tests__/useSuggestions.test.tsx` | `src/features/search/suggestions/__tests__/createSuggestions.test.ts` | Replaced by model/component behavior assertions |
+| `src/components/settings/__tests__/ClearLibraryConfirmDialog.test.tsx` | `src/features/settings/__tests__/ClearLibraryConfirmDialog.test.tsx` | Ported behavior assertions |
+| `src/components/settings/__tests__/DuplicateResolverDialog.test.tsx` | `src/features/settings/__tests__/DuplicateResolverDialog.test.tsx` | Ported behavior assertions |
+| `src/components/settings/__tests__/RemoveScanRootConfirmDialog.test.tsx` | `src/features/settings/__tests__/RemoveScanRootConfirmDialog.test.tsx` | Ported behavior assertions |
+| `src/components/settings/__tests__/SectionOperationStatus.test.tsx` | `src/features/settings/__tests__/SectionOperationStatus.test.tsx` | Ported behavior assertions |
+| `src/components/settings/__tests__/SettingsPanel.test.tsx` | `src/features/settings/__tests__/SettingsPanel.test.tsx` | Ported behavior assertions |
+| `src/components/settings/hooks/__tests__/useDuplicateResolverHandlers.test.ts` | `src/features/settings/__tests__/createDuplicateResolver.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/settings/hooks/__tests__/useStartupScan.test.tsx` | `src/features/settings/__tests__/startupScan.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/settings/sections/__tests__/AboutSection.test.tsx` | `src/features/settings/__tests__/AboutSection.test.tsx` | Ported behavior assertions |
+| `src/components/settings/sections/__tests__/AppearanceSection.test.tsx` | `src/app/__tests__/shell.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/settings/sections/__tests__/DangerZoneSection.test.tsx` | `src/features/settings/__tests__/DangerZoneSection.test.tsx` | Ported behavior assertions |
+| `src/components/settings/sections/__tests__/DuplicatesSection.test.tsx` | `src/features/settings/__tests__/DuplicatesSection.test.tsx` | Ported behavior assertions |
+| `src/components/settings/sections/__tests__/ImportExportSection.test.tsx` | `src/features/settings/__tests__/ImportExportSection.test.tsx` | Ported behavior assertions |
+| `src/components/settings/sections/__tests__/LanguageSection.test.tsx` | `src/app/__tests__/shell.test.tsx` | Replaced by model/component behavior assertions |
+| `src/components/settings/sections/__tests__/ScanSettingsSection.test.tsx` | `src/features/settings/__tests__/ScanSettingsSection.test.tsx` | Ported behavior assertions |
+| `src/components/settings/services/__tests__/duplicateValidationService.test.ts` | `src/features/settings/__tests__/duplicateValidationService.test.ts` | Moved with its assertions |
+| `src/components/settings/services/__tests__/operationStateService.test.ts` | `src/features/settings/__tests__/operationStateService.test.ts` | Moved with its assertions |
+| `src/components/settings/services/__tests__/progressService.test.ts` | `src/features/settings/__tests__/progressService.test.ts` | Moved with its assertions |
+| `src/components/tag-list/__tests__/TagListModal.test.tsx` | `src/features/search/tag-list/__tests__/TagListModal.test.tsx` | Ported behavior assertions |
+| `src/components/tag-list/__tests__/TagListSearchLauncher.test.tsx` | `src/features/search/tag-list/__tests__/TagListModal.test.tsx`; `src/app/__tests__/gallery.test.tsx` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/queryRefreshNavigation.test.tsx` | `src/features/lightbox/__tests__/createLightbox.test.ts` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/useLibraryAssets.test.tsx` | `src/library/query/__tests__/createAssetQuery.test.ts` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/useLibraryBrowser.test.ts` | `src/library/__tests__/createLibrary.test.ts` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/useLibraryKnownTags.test.ts` | `src/library/vocabulary/__tests__/createKnownTags.test.ts` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/useSelectionState.test.ts` | `src/features/lightbox/__tests__/createLightbox.test.ts` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/useSettingsActions.test.ts` | `src/features/settings/__tests__/createSettingsActions.test.tsx` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/useSettingsActionsConfirmFlow.test.ts` | `src/features/settings/__tests__/createSettingsActionsConfirmFlow.test.tsx` | Replaced by model/component behavior assertions |
+| `src/hooks/__tests__/useThumbnailQueue.test.ts` | `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` | Replaced by model/component behavior assertions |
+| `src/hooks/services/__tests__/thumbnailStore.test.ts` | `src/library/thumbnails/__tests__/thumbnailStore.test.ts` | Moved with its assertions |
+| `src/utils/__tests__/literalTagSearch.test.ts` | `src/utils/__tests__/literalTagSearch.test.ts` | Retained |
+| `src/utils/__tests__/media.test.ts` | `src/utils/__tests__/media.test.ts` | Retained |
 
-| Existing suite | Current project | Future stage and owner | Assertion status |
-| --- | --- | --- | --- |
-| `src/__tests__/App.test.tsx` | react | 2–8, `app` composition and feature integration | Retained, all assertions |
-| `src/platform/tauri/__tests__/api.test.ts` | shared | 2, `platform/tauri` command contracts | Moved, all assertions retained |
-| `src/components/UI/__tests__/LazyErrorBoundary.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/app/__tests__/shell.test.tsx` |
-| `src/components/UI/__tests__/ModalPresence.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx`, feature confirmations remain for stage 8 |
-| `src/components/UI/__tests__/TagEditor.test.tsx` | react | 5, `features/tagging` | React reference retained; Solid counterpart in `src/features/tagging/__tests__/TagEditor.test.tsx` |
-| `src/components/UI/__tests__/ThumbnailImage.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/ui/controls/__tests__/ThumbnailImage.test.tsx` |
-| `src/components/UI/__tests__/UiAlert.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
-| `src/components/UI/__tests__/UiModal.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx` |
-| `src/components/UI/__tests__/UiSegmentedControl.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
-| `src/components/app/__tests__/WindowControls.test.tsx` | react | 2, `app/WindowControls` | React assertions retained; Solid counterpart in `src/app/__tests__/WindowControls.test.tsx` |
-| `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` | react | 4, `features/search` | React reference retained; Solid coverage in `src/features/search/__tests__/createSearch.test.ts` and app gallery integration |
-| `src/components/app/hooks/__tests__/useAssetTagState.test.ts` | react | 3, `library/metadata` | React assertions retained; Solid counterpart in `src/library/metadata/__tests__/createAssetTagState.test.ts` |
-| `src/components/app/hooks/__tests__/useBulkFavorites.test.ts` | react | 5, `features/bulk` selection and metadata | React reference retained; Solid coverage in `src/features/bulk/__tests__/createBulk.test.ts`, stage-4 selection and stage-3 metadata suites |
-| `src/components/app/hooks/__tests__/useBulkSelectionController.test.ts` | react | 5, `features/bulk` selection and metadata | React reference retained; Solid coverage in `src/features/bulk/__tests__/createBulk.test.ts`, stage-4 selection and stage-3 metadata suites |
-| `src/components/app/hooks/__tests__/useSelectedSummaries.test.ts` | react | 5, `features/bulk` selection and metadata | React reference retained; Solid coverage in `src/features/bulk/__tests__/createBulk.test.ts`, stage-4 selection and stage-3 metadata suites |
-| `src/components/app/services/__tests__/assetMutationService.test.ts` | shared | 3, `library/metadata` | Retained, all assertions |
-| `src/components/app/services/__tests__/filterService.test.ts` | shared | 4, `features/search` | Retained, all assertions |
-| `src/components/app/services/__tests__/libraryInvalidationService.test.ts` | shared | 3, `library/metadata` | Retained, all assertions |
-| `src/ui/dom/__tests__/theme.test.ts` | shared | 2, shared theme persistence | Moved, all assertions retained |
-| `src/components/app/services/__tests__/tileSizeService.test.ts` | shared | 4, gallery sizing | Retained, all assertions |
-| `src/components/bulk/__tests__/BulkActionsSidebar.test.tsx` | react | 5, `features/bulk` | React reference retained; Solid counterpart in `src/features/bulk/__tests__/BulkActionsSidebar.test.tsx` |
-| `src/components/bulk/grouping/services/__tests__/applyBulkMediaGroupAction.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
-| `src/components/bulk/grouping/services/__tests__/bulkGroupOrderService.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
-| `src/components/bulk/tagging/services/__tests__/applyBulkTagsAction.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
-| `src/components/gallery/__tests__/GalleryGrid.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in real-core/cache integration in `src/features/gallery/__tests__/GalleryGrid.test.tsx` |
-| `src/components/gallery/__tests__/GalleryStatusFooter.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/GalleryStatusFooter.test.tsx` |
-| `src/components/gallery/hooks/__tests__/useGalleryGridHandlers.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/createGridHandlers.test.tsx` |
-| `src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/createVirtualGrid.test.tsx` plus real DOM/cache integration |
-| `src/components/gallery/services/__tests__/selectionGeometry.test.ts` | shared | 4, `features/gallery` | Retained, all assertions |
-| `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx |
-| `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid imageControls.test.tsx and LightboxModal.test.tsx; native-video cases covered by Solid video/LightboxVideo.test.tsx |
-| `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts and LightboxModal.test.tsx |
-| `src/components/lightbox/__tests__/LightboxModal.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx; native-video cases covered by Solid video/LightboxVideo.test.tsx |
-| `src/components/lightbox/__tests__/MediaGroupSetter.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid MediaGroupSetter.test.tsx |
-| `src/components/lightbox/__tests__/nativeVideoLayout.test.ts` | shared | 7, `features/lightbox/video` | Retained, all assertions |
-| `src/components/lightbox/__tests__/useLightboxImageControls.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid imageControls.test.tsx |
-| `src/components/lightbox/__tests__/useLightboxTagging.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx |
-| `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx` | react | 7, `features/lightbox/video` | React retained; Solid createNativeVideoSession.test.ts ports all nine cases and adds early buffering, disposal and label failure coverage |
-| `src/components/lightbox/hooks/__tests__/useLightboxActivity.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts |
-| `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx, imageControls.test.tsx and video/LightboxVideo.test.tsx |
-| `src/components/lightbox/hooks/__tests__/useLightboxModalHandlers.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx and createLightbox.test.ts |
-| `src/components/lightbox/hooks/__tests__/useLightboxSidebar.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts and LightboxModal.test.tsx |
-| `src/components/lightbox/services/__tests__/deleteLightboxAssetAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/services/__tests__/saveLightboxMediaGroupAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/services/__tests__/saveLightboxTagsAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/lightbox/services/__tests__/toggleLightboxFavoriteAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/search/__tests__/SearchTagator.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/__tests__/SearchTagator.test.tsx` |
-| `src/components/search/__tests__/SearchTagatorWrapper.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in wrapper keyboard/focus tests plus `src/app/__tests__/gallery.test.tsx`; legacy parent-commit callbacks are replaced by explicit model commands |
-| `src/components/search/hooks/__tests__/useSearchTagatorHandlers.test.ts` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in Solid search component keyboard/caret/IME tests |
-| `src/components/search/services/__tests__/inputService.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/search/services/__tests__/suggestionService.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/search/services/__tests__/tokenService.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/search/worker/__tests__/SuggestionClient.test.ts` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/suggestions/__tests__/SuggestionClient.test.ts` using the shared client and Solid vocabulary |
-| `src/components/search/worker/__tests__/useSuggestions.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/suggestions/__tests__/createSuggestions.test.ts` |
-| `src/components/settings/__tests__/ClearLibraryConfirmDialog.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/__tests__/DuplicateResolverDialog.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/__tests__/RemoveScanRootConfirmDialog.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/__tests__/SectionOperationStatus.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/__tests__/SettingsPanel.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/hooks/__tests__/useDuplicateResolverHandlers.test.ts` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/hooks/__tests__/useStartupScan.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/sections/__tests__/AboutSection.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/sections/__tests__/AppearanceSection.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/sections/__tests__/DangerZoneSection.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/sections/__tests__/DuplicatesSection.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/sections/__tests__/ImportExportSection.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/sections/__tests__/LanguageSection.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/sections/__tests__/ScanSettingsSection.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/services/__tests__/duplicateValidationService.test.ts` | shared | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/services/__tests__/operationStateService.test.ts` | shared | 8, `features/settings` | Retained, all assertions |
-| `src/components/settings/services/__tests__/progressService.test.ts` | shared | 8, `features/settings` | Retained, all assertions |
-| `src/components/tag-list/__tests__/TagListModal.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/tag-list/__tests__/TagListModal.test.tsx` and pagination races |
-| `src/components/tag-list/__tests__/TagListSearchLauncher.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in toolbar/modal integration and native literal-tag scenario |
-| `src/hooks/__tests__/queryRefreshNavigation.test.tsx` | react | 6, `features/lightbox` selection and navigation | React reference retained; Solid coverage in `src/features/lightbox/__tests__/createLightbox.test.ts` |
-| `src/hooks/__tests__/useLibraryAssets.test.tsx` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/query/__tests__/createAssetQuery.test.ts` |
-| `src/hooks/__tests__/useLibraryBrowser.test.ts` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/__tests__/createLibrary.test.ts` |
-| `src/hooks/__tests__/useLibraryKnownTags.test.ts` | react | 3, `library/vocabulary` | React assertions retained; Solid counterpart in `src/library/vocabulary/__tests__/createKnownTags.test.ts` |
-| `src/hooks/__tests__/useSelectionState.test.ts` | react | 6, `features/lightbox` selection and navigation | React reference retained; Solid coverage in `src/features/lightbox/__tests__/createLightbox.test.ts` |
-| `src/hooks/__tests__/useSettingsActions.test.ts` | react | 8, `features/settings` | Retained, all assertions |
-| `src/hooks/__tests__/useSettingsActionsConfirmFlow.test.ts` | react | 8, `features/settings` | Retained, all assertions |
-| `src/hooks/__tests__/useThumbnailQueue.test.ts` | react | 3, `library/thumbnails` | React assertions retained; Solid counterpart in `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` |
-| `src/hooks/services/__tests__/thumbnailStore.test.ts` | shared | 3, `library/thumbnails` | Retained, all assertions |
-| `src/utils/__tests__/literalTagSearch.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/utils/__tests__/media.test.ts` | shared | 6, framework-independent media helpers | Retained, all assertions |
+## Historical stage notes
+
+These notes describe intermediate commits. The final ownership table above supersedes
+references below to retained React suites or temporary Vitest projects.
 
 Stage 2 adds shell mount/disposal, all 11 live translations, theme persistence/native sync,
 settings remounts, lazy loading/failure, optional performance cleanup, stale native-window
@@ -195,3 +196,12 @@ scan-lifetime case delays delivery of the real IPC result without replacing the 
 progress events. Existing startup, settings-language, About and import/export workflow
 scenarios run with both renderers. Native file chooser interaction is covered at the mocked
 platform boundary; desktop CSV/bundle roundtrips call real commands directly.
+
+## Stage 9 completion
+
+The final suite runs only Solid and pure tests. Startup vocabulary loading and its failure
+logging are covered in `src/app/__tests__/runtime.test.ts`. The real application regression
+in `src/app/__tests__/lightboxRecovery.test.tsx` proves failed-view reopen recovery and
+healthy media ownership across navigation. Lightbox model tests retain all no-selection
+mutation guards. The 84 reference suites above have final owners; no behavior gap remains
+open in this inventory.

@@ -5,7 +5,7 @@ import { cleanup, fireEvent, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MediaGroupSetter } from "../MediaGroupSetter";
-import { parseMediaGroupOrder } from "../../../components/lightbox/services/parseMediaGroupOrder";
+import { parseMediaGroupOrder } from "../parseMediaGroupOrder";
 
 afterEach(cleanup);
 

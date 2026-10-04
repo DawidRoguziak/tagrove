@@ -1,15 +1,15 @@
 import { GroupOrderModal } from "./GroupOrderModal";
 import { createEffect, createMemo, createSignal, onCleanup, For } from "solid-js";
-import type { SuggestionClient } from "../../components/search/worker/SuggestionClient";
-import type { ThumbnailStore } from "../../hooks/services/thumbnailStore";
+import type { SuggestionClient } from "../search/suggestions/SuggestionClient";
+import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 import { useLanguage } from "../../i18n/solid";
 import type { BulkController } from "./createBulk";
 import { TagEditor } from "../tagging/TagEditor";
 import { UiAlert } from "../../ui/controls/UiAlert";
 import { UiButton } from "../../ui/controls/UiButton";
 import { UiIconButton } from "../../ui/controls/UiIconButton";
-import { normalizeGroupKey } from "../../components/bulk/grouping/services/bulkGroupOrderService";
-import { normalizeBulkTag } from "../../components/bulk/tagging/services/bulkTagMergeService";
+import { normalizeGroupKey } from "./bulkGroupOrderService";
+import { normalizeBulkTag } from "./bulkTagMergeService";
 
 interface BulkActionsSidebarProps {
   controller: BulkController;

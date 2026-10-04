@@ -4,7 +4,7 @@ import { createLibrary } from "../../../library/createLibrary";
 import { createLightbox } from "../createLightbox";
 import { settle } from "../../../test/settle";
 import { asset, summary, deferred, saved } from "./fixtures";
-import type { AssetDetails, AssetSummary, AssetQueryPositionResult } from "../../../types";
+import type { AssetDetails, AssetSummary, AssetQueryPositionResult } from "../../../platform/tauri/contracts/assets";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
@@ -73,6 +73,20 @@ describe("Solid lightbox selection and metadata", () => {
     await settled();
     expect(box.tagEditor).toEqual(["cat"]);
     expect(box.tagEditingDisabled).toBe(false);
+  });
+  it.each([false, true])("sends no mutation without a selection, previously opened=%s", async (opened) => {
+    const { box } = await setup(opened);
+    settle(box.close);
+    await settle(async () => {
+      box.saveTags(["ignored"]);
+      await box.toggleFavorite();
+      await box.saveMediaGroup();
+      expect(await box.deleteSelected()).toBeNull();
+    });
+    expect(api.setAssetTags).not.toHaveBeenCalled();
+    expect(api.setAssetFavorite).not.toHaveBeenCalled();
+    expect(api.setAssetMediaGroup).not.toHaveBeenCalled();
+    expect(api.deleteAsset).not.toHaveBeenCalled();
   });
   it("ignores details after selection changes and close", async () => {
     const first = deferred<AssetDetails>(),

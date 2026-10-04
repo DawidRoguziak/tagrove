@@ -1,6 +1,6 @@
 import { UiProgressBar } from "../../ui/controls/UiProgressBar";
-import { formatProgressLabel } from "../../components/settings/services/progressService";
-import type { SectionOperationState } from "../../components/settings/types";
+import { formatProgressLabel } from "./progressService";
+import type { SectionOperationState } from "./types";
 interface SectionOperationStatusProps {
   state: SectionOperationState;
   loaderTestId: string;

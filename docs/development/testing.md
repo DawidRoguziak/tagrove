@@ -8,7 +8,7 @@ MediaTagger has four test layers. Use the lowest layer that can prove the behavi
 
 | Layer | Location | Runner and command | What it exercises | What it does not prove |
 | --- | --- | --- | --- | --- |
-| Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx`, and `src/__tests__/` | Vitest with `bun run test` | TypeScript services, hooks, React/Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
+| Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx`, and `src/__tests__/` | Vitest with `bun run test` | TypeScript helpers, models, Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
 | Rust unit | `#[cfg(test)]` modules beside backend code in `src-tauri/src/` | Cargo through `bun run test:backend` | Isolated database helpers, validation, scanning/indexing helpers, thumbnail scheduling and parsing, backup helpers, and command/service logic | A JavaScript caller, desktop window, packaged resources, or a complete application workflow |
 | Rust integration and backend workflow | `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` | Cargo through `bun run test:backend`, or the focused package scripts below | File-backed SQLite and temporary-filesystem behavior across multiple backend modules | Tauri startup, IPC serialization, WebDriver, UI, profile isolation, or packaging |
 | Desktop E2E | `e2e/specs/*.e2e.js` | WebdriverIO, `tauri-driver`, and WebKitWebDriver on Linux | A real unbundled debug Tauri window, the JavaScript-to-Rust invoke bridge, selected UI workflows, and E2E profile/build isolation | Production app data, all native dialogs, or all locales |
@@ -28,10 +28,10 @@ Run commands from the repository root.
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
 | `bun run app:control` | Keeps an isolated desktop E2E session open on a private Xvfb display for UI interaction, screenshots, and console inspection; see persistent desktop control below. |
-| `bun run test:e2e-build` | Checks selected-frontend build order, profile/selection rejection, and WDIO failure exit with fake build tools in a disposable project. |
+| `bun run test:e2e-build` | Checks frontend build order, profile rejection, preference isolation, and WDIO failure exit with fake build tools in a disposable project. |
 | `bun run test:app-control` | Runs Node tests for controller input validation, local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Checks both MP4s with ffprobe for video and zero audio streams. Requires Linux local sockets, ffmpeg, and ffprobe. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
-| `bun run typecheck` | Runs separate no-emit checks for React, Solid, and Vite/Vitest configuration. |
+| `bun run typecheck` | Runs separate no-emit checks for the Solid application/tests and Vite/Vitest configuration. |
 | `bun run lint` | Runs Biome lint across its configured source, E2E, and script includes. |
 | `bun run format:check` | Checks formatting in `scripts`, `vite.config.ts`, and `vitest.config.ts`; it does not format application source or Markdown. |
 | `bun run locale:check` | Checks language resources and placeholder parity offline; see [localization](localization.md#automated-locale-contract). |
@@ -43,12 +43,12 @@ Run commands from the repository root.
 | `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with the explicit advisory exclusions in `audit:rust`. |
 | `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, and desktop E2E. It stops at the first failed layer. |
 
-`bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It runs `bun run build` for the selected renderer before invoking Tauri. Its overlay disables the redundant `beforeBuildCommand`.
+`bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It runs `bun run build` for the application before invoking Tauri. Its overlay disables the redundant `beforeBuildCommand`.
 
 Focused examples:
 
 ```bash
-bun run test -- src/components/lightbox/__tests__/LightboxModal.test.tsx
+bun run test -- src/features/lightbox/__tests__/LightboxModal.test.tsx
 bun run test -- --maxWorkers=1
 cargo test --manifest-path src-tauri/Cargo.toml module_or_test_name
 cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration test_name
@@ -56,7 +56,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration test_
 
 There is no numeric coverage threshold. Run the frontend and backend suites explicitly; they are not CI merge gates.
 
-Solid library model tests live beside `src/library` owners and run with `--project solid`.
+Solid library model tests live beside `src/library` owners and run with `bun run test -- src/library`.
 They use Solid Testing Library's owned `renderHook` and `src/test/settle.ts` for explicit
 batch boundaries. Deferred promises control races; queue tests use fake timers. The model
 integration suites cover mutation admission/draining, canonical publication, query and
@@ -71,18 +71,16 @@ Frontend checks, Rust checks, application tests, and Linux packaging are run exp
 
 ## Frontend tests and Vitest
 
-`vitest.config.ts` defines three projects. `shared` runs framework-independent suites
-once; `react` retains renderer-dependent reference tests; `solid` compiles the new target
-directories with the Solid plugin, browser export conditions, and inlined Solid dependencies.
-See the [suite inventory](../solid2/BEHAVIOR-INVENTORY.md) for ownership. Use
-`bun run test -- --project solid` or `--project react` for focused runs; `bun run test`
-runs all three. TypeScript uses separate JSX contexts in `tsconfig.json` and
-`tsconfig.solid.json`.
+`vitest.config.ts` runs one Solid project across all source tests, using the Solid plugin,
+browser export conditions and inlined Solid dependencies. Pure tests execute once in the
+same project. See the [suite inventory](../solid2/BEHAVIOR-INVENTORY.md) for the reference
+suite replacements. Use file or directory arguments for focused runs. `tsconfig.json`
+checks every application and test source with `jsxImportSource: @solidjs/web`.
 
 `vitest.config.ts` is part of the test contract:
 
 - `environment: "jsdom"` provides a browser-like DOM, but it is not WebKitGTK or a Tauri runtime.
-- All projects share `src/test/setup-dom.ts` for jest-dom matchers, observers, animation-frame fallbacks, storage and the controlled suggestion worker. React setup additionally awaits i18next English selection. Solid setup explicitly disposes mounted roots after each test.
+- `src/test/setup.ts` imports DOM mocks from `setup-dom.ts`, awaits English i18next initialization and disposes mounted Solid roots after each test. DOM setup provides jest-dom matchers, observers, animation frames, storage and the controlled suggestion worker.
 - `globals: false` means every test imports `describe`, `it`, `expect`, `vi`, and other Vitest APIs explicitly.
 - `css: true` makes Vitest process imported CSS instead of replacing every stylesheet with an empty stub.
 - `pool: "forks"` runs tests in child-process workers. `maxWorkers: 2` limits concurrency because the suite is memory-heavy.
@@ -90,7 +88,7 @@ runs all three. TypeScript uses separate JSX contexts in `tsconfig.json` and
 
 Keep frontend tests next to the owning module in `__tests__`, using the existing `.test.ts`/`.test.tsx` naming. Pure services should use direct inputs and outputs. Hooks should use `renderHook`; components should use Testing Library queries and `userEvent` where user behavior matters. Mock Tauri APIs and repository API modules explicitly with `vi.mock`, reset mock implementations and timers in `beforeEach`/`afterEach`, and clear storage when a test changes persistent browser state. Do not treat a mocked `invoke` assertion as proof that Rust accepts the payload; that requires a Rust contract test or desktop E2E.
 
-The React setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely on persisted language must restore their state; the setup is not rerun before every individual test.
+The setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely on persisted language must restore their state; the setup is not rerun before every individual test.
 
 ## Rust unit and integration tests
 
@@ -114,7 +112,7 @@ Cargo may execute independent tests concurrently. Never use a shared fixed datab
 
 The Rust player regression generates a temporary MP4 with ffmpeg and drives the actual libmpv worker using null audio/video output. It verifies seeking, looping, replacement, settings retention, corrupt-file errors, and retry recovery without claiming GTK or OpenGL coverage. A separate test supersedes a committed session before `loadfile` and checks retirement without cancelling the replacement request.
 
-The same worker regression runs 30 cycles of all six speed choices, alternating same-file reopening and two-file replacement. It checks autoplay from the beginning, advancing time, retained rate and rejection of stale controls, close and failure events. Real-libmpv flag tests cover true/false values, property errors and guarded C-integer storage. Run these with `cargo test --manifest-path src-tauri/Cargo.toml video_ --lib`. The React lifecycle checks are `useNativeVideoSession.test.tsx`, `LightboxModal.test.tsx` and `useLightboxKeyboardShortcuts.test.ts`. Solid ports live in `src/features/lightbox/video/__tests__`, covering session races, labels, bounds acknowledgment, fullscreen, retry, keyboard ownership and disposal. The native bounds helper remains shared.
+The same worker regression runs 30 cycles of all six speed choices, alternating same-file reopening and two-file replacement. It checks autoplay from the beginning, advancing time, retained rate and rejection of stale controls, close and failure events. Real-libmpv flag tests cover true/false values, property errors and guarded C-integer storage. Run these with `cargo test --manifest-path src-tauri/Cargo.toml video_ --lib`. The native lifecycle suites live in `src/features/lightbox/video/__tests__`, covering session races, labels, bounds acknowledgment, fullscreen, retry, keyboard ownership and disposal. The native bounds helper and its tests live beside the video model.
 
 ## Packaging checks
 
@@ -140,10 +138,10 @@ Release production is documented in [setup and builds](setup-and-build.md#docker
 
 The harness runs `media_tagger` with WebKitWebDriver. When running the suite through Xvfb from a Wayland session, unset `WAYLAND_DISPLAY` and set `GDK_BACKEND=x11`; setting `DISPLAY` alone does not force GTK onto the private display. Only the E2E window profile permits resizing down to 320 × 240 so responsive lightbox behavior can be tested; dev and release retain their 1000 × 720 minimum.
 
-With `MEDIATAGGER_FRONTEND=solid`, the desktop harness selects only
-`solid-bootstrap.e2e.js`, which checks mount and reload in the live native window.
-The default React selection keeps the existing workflow suite. Explicit `--spec` flags
-still override discovery. Run renderer comparisons serially with fresh temporary profiles.
+The desktop harness discovers all `e2e/specs/**/*.e2e.js` files. Opt-in suites still require
+their documented environment flags; explicit `--spec` flags restrict discovery. After
+checking the native window title, each spec starts in English with the dark theme.
+Reloads within a spec preserve preferences so persistence checks remain meaningful.
 
 ### Build, driver, and session order
 
@@ -151,7 +149,7 @@ still override discovery. Run renderer comparisons serially with fresh temporary
 
 1. WebdriverIO `onPrepare` records the start time and validates the E2E build configuration.
 2. It removes only the expected old E2E executable and calls the guarded E2E app-data cleanup.
-3. `buildE2eApp()` validates again and runs `bun run build`, producing a fresh selected frontend in `dist/`. A failed build stops WDIO before starting workers.
+3. `buildE2eApp()` validates again and runs `bun run build`, producing a fresh frontend in `dist/`. A failed build stops WDIO before starting workers.
 4. The helper removes only the expected executable, sets `CARGO_TARGET_DIR` to the isolated target, and runs `tauri build --debug --no-bundle --config src-tauri/tauri.conf.e2e.json -- --locked`.
 5. The build helper verifies that the expected executable exists.
 6. WebdriverIO `beforeSession` starts `tauri-driver` with `--native-driver <WEBKIT_WEBDRIVER_PATH>`.
@@ -424,8 +422,8 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 
 | Change | Minimum focused proof | Add when applicable |
 | --- | --- | --- |
-| Pure TypeScript service, parser, or reducer | Vitest unit test | Component/hook test if rendering or React lifecycle matters |
-| React component, hook, keyboard behavior, modal, or accessibility contract | Vitest with Testing Library | Desktop E2E for behavior dependent on WebView/Tauri or a high-value full workflow |
+| Pure TypeScript service, parser, or reducer | Vitest unit test | Component/hook test if rendering or Solid ownership matters |
+| Solid component, model, keyboard behavior, modal, or accessibility contract | Vitest with Testing Library | Desktop E2E for behavior dependent on WebView/Tauri or a high-value full workflow |
 | Rust helper, SQL query, validation, scheduler, scan, thumbnail, or backup logic | Rust unit test | File-backed integration test for transactions or filesystem/SQLite interaction |
 | Public backend workflow spanning database modules | `backend_integration` or the Rust-only `backend_e2e` binary | Desktop E2E if the JavaScript command boundary or UI is part of the contract |
 | Tauri command name/payload, serialization, event/channel, startup, profile, or app-data behavior | Rust test plus frontend API test | Desktop E2E to prove the real bridge and bootstrap |
@@ -651,109 +649,35 @@ unmount any session-owned FUSE mounts below `$scratch/runtime/doc` and
 `artifacts/`; keep redirected command logs local as well. No media or raw desktop
 artifacts accompany this report.
 
-## Solid migration reference capture
+## Solid feature verification
 
-`MEDIATAGGER_SOLID_REFERENCE=1` enables `solid-reference.e2e.js` for React. It indexes
-one disposable PNG, holds a real details response at the fetch boundary, captures the
-disabled tag editor and loading state, then releases the response and checks the enabled
-editor. Screenshots remain under ignored `artifacts/solid2/stage1/`. This is controlled
-latency for reproducible capture; it does not measure backend latency.
+Migration-only shell/reference specs and renderer switches have been removed. Historical
+React/Solid comparison commands and results remain in [migration progress](../solid2/PROGRESS.md).
+`bun run test:build` checks the actual production module graph for the Solid entry and
+absence of React, its adapters and the removed source trees.
 
-The settings-language spec restores English and desktop size after its locale matrix,
-so subsequent English-selector scenarios remain independent. Its geometry assertion
-matches the current stacked selector at every width.
+`src/test/renderSolid.tsx` updates props under one component owner; `settle.ts` supplies
+explicit batch boundaries. Real virtual-core tests retain 10,000/26,000-slot limits,
+measurement identity, null-ref startup, resize anchoring and cleanup. Query/cache tests
+exercise page eviction and per-asset thumbnail updates. Model tests use deferred IPC for
+canonical publication, contention, partial responses and disposal.
 
-## Solid shell verification
-
-Stage 2 retains React behavioral suites and adds Solid window, shared-control, modal,
-lazy-boundary, language/theme, and bootstrap-lifetime tests. The API suite now lives at
-`src/platform/tauri/__tests__/api.test.ts`; the theme suite lives at
-`src/ui/dom/__tests__/theme.test.ts`. Both run once in the shared project.
-
-`MEDIATAGGER_SOLID_SHELL=1` enables `e2e/specs/solid-bootstrap.e2e.js` comparisons for
-either renderer. Select it with `--spec e2e/specs/solid-bootstrap.e2e.js` for React; the
-Solid harness already selects that file. It measures and screenshots both themes and
-English/Polish at 1440, 600 and 320 pixels, exercises persistence and Escape restoration,
-and stores synthetic evidence under `artifacts/solid2/stage2/<renderer>/`. Each renderer
-must run serially in its own fresh E2E profile. This verifies shell controls, not gallery,
-maintenance or native-video parity. See [stage 2 evidence](../solid2/PROGRESS.md).
-
-## Solid gallery and search verification
-
-Stage 4 adds `src/features/gallery`, `src/features/search` and thumbnail-image suites to the
-Solid project. `src/test/renderSolid.tsx` updates props under the same component owner;
-`settle.ts` supplies explicit batch boundaries in tests. Real virtual-core tests retain
-10,000/26,000-slot limits, measurement identity, null-ref startup, resize anchors and cleanup.
-The gallery integration suite uses real query/cache composition and a per-asset thumbnail
-store with mocked IPC. All React reference suites remain enabled.
-
-`MEDIATAGGER_GALLERY_BROWSING=1` enables `e2e/specs/gallery-browsing.e2e.js` for either renderer.
-It indexes 2,048 disposable PNGs plus GIF/video fixtures, crosses 16 pages in cold/warm passes,
-returns to evicted ranges, checks static GIF thumbnails and Settings scroll reset, and records
-gallery geometry/screenshots for English/Polish, light/dark and 1440/600/320px. Screenshot
-capture waits for the visible thumbnails to reach full opacity. Evidence stays ignored under
-`artifacts/solid2/stage4/<renderer>/`. Timings include WebDriver overhead and are diagnostic.
-
-Run renderer comparisons serially with fresh isolated XDG profiles as described above:
+Run opt-in suites under the private display and disposable XDG profile described above:
 
 ```sh
-MEDIATAGGER_FRONTEND=solid MEDIATAGGER_GALLERY_BROWSING=1 bun run test:e2e:tauri --spec e2e/specs/gallery-browsing.e2e.js
-MEDIATAGGER_FRONTEND=react MEDIATAGGER_GALLERY_BROWSING=1 bun run test:e2e:tauri --spec e2e/specs/gallery-browsing.e2e.js
+MEDIATAGGER_GALLERY_BROWSING=1 bun run test:e2e:tauri --spec e2e/specs/gallery-browsing.e2e.js
+MEDIATAGGER_TAG_EDITOR=1 MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri \
+  --spec e2e/specs/tag-editor.e2e.js --spec e2e/specs/gallery-selection.e2e.js --spec e2e/specs/group-order.e2e.js
+MEDIATAGGER_SETTINGS_MAINTENANCE=1 bun run test:e2e:tauri --spec e2e/specs/settings-maintenance.e2e.js
 ```
 
-The stage also runs the existing shell, footer, thumbnail-fade, literal-tag search and
-selection scenarios. Use an explicit Mocha grep for the stage-4 portions: several existing
-selection/performance cases continue into lightbox or bulk editing, which belong to later
-stages. Keep those full reference tests unchanged. Exact selected commands and outcomes are
-in [PROGRESS.md](../solid2/PROGRESS.md). Repeat thumbnail fading with the isolated GTK/GSettings
-reduced-motion configuration described in the animation recipe.
+Gallery browsing indexes 2,048 PNGs plus GIF/video fixtures, crosses 16 pages, returns to
+evicted ranges and records geometry at 1440/600/320px in English/Polish and both themes.
+Tag-editor tests verify persisted writes, vocabulary IPC counts and focus. Maintenance
+holds delivery of a real scan response across settings remount, and verifies mixed duplicate
+batches against files and reloaded rows. Native chooser interaction is mocked in frontend
+tests; desktop CSV/bundle roundtrips call real commands directly.
 
-
-### Solid bulk editing verification
-
-During migration, run the shared tag editor, bulk controller and order dialog tests with:
-
-```sh
-bun run test --project solid src/features/tagging src/features/bulk
-```
-
-The model tests use deferred IPC responses for selection replacement, canonical publication,
-metadata contention, missing IDs, partial results and disposal. The sidebar suite uses real
-virtual-core with synthetic DOM measurements; native layout still requires desktop E2E.
-
-For either renderer, use an isolated E2E profile and private display, then run:
-
-```sh
-MEDIATAGGER_FRONTEND=solid MEDIATAGGER_TAG_EDITOR=1 MEDIATAGGER_GALLERY_SELECTION=1 MEDIATAGGER_GROUP_ORDER=1 bun run test:e2e:tauri \
-  --spec e2e/specs/tag-editor.e2e.js \
-  --spec e2e/specs/gallery-selection.e2e.js \
-  --spec e2e/specs/group-order.e2e.js \
-  --mochaOpts.grep 'keeps bulk|persists bulk|ignores accidental|autoscrolls and resolves|preserves selection on empty|drags, cancels'
-```
-
-Repeat serially with `MEDIATAGGER_FRONTEND=react`. These seven cases cover both themes,
-1100px/600px tag fields, focus, persisted tags after reload, vocabulary IPC counts, 2,051-ID
-selection across evicted pages, and pointer/keyboard group ordering with persisted results.
-The complete tag-editor and gallery-selection suites also exercise the lightbox; those Solid
-scenarios remain part of stage 6. See [migration evidence](../solid2/PROGRESS.md) for commands,
-results and local artifact locations.
-
-
-### Solid settings and maintenance verification
-
-Both renderers retain the existing settings-language, startup-scan, About and workflow suites.
-The stage-8 comparison adds `settings-maintenance.e2e.js`. It verifies running-operation
-ownership across navigation and mixed duplicate batches at 1000px/light and 600px/dark.
-The scan test holds delivery of a real command response until the page has remounted;
-it does not stub the scan or progress events. Duplicate mutations check both temporary files
-and persisted rows after reload. The opt-in command is:
-
-```sh
-MEDIATAGGER_FRONTEND=solid MEDIATAGGER_SETTINGS_MAINTENANCE=1 bun run test:e2e:tauri --spec e2e/specs/settings-maintenance.e2e.js
-```
-
-Use private Xvfb and temporary XDG profiles for destructive comparisons, serially per renderer.
-`MEDIATAGGER_REDUCED_MOTION=1` additionally requires that the actual WebView reports reduced
-motion; the isolated GTK profile must disable animations. Evidence stays under ignored
-`artifacts/solid2/stage8/maintenance-<renderer>/`. The existing CSV/bundle desktop roundtrips
-exercise commands directly; native chooser selection/cancellation is mocked in frontend tests.
+`MEDIATAGGER_REDUCED_MOTION=1` requires the actual WebView preference, configured through the
+isolated GTK profile. Run animation, thumbnail, activity and maintenance variants with it.
+Screenshots, timing samples and raw logs stay ignored under `artifacts/`.

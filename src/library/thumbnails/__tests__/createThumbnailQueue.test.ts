@@ -1,7 +1,7 @@
 import { settle } from "../../../test/settle";
 import { renderHook } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ThumbnailStreamEvent } from "../../../types";
+import type { ThumbnailStreamEvent } from "../../../platform/tauri/contracts/thumbnails";
 import { createThumbnailQueue } from "../createThumbnailQueue";
 
 function deferred<T>() {

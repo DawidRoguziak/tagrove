@@ -4,7 +4,7 @@ import { renderSolid } from "../../../test/renderSolid";
 import { settle as act } from "../../../test/settle";
 import { createImageControls } from "../image/createImageControls";
 import { LightboxMediaStage } from "../LightboxMediaStage";
-import type { SelectedAsset } from "../../../types";
+import type { SelectedAsset } from "../types";
 import { asset } from "./fixtures";
 vi.mock("../../../platform/tauri/assets", () => ({
   toMediaSrc: (path: string) => `asset://${path}`

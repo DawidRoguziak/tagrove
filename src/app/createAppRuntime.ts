@@ -3,13 +3,13 @@ import { createBulk } from "../features/bulk/createBulk";
 import { getStartupPopularTags } from "../platform/tauri/tags";
 import { createSearch } from "../features/search/createSearch";
 import { createSelection } from "../features/gallery/createSelection";
-import { SuggestionClient } from "../components/search/worker/SuggestionClient";
+import { SuggestionClient } from "../features/search/suggestions/SuggestionClient";
 import { createSettings } from "../features/settings/createSettings";
 import {
   clampTileSize,
   DEFAULT_TILE_SIZE,
   getNextTileSizeByWheel
-} from "../components/app/services/tileSizeService";
+} from "../features/gallery/tileSizeService";
 import { createLibrary } from "../library/createLibrary";
 import { createSignal, onCleanup } from "solid-js";
 import { applyTheme, readInitialTheme, type AppTheme } from "../ui/dom/theme";
@@ -76,7 +76,9 @@ export function createAppRuntime() {
         .then((tags) => {
           if (!disposed) setPopularTags(tags);
         })
-        .catch(() => {});
+        .catch((error) => {
+          if (!disposed) console.error("Failed to load startup popular tags", error);
+        });
       void library.refreshLibrary().catch(() => {});
       void settings.scan.scanOnStartup();
       void settings.scan.refreshScanRoots().catch(() => {});

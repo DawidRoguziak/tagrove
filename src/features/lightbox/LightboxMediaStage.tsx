@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import type { SelectedAsset } from "../../types";
+import type { SelectedAsset } from "./types";
 import { toMediaSrc } from "../../platform/tauri/assets";
 import { useLanguage } from "../../i18n/solid";
 import { UiButton } from "../../ui/controls/UiButton";

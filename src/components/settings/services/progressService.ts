@@ -1,5 +1,5 @@
 import type { ScanProgress, ThumbnailRenderSummary } from "../../../types";
-import i18n from "../../../i18n";
+import i18n from "../../../i18n/core";
 
 const SCAN_PHASES = new Set(["counting", "scanning", "cleanup", "scan-empty", "scan-skip"]);
 

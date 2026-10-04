@@ -20,7 +20,7 @@ React remains the default entry. `MEDIATAGGER_FRONTEND=solid` selects `src/app/m
 Its `mountApplication` applies the stored theme before rendering, waits for i18next,
 and owns context-menu suppression and optional performance observation. Disposal also
 cancels a pending mount. `createAppRuntime` owns theme and view selection across remounts;
-it also owns the library, search, bulk and lightbox models. `LanguageProvider` owns one i18next subscription for
+it also owns the library, search, bulk, lightbox and settings models. `LanguageProvider` owns one i18next subscription for
 its tree. Settings and the lightbox view prefetch after 1,500 ms, with timer cleanup.
 Gallery activation opens the lazy image/GIF/video lightbox. Its presence owner remains mounted
 after first activation, retains closing values, and releases modality on logical close.
@@ -33,8 +33,10 @@ Both renderers share theme persistence, modal animation, and segmented-control m
 under `src/ui/dom`. Solid modal registration ends on logical close while presence retains
 the pointer shield through exit. Feature views that clear drafts on close must retain their
 visible values with `createModalSnapshot`, since mounted Solid children remain reactive.
-The shell includes the existing Appearance/Language markup and settings geometry. Other
-settings workflows remain for stage 8. The sections below describe the React reference
+The settings view includes scanning, appearance, language, import/export, duplicates,
+clear-library and About. Its application-owned models preserve operations across navigation;
+the shell dispatches the process-guarded startup scan once. See the
+[settings guide](../subsystems/settings-operations.md#solid-implementation-during-migration). The sections below describe the React reference
 unless they explicitly name a Solid module.
 
 The Solid runtime now owns `createLibrary` from `src/library/createLibrary.ts`. Its query,

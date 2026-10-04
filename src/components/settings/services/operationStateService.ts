@@ -1,5 +1,5 @@
 import type { SectionOperationState, SettingsOperationSection } from "../types";
-import i18n from "../../../i18n";
+import i18n from "../../../i18n/core";
 
 export const SECTION_READY_MESSAGE_KEYS: Record<SettingsOperationSection, string> = {
   scan: "settings.status.ready.scan",

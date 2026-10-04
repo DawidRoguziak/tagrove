@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 7 is complete. React remains the default and functional reference.
-Solid now includes native video sessions, playback controls, fullscreen and recovery.
-Settings and maintenance workflows are next.
+Stage 8 is complete. React remains the default and functional reference.
+Solid now includes settings, startup scanning, maintenance operations and duplicate resolution
+alongside the gallery, tagging and lightbox. Parity verification and cutover are next.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 8](08-settings-and-maintenance.md).
+- Next implementation task: [stage 9](09-parity-and-cutover.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -26,8 +26,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | [4. Gallery and search](04-gallery-and-search.md) | Complete | 931 frontend, 206 Rust, both builds; desktop comparison and reduced motion passed | Findings fixed and rechecked | `feat: migrate gallery and search to Solid`; `9a87d96` |
 | [5. Tagging and bulk](05-tagging-and-bulk.md) | Complete | 1008 frontend, 206 Rust, both builds; 7 desktop cases per renderer and matching editor geometry | Findings fixed and rechecked | `feat: migrate tag editing and bulk actions to Solid`; `6eb9add` |
 | [6. Lightbox and images](06-lightbox-and-images.md) | Complete | 1101 frontend, 206 Rust, both builds; desktop comparison, reduced motion and 12 matching layouts | Findings fixed and rechecked | `feat: migrate lightbox and image interactions to Solid`; `71943b0` |
-| [7. Native video](07-native-video.md) | Complete | 1124 frontend, 206 Rust, both builds; 18 desktop cases per renderer and 30 native reopen cycles each | Findings fixed and rechecked | `feat: migrate native video lifecycle to Solid`; record hash when opening stage 8 |
-| [8. Settings and maintenance](08-settings-and-maintenance.md) | Not started | Not run | Pending | None |
+| [7. Native video](07-native-video.md) | Complete | 1124 frontend, 206 Rust, both builds; 18 desktop cases per renderer and 30 native reopen cycles each | Findings fixed and rechecked | `feat: migrate native video lifecycle to Solid`; `cf59a58` |
+| [8. Settings and maintenance](08-settings-and-maintenance.md) | Complete | 1205 frontend, 206 Rust, both isolated builds; 17 desktop cases and 3 reduced-motion cases per renderer | Findings fixed and rechecked | `feat: migrate settings and maintenance workflows to Solid`; record hash when opening stage 9 |
 | [9. Parity and cutover](09-parity-and-cutover.md) | Not started | Not run | Pending | None |
 | [10. Documentation](10-documentation.md) | Not started | Not run | Pending | None |
 
@@ -862,7 +862,7 @@ Next stage: [native video integration](07-native-video.md).
 
 Date: 4 October 2026. Starting commit: `71943b0`.
 Local commit subject: `feat: migrate native video lifecycle to Solid`.
-Local commit hash: record when opening stage 8.
+Local commit hash: `cf59a58`.
 
 Implemented behavior:
 
@@ -1036,3 +1036,142 @@ other operating systems and release packaging are not established by this stage.
 pre-existing Rust diagnostics remain ignored. No required stage-7 check remains unavailable.
 
 Next stage: [settings and maintenance workflows](08-settings-and-maintenance.md).
+
+## Stage 8 evidence
+
+Date: 4 October 2026. Starting commit: `cf59a58`.
+Local commit subject: `feat: migrate settings and maintenance workflows to Solid`.
+Local commit hash: record when opening stage 9.
+
+Implemented behavior:
+
+- `createAppRuntime` owns `features/settings/createSettings.ts` and its scan, import/export,
+  duplicate and danger models. It hydrates roots and dispatches startup scanning once.
+  Operations, messages, progress and confirmations survive gallery/settings remounts.
+  The first-folder route highlights scanning; Back clears the highlight.
+- The shared runner acquires its lock synchronously, subscribes before dispatch, filters
+  progress phases, translates backend errors and releases loading/locks in `finally`.
+  Owner disposal removes listeners, including late registration. Thumbnail stop requests
+  have their own synchronous guard and leave the original operation's lock intact.
+- All seven settings sections, navigation and confirmations use the existing markup,
+  styling, translations and platform commands. About bundles the exact legal documents
+  and publisher metadata, and keeps the native opener's failure/copy behavior.
+- CSV, restore and clear drain the actual metadata coordinator before backend dispatch,
+  hold maintenance through identity/cache invalidation, and refresh after release.
+  Restore retains vocabulary until refresh; clear empties it immediately. Root removal,
+  scans, thumbnail rendering and duplicate batches keep their separate refresh paths.
+- The duplicate resolver stages one change per ID, validates through the shared helper,
+  virtualizes groups and subscribes to thumbnail updates per asset. Mixed batches require
+  the nested delete confirmation and send one revision/path/version-checked backend batch.
+  Confirmation dialogs retain their visible path/counts/disabled state during exit.
+- Shared settings helpers now import the framework-independent i18n core. React remains
+  runnable and default; Solid's bundle contains no React or React i18n adapter.
+
+Tests written or ported:
+
+- Settings action, confirmation, startup scan, section/status, About, panel and duplicate
+  dialog suites retain the reference behavior. Resolver tests observe real drafts and
+  staged commands instead of React setter spies. Pure progress and validation suites
+  remain shared. All existing React tests remain enabled.
+- New runner tests cover same-turn exclusion, failed/late registration, disposal, stale
+  progress and backend error formats. Maintenance tests use the real tag coordinator to
+  prove draining, denied writes, invalidation ordering and recovery after uncertain errors.
+- Measured virtual-list regression, retained confirmation content, first-folder navigation,
+  root mappings, separate stop ownership and restore/clear reset differences have direct
+  regression assertions. The behavior inventory names the owning suites.
+
+Self-review findings and fixes:
+
+- A rescan removing duplicate groups exposed old virtual indices against the new list.
+  The live desktop fell into the lazy error boundary while retaining the resolver portal.
+  The original zero-size DOM test did not exercise virtual rows. After supplying actual
+  viewport dimensions, `duplicate-rescan-measured.log` reproduces the failure. Each rendered
+  row now carries its group from the same snapshot; `duplicate-rescan-fixed.log` passes.
+  Desktop batches subsequently completed, and filesystem plus reloaded rows matched.
+- Screenshot inspection caught cleared confirmation counts changing to zero during exit.
+  Settings confirmations now use `createModalSnapshot`. The new presence tests verify the
+  old counts and root path while the dialog is logically closed but still animating.
+- Build isolation initially found four `react-i18next` modules imported by shared settings
+  helpers. Their three imports now point to `i18n/core`; both isolated builds pass. No
+  duplicate translations or renderer bridge was introduced.
+- About's WebDriver scroll left the address below a nested scroll viewport. Waiting alone
+  still failed, recorded in `desktop-diagnostics.log` and the ignored geometry JSON.
+  The test now calls the element's native `scrollIntoView` and waits for hit testing before
+  its actual XTest focus click. Selection and native capability-rejection assertions remain.
+- The new duplicate desktop test initially inspected `file_name` on legacy `list_assets`
+  rows, which expose `path`. It now compares the full persisted path with the verified
+  renamed file. The backend and UI assertions were retained. Narrow navigation centers its
+  actual link before clicking to avoid the sticky header.
+- Ported tests now create JSX under the Solid owner and install spies before DOM event
+  registration. Existing shell mocks provide real-shaped roots/startup responses, and the
+  direct runtime test provides its language owner. These fixture failures were not treated
+  as production successes.
+- Reviewed synchronous confirmations/cancellation, scan snapshot identity, partial failure,
+  maintenance release, listener cleanup, thumbnail ownership, modal exits and lazy imports.
+  The settings guide now corrects two stale reference descriptions: duplicate application
+  opts out of global loading, and resetting the thumbnail queue clears its shared store.
+
+Verification evidence stays under ignored `artifacts/solid2/stage8/`:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `bun run test` | 137 files, 1205 passed | `frontend-final.log` |
+| `bun run typecheck` | React, Solid and configuration contexts pass | `types-final.log` |
+| `bun run test:backend` | 206 passed; 2 existing diagnostics ignored | `backend-final.log` |
+| `bun run lint` / `bun run format:check` | Passed | `lint-final.log`, `format-final.log` |
+| `bun run locale:check` | All 11 locales valid | `locales-final.log` |
+| `bun run test:frontends` | Both builds and renderer/entry isolation pass; React restored in `dist` | `builds-final.log`, `solid-modules.json`, `react-modules.json` |
+
+The full desktop comparison runs serially with private Xvfb/D-Bus, fresh temporary XDG
+profiles, the E2E title/profile guards and synthetic media:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_SETTINGS_MAINTENANCE=1 MEDIATAGGER_SETTINGS_LANGUAGE=1 MEDIATAGGER_ABOUT=1 bash artifacts/solid2/stage2/run-desktop.sh \
+    --spec e2e/specs/app.workflows.e2e.js \
+    --spec e2e/specs/startup-scan.e2e.js \
+    --spec e2e/specs/settings-language.e2e.js \
+    --spec e2e/specs/settings-maintenance.e2e.js \
+    --spec e2e/specs/about.e2e.js \
+    --mochaOpts.grep 'removes scan root|clears library data|roundtrips tags|restores library state|per-folder startup scans|both cards|settings maintenance ownership|About and repository links'
+done
+```
+
+`desktop-solid-final.log` and `desktop-react-final.log` each pass 17 cases. After the
+confirmation snapshot fix, the same three maintenance cases pass in
+`maintenance-solid-final.log` and `maintenance-react-final.log`. After correcting the shared i18n imports, the full 17-case comparison passed again in
+`desktop-solid-isolated.log` and `desktop-react-isolated.log` on the final production source. Earlier failed diagnostic runs remain local
+and are not counted as passes.
+
+Actual reduced-motion runs also pass three cases per renderer, recorded in
+`reduced-solid.log` and `reduced-react.log`. The wrapper disables GTK animations in the
+temporary profile; the suite asserts the WebView's actual media preference:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_SETTINGS_MAINTENANCE=1 MEDIATAGGER_REDUCED_MOTION=1 bash artifacts/solid2/stage4/run-reduced.sh \
+    --spec e2e/specs/settings-maintenance.e2e.js
+done
+```
+
+The desktop coverage includes startup preference persistence and fresh-process semantics,
+root removal/clear confirmations, CSV/bundle roundtrips, settings unmount during a real scan,
+preference changes while locked, mixed duplicate cancellation/application, and files plus
+rows after reload. Language layout covers English/Polish at 1440/600/320px; About checks
+both themes/languages, exact offline text and native opener rejection with address selection.
+Inspected actual Solid and React duplicate-dialog screenshots, the resolved Solid dialog,
+narrow Polish settings and the selected About address.
+
+Remaining limits: native chooser interactions are mocked in frontend tests; desktop CSV
+and bundle roundtrips use real commands directly. Desktop verification uses Linux X11;
+other platforms, release packaging and successful external-browser launch are not established
+by this stage. The two pre-existing Rust diagnostics remain ignored. No required stage-8
+check remains unavailable. Raw logs, screenshots, synthetic media and temporary databases
+remain ignored.
+
+Reviewed all staged source, fixtures and documentation for scope and private content.
+`git diff --check` and `git diff --cached --check` pass. The staged privacy check is recorded
+in `privacy-staged.log`; no media, databases, logs or screenshots are included in the commit.
+No backend, wire payload, dependency version or profile change is included.
+
+Next stage: [parity, cutover, and React removal](09-parity-and-cutover.md).

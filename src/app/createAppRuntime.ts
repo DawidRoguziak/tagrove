@@ -4,7 +4,7 @@ import { getStartupPopularTags } from "../platform/tauri/tags";
 import { createSearch } from "../features/search/createSearch";
 import { createSelection } from "../features/gallery/createSelection";
 import { SuggestionClient } from "../components/search/worker/SuggestionClient";
-import { listScanRoots } from "../platform/tauri/scanning";
+import { createSettings } from "../features/settings/createSettings";
 import {
   clampTileSize,
   DEFAULT_TILE_SIZE,
@@ -32,7 +32,17 @@ export function createAppRuntime() {
   let started = false;
   let size = DEFAULT_TILE_SIZE;
   const [tileSize, publishTileSize] = createSignal(size);
-  const [hasScanRoots, setHasScanRoots] = createSignal(true);
+  const [maintenanceLoading, setMaintenanceLoading] = createSignal(false);
+  const [highlightScan, setHighlightScan] = createSignal(false);
+  const settings = createSettings({
+    setLoading: setMaintenanceLoading,
+    refreshLibrary: library.refreshLibrary,
+    onRootRemoved: library.handleRootRemoved,
+    onImportDbRestored: library.handleImportDbRestored,
+    onLibraryCleared: library.handleLibraryCleared,
+    onTagCacheInvalidated: library.resetIdentity,
+    runWithTagMutationBarrier: library.tags.runWithMutationBarrier
+  });
   const setTileSize = (next: number) => {
     size = clampTileSize(next);
     publishTileSize(size);
@@ -50,7 +60,14 @@ export function createAppRuntime() {
     suggestions,
     tileSize,
     setTileSize,
-    hasScanRoots,
+    settings,
+    maintenanceLoading,
+    highlightScan,
+    hasScanRoots: () => settings.scan.scanRoots.length > 0,
+    openFirstFolderSettings() {
+      setHighlightScan(true);
+      setView("settings");
+    },
     zoom: (delta: number) => setTileSize(getNextTileSizeByWheel(size, delta)),
     start() {
       if (started) return;
@@ -61,17 +78,17 @@ export function createAppRuntime() {
         })
         .catch(() => {});
       void library.refreshLibrary().catch(() => {});
-      void listScanRoots()
-        .then((roots) => {
-          if (!disposed) setHasScanRoots(roots.length > 0);
-        })
-        .catch(() => {});
+      void settings.scan.scanOnStartup();
+      void settings.scan.refreshScanRoots().catch(() => {});
     },
     library,
     view,
     theme,
     openSettings: () => setView("settings"),
-    closeSettings: () => setView("gallery"),
+    closeSettings: () => {
+      setView("gallery");
+      setHighlightScan(false);
+    },
     setTheme(next: AppTheme) {
       applyTheme(next);
       setTheme(next);

@@ -168,3 +168,30 @@ player, restores the original and clicks Retry. Pixel comparison verifies decode
 frames after recovery. A mixed-media case checks windowed GIF geometry after fullscreen
 video navigation. The existing native controls, fullscreen and 30-cycle checks retain
 their assertions. Desktop commands and results are recorded in PROGRESS.md.
+
+
+## Stage 8 test ownership
+
+Solid `features/settings/__tests__` ports the action/confirmation, startup scanning,
+section/status, About and dialog assertions. The grouped SettingsPanel tests exercise the
+production controllers directly, preserving the reference section wiring and navigation
+assertions without adding its flat-prop compatibility seam. Appearance/Language remain
+covered by the earlier shell tests and the shared desktop language suite. Pure progress,
+operation-state and duplicate-validation suites remain shared; React suites remain enabled.
+
+`createDuplicateResolver.test.tsx` replaces React setter-spy assertions with observed drafts,
+staged changes and commands, including same-turn updates, UUID extensions and reset on
+reopen/rescan. The measured virtual-list regression covers removing all groups while old
+virtual indices exist. `confirmationPresence.test.tsx` verifies retained counts and paths
+during logical close. `operationSafety.test.tsx` covers immediate exclusion, listener failure
+and disposal, progress filtering and translation, separate stop-request ownership, root
+mapping, and uncertain CSV/restore/clear failure with the real metadata barrier. The library
+mutation suite distinguishes restore vocabulary retention from immediate clear reset.
+
+The opt-in `settings-maintenance.e2e.js` runs actual scan and duplicate commands against
+disposable media, verifies the operation survives settings remount, cancels and confirms a
+mixed rename/delete batch, and checks files plus persisted library rows after reload. Its
+scan-lifetime case delays delivery of the real IPC result without replacing the scan or
+progress events. Existing startup, settings-language, About and import/export workflow
+scenarios run with both renderers. Native file chooser interaction is covered at the mocked
+platform boundary; desktop CSV/bundle roundtrips call real commands directly.

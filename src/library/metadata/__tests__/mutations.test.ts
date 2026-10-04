@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LanguageProvider } from "../../../i18n/solid";
 import { createAppRuntime } from "../../../app/createAppRuntime";
 import { createLibrary } from "../../createLibrary";
 import { settle } from "../../../test/settle";
@@ -80,7 +81,7 @@ beforeEach(() => {
 
 describe("shared canonical metadata publication", () => {
   it("keeps one library across Settings navigation and starts queries with 128-item pages", async () => {
-    const { result: runtime } = renderHook(createAppRuntime);
+    const { result: runtime } = renderHook(createAppRuntime, { wrapper: LanguageProvider });
     const library = runtime.library;
     await settle(() => library.query.refresh());
     settle(() => runtime.openSettings());
@@ -358,4 +359,18 @@ describe("details cache identity and bounds", () => {
     api.getAssetDetails.mockResolvedValueOnce({ ...detail(2), is_favorite: true });
     expect((await library.details.load(2))?.is_favorite).toBe(true);
   });
+});
+
+it("keeps vocabulary until restore refresh but clears it immediately on library clear", async () => {
+  const { result: library } = await setup();
+  settle(() => library.thumbnails.thumbnailStore.complete({ 1: "/synthetic/thumb.jpg" }, []));
+  expect(library.vocabulary.knownTags).toEqual(["cat", "dog"]);
+  settle(library.handleImportDbRestored);
+  expect(library.tags.get(1)).toBeNull();
+  expect(library.details.get(1)).toBeNull();
+  expect(library.query.total).toBe(0);
+  expect(library.thumbnails.thumbnailStore.getPath(1)).toBeUndefined();
+  expect(library.vocabulary.knownTags).toEqual(["cat", "dog"]);
+  settle(library.handleLibraryCleared);
+  expect(library.vocabulary.knownTags).toEqual([]);
 });

@@ -1,7 +1,5 @@
 import { useLanguage } from "../i18n/solid";
-import { SettingsNavigation } from "../features/settings/SettingsNavigation";
-import { AppearanceSection } from "../features/settings/sections/AppearanceSection";
-import { LanguageSection } from "../features/settings/sections/LanguageSection";
+import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { UiButton } from "../ui/controls/UiButton";
 import { UiIcon } from "../ui/controls/UiIcon";
 import { WindowControls } from "./WindowControls";
@@ -45,28 +43,29 @@ export default function AppSettingsView() {
         </div>
       </header>
       <div class="pt-5">
-        <section class="min-h-0 px-4 pb-4 sm:px-6">
-          <div class="settings-card settings-layout">
-            <SettingsNavigation />
-            <div class="grid min-w-0 content-start gap-5">
-              <div id="settings-appearance" class="settings-section" tabindex={-1}>
-                <AppearanceSection theme={runtime.theme()} onThemeChange={runtime.setTheme} />
-              </div>
-              <div id="settings-language" class="settings-section" tabindex={-1}>
-                <LanguageSection
-                  language={language.language()}
-                  onLanguageChange={(value) => {
-                    void language
-                      .setLanguage(value)
-                      .catch((error) =>
-                        console.error("Changing the application language failed", error)
-                      );
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
+        <SettingsPanel
+          highlightScanSection={runtime.highlightScan()}
+          appearance={{
+            get theme() {
+              return runtime.theme();
+            },
+            onThemeChange: runtime.setTheme,
+            get language() {
+              return language.language();
+            },
+            onLanguageChange: (value) => {
+              void language
+                .setLanguage(value)
+                .catch((error) => console.error("Changing the application language failed", error));
+            }
+          }}
+          scan={runtime.settings.scan}
+          importExport={runtime.settings.importExport}
+          dangerZone={runtime.settings.dangerZone}
+          duplicates={runtime.settings.duplicates}
+          thumbnailStore={runtime.library.thumbnails.thumbnailStore}
+          onQueueThumbnailsByIds={runtime.library.thumbnails.queueThumbnailsByIds}
+        />
       </div>
     </div>
   );

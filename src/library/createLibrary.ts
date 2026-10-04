@@ -109,7 +109,11 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
     },
     handleRootRemoved: thumbnails.resetThumbnailQueue,
     resetIdentity,
-    handleImportDbRestored: resetLibrary,
+    handleImportDbRestored() {
+      resetIdentity();
+      query.reset();
+      thumbnails.resetThumbnailQueue();
+    },
     handleLibraryCleared: resetLibrary,
     async runMaintenance<T>(kind: "metadata" | "identity", operation: () => Promise<T>) {
       return tags.runWithMutationBarrier(async () => {

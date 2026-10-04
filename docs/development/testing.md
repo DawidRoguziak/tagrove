@@ -737,3 +737,23 @@ selection across evicted pages, and pointer/keyboard group ordering with persist
 The complete tag-editor and gallery-selection suites also exercise the lightbox; those Solid
 scenarios remain part of stage 6. See [migration evidence](../solid2/PROGRESS.md) for commands,
 results and local artifact locations.
+
+
+### Solid settings and maintenance verification
+
+Both renderers retain the existing settings-language, startup-scan, About and workflow suites.
+The stage-8 comparison adds `settings-maintenance.e2e.js`. It verifies running-operation
+ownership across navigation and mixed duplicate batches at 1000px/light and 600px/dark.
+The scan test holds delivery of a real command response until the page has remounted;
+it does not stub the scan or progress events. Duplicate mutations check both temporary files
+and persisted rows after reload. The opt-in command is:
+
+```sh
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_SETTINGS_MAINTENANCE=1 bun run test:e2e:tauri --spec e2e/specs/settings-maintenance.e2e.js
+```
+
+Use private Xvfb and temporary XDG profiles for destructive comparisons, serially per renderer.
+`MEDIATAGGER_REDUCED_MOTION=1` additionally requires that the actual WebView reports reduced
+motion; the isolated GTK profile must disable animations. Evidence stays under ignored
+`artifacts/solid2/stage8/maintenance-<renderer>/`. The existing CSV/bundle desktop roundtrips
+exercise commands directly; native chooser selection/cancellation is mocked in frontend tests.

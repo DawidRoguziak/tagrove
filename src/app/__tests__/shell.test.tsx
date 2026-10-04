@@ -28,6 +28,15 @@ afterEach(async () => {
 
 describe("Solid shell", () => {
   beforeEach(() => {
+    native.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_scan_roots") return [];
+      if (command === "scan_startup_roots") return null;
+      if (command === "get_video_tool_status")
+        return { ffmpeg_available: true, ffprobe_available: true };
+      if (command === "start_asset_query")
+        return { status: "ready", session_id: 1, revision: 1, total: 0, offset: 0, items: [] };
+      if (command === "list_tags") return { items: [], total: 0 };
+    });
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -35,6 +44,20 @@ describe("Solid shell", () => {
         unobserve() {}
         disconnect() {}
       }
+    );
+  });
+  it("highlights scanning only for the first-folder route and clears it on Back", async () => {
+    render(() => <App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add first folder" }));
+    expect(await screen.findByTestId("scan-settings-section")).toHaveAttribute(
+      "data-highlighted",
+      "true"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open settings" }));
+    expect(await screen.findByTestId("scan-settings-section")).toHaveAttribute(
+      "data-highlighted",
+      "false"
     );
   });
   it("switches views, translates live, persists appearance and returns with Escape", async () => {

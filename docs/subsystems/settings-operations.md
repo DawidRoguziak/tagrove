@@ -4,6 +4,31 @@ Implementation entry points: [settings composition](../../src/hooks/useSettingsA
 
 This page owns settings state, operation sequencing, progress presentation, confirmations, and cache resets. [IPC](../architecture/ipc-contract.md) owns transport shapes, [scanning](scanning-and-indexing.md) owns indexing, [thumbnails](thumbnails.md) owns rendering/cancellation, and [data safety](data-safety-and-portability.md) owns CSV/bundle validation and recovery.
 
+## Solid implementation during migration
+
+`src/features/settings/createSettings.ts` composes the Solid operation runner and scan,
+import/export, duplicate and clear-library models under `createAppRuntime`. Their lifetime
+matches the application owner, so closing the settings view preserves operations, progress,
+roots and confirmations. `SettingsPanel.tsx` renders all seven sections with the existing
+styles and shared modal layers. It takes grouped controllers directly; the React flat-prop
+compatibility seam is not part of the Solid view.
+
+The Solid runner uses a synchronous admission lock and reactive section status. It removes
+an active progress listener on owner disposal and removes a late registration immediately,
+without dispatching its action. Closing only the settings view does not dispose this owner.
+Thumbnail cancellation has its own synchronous lock. Confirmed root removal, restore and
+mixed duplicate batches consume synchronous pending values before dispatch.
+
+The duplicate resolver uses `virtual-core`, the library's per-asset thumbnail subscriptions,
+and one form model. Visible rows carry their group from the same scan snapshot, so an old
+virtual index cannot read a removed group during a rescan. Confirmation dialogs retain their
+path, counts and disabled state through exit with `createModalSnapshot`.
+
+The operation ordering below applies to both implementations. Solid calls the same platform
+wrappers and uses `library.tags.runWithMutationBarrier` for CSV import, restore and clear.
+Restore resets identity, query and thumbnails, retaining vocabulary until refresh; clear
+also empties vocabulary immediately. No backend command or profile contract changes.
+
 ## Settings layout
 
 The full-page view keeps all operation sections mounted. A 240px navigation column links to
@@ -68,7 +93,7 @@ The runner lifecycle is:
 7. On any listener/action/follow-up error, replace that section's message with `<translated error prefix>: <translated backend text>` and clear progress. Errors are presented, not rethrown by the runner.
 8. In `finally`, unregister the progress listener, clear that section's loading flag, clear global loading when it was set, and release both locks. The final message remains visible.
 
-Folder selection and duplicate scans set `setGlobalLoading: false`; duplicate change application and every other runner-backed action use global loading. Duplicate operations still acquire the shared settings lock and show duplicate-section loading. Thumbnail cancellation deliberately bypasses `runExclusiveOperation`: it must remain callable while the bulk thumbnail operation owns the lock. Its separate `cancelThumbnailRunning` guard prevents duplicate stop requests, and the visible Stop button is disabled only by that flag.
+Folder selection, startup-preference saves, duplicate scans and duplicate change application set `setGlobalLoading: false`; the other runner-backed actions use global loading. Duplicate operations still acquire the shared settings lock and show duplicate-section loading. Thumbnail cancellation deliberately bypasses `runExclusiveOperation`: it must remain callable while the bulk thumbnail operation owns the lock. Its separate `cancelThumbnailRunning` guard prevents duplicate stop requests, and the visible Stop button is disabled only by that flag.
 
 Closing the settings page does not cancel an operation because the settings hooks remain mounted in the shell. Reopening the page exposes the same lock, messages, progress, roots, and duplicate results.
 
@@ -164,7 +189,7 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Operation after API success | Ordered frontend follow-up |
 | --- | --- |
 | Add selected scan roots | Reload and replace `scanRoots`; derive the added/skipped summary from the pre-add and post-add lists. No asset/tag refresh or thumbnail reset. |
-| Remove confirmed scan root | Reset thumbnail queue; reload `scanRoots`; refresh assets/query pages and known tags. The pending root was already cleared before the API call. The thumbnail path map is not cleared. |
+| Remove confirmed scan root | Reset thumbnail queue; reload `scanRoots`; refresh assets/query pages and known tags. The pending root was already cleared before the API call. Queue reset clears the shared thumbnail store. |
 | Save startup-scan preference | Update the saved root flag locally. No library refresh or scan. |
 | Startup scan | For a scan result, refresh assets/tags, then roots. On rejection, attempt both refreshes; null requires neither. |
 | Rescan one root | Refresh assets/query pages and known tags; then reload `scanRoots`. No explicit thumbnail reset. |
@@ -175,8 +200,8 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Export CSV | Publish row summary only. No refresh/reset. |
 | Import CSV | Invalidate authoritative tags and both details caches inside the metadata barrier on success or rejection; after release, refresh assets and known tags, best-effort on rejection. Publish the success summary only after a successful refresh. |
 | Export database bundle | Publish copied-file/thumbnail summary only. No refresh/reset. |
-| Import confirmed database bundle | Reset thumbnail queue and replace `thumbs` with `{}`; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
-| Clear library | Reset thumbnail queue; replace `thumbs` with `{}`, assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
+| Import confirmed database bundle | Reset metadata identity, query and thumbnail queue/store; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
+| Clear library | Reset metadata identity and thumbnail queue/store; replace assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
 | Find/rescan duplicates | Replace duplicate groups and count; publish scan summary. No library/root refresh or thumbnail reset, although visible duplicate IDs may be queued for previews. |
 | Apply duplicate changes | After the backend batch returns, refresh assets/query pages and known tags; scan duplicates; replace groups/count/revision; publish committed, rolled-back, or recovery-required summary. No root refresh or explicit thumbnail reset. |
 
@@ -188,11 +213,11 @@ Picker or confirmation cancellation, an empty duplicate batch, and a no-op thumb
 - The runner does not expose cancellation for scans, imports, clear-library, duplicate scans, or duplicate application. Only bulk thumbnail rendering has a stop request.
 - A second runner call made while locked returns silently; it does not queue work or publish a message.
 - The progress listener has no operation identifier beyond phase filtering. Correct attribution depends on exclusivity plus disjoint phase families.
-- The runner unregisters its listener when the action settles, but it has no separate unmount abort/stale-result guard if the entire shell is destroyed mid-operation.
+- The React runner unregisters its listener when the action settles. The Solid runner also unregisters on owner disposal and ignores late progress, but neither cancels an already-dispatched backend operation when the shell is destroyed.
 - Duplicate rename targets cannot be another source in the same batch, so swaps/cycles require independent temporary names in separate rescanned batches.
 - The DB transaction does not make post-commit staged-delete or thumbnail cleanup transactional; those cases are surfaced as recovery-required results.
 - Root addition is sequential. A failure after one addition can leave earlier roots added while preventing the final root-list refresh.
-- Local lifecycle resets intentionally differ by operation; notably root removal does not clear the thumbnail path map, and duplicate mutations do not explicitly reset it.
+- Local lifecycle resets intentionally differ by operation. Root removal explicitly resets the thumbnail queue/store; duplicate mutations refresh the query, whose refresh also resets the store. The React `thumbs`/`setThumbs` compatibility fields are an empty value and no-op in production composition.
 - Layer-manager focus restoration requires a connected trigger. Native GTK video controls are outside its DOM focus model; see [frontend layer limits](../frontend/architecture-and-ui-conventions.md#keyboard-and-accessibility).
 
 ## Change checklist
@@ -219,7 +244,7 @@ When changing settings behavior:
 - `src/components/settings/__tests__/*` covers panel wiring, operation-status rendering, destructive-dialog controls, and resolver staging/locking; `src/components/settings/sections/__tests__/*` covers section callbacks and locked disabled states.
 - `src/__tests__/App.test.tsx` covers the full-page settings route, Back/Escape, highlighted first-folder route, root confirmation, thumbnail stop/retry, section loaders, timestamped export names, and disabling other settings actions during a running operation.
 
-The current tests do not comprehensively exercise listener-registration failure, translated JSON/backend error formats, every settings-specific nested focus transition, partial duplicate-application failure, or every cell of the refresh/reset matrix. Treat those as gaps when changing the corresponding behavior.
+Solid tests cover listener-registration failure, late registration/disposal, phase filtering, translated JSON/backend errors, synchronous exclusion, cancellation, root mapping, and uncertain maintenance rejection with the actual metadata barrier. Desktop checks cover nested duplicate confirmations and persistence. Exhaustive focus transitions and every backend partial-failure case remain outside this frontend coverage.
 
 ## Language card verification
 

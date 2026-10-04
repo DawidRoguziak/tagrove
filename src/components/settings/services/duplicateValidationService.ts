@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { DuplicateGroup } from "../../../types";
 import type { DuplicateResolutionChange } from "../types";
-import i18n from "../../../i18n";
+import i18n from "../../../i18n/core";
 
 const INVALID_FILE_NAME_CHARACTERS = /[\u0000-\u001f\\/:*?"<>|]/;
 const WINDOWS_RESERVED_FILE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;

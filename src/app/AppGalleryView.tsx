@@ -93,7 +93,7 @@ export function AppGalleryView() {
               getAssetAt={library.query.getAssetAt}
               tileSize={runtime.tileSize()}
               hasMore={library.query.offset < library.query.total}
-              isLoading={library.query.loading}
+              isLoading={library.query.loading || runtime.maintenanceLoading()}
               isGeneratingThumbnails={library.thumbnails.isGeneratingPage}
               pendingThumbnailCount={library.thumbnails.pendingPageSize}
               thumbnailStore={library.thumbnails.thumbnailStore}
@@ -103,7 +103,7 @@ export function AppGalleryView() {
               onCtrlWheelZoom={runtime.zoom}
               onSelect={runtime.lightbox.select}
               hasScanRoots={runtime.hasScanRoots()}
-              onAddFirstFolder={runtime.openSettings}
+              onAddFirstFolder={runtime.openFirstFolderSettings}
               selectionModeEnabled={selection.enabled}
               selectedAssetIds={selection.ids}
               onBulkSelectionInteraction={selection.interact}

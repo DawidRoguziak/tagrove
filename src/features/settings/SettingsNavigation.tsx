@@ -3,13 +3,18 @@ import { useLanguage } from "../../i18n/solid";
 import { UiIcon, type UiIconName } from "../../ui/controls/UiIcon";
 
 const sections = [
+  { id: "scan", label: "settings.scan.heading", icon: "folder" },
   { id: "appearance", label: "settings.appearance.heading", icon: "palette" },
-  { id: "language", label: "settings.language.heading", icon: "languages" }
+  { id: "language", label: "settings.language.heading", icon: "languages" },
+  { id: "import-export", label: "settings.importExport.heading", icon: "copy" },
+  { id: "duplicates", label: "settings.duplicates.heading", icon: "group" },
+  { id: "danger", label: "settings.danger.heading", icon: "trash" },
+  { id: "about", label: "settings.about.heading", icon: "info" }
 ] satisfies { id: string; label: string; icon: UiIconName }[];
 
 export function SettingsNavigation() {
   const { t } = useLanguage();
-  const [activeSection, setActiveSection] = createSignal("appearance");
+  const [activeSection, setActiveSection] = createSignal("scan");
 
   onSettled(() => {
     const elements = sections.flatMap(({ id }) => {
@@ -31,7 +36,7 @@ export function SettingsNavigation() {
         (previous, element) => (element.getBoundingClientRect().top <= top ? element : previous),
         undefined
       );
-      setActiveSection(current?.id.replace("settings-", "") ?? "appearance");
+      setActiveSection(current?.id.replace("settings-", "") ?? "scan");
     };
     root.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);

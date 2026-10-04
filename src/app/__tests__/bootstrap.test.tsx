@@ -9,8 +9,8 @@ describe("Solid browser toolchain", () => {
   it("renders the bootstrap with the browser runtime", () => {
     expect(isServer).toBe(false);
     render(() => <App />);
-    expect(screen.getByRole("heading", { name: "Tagrove" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Solid 2 shell ready");
+    expect(screen.getByAltText("Tagrove")).toBeInTheDocument();
+    expect(screen.getByTestId("gallery-grid")).toBeInTheDocument();
   });
 
   it("updates the DOM after an interaction", async () => {

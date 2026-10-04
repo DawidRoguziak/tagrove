@@ -30,6 +30,7 @@
     "src/features",
     "src/ui",
     "src/test/setup-solid.ts",
-    "src/i18n/solid.tsx"
+    "src/i18n/solid.tsx",
+    "src/test/renderSolid.tsx"
   ]
 }

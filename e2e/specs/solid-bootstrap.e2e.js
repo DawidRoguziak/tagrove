@@ -9,12 +9,12 @@ const evidence = path.resolve("artifacts/solid2/stage2", frontend);
 
 suite("Solid desktop bootstrap", () => {
   it("mounts and reloads inside the isolated native window", async () => {
-    await $("main h1").waitForDisplayed();
-    assert.equal(await $("main h1").getText(), "Tagrove");
-    assert.equal(await $('[role="status"]').getText(), "Solid 2 shell ready");
+    await $('[data-testid="gallery-grid"]').waitForDisplayed();
+    assert.equal(await $(".workspace-identity").getText(), "Tagrove");
+    await $(".filter-input").setValue("synthetic-draft");
     await browser.refresh();
-    await $('[role="status"]').waitForDisplayed();
-    assert.equal(await $('[role="status"]').getText(), "Solid 2 shell ready");
+    await $('[data-testid="gallery-grid"]').waitForDisplayed();
+    assert.equal(await $(".filter-input").getValue(), "");
     await fs.mkdir(evidence, { recursive: true });
     await browser.saveScreenshot(path.join(evidence, "shell.png"));
   });

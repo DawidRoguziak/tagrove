@@ -6,9 +6,10 @@ Rewrite the frontend using Solid 2 while preserving the current appearance, inte
 accessibility, persistence, and backend behavior. The working React application is the
 behavioral reference. Its directory structure does not constrain the new implementation.
 
-Implementation has reached stage 3. React remains the functional reference and default
+Implementation has reached stage 4. React remains the functional reference and default
 entry; Solid has a separately compiled shell, platform boundary, shared controls and
-application-owned library models. Gallery/search integration is next. Track verification and completion in
+application-owned library models, virtual gallery, search and tag discovery.
+Shared tag editing and bulk mutations are next. Track verification and completion in
 [PROGRESS.md](PROGRESS.md), and test ownership in [BEHAVIOR-INVENTORY.md](BEHAVIOR-INVENTORY.md).
 
 The planning baseline is commit `f11126dfafd40f877ecf5e496abc37d77a435e78` on

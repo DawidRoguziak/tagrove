@@ -1,12 +1,11 @@
-import { lazy, Loading, onCleanup, Show } from "solid-js";
+import { lazy, Loading, onCleanup, onSettled, Show } from "solid-js";
+import { AppGalleryView } from "./AppGalleryView";
 import { LanguageProvider, useLanguage } from "../i18n/solid";
 import { UiLayerProvider, createUiLayer } from "../ui/overlays/UiLayerProvider";
 import { LazyErrorBoundary } from "../ui/overlays/LazyErrorBoundary";
 import { UiAlert } from "../ui/controls/UiAlert";
 import { UiButton } from "../ui/controls/UiButton";
-import { UiIcon } from "../ui/controls/UiIcon";
 import { AppRuntimeProvider, useAppRuntime } from "./AppRuntimeContext";
-import { WindowControls } from "./WindowControls";
 
 const Settings = lazy(() => import("./AppSettingsView"));
 function SettingsView() {
@@ -58,7 +57,7 @@ function SettingsView() {
 }
 function AppContent() {
   const runtime = useAppRuntime();
-  const { t } = useLanguage();
+  onSettled(runtime.start);
   const prefetch = setTimeout(() => {
     void Promise.allSettled([import("./AppSettingsView"), import("./LightboxBoundary")]);
   }, 1500);
@@ -71,33 +70,7 @@ function AppContent() {
           : "flex h-full min-h-0 flex-col overflow-hidden"
       }
     >
-      <Show
-        when={runtime.view() === "settings"}
-        fallback={
-          <>
-            <header
-              data-tauri-drag-region="deep"
-              class="window-drag-surface flex items-center gap-4 border-b border-[var(--border-soft)] bg-[var(--window-chrome-bg)] px-4 py-3 sm:px-6"
-            >
-              <img src="/tagrove.svg" alt="" width={28} height={28} draggable={false} />
-              <h1 class="m-0 flex-1 text-2xl">Tagrove</h1>
-              <UiButton
-                id="open-settings-button"
-                variant="ghost"
-                aria-label={t("topBar.openSettings")}
-                title={t("topBar.openSettings")}
-                onClick={runtime.openSettings}
-              >
-                <UiIcon name="settings" />
-              </UiButton>
-              <WindowControls />
-            </header>
-            <p role="status" class="p-6">
-              Solid 2 shell ready
-            </p>
-          </>
-        }
-      >
+      <Show when={runtime.view() === "settings"} fallback={<AppGalleryView />}>
         <SettingsView />
       </Show>
     </main>

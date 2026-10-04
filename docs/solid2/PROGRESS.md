@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 3 is complete. React remains the default and functional reference.
-Solid has application-owned query, metadata, vocabulary and thumbnail models.
-Gallery and search UI integration follows in stage 4.
+Stage 4 is complete. React remains the default and functional reference.
+Solid now browses and searches the real library with a virtual gallery, range selection,
+autocomplete and tag discovery. Shared tag editing and bulk actions are next.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 4](04-gallery-and-search.md).
+- Next implementation task: [stage 5](05-tagging-and-bulk.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -22,8 +22,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | --- | --- | --- | --- | --- |
 | [1. Reference and toolchains](01-reference-and-toolchains.md) | Complete | 703 frontend, 206 Rust, both builds, desktop and packaging verified | Findings fixed and rechecked | `build: add isolated Solid 2 migration setup`; `4af0ff4` |
 | [2. Platform and shell](02-platform-and-shell.md) | Complete | 734 frontend, 206 Rust, both builds, desktop shell comparison | Findings fixed and rechecked | `refactor: establish Solid shell and platform boundaries`; `aa7c933` |
-| [3. Library state](03-library-state.md) | Complete | 822 frontend, 206 Rust, both builds; query follow-up passed | Findings fixed and rechecked | `feat: implement Solid library state and mutation coordination` |
-| [4. Gallery and search](04-gallery-and-search.md) | Not started | Not run | Pending | None |
+| [3. Library state](03-library-state.md) | Complete | 822 frontend, 206 Rust, both builds; query follow-up passed | Findings fixed and rechecked | `feat: implement Solid library state and mutation coordination`; `64e7ac1` |
+| [4. Gallery and search](04-gallery-and-search.md) | Complete | 931 frontend, 206 Rust, both builds; desktop comparison and reduced motion passed | Findings fixed and rechecked | `feat: migrate gallery and search to Solid`; record hash in stage 5 |
 | [5. Tagging and bulk](05-tagging-and-bulk.md) | Not started | Not run | Pending | None |
 | [6. Lightbox and images](06-lightbox-and-images.md) | Not started | Not run | Pending | None |
 | [7. Native video](07-native-video.md) | Not started | Not run | Pending | None |
@@ -346,7 +346,7 @@ Next stage: [shared library state](03-library-state.md).
 
 Date: 4 October 2026. Starting commit: `aa7c933`.
 Local commit subject: `feat: implement Solid library state and mutation coordination`.
-Record its hash when opening stage 4.
+Local commit hash: `64e7ac1`.
 
 Implemented behavior:
 
@@ -435,3 +435,148 @@ are unchanged. Those feature integrations remain in their planned stages. No req
 stage-3 check remains unavailable.
 
 Next stage: [gallery, search and tag discovery](04-gallery-and-search.md).
+
+
+## Stage 4 evidence
+
+Date: 4 October 2026. Starting commit: `64e7ac1`.
+Local commit subject: `feat: migrate gallery and search to Solid`.
+Record its hash when opening stage 5.
+
+Implemented behavior:
+
+- The mounted Solid gallery consumes application-owned query, selection, vocabulary and
+  thumbnail models. Startup runs once from `onSettled`. Gallery/Settings navigation retains
+  search and selected IDs while remounting the gallery and resetting scroll.
+- A narrow adapter uses the existing virtual-core 3.17.8, now an exact direct dependency.
+  It waits for measured width, owns observers and cleanup, retains row geometry, overscan,
+  scroll margin, resize anchoring and global indices. Slots use stable global-index keys;
+  sparse arrivals replace placeholders and thumbnail subscriptions follow asset identity.
+- Gallery tiles retain image/GIF presentation, group backplates, badges, selection previews,
+  empty/error states and footer geometry. The shared Solid thumbnail image resets load/failure
+  state per source and forwards load events, including cached-image handling.
+- Pointer selection retains the 150 ms / 5 px threshold, capture, rectangle preview, Escape
+  and query cancellation, click suppression and edge scrolling. The selection model resolves
+  global ranges in 128-index windows, rejects late results and exposes explicit retry.
+- Search commands compose drafts synchronously and apply the existing grammar, literal
+  tokens, meta filters, media kinds and favorites. Unchanged valid submissions still query.
+  Autocomplete retains keyboard/caret/IME behavior and one application-owned lazy worker.
+- Tag discovery retains 100-tag pagination, local fallback, include/exclude click intent,
+  focus and modal cleanup. Applying flushes pending clicks and keeps the selection on failure.
+  Failed pagination without new fallback entries stops automatic retries until explicit input.
+
+Tests ported or added:
+
+- All 699 React/shared reference cases remain enabled. Solid now has 232 cases, including
+  the 123 from previous stages. The full frontend run covers 111 files and 931 tests.
+- Real virtual-core suites cover 10,000/26,000 slots, initially null refs, intermediate range
+  bounds, row-measurement identity, margins, partial rows, resize anchors and disposal.
+  Gallery integration uses the real query/cache composition, covers eviction beyond 12 pages,
+  backward reload, sparse replacement, load retry, overlapping DOM identity and thumbnail
+  subscriber isolation. Pointer tests port all 30 reference cases.
+- Search tests cover explicit unchanged submission and same-batch commands; suggestion tests
+  exercise request cancellation, stale replies, worker vocabulary reuse and disposal. Tag-list
+  tests cover delayed click intent, fallback and pagination retry. Thumbnail tests retain all
+  seven reference cases; footer tests cover all 11 locales.
+- The application startup regression renders real composition with mocked IPC and proves
+  initial results and explicit searches. Shell/bootstrap assertions now target the gallery;
+  the obsolete shell-ready message was removed. The behavior inventory records new owners.
+
+Verification, with local evidence under `artifacts/solid2/stage4/`:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `bun run test` | 111 files, 931 passed | `frontend-final.log` |
+| `bun run typecheck` | All three contexts pass | `types-final.log` |
+| `bun run test:frontends` | Both builds and renderer/entry isolation pass; restores React assets in `dist` | `builds-final.log`, `react-modules.json`, `solid-modules.json` |
+| `bun run test:backend` | 206 passed, 2 pre-existing diagnostics ignored | `backend.log` |
+| `bun run lint` / `bun run format:check` / `bun run locale:check` | Passed; all 11 locales valid | `lint-final.log`, `format-final.log`, `locales-final.log` |
+| `TMPDIR=/tmp BUN_INSTALL=/tmp/solid2-bun BUN_INSTALL_CACHE_DIR=/tmp/solid2-bun-cache bun install --frozen-lockfile --ignore-scripts` | Existing graph and new direct core declaration agree; no dependency version changed | `dependency-check.log` |
+| `python3 artifacts/solid2/stage4/compare-geometry.py` | All 12 geometry samples exactly match; both cold/warm runs stay at or below 91 tiles | `geometry-parity.log` |
+| `PATH="/tmp/solid2-tools:$PATH" bun run privacy:check` | Passed before and after staging | `privacy.log`, `privacy-staged.log` |
+| `git diff --check` / `git diff --cached --check` | Passed | Working/staged diff review |
+
+Desktop comparison used fresh temporary XDG profiles, private Xvfb/D-Bus sessions and
+synthetic fixtures. The local wrapper from stage 2 retains cleanup guards. Each renderer
+ran serially, with a fresh frontend/native build:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_SOLID_SHELL=1 MEDIATAGGER_UI_REDESIGN=1 MEDIATAGGER_THUMBNAIL_FADE=1 MEDIATAGGER_GALLERY_SELECTION=1 MEDIATAGGER_GALLERY_BROWSING=1 bash artifacts/solid2/stage2/run-desktop.sh \
+    --spec e2e/specs/solid-bootstrap.e2e.js \
+    --spec e2e/specs/ui.redesign.e2e.js \
+    --spec e2e/specs/thumbnail-fade.e2e.js \
+    --spec e2e/specs/review-fixes.e2e.js \
+    --spec e2e/specs/gallery-selection.e2e.js \
+    --spec e2e/specs/gallery-browsing.e2e.js \
+    --mochaOpts.grep 'Solid desktop bootstrap|Shell appearance|gallery footer|end-of-results footer|fades new images|applies literal tags|accidental quick drags|autoscrolls and resolves|gallery browsing parity'
+done
+```
+
+Solid passed 22 cases; React passed 21 and skipped the Solid-only bootstrap case.
+`desktop-solid-final.log` and `desktop-react-final.log` retain the results. The scenarios
+cover persisted shell controls, both footers, thumbnail fading, literal tag include/exclude,
+accidental quick drags and selection of all 2,051 items across unloaded ranges. The browsing
+suite crosses 16 pages and returns to the beginning in cold/warm passes, verifies static GIF
+thumbnails and gallery scroll reset, and records both languages/themes at three widths.
+
+Repeated thumbnail tests with actual reduced motion enabled:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_THUMBNAIL_FADE=1 MEDIATAGGER_REDUCED_MOTION=1 bash artifacts/solid2/stage4/run-reduced.sh --spec e2e/specs/thumbnail-fade.e2e.js
+done
+```
+
+The ignored wrapper writes `gtk-enable-animations=false` into the temporary GTK settings,
+sets `GSETTINGS_BACKEND=keyfile` and sets `org.gnome.desktop.interface enable-animations` to
+false. The native scenario asserts the actual media preference. Both renderers passed two
+cases each, recorded in `reduced-solid.log` and `reduced-react.log`.
+
+A final Solid geometry capture waited for visible thumbnails to finish fading:
+
+```sh
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_GALLERY_BROWSING=1 bash artifacts/solid2/stage2/run-desktop.sh --spec e2e/specs/gallery-browsing.e2e.js --mochaOpts.grep 'preserves gallery and search geometry'
+```
+
+It passed one case, recorded in `geometry-solid-settled.log`. Inspected actual Solid
+English/light 1440px and Polish/dark 320px pixels and the React English/light reference.
+Header, search and tile rectangles match exactly across all 12 measured combinations, without
+horizontal overflow. Fixture scan ordering differs between fresh databases, so screenshots
+are visual evidence rather than an exact pixel-diff assertion. Cold/warm timings include
+WebDriver overhead and remain diagnostics; DOM, cache and range bounds are the test gates.
+
+Self-review findings and fixes:
+
+- Starting library writes directly during Solid component construction left the native
+  gallery empty. Startup now runs from `onSettled`; the application regression and native
+  browser scenarios prove results arrive through the actual composed path.
+- Index-position list reconciliation remounted overlapping thumbnails while scrolling.
+  Global-index keys retain their DOM, and a real-core integration assertion checks identity.
+- Thumbnail demand read reactive query data in an effect's apply phase. Those reads now live
+  in computation; page arrivals update demand without repeating page reads or measurements.
+- Image load/failure state must follow the source. A keyed image owner resets it and retains
+  load callbacks. Tag chips also retain identity, preserving keyboard focus during selection.
+- Automatic pagination could loop after a failed page exhausted local fallback. The new
+  regression failed with three requests instead of two before the no-progress guard; it
+  now passes and still allows an explicit retry.
+- Tag-list initial focus now uses the modal's initial-focus marker. Input-frame cleanup,
+  stale selection completion, worker lifetime and disposal were reviewed and tested.
+- An early broad desktop run reached bulk group editing and lightbox assertions belonging
+  to stages 5 and 6. Those scenarios remain unchanged; the final command selects complete
+  stage-4 cases. The earlier failures remain in local logs and are not reported as passes.
+- Initial sandbox D-Bus binding failed. Desktop runs then used approved local socket access.
+  All final wrappers exited successfully and removed their temporary profiles.
+- Reviewed production imports, sparse indices, geometry, ownership, cancellation, shared
+  worker protocol, keyboard behavior, real module graphs, staged source and synthetic fixtures.
+  No backend, IPC, native profile or React feature behavior changed. Raw logs, screenshots,
+  media and databases remain ignored.
+
+Remaining limits: the Solid selection inspector currently exposes count and Clear only.
+Tag/favorite/group bulk editors follow in stage 5, tile activation/lightbox in stage 6,
+native video in stage 7, and the Add first folder scan workflow and remaining settings in
+stage 8. React remains the default and complete application. No cross-platform or packaging
+parity claim is made; two existing Rust diagnostics remain ignored. No required stage-4
+check remains unavailable.
+
+Next stage: [shared tag editing and bulk actions](05-tagging-and-bulk.md).

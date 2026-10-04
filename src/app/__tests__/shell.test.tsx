@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, flush, lazy, untrack } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import App from "../App";
@@ -27,6 +27,16 @@ afterEach(async () => {
 });
 
 describe("Solid shell", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+  });
   it("switches views, translates live, persists appearance and returns with Escape", async () => {
     render(() => <App />);
     const user = userEvent.setup();
@@ -44,7 +54,7 @@ describe("Solid shell", () => {
     );
     fireEvent.keyDown(window, { key: "Escape" });
     flush();
-    expect(screen.getByRole("status")).toHaveTextContent("Solid 2 shell ready");
+    expect(screen.getByTestId("gallery-grid")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: i18n.t("topBar.openSettings") }));
     expect(await screen.findByRole("combobox")).toHaveValue("pl");
     expect(
@@ -215,7 +225,7 @@ describe("Solid shell", () => {
     expect(screen.getByRole("dialog")).toHaveAccessibleName(
       i18n.t("lightbox.previewDialog", { name: "synthetic.png" })
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Loading");
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
     complete({ default: () => <p>Loaded media</p> });
     await screen.findByText("Loaded media");
     expect(screen.queryByRole("dialog")).toBeNull();

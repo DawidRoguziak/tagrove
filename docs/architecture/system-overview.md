@@ -37,8 +37,9 @@ flowchart LR
 
 During the [Solid 2 migration](../solid2/README.md), React remains the default.
 `MEDIATAGGER_FRONTEND=solid` selects a separate bootstrap entry at `src/app/main.tsx`.
-It renders the window shell, Appearance and Language settings, with shared controls and
-modal/lazy boundaries. Gallery and media workflows still use the React reference.
+It renders the virtual gallery, search, tag discovery and selection, plus Appearance and
+Language settings. Shared controls and modal/lazy boundaries use Solid ownership.
+Bulk editing, lightbox media and the remaining settings workflows still use the React reference.
 Both entries call `src/platform/tauri`; `src/api.ts` remains a React compatibility export.
 The flow below describes the functional React app.
 

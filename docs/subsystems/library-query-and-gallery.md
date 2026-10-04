@@ -23,9 +23,21 @@ positions, including holes after deletion, until a new query replaces the snapsh
 `metadata/createDetailsCache.ts` shares at most 256 complete details across future Solid
 consumers. It deduplicates reads, pins pending identities, validates metadata generations,
 and discards replies after query changes, identity resets or disposal. Query changes clear
-details without resetting canonical tags. Restore and clear invalidate both. Solid gallery
-and lightbox presentation remain later migration stages; these models currently have
-frontend tests with mocked IPC, not desktop feature-parity evidence.
+details without resetting canonical tags. Restore and clear invalidate both. The Solid gallery
+now consumes these models through `app/AppGalleryView.tsx`.
+Lightbox details presentation remains stage 6 work.
+
+`features/gallery/createVirtualGrid.ts` adapts the same installed virtual-core version as
+React, now also pinned as a direct dependency. It waits for measured grid width before
+publishing nonempty ranges, owns observers under the mounted view and preserves global-index
+resize anchors. Thumbnail completion does not rebuild row measurements. Tiles use stable
+global-index keys, and each loaded tile subscribes only to its current asset's thumbnail.
+The image element resets its load/failure/fade state when its source changes.
+
+Stage 4 tests run real virtual-core at 10,000 and 26,000 slots, drive sparse replacement,
+explicit page retry and eviction/reload across the 12-page bound, and exercise the native
+WebView with synthetic collections. See the [stage evidence](../solid2/PROGRESS.md) and
+[browsing desktop recipe](../development/testing.md#solid-gallery-and-search-verification).
 
 ## From applied filters to a session
 

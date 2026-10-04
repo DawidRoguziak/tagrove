@@ -1,0 +1,311 @@
+import { createEffect, createSignal, untrack } from "solid-js";
+import { createUiLayer } from "../../ui/overlays/UiLayerProvider";
+import type { AssetSummary } from "../../types";
+import type { BulkSelectionHandler, SelectionRange } from "../../components/gallery/selection";
+import {
+  containsIndex,
+  edgeScrollSpeed,
+  intersectedRanges,
+  rectangleBetween,
+  type GridGeometry,
+  type Point,
+  type SelectionRectangle
+} from "../../components/gallery/services/selectionGeometry";
+interface Options extends GridGeometry {
+  assets: AssetSummary[];
+  getAssetAt?: (index: number) => AssetSummary | undefined;
+  selectionModeEnabled: boolean;
+  queryEpoch: number;
+  gridOffset: number;
+  gridRef: () => HTMLDivElement | undefined;
+  scrollContainerRef?: () => HTMLElement | undefined;
+  onCtrlWheelZoom?: (deltaY: number) => void;
+  onSelect: (asset: AssetSummary) => void;
+  onBulkSelectionInteraction?: BulkSelectionHandler;
+}
+interface Preview {
+  rectangle: SelectionRectangle;
+  ranges: SelectionRange[];
+  additive: boolean;
+}
+interface Gesture {
+  pointerId: number;
+  pressedAt: number;
+  element: HTMLElement;
+  start: Point;
+  origin: Point;
+  latest: Point;
+  additive: boolean;
+  dragging: boolean;
+  lastFrame: number;
+}
+const dragHoldDelayMs = 150;
+const interactiveSelector =
+  'button:not([data-asset-id]), input, select, textarea, a, [role="button"]:not([data-asset-id]), [contenteditable="true"]';
+function isControl(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(interactiveSelector));
+}
+export function createGridHandlers(options: Options) {
+  let gesture: Gesture | null = null;
+  let frame: number | null = null;
+  let generation = 0;
+  let suppressClick = false;
+  const [preview, setPreview] = createSignal<Preview | null>(null);
+  const [isDragSelecting, setIsDragSelecting] = createSignal(false);
+  const release = () => {
+    const active = gesture;
+    gesture = null;
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+    if (active?.element.hasPointerCapture(active.pointerId))
+      active.element.releasePointerCapture(active.pointerId);
+    setIsDragSelecting(false);
+  };
+  const cancel = () => {
+    generation++;
+    if (gesture?.dragging) suppressClick = true;
+    release();
+    setPreview(null);
+    void options.onBulkSelectionInteraction?.({ type: "rectangle-cancel" });
+  };
+  const clearSelection = () => {
+    if (gesture) suppressClick = true;
+    cancel();
+    void options.onBulkSelectionInteraction?.({ type: "clear" });
+  };
+  createUiLayer({
+    active: () => options.selectionModeEnabled,
+    modal: false,
+    container: options.gridRef,
+    onEscape: clearSelection
+  });
+  const updatePreview = (active: Gesture): Preview | null => {
+    const grid = options.gridRef();
+    const scroller = options.scrollContainerRef?.() ?? active.element;
+    if (!grid) return null;
+    const bounds = grid.getBoundingClientRect();
+    const viewport = scroller.getBoundingClientRect();
+    const x = Math.max(
+      viewport.left + scroller.clientLeft,
+      Math.min(active.latest.x, viewport.left + scroller.clientLeft + scroller.clientWidth)
+    );
+    const y = Math.max(
+      viewport.top + scroller.clientTop,
+      Math.min(active.latest.y, viewport.top + scroller.clientTop + scroller.clientHeight)
+    );
+    const rect = rectangleBetween(active.start, { x: x - bounds.left, y: y - bounds.top });
+    const gallery = active.element.getBoundingClientRect();
+    const left = Math.max(bounds.left + rect.left, viewport.left, gallery.left);
+    const top = Math.max(bounds.top + rect.top, viewport.top, gallery.top);
+    const right = Math.min(
+      bounds.left + rect.left + rect.width,
+      viewport.left + scroller.clientWidth,
+      gallery.right
+    );
+    const bottom = Math.min(
+      bounds.top + rect.top + rect.height,
+      viewport.top + scroller.clientHeight,
+      gallery.bottom
+    );
+    const next = {
+      additive: active.additive,
+      ranges: intersectedRanges(rect, options),
+      rectangle: { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }
+    };
+    setPreview(next);
+    return next;
+  };
+  const animate = function tick(time: number) {
+    const active = gesture;
+    if (!active?.dragging) return;
+    const scroller = options.scrollContainerRef?.() ?? active.element;
+    const bounds = scroller.getBoundingClientRect();
+    const elapsed = Math.min(32, time - active.lastFrame);
+    active.lastFrame = time;
+    scroller.scrollTop +=
+      (edgeScrollSpeed(active.latest.y, bounds.top, bounds.top + scroller.clientHeight) * elapsed) /
+      1000;
+    updatePreview(active);
+    frame = requestAnimationFrame(tick);
+  };
+  const handlePointerDown = (event: PointerEvent & { currentTarget: HTMLElement }) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    // A new press must not consume click suppression left by an earlier drag.
+    suppressClick = false;
+    if (!options.selectionModeEnabled || isControl(event.target)) return;
+    const grid = options.gridRef();
+    if (!grid) return;
+    const scroller = options.scrollContainerRef?.() ?? event.currentTarget;
+    const viewport = scroller.getBoundingClientRect();
+    if (
+      event.clientX >= viewport.left + scroller.clientLeft + scroller.clientWidth ||
+      event.clientY >= viewport.top + scroller.clientTop + scroller.clientHeight
+    )
+      return;
+    cancel();
+    suppressClick = false;
+    void options.onBulkSelectionInteraction?.({ type: "rectangle-start" });
+    const bounds = grid.getBoundingClientRect();
+    gesture = {
+      pointerId: event.pointerId,
+      pressedAt: performance.now(),
+      element: event.currentTarget,
+      start: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      origin: { x: event.clientX, y: event.clientY },
+      latest: { x: event.clientX, y: event.clientY },
+      additive: event.ctrlKey || event.metaKey,
+      dragging: false,
+      lastFrame: 0
+    };
+  };
+  const handlePointerMove = (
+    event: Pick<
+      PointerEvent & { currentTarget: HTMLElement },
+      "pointerId" | "clientX" | "clientY" | "preventDefault"
+    >
+  ) => {
+    const active = gesture;
+    if (!active || active.pointerId !== event.pointerId) return;
+    active.latest = { x: event.clientX, y: event.clientY };
+    if (
+      !active.dragging &&
+      performance.now() - active.pressedAt >= dragHoldDelayMs &&
+      Math.hypot(event.clientX - active.origin.x, event.clientY - active.origin.y) >= 5
+    ) {
+      active.dragging = true;
+      active.element.setPointerCapture(active.pointerId);
+      active.lastFrame = performance.now();
+      suppressClick = true;
+      setIsDragSelecting(true);
+      updatePreview(active);
+      frame = requestAnimationFrame(animate);
+    }
+    if (active.dragging) event.preventDefault();
+  };
+  const handlePointerUp = (
+    event: Pick<
+      PointerEvent & { currentTarget: HTMLElement },
+      "pointerId" | "clientX" | "clientY" | "preventDefault"
+    >
+  ) => {
+    const active = gesture;
+    if (!active || active.pointerId !== event.pointerId) return;
+    if (!active.dragging) {
+      cancel();
+      return;
+    }
+    active.latest = { x: event.clientX, y: event.clientY };
+    const final = updatePreview(active);
+    const request = generation;
+    release();
+    if (final) {
+      void Promise.resolve(
+        options.onBulkSelectionInteraction?.({
+          type: "rectangle-commit",
+          ranges: final.ranges,
+          additive: final.additive
+        })
+      ).finally(() => {
+        if (generation === request) setPreview(null);
+      });
+    }
+  };
+  createEffect(
+    () => [
+      options.selectionModeEnabled,
+      options.queryEpoch,
+      options.gridOffset,
+      options.columnCount,
+      options.tilePixelSize,
+      options.tileGap,
+      options.assetCount,
+      options.gridRef(),
+      options.scrollContainerRef?.()
+    ],
+    () => {
+      window.addEventListener("blur", cancel);
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("resize", cancel);
+      const sizes = new Map<Element, string>();
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const size = `${entry.contentRect.width},${entry.contentRect.height}`;
+          const previous = sizes.get(entry.target);
+          sizes.set(entry.target, size);
+          if (previous !== undefined && previous !== size) cancel();
+        }
+      });
+      const grid = untrack(options.gridRef);
+      if (grid) observer.observe(grid);
+      const scroller = untrack(() => options.scrollContainerRef?.());
+      if (scroller) observer.observe(scroller);
+      return () => {
+        window.removeEventListener("blur", cancel);
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("resize", cancel);
+        observer.disconnect();
+        cancel();
+      };
+    }
+  );
+  const handleTileClick = (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {
+    const { assets, getAssetAt, onSelect, selectionModeEnabled, onBulkSelectionInteraction } =
+      options;
+    const assetId = Number(event.currentTarget.dataset.assetId);
+    const assetIndex = Number(event.currentTarget.dataset.assetIndex);
+    if (!Number.isInteger(assetId) || !Number.isInteger(assetIndex) || assetIndex < 0) return;
+    const asset = getAssetAt?.(assetIndex) ?? assets.find((item) => item.id === assetId);
+    if (!asset || asset.id !== assetId) return;
+    if (!selectionModeEnabled) {
+      onSelect(asset);
+      return;
+    }
+    generation++;
+    release();
+    setPreview(null);
+    event.preventDefault();
+    void onBulkSelectionInteraction?.({
+      type: "click",
+      assetId,
+      assetIndex,
+      ctrlLike: event.ctrlKey || event.metaKey,
+      shift: event.shiftKey
+    });
+  };
+  const handleClickCapture = (event: MouseEvent) => {
+    if (suppressClick && event.detail !== 0) {
+      suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+  const handleGalleryWheel = (event: WheelEvent & { currentTarget: HTMLElement }) => {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    options.onCtrlWheelZoom?.(event.deltaY);
+  };
+  return {
+    get isDragSelecting() {
+      return isDragSelecting();
+    },
+    get preview() {
+      return preview();
+    },
+    handleGalleryWheel,
+    handleTileClick,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    handlePointerCancel: cancel,
+    handleLostPointerCapture: () => {
+      if (gesture) cancel();
+    },
+    handleClickCapture,
+    isPreviewSelected: (index: number, selected: boolean) => {
+      const value = preview();
+      return value ? containsIndex(value.ranges, index) || (value.additive && selected) : selected;
+    }
+  };
+}

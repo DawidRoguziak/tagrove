@@ -45,24 +45,28 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
     }
   );
   createEffect(
-    () => ({ range: range(), assets: query.assets }),
-    ({ range }) => {
-      if (!range) return;
+    () => {
+      const viewport = range();
+      query.assets;
       const visible: number[] = [];
       const prefetch: number[] = [];
+      if (!viewport) return null;
       for (
-        let index = Math.max(0, range.startIndex);
-        index <= Math.min(query.total - 1, range.endIndex);
+        let index = Math.max(0, viewport.startIndex);
+        index <= Math.min(query.total - 1, viewport.endIndex);
         index++
       ) {
         const asset = query.getAssetAt(index);
         if (asset)
-          (index >= range.visibleStartIndex && index <= range.visibleEndIndex
+          (index >= viewport.visibleStartIndex && index <= viewport.visibleEndIndex
             ? visible
             : prefetch
           ).push(asset.id);
       }
-      thumbnails.setGalleryThumbnailDemand(visible, prefetch);
+      return { visible, prefetch };
+    },
+    (demand) => {
+      if (demand) thumbnails.setGalleryThumbnailDemand(demand.visible, demand.prefetch);
     }
   );
   const mutations = createMutations({ tags, details, query, vocabulary, filters: () => filters });

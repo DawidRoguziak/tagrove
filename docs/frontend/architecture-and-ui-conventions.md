@@ -37,7 +37,16 @@ The Solid runtime now owns `createLibrary` from `src/library/createLibrary.ts`. 
 canonical metadata, details cache, vocabulary and thumbnail models survive view changes.
 Commands keep admission locks and generations synchronous; read-only getters expose Solid
 signals and memos. `applyFilters` captures plain values before starting IPC. No frontend
-flush is needed in production. Gallery startup and search wiring remain stage 4 work.
+flush is needed in production. `AppContent` starts the initial query, vocabulary and scan-root
+reads from `onSettled`, after component construction. Starting those writes in the render
+scope violates Solid 2 ownership and can leave the gallery empty.
+
+The runtime also owns search drafts/applied filters, selected IDs and one lazy suggestion
+worker. Gallery/Settings switching remounts the gallery DOM and resets scroll while retaining
+those models. `features/gallery` owns virtual-core, geometry observers, pointer capture and
+selection preview; `features/search` owns the input, suggestions and tag-list modal. Virtual
+slots are keyed by global index, so overlapping rows keep their DOM while placeholder
+replacement and current asset identity remain reactive. Bulk action editors follow in stage 5.
 
 ## Bootstrap and shell composition
 

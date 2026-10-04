@@ -677,3 +677,33 @@ English/Polish at 1440, 600 and 320 pixels, exercises persistence and Escape res
 and stores synthetic evidence under `artifacts/solid2/stage2/<renderer>/`. Each renderer
 must run serially in its own fresh E2E profile. This verifies shell controls, not gallery,
 maintenance or native-video parity. See [stage 2 evidence](../solid2/PROGRESS.md).
+
+## Solid gallery and search verification
+
+Stage 4 adds `src/features/gallery`, `src/features/search` and thumbnail-image suites to the
+Solid project. `src/test/renderSolid.tsx` updates props under the same component owner;
+`settle.ts` supplies explicit batch boundaries in tests. Real virtual-core tests retain
+10,000/26,000-slot limits, measurement identity, null-ref startup, resize anchors and cleanup.
+The gallery integration suite uses real query/cache composition and a per-asset thumbnail
+store with mocked IPC. All React reference suites remain enabled.
+
+`MEDIATAGGER_GALLERY_BROWSING=1` enables `e2e/specs/gallery-browsing.e2e.js` for either renderer.
+It indexes 2,048 disposable PNGs plus GIF/video fixtures, crosses 16 pages in cold/warm passes,
+returns to evicted ranges, checks static GIF thumbnails and Settings scroll reset, and records
+gallery geometry/screenshots for English/Polish, light/dark and 1440/600/320px. Screenshot
+capture waits for the visible thumbnails to reach full opacity. Evidence stays ignored under
+`artifacts/solid2/stage4/<renderer>/`. Timings include WebDriver overhead and are diagnostic.
+
+Run renderer comparisons serially with fresh isolated XDG profiles as described above:
+
+```sh
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_GALLERY_BROWSING=1 bun run test:e2e:tauri --spec e2e/specs/gallery-browsing.e2e.js
+MEDIATAGGER_FRONTEND=react MEDIATAGGER_GALLERY_BROWSING=1 bun run test:e2e:tauri --spec e2e/specs/gallery-browsing.e2e.js
+```
+
+The stage also runs the existing shell, footer, thumbnail-fade, literal-tag search and
+selection scenarios. Use an explicit Mocha grep for the stage-4 portions: several existing
+selection/performance cases continue into lightbox or bulk editing, which belong to later
+stages. Keep those full reference tests unchanged. Exact selected commands and outcomes are
+in [PROGRESS.md](../solid2/PROGRESS.md). Repeat thumbnail fading with the isolated GTK/GSettings
+reduced-motion configuration described in the animation recipe.

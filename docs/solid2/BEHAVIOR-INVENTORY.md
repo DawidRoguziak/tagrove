@@ -18,12 +18,12 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/UI/__tests__/LazyErrorBoundary.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/app/__tests__/shell.test.tsx` |
 | `src/components/UI/__tests__/ModalPresence.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx`, feature confirmations remain for stage 8 |
 | `src/components/UI/__tests__/TagEditor.test.tsx` | react | 5, `features/tagging` | Retained, all assertions |
-| `src/components/UI/__tests__/ThumbnailImage.test.tsx` | react | 4, `features/gallery` | Retained, all assertions |
+| `src/components/UI/__tests__/ThumbnailImage.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/ui/controls/__tests__/ThumbnailImage.test.tsx` |
 | `src/components/UI/__tests__/UiAlert.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
 | `src/components/UI/__tests__/UiModal.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/overlays/__tests__/UiModal.test.tsx` |
 | `src/components/UI/__tests__/UiSegmentedControl.test.tsx` | react | 2, `ui/controls` or `ui/overlays` | React assertions retained; Solid counterpart in `src/ui/controls/__tests__/controls.test.tsx` |
 | `src/components/app/__tests__/WindowControls.test.tsx` | react | 2, `app/WindowControls` | React assertions retained; Solid counterpart in `src/app/__tests__/WindowControls.test.tsx` |
-| `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` | react | 4, `features/search` | Retained, all assertions |
+| `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` | react | 4, `features/search` | React reference retained; Solid coverage in `src/features/search/__tests__/createSearch.test.ts` and app gallery integration |
 | `src/components/app/hooks/__tests__/useAssetTagState.test.ts` | react | 3, `library/metadata` | React assertions retained; Solid counterpart in `src/library/metadata/__tests__/createAssetTagState.test.ts` |
 | `src/components/app/hooks/__tests__/useBulkFavorites.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
 | `src/components/app/hooks/__tests__/useBulkSelectionController.test.ts` | react | 5, `features/bulk` selection and metadata | Retained, all assertions |
@@ -37,10 +37,10 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/bulk/grouping/services/__tests__/applyBulkMediaGroupAction.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
 | `src/components/bulk/grouping/services/__tests__/bulkGroupOrderService.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
 | `src/components/bulk/tagging/services/__tests__/applyBulkTagsAction.test.ts` | shared | 5, `features/bulk` | Retained, all assertions |
-| `src/components/gallery/__tests__/GalleryGrid.test.tsx` | react | 4, `features/gallery` | Retained, all assertions |
-| `src/components/gallery/__tests__/GalleryStatusFooter.test.tsx` | react | 4, `features/gallery` | Retained, all assertions |
-| `src/components/gallery/hooks/__tests__/useGalleryGridHandlers.test.tsx` | react | 4, `features/gallery` | Retained, all assertions |
-| `src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` | react | 4, `features/gallery` | Retained, all assertions |
+| `src/components/gallery/__tests__/GalleryGrid.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in real-core/cache integration in `src/features/gallery/__tests__/GalleryGrid.test.tsx` |
+| `src/components/gallery/__tests__/GalleryStatusFooter.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/GalleryStatusFooter.test.tsx` |
+| `src/components/gallery/hooks/__tests__/useGalleryGridHandlers.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/createGridHandlers.test.tsx` |
+| `src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/createVirtualGrid.test.tsx` plus real DOM/cache integration |
 | `src/components/gallery/services/__tests__/selectionGeometry.test.ts` | shared | 4, `features/gallery` | Retained, all assertions |
 | `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
 | `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
@@ -59,14 +59,14 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/lightbox/services/__tests__/saveLightboxMediaGroupAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
 | `src/components/lightbox/services/__tests__/saveLightboxTagsAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
 | `src/components/lightbox/services/__tests__/toggleLightboxFavoriteAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
-| `src/components/search/__tests__/SearchTagator.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/search/__tests__/SearchTagatorWrapper.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/search/hooks/__tests__/useSearchTagatorHandlers.test.ts` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
+| `src/components/search/__tests__/SearchTagator.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/__tests__/SearchTagator.test.tsx` |
+| `src/components/search/__tests__/SearchTagatorWrapper.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in wrapper keyboard/focus tests plus `src/app/__tests__/gallery.test.tsx`; legacy parent-commit callbacks are replaced by explicit model commands |
+| `src/components/search/hooks/__tests__/useSearchTagatorHandlers.test.ts` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in Solid search component keyboard/caret/IME tests |
 | `src/components/search/services/__tests__/inputService.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
 | `src/components/search/services/__tests__/suggestionService.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
 | `src/components/search/services/__tests__/tokenService.test.ts` | shared | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/search/worker/__tests__/SuggestionClient.test.ts` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/search/worker/__tests__/useSuggestions.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
+| `src/components/search/worker/__tests__/SuggestionClient.test.ts` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/suggestions/__tests__/SuggestionClient.test.ts` using the shared client and Solid vocabulary |
+| `src/components/search/worker/__tests__/useSuggestions.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/suggestions/__tests__/createSuggestions.test.ts` |
 | `src/components/settings/__tests__/ClearLibraryConfirmDialog.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
 | `src/components/settings/__tests__/DuplicateResolverDialog.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
 | `src/components/settings/__tests__/RemoveScanRootConfirmDialog.test.tsx` | react | 8, `features/settings` | Retained, all assertions |
@@ -84,8 +84,8 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/settings/services/__tests__/duplicateValidationService.test.ts` | shared | 8, `features/settings` | Retained, all assertions |
 | `src/components/settings/services/__tests__/operationStateService.test.ts` | shared | 8, `features/settings` | Retained, all assertions |
 | `src/components/settings/services/__tests__/progressService.test.ts` | shared | 8, `features/settings` | Retained, all assertions |
-| `src/components/tag-list/__tests__/TagListModal.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
-| `src/components/tag-list/__tests__/TagListSearchLauncher.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | Retained, all assertions |
+| `src/components/tag-list/__tests__/TagListModal.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in `src/features/search/tag-list/__tests__/TagListModal.test.tsx` and pagination races |
+| `src/components/tag-list/__tests__/TagListSearchLauncher.test.tsx` | react | 4–5, `features/search` and `features/tagging/suggestions` | React reference retained; Solid coverage in toolbar/modal integration and native literal-tag scenario |
 | `src/hooks/__tests__/queryRefreshNavigation.test.tsx` | react | 6, `features/lightbox` selection and navigation | Retained, all assertions |
 | `src/hooks/__tests__/useLibraryAssets.test.tsx` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/query/__tests__/createAssetQuery.test.ts` |
 | `src/hooks/__tests__/useLibraryBrowser.test.ts` | react | 3, `library/query` | React assertions retained; Solid counterpart in `src/library/__tests__/createLibrary.test.ts` |
@@ -109,3 +109,17 @@ shared mutation commands. Queue assertions read the real per-asset store instead
 optional React global mirror. Vocabulary fixtures hydrate through public commands instead
 of exported setters. Pure thumbnail-store, mutation-helper and query-impact suites remain
 shared and execute once. React selection/draft/navigation coverage remains until stage 6.
+
+Stage 4 adds application startup/search integration, real-core virtual ranges, sparse-slot
+replacement, per-asset thumbnail DOM isolation, stable overlapping slots and cache eviction
+with backward reload. Gesture tests retain the reference pointer, modifier, cancellation,
+layer, edge-scroll and click-suppression assertions. Shared selection tests cover global
+ranges, retry, same-batch invalidation and identity reset. Footer tests cover all 11 locales.
+
+The new search suites observe synchronous commands, parser/literal/meta payloads, IME,
+keyboard/focus, one worker's coalescing/versioning, stale replies, disposal, pagination
+fallback and no-progress retry behavior. Pure parser, suggestion, token and rectangle
+geometry suites still execute once in `shared`. Full React suites remain unchanged;
+Solid bootstrap expectations now target the implemented gallery instead of the shell text.
+Native evidence covers the stage-4 portions listed in PROGRESS; bulk mutation and lightbox
+assertions in combined desktop scenarios remain for their respective later stages.

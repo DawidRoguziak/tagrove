@@ -6,6 +6,26 @@ This page owns search syntax, tag discovery, bulk selection, and tag/favorite/gr
 
 Transport names, payload casing, and command validation are specified in the [IPC contract](../architecture/ipc-contract.md). Query sessions and the sparse gallery cache are described in [library query and gallery](library-query-and-gallery.md), while SQL filtering, normalization, revision bumps, and group ordering are described in [database](database.md). The single-asset editing surface is described in [lightbox](lightbox.md).
 
+## Solid search and selection during migration
+
+React remains the default. `features/search/createSearch.ts` keeps synchronous command drafts
+and reactive applied state; the shared parser and normalized descriptor determine query
+payloads. A valid submission starts one query even when its normalized filters are unchanged.
+Typing clears validation feedback without submitting. IME Enter leaves composition untouched.
+
+`createAppRuntime` owns one lazy `SuggestionClient`; Solid inputs use
+`features/search/suggestions/createSuggestions.ts` to cancel obsolete requests and hide stale
+results. Both renderers share the worker protocol, indexing and token helpers.
+`features/search/tag-list` owns paginated discovery, local fallback and delayed click intent.
+When a failed page has no new fallback entries, automatic pagination stops. A later scroll
+can explicitly retry instead of immediately repeating the failed request.
+
+`features/gallery/createSelection.ts` retains selected IDs across cache eviction and query
+changes, resolves ranges in 128-index windows and preserves the prior selection on failure.
+Query changes cancel pending ranges and clear the index anchor; identity resets clear IDs.
+The Solid inspector currently provides the selection count and Clear. Tag, favorite and group
+editing follow in stage 5. Existing React editors and their tests remain the reference.
+
 ## Workspace presentation
 
 Search text and its explicit Search action occupy the first header row. Media kind,

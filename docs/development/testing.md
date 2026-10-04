@@ -8,7 +8,7 @@ MediaTagger has four test layers. Use the lowest layer that can prove the behavi
 
 | Layer | Location | Runner and command | What it exercises | What it does not prove |
 | --- | --- | --- | --- | --- |
-| Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx`, and `src/__tests__/` | Vitest with `bun run test` | TypeScript helpers, models, Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
+| Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx` | Vitest with `bun run test` | TypeScript helpers, models, Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
 | Rust unit | `#[cfg(test)]` modules beside backend code in `src-tauri/src/` | Cargo through `bun run test:backend` | Isolated database helpers, validation, scanning/indexing helpers, thumbnail scheduling and parsing, backup helpers, and command/service logic | A JavaScript caller, desktop window, packaged resources, or a complete application workflow |
 | Rust integration and backend workflow | `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` | Cargo through `bun run test:backend`, or the focused package scripts below | File-backed SQLite and temporary-filesystem behavior across multiple backend modules | Tauri startup, IPC serialization, WebDriver, UI, profile isolation, or packaging |
 | Desktop E2E | `e2e/specs/*.e2e.js` | WebdriverIO, `tauri-driver`, and WebKitWebDriver on Linux | A real unbundled debug Tauri window, the JavaScript-to-Rust invoke bridge, selected UI workflows, and E2E profile/build isolation | Production app data, all native dialogs, or all locales |
@@ -23,6 +23,7 @@ Run commands from the repository root.
 | --- | --- |
 | `bun run test` | Runs Vitest once through Node with an 8192 MiB old-space limit. Vitest discovers the frontend `*.test.ts` and `*.test.tsx` files. |
 | `bun run test:watch` | Starts Vitest in watch mode. |
+| `bun run test:build` | Runs a Vite production build and asserts the Solid entry, no React production modules/dependencies and no legacy source trees. Does not run TypeScript; use `build` or `typecheck` too. |
 | `bun run test:backend` | Runs locked Cargo tests, including Rust library unit tests and both integration test binaries in `src-tauri/tests/`. The application binary itself has `test = false`. |
 | `bun run test:backend:integration` | Runs only the locked `backend_integration` Rust integration-test binary. |
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
@@ -86,7 +87,15 @@ checks every application and test source with `jsxImportSource: @solidjs/web`.
 - `pool: "forks"` runs tests in child-process workers. `maxWorkers: 2` limits concurrency because the suite is memory-heavy.
 - `execArgv: ["--max-old-space-size=8192"]` gives each fork the configured Node heap limit. The `test` package script also gives the parent Vitest process the same limit.
 
-Keep frontend tests next to the owning module in `__tests__`, using the existing `.test.ts`/`.test.tsx` naming. Pure services should use direct inputs and outputs. Hooks should use `renderHook`; components should use Testing Library queries and `userEvent` where user behavior matters. Mock Tauri APIs and repository API modules explicitly with `vi.mock`, reset mock implementations and timers in `beforeEach`/`afterEach`, and clear storage when a test changes persistent browser state. Do not treat a mocked `invoke` assertion as proof that Rust accepts the payload; that requires a Rust contract test or desktop E2E.
+Keep frontend tests next to the owning module in `__tests__`, using the existing `.test.ts`/`.test.tsx` naming. Pure services should use direct inputs and outputs. Models should use owned `renderHook` from `@solidjs/testing-library`; components should use Testing Library queries and `userEvent` where user behavior matters. Mock Tauri APIs and repository API modules explicitly with `vi.mock`, reset mock implementations and timers in `beforeEach`/`afterEach`, and clear storage when a test changes persistent browser state. Do not treat a mocked `invoke` assertion as proof that Rust accepts the payload; that requires a Rust contract test or desktop E2E.
+
+Create JSX inside the renderer callback so it belongs to the test owner. Use
+`src/test/renderSolid.tsx` when a controlled prop update must preserve the component's DOM
+and local state. Its `rerender` publishes props on that same owner. Use `settle` from
+`src/test/settle.ts` for explicit model-command batch boundaries, and deferred promises
+for ordering async responses. Forced flushes belong in tests, not production orchestration.
+Cleanup from `src/test/setup.ts` disposes mounted owners; assert listener/observer/timer
+cleanup directly when that lifetime is the behavior under test.
 
 The setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely on persisted language must restore their state; the setup is not rerun before every individual test.
 
@@ -188,6 +197,35 @@ The pre-run app-data cleanup resolves both paths and refuses recursive deletion 
 
 Only then does it recursively remove the E2E directory with retries. An `EPERM` lock is a limitation: the runner warns, skips that cleanup, and continues, so stale isolated E2E state may remain. The live-title check is the final guard before specs containing destructive actions.
 
+### Isolated desktop smoke
+
+With the Linux prerequisites, Xvfb, xauth and `dbus-run-session` installed, run this
+from the repository root in Bash. It creates temporary XDG directories and uses authenticated Xvfb with a private D-Bus
+session. The existing harness still validates the E2E identifier, build target, cleanup
+path and live title. Do not run another desktop controller or build concurrently.
+
+```bash
+set -euo pipefail
+smoke_root=$(mktemp -d /tmp/mediatagger-doc-smoke-XXXXXX)
+export XDG_DATA_HOME="$smoke_root/data" XDG_CONFIG_HOME="$smoke_root/config"
+export XDG_CACHE_HOME="$smoke_root/cache" XDG_RUNTIME_DIR="$smoke_root/runtime"
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+printf 'Temporary smoke profile: %s\n' "$smoke_root"
+unset WAYLAND_DISPLAY
+export GDK_BACKEND=x11 LANG=C.UTF-8 LC_ALL=C.UTF-8
+export GIO_USE_VFS=local GTK_USE_PORTAL=0
+dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
+  sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; exec bun run test:e2e:tauri --spec e2e/specs/app.smoke.e2e.js --logLevel warn'
+```
+
+This smoke checks gallery/settings navigation, confirmation cancellation and persisted bulk
+tag/group actions. Its input PNGs are public repository icons; source files are not deleted.
+It does not prove native playback or native file pickers. Keep logs/screenshots in ignored
+`artifacts/`. After the owned app/driver/display processes exit, check for session-owned FUSE
+mounts under the printed temporary root, unmount any that remain, and remove only that root.
+A failed run retains the root for inspection; never substitute a development/release profile.
+
 ### Fixtures, selectors, and destructive workflows
 
 `app.smoke.e2e.js` indexes the checked-in PNG assets under `src-tauri/icons` and exercises navigation, settings, bulk tags, and bulk groups. It does not delete those source files. `app.workflows.e2e.js` creates unique roots with `fs.mkdtemp`, uses `e2e/fixtures.js` to copy valid PNG icons or use ffmpeg to generate a small GIF and two MP4 files without audio tracks, and records temporary CSV/ZIP artifact paths under the operating-system temp directory. Its `afterEach` clears the isolated library database and removes only those roots and artifacts. Video coverage includes picture clicks to pause/resume and focused Left/Right seeking by five seconds, plus native IPC checks for paused seeking, fullscreen session continuity, retained preferences, autoplay on replacement, and stale closes. These checks use backend snapshot attributes, not GTK button clicks or video pixels. Other video coverage checks authorized native opening, the full native-player footprint, absence of a DOM control rail, rapid source switching, absence of an HTML `<video>`, error fallback, and native-surface cleanup. WebDriver cannot inspect pixels or controls rendered by GTK above the WebView.
@@ -196,7 +234,7 @@ The workflow suite deliberately tests library clear, scan-root removal, backup r
 
 Desktop selectors currently mix stable IDs/classes/data attributes, `aria-label` values, visible English text selectors such as `button=Apply`, and a small number of XPath expressions. Prefer stable accessible roles/names or explicit test IDs when text is not itself the behavior. If visible copy or accessibility labels change, update the associated E2E selectors in the same change.
 
-The desktop harness does not force English. A fresh app chooses a stored language first and otherwise follows `navigator.language`, while the current specs assert English labels. Because pre-run cleanup removes the isolated profile, a manually persisted selection is not a durable fix; run with a browser environment that reports English or update the harness so language setup is deterministic. Vitest does force English through `src/test/setup.ts`; that does not affect the desktop process.
+After checking the live E2E title, the desktop harness sets only `media-tagger.language=en` and `media-tagger.theme=dark`, then reloads before each spec. It leaves unrelated storage untouched. A reload inside a spec retains any language/theme changes, allowing persistence assertions. The tooling tests verify that an unexpected title prevents preference writes.
 
 ### UI redesign matrix
 
@@ -354,7 +392,7 @@ GDK_BACKEND=x11 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 dbus-run-session -- xvfb-run -a 
 ```
 
 Repeat with the temporary animation preference disabled and `MEDIATAGGER_REDUCED_MOTION=1`.
-Hook tests cover the exact three-second deadline, movement filtering, pointer presses,
+Presentation model tests cover the exact three-second deadline, movement filtering, pointer presses,
 wheel/scroll/keyboard resets, native activity callbacks, touch visibility and cleanup.
 Component tests cover pending-deletion guards and the first navigation shortcut after idle.
 
@@ -418,11 +456,11 @@ remove a lock merely because a connection failed.
 
 ## Choosing the test level
 
-For documentation-only changes, verify local links/anchors, referenced commands and symbols, and `git diff --check`. Run an existing focused test only when it resolves a behavior claim. Builds, release scripts, and destructive desktop workflows are not documentation checks.
+For documentation-only changes, verify local links/anchors, referenced commands and symbols, and `git diff --check`. Run an existing focused test when it resolves a behavior claim. An explicitly requested workflow-validation stage, such as Solid migration stage 10, also runs its documented build and isolated smoke recipe. Ordinary prose edits do not require release builds or destructive desktop tests.
 
 | Change | Minimum focused proof | Add when applicable |
 | --- | --- | --- |
-| Pure TypeScript service, parser, or reducer | Vitest unit test | Component/hook test if rendering or Solid ownership matters |
+| Pure TypeScript service, parser, or reducer | Vitest unit test | Component/model test if rendering or Solid ownership matters |
 | Solid component, model, keyboard behavior, modal, or accessibility contract | Vitest with Testing Library | Desktop E2E for behavior dependent on WebView/Tauri or a high-value full workflow |
 | Rust helper, SQL query, validation, scheduler, scan, thumbnail, or backup logic | Rust unit test | File-backed integration test for transactions or filesystem/SQLite interaction |
 | Public backend workflow spanning database modules | `backend_integration` or the Rust-only `backend_e2e` binary | Desktop E2E if the JavaScript command boundary or UI is part of the contract |
@@ -436,9 +474,9 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 - `backend_e2e.rs` does not test the desktop, command serialization, the native CSV dialog/parser path, or profile isolation.
 - The desktop suite is an unbundled debug build and does not verify the release artifact's exact shared-library environment.
 - Desktop E2E requires a configured Linux host. The release container does not include WebKitWebDriver, Xvfb, or `tauri-driver`.
-- Desktop selectors assume English, but the harness does not currently set the application language deterministically.
+- Specs start in English/dark after the title guard; translated scenarios must switch language explicitly.
 - An `EPERM` during E2E app-data deletion leaves stale isolated data and does not fail fast.
-- The standalone `tauri:build:e2e` script can embed stale `dist/`; only the full desktop test command builds the frontend first.
+- Desktop runs share `dist/`, the E2E target and driver port. Run them serially, including standalone E2E builds.
 - Native video playback depends on libmpv, GTK, and OpenGL. WebDriver sees the native session container and backend snapshot attributes, but not decoded `GtkGLArea` pixels or the native GTK control overlay.
 - Backend fixtures cover many filesystem semantics but do not constitute exhaustive testing on every supported filesystem or operating system.
 
@@ -450,9 +488,9 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 | Session creation fails because the native driver is missing | Install WebKitWebDriver or point `WEBKIT_WEBDRIVER_PATH` at it. |
 | `tauri-driver` is not found | Install it with Cargo or set `TAURI_DRIVER_PATH` to the full executable path. The default is `~/.cargo/bin/tauri-driver`. |
 | E2E app data cannot be removed or old state appears | Close the E2E application and stale drivers, then rerun. An `EPERM` warning means cleanup was skipped; inspect only the isolated `com.example.mediatagger.e2e` directory, never delete production app data as a workaround. |
-| Standalone E2E build shows old frontend behavior | `bun run tauri:build:e2e` does not rebuild `dist/`. Run `bun run build` first, or use `bun run test:e2e:tauri`, which does so automatically. |
+| Standalone E2E build shows old frontend behavior | Both E2E entry points build `dist/` first. Check that the run reached a successful frontend build and launched the expected E2E executable; do not run another build concurrently. |
 | E2E build refuses its identifier, title, or target | Restore `src-tauri/tauri.conf.e2e.json` and `e2e/build-e2e.js` to the exact isolated values. The refusal is a safety check, not a cache problem. |
-| Expected English heading/button is missing | Verify the isolated app's selected language. The specs use English text and `aria-label` selectors; the browser locale can choose another language on first start. |
+| Expected English heading/button is missing | Verify the isolated app's selected language. The specs use English text and `aria-label` selectors; the harness should have reset language after its title guard; check whether the spec changed it. |
 | Vitest process is killed or runs out of memory | Run a focused file and retry with `bun run test -- --maxWorkers=1`. Keep large mocks/DOM trees cleaned up; the configured default is two forks with an 8192 MiB heap limit. |
 | A frontend test cannot find `IntersectionObserver`, `ResizeObserver`, or animation-frame APIs | Confirm the test is using the repository `vitest.config.ts` and `src/test/setup.ts` rather than invoking an alternate config. |
 | Cargo test leaves or collides with data | Move the fixture under `tempfile::tempdir()` or use an in-memory database. Remove shared fixed paths and process-global mutable state. |
@@ -477,7 +515,7 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 bun run test:e2e:tauri -- --spec ./e2e/specs/startup-scan.e2e.js
 ```
 
-The focused frontend regression is `useStartupScan.test.tsx`; Rust tests cover launch-snapshot contention, schema migration, preference persistence, and old/new backup compatibility with root remapping.
+The focused frontend regression is `src/features/settings/__tests__/startupScan.test.tsx`; Rust tests cover launch-snapshot contention, schema migration, preference persistence, and old/new backup compatibility with root remapping.
 
 ## Backend runtime regressions
 
@@ -499,7 +537,7 @@ The fixtures contain 1,000 and 10,000 metadata rows and no media collection. The
 bun run test:e2e:tauri -- --spec ./e2e/specs/review-fixes.e2e.js
 ```
 
-Lower-layer regressions are `queryRefreshNavigation.test.tsx`, `literalTagSearch.test.ts`, the library hook/API tests, the query-position service test, and `src-tauri/tests/thumbnail_clear.rs`. The Rust file-backed test also checks nested obsolete files, skipped symlinks, exclusive-reader coordination, failure-marker removal, source preservation, and actual image regeneration.
+Lower-layer regressions are `src/features/lightbox/__tests__/createLightbox.test.ts`, `literalTagSearch.test.ts`, the library model/API tests, the query-position service test, and `src-tauri/tests/thumbnail_clear.rs`. The Rust file-backed test also checks nested obsolete files, skipped symlinks, exclusive-reader coordination, failure-marker removal, source preservation, and actual image regeneration.
 
 ## About and publisher metadata
 
@@ -580,14 +618,12 @@ and existing schemas. Query-plan assertions use 1,000 tags, because SQLite may
 prefer a scan on a tiny table, and require indexed normalization and candidate
 lookups. Existing `db.rs` tests also cover query impact and shared mapping repairs.
 
-`useLibraryKnownTags.test.ts` covers complete pagination, stable array identity,
+`src/library/vocabulary/__tests__/createKnownTags.test.ts` covers complete pagination, stable array identity,
 changed publication, overlapping changes, unchanged saves joining an active pass,
 failed-refresh retry, reset, and unmount. API and save-path tests cover both flag
-values. Save mocks and deferred responses in `App.test.tsx` and the affected service
-and controller tests derive their types from the API or action signatures, so
-missing required fields fail `bun run typecheck`. The App bulk cases wait for the
-lazy editor to mount and enable, then defer save completion and assert exactly
-zero or one vocabulary page for existing and new names. `SuggestionClient.test.ts` composes the real vocabulary hook and worker
+values. Save mocks and deferred responses in `src/app/__tests__/runtimeIntegration.test.ts` and the affected model tests derive their types from the API or action signatures, so
+missing required fields fail `bun run typecheck`. Runtime integration cases defer saves to verify shared metadata ownership and maintenance;
+vocabulary tests check refresh counts, and sidebar tests check mounted editor state and focus. `SuggestionClient.test.ts` composes the real vocabulary model and worker
 client with a controlled worker: twenty unchanged saves after hydration add zero
 page requests and zero worker vocabulary messages.
 

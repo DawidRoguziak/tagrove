@@ -53,6 +53,30 @@ Concrete examples:
 - Delete, rename, root removal, library clear, and bundle restore cross both SQLite and the filesystem. These operations take both workflow locks, always in the order described below.
 - Image, GIF, and thumbnail paths use Tauri's asset protocol. Video opens by asset ID after backend path authorization. libmpv renders into a GTK `GLArea` above the WebView, with native controls above the video. DOM controls must stay outside those native bounds. See [lightbox media presentation](../subsystems/lightbox.md#media-presentation) for authorization, layout, and session behavior.
 
+## Frontend owner lifetimes
+
+```mermaid
+flowchart TD
+    Boot["main / mountApplication"] --> App["App providers"]
+    App --> Runtime["createAppRuntime: application lifetime"]
+    App --> Layers["UiLayerProvider: focus and modal stack"]
+    Runtime --> Library["createLibrary: query, details, tags, thumbnails, vocabulary"]
+    Runtime --> Models["search, selection, bulk, lightbox, settings models"]
+    App --> Gallery["Gallery view: eager, remounted after Settings"]
+    App --> Settings["Settings view: lazy, unmounted on Back"]
+    App --> Lightbox["Lightbox presence: lazy, retained after first activation"]
+    Gallery --> Grid["Virtualizer / observers: view lifetime"]
+    Lightbox --> Media["Presentation / native session: active media lifetime"]
+```
+
+Model state survives gallery/settings switching; DOM measurements, scroll elements and
+view-local drafts do not. Bulk sidebar code is eager with the gallery. Settings/lightbox
+views prefetch after 1,500 ms, while their models already exist. Logical lightbox close
+releases modality and native playback before retained content finishes its exit. Bootstrap
+and each owner dispose their own registrations and reject late async publication. See
+[frontend architecture](../frontend/architecture-and-ui-conventions.md) for the ownership
+contracts and [testing](../development/testing.md) for their observed coverage.
+
 ## Executable bootstrap and runtime lifecycle
 
 `src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`, which:
@@ -123,7 +147,7 @@ Flatpak uses the local release identifier but receives Flatpak-specific XDG dire
 All three window configurations set `decorations: false`. Profile overlays repeat this
 setting because their `windows` arrays replace the base array. Native window titles use the
 profile names above for task switchers and the E2E identity guard. The frontend headers own
-window controls and drag regions; see [frontend window controls](../frontend/architecture-and-ui-conventions.md#compact-studio-visual-system).
+window controls and drag regions; see [frontend window controls](../frontend/architecture-and-ui-conventions.md#light-and-dark-visual-system).
 
 These profiles may run at the same time because their identifiers resolve to different data directories and lock files. Isolation relies on always selecting the intended config overlay. The debug guard allows only `com.example.mediatagger.dev` and `com.example.mediatagger.e2e`, protecting both the local release ID and configurable publisher IDs. The E2E runner adds stronger path/title checks before its destructive cleanup and again verifies the live window title before tests.
 
@@ -151,7 +175,7 @@ Command-level workflow locks have the following matrix:
 
 Whenever both ordinary workflow locks are needed, `with_scan_and_thumb_lock` acquires one operation permit, `scan_lock`, and then the thumbnail write lock. Maintenance uses `with_database_maintenance`, which closes admission, drains admitted operations, closes idle connections, and clears query sessions before taking `scan_lock` and the thumbnail write lock. Preserve these orders; acquiring lower locks before entering maintenance can deadlock. `ThumbnailScheduler`, the query cache, and the database connection pool have their own internal synchronization and are not substitutes for these workflow locks.
 
-The settings operation runner also suppresses concurrent settings operations in one mounted frontend, but that is a user-interface convenience, not a backend safety boundary. Direct IPC callers can still invoke commands concurrently.
+The application-owned `createSettingsOperationRunner` also suppresses concurrent settings operations across view changes in one frontend, but that is a user-interface convenience, not a backend safety boundary. Direct IPC callers can still invoke commands concurrently.
 
 ## Native media dependencies
 
@@ -207,7 +231,7 @@ Before merging an architectural change:
 
 Use [testing](../development/testing.md) for the full test workflow. The most relevant existing checks are:
 
-- `src/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
+- `src/platform/tauri/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
 - Frontend model/component tests under `src/library/**/__tests__` and `src/features/**/__tests__`: query lifecycle, thumbnail queues, settings progress, mutation refreshes, and UI behavior.
 - Rust unit tests in `db.rs`, `commands/*`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.

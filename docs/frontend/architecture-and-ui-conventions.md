@@ -2,181 +2,171 @@
 
 Implementation entry points: [app composition](../../src/app/App.tsx), [application runtime](../../src/app/createAppRuntime.ts), [UI layer manager](../../src/ui/overlays/UiLayerProvider.tsx), [styles](../../src/styles.css).
 
-Solid 2 is the only frontend after stage 9. The current ownership summary below and source code
-are authoritative. The remaining detailed React-era sections are historical until the stage-10
-documentation rewrite; their old paths refer to Git history.
+Solid 2 is the only frontend. Source and executable configuration establish current
+behavior. The dependency directions and coding rules below are intended conventions;
+the tests listed here verify specific behavior, not every architectural rule.
 
-Feature behavior belongs in the narrower canonical guides:
-
-- [library queries and the gallery](../subsystems/library-query-and-gallery.md)
-- [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md)
-- [lightbox behavior](../subsystems/lightbox.md)
-- [settings operations](../subsystems/settings-operations.md)
-- [IPC contracts](../architecture/ipc-contract.md)
-- [localization](../development/localization.md)
-- [testing](../development/testing.md) and [setup and build](../development/setup-and-build.md)
-
-## Current Solid ownership
-
-The normal HTML entry loads `src/app/main.tsx`; no renderer switch remains.
-Its `mountApplication` applies the stored theme before rendering, waits for i18next,
-and owns context-menu suppression and optional performance observation. Disposal also
-cancels a pending mount. `createAppRuntime` owns theme and view selection across remounts;
-it also owns the library, search, bulk, lightbox and settings models. `LanguageProvider` owns one i18next subscription for
-its tree. Settings and the lightbox view prefetch after 1,500 ms, with timer cleanup.
-Gallery activation opens the lazy image/GIF/video lightbox. Its presence owner remains mounted
-after first activation, retains closing values, and releases modality on logical close.
-The application preserves the gallery focus target across lazy loading. Native video sessions
-belong to the active media presentation and end on logical close. Their acknowledged bounds
-control sidebar visibility and focus; fullscreen retains the active player and session.
-
-Solid controls live under `src/ui/controls`, overlays under `src/ui/overlays`.
-Theme persistence, modal animation, and segmented-control measurement live
-under `src/ui/dom`. Modal registration ends on logical close while presence retains
-the pointer shield through exit. Feature views that clear drafts on close must retain their
-visible values with `createModalSnapshot`, since mounted Solid children remain reactive.
-The settings view includes scanning, appearance, language, import/export, duplicates,
-clear-library and About. Its application-owned models preserve operations across navigation;
-the shell dispatches the process-guarded startup scan once. See the
-[settings guide](../subsystems/settings-operations.md#solid-implementation-during-migration). The sections below the current ownership summary describe the historical React reference
-unless they explicitly name a Solid module.
-
-The Solid runtime now owns `createLibrary` from `src/library/createLibrary.ts`. Its query,
-canonical metadata, details cache, vocabulary and thumbnail models survive view changes.
-Commands keep admission locks and generations synchronous; read-only getters expose Solid
-signals and memos. `applyFilters` captures plain values before starting IPC. No frontend
-flush is needed in production. `AppContent` starts the initial query, vocabulary and scan-root
-reads from `onSettled`, after component construction. Starting those writes in the render
-scope violates Solid 2 ownership and can leave the gallery empty.
-
-The runtime also owns search drafts/applied filters, selected IDs and one lazy suggestion
-worker. Gallery/Settings switching remounts the gallery DOM and resets scroll while retaining
-those models. `features/gallery` owns virtual-core, geometry observers, pointer capture and
-selection preview; `features/search` owns the input, suggestions and tag-list modal. Virtual
-slots are keyed by global index, so overlapping rows keep their DOM while placeholder
-replacement and current asset identity remain reactive. `features/bulk/createBulk.ts` owns
-selected metadata and group drafts across view changes. `features/tagging/TagEditor.tsx`
-shares the suggestion worker with search. The mounted bulk sidebar owns its tag input draft,
-focus restoration and group-order dialog. The dialog uses virtual-core and per-asset thumbnail
-subscriptions; its closing frame retains the last visible rows.
+Feature contracts live in [gallery and queries](../subsystems/library-query-and-gallery.md),
+[search and editing](../subsystems/search-tags-and-media-groups.md),
+[lightbox](../subsystems/lightbox.md), [settings](../subsystems/settings-operations.md),
+[IPC](../architecture/ipc-contract.md), [localization](../development/localization.md),
+and [testing](../development/testing.md).
 
 ## Bootstrap and shell composition
 
-The gallery header displays Tagrove with the Obsidian Grove SVG from `public/tagrove.svg`. The image supplies the accessible app name; the adjacent visible wordmark is hidden from assistive technology to avoid repeating it. The same SVG is the HTML favicon and the source for native PNG icons. See [branding assets](../development/setup-and-build.md#branding-assets) for regeneration and desktop metadata.
+[`main.tsx`](../../src/app/main.tsx) imports global CSS and calls
+[`mountApplication`](../../src/app/mountApplication.tsx) for `#root`. Bootstrap applies
+the stored theme before rendering and waits for `i18nReady`. It installs window capture
+suppression for native context menus, including editable fields and portals outside the
+root. The listener only prevents the default menu; ordinary event propagation and clipboard
+shortcuts remain available. `VITE_MEDIATAGGER_PERF=1` enables a PerformanceObserver for
+long tasks and measures where supported. Disposal cancels a pending mount, unmounts Solid,
+disconnects the observer and removes the listener. Vite HMR uses this disposer.
 
-[`src/main.tsx`](../../src/main.tsx) is the browser bootstrap. It imports i18n and global CSS before rendering, applies the stored light/dark theme before the first React render, optionally installs performance instrumentation when `VITE_MEDIATAGGER_PERF=1`, and mounts `<App />` inside `React.StrictMode`.
+[`App`](../../src/app/App.tsx) nests `LanguageProvider`, `AppRuntimeProvider` and
+`UiLayerProvider`. The runtime provider constructs one
+[`createAppRuntime`](../../src/app/createAppRuntime.ts) under the application owner.
+Context exposes those models without creating another state owner. `onSettled` calls the
+idempotent `runtime.start()`, which loads popular tags once, refreshes library data,
+invokes startup scanning and refreshes scan roots. Backend startup-scan consumption remains
+a separate process-wide guarantee.
 
-Before React renders, the bootstrap installs a window-level capture listener that calls `preventDefault()` on every `contextmenu` event. Native WebView context menus are disabled in development, E2E, and production, including images, editable fields, empty areas, and modal or other content outside the React root. Descendant handlers that stop propagation cannot bypass suppression. Mouse and keyboard context-menu invocation share this policy; event propagation, ordinary clicks, typing, and clipboard shortcuts remain available. Vite hot-module disposal removes the listener before the bootstrap reloads.
+The gallery header uses `public/tagrove.svg` as its accessible app identity; the adjacent
+wordmark is hidden from assistive technology. The same SVG supplies the favicon and native
+icon source. See [branding](../development/setup-and-build.md#branding-assets).
 
-Strict Mode means mount effects must tolerate setup, cleanup, and setup again during development. Effects that install listeners, animation frames, timers, observers, or async generations must provide cleanup or stale-result protection. Production behavior must not depend on an effect running exactly once merely because it has an empty dependency list.
+## Directory ownership and dependency direction
 
-[`src/App.tsx`](../../src/App.tsx) is intentionally a thin composition surface:
+| Directory | Responsibility |
+| --- | --- |
+| `src/app` | Bootstrap, feature composition, view choice, runtime context, lazy boundaries and window controls. |
+| `src/platform/tauri` | Typed command payloads, channels, events, native dialogs, media URLs and window operations. Wire types live in `contracts/`. It does not import feature state or UI. |
+| `src/library` | Query/page cache, shared details, metadata coordination/mutations, vocabulary and thumbnails. It does not import feature components. |
+| `src/features/gallery` | Virtual-core adapter, tiles, gesture geometry and selected IDs. |
+| `src/features/search` | Search drafts, applied descriptors, suggestions/worker and tag-list browser. |
+| `src/features/tagging` | Shared `TagEditor`, consumed by lightbox and bulk. |
+| `src/features/bulk` | Selected metadata, group drafts, sidebar and order dialog. |
+| `src/features/lightbox` | Selected asset and navigation model, presentation, image controls and native video session. |
+| `src/features/settings` | Operation models, progress, section views and confirmations. |
+| `src/ui` | Reusable controls, DOM behavior and overlay ownership. It does not import feature or library code. |
+| `src/i18n` | Resources, initialization, persistence and the Solid language binding. |
+| `src/test` | Shared DOM/Tauri mocks and owned test helpers. Tests otherwise live beside their owners. |
 
-1. `useAppShellController()` creates the long-lived application state and callbacks.
-2. `App` chooses either `AppGalleryView` or `AppSettingsView`.
-3. The gallery view conditionally mounts the bulk sidebar, while `App` activates the lazy lightbox on first selection and leaves its presence owner mounted for later closing fades.
-4. View components receive controller-shaped prop groups instead of discovering application state themselves.
-
-[`useAppShellController`](../../src/components/app/hooks/useAppShellController.ts) is the composition root for frontend hooks. It combines search filters, library browsing, selection, bulk selection, settings actions, appearance, and settings-view state. It also owns the shell-only tile-size scheduler and translates feature APIs into the typed props consumed by [`AppGalleryView`](../../src/components/app/AppGalleryView.tsx), [`AppSettingsView`](../../src/components/app/AppSettingsView.tsx), and lazy overlays. The prop contracts in [`src/components/app/types.ts`](../../src/components/app/types.ts) are useful seams: extend the narrow controller group that a view needs rather than passing the entire shell controller through the component tree.
+Feature views consume explicit models and callbacks. Application-wide composition belongs
+in `app`; common persistence and cache coordination belong in `library`. Keep deterministic
+helpers beside their domain, such as `filterService`, `selectionGeometry` and
+`lightboxPanZoomService`. Components may manage local DOM interactions and call platform
+adapters for view-owned actions such as clipboard/window behavior, but must not construct
+raw invoke payloads. Follow the [IPC contract](../architecture/ipc-contract.md) when a
+boundary changes.
 
 ## State ownership and lifetime
 
-Keep state at the lowest owner that must coordinate every consumer. The current ownership is:
-
-| State | Owner | Lifetime and persistence |
+| State | Owner | Lifetime and reset |
 | --- | --- | --- |
-| Current full-page view and one-shot scan-section highlight | `useSettingsView` and `useAppShellController` | Lives while `App` is mounted; not persisted across launches. |
-| Tile size and coalesced slider/wheel work | `useAppShellController` | Survives gallery/settings switching because the shell stays mounted; resets to `188` on a new app mount and is not in local storage. |
-| Search draft and applied filters | `useAppSearchFilters` | Shell lifetime; draft and applied values are intentionally separate. See the search guide for semantics. |
-| Query pages, asset summaries, totals, loading, and query session references | `useLibraryAssets`, composed by `useLibraryBrowser` | Shell lifetime; in-memory bounded page cache, reset or refreshed by lifecycle events. See the gallery guide. |
-| Tag suggestions | Shell `SuggestionProvider` and its lazy worker | One worker across editors; versioned vocabulary/requests and per-editor pending coalescing; terminated on shell unmount. |
-| Known tags | `useLibraryKnownTags`, composed by `useLibraryBrowser` | Shell lifetime; refreshed independently from asset pages. |
-| Thumbnail paths, rendering IDs, and queue progress | `ThumbnailStore` and `useThumbnailQueue` | Shell lifetime; reset when query/library lifecycle requires it. |
-| Authoritative complete tag lists, identity epoch, and per-asset mutation generations | `useAssetTagState` | Shell lifetime; shared by lightbox and bulk. Mutation barriers are exclusive per asset, start before IPC, and reject details from before/during a pending write. A caller that cannot acquire every required asset sends no IPC and releases any locks already acquired. Restore/clear advances the identity epoch; deletion leaves a per-ID invalidation generation. Active editors and mutations pin records; inactive canonical tags and clocks share a 512-entry retention bound with globally increasing generations. |
-| Selected asset, loaded details, lightbox editor drafts, and serialized tag saves | `useSelectionState`, `useMediaGroupDraft`, `useSelectionNavigation`, and `useSelectionMetadataActions` | Shell lifetime; overlays shared authoritative tags onto its local detail cache, blocks replacement while the complete tag base is unknown, and clears selection-scoped state when appropriate. |
-| Bulk mode, selected IDs, anchor, sidebar drafts, detail cache, and applying flags | `useBulkSelectionController` | Shell lifetime; retains selected IDs across page eviction, consumes shared tag state, separates detail-load and mutation failures, and resets drafts when the selected-ID set changes. |
-| Settings operation locks, progress/messages, scan roots, pending confirmations, and duplicate state | `useSettingsActions` and its focused settings hooks | Shell lifetime even while the settings component is unmounted; backend data is refreshed by the owning action hook. See the settings guide. |
-| Theme | `useAppTheme` plus `themeService` | React state for the mounted shell, mirrored to `<html data-theme>`, local storage, and the native window when running under Tauri. |
-| Language | the i18next singleton plus `useAppLanguage` | Process-wide i18n state, mirrored to `<html lang>` and local storage. |
-| Input drafts, open popovers, and other purely presentational interaction state | The closest feature component or focused feature hook | Normally resets when that component unmounts; a modal may also explicitly reset its draft when `open` becomes false. |
+| View, scan highlight, theme and tile size | `createAppRuntime` | Application lifetime. Tile size starts at 188; only theme is persisted. Closing settings clears the highlight. |
+| Search draft/applied descriptor | `features/search/createSearch` | Application lifetime. Commands keep synchronous drafts and publish reactive state; every valid submission invokes the library once. |
+| Sparse query pages and navigation snapshot | `library/query/createAssetQuery` | Application lifetime; 128-item pages and at most 12 pages. Generations discard obsolete responses. |
+| Complete details | `library/metadata/createDetailsCache` | One shared 256-entry LRU for lightbox and bulk. Query changes clear it; identity/generation checks reject stale metadata. Concurrent reads for one ID share a promise. |
+| Canonical tags and metadata write ownership | `library/metadata/createAssetTagState` | Application lifetime; per-ID exclusive tokens, identity epoch, deletion invalidation and maintenance barrier. Active users pin records; inactive records have a 512-entry retention bound. |
+| Known tags and suggestion worker | `createKnownTags` and runtime `SuggestionClient` | Application lifetime. The worker starts lazily, coalesces requests per editor and terminates on disposal. |
+| Thumbnail paths, rendering and queue | `createThumbnailQueue` and `ThumbnailStore` | Application lifetime. Queue reset invalidates callbacks and clears the store. Mounted previews retain per-asset subscriptions. |
+| Selected IDs and range anchor | `features/gallery/createSelection` | Survives view/query changes and page eviction. Query changes cancel ranges and clear the anchor; identity reset clears IDs. |
+| Bulk metadata and group drafts | `features/bulk/createBulk` | Application lifetime; drafts reset when the selected-ID set changes. The mounted sidebar owns tag input/focus and the order dialog. |
+| Lightbox selection, navigation and save intents | `features/lightbox/createLightbox` | Application lifetime; close resets selection state, identity reset discards pending intents. |
+| Lightbox sidebar, activity, confirmation and image controls | `createLightboxPresentation.ts`, `LightboxModal`, `image/createImageControls` | Mounted presentation lifetime; survives asset navigation where appropriate, resets on close/reopen. |
+| Native playback | `video/createNativeVideoSession` | Active presentation session; logical close retires playback before the retained modal exits. |
+| Settings locks, roots, progress and confirmations | `features/settings/createSettings` and its focused models | Application lifetime, including while the settings view is unmounted. |
+| Language | i18next core and `LanguageProvider` | Singleton resources/persistence; one language subscription per provider tree, removed on disposal. |
+| Geometry, gestures, popovers and local drafts | Mounted feature/UI owner | Observers, listeners, pointer capture, timers and frames are released with that owner. |
 
-Refs are used for mutable coordination that should not render: active request generations, in-flight page offsets, scheduled animation frames, selection indices, element handles, and caches. Do not move user-visible state into a ref merely to avoid renders.
+## Reactivity and cleanup
+
+Models expose read-only reactive getters/accessors and explicit commands. Signals publish
+independent values; memos derive state without effects copying values between owners.
+Read reactive props inside JSX, memos or effect computations. Destructuring a stable model
+object is safe; destructuring its current reactive values at component initialization freezes
+them. Keep transport DTOs separate from editor drafts and the lightbox `SelectedAsset` view.
+
+Solid 2 effects use compute/apply functions. Track dependencies in the computation and put
+external writes or registrations in apply; return registration cleanup or use `onCleanup`
+for the owning scope. Use `onSettled` for work that needs attached DOM. Ref callbacks capture
+elements; subscriptions and async work still need an owner and disposal path.
+
+Signal publication is batched. Admission locks, request generations, pending registries,
+confirmation snapshots and navigation targets use synchronous local state so repeated
+commands in one turn cannot dispatch duplicate writes or read an old target. Derive command
+inputs before publishing; do not add production `flush()` calls to repair sequencing.
+User-visible values still publish through reactive state. Tests use explicit scheduling
+boundaries, deferred promises, disposal and reopen checks.
+
+Late async listener registration must remove its listener immediately if the owner has
+already disposed. Query/detail replies and thumbnail channels use generations or tokens
+to prevent stale publication. Disposal does not imply cancellation of already-dispatched
+Rust work; document cancellation separately for each operation.
 
 ## Gallery and settings lifecycle
 
-The gallery and settings are mutually exclusive children of the same `<main>` element. Opening settings unmounts `AppGalleryView` and mounts the lazy `AppSettingsView`; going back does the reverse. Consequently:
+The gallery and settings are mutually exclusive children of `<main>`. View switching
+unmounts DOM and local state while runtime models remain alive. Gallery owns a scroll
+element below its header; settings scrolls in `<main>`. Neither saves scroll position
+across remounts. Grid measurements and observers are recreated on return. Bulk selection
+survives even though its sidebar unmounts.
 
-- shell-owned hooks continue running and their state survives the switch;
-- view-local DOM state, virtualization measurements, and component-local state do not survive unmounting;
-- Settings scrolls inside the shared `<main>`, while the gallery mounts its own scroll element below the header; gallery scroll position resets when that element remounts, and neither view explicitly saves its position;
-- settings actions are constructed even while the gallery is visible, because they belong to the shell;
-- opening settings unmounts the gallery-owned bulk sidebar while its shell-owned selection state remains available;
-- the scan-root list and known tags are hydrated on shell mount, which also invokes the process-guarded startup scan through the settings runner; applied search filters drive library refreshes from shell effects.
-
-Settings closes through Back or the layer registered by `SettingsViewLayer` in `App.tsx`. `useSettingsView` owns only the open boolean and callbacks. A normal settings open starts without a highlighted scan section; the empty-library "add first folder" route opens the same view with the scan section highlighted. Closing the view clears that transient highlight.
+`SettingsView` in `App.tsx` registers a nonmodal layer for Escape. Back and Escape call
+`runtime.closeSettings`. The empty-library first-folder action sets the scan highlight
+before opening settings. Settings operations continue while the gallery is visible.
 
 ## Lazy loading and delayed prefetch
 
-The gallery is eagerly imported. Settings, the bulk sidebar, and lightbox use `React.lazy`. Settings shows a localized status while loading; lightbox shows a named loading dialog. `LazyErrorBoundary` supplies localized failure UI with reload and Back/Close actions. Its reset key follows settings visibility or lightbox opening/asset changes, preserving a closing failure dialog until its fade ends; resetting the boundary alone does not guarantee a fresh download of a rejected lazy module.
+`AppGalleryView` eagerly imports gallery, search and the bulk sidebar. Settings view and
+`LightboxModal` use Solid `lazy`; their models are already in the runtime. `Loading` provides
+a localized status for settings and a named loading dialog for lightbox. `LazyErrorBoundary`
+and `LightboxBoundary` use `Errored` for localized failure UI and reload/Back/Close actions.
+A new lightbox activation resets a failed view, including reopening the same ID; healthy
+navigation retains its presentation owner. Reload remains the explicit recovery for a
+rejected module download.
 
-After `App` mounts, an effect schedules dynamic imports for settings and lightbox after 1,500 ms. The bulk sidebar loads on demand. Opening one earlier starts its import immediately. The timer is cleared on cleanup; module loading itself is cached by the JavaScript module loader. Preserve this split when adding a large, infrequently used surface: make the initial render path explicit, cancel delayed work in cleanup, and do not assume prefetch completed before user interaction.
-
-## Layer responsibilities
-
-### Components
-
-Components render semantic HTML, compose UI primitives, translate display text, and turn DOM events into prop callbacks. They may own interaction state that no parent needs, such as an input draft or popover toggle. App-wide fetching, persistence, mutation ordering, and cross-feature synchronization do not belong in leaf components.
-
-Full-page components accept grouped controller props. Reusable components should prefer explicit values and callbacks over importing the shell hook. Backend calls should not originate in render components.
-
-### Controller and state hooks
-
-Hooks own React state, effects, refs, and coordination across components. A controller hook adapts lower-level hooks and action functions into a stable view contract. Focused hooks are preferred over growing a component or `useAppShellController` with feature internals.
-
-Effects must clean up browser registrations and guard stale asynchronous work. Callback dependencies remain explicit; the few intentionally mount-only effects in the shell carry local lint suppressions and should not become the default pattern.
-
-### Pure and action services
-
-Pure services contain deterministic normalization, validation, comparison, and immutable state transformations. Examples include tile-size clamping, filter comparison, and asset patch helpers. They do not use React or access the DOM and are tested with direct input/output assertions.
-
-Some feature `services` are action services rather than pure functions. They sequence an API call and then invoke state setters or refresh callbacks. Keep that distinction visible in names and signatures. The hook remains responsible for busy flags, retry/close behavior, and presenting failures; the action service owns the successful operation sequence.
-
-### API wrapper
-
-[`src/platform/tauri`](../../src/platform/tauri) owns Tauri commands, channels, events, dialogs, window access, and media-source conversion. `src/api.ts` re-exports its command functions for the React reference. Hooks and action services call these typed wrappers; components should not call `invoke` or construct command payloads. Any command name, payload, result, event, or serialization change must follow the [IPC contract guide](../architecture/ipc-contract.md).
+App schedules settings and lightbox imports after 1,500 ms and cancels the timer on disposal.
+Opening a view sooner begins its import immediately. The lightbox presence owner stays
+mounted after first activation so its closing content can finish the exit animation.
 
 ## Successful mutations and local patches
 
-Asset mutations use a pessimistic-local-update sequence:
+`library/metadata/createMutations.ts` acquires per-asset ownership, awaits the platform
+command, publishes canonical tag results and patches loaded summaries/shared details.
+`queryImpact.ts` evaluates the filter active when the write settles. Known-tag refresh is
+best effort; group changes always refresh query order. Favorites refresh when membership
+requires it. Feature models retain drafts, pending states and retry intent.
 
-1. Await the backend API wrapper.
-2. Publish canonical per-asset tags from the successful response when the mutation changes tags.
-3. Only after success, immutably patch the in-memory asset/detail caches and, when applicable, the selected asset.
-4. Refresh secondary data such as known tags, or refresh the query when a mutation can change current result membership.
+A summary or failed detail request cannot establish a complete tag base. Editors disable
+replacement until canonical tags are known. An unsuccessful command makes no success patch.
+Partial bulk results publish only acknowledged IDs and trigger missing-ID recovery.
 
-A complete tag replacement must never be sent from a summary placeholder or a failed details request. Tag editors stay disabled until `useAssetTagState` has a known complete list; loading and persistence failures have separate retry paths.
-
-CSV import parses and validates the complete document before applying all matching rows and the revision bump in one database transaction. The shell-owned tag coordinator also provides an asynchronous global maintenance barrier. Requesting it immediately denies new per-asset mutation tokens, waits for every already-dispatched asset metadata write to settle, and only then invokes the maintenance operation. CSV import holds the barrier while success or rejection advances the coordinator epoch, clearing lightbox/bulk details caches, pending tag requests, and editor state without resetting unrelated library/thumbnail identity. Confirmed database restore and clear-library use the same barrier and hold it through their broader lifecycle reset on both success and rejection, because either command may reject after changing live state. Release occurs in `finally`; queued maintenance is serialized, and thrown operations or coordinator unmount cannot permanently retain the barrier. The library query refreshes after release, best-effort on uncertain failures.
-
-The helpers in [`assetMutationService.ts`](../../src/components/app/services/assetMutationService.ts) keep list and selected-object updates consistent. State setters use functional updater callbacks, and selected-object helpers verify the asset ID before patching. Bulk tag and media-group actions follow the same "API first, patch second" order. Delete removes the cached asset and clears a matching selection after success, then refreshes relevant data. Unfavoriting inside a favorites-only query triggers a refresh because the item no longer belongs in the result.
-
-Do not patch before a successful command unless a feature deliberately introduces a complete optimistic-update and rollback design. On failure, retain retry context when safe; the bulk sidebar keeps group and tag input available, reports the failed card, and clears only the applying flag.
+Settings CSV import, restore and clear use `library.tags.runWithMutationBarrier` to deny
+new metadata writes and drain dispatched writes. They invalidate affected identity/cache
+state inside the barrier on both success and rejection, then refresh after release.
+Restore resets query and thumbnails; clear also empties vocabulary. See the exact
+[settings reset matrix](../subsystems/settings-operations.md#exact-success-refresh-and-reset-matrix).
+These frontend rules do not replace backend transactions or workflow locks.
 
 ## Runtime appearance and language effects
 
-Theme and language are the only frontend preferences currently persisted in local storage:
+Theme and language are the only frontend preferences persisted in local storage:
 
-- `media-tagger.theme` accepts only `light` or `dark`; invalid or absent values resolve to `dark`.
-- `main.tsx` applies the initial theme before React renders to avoid a theme flash.
-- `useAppTheme` reapplies changes through `applyTheme`, which sets `data-theme`, writes local storage, and best-effort synchronizes the native window theme under Tauri. Native synchronization errors are intentionally ignored.
-- `media-tagger.language` is normalized against the supported language list. With no valid stored value, initialization uses the browser language when supported, then English.
-- i18n initialization and every `languageChanged` event update `document.documentElement.lang` and local storage. `useAppLanguage` subscribes through `useTranslation` and exposes the active normalized language.
+- `media-tagger.theme` accepts `light` or `dark`, defaulting to `dark`. Bootstrap and
+  runtime changes use `ui/dom/theme.ts`, which sets `<html data-theme>`, saves the preference
+  and best-effort synchronizes the native window. Native theme errors are ignored.
+- `media-tagger.language` uses the supported language registry, then browser language,
+  then English. `i18n/core.ts` owns initialization and persistence to storage and `<html lang>`.
+  `i18n/solid.tsx` provides the reactive translator and normalized language accessor.
 
-Do not access these storage keys from new components. Extend the owning service/hook so validation, DOM effects, and native synchronization remain centralized. Localization resource structure, key naming, and update checks belong in the [localization guide](../development/localization.md).
+Extend these owners for preference changes rather than reading storage in leaf components.
+The [localization guide](../development/localization.md) owns resource invariants.
 
 ## UI primitives and styling
 
-Reusable primitives live in [`src/components/UI`](../../src/components/UI):
+Reusable controls live in [`src/ui/controls`](../../src/ui/controls); modal primitives live in [`src/ui/overlays`](../../src/ui/overlays):
 
 - `UiButton` supplies consistent sizing, variants, disabled styling, and `type="button"` by default.
 - `UiIconButton` layers active and danger states over `UiButton`; callers still provide an accessible name.
@@ -185,7 +175,7 @@ Reusable primitives live in [`src/components/UI`](../../src/components/UI):
 - `UiSegmentedControl` owns controlled native radio groups with translated labels, independent names, and content-based wrapping. An accessibility-hidden bold copy reserves each label’s selected width. The media filter uses it; filter submission stays in `SearchTagatorWrapper`.
 - `UiModal` is the standard portal dialog primitive described below.
 - `TagEditor` composes assigned chips and a borderless `SearchTagator` input inside one wrapping field. Callers supply controlled tags, draft, accessible labels, disabled/loading state, and mutation callbacks. Blank field space focuses the input; input focus highlights the field. The field scrolls to keep the focused input visible after chip changes and resizing.
-- `browserAssistDisabledProps` is shared by exact-token/confirmation inputs where browser autocorrection would be harmful.
+- Exact-token and confirmation inputs disable browser autocorrection in their owning components.
 
 [`src/styles.css`](../../src/styles.css) imports Tailwind CSS, disables DaisyUI's stock theme set, and declares the app's `light` and `dark` DaisyUI themes. Components combine Tailwind utility classes, DaisyUI component classes such as `btn`, `progress`, and `loading`, and app CSS variables.
 
@@ -206,11 +196,11 @@ Positioned suggestion lists, bulk inspector sections and inline lightbox
 information/confirmation use it. Suggestions keep the same mounted
 list while typing, hiding it and pausing the fade while worker results are empty.
 Their fade starts only once results and viewport positioning are available.
-`UiModal` and `LightboxModal` use `useModalPresence` instead. Their backdrop and DOM
+`UiModal` and `LightboxModal` use `createModalPresence` instead. Their backdrop and DOM
 content fade together using the shared easing. `UiModal` opens in 150 ms and closes
 in 100 ms. The lightbox uses local `--modal-entrance` and `--modal-exit` tokens for
 75 ms opening and 50 ms closing, leaving inline entrances and other motion unchanged.
-The hook tracks opening, open, closing and hidden states. Interrupted
+The presence model tracks opening, open, closing and hidden states. Interrupted
 animations cancel their completion callbacks and fallback timers, so stale cleanup
 cannot remove a reopened dialog. Animations and timers are cleaned on unmount.
 A fullscreen image shell receives its own fade because browser top-layer elements
@@ -231,8 +221,7 @@ Tiles, thumbnail arrivals, reordering and virtual scrolling have no entrance ani
 Outside the segmented highlight described below, never transition dimensions, spacing,
 offsets or grid tracks, or add scale-up, bounce, stagger, delayed layout or automatic scrolling. Preserve scroll containers, gutters,
 portal positioning and clipping; do not hide overflow globally to conceal a defect.
-Functional layout changes remain immediate. Other decorative motion needs no React state,
-effect or timer. The lightbox's existing clipped 200 ms drawer slide and matching
+Functional layout changes remain immediate. Other decorative motion belongs in CSS. The lightbox's existing clipped 200 ms drawer slide and matching
 retention timer remain the exception, including native-video bounds coordination.
 Keep media, zoom/pan transforms, fullscreen geometry and native containers outside
 decorative motion. DOM controls still receive shared feedback.
@@ -240,7 +229,7 @@ decorative motion. DOM controls still receive shared feedback.
 `UiSegmentedControl` is a bounded exception. Only its non-interactive, absolute-positioned
 highlight transitions translation, width and height over 150 ms with `--motion-ease`.
 Labels and adjacent controls keep their geometry when selection changes. Measurement
-stays inside the component: a layout effect places the highlight before paint, and
+stays inside the component: the owned `segmentedHighlight` DOM helper places the highlight after attachment, and
 `ResizeObserver` snaps it after wrapping, resizing or font changes. Translated-label
 changes also snap. Native radio selection and external controlled-value updates slide
 from the current highlight position, including during rapid changes. Observers disconnect
@@ -280,7 +269,7 @@ and panels/dialogs 8px. Buttons are 32px high. Green text in the light theme use
 `--color-primary-text: #076C4D` for 4.5:1 contrast on raised controls, while filled
 buttons retain the specified `#087F5B` accent and white text. Both themes use the same geometry.
 
-`TopBar` composes the identity, search field and Settings action in a 52px desktop row.
+`SearchTagatorWrapper` composes the identity, search field and Settings action in a 52px desktop row.
 The second row targets 44px and contains media kind, favorites, tag browsing, the result
 count, bulk mode and thumbnail sizing. Media kind is a native radio group styled as a
 segmented selector, with localized All, Images, GIF and Video choices. The track uses a muted
@@ -304,7 +293,7 @@ Double-clicking a draggable area maximizes/restores the window. No separate move
 needed, and descendants retain pointer events so inputs and action icons stay interactive.
 Invisible edge/corner handles support native resizing and disappear while maximized or fullscreen.
 The controls are omitted in browser previews. Window actions use Tauri's window API; resize
-listeners are removed on view changes, including delayed registration under Strict Mode.
+listeners are removed on view changes, including registration that resolves after owner disposal.
 Modal overlays keep their existing dismissal controls and keyboard behavior.
 
 Bulk editing occupies a 360px inspector at window widths of at least 1000px, and follows
@@ -315,7 +304,7 @@ Full-page settings uses 240px navigation beside mounted sections at widths of at
 1000px, and wrapping navigation above the content below that width. Navigation focuses and
 scrolls to the corresponding section without changing the URL or unmounting operation UI.
 The active marker follows the scroll position; settings section choice is not persisted.
-Sections appear in scan, appearance, language, import/export, duplicates, and danger-zone order.
+Sections appear in scan, appearance, language, import/export, duplicates, danger-zone and About order.
 Operations pair descriptions with actions in compact rows, stacking below 700px.
 Language keeps its selector below the description at every viewport width.
 Appearance uses native light/dark radio choices with decorative CSS previews. Only the
@@ -328,7 +317,7 @@ pill-shaped buttons. Native video controls retain their contrast gradient over t
 
 ## Modal and overlay conventions
 
-[UiLayerProvider](../../src/components/UI/UiLayerProvider.tsx), mounted by `App`, owns the DOM layer stack. [UiModal](../../src/components/UI/UiModal.tsx) and the specialized lightbox register modal layers and portal into `document.body`. `SettingsViewLayer` registers a nonmodal layer for page-level Escape. While bulk mode is enabled, the gallery registers a nonmodal layer that clears selection and cancels rectangle work on Escape. A modal above it receives Escape first.
+[UiLayerProvider](../../src/ui/overlays/UiLayerProvider.tsx), mounted by `App`, owns the DOM layer stack. [UiModal](../../src/ui/overlays/UiModal.tsx) and the specialized lightbox register modal layers and portal into `document.body`. `SettingsView` registers a nonmodal layer for page-level Escape. While bulk mode is enabled, the gallery registers a nonmodal layer that clears selection and cancels rectangle work on Escape. A modal above it receives Escape first.
 
 - Only the top registered layer receives managed Escape dismissal. A locked top layer does not select a lower layer as a fallback. UiModal backdrop dismissal also checks top-layer ownership.
 - A top modal makes `#root` and lower registered modal elements inert and aria-hidden, and locks body scrolling. Cleanup removes those attributes and restores the previous body overflow.
@@ -352,28 +341,27 @@ Bulk ordering lives only in the group-order modal. The sidebar retains its headi
 
 ## Safe change checklist
 
-Before changing frontend structure or UI behavior:
-
-1. Choose the lowest stable state owner and document whether the state survives view switches, component close/reopen, and app restart.
-2. Keep `App` declarative. Add feature orchestration to a focused hook/service and expose only the typed prop group the view needs.
-3. Keep components free of raw Tauri `invoke` calls; update `src/platform/tauri` and follow the IPC contract for boundary changes.
-4. For mutations, await backend success before applying local patches. Update every in-memory representation, and refresh tags or query membership when affected.
-5. Make effects Strict-Mode-safe: unregister listeners/observers, cancel timers/frames, and ignore stale async responses.
-6. Preserve lazy boundaries, visible loading states, and failure recovery for settings and lightbox. Test a rejected chunk as well as a delayed one.
-7. Reuse UI primitives and semantic theme tokens. Verify both light and dark themes and avoid hard-coded foreground/background pairs.
-8. Localize visible text, titles, labels, status text, and accessible names; follow the localization guide rather than editing one locale in isolation.
-9. For dialogs, provide a name, explicit close action, busy-state close policy, initial focus, Escape/backdrop tests, and a plan for restoring focus. Consider interaction with another open layer.
-10. Test at the layer where behavior lives, then run the relevant integration coverage and a build.
+1. Choose an owner and state whether values survive view switching, close/reopen and restart.
+2. Keep application composition in `app`, feature models beside their views and shared cache/mutation behavior in `library`.
+3. Construct IPC only in `platform/tauri`; preserve backend-first writes and canonical publication.
+4. Clean up registrations, frames and timers; reject late async publication after disposal or identity changes.
+5. Preserve loading/error boundaries, modal presence, focus restoration and logical-close cleanup.
+6. Reuse controls and theme tokens; localize visible and accessible text in every locale.
+7. Verify at the layer that observes the change, adding desktop checks for actual WebView/native behavior.
 
 ## Test map
 
-The existing tests exercise these boundaries:
+- `src/app/__tests__` covers bootstrap/disposal, runtime composition, view replacement,
+  language/theme persistence, lazy loading/failure and lightbox error recovery.
+- `src/library/**/__tests__` covers query/cache bounds, races, metadata admission,
+  canonical publication, maintenance, vocabulary and per-asset thumbnail isolation.
+- `src/features/**/__tests__` covers feature models and DOM behavior. Virtual grid/order
+  tests run the installed virtual-core with controlled geometry.
+- `src/ui/**/__tests__` covers modal presence, nested dismissal, focus, inertness,
+  controls and thumbnail images. Mount `UiLayerProvider` when asserting layer behavior.
 
-- `themeService`, `tileSizeService`, `filterService`, and `assetMutationService` tests cover deterministic policy and immutable patches.
-- `UiModal` tests cover closed rendering, backdrop/Escape options, top-layer dismissal, locked nested layers, focus trapping/restoration, app-root inertness, and responsive sizes; `UiAlert` tests cover semantic role and tone styling.
-- Hook tests cover query-cache lifecycle, stale/duplicate work protection, selection/editor synchronization, thumbnail queues, settings actions, confirmation flows, and shell search behavior.
-- `App.test.tsx` is the integration seam for initial hydration, gallery/settings replacement, Back and Escape navigation, modal flows, mutation wiring, and runtime theme application.
-- `TagEditor.test.tsx` covers shared-field composition, blank-space focus, removal, loading/disabled guards, add-only chips, assigned-tag exclusion, and typed versus suggestion submission.
-- Focused component tests cover specialized keyboard, labeling, selection, and modal behavior. End-to-end Tauri tests cover behavior that requires the desktop runtime.
-
-Add a direct service test for pure policy, a hook test for ownership/effect behavior, a component test for semantics and interaction, and an `App` integration test only when the composition contract changes. Run targeted Vitest files while iterating, then `bun run test` and `bun run build` in proportion to the change; consult the [testing guide](../development/testing.md) for the maintained command matrix.
+Use direct inputs/outputs for pure helpers, owned `renderHook` for models and Testing
+Library for components. `src/test/renderSolid.tsx` changes props under the same owner;
+`settle.ts` provides explicit batch boundaries. Deferred IPC establishes race ordering.
+The [behavior inventory](../solid2/BEHAVIOR-INVENTORY.md) maps migration coverage to final
+owners. Consult [testing](../development/testing.md) for commands and desktop opt-ins.

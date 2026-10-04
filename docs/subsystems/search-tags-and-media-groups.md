@@ -1,21 +1,21 @@
 # Search, tags, and media groups
 
-Implementation entry points: [search state](../../src/components/app/hooks/useAppSearchFilters.ts), [tag coordinator](../../src/components/app/hooks/useAssetTagState.ts), [bulk controller](../../src/components/app/hooks/useBulkSelectionController.ts), [tag browser](../../src/components/tag-list/TagListModal.tsx).
+Implementation entry points: [search state](../../src/features/search/createSearch.ts), [tag coordinator](../../src/library/metadata/createAssetTagState.ts), [bulk controller](../../src/features/bulk/createBulk.ts), [tag browser](../../src/features/search/tag-list/TagListModal.tsx).
 
-This page owns search syntax, tag discovery, bulk selection, and tag/favorite/group editing. The [parser](../../src/components/app/services/filterService.ts) and [tag normalization](../../src/utils/media.ts) complement the controller entry points above.
+This page owns search syntax, tag discovery, bulk selection, and tag/favorite/group editing. The [parser](../../src/features/search/filterService.ts) and [tag normalization](../../src/utils/media.ts) complement the controller entry points above.
 
 Transport names, payload casing, and command validation are specified in the [IPC contract](../architecture/ipc-contract.md). Query sessions and the sparse gallery cache are described in [library query and gallery](library-query-and-gallery.md), while SQL filtering, normalization, revision bumps, and group ordering are described in [database](database.md). The single-asset editing surface is described in [lightbox](lightbox.md).
 
-## Solid search and selection during migration
+## Frontend ownership
 
-React remains the default. `features/search/createSearch.ts` keeps synchronous command drafts
+`features/search/createSearch.ts` keeps synchronous command drafts
 and reactive applied state; the shared parser and normalized descriptor determine query
 payloads. A valid submission starts one query even when its normalized filters are unchanged.
 Typing clears validation feedback without submitting. IME Enter leaves composition untouched.
 
 `createAppRuntime` owns one lazy `SuggestionClient`; Solid inputs use
 `features/search/suggestions/createSuggestions.ts` to cancel obsolete requests and hide stale
-results. Both renderers share the worker protocol, indexing and token helpers.
+results. The worker protocol, indexing and token helpers live beside this client.
 `features/search/tag-list` owns paginated discovery, local fallback and delayed click intent.
 When a failed page has no new fallback entries, automatic pagination stops. A later scroll
 can explicitly retry instead of immediately repeating the failed request.
@@ -29,7 +29,7 @@ in batches of 256 with four requests in flight, and overlays committed metadata 
 responses. Missing records and failed reads require explicit retry. Query changes preserve
 selected IDs and drafts; library identity changes clear them.
 
-`features/tagging/TagEditor.tsx` shares the application suggestion client. The Solid bulk
+`features/tagging/TagEditor.tsx` shares the application suggestion client. The bulk
 sidebar uses it for complete single-asset tags and add-only multi-selection feedback.
 `library/metadata/createMutations.ts` owns admission, canonical publication and refreshes.
 Single replacements require a complete canonical base; multi-selection merges use the
@@ -39,8 +39,7 @@ Obsolete selections cannot publish editor feedback or restore focus to a new dra
 `features/bulk/GroupOrderModal.tsx` keeps an isolated order draft, virtualizes rows through
 virtual-core, and supports pointer and keyboard ordering. Failure or partial success retains
 the draft. Logical close releases interaction ownership while the closing frame retains its
-rows and metadata. The runtime loads the startup popular-tag snapshot once. React editors
-and tests remain the reference until cutover.
+rows and metadata. The runtime loads the startup popular-tag snapshot once. The [behavior inventory](../solid2/BEHAVIOR-INVENTORY.md) maps reference assertions to current tests.
 
 ## Workspace presentation
 
@@ -56,11 +55,11 @@ states retain their distinct accessible labels and keyboard shortcuts.
 
 ## Draft filters, applied filters, and refreshes
 
-`useAppSearchFilters` owns two versions of search state. `filterInput`, `mediaKind`, and `favoritesOnly` are the editable values shown by the top bar. Separate applied values feed `useLibraryBrowser`; typing alone only changes the draft input and clears any displayed validation error.
+`createSearch` owns two versions of search state. `filterInput`, `mediaKind`, and `favoritesOnly` are the editable values shown by the top bar. Separate applied values feed `createLibrary`; typing alone only changes the draft input and clears any displayed validation error.
 
 Search, Enter, tag-list Apply, media-kind changes, and favorites use one parse/validate/commit function. Invalid input retains the prior applied query and displays its validation error. Clearing commits the default values through the same function.
 
-The shell keys query refreshes with a JSON-serialized normalized descriptor containing sorted, deduplicated include/exclude tags, the complete meta filter, media kind, and favorites. Pipe characters within a tag cannot collide with a tag boundary. Submitting an unchanged normalized descriptor explicitly refreshes the current query, including equivalent case/order spellings.
+`createSearch` compares applied state with a JSON-serialized normalized descriptor containing sorted, deduplicated include/exclude tags, the complete meta filter, media kind, and favorites. Pipe characters within a tag cannot collide with a tag boundary. Every valid submission calls `createLibrary.applyFilters` once and refreshes the current query, even for an unchanged descriptor, including equivalent case/order spellings.
 
 ## Search grammar and filter semantics
 
@@ -90,7 +89,7 @@ Lightbox and bulk actions share `TagEditor`. Chips and the input wrap together i
 
 `SearchTagator` discovers the active token around the current caret, scanning left and right to whitespace boundaries. The active query is trimmed, lowercased, and stripped of one leading `-`; replacement covers the entire token even when the caret is in its middle, and preserves the negative prefix. Caret position is restored immediately after the inserted tag.
 
-A lazy shell-owned `SuggestionProvider` shares one worker between tag editors. The worker owns Fuse indexing and searching, using match ranges, sorting, threshold `0.35`, and minimum match length one. It considers at most 20 eligible matches and displays at most eight. Hard exclusions are removed before that limit; tags already used in the query are omitted unless they equal the active query. Unquoted positive metatag tokens suppress suggestions. Quoted literals and negative tag tokens remain eligible, and suggestion replacement escapes the complete literal while retaining an exclusion prefix. Used-tag comparisons decode search syntax but treat vocabulary and hard-exclusion entries as stored names.
+The application-owned `SuggestionClient` lazily starts one worker shared by search and tag editors. The worker owns Fuse indexing and searching, using match ranges, sorting, threshold `0.35`, and minimum match length one. It considers at most 20 eligible matches and displays at most eight. Hard exclusions are removed before that limit; tags already used in the query are omitted unless they equal the active query. Unquoted positive metatag tokens suppress suggestions. Quoted literals and negative tag tokens remain eligible, and suggestion replacement escapes the complete literal while retaining an exclusion prefix. Used-tag comparisons decode search syntax but treat vocabulary and hard-exclusion entries as stored names.
 
 Only focused, enabled inputs with an eligible token request suggestions. Vocabulary versions and request IDs reject obsolete results. One search runs at a time and pending searches coalesce per editor. Worker failure leaves ordinary text submission available and displays an explicit suggestion Retry. The shell disposes the worker on unmount. Filtering assigned lightbox tags uses worker exclusions and does not copy or reindex the vocabulary on thumbnail updates.
 
@@ -108,7 +107,7 @@ Viewport suggestions retain their requested above/below placement rather than fl
 
 ## Known tags and the tag-list browser
 
-`useLibraryKnownTags`, owned by `useLibraryBrowser`, is the shared in-memory tag source for search, lightbox, bulk tagging, and the tag-list fallback. Hydration paginates `listTags` in pages of 200 until `total` is loaded. Explicit refreshes and vocabulary-changing saves share one drain promise and request a latest-generation pass. Unchanged saves join an active refresh without advancing its generation; with a current snapshot they perform no fetch. Superseded pagination stops between requests. Reset and unmount invalidate pending reads without publishing a partial vocabulary. Lightbox saves, single-selection bulk additions/removals, and multi-selection merges pass `vocabulary_changed` to `refreshKnownTagsAfterMutation`. Failed refreshes retain the previous snapshot and remain dirty, so the next accepted save retries even if its flag is false. Refresh failure does not fail a successful save. After complete pagination, equal array lengths and exact ordered values reuse the previous array, avoiding redundant suggestion-worker vocabulary messages. Startup hydration and explicit deletion/import/clear lifecycle refreshes or resets remain in place. CSV import uses the global metadata-mutation barrier: it denies new tag, favorite, and group writes and drains already-dispatched writes before import IPC starts. After the atomic import settles, including rejection, the shell resets authoritative per-asset tags and both detail caches before releasing the barrier and refreshing, so reopened editors load canonical post-import tags. Confirmed database restore and clear-library use the same barrier and perform their broader identity/cache reset before release on both success and rejection; an uncertain rejection is followed by a best-effort library refresh.
+`createKnownTags`, owned by `createLibrary`, is the shared in-memory tag source for search, lightbox, bulk tagging, and the tag-list fallback. Hydration paginates `listTags` in pages of 200 until `total` is loaded. Explicit refreshes and vocabulary-changing saves share one drain promise and request a latest-generation pass. Unchanged saves join an active refresh without advancing its generation; with a current snapshot they perform no fetch. Superseded pagination stops between requests. Reset and unmount invalidate pending reads without publishing a partial vocabulary. Lightbox saves, single-selection bulk additions/removals, and multi-selection merges pass `vocabulary_changed` to `refreshKnownTagsAfterMutation`. Failed refreshes retain the previous snapshot and remain dirty, so the next accepted save retries even if its flag is false. Refresh failure does not fail a successful save. After complete pagination, equal array lengths and exact ordered values reuse the previous array, avoiding redundant suggestion-worker vocabulary messages. Startup hydration and explicit deletion/import/clear lifecycle refreshes or resets remain in place. CSV import uses the global metadata-mutation barrier: it denies new tag, favorite, and group writes and drains already-dispatched writes before import IPC starts. After the atomic import settles, including rejection, the shell resets authoritative per-asset tags and the shared details cache before releasing the barrier and refreshing, so reopened editors load canonical post-import tags. Confirmed database restore and clear-library use the same barrier and perform their broader identity/cache reset before release on both success and rejection; an uncertain rejection is followed by a best-effort library refresh.
 
 Rust stores case-insensitively unique tag names and `list_tags`:
 
@@ -118,7 +117,7 @@ Rust stores case-insensitively unique tag names and `list_tags`:
 - floors offset at zero; and
 - clamps every requested limit to 1–200.
 
-The tag-list modal component stays mounted with the gallery toolbar, but prepares its fallback vocabulary and requests pages of 100 only while open. Returning from Settings remounts the toolbar without deduplicating or sorting the known tags for the closed modal. Its trimmed query is passed through `useDeferredValue`. Every new open/query/fallback change increments a request ID, resets to a locally derived first page, scrolls to the top, and ignores results or finalizers from older request IDs. Scrolling within 120 px of the bottom loads another page, and an effect also loads more while the content is too short to become scrollable. Guards prevent requests while closed, during initial or incremental loading, or after `items.length >= total`. Page merging removes case-insensitive duplicates.
+The tag-list modal component stays mounted with the gallery toolbar, but prepares its fallback vocabulary and requests pages of 100 only while open. Returning from Settings remounts the toolbar without deduplicating or sorting the known tags for the closed modal. Its trimmed query is read in the model effect; there is no deferred query copy. Every new open/query/fallback change increments a request ID, resets to a locally derived first page, scrolls to the top, and ignores results or finalizers from older request IDs. Scrolling within 120 px of the bottom loads another page, and an effect also loads more while the content is too short to become scrollable. Guards prevent requests while closed, during initial or incremental loading, or after `items.length >= total`. Page merging removes case-insensitive duplicates.
 
 If a tag-list request fails, the modal filters and pages the shared known-tag snapshot locally. That fallback trims values, removes blank and case-insensitive duplicates while keeping the first display spelling, and sorts with one `Intl.Collator(undefined, { sensitivity: "base" })` per sort. The comparator reuses that collator for every pair of tags.
 
@@ -128,7 +127,7 @@ Apply disables closing interactions while in flight. Success closes the modal; r
 
 ## Bulk selection
 
-Bulk selection stores authoritative IDs independently of gallery-page eviction and current filters. `useSelectedSummaries` retains ordering/display metadata only for those IDs, seeds it from cached pages, and hydrates missing summaries through batches of at most 256 IDs with at most four requests in flight. Omitted records and failed batches show a retryable hydration error. Turning selection mode off clears the selected-ID set and anchor. A new query session clears the global-index anchor and invalidates in-flight selection ranges. Enabling bulk mode adds a sticky right column beside the gallery, bounded to the viewport height. The column scrolls vertically when its content exceeds the viewport, with its header sticky at the top. Long tag content also scrolls inside the shared editor field. The sidebar has an 8px rounded bottom-left corner. Changing the selected-ID set resets its group draft, order, tag feedback, and request state.
+Bulk selection stores authoritative IDs independently of gallery-page eviction and current filters. `createSelectedSummaries` retains ordering/display metadata only for those IDs, seeds it from cached pages, and hydrates missing summaries through batches of at most 256 IDs with at most four requests in flight. Omitted records and failed batches show a retryable hydration error. Turning selection mode off clears the selected-ID set and anchor. A new query session clears the global-index anchor and invalidates in-flight selection ranges. Enabling bulk mode adds a sticky right column beside the gallery, bounded to the viewport height. The column scrolls vertically when its content exceeds the viewport, with its header sticky at the top. Long tag content also scrolls inside the shared editor field. The sidebar has an 8px rounded bottom-left corner. Changing the selected-ID set resets its group draft, order, tag feedback, and request state.
 
 In bulk mode, an ordinary click toggles only the clicked tile: an unselected tile is added, and a selected tile is removed while other selected IDs are preserved. Ctrl/Cmd-click has the same toggle behavior. Both set its global-index anchor. Shift-click resolves the inclusive range from the anchor, replacing selection; Ctrl/Cmd+Shift adds that range. Shift does not move an existing anchor. Without an anchor, Shift-click adds the tile and establishes an anchor.
 
@@ -148,7 +147,7 @@ whole library after initialization and recovery, before automatic startup scanni
 Unused tags are excluded; assignment count descending determines rank, with tag name
 ascending using SQLite's NOCASE collation for ties. Only names are displayed.
 
-`StartupPopularTags` holds the immutable process snapshot. `useAppShellController` loads
+`StartupPopularTags` holds the immutable process snapshot. `createAppRuntime.start()` loads
 it on mount through `getStartupPopularTags` and passes it through the bulk controller.
 Sidebar remounts, filters, tag edits, scans, imports, restore, library clearing, and frontend
 reloads retain that launch ranking. Only a new desktop process calculates a new snapshot.
@@ -160,38 +159,39 @@ failed drafts, and focus restoration. Buttons share the input's disabled conditi
 All startup buttons remain visible after applying them, including tags already assigned
 to a single selected asset. An empty snapshot hides the section.
 
-## Solid metadata models during migration
+## Metadata coordination
 
 `src/library/metadata/createAssetTagState.ts` owns canonical tags, exclusive per-asset
 mutation tokens, identity epochs, tombstones, pins and the 512-entry inactive-record limit.
 Maintenance admission blocks new writes immediately and drains already-dispatched work.
 Disposal releases drain waiters; queued maintenance rejects before running its operation.
 
-`createMutations.ts` centralizes Solid tag, favorite, group and deletion commands. Bulk
+`createMutations.ts` centralizes tag, favorite, group and deletion commands. Bulk
 admission is all-or-none. Backend acknowledgements publish only accepted identities, patch
 cached details and summaries, notify consumers, and evaluate the current query's refresh
-rules. Summary rows never gain detail-only tags. `queryImpact.ts` is shared with React
-through its existing service export; its shared tests still run once.
+rules. Summary rows never gain detail-only tags. `queryImpact.ts` owns the refresh predicate and its direct tests.
 
 `src/library/vocabulary/createKnownTags.ts` retains complete pagination, latest-generation
-refresh draining, unchanged-save reuse and dirty retry behavior. `createLibrary.runMaintenance`
-resets metadata or the whole library before releasing the barrier, on success and failure.
-The settings workflow will own subsequent refresh and user feedback in stage 8. Solid bulk
-and lightbox editors consume these commands; their feature models retain
+refresh draining, unchanged-save reuse and dirty retry behavior. `createLibrary.runMaintenance` provides metadata/identity reset within the barrier for direct
+model consumers. Production settings uses `library.tags.runWithMutationBarrier` with its
+operation-specific reset callbacks, preserving the restore/clear vocabulary distinction.
+Settings passes its operation-specific reset callbacks through the same barrier and owns
+subsequent refresh and user feedback. Bulk and lightbox editors consume the mutation commands;
+their feature models retain
 editor drafts and retry intent. The lightbox serializes/coalesces replacements per ID and
 rebases failed add/remove intent onto an external writer's canonical tags before retry.
 
 ## Tag mutations
 
-One tag cannot contain whitespace, comma, semicolon, or a control character. Lightbox, bulk, normal search, CSV, and backend command boundaries apply this rule; the backend remains authoritative. Replacements are serialized per asset by the shell-lived selection owner and rapid edits coalesce to the latest desired complete array. Both lightbox and bulk consume shell-owned `useAssetTagState`, which records whether each complete tag base is known. Every affected ID must acquire an exclusive mutation-start generation before IPC. A second writer for the same ID sends no command. Multi-asset bulk is all-or-none at lock acquisition: if any selected ID is busy, already-acquired tokens are released and the command is not sent with a reduced subset. Favorite and group writes acquire the same ownership so CSV maintenance can drain every field it may overwrite. Pending writes block detail publication, and settlement advances the generation again so reads started before or during the mutation stay invalid even after failure. A summary-derived editor placeholder is never accepted as a complete tag base. The backend normalizes again, validates the asset, replaces mappings when needed, repairs `tag_count`, canonicalizes legacy tag spelling, removes orphan rows, and conditionally bumps the library revision in the same transaction. After backend success the frontend publishes canonical response tags, patches loaded/detail state, and refreshes known tags best-effort.
+One tag cannot contain whitespace, comma, semicolon, or a control character. Lightbox, bulk, normal search, CSV, and backend command boundaries apply this rule; the backend remains authoritative. Replacements are serialized per asset by the shell-lived selection owner and rapid edits coalesce to the latest desired complete array. Both lightbox and bulk consume shell-owned `createAssetTagState`, which records whether each complete tag base is known. Every affected ID must acquire an exclusive mutation-start generation before IPC. A second writer for the same ID sends no command. Multi-asset bulk is all-or-none at lock acquisition: if any selected ID is busy, already-acquired tokens are released and the command is not sent with a reduced subset. Favorite and group writes acquire the same ownership so CSV maintenance can drain every field it may overwrite. Pending writes block detail publication, and settlement advances the generation again so reads started before or during the mutation stay invalid even after failure. A summary-derived editor placeholder is never accepted as a complete tag base. The backend normalizes again, validates the asset, replaces mappings when needed, repairs `tag_count`, canonicalizes legacy tag spelling, removes orphan rows, and conditionally bumps the library revision in the same transaction. After backend success the frontend publishes canonical response tags, patches loaded/detail state, and refreshes known tags best-effort.
 
 With one bulk-selected asset, the sidebar loads current tags through `get_asset_details` unless the shared authoritative state already knows them. Each chip removal or submitted tag sends the complete replacement through `set_asset_tags` only while that base is known. Loading and save failures are distinct: a loading failure leaves editing disabled and has a details Retry, while a save failure retains the draft and reports a persistence error.
 
 With multiple selected assets, the sidebar is add-only. Every submitted nonempty trimmed, lowercased tag is immediately sent through `merge_asset_tags_bulk`; the backend keeps existing tags and merges the new value into every existing target without duplicates. Tags successfully added during the current selection are shown as non-removable confirmation chips.
 
-After tag backend success, the frontend consumes canonical returned tags, publishes each returned asset independently to the shared coordinator, patches authoritative cached details, and refreshes known tags as best-effort secondary work. A multi-asset result with `processed_assets === 0` is not shown as success: the draft is retained and the library refreshes so stale selections can be pruned. Partial results settle canonical success only for `results[]` IDs, settle the other mutation barriers without publishing tags, retain success for the durable processed subset, and also refresh the library. Full DB restore/library clear advances a global coordinator epoch and clears both tag detail caches and pending editor state; deletion retains a per-ID tombstone generation. `updated_assets === 0` remains a valid no-op success when at least one asset was processed. Failed lightbox drafts remain visible with an explicit Retry action. The secondary known-tag refresh is best-effort after the durable mutation. After a bulk-sidebar tag submission settles, the tag input regains focus so another tag can be entered immediately; success clears the draft, while a backend rejection preserves it for correction or retry. A rejection performs no local patch and displays an inline error in the tag card.
+After tag backend success, the frontend consumes canonical returned tags, publishes each returned asset independently to the shared coordinator, patches authoritative cached details, and refreshes known tags as best-effort secondary work. A multi-asset result with `processed_assets === 0` is not shown as success: the draft is retained and the library refreshes so stale selections can be pruned. Partial results settle canonical success only for `results[]` IDs, settle the other mutation barriers without publishing tags, retain success for the durable processed subset, and also refresh the library. Full DB restore/library clear advances a global coordinator epoch and clears the shared details cache and pending editor state; deletion retains a per-ID tombstone generation. `updated_assets === 0` remains a valid no-op success when at least one asset was processed. Failed lightbox drafts remain visible with an explicit Retry action. The secondary known-tag refresh is best-effort after the durable mutation. After a bulk-sidebar tag submission settles, the tag input regains focus so another tag can be entered immediately; success clears the draft, while a backend rejection preserves it for correction or retry. A rejection performs no local patch and displays an inline error in the tag card.
 
-All lightbox and bulk tag paths consume the backend's `query_impact` through one shell callback. It evaluates the current applied filter when the mutation settles. Only included/excluded changed names, changed counts under exact-count filters, or full repair impact cause a refresh. Canonical no-ops and unrelated tag edits preserve cached pages, thumbnail state, and scroll position. Missing-ID results retain their existing refresh recovery.
+All lightbox and bulk tag paths consume the backend's `query_impact` through the shared mutation coordinator. It evaluates the current applied filter when the mutation settles. Only included/excluded changed names, changed counts under exact-count filters, or full repair impact cause a refresh. Canonical no-ops and unrelated tag edits preserve cached pages, thumbnail state, and scroll position. Missing-ID results retain their existing refresh recovery.
 
 ## Favorites and media groups
 
@@ -246,12 +246,12 @@ Revision behavior for tag, favorite, and group writes is defined in [database pe
 ### Relevant existing tests
 
 - Startup popular-tag tests in `src-tauri/src/app/state.rs` cover empty/unused tags, global counts, alphabetical ties, the ten-tag limit, and immutable snapshots after mutations and clearing. Sidebar/App/API tests cover ordered chips, keyboard activation, disabled states, failed-draft retry, duplicate handling, and shell retention across filters and remounts. `e2e/specs/popular-tags.e2e.js` verifies persisted chip assignments, fixed ranking through edits/scans/reloads, and recalculation on process restart using disposable media. Run it with `bun run test:e2e:tauri --spec e2e/specs/popular-tags.e2e.js` in the isolated desktop environment described in [testing](../development/testing.md#real-desktop-e2e).
-- `src/utils/__tests__/media.test.ts`, `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts`, and `src/components/app/services/__tests__/filterService.test.ts` cover normalization, grammar validation, applied state, repeat refresh, and meta keys.
-- `src/components/search/services/__tests__/*` and `src/components/search/__tests__/SearchTagator.test.tsx` cover caret tokens, replacement, used-tag filtering, Fuse/fallback result shaping, reserved meta tokens, keyboard selection, focus, and editor auto-selection modes.
-- `src/components/tag-list/__tests__/TagListModal.test.tsx` and `TagListSearchLauncher.test.tsx` cover lazy opening, focus, fallback de-duplication/filtering, click arbitration, deterministic output, apply failure, pagination, and page merging.
-- `src/components/gallery/__tests__/GalleryGrid.test.tsx`, `src/components/app/hooks/__tests__/useBulkSelectionController.test.ts`, and `src/__tests__/App.test.tsx` cover modifier and rectangle event reporting, stale detail-request protection, and primary bulk tag/group flows. Geometry and handler tests cover movement threshold, partial overlap in all directions, shrinking, edge scrolling, unloaded rows, click suppression, and cancellation. Controller tests cover global Shift ranges, bounded rectangle reads beyond the cache, stale results, retries, eviction, and anchor reset. The opt-in `e2e/specs/gallery-selection.e2e.js` uses native pointer actions in both themes and 2,051 temporary mixed-media fixtures.
+- `src/utils/__tests__/media.test.ts`, `src/features/search/__tests__/createSearch.test.ts`, and `src/features/search/__tests__/filterService.test.ts` cover normalization, grammar validation, applied state, repeat refresh, and meta keys.
+- `src/features/search/suggestions/__tests__` and `src/features/search/__tests__/SearchTagator.test.tsx` cover caret tokens, replacement, used-tag filtering, Fuse/fallback result shaping, reserved meta tokens, keyboard selection, focus, and editor auto-selection modes.
+- `src/features/search/tag-list/__tests__/TagListModal.test.tsx` and `src/app/__tests__/gallery.test.tsx` cover lazy opening, focus, fallback de-duplication/filtering, click arbitration, deterministic output, apply failure, pagination, and page merging.
+- `src/features/gallery/__tests__/GalleryGrid.test.tsx`, `createGridHandlers.test.tsx` and `createSelection.test.ts` cover event reporting and global selection. `src/features/bulk/__tests__/createBulk.test.ts` covers stale detail protection and bulk tag/group flows. `src/app/__tests__/runtimeIntegration.test.ts` covers shared mutation ownership. Geometry and handler tests cover movement threshold, partial overlap in all directions, shrinking, edge scrolling, unloaded rows, click suppression, and cancellation. Controller tests cover global Shift ranges, bounded rectangle reads beyond the cache, stale results, retries, eviction, and anchor reset. The opt-in `e2e/specs/gallery-selection.e2e.js` uses native pointer actions in both themes and 2,051 temporary mixed-media fixtures.
 - Bulk tagging, grouping, controller, and sidebar tests cover normalization, stable merge/order construction, payload filtering, local patches, stale detail responses, reordering, and panel interaction states. Modal coverage includes isolated drafts, cancellation/focus restoration, exact-order submission, failed/partial saves, context changes, and bounded rendering for large selections. `e2e/specs/group-order.e2e.js` checks real pointer drops, cancellation, edge scrolling, wide/narrow layout, and persisted order using copied temporary PNG fixtures.
-- `useBulkFavorites.test.ts`, the sidebar/API tests, and Rust bulk-favorite tests cover mixed/all-favorite toggles, evicted IDs, missing IDs, revision behavior, transaction rollback, contention, duplicate clicks, maintenance draining, and stale identity results.
-- Lightbox service and hook tests cover tag normalization, serialized/coalesced saves, retry, stale-detail protection, local updates/known-tag refresh, conditional favorite refresh, group parsing, and backend-failure non-patching.
+- `src/features/bulk/__tests__/createBulk.test.ts`, the sidebar/API tests, and Rust bulk-favorite tests cover mixed/all-favorite toggles, evicted IDs, missing IDs, revision behavior, transaction rollback, contention, duplicate clicks, maintenance draining, and stale identity results.
+- Lightbox model and library mutation tests cover tag normalization, serialized/coalesced saves, retry, stale-detail protection, local updates/known-tag refresh, conditional favorite refresh, group parsing, and backend-failure non-patching.
 - `src-tauri/src/utils/tags.rs` and `src-tauri/src/db.rs` unit tests cover normalization, merge order, tag listing/search, exact filters, tag replacement, orphan cleanup, favorites, group mutations, and grouped ordering.
 - `src-tauri/tests/backend_integration.rs` covers file-backed tag query/merge and bulk group replacement. `src-tauri/tests/backend_e2e.rs` covers combined CSV/tag/group workflows; browser smoke tests cover bulk tag and group actions in a real window.

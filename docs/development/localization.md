@@ -2,7 +2,7 @@
 
 Implementation entry points: [language registry](../../src/i18n/languages.ts), [runtime initialization](../../src/i18n/core.ts), [English resource](../../src/i18n/locales/en.json), [locale validator](../../scripts/validate-locales.mjs), [generator](../../scripts/generate-locales.mjs).
 
-MediaTagger uses i18next and react-i18next for frontend localization. English is the fallback language and the canonical translation tree. Locale data is bundled with the frontend; changing language does not require a network request.
+MediaTagger uses i18next with the owned Solid binding in `src/i18n/solid.tsx` for frontend localization. English is the fallback language and the canonical translation tree. Locale data is bundled with the frontend; changing language does not require a network request.
 
 ## Supported languages and sources of truth
 
@@ -24,17 +24,20 @@ The application supports these 11 languages, in the order shown in the settings 
 
 There is deliberately more than one source that must stay synchronized:
 
-- `APP_LANGUAGES` in `src/i18n/languages.ts` is the ordered runtime allowlist. It controls selector order and language normalization. `AppLanguage` is derived from this tuple and re-exported by `src/components/app/types.ts` for application and settings props.
+- `APP_LANGUAGES` in `src/i18n/languages.ts` is the ordered runtime allowlist. It controls selector order and language normalization. `AppLanguage` is derived from this tuple; application/settings consumers import it from this registry.
 - `APP_LANGUAGE_NATIVE_LABELS` in the same file is the source for labels displayed by `LanguageSection`. The `settings.language.*` resource keys supply the card heading, description, and accessible selector label; they do not define its options.
 - Imports and the `resources` object in `src/i18n/core.ts` register the translation tree that i18next can load for each code.
 - `src/i18n/locales/<code>.json` supplies the actual resource. `en.json` defines the canonical keys, value shapes, and interpolation placeholders.
 
-`useAppLanguage` exposes the normalized active language and delegates changes to i18next. Its call to `useTranslation()` subscribes the owning React component to language changes. `LanguageSection` builds its options from `APP_LANGUAGES` and `APP_LANGUAGE_NATIVE_LABELS`, so a resource alone does not make a language selectable.
+`LanguageProvider` in [`src/i18n/solid.tsx`](../../src/i18n/solid.tsx) creates one
+`createLanguage` owner per provider tree. `useLanguage()` returns its normalized language
+accessor, async `setLanguage` and translator `t`. The translator reads the language signal
+before calling i18next, so JSX/memos recompute when the language changes. Consumers need a
+provider; `useLanguage` throws when it is missing. Disposal removes the provider's
+`languageChanged` subscription. Core HMR cleanup removes the separate persistence listener.
 
-`src/i18n/index.ts` adds the React binding to the shared core. Solid imports `core.ts`
-and uses the application-owned `LanguageProvider` in `src/i18n/solid.tsx`; leaf consumers
-share its reactive translator and normalized language accessor. Disposal removes the
-subscription, and HMR removes the core persistence listener before replacing that module.
+`LanguageSection` builds options from `APP_LANGUAGES` and `APP_LANGUAGE_NATIVE_LABELS`.
+Adding a resource alone does not make a language selectable.
 
 Language has its own settings card and `settings-language` navigation destination directly below Appearance. The panel passes language and change callbacks from its existing `appearance` controller to `LanguageSection`.
 
@@ -53,7 +56,7 @@ On initialization and after every i18next `languageChanged` event, the normalize
 - `document.documentElement.lang`, for browser semantics and assistive technology;
 - `localStorage["media-tagger.language"]`, for the next launch.
 
-`changeAppLanguage` awaits `i18n.changeLanguage`. `useAppLanguage.setLanguage` intentionally starts that promise without exposing it to UI callers. i18next falls back to English for a key absent from the active resource.
+`changeAppLanguage` awaits `i18n.changeLanguage`. The Solid binding exposes this same async function as `setLanguage`; event handlers may intentionally discard its promise. i18next falls back to English for a key absent from the active resource.
 
 ## Translation contract
 
@@ -86,7 +89,7 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 3. Create `src/i18n/locales/<code>.json` by copying the complete English tree, then translate every leaf while preserving placeholders and types.
 4. Import the JSON and add `{ translation: <import> }` under the same code in the `resources` object in `src/i18n/core.ts`.
 5. Choose and test `lightbox.deleteConfirm.confirmWord`, `typeYesLabel`, and `typeYesPlaceholder` explicitly.
-6. Extend `LanguageSection.test.tsx` to select the new value. Add runtime coverage for normalization/persistence if the new code introduces a region or script concern.
+6. Extend the ordered selector checks in `src/app/__tests__/shell.test.tsx` to select the new value. Add runtime coverage for normalization/persistence if the new code introduces a region or script concern.
 7. Run parity, focused tests, a build, and the manual selector/reload checklist. Updating `scripts/generate-locales.mjs` is a separate decision and does not replace any of the preceding registration steps.
 
 ## Automated locale contract
@@ -99,7 +102,7 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 
 The gate also rejects missing or unexpected locale JSON files, duplicate language codes, and a language list that does not start with English. It is read-only and needs no network access. `scripts/locale-tools.test.mjs` covers these failure modes and the generator's preservation policy.
 
-Runtime tests for initial language resolution and persistence remain separate from resource parity. `src/test/setup.ts` imports the real i18n module and requests English for tests. The existing `LanguageSection` test checks selector callbacks, and the lightbox confirmation tests exercise the English `Yes` flow.
+Runtime tests for initial language resolution and persistence remain separate from resource parity. `src/test/setup.ts` awaits real i18next initialization and English before the test file runs. The shell tests check all ordered selector options and language changes, and the lightbox confirmation tests exercise the English `Yes` flow.
 
 ## Locale generator
 
@@ -127,7 +130,7 @@ bun run test:locale-tools
 Run the relevant existing tests and TypeScript/Vite build after localization changes:
 
 ```bash
-bun run test -- src/components/settings/sections/__tests__/LanguageSection.test.tsx src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx
+bun run test -- src/app/__tests__/shell.test.tsx src/features/lightbox/__tests__/LightboxModal.test.tsx
 bun run build
 ```
 

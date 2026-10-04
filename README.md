@@ -2,7 +2,7 @@
 
 Tagrove is a desktop application for browsing and tagging large local collections of images, GIFs and videos. Organize files with tags, favorites and media groups, search the library and play videos without moving your collection into a cloud service.
 
-The public publisher is **Tagrove**. The application uses Tauri 2, Rust, SQLite, React and TypeScript. Linux video playback uses libmpv, with ffmpeg and ffprobe for media processing.
+The public publisher is **Tagrove**. The application uses Tauri 2, Rust, SQLite, Solid 2 and TypeScript. Linux video playback uses libmpv, with ffmpeg and ffprobe for media processing.
 
 ## Build and development
 

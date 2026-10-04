@@ -1,19 +1,18 @@
 # Settings operations
 
-Implementation entry points: [settings composition](../../src/hooks/useSettingsActions.ts), [operation runner](../../src/components/settings/hooks/useSettingsOperationRunner.ts), [import controller](../../src/components/settings/hooks/useImportExportSettingsActions.ts), [progress translation](../../src/components/settings/services/progressService.ts).
+Implementation entry points: [settings composition](../../src/features/settings/createSettings.ts), [operation runner](../../src/features/settings/createSettingsOperationRunner.ts), [import controller](../../src/features/settings/createImportExportSettings.ts), [progress translation](../../src/features/settings/progressService.ts).
 
 This page owns settings state, operation sequencing, progress presentation, confirmations, and cache resets. [IPC](../architecture/ipc-contract.md) owns transport shapes, [scanning](scanning-and-indexing.md) owns indexing, [thumbnails](thumbnails.md) owns rendering/cancellation, and [data safety](data-safety-and-portability.md) owns CSV/bundle validation and recovery.
 
-## Solid implementation during migration
+## Application and view lifetimes
 
-`src/features/settings/createSettings.ts` composes the Solid operation runner and scan,
+`src/features/settings/createSettings.ts` composes the operation runner and scan,
 import/export, duplicate and clear-library models under `createAppRuntime`. Their lifetime
 matches the application owner, so closing the settings view preserves operations, progress,
 roots and confirmations. `SettingsPanel.tsx` renders all seven sections with the existing
-styles and shared modal layers. It takes grouped controllers directly; the React flat-prop
-compatibility seam is not part of the Solid view.
+styles and shared modal layers. It takes grouped controllers directly.
 
-The Solid runner uses a synchronous admission lock and reactive section status. It removes
+The runner uses a synchronous admission lock and reactive section status. It removes
 an active progress listener on owner disposal and removes a late registration immediately,
 without dispatching its action. Closing only the settings view does not dispose this owner.
 Thumbnail cancellation has its own synchronous lock. Confirmed root removal, restore and
@@ -24,15 +23,15 @@ and one form model. Visible rows carry their group from the same scan snapshot, 
 virtual index cannot read a removed group during a rescan. Confirmation dialogs retain their
 path, counts and disabled state through exit with `createModalSnapshot`.
 
-The operation ordering below applies to both implementations. Solid calls the same platform
-wrappers and uses `library.tags.runWithMutationBarrier` for CSV import, restore and clear.
+The operation ordering below uses `platform/tauri`
+wrappers and `library.tags.runWithMutationBarrier` for CSV import, restore and clear.
 Restore resets identity, query and thumbnails, retaining vocabulary until refresh; clear
-also empties vocabulary immediately. No backend command or profile contract changes.
+also empties vocabulary immediately. The [IPC](../architecture/ipc-contract.md) and [profile](../architecture/system-overview.md#profiles-identifiers-and-data-isolation) contracts remain backend-owned.
 
 ## Settings layout
 
 The full-page view keeps all operation sections mounted. A 240px navigation column links to
-scan settings, appearance, language, import/export, duplicates and the danger zone in that order. At
+scan settings, appearance, language, import/export, duplicates, the danger zone and About in that order. At
 widths below 1000px navigation wraps above the content. The page grid stays within the
 viewport; the page title truncates when space beside the window controls is tight.
 Selecting a link scrolls to and
@@ -42,9 +41,9 @@ folder rows and dialogs follow the [frontend visual system](../frontend/architec
 
 ## Composition and state ownership
 
-`useAppShellController` constructs `useSettingsActions` even when the gallery is visible. The settings action state therefore has shell lifetime: it survives switching between the gallery and the lazy-loaded `AppSettingsView`, but not a complete app unmount or restart. On shell mount, scan roots are hydrated alongside known tags. `useSettingsView` independently owns whether the full-page settings view is open; Back and the shell's registered settings-layer Escape handler return to the gallery.
+`createAppRuntime` constructs `createSettings` even when the gallery is visible. The settings action state therefore has shell lifetime: it survives switching between the gallery and the lazy-loaded `AppSettingsView`, but not a complete app unmount or restart. On shell mount, scan roots are hydrated alongside known tags. The runtime view signal owns whether the full-page settings view is open; Back and the shell's registered settings-layer Escape handler return to the gallery.
 
-`AppSettingsView` supplies the sticky page header and renders `SettingsPanel` in full-view mode. `SettingsPanel` is the rendering/composition boundary for six sections:
+`AppSettingsView` supplies the sticky page header and renders `SettingsPanel`. `SettingsPanel` is the rendering/composition boundary for seven sections:
 
 1. `ScanSettingsSection` lists roots and exposes add, remove, per-root/all-root rescan, bulk thumbnail render, retry, and stop controls.
 2. `AppearanceSection` changes the theme, preserving the light/dark preview sizes.
@@ -52,23 +51,24 @@ folder rows and dialogs follow the [frontend visual system](../frontend/architec
 4. `ImportExportSection` exposes CSV and database-bundle import/export.
 5. `DuplicatesSection` starts the duplicate scan and shows the last non-zero result.
 6. `DangerZoneSection` opens the clear-library confirmation.
+7. `AboutSection` displays version, legal text and repository/contact links.
 
-The panel also mounts the remove-root, clear-library, duplicate resolver, duplicate-delete, and database-import confirmation dialogs. Production composition passes the typed `appearance`, `scan`, `importExport`, `duplicates`, and `dangerZone` controller groups. The flat props and no-op defaults in `SettingsPanel` are a compatibility/test seam, not an additional state owner.
+The panel also mounts the remove-root, clear-library, duplicate resolver, duplicate-delete, and database-import confirmation dialogs. Production composition passes the typed `appearance`, `scan`, `importExport`, `duplicates`, and `dangerZone` controller groups. The panel does not own the operation models.
 
-`useSettingsActions` composes one shared `useSettingsOperationRunner` with four focused hooks:
+`createSettings` composes one shared `createSettingsOperationRunner` with four focused models:
 
-| Hook | Owned state and responsibility |
+| Model | Owned state and responsibility |
 | --- | --- |
-| `useScanSettingsActions` | Roots, video-tool availability, thumbnail bulk/cancel flags, remove-root candidate, and scan/thumbnail actions. |
-| `useImportExportSettingsActions` | File dialogs, bundle inspection/root mapping, and the source/mappings awaiting overwrite confirmation. |
-| `useDuplicateSettingsActions` | Resolver visibility, pending delete confirmation, duplicate snapshot/revision, and one backend batch application. |
-| `useDangerZoneSettingsActions` | Clear-library confirmation and action. |
+| `createScanSettings` | Roots, video-tool availability, thumbnail bulk/cancel flags, remove-root candidate, and scan/thumbnail actions. |
+| `createImportExportSettings` | File dialogs, bundle inspection/root mapping, and the source/mappings awaiting overwrite confirmation. |
+| `createDuplicateSettings` | Resolver visibility, pending delete confirmation, duplicate snapshot/revision, and one backend batch application. |
+| `createDangerZoneSettings` | Clear-library confirmation and action. |
 
-Duplicate thumbnails reuse the library browser's thumbnail map, rendering-ID map, and queue callback. Cross-feature refresh/reset callbacks also come from `useLibraryBrowser` and `useLibraryLifecycle`; settings code does not maintain a second asset cache.
+Duplicate previews use the library's per-asset thumbnail store and queue. `createAppRuntime` supplies lifecycle callbacks from `createLibrary`; settings does not maintain a second asset cache.
 
 ## Exclusive operation runner
 
-The runner serializes settings work within the mounted frontend. A synchronous `operationLockRef` rejects a second call immediately, before React can publish the rendered `isOperationLocked` state. The rendered boolean is passed to every operation section, so their normal action buttons are disabled together. This is a UI-level lock only; backend concurrency and workflow locks are described in the [system overview](../architecture/system-overview.md).
+The runner serializes settings work within the mounted frontend. A synchronous `operationLock` rejects a second call immediately, before Solid publishes the reactive lock state. Each model exposes the shared lock to its section, so their normal action buttons are disabled together. This is a UI-level lock only; backend concurrency and workflow locks are described in the [system overview](../architecture/system-overview.md).
 
 The lock is global, but operation feedback is per section. Each of `scan`, `importExport`, `duplicates`, and `danger` has an independent `SectionOperationState`:
 
@@ -84,8 +84,8 @@ Each starts with a translated section-specific ready message. Running an operati
 
 The runner lifecycle is:
 
-1. Return without doing anything if the ref lock is already set.
-2. Set the ref lock and rendered global lock.
+1. Return without doing anything if the synchronous lock is already set.
+2. Set the synchronous lock and rendered global lock.
 3. Unless `setGlobalLoading: false` was requested, set the library browser's global loading state to true.
 4. Mark the initiating section loading, set its pending message, and clear progress.
 5. If configured, await registration of a `process-progress` listener.
@@ -95,7 +95,7 @@ The runner lifecycle is:
 
 Folder selection, startup-preference saves, duplicate scans and duplicate change application set `setGlobalLoading: false`; the other runner-backed actions use global loading. Duplicate operations still acquire the shared settings lock and show duplicate-section loading. Thumbnail cancellation deliberately bypasses `runExclusiveOperation`: it must remain callable while the bulk thumbnail operation owns the lock. Its separate `cancelThumbnailRunning` guard prevents duplicate stop requests, and the visible Stop button is disabled only by that flag.
 
-Closing the settings page does not cancel an operation because the settings hooks remain mounted in the shell. Reopening the page exposes the same lock, messages, progress, roots, and duplicate results.
+Closing the settings page does not cancel an operation because the settings models remain owned by the application. Reopening the page exposes the same lock, messages, progress, roots, and duplicate results.
 
 ## Progress events and message translation
 
@@ -127,11 +127,11 @@ Remove first stores the exact root path and opens an in-app confirmation. Cancel
 
 Per-root rescan calls `scanFolder(path)`; Rescan all is disabled when the frontend root list is empty and calls `rescanAllRoots()` otherwise. Both listen for scan progress and display either the normal or partial completion summary returned by the API. Discovery, cleanup, and partial-scan semantics are intentionally not repeated here; see [scanning and indexing](scanning-and-indexing.md).
 
-`useScanSettingsActions` reads `getVideoToolStatus` once on mount. Pending status is null; a rejected check becomes both tools unavailable. The section warns when ffmpeg or ffprobe is unavailable. This does not measure libmpv playback capability and does not automatically recheck after installing tools.
+`createScanSettings` reads `getVideoToolStatus` once on mount. Pending status is null; a rejected check becomes both tools unavailable. The section warns when ffmpeg or ffprobe is unavailable. This does not measure libmpv playback capability and does not automatically recheck after installing tools.
 
 Each folder row includes a localized, accessible **Scan on app startup** checkbox. Its saved value is false for existing and newly added roots. Saving uses the shared runner with `setGlobalLoading: false`, updates the row after backend success, and keeps the previous value on error. The checkbox is disabled while a settings operation holds the lock. Enabling it takes effect at the next app launch.
 
-The shell invokes `scanOnStartup` at mount, independently of whether Settings is open. A hook ref prevents StrictMode replay from dispatching twice; the backend process owns the authoritative once-only snapshot. The startup action uses the scan progress matcher and ordinary loading/summary behavior. A null response clears its pending message without refreshing the library. A scan result refreshes assets, tags, and roots; rejection attempts both refreshes before reporting the error because scan batches may already have committed. No automatic retry runs during that process.
+The shell invokes `scanOnStartup` at mount, independently of whether Settings is open. Synchronous once-only flags in the runtime and scan model prevent repeated dispatch; the backend process owns the authoritative once-only snapshot. The startup action uses the scan progress matcher and ordinary loading/summary behavior. A null response clears its pending message without refreshing the library. A scan result refreshes assets, tags, and roots; rejection attempts both refreshes before reporting the error because scan batches may already have committed. No automatic retry runs during that process.
 
 ## Thumbnail bulk actions and cancellation
 
@@ -180,7 +180,7 @@ Remove-root, clear-library, duplicate-delete, and database-import confirmations 
 
 Database import has two non-overlapping runner phases: file selection, then confirmation, then import. Duplicate deletion is the only intentionally nested modal flow: the resolver stays open underneath the later-rendered delete confirmation. Resolve or cancel that confirmation before interacting with the resolver again.
 
-Settings and its dialogs use [the shared UI layer manager](../frontend/architecture-and-ui-conventions.md#modal-and-overlay-conventions). `SettingsViewLayer` owns page-level Escape; nested dialogs register above it, so managed dismissal targets the top layer and focus returns to its trigger when available. Keep this registration when adding a confirmation.
+Settings and its dialogs use [the shared UI layer manager](../frontend/architecture-and-ui-conventions.md#modal-and-overlay-conventions). `SettingsView` owns page-level Escape; nested dialogs register above it, so managed dismissal targets the top layer and focus returns to its trigger when available. Keep this registration when adding a confirmation.
 
 ## Exact success refresh and reset matrix
 
@@ -198,7 +198,7 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Retry failed thumbnails | Refresh assets/query pages and known tags; publish the thumbnail summary. The inner `finally` clears `thumbnailBulkRunning`. No scan-root refresh or explicit thumbnail reset. |
 | Request thumbnail cancellation | Publish accepted/rejected/error status and clear `cancelThumbnailRunning`. No refresh/reset; the original render later owns its normal success follow-up. |
 | Export CSV | Publish row summary only. No refresh/reset. |
-| Import CSV | Invalidate authoritative tags and both details caches inside the metadata barrier on success or rejection; after release, refresh assets and known tags, best-effort on rejection. Publish the success summary only after a successful refresh. |
+| Import CSV | Invalidate authoritative tags and the shared details cache inside the metadata barrier on success or rejection; after release, refresh assets and known tags, best-effort on rejection. Publish the success summary only after a successful refresh. |
 | Export database bundle | Publish copied-file/thumbnail summary only. No refresh/reset. |
 | Import confirmed database bundle | Reset metadata identity, query and thumbnail queue/store; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
 | Clear library | Reset metadata identity and thumbnail queue/store; replace assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
@@ -213,18 +213,18 @@ Picker or confirmation cancellation, an empty duplicate batch, and a no-op thumb
 - The runner does not expose cancellation for scans, imports, clear-library, duplicate scans, or duplicate application. Only bulk thumbnail rendering has a stop request.
 - A second runner call made while locked returns silently; it does not queue work or publish a message.
 - The progress listener has no operation identifier beyond phase filtering. Correct attribution depends on exclusivity plus disjoint phase families.
-- The React runner unregisters its listener when the action settles. The Solid runner also unregisters on owner disposal and ignores late progress, but neither cancels an already-dispatched backend operation when the shell is destroyed.
+- The runner unregisters its listener when the action settles or its owner disposes and ignores late progress. It does not cancel an already-dispatched backend operation when the application is destroyed.
 - Duplicate rename targets cannot be another source in the same batch, so swaps/cycles require independent temporary names in separate rescanned batches.
 - The DB transaction does not make post-commit staged-delete or thumbnail cleanup transactional; those cases are surfaced as recovery-required results.
 - Root addition is sequential. A failure after one addition can leave earlier roots added while preventing the final root-list refresh.
-- Local lifecycle resets intentionally differ by operation. Root removal explicitly resets the thumbnail queue/store; duplicate mutations refresh the query, whose refresh also resets the store. The React `thumbs`/`setThumbs` compatibility fields are an empty value and no-op in production composition.
+- Local lifecycle resets intentionally differ by operation. Root removal explicitly resets the thumbnail queue/store; duplicate mutations refresh the query, whose refresh also resets the store.
 - Layer-manager focus restoration requires a connected trigger. Native GTK video controls are outside its DOM focus model; see [frontend layer limits](../frontend/architecture-and-ui-conventions.md#keyboard-and-accessibility).
 
 ## Change checklist
 
 When changing settings behavior:
 
-1. Keep raw `invoke` and event serialization in `src/api.ts`; update the [IPC contract](../architecture/ipc-contract.md) for boundary changes.
+1. Keep raw `invoke` and event serialization in `src/platform/tauri`; update the [IPC contract](../architecture/ipc-contract.md) for boundary changes.
 2. Decide whether the action belongs to an existing section and whether it must use the shared exclusive runner. Document any intentional exception like thumbnail cancellation.
 3. Choose `setGlobalLoading` deliberately. Do not confuse the global settings lock with the per-section loading/progress state or library gallery loading.
 4. If the backend emits progress, add a non-overlapping matcher, translated known phases, raw-message fallback coverage, and guaranteed listener cleanup.
@@ -233,22 +233,22 @@ When changing settings behavior:
 7. Update every affected cache deliberately: assets/query pages, known tags, scan roots, thumbnail queue/store/map, duplicate results, and selection state. Amend the refresh/reset matrix when behavior changes.
 8. For duplicate actions, preserve staged-action validation, delete confirmation for mixed batches, deterministic execution order, and post-success duplicate rescan; add failure coverage if transactional behavior changes.
 9. Preserve localized visible messages, dialog names, disabled states, and progress accessibility. Test Escape/backdrop behavior when adding another nested layer.
-10. Run focused service/hook/component tests, the relevant `App.test.tsx` integration cases, and a build for contract or composition changes.
+10. Run focused helper/model/component tests, the relevant `src/app/__tests__/runtimeIntegration.test.ts` cases, and a build for contract or composition changes.
 
 ## Test map
 
-- `src/hooks/__tests__/useSettingsActions.test.ts` covers root add/remove/rescan, progress updates, cross-section exclusion, thumbnail summaries/cancel errors, clear-library, picker cancellation, duplicate scan/basic validation, CSV import, and bundle export.
-- `src/hooks/__tests__/useSettingsActionsConfirmFlow.test.ts` covers cancel/confirm ordering for mixed duplicate deletion and database-bundle overwrite.
-- `src/components/settings/services/__tests__/operationStateService.test.ts`, `progressService.test.ts`, and `duplicateValidationService.test.ts` cover ready state, progress formatting/matchers, thumbnail summaries, file-name validation, case-insensitive collisions, unknown assets, and touched-group rules.
-- `src/components/settings/hooks/__tests__/useDuplicateResolverHandlers.test.ts` covers rename draft updates and queue/delete toggling.
-- `src/components/settings/__tests__/*` covers panel wiring, operation-status rendering, destructive-dialog controls, and resolver staging/locking; `src/components/settings/sections/__tests__/*` covers section callbacks and locked disabled states.
-- `src/__tests__/App.test.tsx` covers the full-page settings route, Back/Escape, highlighted first-folder route, root confirmation, thumbnail stop/retry, section loaders, timestamped export names, and disabling other settings actions during a running operation.
+- `src/features/settings/__tests__/createSettingsActions.test.tsx` covers root add/remove/rescan, progress updates, cross-section exclusion, thumbnail summaries/cancel errors, clear-library, picker cancellation, duplicate scan/basic validation, CSV import, and bundle export.
+- `src/features/settings/__tests__/createSettingsActionsConfirmFlow.test.tsx` covers cancel/confirm ordering for mixed duplicate deletion and database-bundle overwrite.
+- `src/features/settings/__tests__/operationStateService.test.ts`, `progressService.test.ts`, and `duplicateValidationService.test.ts` cover ready state, progress formatting/matchers, thumbnail summaries, file-name validation, case-insensitive collisions, unknown assets, and touched-group rules.
+- `src/features/settings/__tests__/createDuplicateResolver.test.tsx` covers rename draft updates and queue/delete toggling.
+- `src/features/settings/__tests__` covers panel wiring, operation-status rendering, destructive-dialog controls, and resolver staging/locking; the same directory covers section callbacks and locked disabled states.
+- `src/app/__tests__/shell.test.tsx` covers settings navigation, Back/Escape, the first-folder highlight, themes and ordered language choices. `runtimeIntegration.test.ts` composes real settings/library/lightbox/bulk models for CSV draining/invalidation and cleared-ID reuse. Export names and cross-section locks live in the settings model suites.
 
-Solid tests cover listener-registration failure, late registration/disposal, phase filtering, translated JSON/backend errors, synchronous exclusion, cancellation, root mapping, and uncertain maintenance rejection with the actual metadata barrier. Desktop checks cover nested duplicate confirmations and persistence. Exhaustive focus transitions and every backend partial-failure case remain outside this frontend coverage.
+`operationSafety.test.tsx` and the settings model tests cover listener-registration failure, late registration/disposal, phase filtering, translated JSON/backend errors, synchronous exclusion, cancellation, root mapping, and uncertain maintenance rejection with the actual metadata barrier. Desktop checks cover nested duplicate confirmations and persistence. Exhaustive focus transitions and every backend partial-failure case remain outside this frontend coverage.
 
 ## Language card verification
 
-The focused `AppearanceSection`, `LanguageSection`, and `SettingsPanel` tests cover theme
+The focused `src/app/__tests__/shell.test.tsx` and `SettingsPanel` tests cover theme
 selection, ordered language options, callbacks, and navigation focus. The opt-in desktop
 spec checks both cards in English and Polish at 1440, 600, and 320 pixels, including
 responsive placement, preview height, immediate switching, and persistence after reload.

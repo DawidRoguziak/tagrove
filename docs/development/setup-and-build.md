@@ -71,7 +71,7 @@ Install frontend and tooling dependencies from the repository root:
 bun install
 ```
 
-`bun.lock` records the resolved JavaScript dependency graph and should remain committed. `bunfig.toml` sets `[install].exact = false`, so newly added dependencies are normally written as compatible ranges rather than exact versions. Existing `package.json` dependencies likewise use ranges, while the lockfile supplies reproducible resolutions. For a verification or CI install that must not update the lockfile, use:
+`bun.lock` records the resolved JavaScript dependency graph and should remain committed. `bunfig.toml` sets `[install].exact = false`, so newly added dependencies are normally written as compatible ranges rather than exact versions. Most `package.json` dependencies use ranges. The Solid toolchain and virtual-core are exact pins; the lockfile supplies reproducible transitive resolutions. For a verification or CI install that must not update the lockfile, use:
 
 ```bash
 bun install --frozen-lockfile
@@ -114,12 +114,33 @@ Vite-only mode is not a complete application runtime. Code paths that invoke Tau
 
 Solid 2 is the only frontend. `index.html` loads `src/app/main.tsx`; Vite uses the
 Solid compiler and Tailwind. Normal build, desktop and E2E commands share this entry.
-The temporary renderer selection and React dependencies have been removed.
+There is no renderer-selection environment variable.
 
 `bun run test:build` builds the application and checks the emitted module graph and
 package manifest for the Solid entry and absence of React or legacy feature trees.
 It writes the module list to ignored `artifacts/build/modules.json`.
 Desktop runs remain serial because they share `dist/` and the E2E target.
+
+The installed family is pinned in `package.json` and `bun.lock`:
+
+| Package | Exact version |
+| --- | --- |
+| `solid-js`, `@solidjs/web`, `@solidjs/compiler` | `2.0.0-rc.13` |
+| `@solidjs/vite-plugin` | `3.0.0-next.47` |
+| `@solidjs/testing-library` | `1.0.0-beta.3` |
+| `@tanstack/virtual-core` | `3.17.8` |
+
+These are repository pins, not a claim about the latest public releases. Vite and Vitest
+both use `@solidjs/vite-plugin`; JSX stays preserved for the compiler with
+`jsxImportSource: @solidjs/web`. Vitest uses browser/development export conditions and
+inlines the Solid dependencies. No separate renderer projects or compiler contexts remain.
+
+The gallery uses `features/gallery/createVirtualGrid.ts` over virtual-core. The migration
+selected this adapter because the then-reviewed Solid virtualizer adapter declared Solid 1
+compatibility. The local adapter owns geometry, observers and range publication explicitly;
+its real-core tests verify measurements, bounded slots and resize anchors. Bulk order and
+duplicate dialogs also use virtual-core. Replacing it or upgrading the Solid RC family
+requires its own compatibility and behavior checks.
 
 ### Canonical Tauri development
 
@@ -131,7 +152,7 @@ bun run tauri:dev
 
 The base Tauri configuration expects the development URL `http://localhost:1420`; the strict Vite port ensures that URL cannot drift. The development overlay changes the product/window title to `Tagrove Dev` and the identifier to `com.example.mediatagger.dev`.
 
-The local development profile already has a collection of approximately 30,000 images. Use it for manual testing with `bun run tauri:dev` when a large library is useful. Continue to use temporary media fixtures for destructive tests.
+Use generated or copied synthetic media in an isolated profile for reproducible large-library checks. Keep destructive tests in temporary roots.
 
 Do not use an unqualified debug Tauri launch with the base configuration. In debug builds, `src-tauri/src/lib.rs` permits startup only with `com.example.mediatagger.dev` or `com.example.mediatagger.e2e`. This protects both the local release profile and future publisher identities. Use the established dev or E2E overlay; arbitrary custom identifiers are rejected.
 
@@ -154,7 +175,7 @@ Both standalone `bun run tauri:build:e2e` and `bun run test:e2e:tauri` use the s
 
 | File | Owns |
 | --- | --- |
-| `package.json` | Node compatibility, JavaScript dependency ranges, and command entry points. |
+| `package.json` | Node compatibility, JavaScript dependency ranges/exact pins, and command entry points. |
 | `bunfig.toml` / `bun.lock` | Bun install policy and exact resolved JavaScript dependency graph. |
 | `tsconfig.json` | Application/test sources, strictness, preserved JSX and the `@solidjs/web` JSX context. |
 | `tsconfig.node.json` | TypeScript project settings for `vite.config.ts` and `vitest.config.ts`. |

@@ -1,21 +1,21 @@
 # Lightbox
 
-Implementation entry points: [selection lifecycle](../../src/hooks/useSelectionState.ts), [modal composition](../../src/components/lightbox/LightboxModal.tsx), [native session hook](../../src/components/lightbox/useNativeVideoSession.ts), [native playback](../../src-tauri/src/services/video_player_service.rs), [GTK surface](../../src-tauri/src/video_surface.rs).
+Implementation entry points: [selection lifecycle](../../src/features/lightbox/createLightbox.ts), [modal composition](../../src/features/lightbox/LightboxModal.tsx), [native session model](../../src/features/lightbox/video/createNativeVideoSession.ts), [native playback](../../src-tauri/src/services/video_player_service.rs), [GTK surface](../../src-tauri/src/video_surface.rs).
 
-The lightbox is the selected-asset workspace layered over the gallery. It owns full-media presentation, per-asset editing, deletion confirmation, image transforms, video playback, fullscreen, and keyboard navigation. Selection and mutation state live above the modal in `useSelectionState`; `LightboxModal` and its hooks own transient interaction state.
+The lightbox is the selected-asset workspace layered over the gallery. It owns full-media presentation, per-asset editing, deletion confirmation, image transforms, video playback, fullscreen, and keyboard navigation. Selection and mutation state live above the modal in `createLightbox`; `LightboxModal` and its presentation models own transient interaction state.
 
 Related documentation:
 
 - [Library query and gallery](library-query-and-gallery.md) describes query sessions, summary objects, the global index, and the paged frontend cache used by lightbox navigation.
 - [Search, tags, and media groups](search-tags-and-media-groups.md) defines tag normalization, favorites, and group semantics shared with the lightbox editors.
 - [IPC contract](../architecture/ipc-contract.md) covers the Tauri command boundary and camel-case request payloads.
-- [Frontend architecture and UI conventions](../frontend/architecture-and-ui-conventions.md) defines controller, hook, service, modal, and accessibility responsibilities.
+- [Frontend architecture and UI conventions](../frontend/architecture-and-ui-conventions.md) defines model, component, platform, modal, and accessibility responsibilities.
 - [Database](database.md) covers library revisions changed by lightbox mutations.
 - [Thumbnails](thumbnails.md) covers gallery previews; the lightbox itself loads the original media URL rather than a thumbnail.
 
-The tagging panel uses the shared `TagEditor` with chips and input inside one border. It retains the 200px scrolling limit, wraps long names, and keeps the focused input visible. The input has an accessible Add tag name without a separate visible label. Empty editable fields show the existing placeholder; details-loading status and retry controls remain outside the field. Autosave and draft ownership remain in the lightbox tagging hook.
+The tagging panel uses the shared `TagEditor` with chips and input inside one border. It retains the 200px scrolling limit, wraps long names, and keeps the focused input visible. The input has an accessible Add tag name without a separate visible label. Empty editable fields show the existing placeholder; details-loading status and retry controls remain outside the field. Autosave and draft ownership remain in the lightbox model.
 
-## Solid lightbox during migration
+## Frontend owners
 
 `src/features/lightbox/createLightbox.ts` owns selection, position recovery, tag-save intents
 and group drafts at application lifetime. It consumes the shared library's bounded details
@@ -31,7 +31,7 @@ logical close releases keyboard and background locks. Navigation retains the she
 opening animation; closing and reopening starts a fresh presentation owner. The application
 captures the gallery focus target before loading the lazy view.
 
-`image/createImageControls.ts` shares the reference fit, zoom and pan calculations. It
+`image/createImageControls.ts` uses the pure fit, zoom and pan calculations in `lightboxPanZoomService.ts`. It
 measures the viewport, coalesces transform writes per frame, and releases pointer capture,
 observers, listeners and frames with its owner. Metadata-only updates retain image/GIF DOM
 and zoom. `video/createNativeVideoSession.ts` owns native playback through the existing platform
@@ -46,20 +46,18 @@ player node and session, removes the top reservation, and hides DOM action panel
 Logical close disposes native playback before the retained modal fades. The player publishes
 explicit string values for boolean snapshot data attributes, preserving their reference
 contract. Native controls, persistence and decoding remain owned by the unchanged Rust/GTK
-backend. React remains the default complete application.
-
-The sections below describe the React reference unless they explicitly name Solid.
+backend.
 
 ## Ownership and composition
 
-`useAppShellController` creates `useLibraryBrowser` and passes its loaded assets, total result count, global lookup functions, refresh functions, and cache setter to `useSelectionState`. It exposes the returned selection state as the `lightbox` props. `App` activates the lazy `LightboxModal` on first selection and keeps its presence owner mounted so closing fades can finish.
+`createAppRuntime` creates `createLibrary` and supplies it to `createLightbox`. The model consumes query accessors, shared details/tags and mutation commands, and is exposed as `runtime.lightbox`. `App` activates the lazy `LightboxModal` on first selection and keeps its presence owner mounted so closing fades can finish.
 
 The runtime path is:
 
-1. A gallery tile calls `selection.setSelected(summaryAsset)`.
-2. `useSelectionState` publishes that object synchronously so the modal opens without waiting for IPC.
-3. It calls `getAssetDetails(asset.id)` and replaces the summary with `AssetDetails` if that request is still current. Until a complete tag list is available from details or the shared authoritative tag state, tag editing is disabled.
-4. `LightboxModal` delegates persistent edits back to `useSelectionState`; local hooks manage panels, confirmation, clipboard feedback, media transforms, fullscreen, and shortcuts. Detail-load failure and tag-save failure are displayed and retried independently.
+1. A gallery tile calls `runtime.lightbox.select(summaryAsset, index)`.
+2. `createLightbox` sets its current selection synchronously and publishes reactive state so the modal opens without waiting for IPC.
+3. It loads through `library.details.load(asset.id)` and replaces the summary with `AssetDetails` if that request is still current. Until a complete tag list is available from details or the shared authoritative tag state, tag editing is disabled.
+4. `LightboxModal` delegates persistent edits back to `createLightbox`; local models and components manage panels, confirmation, clipboard feedback, media transforms, fullscreen, and shortcuts. Detail-load failure and tag-save failure are displayed and retried independently.
 
 At widths of at least 768 px the modal initially shows the media stage beside the action sidebar. Below 768 px the sidebar starts as a closed right drawer. Both layouts allow the sidebar to slide off the right edge in 200 ms, with reduced motion respected. The covered media controls and action island are inert while the drawer is open. An explicit open/closed choice survives asset navigation and resizing until the lightbox closes; without a choice the default follows the breakpoint. Editors remain mounted while collapsed. The sidebar uses shrinkable grid tracks, wraps long tags, scrolls vertically, and keeps actions reachable. Shell height stays within the viewport. Desktop minimum window dimensions remain unchanged.
 
@@ -72,22 +70,22 @@ the controls. The filename remains in the dialog's accessible name and sidebar i
 moves focus into the panel after GTK acknowledges bounds that leave it clear. Keyboard
 collapse returns focus to the trigger. In a narrow video layout, restoration waits for
 the closing transition to reveal the media column that contains the trigger. Delete confirmation and pending deletion prevent
-collapse. `useLightboxSidebar` retains occupied space through the closing transition;
-selection-scoped info and confirmation state remain in `useLightboxModalHandlers`.
+collapse. `createLightboxSidebar` in `createLightboxPresentation.ts` retains occupied space through
+the closing transition. `LightboxModal` owns selection-scoped information and confirmation state.
 
-Group drafts live in `useMediaGroupDraft`. Selected-ID changes initialize fields; canonical arrivals update untouched fields and preserve dirty ones. `useSelectionNavigation` owns asynchronous global-index navigation, and `useSelectionMetadataActions` owns favorite/group writes and pending state. Busy mutation ownership rejects visibly through the existing failure UI rather than silently succeeding.
+Group drafts live in `createLightbox`. Selected-ID changes initialize fields; canonical arrivals update untouched fields and preserve dirty ones. The same model owns asynchronous global-index navigation and favorite/group pending state; `library.mutations` owns persistence. Busy mutation ownership rejects visibly through the existing failure UI rather than silently succeeding.
 
 Complete detail responses and adjacent prefetches must pass metadata-generation validation. An old favorite, group, path, or tag snapshot cannot enter the details cache by overlaying only its tags. Current selection reads wait for mutation settlement and re-fetch when their generation changed. Detail cache entries carry generation stamps as well as the identity epoch.
 
 ## Summary-to-details selection lifecycle
 
-The query cache stores `AssetSummary` objects verbatim. Selecting a tile builds a `SelectedAsset` view: `path` starts as the summary's `preview_path` (a valid source for GIF and video; null for ordinary images), `size_bytes` starts as null, and tags are empty. Kind, dimensions, duration, favorite state, media group, and thumbnail fields come from the summary. The media stage never guesses a source from the file name. It renders a loading placeholder while the view has no verified path, and a failed detail read then renders a failure notice. GIF/video summaries already carry a verified preview path, so the reference can present that source before complete details arrive; a later detail failure appears alongside the media. The empty tag list is never authoritative; while the complete tag base is unknown the tag input and chip removal are disabled. A null or rejected `getAssetDetails` result shows the loading error and Retry action; successful Retry, or a canonical mutation published by bulk, unlocks editing.
+The query cache stores `AssetSummary` objects verbatim. Selecting a tile builds a `SelectedAsset` view: `path` starts as the summary's `preview_path` (a valid source for GIF and video; null for ordinary images), `size_bytes` starts as null, and tags are empty. Kind, dimensions, duration, favorite state, media group, and thumbnail fields come from the summary. The media stage never guesses a source from the file name. It renders a loading placeholder while the view has no verified path, and a failed detail read then renders a failure notice. GIF/video summaries already carry a verified preview path, so the lightbox can present that source before complete details arrive; a later detail failure appears alongside the media. The empty tag list is never authoritative; while the complete tag base is unknown the tag input and chip removal are disabled. A null or rejected `getAssetDetails` result shows the loading error and Retry action; successful Retry, or a canonical mutation published by bulk, unlocks editing.
 
-Every `selectAsset` call, including close, increments `selectionRequestRef`. A detail response may replace `selected` only when its captured request ID still equals the current request ID. Consequently, a slow response for A cannot replace B or reopen a closed lightbox. The request is not cancelled at the transport layer.
+Every `select` call, including close, increments `selectionRequest`. A detail response may replace `selected` only when its captured request ID still equals the current request ID. Consequently, a slow response for A cannot replace B or reopen a closed lightbox. The request is not cancelled at the transport layer.
 
-Successful current details are stored in a bounded LRU `Map<assetId, AssetDetails>` (256 entries, refreshed on read). Each entry carries the tag-state identity epoch at insertion time: an entry stamped with an older epoch is discarded on lookup, and starting a new asset-query session (`queryEpoch`) clears the whole map so reused IDs cannot serve rows from before a restore or rescan. Their `tags` field is overlaid from shell-owned `useAssetTagState`, which stores the latest complete canonical list plus that identity epoch and per-asset generation. A mutation exclusively acquires the asset before IPC begins, advances the generation, remains an active read barrier while pending, and advances again when it settles. A second lightbox/bulk writer cannot acquire the same asset and therefore sends no IPC. Details started before or during the write cannot publish. Only detail-complete records (real path and byte size) may enter the cache; a cached ID reselects without another details request. After the current asset's first successful details fetch, the hook calculates previous and next global indices with modulo arithmetic, resolves those summaries through `getAssetAtAsync`, and fetches their details into the same map. Prefetch is skipped for a one-item result and for an adjacent ID already in the details map.
+Successful current details are stored in the library-owned `createDetailsCache`, one 256-entry LRU shared with bulk. Pending reads for the same ID share one promise. Each entry carries the tag-state identity epoch at insertion time: an entry stamped with an older epoch is discarded on lookup, and starting a new asset-query session (`queryEpoch`) clears the whole map so reused IDs cannot serve rows from before a restore or rescan. Their `tags` field is overlaid from shell-owned `createAssetTagState`, which stores the latest complete canonical list plus that identity epoch and per-asset generation. A mutation exclusively acquires the asset before IPC begins, advances the generation, remains an active read barrier while pending, and advances again when it settles. A second lightbox/bulk writer cannot acquire the same asset and therefore sends no IPC. Details started before or during the write cannot publish. Only detail-complete records (real path and byte size) may enter the cache; a cached ID reselects without another details request. After the current asset's first successful details fetch, the model calculates distinct previous and next global indices with modulo arithmetic, resolves those summaries through `getAssetAtAsync`, and fetches their details into the same map. Prefetch is skipped for a one-item result and for an adjacent ID already in the details map.
 
-The selection-derived editors are reset from every new `selected` object:
+Selected-ID changes initialize group drafts. Later canonical arrivals update untouched fields and preserve dirty group drafts; tag intents retain unsaved edits:
 
 - tags remain a normalized `string[]`; whitespace and CSV delimiters are invalid inside a tag;
 - a null group key becomes an empty string;
@@ -100,9 +98,9 @@ Selection records a global result index supplied by navigation or discovered by 
 
 When a target page fails or returns no record, navigation rolls its pending index back so the next key retries that position. A query refresh invalidates pending navigation immediately and shows a localized “Finding this photo in the results…” notice. Once the new session is ready, selection first checks its sparse cache, then resolves an uncached photo through `getAssetPosition`. The backend searches its ordered ID snapshot; the frontend does not fetch every intervening page.
 
-A resolved index enables Next/Previous in the new order. A missing photo stays open with a notice explaining that it no longer belongs to the results, including when the query has zero matches. A failed lookup or refresh shows Retry, which refreshes the query and resolves the position again. Keys do not navigate while the position is unresolved. Another refresh, selection, close, or unmount invalidates the outstanding position response. The non-session hook fallback still closes selection when its entire asset list disappears.
+A resolved index enables Next/Previous in the new order. A missing photo stays open with a notice explaining that it no longer belongs to the results, including when the query has zero matches. A failed lookup or refresh shows Retry, which refreshes the query and resolves the position again. Keys do not navigate while the position is unresolved. Another refresh, selection, close, or unmount invalidates the outstanding position response. A query that no longer contains the selected ID leaves the lightbox open with missing-position feedback.
 
-`useSelectionState` also watches the library cache for the selected ID. When a matching summary changes, it merges that summary into the selected details while preserving the current full `path` and `size_bytes`. It preserves current tags when the summary has no tags, because query summaries do not carry tags. An equality check over every displayed field avoids a redundant state update. If no matching asset exists, the lightbox closes only when the materialized asset cache is completely empty; absence from one non-empty cache snapshot is not treated as deletion.
+`createLightbox` also watches the library cache for the selected ID. When a matching summary changes, it merges that summary into the selected details while preserving the current full `path` and `size_bytes`. It preserves current tags when the summary has no tags, because query summaries do not carry tags. An equality check over every displayed field avoids a redundant state update. Absence from cached pages does not close the lightbox. A committed deletion or library identity reset explicitly closes the affected selection.
 
 This synchronization makes the selected object and its editors follow local cache mutations. The mutation helpers additionally use ID-checked selected-state updaters, so a response started for A cannot overwrite B after the user navigates.
 
@@ -119,7 +117,7 @@ All lightbox mutations are backend-first: the action awaits its API command befo
 
 Accepted tag saves use the shell's shared impact predicate: `none` preserves the query, `all` refreshes, and `tags` refreshes only when changed names intersect included/excluded names or an exact-count filter sees a count change. Same-count replacements preserve count-filter sessions. Obsolete and failed saves do not trigger success-driven refreshes. Stable callbacks read the latest applied filter after pending writes finish.
 
-Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `useSelectionState` is the only owner of save serialization/coalescing; `useLightboxTagging` only manages input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and passing `vocabulary_changed` to the best-effort known-tag refresh callback. A current vocabulary skips unchanged saves; a failed refresh remains dirty and retries on the next accepted save. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. A successful add clears and refocuses the input.
+Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and empty values are discarded. `createLightbox` is the only owner of save serialization/coalescing; the mounted tag panel and `TagEditor` manage input interaction and delegation. A replacement is guarded unless the shared complete tag base is known, and its exclusive coordinator mutation token is acquired before calling `set_asset_tags`. Lock contention retains the desired editor state and exposes Retry; when the winning external write settles, the add/remove intent is rebased onto its canonical tags before Retry. Save failure keeps unsaved chips visible and exposes its own Retry, while success publishes canonical response tags before patching the details cache and passing `vocabulary_changed` to the best-effort known-tag refresh callback. A current vocabulary skips unchanged saves; a failed refresh remains dirty and retries on the next accepted save. Adding a draft or removing a chip immediately updates the editor and starts a save; merely typing a draft does not save. Known-tag suggestions exclude already-selected tags case-insensitively. A successful add clears and refocuses the input.
 
 Media-group apply trims the key and converts an empty key to null. The order uses a text field with a numeric keyboard hint and no native spinner arrows. Empty order becomes null. Nonempty edits must contain only digits and represent a positive safe integer, at most `9007199254740991`. Leading zeros are accepted and saved as the numeric value. Invalid typing or paste is rejected as a whole change without stripping characters. The field and Apply handler share validation; invalid preloaded drafts disable Apply and cannot be submitted. Existing stored orders remain visible and unchanged until explicitly edited or cleared. The generate button uses `crypto.randomUUID()` when available, with a timestamp/random fallback. Applying does not mutate the editor controls directly; the selected-object update rehydrates them.
 
@@ -147,7 +145,7 @@ stays outside native GTK video bounds. Reset is disabled for video. Both native 
 image fullscreen use the existing fullscreen action. Image fullscreen retains the chrome;
 native fullscreen hides it and preserves the prior sidebar choice when returning.
 
-`useLightboxActivity.visible` controls the floating buttons and bottom action row. After
+`createLightboxActivity.visible` controls the floating buttons and bottom action row. After
 three seconds without activity they fade to zero opacity over 200 ms and stop receiving
 pointer input. Reduced motion makes the opacity change immediate. Both stay mounted and
 retain their layout space, including the native video's top clearance, so fading does not
@@ -186,7 +184,7 @@ the selection; a rejected pre-commit delete retains the confirmation and error.
 ## Opening and closing presence
 
 `App` activates the lazy `LightboxModal` on first selection and keeps that presence
-owner mounted. It uses the same `useModalPresence` lifecycle as `UiModal`: a 75 ms
+owner mounted. It uses the same `createModalPresence` lifecycle as `UiModal`: a 75 ms
 opacity entrance, an open state, a 50 ms opacity exit, then hidden. Local
 `--modal-entrance` and `--modal-exit` tokens leave other animations unchanged. The backdrop
 and DOM controls fade together. Image/GIF pixels also fade; native video pixels and
@@ -212,8 +210,8 @@ Image and GIF source paths pass through `toMediaSrc`.
 
 - `image` and `gif` use the same non-draggable `<img>` stage. GIF animation is browser-native, and both kinds receive the image fit, zoom, and pan behavior.
 - The `<img>` is keyed by the asset activation generation. Changing asset ID, kind, or path mounts a fresh image, including on revisits, to prevent accelerated GIF timing after navigation in WebKit. Metadata edits, zoom, and unrelated renders keep the same image element. Only the image is replaced; the stage, sidebar, and modal presence persist.
-- On a wide viewport the media stage occupies only the left shell column. `measureNativeVideoBounds` therefore reports a rect inside that column, so the native GTK surface cannot cover the sidebar's DOM controls. Opening the narrow drawer hides the video stage; its resize observer publishes zero bounds, which hides the native GTK surface until the drawer finishes closing. The windowed header and action island occupy rows above and below native bounds, including when the sidebar is collapsed. Sidebar opening waits for acknowledged native bounds that leave the panel clear. Native GTK pointer motion is observed in capture phase without consuming input and forwards session-scoped `pointerActivity` events, throttled to at most ten per second, to the same frontend idle timer. `useNativeVideoSession` reserves an open request before resolving an authorized video by asset ID, accepts events for its returned session, publishes measured bounds, and cancels pending opens and closes playback on unmount. React renders a plain container and no `<video>` or hidden control rail. Resize work keeps one outstanding request and only the latest pending measurement. Labels update through a separate command without restarting playback.
-- The backend validates the SQLite row, video kind, canonical regular file, assigned roots, and symlink containment before passing the canonical path to libmpv. One process-wide player uses `vo=libmpv`, `hwdec=auto-safe`, and infinite looping. Each video autoplays from the beginning; volume, mute, and speed survive navigation until app exit. Startup defaults are volume 100, unmuted, and speed 1. GTK positions an input-pass-through `GLArea` above the WebView. The controls are a direct `GtkOverlay` child sized only to the bottom 88 px of the video rectangle, clamped to the video height for shorter surfaces, so they accept input without blocking the rest of the WebView. Both rows overlay the picture in windowed and fullscreen modes. A full-width seek bar sits above a button row with play/pause, mute, a 0–100% volume slider, and elapsed / duration time on the left, then flexible space before playback-rate and fullscreen controls on the right. Raising the volume unmutes playback; mute preserves the selected level. Unmuting at zero restores 100%. The volume slider supports pointer dragging and keyboard increments, and snapshot updates do not move its thumb during a drag. The fitted dimensions describe the complete decoded-video footprint; no separate DOM control rail is reserved below it. The controls use a transparent-to-dark gradient only for contrast rather than a bordered panel. The non-fullscreen video dialog keeps at least 20 px from every window edge, and its shell owns the only visible border, radius, and shadow. GTK receives authoritative playback snapshots from the same session as React. A single worker executes libmpv commands and consumes events. Initial pause/load commands are submitted asynchronously through the session event client; completion errors are consumed there, so initialization does not make synchronous libmpv calls while holding the mutex shared with GTK. The worker blocks on its command channel when there is no session. GTK rendering wakes from the existing bounded callback channel rather than a permanent 8 ms timer; the controls timer is suspended without an active surface. Replacing a file stops the previous decoder and retires its event client before creating the next client. Paused, seeking, and buffering are independent properties. GTK callbacks enqueue commands without blocking the render thread. Seeking stays disabled until duration is known, and progress updates do not move the thumb during a drag. This avoids relying on WebKitGTK alpha compositing, which cannot reliably place DOM controls over a sibling native widget. The render context must be ready before libmpv receives `loadfile`.
+- On a wide viewport the media stage occupies only the left shell column. `measureNativeVideoBounds` therefore reports a rect inside that column, so the native GTK surface cannot cover the sidebar's DOM controls. Opening the narrow drawer hides the video stage; its resize observer publishes zero bounds, which hides the native GTK surface until the drawer finishes closing. The windowed header and action island occupy rows above and below native bounds, including when the sidebar is collapsed. Sidebar opening waits for acknowledged native bounds that leave the panel clear. Native GTK pointer motion is observed in capture phase without consuming input and forwards session-scoped `pointerActivity` events, throttled to at most ten per second, to the same frontend idle timer. `createNativeVideoSession` reserves an open request before resolving an authorized video by asset ID, accepts events for its returned session, publishes measured bounds, and cancels pending opens and closes playback on unmount. Solid renders a plain container and no `<video>` or hidden control rail. Resize work keeps one outstanding request and only the latest pending measurement. Labels update through a separate command without restarting playback.
+- The backend validates the SQLite row, video kind, canonical regular file, assigned roots, and symlink containment before passing the canonical path to libmpv. One process-wide player uses `vo=libmpv`, `hwdec=auto-safe`, and infinite looping. Each video autoplays from the beginning; volume, mute, and speed survive navigation until app exit. Startup defaults are volume 100, unmuted, and speed 1. GTK positions an input-pass-through `GLArea` above the WebView. The controls are a direct `GtkOverlay` child sized only to the bottom 88 px of the video rectangle, clamped to the video height for shorter surfaces, so they accept input without blocking the rest of the WebView. Both rows overlay the picture in windowed and fullscreen modes. A full-width seek bar sits above a button row with play/pause, mute, a 0–100% volume slider, and elapsed / duration time on the left, then flexible space before playback-rate and fullscreen controls on the right. Raising the volume unmutes playback; mute preserves the selected level. Unmuting at zero restores 100%. The volume slider supports pointer dragging and keyboard increments, and snapshot updates do not move its thumb during a drag. The fitted dimensions describe the complete decoded-video footprint; no separate DOM control rail is reserved below it. The controls use a transparent-to-dark gradient only for contrast rather than a bordered panel. The non-fullscreen video dialog keeps at least 20 px from every window edge, and its shell owns the only visible border, radius, and shadow. GTK receives authoritative playback snapshots from the same session as the Solid frontend. A single worker executes libmpv commands and consumes events. Initial pause/load commands are submitted asynchronously through the session event client; completion errors are consumed there, so initialization does not make synchronous libmpv calls while holding the mutex shared with GTK. The worker blocks on its command channel when there is no session. GTK rendering wakes from the existing bounded callback channel rather than a permanent 8 ms timer; the controls timer is suspended without an active surface. Replacing a file stops the previous decoder and retires its event client before creating the next client. Paused, seeking, and buffering are independent properties. GTK callbacks enqueue commands without blocking the render thread. Seeking stays disabled until duration is known, and progress updates do not move the thumb during a drag. This avoids relying on WebKitGTK alpha compositing, which cannot reliably place DOM controls over a sibling native widget. The render context must be ready before libmpv receives `loadfile`.
 - libmpv metadata events supply duration and intrinsic dimensions. Before that, selected dimensions are used; otherwise the aspect-ratio fallback is `16 / 9`. Native control labels follow the active i18next language. Picture-in-picture and remote playback are unavailable.
 
 Image/GIF load failures, native-session open failures, and backend video error events replace the failed media with a localized alert. Every asset ID/kind/path activation receives a new generation, so A→B→A retries A and a late callback from the first A activation cannot fail the new one. Open tokens reject superseded backend work; session IDs filter late events and commands. Original media is independent of thumbnail generation and thumbnail cache state. Video errors expose Retry, which starts a fresh activation. Recoverable control errors leave playback running and show a dismissible localized message above the native bounds. Fatal decoder or rendering errors stop playback and hide the native surface. Bounds can update only an active surface; they cannot reactivate a closed session.
@@ -239,7 +237,7 @@ Zoom is a factor relative to the fitted size:
 - single click zooms in one step around the pointer;
 - `+` or `=` zooms in and `-` zooms out around viewport center;
 - `0` and the reset button restore factor 1 and pan `(0, 0)`;
-- the double-click helper toggles between reset and `clamp(max(2, 1 / fitScale), 1, 12)`, intended to reach at least 2x or pixel-perfect scale.
+- the pure `getDoubleClickZoomFactor` helper calculates `clamp(max(2, 1 / fitScale), 1, 12)`, but the rendered stage does not bind a double-click action.
 
 Wheel zoom is cursor-anchored and prevents native scrolling. Delta mode 1 is converted with a 16 px line height; mode 2 uses viewport height; the resulting delta is clamped to `[-100, 100]`. The factor is `current * exp(-delta * 0.002)`, then clamped to `[1, 12]`.
 
@@ -247,13 +245,13 @@ Zoom preserves the source point under the pointer or viewport center. Pan is cla
 
 Primary-button drag starts only above factor 1. Pointer capture is preferred; window pointer listeners provide a fallback and window blur ends the drag. Movement over 3 px marks the gesture as a drag, suppressing the following image click for 120 ms. Selection changes reset zoom, pan, dragging, click suppression, and intrinsic dimensions. Viewport changes re-clamp pan while zoomed.
 
-Zoom-property and translation writes are coalesced to one `requestAnimationFrame`: callers update refs immediately, `requestImageTransform` refuses to queue a second frame, and the frame writes both values. React owns fitted dimensions; the controls hook owns the zoom custom property and translation, so unrelated renders preserve zoom. The pending frame is cancelled on unmount. Resize measurement and tag-input focus also use their respective observer/animation-frame lifecycles.
+Zoom-property and translation writes are coalesced to one `requestAnimationFrame`: callers update synchronous local transform state and refuse to queue a second frame, and the frame writes both values. Solid tracks fitted dimensions; the image controls owner writes the zoom custom property and translation, so unrelated renders preserve zoom. The pending frame is cancelled on unmount. Resize measurement and tag-input focus also use their respective observer/animation-frame lifecycles.
 
 ## Fullscreen and keyboard behavior
 
 For images and GIFs, fullscreen targets the lightbox shell. If another element is fullscreen, it is exited first. `fullscreenchange` derives `isFullscreen` from whether that exact shell is the fullscreen element; fullscreen CSS removes the shell's bounds, radius, border, and shadow. The sidebar remains part of the fullscreen shell, so its controls stay reachable. The fullscreen button and `F` toggle it.
 
-For video, fullscreen delegates through the local `LightboxVideoPlayerHandle` and the session hook. Frontend and native GTK controls share the Rust fullscreen operation. It rechecks session identity on the GTK thread, toggles the Tauri window, records the state, and sends a `fullscreen` event. The lightbox keeps the same mounted media stage when entering and leaving fullscreen, preserving the playback session and position. Native fullscreen removes backdrop padding and lightbox chrome and hides the sidebar and trigger. `F` reaches the native action from both WebView and GTK controls; `Escape` exits fullscreen before closing the lightbox. Closing or replacing a fullscreen surface restores the window. The sidebar choice survives fullscreen. Frontend fullscreen failures show a recoverable control error.
+For video, fullscreen delegates through the local `LightboxVideoPlayerHandle` and the session model. Frontend and native GTK controls share the Rust fullscreen operation. It rechecks session identity on the GTK thread, toggles the Tauri window, records the state, and sends a `fullscreen` event. The lightbox keeps the same mounted media stage when entering and leaving fullscreen, preserving the playback session and position. Native fullscreen removes backdrop padding and lightbox chrome and hides the sidebar and trigger. `F` reaches the native action from both WebView and GTK controls; `Escape` exits fullscreen before closing the lightbox. Closing or replacing a fullscreen surface restores the window. The sidebar choice survives fullscreen. Frontend fullscreen failures show a recoverable control error.
 
 
 The window-level shortcuts while an asset is selected are:
@@ -267,7 +265,7 @@ The window-level shortcuts while an asset is selected are:
 | `+` / `=` | Zoom image/GIF in by 1.25 |
 | `-` | Zoom image/GIF out by 1.25 |
 
-The first key press after three seconds of inactivity both reveals the controls and executes its eligible shortcut. `useLightboxKeyboardShortcuts` keeps one listener registered while shortcuts are enabled and an asset is selected. A layout effect updates its local ref with the current callbacks, media kind, and fullscreen state, so an activity-triggered render during `keydown` cannot remove the listener before it handles that event. Asset changes and control visibility do not replace the listener; disabling shortcuts, closing, and unmounting remove it.
+The first key press after three seconds of inactivity both reveals the controls and executes its eligible shortcut. `createImageControls` owns one keyboard listener for its mounted scope. The listener reads current reactive options when handling the event, so activity updates do not replace it. Asset changes and control visibility do not replace the listener. Logical close disables handling through the `active`/`keyboardEnabled` options; disposal removes it.
 
 While delete confirmation is open, the lightbox shortcut listener is disabled and the inline confirmation owns Escape. Otherwise, form controls keep their keys except video fullscreen Escape. The WebView fallback consumes fullscreen Escape before other listeners and ignores repeated keydown events. It remains enabled while fullscreen hides an open narrow sidebar. Native video `F` is handled by the WebView shortcut path or GTK controls; the GTK window captures fullscreen Escape regardless of focus. Global navigation is suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
 
@@ -278,7 +276,6 @@ A primary-button click on the video picture focuses its WebView container and to
 Clicking the outer backdrop calls `tryCloseLightbox`; clicking the shell stops propagation. A live drag always blocks backdrop close. Zoom/pan gestures additionally set short time gates so the click synthesized after an interaction cannot close the modal:
 
 - wheel or image click: 360 ms;
-- double click: 420 ms;
 - drag start: 500 ms;
 - drag finish: 240 ms.
 
@@ -286,11 +283,11 @@ The inline delete confirmation is part of the sidebar, so while it is open a lig
 
 ## Known limitations and maintenance hazards
 
-- The bounded details caches (256-entry LRU, epoch- and session-stamped) also validate metadata-generation stamps, rejecting cached snapshots made obsolete by favorite/group mutations. Full DB restore and library clear advance the shared identity epoch and clear selection/bulk detail caches, requests, and pending tag mutation state. Successful deletion creates a per-ID tombstone generation before refresh work, so an older detail response cannot repopulate a deleted or reused ID.
-- Adjacent prefetch has no in-flight de-duplication or selection request generation. Rejections are caught and ignored. With exactly two results, previous and next resolve to the same index and can start duplicate details calls. Prefetch work may continue after selection or query changes, but a response cannot cache any fields from a snapshot invalidated by a newer mutation or query epoch.
+- The shared details cache (256-entry LRU, identity- and query-guarded) also validate metadata-generation stamps, rejecting cached snapshots made obsolete by favorite/group mutations. Full DB restore and library clear advance the shared identity epoch and clear the shared details cache, requests, and pending tag mutation state. Successful deletion creates a per-ID tombstone generation before refresh work, so an older detail response cannot repopulate a deleted or reused ID.
+- Adjacent prefetch deduplicates neighbor indices and shares in-flight details requests. Rejections are caught and ignored. Work can continue after a selection change, but query and metadata generations reject stale cache publication.
 - A cached selection returns before adjacent prefetch, so revisiting an asset does not warm its new neighbors.
-- Query changes recompute the selected index from loaded pages. If the selected asset is absent there, the lightbox remains open but relative navigation becomes inert until a fresh selection provides an index.
-- The double-click and legacy mouse-down handlers are returned by `useLightboxImageControls` and unit-tested directly, but `LightboxMediaStage` currently wires neither one. Rendered images therefore single-click through 1.25x steps; the pixel-perfect double-click toggle is not reachable from the modal.
+- Query changes resolve an uncached selected ID through the backend position command. Navigation stays disabled until resolution or explicit retry succeeds.
+- The unused `getDoubleClickZoomFactor` calculation remains in `lightboxPanZoomService.ts`; neither `createImageControls` nor `LightboxMediaStage` binds a double-click action. Rendered images therefore single-click through 1.25x steps; the pixel-perfect double-click toggle is not reachable from the modal.
 - The lightbox is a named portal dialog registered with the shared layer manager. Focus restoration depends on the saved trigger still being connected; a virtualized gallery tile can disappear before close.
 - Final staged-delete cleanup can fail after DB commit; the UI reports the recovery path and the durable journal retries cleanup at startup.
 - Details and media failures have localized error UI; details also has Retry. Clipboard failure clears feedback, and some fullscreen shortcut failures are caught without an alert.
@@ -311,20 +308,38 @@ When changing lightbox behavior:
 
 ## Tests
 
-Current focused coverage is split across:
+- [`createLightbox.test.ts`](../../src/features/lightbox/__tests__/createLightbox.test.ts)
+  covers summary-to-details loading, A/B and close races, adjacent prefetch/cache reuse,
+  coalesced saves/retry, contention, dirty group fields, metadata-generation refetch,
+  identity reset and ID reuse, deletion, rapid navigation, real page boundaries, wrap,
+  query-position recovery and same-turn refresh invalidation.
+- [`mutations.test.ts`](../../src/library/metadata/__tests__/mutations.test.ts) covers the
+  shared persistence path, backend-first publication, partial results and query impact.
+  [`runtimeIntegration.test.ts`](../../src/app/__tests__/runtimeIntegration.test.ts) composes
+  actual models for CSV draining/invalidation, cleared-ID reuse and bidirectional
+  lightbox/bulk ownership, with mocked IPC.
+- [`LightboxModal.test.tsx`](../../src/features/lightbox/__tests__/LightboxModal.test.tsx)
+  covers presence, immediate native-player disposal on logical close, retained closing
+  state, tag input/suggestions, favorite/group actions, inline delete confirmation and
+  image/GIF activation identity. [`presentation.test.ts`](../../src/features/lightbox/__tests__/presentation.test.ts)
+  covers sidebar, activity and clipboard state. [`keyboard.test.tsx`](../../src/features/lightbox/__tests__/keyboard.test.tsx)
+  covers current callbacks, idle reveal, form/fullscreen keys and listener lifetime.
+- [`imageControls.test.tsx`](../../src/features/lightbox/__tests__/imageControls.test.tsx)
+  covers wheel anchoring, zoom/pan bounds, natural dimensions, navigation reset and frame
+  coalescing/cancellation. It does not establish decoded GIF timing or image sharpness.
+- [`video/__tests__`](../../src/features/lightbox/video/__tests__) covers native session
+  reservation/cancellation, early and retired events, coalesced bounds acknowledgements,
+  labels, recoverable/fatal errors, keyboard ownership and fullscreen continuity.
+- [`lightboxRecovery.test.tsx`](../../src/app/__tests__/lightboxRecovery.test.tsx) covers
+  failed-view reopening and preservation of a healthy view during navigation.
+- [`UiModal.test.tsx`](../../src/ui/overlays/__tests__/UiModal.test.tsx) covers nested layers,
+  presence, reduced motion, focus and inertness. These tests require the layer provider.
+- `e2e/specs/lightbox-images.e2e.js` and `e2e/specs/video-speed.e2e.js` exercise the actual
+  WebView/native presentation with synthetic media. The latter checks GTK menu dismissal,
+  focus/fullscreen ownership and 30 reopen cycles with decoded-frame comparisons. See
+  [desktop opt-ins](../development/testing.md#solid-feature-verification) and
+  [native setup](../development/testing.md#native-speed-menu-and-repeated-playback).
 
-- `src/hooks/__tests__/useSelectionState.test.ts`: editor hydration, cache-to-selection synchronization, empty-library close, tag-mutation serialization/retry, pending-mutation detail barriers, restore/reset ID reuse, deletion tombstones, stale-detail protection, rapid Right/Right and Right/Left ordering, and delegation to mutation actions. It also covers query-position recomputation and failed navigation retries, but not every prefetch race or global wrap/unloaded-page combination.
-- `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx`: A→B→A failure reset and rejection of a late error callback from an older activation; fresh image elements through GIF→GIF→GIF and GIF→PNG→GIF navigation, with stable identity during metadata edits and presentation updates; image/GIF zoom sizing, preservation across unrelated renders, wheel anchoring, drag bounds, resize re-clamping, natural dimensions, navigation/reset, and RAF coalescing/cancellation. DOM tests establish element identity, sizing, and interaction contracts; GIF timing and sharpness require inspecting pixels in the desktop WebView.
-- `src/components/UI/__tests__/ModalPresence.test.tsx`: exit retention, interrupted transitions, reduced motion, compiled duration tokens, nested focus restoration and locked confirmations.
-- `src/components/lightbox/__tests__/LightboxModal.test.tsx`: 75 ms opening and 50 ms closing, navigation without replay, rapid reactivation, reduced motion, retained editor props, immediate native-player shutdown, arrow navigation, native video opening/error handling, input suppression, tag add/remove/suggestions/focus, group apply, favorite, responsive sidebar/drawer layout, fullscreen Escape consumption with an open narrow sidebar, session preservation, sidebar-only information, and inline delete confirmation.
-- `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx`: cancellation before and after reservation, delayed open completion, A→B→A event isolation, coalesced bounds acknowledgements, label changes, recoverable/fatal errors, and serialized fullscreen toggles.
-- `e2e/specs/video-speed.e2e.js`: actual native speed selection, outside-click consumption, focus loss, zero/stale bounds, Escape after bottom-button fullscreen with WebView/native/menu focus at 1000px and 600px in both themes, session/position/sidebar preservation, native button clickability, and 30 reopen cycles with decoded-picture comparisons. See the [native playback test setup](../development/testing.md#native-speed-menu-and-repeated-playback).
-- `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx`: copy availability, clipboard write, confirmed state, and 1,600 ms reset.
-- `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` and `hooks/__tests__/useLightboxModalHandlers.test.ts`: confirmation text, inline close/confirm callbacks, media-group parsing, and pending-delete guards.
-- `src/components/lightbox/__tests__/useLightboxImageControls.test.ts`: keyboard navigation/zoom/fullscreen, wheel suppression, direct double-click zoom, drag fallback, and close timing.
-- `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts`: first-arrow navigation and default prevention after idle with a synchronous render in an earlier key listener, current callbacks/media/fullscreen without re-registration, fullscreen Escape from form focus and repeat suppression, and listener cleanup across disabling, closing, Strict Mode, and reopening.
-- `src/components/lightbox/services/__tests__`: backend-first local updates and follow-up refresh rules for tags, favorite, group, and deletion. The `selectPrevious/Next` service tests cover legacy non-runtime helpers only.
-- `src/components/app/services/__tests__/assetMutationService.test.ts`: immutable list/selection update helpers.
-- `src/__tests__/api.test.ts`: API payload/source conversion plus single and bulk tag mutation result mapping. `src/__tests__/App.test.tsx` mocks `getAssetDetails`, but currently has no end-to-end lightbox selection/details/mutation case.
-
-Minimum regression additions for lifecycle work should include deferred A/B details responses, close-before-response, cache revisit, two-item prefetch de-duplication, first/last wrap across unloaded pages, query refresh while open, mutation followed by cached revisit, rapid out-of-order mutations, inline-confirmation `Escape`, rendered double-click wiring, GIF transforms, video-target key ownership, and failed physical-file deletion reporting.
+Use deferred IPC for lifecycle changes and the shared query/details owners for cache and
+navigation changes. Desktop pixels, GTK focus and playback need the corresponding native
+suite; DOM tests alone do not establish those properties.

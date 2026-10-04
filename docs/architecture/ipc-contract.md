@@ -18,9 +18,24 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 - `src/platform/tauri/contracts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
 - All registered command failures reject the invoke promise with text. Command boundaries return `Result<_, String>` and flatten `AppError`, worker-join failures, validation failures, and platform errors to a message; there is no structured IPC error code or error payload.
 
-Consumers import payloads from their owning contract module directly. The temporary React
-API and type re-exports were removed at cutover. `SelectedAsset` is frontend view state in
+Consumers import payloads from their owning contract module directly. `SelectedAsset` is frontend view state in
 `src/features/lightbox/types.ts`, outside the wire contracts.
+
+## Frontend transport ownership
+
+| Module under `src/platform/tauri` | Commands and payload types |
+| --- | --- |
+| `assets.ts` / `contracts/assets.ts` | Query sessions, summaries/details, favorite/group writes, deletion and media URLs. |
+| `tags.ts` / `contracts/tags.ts` | Tag listing, startup snapshot, replacements/merges and query-impact results. |
+| `scanning.ts` / `contracts/scanning.ts` | Roots, scans, startup preferences and progress shape. |
+| `thumbnails.ts` / `contracts/thumbnails.ts` | Channel-based demand, bulk render/retry/cancel and cleanup. |
+| `maintenance.ts` / `contracts/maintenance.ts` | CSV/bundles, duplicates, video-tool checks and library clearing. |
+| `video.ts` / `contracts/video.ts` | Open reservations, session controls, labels, bounds and event channel. |
+| `events.ts`, `dialogs.ts`, `window.ts` | Tauri event binding, native pickers and window access/theme. |
+
+Models pass plain arrays/objects to these adapters. Keep Solid owners, reactive containers
+and editor drafts out of serialized payloads. TypeScript declares the transport but does
+not validate arbitrary external callers; Rust boundary validation remains authoritative.
 
 ## Shared response shapes
 
@@ -54,7 +69,7 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `VideoToolStatus` / same | `ffmpeg_available`, `ffprobe_available` |
 | `ScanProgress` / `ScanProgress` | `phase`, `processed`, `total`, `message` |
 
-`AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. Gallery GIF previews use it. The lightbox accepts verified GIF/video preview paths while complete details load. Ordinary images wait for their detail path. Video opens by asset ID, not by a frontend path.
+`AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. Gallery GIF tiles use static thumbnails, never this original-media path. The lightbox accepts verified GIF/video preview paths while complete details load. Ordinary images wait for their detail path. Video opens by asset ID, not by a frontend path.
 
 `controlLabels` includes localized `play`, `pause`, `mute`, `unmute`, `volume`, `seek`, `playbackRate`, `fullscreen`, and `exitFullscreen` strings. Each label must contain 1–120 visible characters after trimming.
 
@@ -202,8 +217,8 @@ A successful `start_asset_query` returns:
 
 Sessions bind an ordered asset-ID snapshot to normalized filters and their dependency revision. The public `revision` remains the global revision of the read snapshot. See [the query manager lifecycle](../subsystems/library-query-and-gallery.md#backend-session-and-page-contract) for snapshot construction, cancellation, reuse, and cache limits.
 
-- `superseded` is a successful start result, not an invoke error. A request whose backend registration token is no longer latest returns it, including on the cache-hit path. `useLibraryAssets` also compares its local generation and ignores an obsolete response.
-- `stale` is a successful page or position result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older dependency revision. A dependency revision mismatch also removes that session. `useLibraryAssets` responds by starting a fresh query.
+- `superseded` is a successful start result, not an invoke error. A request whose backend registration token is no longer latest returns it, including on the cache-hit path. `createAssetQuery` also compares its local generation and ignores an obsolete response.
+- `stale` is a successful page or position result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older dependency revision. A dependency revision mismatch also removes that session. `createAssetQuery` responds by starting a fresh query.
 - `ready` pages preserve the session order and report the effective (possibly end-clamped) offset. Relevant dependency changes and full invalidations make later pages stale. Unrelated metadata edits keep the session usable and appear in newly materialized summaries.
 
 Because supersession and the cache are process-wide, requests from another window or independent caller can supersede or evict this window's work. Pooled database connections are acquired with a five-second bounded wait; exhaustion rejects the command with a text `database pool is busy` failure instead of blocking forever.
@@ -229,7 +244,7 @@ Current phase families are:
 - library clear: `library-clear`, `library-clear-done`; and
 - duplicates: `duplicates-scan`, `duplicates-scan-done`.
 
-Consumers must filter by phase because the event name is shared and broadcasts are not correlated to a command invocation. `useSettingsOperationRunner` subscribes only for the duration of an operation and applies a phase matcher. Messages are display text, not stable machine-readable error data. Most emit sites intentionally discard delivery errors; the command result is authoritative for operation completion.
+Consumers must filter by phase because the event name is shared and broadcasts are not correlated to a command invocation. `createSettingsOperationRunner` subscribes only for the duration of an operation and applies a phase matcher. Messages are display text, not stable machine-readable error data. Most emit sites intentionally discard delivery errors; the command result is authoritative for operation completion.
 
 ## Boundary validation and normalization summary
 
@@ -254,7 +269,7 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 ## Known limitations
 
 - Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check.
-- `requestId` on `ensure_thumbnails` is hook-local and does not cancel scheduler jobs. Jobs can finish after a frontend reset or receiver disconnect; local generation checks discard late messages.
+- `requestId` on `ensure_thumbnails` is queue-local and does not cancel scheduler jobs. Jobs can finish after a frontend reset or receiver disconnect; local generation checks discard late messages.
 - `list_assets` remains registered because desktop E2E uses it for direct workflow assertions; production gallery code uses query sessions.
 - IPC errors are text only. Consumers cannot reliably distinguish validation, not-found, busy, filesystem, database, worker, or platform failures except by message text.
 - Numeric Rust IDs/counters are exposed as JavaScript `number` without an explicit safe-integer guard.

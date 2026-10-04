@@ -137,7 +137,7 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 6. For root-ownership changes, test parent/child and duplicate-spelling overlaps, rescanning each root in both orders, removing one root, removing the last root, and ensuring only globally orphaned assets/tags/failures are deleted.
 7. Keep mutation and revision semantics aligned with [database persistence](database.md). Add fault tests at touch, upsert-batch, prune, revision, and optimize boundaries if those boundaries change.
 8. Keep blocking work under `spawn_blocking`, scan serialization under the shared lock helper, and the combined lock order as scan then exclusive thumbnail. Consider direct IPC concurrency with unlocked add/list operations.
-9. Keep progress phases and result fields synchronized with Rust models, `src/types.ts`, `src/api.ts`, and the [IPC contract](../architecture/ipc-contract.md). Consumers must not depend on display messages.
+9. Keep progress phases and result fields synchronized with Rust models, `src/platform/tauri/contracts/scanning.ts`, `src/platform/tauri/scanning.ts`, and the [IPC contract](../architecture/ipc-contract.md). Consumers must not depend on display messages.
 10. Review thumbnail cleanup whenever scan pruning or root removal changes. Database orphan deletion and filesystem cleanup need separate assertions because they have different failure semantics.
 
 ### Relevant existing tests

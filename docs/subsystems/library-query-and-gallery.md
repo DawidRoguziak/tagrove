@@ -1,14 +1,14 @@
 # Library query and gallery
 
-Implementation entry points: [query manager](../../src-tauri/src/services/asset_query_service.rs), [page cache](../../src/hooks/useLibraryAssets.ts), [range loading](../../src/hooks/useLibraryBrowser.ts), [virtual grid](../../src/components/gallery/GalleryGrid.tsx).
+Implementation entry points: [query manager](../../src-tauri/src/services/asset_query_service.rs), [page cache](../../src/library/query/createAssetQuery.ts), [range loading](../../src/library/createLibrary.ts), [virtual grid](../../src/features/gallery/GalleryGrid.tsx).
 
 This page owns query-session caching, frontend page loading/invalidation, and virtual gallery behavior. It explains how applied search state becomes a revision-bound query and a bounded sparse page cache.
 
 The transport shapes and command-registration rules are in the [IPC contract](../architecture/ipc-contract.md). SQL filters, grouped ordering, and the library revision are described in [database](database.md). Related user workflows belong in [search, tags, and media groups](search-tags-and-media-groups.md), [thumbnails](thumbnails.md), and [lightbox](lightbox.md).
 
-## Solid library during migration
+## Frontend ownership
 
-React remains the default. `src/library/createLibrary.ts` composes the Solid models under
+`src/library/createLibrary.ts` composes the shared models under
 `createAppRuntime`; feature views do not construct separate library owners.
 `query/createAssetQuery.ts` preserves 128-item pages, sparse positions, a 12-page cache,
 failed offsets, explicit retry, patch-counter rereads and stale-session recovery.
@@ -25,27 +25,26 @@ positions, including holes after deletion, until a new query replaces the snapsh
 `metadata/createDetailsCache.ts` shares at most 256 complete details across Solid
 consumers. It deduplicates reads, pins pending identities, validates metadata generations,
 and discards replies after query changes, identity resets or disposal. Query changes clear
-details without resetting canonical tags. Restore and clear invalidate both. The Solid gallery
-now consumes these models through `app/AppGalleryView.tsx`.
+details without resetting canonical tags. Restore and clear invalidate both. The gallery
+consumes these models through `app/AppGalleryView.tsx`.
 The application-owned lightbox also consumes the details cache, canonical tags and mutations.
 
-`features/gallery/createVirtualGrid.ts` adapts the same installed virtual-core version as
-React, now also pinned as a direct dependency. It waits for measured grid width before
+`features/gallery/createVirtualGrid.ts` adapts the pinned `@tanstack/virtual-core` dependency. It waits for measured grid width before
 publishing nonempty ranges, owns observers under the mounted view and preserves global-index
 resize anchors. Thumbnail completion does not rebuild row measurements. Tiles use stable
 global-index keys, and each loaded tile subscribes only to its current asset's thumbnail.
 The image element resets its load/failure/fade state when its source changes.
 
-Stage 4 tests run real virtual-core at 10,000 and 26,000 slots, drive sparse replacement,
+The current tests run real virtual-core at 10,000 and 26,000 slots, drive sparse replacement,
 explicit page retry and eviction/reload across the 12-page bound, and exercise the native
 WebView with synthetic collections. See the [stage evidence](../solid2/PROGRESS.md) and
-[browsing desktop recipe](../development/testing.md#solid-gallery-and-search-verification).
+[browsing desktop recipe](../development/testing.md#solid-feature-verification).
 
 ## From applied filters to a session
 
-The top bar has editable filter state and separate applied filter state. A valid submit copies the input, media kind, and favorites flag into the applied state. `useAppShellController` refreshes the asset query when the applied include tags, exclude tags, meta-filter key, media kind, or favorites flag changes. Submitting values that are already applied explicitly refreshes instead. Invalid search metatags do not change the applied state or start a query.
+The top bar has editable filter state and separate applied filter state. A valid submit copies the input, media kind, and favorites flag into the applied state. `createSearch.submit` passes the normalized descriptor to `createLibrary.applyFilters`, which refreshes the query. Every valid submission refreshes, including one whose descriptor is unchanged. Invalid search metatags do not change the applied state or start a query.
 
-Production uses a page size of 128. `useLibraryAssets.refresh`:
+Production uses a page size of 128. `createAssetQuery.refresh`:
 
 1. increments its local generation and query epoch, marks the query pending, and invalidates navigation positions;
 2. clears the active session reference and in-flight offset set;
@@ -79,19 +78,19 @@ Query start, page reads, position lookups, and detail reads run as blocking work
 
 ## Mutation refresh and overlapping reads
 
-The shell uses `useQueryInvalidation` to evaluate accepted tag results against the latest applied filter and refresh function. `none` preserves the query; `all` refreshes; `tags` refreshes for an include/exclude intersection or an actual count change under an exact-count filter. Lightbox and both bulk editing modes share this predicate. Missing-ID recovery and Favorites rules also use current query state.
+`createMutations` uses `queryImpact.ts` to evaluate accepted tag results against the latest applied filter and refresh function. `none` preserves the query; `all` refreshes; `tags` refreshes for an include/exclude intersection or an actual count change under an exact-count filter. Lightbox and both bulk editing modes share this predicate. Missing-ID recovery and Favorites rules also use current query state.
 
-`useLibraryAssets.setAssets` increments a local patch counter synchronously. Start/page calls capture it before IPC. If a ready response crosses a patch, the hook rereads that page from the returned session before merging or returning rows to asynchronous callers. It repeats when another patch overlaps, retaining generation checks and request deduplication. These rereads preserve the query and thumbnail queue; unavailable sessions keep ordinary stale recovery. Reads never wait for metadata ownership to release, since a favorite action can await refresh while holding it.
+`query.patchAssets` increments a local patch counter synchronously. Start/page calls capture it before IPC. If a ready response crosses a patch, the model rereads that page from the returned session before merging or returning rows to asynchronous callers. It repeats when another patch overlaps, retaining generation checks and request deduplication. These rereads preserve the query and thumbnail queue; unavailable sessions keep ordinary stale recovery. Reads never wait for metadata ownership to release, since a favorite action can await refresh while holding it.
 
 ## Frontend sparse page cache
 
-The cache in `useLibraryAssets` has three coordinated structures:
+The cache in `createAssetQuery` has three coordinated structures:
 
 - `pages: Map<pageOffset, assetId[]>` records which IDs occupy each loaded page;
 - `assetsById: Map<assetId, AssetSummary>` stores the summaries verbatim; and
-- `lru: pageOffset[]` records the eviction order from the last merge; a bounded access-order ref records subsequent explicit reads.
+- `lru: pageOffset[]` records the eviction order from the last merge; a bounded access-order array records subsequent explicit reads.
 
-A merge replaces or adds the page, upserts its assets, and evicts the least recently accessed unprotected page until no more than 12 pages remain. Range access and async page/asset reads promote pages through a bounded ref without setting React state. Render-time `getAssetAt` stays read-only. The latest gallery range protects up to 12 intersecting pages; if an oversized range needs more, the exact cache bound still wins. Eviction deletes the page and its asset objects and thumbnail retention removes inactive paths outside cached pages or active preview subscriptions.
+A merge replaces or adds the page, upserts its assets, and evicts the least recently accessed unprotected page until no more than 12 pages remain. Range access and async page/asset reads promote pages through a bounded local array without publishing reactive state. Render-time `getAssetAt` stays read-only. The latest gallery range protects up to 12 intersecting pages; if an oversized range needs more, the exact cache bound still wins. Eviction deletes the page and its asset objects and thumbnail retention removes inactive paths outside cached pages or active preview subscriptions.
 
 `total` is the session's global match count and is the virtualizer count. By contrast, the returned `assets` array is only `Array.from(assetsById.values())`: it contains cached assets, is not padded to `total`, and must not be indexed as the global result list. `offset` is the greatest merged page end observed and is retained mainly for the reach-end loader.
 
@@ -103,7 +102,7 @@ Global-index access goes through these methods:
 - `getAssetPosition(assetId)` uses the backend session's ordered ID vector to return `resolved` with an index, `missing` for an absent ID, or `stale` for an unavailable session. It neither loads pages nor transfers the ID vector. A stale backend response starts a refresh; a response from a superseded local generation is discarded. An unavailable current query rejects, leaving explicit retry to the caller.
 - `getIdsRangeAsync(from, to)` loads every intersecting page and returns the inclusive global ID range. It rejects the whole request when a page is stale, cancelled, failed, or lacks any expected position; callers never receive a silently truncated range.
 
-Only one request per page offset is started at a time. A ref-backed Promise map deduplicates callers, while a separate in-flight counter keeps `loading` true until all tracked query/page requests finish. Refresh clears the Promise map; an older request's `finally` removes its entry only if that exact Promise is still registered, so it cannot erase a newer-generation request for the same offset. A page response is discarded when its captured local generation is obsolete. The active session ID is captured before the request; no page is requested without a session or outside the current `total`. The frontend trusts a backend `ready` page's returned session and revision rather than comparing them again, because the backend page command is keyed by the supplied session ID.
+Only one request per page offset is started at a time. A local Promise map deduplicates callers, while a separate in-flight counter keeps `loading` true until all tracked query/page requests finish. Refresh clears the Promise map; an older request's `finally` removes its entry only if that exact Promise is still registered, so it cannot erase a newer-generation request for the same offset. A page response is discarded when its captured local generation is obsolete. The active session ID is captured before the request; no page is requested without a session or outside the current `total`. The frontend trusts a backend `ready` page's returned session and revision rather than comparing them again, because the backend page command is keyed by the supplied session ID.
 
 ## Summary rows and the details boundary
 
@@ -111,19 +110,19 @@ Sessions materialize `AssetSummary`, which carries display/order metadata and th
 
 The page cache stores `AssetSummary` objects verbatim: nothing fabricates a path, byte size, or tag list, so a cache entry can never masquerade as a complete record. Gallery tiles read only summary fields (`file_name`, `preview_path`, thumbnail state, kind, media-group fields).
 
-Selecting a tile opens the lightbox with a `SelectedAsset` view built from the summary: `path` starts as the summary's `preview_path` (a valid source for GIF/video; null for ordinary images), and `size_bytes` starts as null. When that path is null, the media stage renders a loading placeholder until details arrive, or a failure notice when the detail read fails. Existing GIF/video preview paths remain usable while complete details and tags load. `useSelectionState` then calls `getAssetDetails`; a successful `AssetDetails` replaces the view with the full path, size, and tags. Selection-request IDs prevent a late detail response from replacing a newer selection. Details for the previous and next global indices are also prefetched, using `getAssetAtAsync` when their pages are absent. A missing detail row or failed detail request leaves the summary view usable. See [lightbox](lightbox.md) for the editing and navigation behavior built on this boundary.
+Selecting a tile opens the lightbox with a `SelectedAsset` view built from the summary: `path` starts as the summary's `preview_path` (a valid source for GIF/video; null for ordinary images), and `size_bytes` starts as null. When that path is null, the media stage renders a loading placeholder until details arrive, or a failure notice when the detail read fails. Existing GIF/video preview paths remain usable while complete details and tags load. `createLightbox` then loads through the shared details cache, which calls `getAssetDetails`; a successful `AssetDetails` replaces the view with the full path, size, and tags. Selection-request IDs prevent a late detail response from replacing a newer selection. Details for the previous and next global indices are also prefetched, using `getAssetAtAsync` when their pages are absent. A missing detail row or failed detail request leaves the summary view usable. See [lightbox](lightbox.md) for the editing and navigation behavior built on this boundary.
 
 ## Virtual range loading and thumbnail prefetch
 
-`useGalleryVirtualGrid` gives TanStack Virtual the row count, `ceil(assetCount / columnCount)`, with one lane and a module-stable row-index key function. Each mounted row expands to its global asset indices. Layout keys are independent of loaded pages; React tile keys remain asset IDs and unloaded slots use `pending-{index}`. Scroll events, thumbnail updates, and page arrivals reuse existing row measurements instead of rebuilding a layout for every asset.
+`createVirtualGrid` gives TanStack Virtual the row count, `ceil(assetCount / columnCount)`, with one lane and a module-stable row-index key function. Each mounted row expands to its global asset indices. Virtual slots use global-index keys. A loaded asset replaces a placeholder inside its slot; a changed asset identity updates that slot and its thumbnail subscription. Scroll events, thumbnail updates, and page arrivals reuse existing row measurements instead of rebuilding a layout for every asset.
 
 The grid measures its content width and its origin inside the actual scroll container. Tiles remain square with a 12-pixel gap and four rows of overscan on either side. The full-width search/tools header sits outside the gallery scroll container, which fills the remaining window height and owns the scrollbar below both header rows. Header wrapping adjusts that viewport through CSS layout. Bulk mode adds a 360px inspector at widths of at least 1000px; it sticks to the content viewport's top and scrolls independently within that viewport's height. The existing resize observers measure the narrower grid and retain the visible anchor. Changes to tile size or column count invalidate row measurements and keep the previous first visible asset in view. The scroll container, gallery, and grid have resize observation; listeners are removed on unmount.
 
-When a caller supplies a scroll-container ref, the virtualizer uses only that element and waits while the ref is null. Callers without an external ref use the gallery itself. Geometry measurement and observer setup run in a passive effect, after parent DOM refs attach; resize anchoring stays in a layout effect. This also applies when Back from Settings remounts the gallery. Using the gallery as a temporary fallback would mistake its full content height for the viewport, mount every slot, and demand pages across the entire library.
+When a caller supplies a scroll-container ref, the virtualizer uses only that element and waits while the ref is null. Callers without an external ref use the gallery itself. An owned compute/apply effect starts observation after all required elements exist. A second effect configures the virtualizer and restores the global-index anchor when columns or tile size change. This also applies when Back from Settings remounts the gallery. Using the gallery as a temporary fallback would mistake its full content height for the viewport, mount every slot, and demand pages across the entire library.
 
-The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex }`, with inclusive indices. `useLibraryBrowser` loads pages intersecting the overscan range and replaces gallery thumbnail demand with visible and prefetch IDs from currently loaded summaries. Page arrivals and page failure epochs rerun the callback even when the index range stays the same. Failed offsets remain blocked in that generation until explicit Retry. Empty ranges clear gallery thumbnail demand. Bulk and duplicate preview requests remain additive and independent of this replaceable demand.
+The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex }`, with inclusive indices. `createLibrary` loads pages intersecting the overscan range and replaces gallery thumbnail demand with visible and prefetch IDs from currently loaded summaries. Range/query-epoch changes request pages. Page arrivals update thumbnail demand separately without requesting evicted pages again. The grid also reports its range when its failure/reset key changes. Failed offsets remain blocked in that generation until explicit Retry. Empty ranges clear gallery thumbnail demand. Bulk and duplicate preview requests remain additive and independent of this replaceable demand.
 
-Near-end loading retains its two-row threshold for other consumers. Production uses `hasMore: false` and sparse loading across the known total. Thumbnail progress renders outside the memoized grid content, so progress-counter changes alone do not invalidate its layout.
+Near-end loading retains its two-row threshold for other consumers. Production uses `hasMore: false` and sparse loading across the known total. Thumbnail progress renders outside the virtual-row computation, so progress-counter changes alone do not invalidate its layout.
 
 ## Gallery presentation states
 
@@ -140,9 +139,9 @@ The focused gallery and App tests cover totals, sparse caches, footer visibility
 
 ## Bulk rectangle selection
 
-`useGalleryGridHandlers` owns the pointer gesture, capture, animation frame, and temporary highlights. `selectionGeometry` computes inclusive global-index ranges from the virtual grid's columns, square tile size, gap, and scroll position. It does not inspect mounted tiles or summaries. Unloaded placeholders receive the same preview highlight as loaded tiles. The gallery interaction section fills its available height, including padding and unused space below the last row; the status footer does not intercept pointer input.
+`createGridHandlers` owns the pointer gesture, capture, animation frame, and temporary highlights. `selectionGeometry` computes inclusive global-index ranges from the virtual grid's columns, square tile size, gap, and scroll position. It does not inspect mounted tiles or summaries. Unloaded placeholders receive the same preview highlight as loaded tiles. The gallery interaction section fills its available height, including padding and unused space below the last row; the status footer does not intercept pointer input.
 
-A primary-pointer movement of at least five pixels draws a translucent primary-color rectangle clipped to the visible gallery. An animation frame updates overlap and scrolls near the viewport's vertical edges. On release, the complete ranges go to `useBulkSelectionController`, which resolves at most 128 indices per read, sequentially in query order, and commits selected IDs once. The preview remains while resolution is pending and bulk writes stay disabled. Failure restores the previous visual selection and offers Retry. New input, query or layout changes, cancellation, lost capture, blur, and unmount discard stale gesture work. Escape clears selection and cancels pending gesture work without leaving bulk mode. The gallery registers a nonmodal UI layer so an open modal receives Escape first. See [bulk selection](search-tags-and-media-groups.md#bulk-selection) for click and modifier behavior.
+Holding the primary pointer for at least 150 ms and moving at least five pixels draws a translucent primary-color rectangle clipped to the visible gallery. An animation frame updates overlap and scrolls near the viewport's vertical edges. On release, the complete ranges go to `createSelection`, which resolves at most 128 indices per read, sequentially in query order, and commits selected IDs once. The preview remains while resolution is pending and bulk writes stay disabled. Failure restores the previous visual selection and offers Retry. New input, query or layout changes, cancellation, lost capture, blur, and unmount discard stale gesture work. Escape clears selection and cancels pending gesture work without leaving bulk mode. The gallery registers a nonmodal UI layer so an open modal receives Escape first. See [bulk selection](search-tags-and-media-groups.md#bulk-selection) for click and modifier behavior.
 
 ## Refresh and invalidation paths
 
@@ -150,12 +149,12 @@ The dependency revision is authoritative for session invalidation. General chang
 
 | Trigger | Frontend behavior |
 | --- | --- |
-| Applied filters change | The controller effect calls asset `refresh`; resubmitting identical applied filters calls it directly. A ready first page replaces the old cache. |
+| Applied filters change | The search command calls `applyFilters`, which refreshes even for an identical descriptor. A ready first page replaces the old cache. |
 | Scan/rescan, scan-root removal, CSV import, duplicate rename/delete | The settings workflow calls `refreshLibrary`, which refreshes assets and known tags together. Root removal first resets the thumbnail queue. |
 | Database restore | The backend closes admission, drains admitted operations, closes idle pooled connections, and clears query sessions before replacement. The frontend invalidates tag/details identity state inside its mutation barrier, resets the thumbnail queue and map, refreshes roots, then refreshes assets and known tags. |
 | Clear library | After backend success, the frontend immediately resets the thumbnail queue, thumbnails, cached assets, total, offset, and known tags. It does not need to query the now-empty library. |
 | Lightbox delete | Removes the loaded object and selection locally, refreshes known tags, then starts a fresh asset query. |
-| Bulk favorite toggle | Uses all selected IDs, patches loaded summaries and both detail caches, and refreshes after either toggle direction in a favorites-only query or after missing IDs. Existing selected IDs survive the refresh. |
+| Bulk favorite toggle | Uses all selected IDs, patches loaded summaries and the shared details cache, and refreshes after either toggle direction in a favorites-only query or after missing IDs. Existing selected IDs survive the refresh. |
 | Favorite toggle | Patches loaded state. Removing an item while favorites-only is applied also refreshes; other favorite changes do not. |
 | Single/bulk tag edit | Patches loaded objects locally. Tag operations also refresh known tags. The returned impact restarts the query for repairs, changed names in the current include/exclude filter, or actual count changes under an exact-count filter. Unrelated edits preserve the session even when pages have been evicted. |
 | Single/bulk media-group edit | Patches loaded objects locally and then always restarts the asset query, because group changes alter ordering and adjacency of the active view. |
@@ -173,10 +172,10 @@ Inclusive range reads capture one session and generation, checking them after ev
 
 - Backend supersession, TTL, and the four-session LRU are process-wide. Another window or independent caller can supersede an uncached start or evict this window's session.
 - `assets` covers loaded pages only; bulk operations use authoritative selected IDs and a separate selection metadata cache. `getAssetIndex` cannot locate an unloaded asset. The 12-page bound takes precedence if an unusually large requested viewport intersects more than 12 pages.
-- The detail caches in `useSelectionState` and `useBulkSelectionController` are bounded LRU maps (256 entries) stamped with the tag-state identity epoch and cleared whenever a new query session starts. Reselecting an asset after a restore, identity reset, or session restart re-reads details instead of trusting stale path/size/tags. Lightbox details carry metadata-generation stamps; complete snapshots from before or during a write are rejected, and current details are re-read after mutations drain.
+- Lightbox and bulk use one shared 256-entry details cache, stamped with metadata tokens and cleared whenever the query epoch changes. Reselecting an asset after a restore, identity reset, or session restart re-reads details instead of trusting stale path/size/tags. Lightbox details carry metadata-generation stamps; complete snapshots from before or during a write are rejected, and current details are re-read after mutations drain.
 - Refresh does not cancel in-flight backend page work; the generation guard only discards late responses after they finish. A `superseded` result is not retried automatically.
 - The empty state depends only on `assetCount`, so it can appear during the initial load while `total` is still zero. Conversely, an in-progress refresh keeps the old nonempty grid visible. The footer does not expose asset-page loading and normally shows the end state whenever thumbnail generation is idle.
-- Sparse slots change React keys from `pending-{index}` to the asset ID when loaded, which remounts that tile. Group backplates are presentation-only fragments for loaded entries in one row; they do not visually span row boundaries or holes.
+- Global-index slot identity survives page changes; each slot still has to update its current asset and release its previous thumbnail subscription. Group backplates are presentation-only fragments for loaded entries in one row; they do not visually span row boundaries or holes.
 - The connection pool bounds each acquisition at five seconds but aggregate retry loops can still wait longer; the pool's busy path has no focused unit test yet.
 
 ## Safe change checklist
@@ -190,23 +189,23 @@ Inclusive range reads capture one session and generation, checking them after ev
 7. Preserve generation checks, per-offset request de-duplication, loading-counter balance, stale recovery, and thumbnail-queue reset. Add explicit cancellation or error state before relying on either behavior in the UI.
 8. Test virtual holes, cache eviction and reload, resize/overscan ranges, placeholder-to-tile transitions, thumbnail prefetch after a page merge, zero-result loading, group backplates, and static GIF previews with missing, ready, and failed thumbnails.
 9. Add backend tests for equal-key reuse, supersession, revision mismatch, missing/expired/evicted sessions, LRU promotion, TTL, page clamps, and cross-session isolation. Use a controllable clock or cache constructor rather than sleeping for the TTL.
-10. Run Rust formatting and the relevant backend query/database tests, then run the focused React hook, gallery, selection, search-filter, lightbox, and thumbnail tests. For cache or virtualizer changes, also exercise a library larger than 12 pages and scroll backward into evicted ranges.
+10. Run Rust formatting and the relevant backend query/database tests, then run the focused Solid model, gallery, selection, search-filter, lightbox, and thumbnail tests. For cache or virtualizer changes, also exercise a library larger than 12 pages and scroll backward into evicted ranges.
 
 ### Relevant existing tests
 
 - `src-tauri/src/db.rs` tests cover filter composition, grouped ordering, summary-supporting data invariants, cooperative ID-build cancellation, and related mutations including same-transaction revision bumps.
 - `src-tauri/src/services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, registration-order and generation supersession, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot starts.
-- `src/hooks/__tests__/useLibraryAssets.test.tsx` covers first-page replacement, superseded-start retention, start/page failure error state with retry recovery, stale-triggered restarts, page-failure epoch signaling, and late-generation response rejection.
+- `src/library/query/__tests__/createAssetQuery.test.ts` covers first-page replacement, superseded-start retention, start/page failure error state with retry recovery, stale-triggered restarts, page-failure epoch signaling, and late-generation response rejection.
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
-- `src/hooks/__tests__/useLibraryBrowser.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, shared in-flight indexed page lookup, virtual-range thumbnail IDs, and clear-library reset.
-- `src/components/gallery/__tests__/GalleryGrid.test.tsx` covers virtual-range reporting, reach-end triggering, thumbnail status/spinners, selection interactions, static GIF previews, and isolation of thumbnail/progress updates from grid rendering.
-- `src/components/UI/__tests__/ThumbnailImage.test.tsx` covers fade readiness for delayed/cached loads, failures, source replacement, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail fade checks](../development/testing.md#gallery-thumbnail-fade) sample opacity during filtering and scrolling in both themes and with reduced motion.
-- `src/hooks/__tests__/useSelectionState.test.ts` covers detail/mutation races, identity-reset ID reuse, deletion tombstones, query-session cache invalidation, rapid navigation, and query-position recomputation. See [lightbox tests](lightbox.md#tests) for remaining navigation/prefetch scenarios.
-- `src/components/app/hooks/__tests__/useAppSearchFilters.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.
+- `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, shared in-flight indexed page lookup, virtual-range thumbnail IDs, and clear-library reset.
+- `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews and per-asset thumbnail DOM isolation. `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior; `createVirtualGrid.test.tsx` covers ranges and measurements.
+- `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers fade readiness for delayed/cached loads, failures, source replacement, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail fade checks](../development/testing.md#gallery-thumbnail-fade) sample opacity during filtering and scrolling in both themes and with reduced motion.
+- `src/features/lightbox/__tests__/createLightbox.test.ts` covers detail/mutation races, identity-reset ID reuse, deletion tombstones, query-session cache invalidation, rapid navigation, and query-position recomputation. See [lightbox tests](lightbox.md#tests) for remaining navigation/prefetch scenarios.
+- `src/features/search/__tests__/createSearch.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.
 
 ### Gallery performance verification
 
-`src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` runs the installed TanStack virtualizer with 10,000 numeric slots and asserts that scrolling and page/status updates do not rebuild row measurements. It also checks external-scroll offsets, partial rows, and resize anchoring. A 26,000-slot regression mounts initially null parent refs, bounds every intermediate commit and range callback on cold mount and Settings return, and checks scrolling, resize anchoring, observer cleanup, and real page-loader demand with and without Strict Mode. These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. Queue/store tests cover latest-viewport priority, additive consumers, reset/unmount races, atomic tile updates, and version cleanup; page-cache tests cross the 12-page bound and reload evicted pages.
+`src/features/gallery/__tests__/createVirtualGrid.test.tsx` runs the installed TanStack virtualizer with 10,000 numeric slots and asserts that scrolling and page/status updates do not rebuild row measurements. It also checks external-scroll offsets, partial rows, and resize anchoring. A 26,000-slot regression mounts initially null parent refs, bounds every intermediate commit and range callback on cold mount and Settings return, and checks scrolling, resize anchoring, observer cleanup, and real page-loader demand through owner disposal and remounting. These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. Queue/store tests cover latest-viewport priority, additive consumers, reset/unmount races, atomic tile updates, and version cleanup; page-cache tests cross the 12-page bound and reload evicted pages.
 
 The opt-in desktop spec uses 2,048 copied PNGs, 12 GIFs, and two videos in a temporary root. It follows the same route with cold and warm thumbnails, visits more than 12 pages, returns to evicted ranges, bounds mounted tiles, and compares decoded pixels from native-display captures of lightbox GIF frames. Run with `MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js` in the isolated desktop environment described in [testing](../development/testing.md). For headless Linux, use `env -u WAYLAND_DISPLAY GDK_BACKEND=x11 MEDIATAGGER_GALLERY_PERF=1 xvfb-run -a -s '-screen 0 1920x1080x24' bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js`. The pixel check requires ImageMagick `import` and `magick`. It writes samples to `artifacts/gallery-performance/`. Timings include WebDriver overhead and are observations, not portable frame-rate thresholds. Million-file desktop behavior requires manual validation; no million-file dataset is generated.
 

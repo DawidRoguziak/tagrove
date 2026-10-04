@@ -6,14 +6,22 @@ Rewrite the frontend using Solid 2 while preserving the current appearance, inte
 accessibility, persistence, and backend behavior. The working React application is the
 behavioral reference. Its directory structure does not constrain the new implementation.
 
-Stage 9 is complete. Solid is the normal application entry and React has been removed.
-Parity and final verification passed. The canonical documentation rewrite is stage 10.
+All ten stages are complete. Solid is the normal application entry and React has been
+removed. Canonical architecture, subsystem and development guides describe the final tree.
+Stage 10 verified those references, the Solid build and the isolated desktop smoke workflow.
 Track verification and completion in
 [PROGRESS.md](PROGRESS.md), and test ownership in [BEHAVIOR-INVENTORY.md](BEHAVIOR-INVENTORY.md).
 
 The planning baseline is commit `f11126dfafd40f877ecf5e496abc37d77a435e78` on
 `feature/rewrite-react-to-solid2`. During planning, all 699 frontend tests across 84 files
 passed, and TypeScript checks passed. Rust and desktop checks were not run during planning.
+
+The remaining sections preserve the migration plan and its execution rules. Temporary
+renderer selection, parallel compiler contexts and retained React sources below describe
+intermediate stages, not current setup. For current development, use
+[setup and builds](../development/setup-and-build.md),
+[frontend architecture](../frontend/architecture-and-ui-conventions.md) and
+[testing](../development/testing.md).
 
 ## Working rules
 

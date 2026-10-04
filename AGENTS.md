@@ -9,11 +9,11 @@ MediaTagger is a desktop application for efficiently browsing and tagging very l
 ## Tech stack
 
 - Tauri 2 with a Rust backend
-- React, TypeScript, and Vite frontend
+- Solid 2, TypeScript, and Vite frontend
 - Tailwind CSS 4 and DaisyUI 5
 - SQLite through `rusqlite`
 - Bun package manager and runtime
-- Key libraries: TanStack Virtual, Fuse.js, i18next, and Zod
+- Key libraries: TanStack virtual-core, Fuse.js, i18next, and Zod
 - Linux playback uses libmpv with GTK/OpenGL. ffmpeg and ffprobe handle thumbnails and probing.
 
 ## Working in this repository
@@ -28,7 +28,7 @@ Use `bun run tauri:dev` for desktop development. Dev, E2E, and release have sepa
 
 ## Documentation
 
-Use [deep-review](.agents/skills/deep-review/SKILL.md) only when explicitly requested, such as `$deep-review current changes`, `$deep-review src/components/lightbox`, or `$deep-review whole project`. Ordinary review requests do not automatically invoke a multi-agent workflow. Deep review saves generated reports and evidence under the ignored repository-root `raports/` folder. Explicit requests for other review skills retain their workflow. Delegated reviewers follow their assigned role and do not spawn agents.
+Use [deep-review](.agents/skills/deep-review/SKILL.md) only when explicitly requested, such as `$deep-review current changes`, `$deep-review src/features/lightbox`, or `$deep-review whole project`. Ordinary review requests do not automatically invoke a multi-agent workflow. Deep review saves generated reports and evidence under the ignored repository-root `raports/` folder. Explicit requests for other review skills retain their workflow. Delegated reviewers follow their assigned role and do not spawn agents.
 
 Select the documentation relevant to the current task from the table below and read only those files.
 
@@ -36,7 +36,7 @@ Select the documentation relevant to the current task from the table below and r
 | --- | --- |
 | System architecture, runtime lifecycle, module boundaries, Tauri profiles, app-data isolation, locking, and bundled resources | `docs/architecture/system-overview.md` |
 | Tauri commands, shared payloads, serialization, query sessions, channels, progress events, validation, and contract-change rules | `docs/architecture/ipc-contract.md` |
-| Frontend composition, state ownership, hooks/services/components boundaries, runtime persistence, UI primitives, modals, theme, and accessibility conventions | `docs/frontend/architecture-and-ui-conventions.md` |
+| Frontend composition, state ownership, model/component/platform boundaries, runtime persistence, UI primitives, modals, theme, and accessibility conventions | `docs/frontend/architecture-and-ui-conventions.md` |
 | SQLite schema, migrations, connection pooling, derived fields, query semantics, ordering, and library revisions | `docs/subsystems/database.md` |
 | Scan roots, media discovery, fingerprints, incremental indexing, worker batching, partial scans, and cleanup rules | `docs/subsystems/scanning-and-indexing.md` |
 | Asset query sessions, frontend page cache, summary/details boundary, virtual gallery, loading, and invalidation | `docs/subsystems/library-query-and-gallery.md` |

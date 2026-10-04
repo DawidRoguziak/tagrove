@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 9 is complete. Solid is the normal entry and React has been removed after
-parity verification. Final Solid-only checks and review pass.
-The canonical documentation rewrite is stage 10.
+All ten stages are complete. Solid is the normal entry and React has been removed after
+parity verification. Canonical guides now describe the final owners, contracts and workflows.
+Stage 10 verified documentation references, production build and an isolated desktop smoke.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 10](10-documentation.md).
+- Next implementation task: none. The migration plan is complete.
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -28,8 +28,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | [6. Lightbox and images](06-lightbox-and-images.md) | Complete | 1101 frontend, 206 Rust, both builds; desktop comparison, reduced motion and 12 matching layouts | Findings fixed and rechecked | `feat: migrate lightbox and image interactions to Solid`; `71943b0` |
 | [7. Native video](07-native-video.md) | Complete | 1124 frontend, 206 Rust, both builds; 18 desktop cases per renderer and 30 native reopen cycles each | Findings fixed and rechecked | `feat: migrate native video lifecycle to Solid`; `cf59a58` |
 | [8. Settings and maintenance](08-settings-and-maintenance.md) | Complete | 1205 frontend, 206 Rust, both isolated builds; 17 desktop cases and 3 reduced-motion cases per renderer | Findings fixed and rechecked | `feat: migrate settings and maintenance workflows to Solid`; `b401770` |
-| [9. Parity and cutover](09-parity-and-cutover.md) | Complete | 622 final frontend, 206 Rust, final test:all with 39 desktop cases; 117 normal + 46 reduced-motion cases per renderer before cutover | Findings fixed and rechecked | `refactor: complete Solid migration and remove React` |
-| [10. Documentation](10-documentation.md) | Not started | Not run | Pending | None |
+| [9. Parity and cutover](09-parity-and-cutover.md) | Complete | 622 final frontend, 206 Rust, final test:all with 39 desktop cases; 117 normal + 46 reduced-motion cases per renderer before cutover | Findings fixed and rechecked | `refactor: complete Solid migration and remove React`; `6cc1f24` |
+| [10. Documentation](10-documentation.md) | Complete | References, 193-module build, 281 focused frontend tests, 8 tooling tests and 4 desktop smoke cases pass | Findings fixed; evidence audited | `docs: document Solid architecture and verification` |
 
 ## Planning baseline evidence
 
@@ -1307,7 +1307,75 @@ all findings were fixed and rechecked. Same-host timing samples and the isolated
 reduced-motion timeout remain limitations, not performance or cross-platform guarantees.
 
 Local commit subject: `refactor: complete Solid migration and remove React`.
-Local commit hash: recorded when stage 10 starts.
+Local commit hash: `6cc1f24`.
 
 Next stage: [documentation](10-documentation.md). Current build, entry and IPC guidance is
 corrected here; the full canonical frontend/subsystem documentation rewrite belongs to stage 10.
+
+
+## Stage 10 evidence
+
+Date: 4 October 2026. Starting commit: `6cc1f24`.
+Local commit subject: `docs: document Solid architecture and verification`.
+Resolve the final hash through Git history with that subject, as required by the final-stage
+bookkeeping rule. No further migration stage remains.
+
+Documentation changes:
+
+- Rewrote frontend architecture around the actual runtime, feature models, shared library,
+  platform adapters and UI owners. Added the system lifecycle diagram and transport-owner
+  table. The bulk sidebar is eager; settings/lightbox views are lazy and prefetch at 1,500 ms.
+- Replaced removed hook/component/type paths in canonical subsystem and development guides.
+  Documented the shared 256-entry details cache, synchronous command coordination, stable
+  gallery slots, query-position recovery and owned cleanup. Backend wire/storage contracts
+  remain unchanged.
+- Documented the exact installed Solid/compiler/plugin/testing/virtual-core versions,
+  TypeScript/Vitest configuration, i18next binding and current test owners. Corrected the
+  E2E build and preference setup descriptions and added a copyable isolated smoke recipe.
+- Updated AGENTS and the public README to Solid, preserving privacy, profile isolation and
+  the worktree prohibition. Marked the migration README's intermediate setup as historical.
+  Removed the setup guide's machine-specific personal collection description.
+
+No application, backend, test, dependency or executable configuration changed. No new tests
+were added to assert documentation wording. Existing focused tests resolve lifecycle and
+cache claims; the stage explicitly requires exercising the documented build and desktop
+workflow. Commands ran on Node 26.7.0, satisfying the declared compatibility range; this is
+not a new verification of the pinned Node 22.22.0 packaging environment.
+
+Verification artifacts stay ignored under `artifacts/solid2/stage10/`:
+
+| Command | Result and evidence |
+| --- | --- |
+| `python3 artifacts/solid2/stage10/check-docs.py` | All checked relative links/anchors, explicit repository paths and package commands resolve; `references.log`. Source owners, symbols, examples and version pins were also inspected against implementation/configuration. |
+| `bun run test:build` | 193 production modules; Solid entry and absence of React/legacy trees pass; `build.log`. |
+| `bun run test -- src/app src/library src/features/lightbox src/features/gallery/__tests__/createVirtualGrid.test.tsx src/features/settings/__tests__/operationSafety.test.tsx` | 28 files, 281 tests pass; `frontend-focused.log`. |
+| `bun run lint` and `bun run format:check` | Pass. The format script checks its configured scripts/configuration, not Markdown. |
+| `bun run locale:check` | All 11 locale contracts pass. |
+| `bun run test:locale-tools` and `bun run test:e2e-build` | Pass. Node's default reporter prints one file-level result for each; the explicit command below checks individual case results. |
+| `node --test --test-isolation=none scripts/locale-tools.test.mjs e2e/build-e2e.test.js` | Eight cases pass; `tooling-explicit.log`. |
+| `bash artifacts/solid2/stage10/run-smoke.sh` | Exact Bash block from [isolated desktop smoke](../development/testing.md#isolated-desktop-smoke). First run stops before app launch because the sandbox denies a D-Bus socket; `desktop-smoke.log`. Approved execution outside that socket restriction passes four desktop scenarios with exit 0; `desktop-smoke-recheck.log`. The harness runs `bun run build`, including both TypeScript checks, before the isolated native build. |
+| `python3 artifacts/solid2/stage10/cleanup-smoke.py` | Confirms zero owned processes and mounts for both recorded temporary profiles, then removes only those directories; `cleanup.log`. |
+| `PATH="$PWD/artifacts/tools:$PATH" bun run privacy:check` | Full-history/working-file check passes; `privacy-working.log`. Staged content is checked again before the commit. |
+| `git diff --check` | Pass. |
+
+Self-review corrected stale descriptions of separate details caches, effect-driven search
+submission, placeholder keys, non-session navigation, deferred tag-list queries, and the
+unused double-click calculation. Test maps now distinguish model, component and real-desktop
+coverage. No production code was changed to make a prose claim true.
+
+The local decision trail is `artifacts/solid2/stage10/decisions.tsv`. Cross-model evidence
+review by `gpt-6-astra` confirmed the build/focused/smoke results and found two remaining old
+owner names in settings and startup popular tags; both were fixed. No workspace transcript
+was available, so that review checked artifacts, source and the handoff rather than the full
+execution chronology. Cleanup was subsequently verified directly as recorded above.
+
+Limits: this documentation stage did not rerun the full frontend/Rust/desktop parity matrix,
+release packaging, native-video decoded-frame suite or other operating systems. Their
+previous results and limits remain in stage 9. The new smoke establishes Linux X11/WebKit
+navigation, confirmation cancellation and bulk metadata workflows, not native chooser,
+video/audio or hardware-decoding behavior. No required stage-10 check remains blocked.
+
+Only Markdown documentation is included. Staged changes were reviewed for scope and private
+content; no media, databases, raw logs, screenshots, temporary profiles or generated bundles
+are committed. Final reference/privacy checks and the local commit are recorded in the
+ignored decision trail.

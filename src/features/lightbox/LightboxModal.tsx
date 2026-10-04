@@ -17,6 +17,7 @@ import {
   createGroupClipboard
 } from "./createLightboxPresentation";
 import type { LightboxModel } from "./createLightbox";
+import type { VideoBounds } from "../../platform/tauri/contracts/video";
 import type { SelectedAsset } from "../../types";
 
 const TRIGGER_ID = "lightbox-sidebar-trigger-button";
@@ -101,12 +102,28 @@ function LightboxContent(
     () => true,
     () => confirm() || deleting()
   );
+  const [nativePanelReady, setNativePanelReady] = createSignal(false);
+  const openSidebar = () => {
+    if (!sidebar.occupied()) setNativePanelReady(false);
+    sidebar.show();
+  };
+  const sidebarVisible = () =>
+    sidebar.open() && (props.selected.kind !== "video" || nativePanelReady());
+  const videoFullscreen = () => props.selected.kind === "video" && controls.isFullscreen;
+  const handleNativeBounds = (bounds: VideoBounds) => {
+    const viewport = controls.viewport()?.getBoundingClientRect();
+    if (viewport && (bounds.width === 0 || bounds.x + bounds.width <= viewport.right + 1))
+      setNativePanelReady(true);
+  };
   const activity = createLightboxActivity(() => props.active);
   const controls = createImageControls({
     selected: () => props.selected,
     active: () => props.active,
     keyboardEnabled: () =>
-      layer.isTopLayer() && !confirm() && !deleting() && !(sidebar.narrow() && sidebar.open()),
+      layer.isTopLayer() &&
+      !confirm() &&
+      !deleting() &&
+      (!(sidebar.narrow() && sidebar.open()) || videoFullscreen()),
     close,
     previous: props.model.previous,
     next: props.model.next,
@@ -134,24 +151,36 @@ function LightboxContent(
     sidebar.hide();
   }
   createEffect(
-    () => ({ open: sidebar.open(), active: props.active }),
-    ({ open, active }) => {
+    () => ({
+      open: sidebar.open(),
+      visible: sidebarVisible(),
+      occupied: sidebar.occupied(),
+      narrow: sidebar.narrow(),
+      kind: props.selected.kind,
+      active: props.active,
+      confirm: confirm()
+    }),
+    ({ open, visible, occupied, narrow, kind, active, confirm }) => {
       if (!active) return;
-      if (wasOpen === undefined || wasOpen === open) {
-        wasOpen = open;
+      if (wasOpen && !open && kind === "video" && narrow && occupied) return;
+      if (wasOpen === undefined || wasOpen === visible) {
+        wasOpen = visible;
         return;
       }
-      wasOpen = open;
       const frame = requestAnimationFrame(() => {
-        const target = open
-          ? document.getElementById(
-              confirm() ? "lightbox-delete-confirm-input" : SIDEBAR_CLOSE_BUTTON_ID
-            )
-          : restoreTriggerFocus
+        const previouslyOpen = wasOpen;
+        wasOpen = visible;
+        if (visible) {
+          document
+            .getElementById(confirm ? "lightbox-delete-confirm-input" : SIDEBAR_CLOSE_BUTTON_ID)
+            ?.focus({ preventScroll: true });
+        } else if (previouslyOpen && !open) {
+          const target = restoreTriggerFocus
             ? document.getElementById(TRIGGER_ID)
             : controls.shell();
-        target?.focus({ preventScroll: true });
-        activity.reveal();
+          target?.focus({ preventScroll: true });
+          activity.reveal();
+        }
       });
       return () => cancelAnimationFrame(frame);
     }
@@ -199,7 +228,7 @@ function LightboxContent(
         ref={props.presence.overlayRef}
         data-modal-presence={props.presence.phase()}
         aria-hidden={!props.active || undefined ? "true" : "false"}
-        class={`fixed inset-0 z-[55] grid place-items-center bg-neutral/62 ${props.selected.kind === "video" ? "p-5" : "p-2 sm:p-5"}`}
+        class={`fixed inset-0 z-[55] grid place-items-center ${videoFullscreen() ? "bg-neutral p-0 backdrop-blur-none" : `bg-neutral/62 ${props.selected.kind === "video" ? "p-5" : "p-2 sm:p-5"}`}`}
         data-ui-layer={layer.layerId}
         data-lightbox-backdrop
         onClick={() => {
@@ -212,7 +241,7 @@ function LightboxContent(
           class={[
             "relative min-w-0 overflow-hidden",
             controls.isFullscreen
-              ? "h-full min-h-0 w-full rounded-none border-0 shadow-none bg-base-100"
+              ? `h-full min-h-0 w-full rounded-none border-0 shadow-none ${videoFullscreen() ? "bg-neutral" : "bg-base-100"}`
               : [
                   "h-[min(calc(100dvh-40px),1180px)] min-h-0 w-[min(calc(100vw-40px),1800px)]",
                   "rounded-[var(--radius-surface)] border shadow-[var(--shadow-modal)]",
@@ -237,14 +266,18 @@ function LightboxContent(
             {t("lightbox.previewDialogDescription")}
           </span>
           <div
-            class={`lightbox-layout relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] ${!sidebar.narrow() && sidebar.occupied() ? "grid-cols-[minmax(0,1fr)_340px]" : "grid-cols-[minmax(0,1fr)]"}`}
+            class={`lightbox-layout relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] ${!videoFullscreen() && !sidebar.narrow() && sidebar.occupied() ? "grid-cols-[minmax(0,1fr)_340px]" : "grid-cols-[minmax(0,1fr)]"}`}
           >
             <div
-              inert={sidebar.narrow() && sidebar.open()}
-              aria-hidden={(sidebar.narrow() && sidebar.open()) || undefined ? "true" : "false"}
-              class={`lightbox-media-column relative grid h-full min-h-0 min-w-0 overflow-hidden grid-rows-[minmax(0,1fr)_auto] ${props.selected.kind === "video" ? "pt-11" : ""}`}
+              inert={!videoFullscreen() && sidebar.narrow() && sidebar.open()}
+              aria-hidden={
+                (!videoFullscreen() && sidebar.narrow() && sidebar.open()) || undefined
+                  ? "true"
+                  : "false"
+              }
+              class={`lightbox-media-column relative grid h-full min-h-0 min-w-0 overflow-hidden ${videoFullscreen() ? "grid-rows-[minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)_auto]"} ${props.selected.kind === "video" && !videoFullscreen() ? "pt-11" : ""} ${props.selected.kind === "video" && !videoFullscreen() && sidebar.narrow() && sidebar.occupied() ? "hidden" : ""}`}
             >
-              {!sidebar.open() ? (
+              {!videoFullscreen() && !sidebar.open() ? (
                 <div
                   class="lightbox-media-controls absolute right-3 top-1.5 z-[5] flex gap-2 transition-opacity duration-200 motion-reduce:transition-none"
                   style={{
@@ -259,7 +292,7 @@ function LightboxContent(
                     title={t("lightbox.openPanel")}
                     aria-expanded="false"
                     aria-controls="lightbox-sidebar"
-                    onClick={sidebar.show}
+                    onClick={openSidebar}
                   />
                   <UiIconButton
                     icon="close"
@@ -318,31 +351,35 @@ function LightboxContent(
                 detailsFailed={props.model.assetDetailsFailed}
                 retryDetails={props.model.retryDetails}
                 controls={controls}
+                onPointerActivity={activity.reveal}
+                onNativeBounds={handleNativeBounds}
               />
-              <LightboxActionRail
-                visible={activity.visible()}
-                covered={sidebar.narrow() && sidebar.occupied()}
-                onReveal={activity.reveal}
-                selected={props.selected}
-                isFullscreen={controls.isFullscreen}
-                favoritePending={props.model.favoritePending}
-                onToggleFavorite={() => {
-                  void props.model.toggleFavorite();
-                }}
-                onResetZoom={controls.resetZoom}
-                onToggleFullscreen={() => {
-                  void controls.toggleFullscreen();
-                }}
-                onOpenDeleteConfirm={() => {
-                  sidebar.show();
-                  setConfirm(true);
-                  setDeleteError(null);
-                  setInfo(false);
-                }}
-                t={t}
-              />
+              {!videoFullscreen() && (
+                <LightboxActionRail
+                  visible={activity.visible()}
+                  covered={sidebar.narrow() && sidebar.occupied()}
+                  onReveal={activity.reveal}
+                  selected={props.selected}
+                  isFullscreen={controls.isFullscreen}
+                  favoritePending={props.model.favoritePending}
+                  onToggleFavorite={() => {
+                    void props.model.toggleFavorite();
+                  }}
+                  onResetZoom={controls.resetZoom}
+                  onToggleFullscreen={() => {
+                    void controls.toggleFullscreen();
+                  }}
+                  onOpenDeleteConfirm={() => {
+                    openSidebar();
+                    setConfirm(true);
+                    setDeleteError(null);
+                    setInfo(false);
+                  }}
+                  t={t}
+                />
+              )}
             </div>
-            {sidebar.narrow() && sidebar.open() ? (
+            {!videoFullscreen() && sidebar.narrow() && sidebar.open() ? (
               <div
                 class="absolute inset-0 z-[7] bg-neutral/52 backdrop-blur-[1px]"
                 data-testid="lightbox-sidebar-scrim"
@@ -352,66 +389,68 @@ function LightboxContent(
                 }}
               />
             ) : null}
-            <LightboxToolbar
-              client={props.client}
-              selected={props.selected}
-              mediaGroupKeyEditor={props.groupKey}
-              mediaGroupOrderEditor={props.groupOrder}
-              isNarrow={sidebar.narrow()}
-              sidebarOpen={sidebar.open()}
-              sidebarVisible={sidebar.open()}
-              selectedTags={props.tags}
-              tagDraft={draft()}
-              knownTags={props.knownTags}
-              tagInputRef={(node) => {
-                input = node;
-              }}
-              tagSaving={props.model.tagSaving}
-              tagFailed={props.model.tagFailed}
-              tagDetailsLoading={props.model.tagDetailsLoading}
-              tagDetailsFailed={props.model.tagDetailsFailed}
-              tagEditingDisabled={props.model.tagEditingDisabled}
-              onRemoveTag={(tag) => {
-                if (!props.model.tagEditingDisabled)
-                  props.model.saveTags(props.model.tagEditor.filter((value) => value !== tag));
-              }}
-              onTagDraftChange={setDraft}
-              onAddTag={addTag}
-              onRetryTags={props.model.retryTags}
-              onRetryTagDetails={props.model.retryDetails}
-              onMediaGroupKeyChange={props.model.setMediaGroupKeyEditor}
-              onMediaGroupOrderChange={props.model.setMediaGroupOrderEditor}
-              onApplyMediaGroup={() => {
-                void props.model.saveMediaGroup();
-              }}
-              infoPanelOpen={info()}
-              onToggleInfo={() => setInfo((value) => !value)}
-              onCloseSidebar={closeSidebar}
-              onCloseLightbox={close}
-              groupPending={props.model.groupPending}
-              groupCopyConfirmed={clipboard.confirmed()}
-              canCopyMediaGroup={clipboard.canCopy()}
-              copyMediaGroupTitle={t(
-                clipboard.confirmed()
-                  ? "lightbox.copyMediaGroup.copied"
-                  : clipboard.canCopy()
-                    ? "lightbox.copyMediaGroup.title"
-                    : "lightbox.copyMediaGroup.unavailable"
-              )}
-              onCopyMediaGroup={() => {
-                void clipboard.copy();
-              }}
-              deleteConfirmOpen={confirm()}
-              deleteSubmitting={deleting()}
-              deleteError={deleteError()}
-              onDeleteConfirmClose={() => {
-                if (!deletingNow) setConfirm(false);
-              }}
-              onDeleteConfirmSubmit={() => {
-                void deleteMedia();
-              }}
-              t={t}
-            />
+            {!videoFullscreen() && (
+              <LightboxToolbar
+                client={props.client}
+                selected={props.selected}
+                mediaGroupKeyEditor={props.groupKey}
+                mediaGroupOrderEditor={props.groupOrder}
+                isNarrow={sidebar.narrow()}
+                sidebarOpen={sidebar.open()}
+                sidebarVisible={sidebarVisible()}
+                selectedTags={props.tags}
+                tagDraft={draft()}
+                knownTags={props.knownTags}
+                tagInputRef={(node) => {
+                  input = node;
+                }}
+                tagSaving={props.model.tagSaving}
+                tagFailed={props.model.tagFailed}
+                tagDetailsLoading={props.model.tagDetailsLoading}
+                tagDetailsFailed={props.model.tagDetailsFailed}
+                tagEditingDisabled={props.model.tagEditingDisabled}
+                onRemoveTag={(tag) => {
+                  if (!props.model.tagEditingDisabled)
+                    props.model.saveTags(props.model.tagEditor.filter((value) => value !== tag));
+                }}
+                onTagDraftChange={setDraft}
+                onAddTag={addTag}
+                onRetryTags={props.model.retryTags}
+                onRetryTagDetails={props.model.retryDetails}
+                onMediaGroupKeyChange={props.model.setMediaGroupKeyEditor}
+                onMediaGroupOrderChange={props.model.setMediaGroupOrderEditor}
+                onApplyMediaGroup={() => {
+                  void props.model.saveMediaGroup();
+                }}
+                infoPanelOpen={info()}
+                onToggleInfo={() => setInfo((value) => !value)}
+                onCloseSidebar={closeSidebar}
+                onCloseLightbox={close}
+                groupPending={props.model.groupPending}
+                groupCopyConfirmed={clipboard.confirmed()}
+                canCopyMediaGroup={clipboard.canCopy()}
+                copyMediaGroupTitle={t(
+                  clipboard.confirmed()
+                    ? "lightbox.copyMediaGroup.copied"
+                    : clipboard.canCopy()
+                      ? "lightbox.copyMediaGroup.title"
+                      : "lightbox.copyMediaGroup.unavailable"
+                )}
+                onCopyMediaGroup={() => {
+                  void clipboard.copy();
+                }}
+                deleteConfirmOpen={confirm()}
+                deleteSubmitting={deleting()}
+                deleteError={deleteError()}
+                onDeleteConfirmClose={() => {
+                  if (!deletingNow) setConfirm(false);
+                }}
+                onDeleteConfirmSubmit={() => {
+                  void deleteMedia();
+                }}
+                t={t}
+              />
+            )}
           </div>
         </div>
       </div>

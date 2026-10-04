@@ -22,10 +22,11 @@ and owns context-menu suppression and optional performance observation. Disposal
 cancels a pending mount. `createAppRuntime` owns theme and view selection across remounts;
 it also owns the library, search, bulk and lightbox models. `LanguageProvider` owns one i18next subscription for
 its tree. Settings and the lightbox view prefetch after 1,500 ms, with timer cleanup.
-Gallery activation opens the lazy image/GIF lightbox. Its presence owner remains mounted
+Gallery activation opens the lazy image/GIF/video lightbox. Its presence owner remains mounted
 after first activation, retains closing values, and releases modality on logical close.
-The application preserves the gallery focus target across lazy loading. Native video
-playback follows in stage 7.
+The application preserves the gallery focus target across lazy loading. Native video sessions
+belong to the active media presentation and end on logical close. Their acknowledged bounds
+control sidebar visibility and focus; fullscreen retains the active player and session.
 
 Solid controls live under `src/ui/controls`, overlays under `src/ui/overlays`.
 Both renderers share theme persistence, modal animation, and segmented-control measurement

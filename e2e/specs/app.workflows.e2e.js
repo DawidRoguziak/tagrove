@@ -516,16 +516,30 @@ describe("MediaTagger desktop workflows", () => {
     await ensureGalleryView();
     await $(`button[data-asset-id="${page.items[0].id}"]`).click();
     await $('button[aria-label="Close asset panel"]').waitForDisplayed();
+    await browser.waitUntil(() => browser.execute(() => {
+      const panel = document.querySelector("#lightbox-sidebar");
+      const button = panel?.querySelector('button[aria-label="Close asset panel"]');
+      const rect = button?.getBoundingClientRect();
+      return panel?.getAttribute("aria-hidden") === "false" &&
+        panel.getAnimations().every(animation => animation.playState === "finished") && rect &&
+        button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+    }), { timeoutMsg: "Native clearance and sidebar entrance settle before clicking collapse" });
     await $('button[aria-label="Close asset panel"]').click();
     await browser.waitUntil(() => browser.execute(() => {
       const video = document.querySelector("[data-lightbox-video-player]").getBoundingClientRect();
       const trigger = document.querySelector("#lightbox-sidebar-trigger-button").getBoundingClientRect();
       return trigger.bottom <= video.top + 1;
     }));
+    await browser.waitUntil(() => browser.execute(() => {
+      const layout = document.querySelector(".lightbox-layout");
+      const panel = document.querySelector("#lightbox-sidebar");
+      return layout.classList.contains("grid-cols-[minmax(0,1fr)]") &&
+        panel.getAnimations().every(animation => animation.playState === "finished");
+    }), { timeoutMsg: "Sidebar exit must release its retained width before measuring video" });
     const beforeIdle = await $("[data-lightbox-video-player]").getSize();
     await browser.waitUntil(() => browser.execute(() =>
-      getComputedStyle(document.querySelector("#lightbox-sidebar-trigger-button")).opacity === "1"
-    ), { timeout: 6000 });
+      getComputedStyle(document.querySelector(".lightbox-media-controls")).opacity === "0"
+    ), { timeout: 6000, timeoutMsg: "Floating controls fade after native pointer inactivity" });
     const afterIdle = await $("[data-lightbox-video-player]").getSize();
     if (JSON.stringify(beforeIdle) !== JSON.stringify(afterIdle)) throw new Error("Idle video bounds changed");
     await browser.keys("Tab");

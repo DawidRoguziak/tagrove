@@ -34,6 +34,15 @@ async function point(x, y) {
 }
 async function click(selector) {
   const r = await rect(selector);
+  // Moving onto faded DOM controls reveals them before the physical click arrives.
+  // XTest's move and press in one batch can otherwise hit pointer-events:none.
+  await native("move", Math.round(r.x + r.width / 2 + Number(process.env.MEDIATAGGER_NATIVE_X ?? 0)),
+    Math.round(r.y + r.height / 2 + Number(process.env.MEDIATAGGER_NATIVE_Y ?? 0)));
+  await browser.waitUntil(() => browser.execute(selector => {
+    const element = document.querySelector(selector);
+    const bounds = element?.getBoundingClientRect();
+    return bounds && element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+  }, selector), { timeoutMsg: `DOM control is reachable before native click: ${selector}` });
   await point(r.x + r.width / 2, r.y + r.height / 2);
 }
 async function controls() {
@@ -253,6 +262,34 @@ suite("native video speed and reopening", function () {
     await assert.rejects(invoke("set_video_bounds", { sessionId: sessionId - 1, bounds: { ...r, width: 0 } }));
     await waitAttribute("paused", false);
   });
+  it("recovers a corrupt original through Retry without reopening the dialog", async () => {
+    await close();
+    const details = await invoke("get_asset_details", { assetId: ids[0] });
+    assert.equal(path.dirname(details.path), root, "Only corrupt this run's generated fixture");
+    const original = await fs.readFile(details.path);
+    try {
+      await fs.writeFile(details.path, "synthetic invalid video");
+      await $(`button[data-asset-id="${ids[0]}"]`).click();
+      await $('[data-testid="lightbox-media-error"]').waitForDisplayed({ timeout: 15000 });
+      assert.equal(await $(player).isExisting(), false, "A failed decoder releases the native surface");
+      await capture("corrupt-original");
+    } finally {
+      await fs.writeFile(details.path, original);
+    }
+    await click('[data-testid="lightbox-media-error"] button');
+    await $(player).waitForExist({ timeout: 15000 });
+    await waitAttribute("paused", false);
+    const time = Number(await attribute("time"));
+    await browser.waitUntil(async () => Number(await attribute("time")) !== time);
+    const first = await capture("recovered-a");
+    await browser.pause(250);
+    const second = await capture("recovered-b");
+    const r = await rect(player);
+    const { stdout } = await run("python3", ["e2e/video-frames.py", first, second,
+      r.x + Number(process.env.MEDIATAGGER_NATIVE_X ?? 0),
+      r.y + Number(process.env.MEDIATAGGER_NATIVE_Y ?? 0), r.width, r.height].map(String));
+    await fs.writeFile(path.join(output, "recovery.json"), stdout);
+  });
   it("keeps moving pixels and responsive controls through 30 speed and reopen cycles", async () => {
     const evidence = [];
     for (let cycle = 0; cycle < 30; cycle++) {
@@ -289,4 +326,29 @@ suite("native video speed and reopening", function () {
     await fs.writeFile(path.join(output, "cycles.json"), JSON.stringify(evidence, null, 2));
     await close();
   });
+  it("restores windowed GIF geometry when navigating from fullscreen video", async () => {
+    if (await $(player).isExisting()) await close();
+    const page = await invoke("list_assets", { offset: 0, limit: 20, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false });
+    const gif = page.items.findIndex(asset => asset.kind === "gif");
+    assert.ok(gif >= 0);
+    const previous = page.items[(gif + page.items.length - 1) % page.items.length];
+    assert.equal(previous.kind, "video");
+    await open(previous.id);
+    await click('[data-testid="lightbox-action-rail"] button[aria-label="Toggle fullscreen"]');
+    await browser.waitUntil(async () => await attribute("fullscreen") !== null);
+    await browser.execute(() => document.querySelector('[data-lightbox-kind]').focus());
+    await browser.keys("ArrowRight");
+    await $('[data-lightbox-kind="gif"]').waitForExist();
+    await browser.waitUntil(() => browser.execute(() => {
+      const shell = document.querySelector('[data-lightbox-kind="gif"]');
+      const image = shell?.querySelector("img");
+      const rect = shell?.getBoundingClientRect();
+      return image?.complete && image.naturalWidth > 0 && !document.fullscreenElement &&
+        !shell.classList.contains("rounded-none") && rect.width <= innerWidth - 39;
+    }), { timeoutMsg: "GIF returns to the windowed shell after native fullscreen closes" });
+    assert.equal(await $(player).isExisting(), false);
+    await capture("fullscreen-to-gif");
+    await click('button[aria-label="Close preview"]');
+  });
+
 });

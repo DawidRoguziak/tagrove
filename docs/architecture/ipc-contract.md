@@ -53,7 +53,7 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `VideoToolStatus` / same | `ffmpeg_available`, `ffprobe_available` |
 | `ScanProgress` / `ScanProgress` | `phase`, `processed`, `total`, `message` |
 
-`AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. Gallery GIF previews use it. The lightbox waits for complete details before rendering media; video opens by asset ID, not by a frontend path.
+`AssetSummary.preview_path` contains the full source path for GIF and video rows and is null for ordinary image rows. Gallery GIF previews use it. The lightbox accepts verified GIF/video preview paths while complete details load. Ordinary images wait for their detail path. Video opens by asset ID, not by a frontend path.
 
 `controlLabels` includes localized `play`, `pause`, `mute`, `unmute`, `volume`, `seek`, `playbackRate`, `fullscreen`, and `exitFullscreen` strings. Each label must contain 1–120 visible characters after trimming.
 

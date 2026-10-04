@@ -2,14 +2,14 @@
 
 ## Current state
 
-Stage 6 is complete. React remains the default and functional reference.
-Solid now opens image/GIF lightboxes with shared metadata editing, global navigation,
-responsive panels and deletion. Native video integration is next.
+Stage 7 is complete. React remains the default and functional reference.
+Solid now includes native video sessions, playback controls, fullscreen and recovery.
+Settings and maintenance workflows are next.
 
 - Working branch: `feature/rewrite-react-to-solid2`.
 - React reference commit: `f11126dfafd40f877ecf5e496abc37d77a435e78`.
 - Stage 1 starting commit: `0e1cc02`, the migration plan.
-- Next implementation task: [stage 7](07-native-video.md).
+- Next implementation task: [stage 8](08-settings-and-maintenance.md).
 - No worktrees, GitHub pushes, or merges to `main` are permitted.
 
 ## Stage tracker
@@ -25,8 +25,8 @@ Use this table as the status source of truth; the stage files describe planned w
 | [3. Library state](03-library-state.md) | Complete | 822 frontend, 206 Rust, both builds; query follow-up passed | Findings fixed and rechecked | `feat: implement Solid library state and mutation coordination`; `64e7ac1` |
 | [4. Gallery and search](04-gallery-and-search.md) | Complete | 931 frontend, 206 Rust, both builds; desktop comparison and reduced motion passed | Findings fixed and rechecked | `feat: migrate gallery and search to Solid`; `9a87d96` |
 | [5. Tagging and bulk](05-tagging-and-bulk.md) | Complete | 1008 frontend, 206 Rust, both builds; 7 desktop cases per renderer and matching editor geometry | Findings fixed and rechecked | `feat: migrate tag editing and bulk actions to Solid`; `6eb9add` |
-| [6. Lightbox and images](06-lightbox-and-images.md) | Complete | 1101 frontend, 206 Rust, both builds; desktop comparison, reduced motion and 12 matching layouts | Findings fixed and rechecked | `feat: migrate lightbox and image interactions to Solid`; record hash when opening stage 7 |
-| [7. Native video](07-native-video.md) | Not started | Not run | Pending | None |
+| [6. Lightbox and images](06-lightbox-and-images.md) | Complete | 1101 frontend, 206 Rust, both builds; desktop comparison, reduced motion and 12 matching layouts | Findings fixed and rechecked | `feat: migrate lightbox and image interactions to Solid`; `71943b0` |
+| [7. Native video](07-native-video.md) | Complete | 1124 frontend, 206 Rust, both builds; 18 desktop cases per renderer and 30 native reopen cycles each | Findings fixed and rechecked | `feat: migrate native video lifecycle to Solid`; record hash when opening stage 8 |
 | [8. Settings and maintenance](08-settings-and-maintenance.md) | Not started | Not run | Pending | None |
 | [9. Parity and cutover](09-parity-and-cutover.md) | Not started | Not run | Pending | None |
 | [10. Documentation](10-documentation.md) | Not started | Not run | Pending | None |
@@ -701,7 +701,7 @@ Next stage: [lightbox selection and images](06-lightbox-and-images.md).
 
 Date: 4 October 2026. Starting commit: `6eb9add`.
 Local commit subject: `feat: migrate lightbox and image interactions to Solid`.
-Local commit hash: record when opening stage 7.
+Local commit hash: `71943b0`.
 
 Implemented behavior:
 
@@ -856,3 +856,183 @@ or packaging parity. Two pre-existing Rust diagnostics remain ignored. No requir
 check remains unavailable.
 
 Next stage: [native video integration](07-native-video.md).
+
+
+## Stage 7 evidence
+
+Date: 4 October 2026. Starting commit: `71943b0`.
+Local commit subject: `feat: migrate native video lifecycle to Solid`.
+Local commit hash: record when opening stage 8.
+
+Implemented behavior:
+
+- `features/lightbox/video/createNativeVideoSession.ts` owns begin/open/cancel tokens,
+  returned-session event filtering, bounded early events, serialized controls, native bounds
+  acknowledgments and cleanup. Labels and callbacks update without replacing playback.
+- The native player uses the existing video platform wrappers and shared bounds helper.
+  Asset ID/kind/path changes and Retry create new media owners. Logical close disposes the
+  player immediately, including pending opens, while the DOM shell finishes its exit.
+- The lightbox reserves windowed top controls, waits for native clearance before revealing
+  the sidebar, hides narrow video through drawer exit and restores focus afterward. Fullscreen
+  retains the player/session while hiding DOM panels and removing the top reservation.
+- Video-target keys seek or toggle pause without navigating the library. Native pointer events
+  reset the activity timer. Translated labels update the active GTK controls. Playback rate,
+  volume and mute remain backend-owned, with no change to commands or backend behavior.
+- Leaving native fullscreen for an image/GIF restores the shell's browser fullscreen state.
+  A corrupt generated original can recover through the existing Retry UI.
+
+Self-review findings and fixes:
+
+- The first dependency tuple invalidated the session when only labels or callbacks changed.
+  The ported label-update test failed. A memo now preserves asset/generation/container identity
+  across these updates, and the complete session suite passes.
+- Native desktop playback exposed Solid's boolean data-attribute serialization. Explicit
+  string values preserve `data-native-paused`, seeking, buffering and muted snapshots. A
+  rendered-player regression observes both false and true values rather than only signal state.
+- Review found stale fullscreen layout when navigating from native video to an image.
+  `fullscreen-transition-regression.log` fails on the actual shell's `rounded-none` class.
+  Media-kind changes now resynchronize browser fullscreen state; the regression passes in
+  `fullscreen-transition-fixed.log`. Its initial fixture lacked `toMediaSrc`; that fixture
+  failure is recorded separately in `fullscreen-transition-before.log`.
+- The native failure test initially queried every Retry button, including query-position
+  retry. It now finds the button inside the media error. The model fixture also initializes
+  a real query model so unrelated navigation failure does not contaminate the test.
+- React comparison exposed a test race in the windowed-toggle scenario. Its first size sample
+  preceded the sidebar's retained-width release, and its supposed idle wait read a child's
+  opacity instead of the fading parent. The test now waits for the one-column layout and
+  finished drawer animation, then observes the actual parent fade. The exact size equality
+  and native-clearance assertions remain. `native-react.log` preserves the original failure.
+  A later Solid recheck caught WebDriver clicking the still-entering sidebar and retrying
+  after it moved. The test now also waits for acknowledged visibility, completed entrance
+  and button hit testing before its first collapse click.
+- React native fullscreen failed when the XTest helper batched movement and button press
+  over idle DOM controls. Subsequent cases inherited its paused state. The helper now moves
+  the real pointer, waits for the button to be reachable through DOM hit testing, then clicks.
+  It does not change playback state or bypass native input. The affected scenarios are rerun
+  after this change; the original failures remain in `native-react.log`.
+- Reviewed current and retired callbacks, queued commands, late open/label/bounds completion,
+  owner disposal, retained exit values, narrow focus timing and metadata-only updates.
+  The IPC guide incorrectly said every medium waits for details. It now describes the verified
+  GIF/video preview paths already used by both implementations.
+
+Verification, with local evidence under `artifacts/solid2/stage7/`:
+
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `bun run test` | 121 files, 1124 passed | `frontend-final.log` |
+| `bun run typecheck` | All three contexts pass | `types-final.log` |
+| `cargo test --manifest-path src-tauri/Cargo.toml video_ --lib` | 17 passed, including real libmpv worker tests with null output | `rust-video.log` |
+| `bun run test:backend` | 206 passed; 2 existing diagnostics ignored | `backend-final.log` |
+| `bun run lint` / `bun run format:check` | Passed | `lint-final.log`, `format-final.log` |
+| `bun run locale:check` | All 11 languages valid | `locales-final.log` |
+| `PATH="/tmp/solid2-tools:$PATH" bun run privacy:check` | Passed | `privacy-final.log` |
+
+Solid's first desktop run passed seven of eight cases. The snapshot boolean assertion failed
+in `keeps native playback state`; `desktop-solid-review.log` preserves that failure. After
+the explicit string-attribute fix, all three video workflow cases passed, and six native
+speed/recovery cases passed in `native-solid.log`. These commands used generated media,
+disposable XDG profiles, authenticated private Xvfb and the existing wrapper:
+
+```sh
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_NATIVE_VIDEO=1 MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 bash artifacts/solid2/stage2/run-desktop.sh \
+  --spec e2e/specs/app.workflows.e2e.js \
+  --spec e2e/specs/animations.e2e.js \
+  --spec e2e/specs/lightbox-activity.e2e.js \
+  --mochaOpts.grep 'windowed video lightbox|keeps native playback|loads generated GIF|modal media lifecycle video|fades controls and restores focus without resizing video'
+
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_NATIVE_VIDEO=1 bash artifacts/solid2/stage2/run-desktop.sh \
+  --spec e2e/specs/app.workflows.e2e.js \
+  --spec e2e/specs/video-speed.e2e.js \
+  --mochaOpts.grep 'windowed video lightbox|keeps native playback|loads generated GIF|native video speed and reopening'
+```
+
+The first invocation inside the sandbox could not bind its private D-Bus socket. Elevated
+execution of the same isolated wrapper succeeded; no application code or isolation guard
+was changed to accommodate the environment.
+
+The native suite used actual XTest clicks on GTK controls and screenshot pixel comparisons,
+not only DOM snapshots. Solid's 30 cycles passed at all six rates, with alternating same-file
+reopens and two-file replacement. Every capture pair contained colored, changing decoded
+pixels. The minimum color fraction was 0.6667 and minimum mean frame difference was 9.4781.
+Corrupt-original Retry recovery also passed its pixel check. Raw evidence remains in
+`artifacts/video-speed/2026-10-04T13-14-23-454Z/`, including `cycles.json` and `recovery.json`.
+Inspected the actual desktop and narrow-window screenshots, including GTK controls and
+clearance above the picture. Backend startup identified `GdkX11Display`.
+
+The fullscreen-video to image fix followed this native run. Its focused regression passes.
+The broad React comparison ran this command and passed 11 of 15 cases. Its four failures
+were the geometry timing and native click issues described above; final rechecks follow.
+
+```sh
+MEDIATAGGER_FRONTEND=react MEDIATAGGER_NATIVE_VIDEO=1 MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 bash artifacts/solid2/stage2/run-desktop.sh \
+  --spec e2e/specs/app.workflows.e2e.js \
+  --spec e2e/specs/video-speed.e2e.js \
+  --spec e2e/specs/animations.e2e.js \
+  --spec e2e/specs/lightbox-activity.e2e.js \
+  --mochaOpts.grep 'windowed video lightbox|keeps native playback|loads generated GIF|native video speed and reopening|modal media lifecycle video|fades controls and restores focus without resizing video'
+```
+
+React passed all 30 reopen cycles and pixel comparisons, corrupt-original recovery,
+fullscreen-to-GIF navigation, animation lifecycle and four activity scenarios in that run.
+Its raw pixel evidence is under `artifacts/video-speed/2026-10-04T13-21-13-525Z/`. The minimum
+color fraction was 0.6962 and minimum mean frame difference was 10.9338. These measurements
+are diagnostics on the same host; the existing pixel assertions remain the acceptance gate.
+
+Final native rechecks:
+
+- `native-react-final.log`: all five selected cases passed after the pointer and geometry
+  corrections. This includes the four previously failing cases and mixed-media navigation.
+- `native-solid-final.log`: fullscreen across both themes, both widths and all three focus
+  locations passed, as did mixed-media navigation on the final production source. The
+  entering-sidebar click failed in the geometry case, as described above.
+- `geometry-solid-final.log` and `geometry-react-final.log`: one case each passed after the
+  entrance wait. Both assert exact video-size preservation through actual inactivity and
+  native clearance above and beside the picture.
+
+The final native rechecks used:
+
+```sh
+MEDIATAGGER_FRONTEND=react MEDIATAGGER_NATIVE_VIDEO=1 bash artifacts/solid2/stage2/run-desktop.sh \
+  --spec e2e/specs/app.workflows.e2e.js --spec e2e/specs/video-speed.e2e.js \
+  --mochaOpts.grep 'windowed video lightbox|exits bottom-button fullscreen|dismisses outside clicks|selects every rate|restores windowed GIF geometry'
+MEDIATAGGER_FRONTEND=solid MEDIATAGGER_NATIVE_VIDEO=1 bash artifacts/solid2/stage2/run-desktop.sh \
+  --spec e2e/specs/app.workflows.e2e.js --spec e2e/specs/video-speed.e2e.js \
+  --mochaOpts.grep 'windowed video lightbox|exits bottom-button fullscreen|restores windowed GIF geometry'
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" bash artifacts/solid2/stage2/run-desktop.sh \
+    --spec e2e/specs/app.workflows.e2e.js --mochaOpts.grep 'windowed video lightbox'
+done
+```
+
+Together the successful runs cover all 15 distinct desktop scenarios for each renderer.
+Earlier failed invocations remain recorded and are not counted as successful runs.
+Actual reduced-motion checks then passed all three cases per renderer, using the temporary
+GTK preference and asserting `prefers-reduced-motion` inside the WebView:
+
+```sh
+for renderer in solid react; do
+  MEDIATAGGER_FRONTEND="$renderer" MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_LIGHTBOX_ACTIVITY=1 MEDIATAGGER_REDUCED_MOTION=1 bash artifacts/solid2/stage4/run-reduced.sh \
+    --spec e2e/specs/animations.e2e.js --spec e2e/specs/lightbox-activity.e2e.js \
+    --mochaOpts.grep 'modal media lifecycle video|fades controls and restores focus without resizing (video, light, 600px|video, dark, 1000px)'
+done
+bun run test:frontends
+```
+
+`reduced-solid.log` and `reduced-react.log` record the three-case runs. The normal and reduced
+runs together cover 18 distinct desktop cases per renderer. `builds-final.log` proves both
+entries compile with the correct renderer and no other renderer bundled. The module lists
+are copied to `solid-modules.json` and `react-modules.json`; React assets are restored in
+`dist`. Inspected Solid desktop/narrow screenshots, the React reference, and the actual
+windowed GIF after native fullscreen navigation.
+
+Reviewed staged source, fixtures and documentation for scope and private content. Final
+`git diff --check` and `git diff --cached --check` pass; the staged privacy check is recorded
+in `privacy-staged.log`. Raw logs, screenshots, synthetic media and temporary databases stay
+ignored. No backend, wire payload, dependency or profile change is included.
+
+Remaining limits: native desktop verification used Linux X11 with llvmpipe basic rendering.
+The generated MP4s contain no audio track, so audible output, hardware GPU rendering, Wayland,
+other operating systems and release packaging are not established by this stage. The two
+pre-existing Rust diagnostics remain ignored. No required stage-7 check remains unavailable.
+
+Next stage: [settings and maintenance workflows](08-settings-and-maintenance.md).

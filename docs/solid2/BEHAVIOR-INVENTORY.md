@@ -43,16 +43,16 @@ Shared tests use DOM mocks without importing the React i18n binding.
 | `src/components/gallery/hooks/__tests__/useGalleryVirtualGrid.test.tsx` | react | 4, `features/gallery` | React reference retained; Solid coverage in `src/features/gallery/__tests__/createVirtualGrid.test.tsx` plus real DOM/cache integration |
 | `src/components/gallery/services/__tests__/selectionGeometry.test.ts` | shared | 4, `features/gallery` | Retained, all assertions |
 | `src/components/lightbox/__tests__/LightboxDeleteConfirmDialog.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx |
-| `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid imageControls.test.tsx and LightboxModal.test.tsx; native-video cases remain stage 7 |
+| `src/components/lightbox/__tests__/LightboxMediaStage.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid imageControls.test.tsx and LightboxModal.test.tsx; native-video cases covered by Solid video/LightboxVideo.test.tsx |
 | `src/components/lightbox/__tests__/LightboxModal.copy.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts and LightboxModal.test.tsx |
-| `src/components/lightbox/__tests__/LightboxModal.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx; native-video cases remain stage 7 |
+| `src/components/lightbox/__tests__/LightboxModal.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx; native-video cases covered by Solid video/LightboxVideo.test.tsx |
 | `src/components/lightbox/__tests__/MediaGroupSetter.test.tsx` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid MediaGroupSetter.test.tsx |
 | `src/components/lightbox/__tests__/nativeVideoLayout.test.ts` | shared | 7, `features/lightbox/video` | Retained, all assertions |
 | `src/components/lightbox/__tests__/useLightboxImageControls.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid imageControls.test.tsx |
 | `src/components/lightbox/__tests__/useLightboxTagging.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx |
-| `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx` | react | 7, `features/lightbox/video` | Retained, all assertions |
+| `src/components/lightbox/__tests__/useNativeVideoSession.test.tsx` | react | 7, `features/lightbox/video` | React retained; Solid createNativeVideoSession.test.ts ports all nine cases and adds early buffering, disposal and label failure coverage |
 | `src/components/lightbox/hooks/__tests__/useLightboxActivity.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts |
-| `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx and imageControls.test.tsx |
+| `src/components/lightbox/hooks/__tests__/useLightboxKeyboardShortcuts.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx, imageControls.test.tsx and video/LightboxVideo.test.tsx |
 | `src/components/lightbox/hooks/__tests__/useLightboxModalHandlers.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid LightboxModal.test.tsx and createLightbox.test.ts |
 | `src/components/lightbox/hooks/__tests__/useLightboxSidebar.test.ts` | react | 5–7, `features/lightbox` and shared tagging | React reference retained; Solid presentation.test.ts and LightboxModal.test.tsx |
 | `src/components/lightbox/services/__tests__/deleteLightboxAssetAction.test.ts` | shared | 5–7, `features/lightbox` and shared tagging | Retained, all assertions |
@@ -151,3 +151,20 @@ assertion so image/GIF checks can run before the Solid video port. Sidebar geome
 for the actual drawer translate transition to settle before asserting exact button dimensions. The new
 image comparison suite captures both themes and languages at three widths and verifies
 suggestion dismissal and gallery focus restoration through the real window.
+
+## Stage 7 test ownership
+
+Solid `features/lightbox/video/__tests__/createNativeVideoSession.test.ts` ports the nine
+React lifecycle cases and adds returned-session early-event filtering, latest-per-type
+buffering, observer/frame disposal and retired label failures. `LightboxVideo.test.tsx`
+covers native opening, live translations, explicit snapshot attributes, recoverable errors,
+acknowledged panel clearance, fullscreen identity and Escape, video-target keys, logical-close
+shutdown, late open cleanup, retry and A/B/A navigation, narrow drawer focus timing, and
+fullscreen-video to image navigation.
+The pure native bounds tests remain shared and the React suites remain enabled.
+
+`video-speed.e2e.js` now also corrupts only its generated original, observes the failed native
+player, restores the original and clicks Retry. Pixel comparison verifies decoded, changing
+frames after recovery. A mixed-media case checks windowed GIF geometry after fullscreen
+video navigation. The existing native controls, fullscreen and 30-cycle checks retain
+their assertions. Desktop commands and results are recorded in PROGRESS.md.

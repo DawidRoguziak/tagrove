@@ -9,6 +9,8 @@ import {
   type MediaDimensions
 } from "../../../components/lightbox/services/lightboxPanZoomService";
 
+import type { LightboxVideoPlayerHandle } from "../video/LightboxVideoPlayer";
+
 type Pointer = PointerEvent & { currentTarget: HTMLDivElement };
 export function createImageControls(options: {
   selected: () => SelectedAsset;
@@ -19,6 +21,7 @@ export function createImageControls(options: {
   next: () => void;
   enterFullscreen: () => void;
 }) {
+  let videoPlayer: LightboxVideoPlayerHandle | null = null;
   let shell: HTMLDivElement | undefined, image: HTMLImageElement | undefined;
   const [viewport, setViewport] = createSignal<HTMLDivElement>();
   const [size, setSize] = createSignal<MediaDimensions>({ width: 0, height: 0 });
@@ -103,7 +106,11 @@ export function createImageControls(options: {
     if (drag?.pointerId === event.pointerId) finishDrag();
   }
   async function toggleFullscreen() {
-    if (!shell || !isImage()) return;
+    if (!isImage()) {
+      await videoPlayer?.toggleFullscreen();
+      return;
+    }
+    if (!shell) return;
     try {
       if (document.fullscreenElement === shell) {
         await document.exitFullscreen();
@@ -181,12 +188,30 @@ export function createImageControls(options: {
       window.removeEventListener("blur", finishDrag);
     };
   });
+  createEffect(isImage, (imageSelected) => {
+    if (imageSelected) setFullscreen(!!shell && document.fullscreenElement === shell);
+  });
   onSettled(() => {
-    const changed = () => setFullscreen(!!shell && document.fullscreenElement === shell);
+    const changed = () => {
+      if (isImage()) setFullscreen(!!shell && document.fullscreenElement === shell);
+    };
     const keyboard = (event: KeyboardEvent) => {
       if (!options.active() || !options.keyboardEnabled() || event.defaultPrevented) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!isImage() && fullscreen() && event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) void toggleFullscreen();
+        return;
+      }
       if (target?.matches("input,textarea") || target?.isContentEditable) return;
+      if (
+        !isImage() &&
+        target?.closest("[data-lightbox-video-player]") &&
+        event.key !== "f" &&
+        event.key !== "F"
+      )
+        return;
       const actions: Record<string, () => void> = {
         ArrowLeft: options.previous,
         ArrowRight: options.next,
@@ -213,7 +238,6 @@ export function createImageControls(options: {
     };
     document.addEventListener("fullscreenchange", changed);
     window.addEventListener("keydown", keyboard, true);
-    changed();
     return () => {
       document.removeEventListener("fullscreenchange", changed);
       window.removeEventListener("keydown", keyboard, true);
@@ -228,7 +252,16 @@ export function createImageControls(options: {
     shellRef: (el: HTMLDivElement) => {
       shell = el;
     },
+    viewport: () => viewport(),
     viewportRef: setViewport,
+    videoPlayerRef: (handle: LightboxVideoPlayerHandle | null) => {
+      videoPlayer = handle;
+    },
+    onVideoLoadedMetadata: (dimensions: MediaDimensions) => setIntrinsic(dimensions),
+    onVideoFullscreenChange: (value: boolean) => {
+      setFullscreen(value);
+      if (value) options.enterFullscreen();
+    },
     imageRef: (el: HTMLImageElement) => {
       image = el;
       paint();

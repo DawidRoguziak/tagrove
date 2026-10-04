@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import type { SelectedAsset } from "../../types";
 import { toMediaSrc } from "../../platform/tauri/assets";
@@ -6,18 +6,17 @@ import { useLanguage } from "../../i18n/solid";
 import { UiButton } from "../../ui/controls/UiButton";
 import type { createImageControls } from "./image/createImageControls";
 
-// Stage 7 supplies a session-owned native player at this boundary.
-export interface VideoPresentation {
-  selected: SelectedAsset;
-  active: boolean;
-}
+import { LightboxVideoPlayer } from "./video/LightboxVideoPlayer";
+import type { VideoBounds } from "../../platform/tauri/contracts/video";
+
 export function LightboxMediaStage(props: {
   selected: SelectedAsset;
   active: boolean;
   detailsFailed: boolean;
   retryDetails: () => void;
   controls: ReturnType<typeof createImageControls>;
-  video?: (props: VideoPresentation) => JSX.Element;
+  onPointerActivity?: () => void;
+  onNativeBounds?: (bounds: VideoBounds) => void;
 }) {
   const { t } = useLanguage();
   const source = createMemo(
@@ -43,6 +42,12 @@ export function LightboxMediaStage(props: {
       <Show when={source()} keyed>
         {(_source) => {
           const [failed, setFailed] = createSignal(false);
+          createEffect(
+            () => props.selected.kind === "video" && (props.selected.path === null || failed()),
+            (cleared) => {
+              if (cleared) props.onNativeBounds?.({ x: 0, y: 0, width: 0, height: 0 });
+            }
+          );
           return (
             <Show
               when={props.selected.path !== null}
@@ -79,28 +84,58 @@ export function LightboxMediaStage(props: {
                       data-testid="lightbox-media-error"
                       class="rounded-[var(--radius-control)] border border-error/52 bg-error/14 px-5 py-4 text-center text-sm font-semibold text-base-content"
                     >
-                      {t("lightbox.mediaError.image")}
+                      {t(
+                        props.selected.kind === "video"
+                          ? "lightbox.mediaError.video"
+                          : "lightbox.mediaError.image"
+                      )}
+                      {props.selected.kind === "video" && (
+                        <div class="mt-3">
+                          <UiButton onClick={() => setFailed(false)}>{t("gallery.retry")}</UiButton>
+                        </div>
+                      )}
                     </div>
                   </div>
                 }
               >
                 {props.selected.kind === "video" ? (
-                  (props.video?.({
-                    get selected() {
-                      return props.selected;
-                    },
-                    get active() {
-                      return props.active;
-                    }
-                  }) ?? (
-                    <div
-                      class="flex h-full items-center justify-center"
-                      data-video-migration-pending
-                      role="status"
-                    >
-                      {t("lightbox.mediaError.video")}
-                    </div>
-                  ))
+                  <div class="flex h-full w-full items-center justify-center overflow-hidden">
+                    <Show when={props.active}>
+                      <LightboxVideoPlayer
+                        assetId={props.selected.id}
+                        generation={0}
+                        title={props.selected.path ?? ""}
+                        style={
+                          props.controls.isFullscreen
+                            ? undefined
+                            : {
+                                width:
+                                  props.controls.mediaDisplaySize.width > 0
+                                    ? `${props.controls.mediaDisplaySize.width}px`
+                                    : undefined,
+                                height:
+                                  props.controls.mediaDisplaySize.height > 0
+                                    ? `${props.controls.mediaDisplaySize.height}px`
+                                    : undefined
+                              }
+                        }
+                        aspectRatio={
+                          props.controls.mediaDisplaySize.width > 0 &&
+                          props.controls.mediaDisplaySize.height > 0
+                            ? `${props.controls.mediaDisplaySize.width} / ${props.controls.mediaDisplaySize.height}`
+                            : props.selected.width && props.selected.height
+                              ? `${props.selected.width} / ${props.selected.height}`
+                              : "16 / 9"
+                        }
+                        playerRef={props.controls.videoPlayerRef}
+                        onLoadedMetadata={props.controls.onVideoLoadedMetadata}
+                        onFullscreenChange={props.controls.onVideoFullscreenChange}
+                        onPointerActivity={props.onPointerActivity}
+                        onNativeBounds={props.onNativeBounds}
+                        onError={() => setFailed(true)}
+                      />
+                    </Show>
+                  </div>
                 ) : (
                   <div
                     class={`flex h-full w-full touch-none items-center justify-center overflow-hidden ${props.controls.isZoomed ? (props.controls.isDragging ? "cursor-grabbing" : "cursor-grab") : ""}`}
@@ -130,7 +165,7 @@ export function LightboxMediaStage(props: {
       </Show>
       {props.selected.path !== null && props.detailsFailed ? (
         <div
-          class="absolute left-4 bottom-4 z-[3] flex items-center gap-3 rounded-[var(--radius-control)] border border-warning/52 bg-base-100/92 px-3 py-2 text-xs shadow-[var(--shadow-floating)]"
+          class={`absolute left-4 ${props.selected.kind === "video" ? "bottom-[88px]" : "bottom-4"} z-[3] flex items-center gap-3 rounded-[var(--radius-control)] border border-warning/52 bg-base-100/92 px-3 py-2 text-xs shadow-[var(--shadow-floating)]`}
           role="alert"
         >
           <span>{t("lightbox.assetDetailsLoadFailed")}</span>

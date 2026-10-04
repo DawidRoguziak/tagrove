@@ -15,7 +15,7 @@ Related documentation:
 
 The tagging panel uses the shared `TagEditor` with chips and input inside one border. It retains the 200px scrolling limit, wraps long names, and keeps the focused input visible. The input has an accessible Add tag name without a separate visible label. Empty editable fields show the existing placeholder; details-loading status and retry controls remain outside the field. Autosave and draft ownership remain in the lightbox tagging hook.
 
-## Solid image lightbox during migration
+## Solid lightbox during migration
 
 `src/features/lightbox/createLightbox.ts` owns selection, position recovery, tag-save intents
 and group drafts at application lifetime. It consumes the shared library's bounded details
@@ -24,7 +24,7 @@ query refresh resolves the current ID in the new session without walking interve
 A changed metadata generation causes a current detail read to wait for writes and refetch.
 Identity reset closes the selection and discards retained save intents.
 
-`LightboxModal.tsx` owns the mounted image/GIF presentation, inline confirmation, tag input,
+`LightboxModal.tsx` owns the mounted image/GIF/video presentation, inline confirmation, tag input,
 clipboard feedback, sidebar choice and activity timer. It uses the shared tag editor and
 layer manager. The presence owner retains all displayed model values during exit, while
 logical close releases keyboard and background locks. Navigation retains the shell and
@@ -34,8 +34,19 @@ captures the gallery focus target before loading the lazy view.
 `image/createImageControls.ts` shares the reference fit, zoom and pan calculations. It
 measures the viewport, coalesces transform writes per frame, and releases pointer capture,
 observers, listeners and frames with its owner. Metadata-only updates retain image/GIF DOM
-and zoom. `LightboxMediaStage.tsx` accepts the future native player at a presentation boundary;
-Solid native video playback remains stage 7. React remains the default complete application.
+and zoom. `video/createNativeVideoSession.ts` owns native playback through the existing platform
+wrappers. Its session identity changes only for asset, activation or container changes;
+translated labels and callbacks update without reopening. It buffers the latest early event
+per type, accepts the returned session ID, cancels pending opens and closes late sessions
+when their presentation owner retires. Bounds requests serialize and retain the latest pending
+measurement. The sidebar waits for acknowledged clearance; narrow drawers hide the media
+column through their exit before restoring trigger focus. Native fullscreen keeps the same
+player node and session, removes the top reservation, and hides DOM action panels.
+
+Logical close disposes native playback before the retained modal fades. The player publishes
+explicit string values for boolean snapshot data attributes, preserving their reference
+contract. Native controls, persistence and decoding remain owned by the unchanged Rust/GTK
+backend. React remains the default complete application.
 
 The sections below describe the React reference unless they explicitly name Solid.
 

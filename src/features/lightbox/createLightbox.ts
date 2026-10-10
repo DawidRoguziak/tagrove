@@ -191,8 +191,10 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       }
     );
     resolvePosition();
-    if (cached) setDetailState("ready");
-    else void readDetails(summary.id);
+    if (cached) {
+      setDetailState("ready");
+      if (selectedIndex !== null) prefetch(selectedIndex);
+    } else void readDetails(summary.id);
   }
   function navigate(step: -1 | 1) {
     // Refresh commands change the query immediately, before reactive effects run.

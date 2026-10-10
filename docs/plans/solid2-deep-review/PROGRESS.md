@@ -1,8 +1,8 @@
 # Solid 2 review progress
 
-Current stages: 04-09 independent library and interaction review; 14 desktop verification.
-Current assignments: library-a/library-b peer exchange, interaction-b scale review; coordinator desktop suites and user-requested plan checkpoint commit.
-Exact next action: finish peer exchanges, start lightbox/settings reviews as slots open, inspect desktop suite results, then independently verify candidates.
+Review stopped at the user's request. This review is incomplete.
+Current assignment: commit the existing application, test and documentation changes.
+Exact next action: no further review work is scheduled.
 
 Review baseline: `460d431599012ecb779ef4b1c16771b4e79e5692`. Existing edits: lightbox model/test/docs and duplicate resolver component/test/settings docs, six files. These edits are included and preserved.
 
@@ -11,20 +11,20 @@ Active report directory: [raports/20261010T175947Z-solid2](../../../raports/2026
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
 | 00 | complete | HEAD, six edits, hashes, dependencies, host and full file inventory captured |
-| 01 | in_progress | Independent reviews or baseline capture in progress |
-| 02 | in_progress | Independent reviews or baseline capture in progress |
-| 03 | in_progress | Independent reviews or baseline capture in progress |
-| 04 | in_progress | Independent reviews or baseline capture in progress |
-| 05 | in_progress | Independent reviews or baseline capture in progress |
-| 06 | in_progress | interaction-a and interaction-b independent investigations |
-| 07 | in_progress | Independent reviews or baseline capture in progress |
-| 08 | in_progress | interaction-a and interaction-b independent investigations |
-| 09 | in_progress | interaction-a and interaction-b independent investigations |
-| 10 | pending | Awaiting independent investigation |
-| 11 | pending | Awaiting independent investigation |
-| 12 | pending | Awaiting independent investigation |
-| 13 | in_progress | Independent reviews or baseline capture in progress |
-| 14 | in_progress | Repeated desktop cycles and scale probes underway |
+| 01 | blocked | Independent reviews or baseline capture in progress |
+| 02 | blocked | Independent reviews or baseline capture in progress |
+| 03 | blocked | Independent reviews or baseline capture in progress |
+| 04 | blocked | Independent reviews or baseline capture in progress |
+| 05 | blocked | Independent reviews or baseline capture in progress |
+| 06 | blocked | interaction-a and interaction-b independent investigations |
+| 07 | blocked | Independent reviews or baseline capture in progress |
+| 08 | blocked | interaction-a and interaction-b independent investigations |
+| 09 | blocked | interaction-a and interaction-b independent investigations |
+| 10 | blocked | lightbox-a started; second perspective queued |
+| 11 | blocked | lightbox-a started; second perspective queued |
+| 12 | blocked | settings-a started; second perspective queued |
+| 13 | blocked | Independent reviews or baseline capture in progress |
+| 14 | blocked | Repeated desktop cycles and scale probes underway |
 | 15 | pending | Awaiting independent investigation |
 
 All stages were initialized pending. Stage starts and completion are recorded below after investigation begins.
@@ -62,3 +62,11 @@ The real desktop 2,048-image probe completed cold/warm cache-eviction routes and
 The real WebView probe reproduced the suggestion-retry candidate after an injected Worker constructor failure: a pointer click left focus on BODY and made no second worker-construction attempt. Candidate DR-006 remains subject to fresh verification. DR-007 covers prototype-property collisions in tag selection; DR-005 covers a late metadata acknowledgement repopulating stale details. All seven current candidates are provisional. See [findings](../../../raports/20261010T175947Z-solid2/findings.json).
 
 The user explicitly requested a commit during review. This authorizes a checkpoint of these new plan/progress files; application code, existing tests and the six pre-existing edits remain outside this checkpoint. Generated evidence remains ignored under raports/.
+
+Plan/progress checkpoint committed at user request as `f9b0e3a`. The six original edits remain uncommitted; baseline application hashes remain unchanged. Subsequent progress updates remain in the working tree.
+
+Library peer exchange is complete. DR-003 remains uncertain for native task scheduling. DR-004 has a narrower repeated failed Retry trigger after the error alert already exists; first-failure layout can recover. Both are awaiting a fresh verifier. Lightbox-a and settings-a have started their independent source investigations.
+
+## User correction and stop
+
+The user clarified that "commit" meant the existing code, test and documentation changes. The earlier plan-only commit was an incorrect interpretation. Review workers and the owned desktop suite were stopped. The suite is incomplete and must not be reported as passing. The six original source/test/documentation changes are now included in the requested commit together with this progress correction. No review fixes were implemented.

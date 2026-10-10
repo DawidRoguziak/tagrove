@@ -120,6 +120,24 @@ describe("Solid lightbox selection and metadata", () => {
     await settled();
     expect(api.getAssetDetails).toHaveBeenCalledTimes(1);
   });
+  it("keeps prefetching neighbors when navigation selects cached details", async () => {
+    api.startAssetQuery.mockResolvedValue(ready([1, 2, 3, 4, 5]));
+    const { box, library } = await setup();
+    await settled();
+    expect(api.getAssetDetails.mock.calls.map(([id]) => id).sort()).toEqual([1, 2, 5]);
+
+    settle(box.next);
+    await settled();
+    expect(box.selected?.id).toBe(2);
+    expect(library.details.get(3)?.id).toBe(3);
+    expect(api.getAssetDetails.mock.calls.map(([id]) => id).sort()).toEqual([1, 2, 3, 5]);
+
+    settle(box.next);
+    await settled();
+    expect(box.selected?.id).toBe(3);
+    expect(library.details.get(4)?.id).toBe(4);
+    expect(api.getAssetDetails.mock.calls.map(([id]) => id).sort()).toEqual([1, 2, 3, 4, 5]);
+  });
   it("keeps failed details and failed saves independent", async () => {
     api.getAssetDetails.mockRejectedValue(new Error("read failed"));
     const { box, library } = await setup(false);

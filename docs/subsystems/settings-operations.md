@@ -23,6 +23,13 @@ and one form model. Visible rows carry their group from the same scan snapshot, 
 virtual index cannot read a removed group during a rescan. Confirmation dialogs retain their
 path, counts and disabled state through exit with `createModalSnapshot`.
 
+Rows keep stable identities within a scan snapshot while virtual positions update
+reactively, preserving visible editors, focus and thumbnail subscriptions during scrolling.
+Measurement registration runs in `onSettled`, after attachment and `data-index`
+initialization; rows removed before that callback are skipped. The duplicate dialog
+component tests exercise measured spacing and focus/subscription retention with real
+`virtual-core` and synthetic DOM dimensions.
+
 The operation ordering below uses `platform/tauri`
 wrappers and `library.tags.runWithMutationBarrier` for CSV import, restore and clear.
 Restore resets identity, query and thumbnails, retaining vocabulary until refresh; clear

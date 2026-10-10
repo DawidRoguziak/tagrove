@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onCleanup } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onSettled } from "solid-js";
 import {
   Virtualizer,
   elementScroll,
@@ -64,18 +64,24 @@ export function DuplicateResolverDialog(props: Props) {
   );
   const snapshot = createMemo(() => {
     version();
-    return { items: virtualizer.getVirtualItems(), height: virtualizer.getTotalSize() };
+    const items = virtualizer.getVirtualItems();
+    return {
+      items,
+      starts: new Map(items.map((item) => [item.index, item.start])),
+      height: virtualizer.getTotalSize()
+    };
   });
+  // Keep row identities for the scan snapshot; virtualizer updates only change geometry.
+  const rows = createMemo(() => props.groups.map((group, index) => ({ group, index })));
   const renderedGroups = createMemo(() => {
-    const groups = props.groups;
-    const items = snapshot().items.length
-      ? snapshot().items
-      : groups.slice(0, 3).map((_, index) => ({ index, start: index * 360 }));
+    const groups = rows();
+    const items = snapshot().items;
+    if (!items.length) return groups.slice(0, 3);
     // Virtual measurements can still describe the previous scan during this update.
     // Carry each existing group with its row so children never index a newer snapshot.
     return items.flatMap((item) => {
       const group = groups[item.index];
-      return group ? [{ ...item, group }] : [];
+      return group ? [group] : [];
     });
   });
   createEffect(
@@ -155,10 +161,16 @@ export function DuplicateResolverDialog(props: Props) {
           <For each={renderedGroups()}>
             {(item) => (
               <div
-                ref={virtualizer.measureElement}
+                ref={(element) =>
+                  onSettled(() => {
+                    if (element.isConnected) virtualizer.measureElement(element);
+                  })
+                }
                 data-index={item.index}
                 class="absolute left-0 top-0 w-full pb-2"
-                style={{ transform: `translateY(${item.start}px)` }}
+                style={{
+                  transform: `translateY(${snapshot().starts.get(item.index) ?? item.index * 360}px)`
+                }}
               >
                 <DuplicateGroupCard
                   group={item.group}

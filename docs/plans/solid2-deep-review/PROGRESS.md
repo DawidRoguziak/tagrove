@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 05 complete; overall review partial.
-Current stage: none active; stage 06 is next.
-Current assignment: none; stage 05 reviews, peer handoffs, independent verification and trail audit are complete.
-Next action: recheck source hashes, then begin stage 06, gallery virtualization and selection.
+Status: stages 00 through 06 complete; overall review partial.
+Current stage: none active; stage 07 is next.
+Current assignment: none; stage 06 reviews, peer handoffs, independent verdicts and trail audit are complete.
+Next action: recheck source hashes, then begin stage 07, thumbnail pipeline.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; no stage 05 desktop session; native checks finished.
+Runtime/build owner: coordinator `/root`; stage 06 native fixtures finished and cleaned; no full Tauri session ran.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ Runtime/build owner: coordinator `/root`; no stage 05 desktop session; native ch
 | 03 | complete | Dual 18-path lifetime review, peer exchange, isolated desktop smoke and independent P2 startup-remount finding |
 | 04 | complete | Dual eight-path review, peer exchange, native/frontend probes and two independently confirmed P2 findings |
 | 05 | complete | Dual 18-path review, peer exchange, 19 supplemental probes and one independently confirmed P2 finding |
-| 06 | pending | Awaiting investigation |
+| 06 | complete | Dual 21-path review, 100k/1m probes, native WebKit checks and three independent findings |
 | 07 | pending | Awaiting investigation |
 | 08 | pending | Awaiting investigation |
 | 09 | pending | Awaiting investigation |
@@ -188,6 +188,36 @@ No desktop session, live IPC response-order experiment, physical rename/rescan r
 
 The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage05-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage05-trail-audit/trail-audit.md) record the missing raw contract-discovery refusal log and distinguish inventory evidence from assignment evidence. These were clarified without changing initial reviews. Requested auditor model was `gpt-5.6-sol`; observed model metadata and a conversation transcript were unavailable. The audit found no remaining factual mismatch. The overall review remains partial because stages 06-15 are pending.
 
+## Stage 06 evidence and limits
+
+Completed on 2026-10-11 with peer exchange, three independent verdicts and final trail audit. Two fresh reviewers inspected all 21 stage paths. `/root/stage06_behavior` traced user interaction, reactive identity and selection across 42 paths; `/root/stage06_scale` traced virtualization, bounded work and cache coordination across 44 paths. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata was unavailable. Six initial reviewer artifacts and two coordinator intake artifacts remain unchanged after peer exchange. Application, existing-test and configuration hashes match the original baseline.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[behavior review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage06-behavior/notes.md),
+[scale review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage06-scale/notes.md),
+[coverage and hashes](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage06-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage06-commands.json).
+
+Three pre-existing findings were independently confirmed by separate fresh `gpt-6.1-sol` verifiers, all with high reasoning and unavailable observed model metadata. No fixes were applied.
+
+- DR-007, P2: a single full-height gallery spacer exceeds WebKit's coordinate limit. At one million results, five 188px columns require 39,999,988px; native WebKitGTK 2.54.1 clamps the spacer to 33,554,428px. Repeated maximum scrolling leaves the mounted/requested range ending at index 838,884, without final index 999,999. Smaller tiles, wider grids and narrower result counts recover. A 100k result set also fails at one 588px column, so the threshold depends on layout. Fresh verifier `/root/verify_stage06_height` passed nine native cases and 11 assertions against actual GalleryGrid, virtual-core and checked production CSS. Repair requires bounded physical scroll coordinates mapped to logical indices. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-007.json).
+- DR-008, P2: an error banner moves the grid origin and handler cleanup erases a settled failed-selection retry. Fresh verifier `/root/verify_stage06_retry` anchored an early tile, browsed 15 pages, Shift-clicked a loaded late tile and failed evicted intermediate page 128. The native origin moved from 20 to 74px; clicking visible Retry cleared the error without issuing another page request. Prior IDs remained intact. An unchanged-origin control completed all 1,953 IDs; viewport retry and newer-input controls passed. Four native cases and 11 assertions passed. Preserve failed retry intent when cancelling inactive gesture state during layout updates. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-008.json).
+- DR-009, P3: the gallery guide says production uses `hasMore: false`, but AppGalleryView passes `offset < total`. Footer fallback/guard descriptions also contain stale text. Fresh verifier `/root/verify_stage06_docs` confirmed the exact code/document mismatch without inferring a runtime defect. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-009.json).
+
+Cumulative confirmed counts are P0 0, P1 0, P2 6, P3 3; rejected 0; unresolved 0. DR-001 through DR-006 remain unchanged.
+
+Executed verification:
+
+- The focused existing suite passed 103 tests across 10 files, including 10,000/26,000-slot cases. Reviewers passed eight behavioral probes, two scale probes and two peer counterexamples, 12 supplemental tests in total.
+- Metadata-only 100k/1m scenarios used real GalleryGrid, library and query owners with controlled IPC. Both mounted at most 60 slots, retained at most 1,536 summaries and issued at most two page reads per jump, 38 over the route. All three observer registrations disconnected on disposal. The measurement cache still scales with row count. Mocked geometry cannot establish native scroll limits or desktop latency.
+- Native fixtures compiled production components and CSS in isolated owned output directories, using ephemeral WebKitGTK, synthetic data and temporary localhost servers. Height evidence records range demand; Retry uses real API/query wrappers with injected invoke replies. These are separate from live Tauri/SQLite execution. Native processes and temporary profiles were cleaned; direct cleanup checks passed.
+- Failed probe attempts remain visible. A height-fixture callback returned a number as Solid cleanup; correcting it produced passing evidence. The initial Retry fixture omitted Tailwind utilities because its root was ignored; explicit source discovery and computed-style assertions corrected it. The retained height bundle separately passed its CSS audit. Behavioral fixture corrections are preserved in reviewer logs. No application code changed to make probes pass.
+- Both peer handoffs are answered. Coverage, initial-artifact hash checks, source inventory, record validation and `git diff --check` passed.
+
+No full Tauri application session, live Rust bridge, million-row SQLite query, hardware-input or pixel check ran. Native Retry output includes settled ResizeObserver loop notifications and uses fallback fonts. No Rust suite, full frontend suite, production application build, typecheck, lint, locale check or release verification ran in stage 06. All generated artifacts remain ignored; only this progress document changed among tracked files. No worktree, commit or push was created.
+
+The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage06-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage06-trail-audit/trail-audit.md) resolve evidence-link gaps for fixture failures, cleanup and cumulative counts. The peer documentation assignment was copied byte-for-byte into its required owned directory after an initial validator rejection. The final audit found no remaining factual discrepancy. Requested auditor model was `gpt-5.6-sol`; no workspace transcript or observed model metadata was available. Native CSS utilities were checked, without claiming byte-identical application bundles. Overall review remains partial because stages 07-15 remain pending.
+
 ## Exact resume action
 
-Stage 06 is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 06](06-gallery-virtualization-selection.md), library query/gallery and frontend architecture conventions, plus linked contracts needed for gallery callers. Assign two fresh perspectives on measurement, row identity, overscan, resize anchors, range selection, drag geometry and remounts. Exercise existing 10,000/26,000-slot tests and metadata-only 100,000/1,000,000-entry scenarios, measuring mounted nodes and request work. Use exact-file probe discovery, preserve initial reviews before peer exchange, and independently verify every distinct candidate. Carry DR-001 through DR-006 forward without applying fixes.
+Stage 07 is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 07](07-thumbnail-pipeline.md), thumbnail subsystem documentation and the linked IPC contracts. Assign two fresh perspectives on demand, prefetch, deduplication, generations, retry, retention, subscriptions and cleanup. Exercise cold/warm routes, cache eviction, late events after reset and repeated failures; count unrelated tile updates and requests. Keep exact-file probe discovery and explicit production CSS source discovery for standalone native fixtures. Preserve initial reviews before peer exchange and independently verify each distinct candidate. Carry DR-001 through DR-009 forward without fixes.

@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 13 complete; overall review partial.
-Current stage: none active; stage 14 is next.
-Current assignment: none; stage 13 reviews, peer exchange, native checks, independent verdicts and audit are complete.
-Next action: recheck source hashes, then begin stage 14 integrated performance and stability.
+Status: stages 00 through 14 complete; overall review partial.
+Current stage: none active; stage 15 is next.
+Current assignment: none; stage 14 reviews, peer exchange, native checks, independent disposition and audit are complete.
+Next action: recheck source hashes, then begin stage 15 independent verification and final report.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 13 controller and fourteen native cases finished. Temporary profiles, synthetic media roots and owned processes were cleaned.
+Runtime/build owner: coordinator `/root`; stage 14 controller and five native cases finished. Temporary profiles, synthetic media roots and owned processes were cleaned.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Runtime/build owner: coordinator `/root`; stage 13 controller and fourteen nativ
 | 11 | complete | Dual nine-path review, native 30-cycle checks and one independently confirmed P2 finding |
 | 12 | complete | Dual 59-path review, eight native cases and fifty cycles; one confirmed P3, one rejected claim |
 | 13 | complete | Dual 37-path review, 14 native cases and final audit; confirmed P2/P3, one rejected claim |
-| 14 | pending | Awaiting investigation |
+| 14 | complete | Dual 22-path review, 2,048-image timings, 100/50/30 cycles and one confirmed P3 |
 | 15 | pending | Awaiting investigation |
 
 ## Stage 00 evidence and limits
@@ -418,6 +418,36 @@ Default-sandbox controller startup failed on local-socket EPERM; its approved is
 [final checks](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage13-final-checks.json).
 The requested audit model is `gpt-5.6-sol`; observed telemetry and workspace transcript are unavailable. Preliminary flags prompted direct raw-log links, appended harness-pivot records and separate source-provenance counts. The final delta audit found no remaining factual or evidence-integrity flags. Five installed i18next/jsdom support files were first hashed during stage 13, so their original-baseline identities are unavailable. Repository package/lock/source hashes remain unchanged. Coverage checks compare 159 original-baseline hashes and one late-captured review dependency; final checks additionally recheck all 126 verifier source hashes. Record validation and diff checks pass. Only this progress document changes among tracked files; no worktree, commit or push was created.
 
+## Stage 14 evidence and limits
+
+Completed on 2026-10-11, including peer exchange, candidate disposition and final evidence audit. Both independent reviewers inspected all 22 assigned paths. Behavior records 55 inspected paths; performance records 22 assigned paths plus supporting traces and 52 source hashes. Both requested `gpt-6.1-sol` with high reasoning; observed metadata is unavailable. Eight original artifacts were frozen before peer exchange and remain unchanged. Both handoffs are answered.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[coverage](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage14-coverage-check.json),
+[runtime details](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage14-coordinator-runtime.md),
+[clean measurements](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage14-clean/stage14-integrated-result.json).
+
+DR-022 is independently confirmed as P3. The complete opt-in gallery benchmark warms sampled thumbnails in its metadata test before calling a later pass cold. That result mixes cached and first-use work. The fresh verifier traced declared test order, frontend refresh and backend JPEG reuse; exact cache-hit counts and numerical impact remain unmeasured. This is a benchmark provenance defect, not a proved production slowdown. Measure first use before the earlier traversal or rename the pass. No fix was applied. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-022.json).
+
+The behavior reviewer independently reproduced the delayed-save/Settings-rename defect already recorded as DR-006. Its original is mapped to that existing P2, whose independent verdict and source hashes remain valid. A controlled frontend response arrives after rename/refresh and restores the old path without another details read. No live delayed-IPC frequency or new defect is claimed.
+
+Focused frontend runs passed 126 tests across eleven files and an overlapping 57 across seven. One supplemental race case passed. An accidental merged include glob ran 626 tests across 75 files and overlapped the first native timing trial. Its raw passing log survives; the corrected owned config selects one probe. Final timing evidence comes from a fresh isolated rerun after reviewer tests ended.
+
+Five native cases passed across two launchers. Each integrated run exercised 2,048 copied PNGs, 100 same-image preview cycles and 50 Settings round trips. The clean trial measured nineteen first-use route samples at 469 ms median / 524 ms p95, then thirty fully warmed samples at 62.5 / 69 ms in the WebView. Including WebDriver overhead, warm median/p95 were 66.0 / 101.7 ms. Warmup completed all 2,051 thumbnails, including one GIF and two videos, and read-only SQLite confirmed their paths. First use includes an already loaded viewport and revisits; OS caches were not flushed. Readiness checks decoded images, not full fade opacity.
+
+The route crossed all sixteen image pages with forty-two page reads and at most ninety-one mounted tiles. Image/Settings DOM counts stayed constant within each repetition group, listener calls balanced, and captured errors/rejections were empty. Process CPU/RSS/FD/thread samples survive. App descriptors were sixty at warmed baseline and final settling, WebKit descriptors forty-one. WebKit RSS varied and remained above its warmed baseline; no retained heap or forced GC was available, so leak freedom is unverified.
+
+The native video case passed thirty reopens across six rates with distinct sessions, decoded moving-picture comparisons and retired-close guards. Native-process RSS rose during the run without an isolated allocation cause. This remains a resource-measurement limit, not a confirmed leak. Immediate backend idle after each close was not observed. Five screenshots were inspected; all thirty video pairs were decoded by the comparison tool.
+
+The controller and both launchers used private X11/Xvfb, disposable profiles and synthetic media. Initial sandbox startup failed on local sockets; the approved isolated rerun succeeded. Owned processes, profiles and generated media roots were cleaned. No Wayland, physical input, audio, native chooser, full-process persistence, release package, large unique-photo workload or million-file desktop ran. Image/Settings cycles use DOM dispatch; native video uses XTest. Desktop builds included TypeScript and frontend/native compilation. No new Rust suite, lint or locale check ran.
+
+Cumulative confirmed counts are P0 0, P1 0, P2 14, P3 6; rejected 2; unresolved 0. Application, existing-test and configuration hashes remain unchanged. Two installed Mocha files were first hashed during stage 14; their original-baseline identity is unavailable. Reviewer hash checks total 107 and all eight originals are preserved. Record validation passes as partial. Only this progress file changes among tracked files; no fixes, worktrees, commits or pushes were made.
+
+[Decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage14-decisions.tsv),
+[audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage14-trail-audit/trail-audit.md),
+[final checks](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage14-final-checks.json).
+The audit requested `gpt-5.6-sol`. Three incomplete evidence pointers were corrected with appended rows; the delta audit found no remaining flags. Final checks include 61 unchanged verifier source hashes. Workspace transcript and observed model telemetry are unavailable.
+
 ## Exact resume action
 
-Stage 14 integrated performance and stability is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and read [stage 14](14-integrated-performance-stability.md). Carry findings forward without fixes, preserve independent coverage and serialize builds/native sessions with synthetic fixtures and disposable profiles.
+Stage 15 is next. Begin [independent verification and final report](15-independent-verification-final-report.md). Recheck hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Carry all findings forward without fixes and preserve serialized builds/native sessions with disposable profiles.

@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 06 complete; overall review partial.
-Current stage: none active; stage 07 is next.
-Current assignment: none; stage 06 reviews, peer handoffs, independent verdicts and trail audit are complete.
-Next action: recheck source hashes, then begin stage 07, thumbnail pipeline.
+Status: stages 00 through 07 complete; overall review partial.
+Current stage: none active; stage 08 is next.
+Current assignment: none; stage 07 reviews, peer handoffs, runtime checks and trail audit are complete.
+Next action: recheck source hashes, then begin stage 08, search and suggestions.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 06 native fixtures finished and cleaned; no full Tauri session ran.
+Runtime/build owner: coordinator `/root`; stage 07 native tests finished; no desktop session ran.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ Runtime/build owner: coordinator `/root`; stage 06 native fixtures finished and 
 | 04 | complete | Dual eight-path review, peer exchange, native/frontend probes and two independently confirmed P2 findings |
 | 05 | complete | Dual 18-path review, peer exchange, 19 supplemental probes and one independently confirmed P2 finding |
 | 06 | complete | Dual 21-path review, 100k/1m probes, native WebKit checks and three independent findings |
-| 07 | pending | Awaiting investigation |
+| 07 | complete | Dual 13-path review, peer exchange, 48 frontend/47 native tests and 12 supplemental cases; no new candidates |
 | 08 | pending | Awaiting investigation |
 | 09 | pending | Awaiting investigation |
 | 10 | pending | Awaiting investigation |
@@ -218,6 +218,31 @@ No full Tauri application session, live Rust bridge, million-row SQLite query, h
 
 The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage06-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage06-trail-audit/trail-audit.md) resolve evidence-link gaps for fixture failures, cleanup and cumulative counts. The peer documentation assignment was copied byte-for-byte into its required owned directory after an initial validator rejection. The final audit found no remaining factual discrepancy. Requested auditor model was `gpt-5.6-sol`; no workspace transcript or observed model metadata was available. Native CSS utilities were checked, without claiming byte-identical application bundles. Overall review remains partial because stages 07-15 remain pending.
 
+## Stage 07 evidence and limits
+
+Completed on 2026-10-11 at `3051692`, including independent reviews, peer exchange and final trail audit. Two independent reviewers inspected all 13 assigned paths. `/root/stage07_frontend` traced Solid ownership, demand, subscriptions and tile updates across 44 paths. `/root/stage07_contracts` traced architecture, scheduler admission and Rust/IPC/database publication across 42 paths. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata was unavailable. Six initial review artifacts remain unchanged after peer exchange. Application, existing-test and configuration hashes match the original baseline.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[frontend review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage07-frontend/notes.md),
+[contract review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage07-contracts/notes.md),
+[coverage and hashes](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage07-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage07-commands.json).
+
+Neither independent investigation nor peer exchange submitted a candidate. No new independent candidate verdict was needed, and no fix was applied. Cumulative confirmed counts remain P0 0, P1 0, P2 6, P3 3; rejected 0; unresolved 0. DR-001 through DR-009 remain unchanged. This result is limited to the inspected paths and executed scenarios.
+
+Executed verification:
+
+- The coordinator's focused frontend suite passed 48 tests across seven files. The frontend reviewer passed 19 overlapping existing tests. Rust checks passed 12 scheduler, 17 service, 17 rendering and one file-backed thumbnail-clear case, 47 total, including real synthetic video probing/rendering and image regeneration after clear.
+- Ten supplemental frontend cases passed. Queue cold/warm/eviction request totals were 1/1/2. Twenty-five repeated failed demands added no request until reset. Old ready/failed/stale events and invoke rejection did not repopulate or poison the new generation. Inactive paths/versions were released; mounted subscribers retained paths until unsubscribe.
+- Completing one of 100 actual GalleryTile components replaced one image and cleared its spinner; 99 unrelated image nodes retained identity with zero unrelated path reads or media conversions. A separate store probe with 10,000 subscriptions notified the changed ID once and unrelated IDs zero times. These are update counts under controlled frontend execution, not native latency or memory benchmarks.
+- Two supplemental native scheduler cases passed using actual scheduler source and controlled processors. Two active browsing videos blocked a third while an eligible low-priority image ran. Admission stopped at 2,048 distinct jobs and 256 waiters per target; all admitted receivers received terminal results. Renderer and database-permit stubs were not exercised in these probes.
+- Peer review corrected an evidence claim: the initial 13-page library fixture tested passive path rehydration without gallery demand. A separate follow-up passed with 14 viewport changes across 13 pages and a revisit, then explicit demand for returned IDs. It retained 24 synthetic ready summaries, refetched one evicted page and sent zero generation invokes. Initial evidence remains preserved. Prior virtualizer coverage belongs to stage 06; no GalleryGrid/virtualizer test reran here.
+- One intermediate probe failed in its observation writer after the six cases passed. Correcting only the owned output path produced passing recorded evidence. A nonexistent coordinator integration-test filter contributed no tests; the saved discovery list identifies the seven actual files. Both peer handoffs are answered, and coverage, source inventory, review-record validation and `git diff --check` passed.
+
+No desktop session, live Tauri channel-order experiment, WebKit rendering/pixel check, cold-video viewport-latency measurement or native memory benchmark ran. Frontend probes use jsdom, fake timers and mocked IPC; native suites establish separate backend behavior. Rust fixtures use temporary directories; their individual cleanup paths were not logged or independently checked. No full frontend/backend suite, production application build, typecheck, lint, locale check or release verification ran in this stage. Only this progress document changed among tracked files. No worktree, commit or push was created.
+
+The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage07-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage07-trail-audit/trail-audit.md) retain the peer correction and separate follow-up. The auditor found two narrow evidence pointers, corrected through appended rows linking the inventory and separate supplemental/coverage results. No factual mismatch remains. Requested auditor model was `gpt-5.6-sol`; workspace transcript and observed model metadata were unavailable. Overall review remains partial because stages 08-15 remain pending.
+
 ## Exact resume action
 
-Stage 07 is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 07](07-thumbnail-pipeline.md), thumbnail subsystem documentation and the linked IPC contracts. Assign two fresh perspectives on demand, prefetch, deduplication, generations, retry, retention, subscriptions and cleanup. Exercise cold/warm routes, cache eviction, late events after reset and repeated failures; count unrelated tile updates and requests. Keep exact-file probe discovery and explicit production CSS source discovery for standalone native fixtures. Preserve initial reviews before peer exchange and independently verify each distinct candidate. Carry DR-001 through DR-009 forward without fixes.
+Stage 08 is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 08](08-search-suggestions.md), search subsystem documentation and the linked worker/runtime contracts. Assign two fresh perspectives on debounce, query application, composition input, suggestion-worker generations, vocabulary changes, ranking, highlight and cleanup. Preserve initial reviews before peer exchange and independently verify each distinct candidate. Keep exact-file probe discovery and distinguish controlled frontend execution from native desktop behavior. Carry DR-001 through DR-009 forward without fixes.

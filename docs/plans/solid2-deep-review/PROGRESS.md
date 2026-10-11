@@ -3,7 +3,7 @@
 Status: stages 00 through 15 complete; review complete within the documented scope.
 Current stage: none active; stage 15 and the review plan are complete.
 Current assignment: none; independent audits, peer exchange and final evidence validation are complete.
-Next action: use the final report to plan repairs separately. No fixes were applied.
+Next action: execute batch 01 of the [separate repair plan](../solid2-repairs/README.md). Repair planning is complete; no fixes were applied.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
@@ -478,4 +478,6 @@ Only this progress document changes among tracked files. Reports, probes and raw
 
 ## Exact resume action
 
-The review plan is complete. Use the final report and catalogue to plan repairs separately; this review applied no fixes. Revalidate current evidence with `python3 raports/20261010T182819Z-solid2-deep-review/verify_stage15.py` before relying on it after source changes.
+The review plan is complete. The final report and catalogue now have a [separate repair plan](../solid2-repairs/README.md), with implementation status in [repair progress](../solid2-repairs/PROGRESS.md). Continue with repair batch 01. This review applied no fixes.
+
+The historical evidence was revalidated successfully on 2026-10-11 before repair planning. `python3 raports/20261010T182819Z-solid2-deep-review/verify_stage15.py` checks original source identity; intentional repairs will cause drift. Preserve those original hashes and record repair verification separately.

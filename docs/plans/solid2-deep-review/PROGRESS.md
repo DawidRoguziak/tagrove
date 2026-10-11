@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 04 complete; overall review partial.
-Current stage: none active; stage 05 is next.
-Current assignment: none; stage 04 reviews, peer handoffs, independent verification and trail audit are complete.
-Next action: recheck source hashes, then begin stage 05, metadata and mutation coordination.
+Status: stages 00 through 05 complete; overall review partial.
+Current stage: none active; stage 06 is next.
+Current assignment: none; stage 05 reviews, peer handoffs, independent verification and trail audit are complete.
+Next action: recheck source hashes, then begin stage 06, gallery virtualization and selection.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; no stage 04 desktop session; native probes finished.
+Runtime/build owner: coordinator `/root`; no stage 05 desktop session; native checks finished.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ Runtime/build owner: coordinator `/root`; no stage 04 desktop session; native pr
 | 02 | complete | Dual 82-path reliability review, peer exchange, 625 tests plus shuffled run, independent P3 false-pass finding |
 | 03 | complete | Dual 18-path lifetime review, peer exchange, isolated desktop smoke and independent P2 startup-remount finding |
 | 04 | complete | Dual eight-path review, peer exchange, native/frontend probes and two independently confirmed P2 findings |
-| 05 | pending | Awaiting investigation |
+| 05 | complete | Dual 18-path review, peer exchange, 19 supplemental probes and one independently confirmed P2 finding |
 | 06 | pending | Awaiting investigation |
 | 07 | pending | Awaiting investigation |
 | 08 | pending | Awaiting investigation |
@@ -161,6 +161,33 @@ No live WebView query race, desktop session, multi-million-row SQLite query, pro
 
 The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage04-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage04-trail-audit/trail-audit.md) retain the discovery-scope clarification and verification limits. The auditor requested `gpt-5.6-sol`; observed model metadata and a conversation transcript were unavailable. It found no remaining factual trail discrepancy. Overall review remains partial because stages 05-15 are pending.
 
+## Stage 05 evidence and limits
+
+Completed on 2026-10-11 with two independent reviews, peer exchange, fresh candidate verification and trail audit. Application, existing-test and configuration hashes remain unchanged from the original baseline. Both reviewers inspected all 18 stage paths. `/root/stage05_frontend` traced reactive ownership, cache lifetime and canonical publication across 50 paths; `/root/stage05_contracts` traced architecture, Rust/IPC/SQLite contracts and maintenance across 54 paths. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata was unavailable. Six initial review artifacts remain unchanged after peer exchange.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[frontend review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage05-frontend/notes.md),
+[contract review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage05-contracts/notes.md),
+[coverage and hashes](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage05-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage05-commands.json).
+
+One new P2 defect, DR-006, was independently confirmed by `/root/verify_stage05_details`, requested `gpt-6.1-sol` with high reasoning. A pending metadata save captures a complete details record before IPC. If Settings rescan or duplicate rename refreshes the query before the save settles, the save restores that older record with a fresh metadata token. Reopening the lightbox accepts stale path or size without another details request, even though the gallery has current summaries. A successful rename can therefore leave the lightbox reading the former pathname. The frontend stale-record behavior was reproduced; a physical rename and WebView load failure were not executed.
+
+The verifier's eight independent cases exercise actual lightbox save, Settings controllers, query/cache and reopened selection with controlled IPC. Three reproduction schedules pass, including tag commit before duplicate discovery with delayed response, and tag execution after rename. Five controls pass: ordinary save, identity reset, pre-save eviction, same-save refresh and unchanged-file query clear. Duplicate revision guards do not reject either modeled valid schedule. Source traces establish backend feasibility; live Tauri reply ordering and incidence remain unmeasured. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-006.json).
+
+Repair direction is to preserve the details-cache generation at mutation start and avoid restoring a captured full record after a clear, while still publishing canonical metadata. No fix was applied. The source matches the original baseline. Cumulative confirmed counts are P0 0, P1 0, P2 4, P3 2; rejected 0; unresolved 0. DR-001 through DR-005 remain unchanged.
+
+Executed verification:
+
+- Coordinator frontend suite passed 167 tests across 10 files. Database unit tests passed 52; backend integration/workflow tests passed seven; database-pool tests passed three.
+- Frontend reviewer passed 86 tests across seven assigned files, overlapping the coordinator suite, plus five supplemental cases. Contract reviewer passed six supplemental cases. Fresh verifier passed eight cases. These cover reversed completions, partial canonical responses, save after details eviction, concurrent lightbox/bulk writes with maintenance, identity reset and the stale-cache finding.
+- Both reviewers initially merged extra test include patterns. The exact-file discovery guard prevented unintended suite execution. The frontend refusal has a raw log; the contract refusal is recorded in reviewer notes/commands only. A maintenance assertion and a missing Settings mock dependency were corrected in ignored probes; their failing runtime logs remain preserved.
+- Both peer handoffs are answered. Coverage and initial-artifact hash checks passed. Final inventory, record validation and `git diff --check` passed.
+
+No desktop session, live IPC response-order experiment, physical rename/rescan reproduction, native video, full backend suite, release build, typecheck, lint or locale validation ran in stage 05. Frontend tests and native persistence tests are separate executed layers. No application, existing-test or configuration changes were made. All generated evidence remains ignored; only this progress document changed among tracked files. No worktree, commit or push was created.
+
+The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage05-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage05-trail-audit/trail-audit.md) record the missing raw contract-discovery refusal log and distinguish inventory evidence from assignment evidence. These were clarified without changing initial reviews. Requested auditor model was `gpt-5.6-sol`; observed model metadata and a conversation transcript were unavailable. The audit found no remaining factual mismatch. The overall review remains partial because stages 06-15 are pending.
+
 ## Exact resume action
 
-Run `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and inspect drift before assigning stage 05. Read [stage 05](05-metadata-mutation-coordination.md), search/tags/groups, data safety and relevant IPC contracts. Start two fresh perspectives on details, canonical tags, ownership tokens, mutation barriers, optimistic patches, partial responses and identity resets. Probe overlapping lightbox/bulk saves with maintenance, reversed completions, saving after details eviction and partial canonical results. Preserve initial reviews before peer exchange and assign each distinct candidate a fresh verifier. Use the ignored run's `run_probe.py` to check exact frontend probe discovery before execution. Carry DR-001 through DR-005 forward without applying fixes during this read-only review.
+Stage 06 is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 06](06-gallery-virtualization-selection.md), library query/gallery and frontend architecture conventions, plus linked contracts needed for gallery callers. Assign two fresh perspectives on measurement, row identity, overscan, resize anchors, range selection, drag geometry and remounts. Exercise existing 10,000/26,000-slot tests and metadata-only 100,000/1,000,000-entry scenarios, measuring mounted nodes and request work. Use exact-file probe discovery, preserve initial reviews before peer exchange, and independently verify every distinct candidate. Carry DR-001 through DR-006 forward without applying fixes.

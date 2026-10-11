@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 08 complete; overall review partial.
-Current stage: none active; stage 09 is next.
-Current assignment: none; stage 08 reviews, peer exchange, verification and audit are complete.
-Next action: recheck source hashes, then begin stage 09, tag editing, bulk actions and groups.
+Status: stages 00 through 09 complete; overall review partial.
+Current stage: none active; stage 10 is next.
+Current assignment: none; stage 09 reviews, peer exchange, runtime verification and audit are complete.
+Next action: recheck source hashes, then begin stage 10, lightbox model and image controls.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; isolated stage 08 WebKit fixtures finished and cleaned; no full Tauri session ran.
+Runtime/build owner: coordinator `/root`; stage 09 Tauri controller and group-order E2E finished. Temporary profiles and recorded processes were cleaned.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ Runtime/build owner: coordinator `/root`; isolated stage 08 WebKit fixtures fini
 | 06 | complete | Dual 21-path review, 100k/1m probes, native WebKit checks and three independent findings |
 | 07 | complete | Dual 13-path review, peer exchange, 48 frontend/47 native tests and 12 supplemental cases; no new candidates |
 | 08 | complete | Dual 40-path review, peer exchange, native worker/input checks and two independently confirmed P2 findings |
-| 09 | pending | Awaiting investigation |
+| 09 | complete | Dual 22-path review, peer exchange, native tag/group persistence and 96-image ordering; no new candidates |
 | 10 | pending | Awaiting investigation |
 | 11 | pending | Awaiting investigation |
 | 12 | pending | Awaiting investigation |
@@ -275,6 +275,35 @@ No full Tauri session, live bridge or persistence workflow, screenshot/pixel che
 [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage08-trail-audit/trail-audit.md).
 Requested auditor model is `gpt-5.6-sol`; workspace transcript and observed model telemetry are unavailable. The audit found narrow evidence pointers, corrected with appended trail rows. No factual or evidence-integrity flag remains. Final coverage, source inventory, record validation and `git diff --check` passed. Overall review remains partial because stages 09-15 remain pending.
 
+## Stage 09 evidence and limits
+
+Completed on 2026-10-11, including peer exchange, native verification and final trail audit. Both independent reviewers inspected all 22 assigned paths. `/root/stage09_behavior` covered frontend drafts, save ordering, focus and modal ownership across 56 paths; `/root/stage09_contracts` covered architecture, canonical publication and Rust/SQLite contracts across 54. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata is unavailable. Six initial review artifacts remain unchanged after exchange. Application, existing-test and configuration hashes match the original baseline.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[behavior review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage09-behavior/notes.md),
+[contract review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage09-contracts/notes.md),
+[coverage and hashes](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage09-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage09-commands.json).
+
+Neither initial investigation nor peer exchange submitted a candidate. No new independent candidate verdict was needed, and no fix was applied. Cumulative confirmed counts remain P0 0, P1 0, P2 8, P3 3; rejected 0; unresolved 0. DR-001 through DR-011 remain unchanged. This conclusion is limited to inspected paths and executed scenarios.
+
+Executed verification:
+
+- The coordinator's focused frontend suite passed 172 tests across nine files. Each reviewer separately passed an overlapping 128 tests across six files. Rust checks passed six backend integration tests, two group unit tests and six vocabulary tests, fourteen distinct tests. A name-filtered command reran one integration case.
+- Six guarded behavior probes composed the real library/bulk models with mounted sidebar/modal components. They covered failed-save draft retention and retry, success/rejection after selection changes without focus theft, isolated order, duplicate Save, locked Escape, canonical publication, partial group retry and delayed hydration overlays. Two contract probes forced real twelve-page cache eviction, checked retained selected metadata and loaded canonical group/tag state in a fresh owner backed by mocked persistence.
+- Peer exchange corrected the behavior review's initial categorical exclusion of delayed cross-owner group acknowledgement. A pending lightbox save can finish after close and bulk selection. Three additional guarded cases confirmed canonical selected metadata updates while captured or typed bulk drafts persist. The current contract permits draft retention, and no bulk overwrite occurs before explicit Apply. Both reviewers kept zero-candidate dispositions with the narrower explanation; frozen originals remain unchanged.
+- A private Tauri controller session saved single/multi-asset tags and keyboard group ordering. After frontend reload, a real group query returned the saved order. Read-only SQLite assertions confirmed both group orders and the expected tags. Doctor checked the exact E2E title, temporary app-data, synthetic root and private display. The separate existing 96-image group-order E2E passed pointer insertion, keyboard movement/focus, cancellation, persisted order/reopen, edge scrolling, narrow controls, Escape and light Polish narrow/wide layout.
+- Desktop builds included typecheck and production frontend compilation. Controller and E2E profiles were removed; direct process checks found no remaining owned processes. The controller screenshot and dark wide modal screenshot showed rendered synthetic previews and controls. The light Polish narrow capture shows translucency during opening, so it does not prove settled pixel correctness.
+- Both reviewers initially merged include arrays and unintentionally selected the existing suite too, passing 75 files/629 tests and 75 files/627 tests. Logs remain preserved; initial config text was reconstructed from creation commands. Final configs replace include patterns, and exact-file discovery passed before final supplemental runs. The default-sandbox controller launch failed on local socket EPERM; its approved isolated rerun succeeded. No application code changed to make checks pass.
+
+Before behavior originals were saved, the coordinator disclosed the contract reviewer's zero-candidate status and cache/hydration probe topics. Both had already executed independent probes, and no peer files or detailed conclusions were shared until originals were frozen. Strict pre-freeze blinding was incomplete. The [initial record](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage09-initial-reviews.json) retains this limitation.
+
+Native checks did not inject partial failure or delayed IPC; controlled frontend checks establish those boundaries separately. No physical hardware input, full desktop-process restart persistence, full tag-editor desktop spec, production-scale benchmark, complete backend suite, locale/lint check or release verification ran. Rust fixture cleanup paths were not individually audited. Software-rendering and D-Bus shutdown warnings remain in raw logs. Only this progress file changed among tracked files. No worktree, commit or push was created.
+
+[Runtime detail and limits](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage09-coordinator-runtime.md),
+[decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage09-decisions.tsv).
+The [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage09-trail-audit/trail-audit.md) requested `gpt-5.6-sol`; workspace transcript and observed telemetry are unavailable. Two appended corrections distinguish UI group reload from SQLite tag verification and clarify early peer-status disclosure. No factual discrepancy remains after correction; blinding, reconstruction and native-runtime limits remain explicit. Final coverage, source inventory, record validation and diff checks passed. Overall review remains partial because stages 10-15 are pending.
+
 ## Exact resume action
 
-Stage 09, tag editing, bulk actions and groups, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 09](09-tag-editing-bulk-actions-groups.md), its owning search/tag/group and metadata contracts, and follow the same dual-review, saved-initial, peer-exchange and independent-verifier workflow. Keep exact-file probe discovery and separate controlled frontend evidence from native runtime claims. Carry DR-001 through DR-011 forward without fixes.
+Stage 10, lightbox model and image controls, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 10](10-lightbox-model-image-controls.md), its owning lightbox and frontend/IPC contracts, and follow the dual-review, saved-initial, peer-exchange and independent-verifier workflow. Keep exact-file probe discovery and separate controlled frontend evidence from native runtime claims. Carry DR-001 through DR-011 forward without fixes.

@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 11 complete; overall review partial.
-Current stage: none active; stage 12 is next.
-Current assignment: none; stage 11 reviews, peer exchange, native checks, independent verification and audit are complete.
-Next action: recheck source hashes, then begin stage 12, settings and maintenance.
+Status: stages 00 through 12 complete; overall review partial.
+Current stage: none active; stage 13 is next.
+Current assignment: none; stage 12 reviews, peer exchange, native checks, independent verdicts and audit are complete.
+Next action: recheck source hashes, then begin stage 13, shared UI, overlays and localization.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 11 controller, native video suite and both Escape probes finished. Temporary profiles, synthetic media roots and owned processes were cleaned.
+Runtime/build owner: coordinator `/root`; stage 12 controller, maintenance suites and fifty native round trips finished. Temporary profiles, synthetic media roots, export targets and owned processes were cleaned.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ Runtime/build owner: coordinator `/root`; stage 11 controller, native video suit
 | 09 | complete | Dual 22-path review, peer exchange, native tag/group persistence and 96-image ordering; no new candidates |
 | 10 | complete | Dual 26-path review, native image/delete checks and four independently confirmed P2 findings |
 | 11 | complete | Dual nine-path review, native 30-cycle checks and one independently confirmed P2 finding |
-| 12 | pending | Awaiting investigation |
+| 12 | complete | Dual 59-path review, eight native cases and fifty cycles; one confirmed P3, one rejected claim |
 | 13 | pending | Awaiting investigation |
 | 14 | pending | Awaiting investigation |
 | 15 | pending | Awaiting investigation |
@@ -359,6 +359,37 @@ Native coverage is limited to X11/Xvfb with llvmpipe and silent MP4s. No Wayland
 
 Cumulative confirmed counts are P0 0, P1 0, P2 13, P3 3; rejected 0; unresolved 0. Previous findings remain unchanged. Only this progress document changes among tracked files. No worktree, commit or push was created. [Decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage11-decisions.tsv). The [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage11-trail-audit/trail-audit.md), requested `gpt-5.6-sol`, has no unresolved record-quality flags after an appended correction qualifying historical running/queued statements as coordinator-reported chronology. Workspace transcript and observed model telemetry are unavailable. Final coverage, inventory, record validation and diff checks passed, including 25 verifier source hashes and five probe/launcher input hashes.
 
+## Stage 12 evidence and limits
+
+Completed on 2026-10-11, including peer exchange, independent verdicts and final audit. Both independent reviews inspected all 59 assigned settings/runtime/platform paths. Behavior recorded 75 assigned/supporting paths and contracts recorded 85. Both requested `gpt-6.1-sol` with high reasoning; observed metadata is unavailable. Eight original notes/findings/inspection/hash artifacts were frozen before peer exchange and remain unchanged. Both handoffs are answered. Independent dispositions and final trail audit are complete.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[coverage](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage12-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage12-commands.json),
+[runtime detail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage12-coordinator-runtime.md).
+
+DR-017 was independently rejected as a defect. Generating a UUID after queuing a rename changes the draft while the Pending label and Save all retain the staged filename. Five independent production dialog/controller/wrapper cases establish this behavior plus typing, requeue, unqueued generation and deletion-confirmation countercases. The explicit draft-only generation contract and truthful Pending label refute the inferred failure expectation. Original evidence remains preserved. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-017.json).
+
+DR-018 is independently confirmed as P3. A late thumbnail Stop response can replace the completed render error, or clear progress from a newer scan while its loader and lock remain active. Seven independent rendered cases used the actual scan section, buttons, controller, runner and platform wrappers, with Tauri transport mocked. An existing synthetic root made the newer Rescan click reachable. Prompt replies, subsequent progress, empty-root admission, retired listeners and owner disposal provide counterexamples. Native cancellation is synchronous; late-delivery frequency in WebKit remains unmeasured. No wrong-job cancellation or data corruption is established. Guard Stop publication with its originating render's operation generation. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-018.json).
+
+Fresh verifiers were `/root/verify_stage12_uuid` and `/root/verify_stage12_stop`, both requested `gpt-6.1-sol` with high reasoning. Their twelve cases passed. Cumulative confirmed counts are P0 0, P1 0, P2 13, P3 4; rejected 1; unresolved 0. Previous findings remain unchanged. No fix was applied.
+
+Executed verification:
+
+- Coordinator frontend checks passed 114 tests across 21 files. Reviewer runs overlap that scope. Nine supplemental reviewer cases cover delayed scans through fifty real panel remounts, reversed listener registration, staged UUID behavior, partial duplicate outcomes and late Stop replies. Peer exchange identified the missing-root limit in the original later-rescan probe; a separate case hydrates a valid root.
+- Thirty-nine Rust tests passed across backup/restore, CSV, database-pool maintenance, journaled source mutation, integration clearing/root behavior and real scan batching. One scale diagnostic remained ignored. These checks do not exhaust filesystem fault boundaries.
+- The isolated controller rescanned seven copied media files and exercised cancel/confirm for library clearing. After frontend reload the gallery was empty; read-only SQLite found zero assets, roots, tags and thumbnail failures. The coordinator recorded equality for all seven media hashes, but retained only the before hashes and post-clear equality/count, so saved artifacts cannot independently repeat that comparison after cleanup. Both screenshots were inspected.
+- Seven existing native cases passed, covering real scan-response delivery across Settings remount, mixed duplicate rename/delete and cancellation in light/wide and dark/narrow views, root removal, clear, CSV tag roundtrip and bundle restore. Duplicate checks verified files and rows after frontend reload. CSV/bundle cases call real IPC directly; they do not drive native choosers.
+- A separate native probe completed fifty Settings/gallery round trips with two copied PNGs. Every cycle checked root DOM content, enabled controls and navigation mount/unmount. Final reads found two assets and one root, with no captured window errors or unhandled rejections. The final screenshot was inspected. This is repeated behavior evidence, not a heap-growth benchmark.
+
+Default-sandbox controller startup failed on local-socket EPERM; its approved isolated rerun succeeded. Early ignored native probes failed on an import path and aggregate WebDriver text omitting a truncated path. Their exact files/logs remain; the corrected probe checks exact DOM text/title. Reviewer/verifier probes also corrected guessed English labels. Behavior's broad 117-test log shows a pass but its final process exit was not retrieved; its separate three-case rerun exited zero. No application changes made checks pass.
+
+Owned profiles, processes, media roots and CSV/ZIP targets were cleaned. Native checks use private X11/Xvfb with software rendering. Native chooser interaction, physical input, Wayland, full-process restart persistence, production-scale benchmarks, release packaging and exhaustive filesystem faults remain unverified. Desktop builds included TypeScript and production compilation. No complete suites or lint/locale check ran. Only this progress document changes among tracked files; no fixes, worktrees, commits or pushes were made.
+
+[Decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage12-decisions.tsv),
+[trail audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage12-trail-audit/trail-audit.md).
+The audit requested `gpt-5.6-sol`; workspace transcript and observed model telemetry are unavailable. Initial audit flags prompted explicit qualification of the recorded media comparison and direct evidence pointers for canonical mappings and preserved originals. The final delta audit found no unresolved factual or evidence-integrity flags after the stage/resume labels were updated. Coverage, inventory, record validation, diff checks and all 83 verifier hash comparisons passed. Installed Tauri `core.js` was added as support during this stage; its original-baseline identity is not independently established, while package/lock/source hashes remain unchanged.
+
 ## Exact resume action
 
-Stage 12, settings and maintenance, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and read [stage 12](12-settings-maintenance.md) with its linked settings, data-safety, database and IPC contracts. Preserve dual independent review, frozen originals, peer exchange and fresh candidate verification. Keep desktop/build ownership serialized and use only synthetic media and temporary profiles. Carry confirmed findings forward without fixes.
+Stage 13, shared UI, overlays and localization, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and read [stage 13](13-shared-ui-overlays-localization.md) with its linked frontend and localization contracts. Preserve dual independent review, frozen originals, peer exchange and fresh candidate verification. Keep desktop/build ownership serialized and use only synthetic media and temporary profiles. Carry confirmed findings forward without fixes.

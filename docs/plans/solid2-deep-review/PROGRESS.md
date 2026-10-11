@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 10 complete; overall review partial.
-Current stage: none active; stage 11 is next.
-Current assignment: none; stage 10 reviews, peer exchange, independent verification and audit are complete.
-Next action: recheck source hashes, then begin stage 11, native video integration.
+Status: stages 00 through 11 complete; overall review partial.
+Current stage: none active; stage 12 is next.
+Current assignment: none; stage 11 reviews, peer exchange, native checks, independent verification and audit are complete.
+Next action: recheck source hashes, then begin stage 12, settings and maintenance.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 10 Tauri controller and two standalone WebKit image probes finished. Temporary profiles, servers and recorded processes were cleaned.
+Runtime/build owner: coordinator `/root`; stage 11 controller, native video suite and both Escape probes finished. Temporary profiles, synthetic media roots and owned processes were cleaned.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -22,7 +22,7 @@ Runtime/build owner: coordinator `/root`; stage 10 Tauri controller and two stan
 | 08 | complete | Dual 40-path review, peer exchange, native worker/input checks and two independently confirmed P2 findings |
 | 09 | complete | Dual 22-path review, peer exchange, native tag/group persistence and 96-image ordering; no new candidates |
 | 10 | complete | Dual 26-path review, native image/delete checks and four independently confirmed P2 findings |
-| 11 | pending | Awaiting investigation |
+| 11 | complete | Dual nine-path review, native 30-cycle checks and one independently confirmed P2 finding |
 | 12 | pending | Awaiting investigation |
 | 13 | pending | Awaiting investigation |
 | 14 | pending | Awaiting investigation |
@@ -335,6 +335,30 @@ Mixed DOM/native fullscreen was explored without jointly observing fullscreenEle
 [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage10-decisions.tsv).
 Cumulative confirmed counts are P0 0, P1 0, P2 12, P3 3; rejected 0; unresolved 0. DR-001 through DR-011 are unchanged. New findings are pre-existing relative to the unchanged baseline. The [trail audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage10-trail-audit/trail-audit.md), requested `gpt-5.6-sol`, found evidence-pointer and wording issues corrected through appended rows. No record-quality flag remains. Workspace transcript and observed telemetry are unavailable, so historical scheduling and actual model-family separation cannot be independently established. Final coverage, inventory, record validation and diff checks passed, including 147 verifier source-hash comparisons. No fixes, worktrees, commits or pushes were made. Only this progress document changes among tracked files.
 
+## Stage 11 evidence and limits
+
+Completed on 2026-10-11, including independent verification and final trail audit. Both reviewers inspected all nine assigned paths. `/root/stage11_behavior` recorded 37 inspected paths and `/root/stage11_contracts` recorded 29, including native callers and guards. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata is unavailable. Both initial investigations were saved before peer exchange, and all six originals remain unchanged. Application, existing-test and configuration hashes match the original baseline.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[coverage](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage11-coverage-check.json),
+[commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage11-commands.json),
+[runtime detail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage11-coordinator-runtime.md).
+
+One pre-existing P2 finding, DR-016, was independently confirmed by `/root/verify_stage11_escape`, requested `gpt-6.1-sol` with high reasoning. After GTK play or volume controls take keyboard focus, windowed Escape never reaches the DOM and leaves the preview open. The verifier established focus through native Space pause toggles and End/Home volume changes. WebView-picture Escape closes normally; speed-menu dismissal and fullscreen exit retain their intended priority. Forward a session-scoped Escape intent to the frontend layer owner while preserving nested-overlay handling. No fix was applied. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-016.json).
+
+Executed verification:
+
+- Coordinator frontend checks passed 37 tests across four files; both reviewers ran overlapping focused checks. Two extra behavior probes passed, including thirty owners with delayed open/control completion, retired events and observer/listener cleanup. These use mocked IPC.
+- Twenty Rust tests passed, including actual libmpv worker replacement/reopen cycles, stale controls, source authorization, surface guards and command validation. Worker tests use null video/audio output.
+- An isolated controller rendered synthetic MP4 pixels. The existing native E2E suite passed all seven cases, including fullscreen focus, menu handling, corrupt-file Retry, thirty reopen/speed cycles with decoded-picture comparisons and fullscreen-video-to-GIF geometry. All thirty sessions were distinct; six rates were exercised. Original and independent Escape probes passed three and five cases. Native events use synthetic XTest input on private X11, not physical hardware.
+- The main E2E runner exited zero, then launcher cleanup hit transient GVFS ENOTCONN. After checks found no owned process or mount, removing its exact leftover scratch succeeded. Other launchers exited zero. Profiles, generated media roots and owned processes were cleaned. Default-sandbox controller startup first failed on local-socket EPERM; its approved isolated rerun succeeded.
+
+The contract reviewer's first config accidentally retained the base include glob and ran 625 tests across 74 files. Its passing summary is preserved, but its process exit was not collected; the initial config is reconstructed. Corrected exact discovery and the final four-file run establish intended scope. The behavior probe's first run failed on its own missing observer stub; the corrected ignored probe passed. No application changes made checks pass.
+
+Native coverage is limited to X11/Xvfb with llvmpipe and silent MP4s. No Wayland, hardware GPU/input, audio output, GL context-loss, packaging or production-scale benchmark ran. Delayed-open disposal uses controlled frontend responses; live IPC delay was not injected. Fullscreen checks use backend state/layout rather than a separate OS property query. No full backend suite or lint/locale check ran. Desktop builds included TypeScript and production frontend compilation.
+
+Cumulative confirmed counts are P0 0, P1 0, P2 13, P3 3; rejected 0; unresolved 0. Previous findings remain unchanged. Only this progress document changes among tracked files. No worktree, commit or push was created. [Decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage11-decisions.tsv). The [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage11-trail-audit/trail-audit.md), requested `gpt-5.6-sol`, has no unresolved record-quality flags after an appended correction qualifying historical running/queued statements as coordinator-reported chronology. Workspace transcript and observed model telemetry are unavailable. Final coverage, inventory, record validation and diff checks passed, including 25 verifier source hashes and five probe/launcher input hashes.
+
 ## Exact resume action
 
-Stage 11, native video integration, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 11](11-native-video-integration.md), the lightbox/native-video contracts and required desktop recipes. Keep the dual-review, saved-initial, peer-exchange and independent-verifier workflow. Use exact-file probe discovery and separate controlled frontend evidence from native runtime claims. Carry confirmed findings forward without fixes.
+Stage 12, settings and maintenance, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and read [stage 12](12-settings-maintenance.md) with its linked settings, data-safety, database and IPC contracts. Preserve dual independent review, frozen originals, peer exchange and fresh candidate verification. Keep desktop/build ownership serialized and use only synthetic media and temporary profiles. Carry confirmed findings forward without fixes.

@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 12 complete; overall review partial.
-Current stage: none active; stage 13 is next.
-Current assignment: none; stage 12 reviews, peer exchange, native checks, independent verdicts and audit are complete.
-Next action: recheck source hashes, then begin stage 13, shared UI, overlays and localization.
+Status: stages 00 through 13 complete; overall review partial.
+Current stage: none active; stage 14 is next.
+Current assignment: none; stage 13 reviews, peer exchange, native checks, independent verdicts and audit are complete.
+Next action: recheck source hashes, then begin stage 14 integrated performance and stability.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 12 controller, maintenance suites and fifty native round trips finished. Temporary profiles, synthetic media roots, export targets and owned processes were cleaned.
+Runtime/build owner: coordinator `/root`; stage 13 controller and fourteen native cases finished. Temporary profiles, synthetic media roots and owned processes were cleaned.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Runtime/build owner: coordinator `/root`; stage 12 controller, maintenance suite
 | 10 | complete | Dual 26-path review, native image/delete checks and four independently confirmed P2 findings |
 | 11 | complete | Dual nine-path review, native 30-cycle checks and one independently confirmed P2 finding |
 | 12 | complete | Dual 59-path review, eight native cases and fifty cycles; one confirmed P3, one rejected claim |
-| 13 | pending | Awaiting investigation |
+| 13 | complete | Dual 37-path review, 14 native cases and final audit; confirmed P2/P3, one rejected claim |
 | 14 | pending | Awaiting investigation |
 | 15 | pending | Awaiting investigation |
 
@@ -390,6 +390,34 @@ Owned profiles, processes, media roots and CSV/ZIP targets were cleaned. Native 
 [trail audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage12-trail-audit/trail-audit.md).
 The audit requested `gpt-5.6-sol`; workspace transcript and observed model telemetry are unavailable. Initial audit flags prompted explicit qualification of the recorded media comparison and direct evidence pointers for canonical mappings and preserved originals. The final delta audit found no unresolved factual or evidence-integrity flags after the stage/resume labels were updated. Coverage, inventory, record validation, diff checks and all 83 verifier hash comparisons passed. Installed Tauri `core.js` was added as support during this stage; its original-baseline identity is not independently established, while package/lock/source hashes remain unchanged.
 
+## Stage 13 evidence and limits
+
+Completed on 2026-10-11, including independent verdicts and final evidence audit. Both reviewers inspected all 37 assigned paths, with 66 and 86 assigned/supporting paths respectively. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata is unavailable. Eight original artifacts were frozen before peer exchange and remain unchanged. Both handoffs are answered. Application, existing-test and configuration hashes match the original baseline.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[coverage](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage13-coverage-check.json),
+[commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage13-commands.json),
+[runtime detail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage13-coordinator-runtime.md).
+
+DR-019 is independently confirmed as P3. Nine selectable locales contain English values for thirteen tag-list interaction keys and four search errors, 153 copied values. The fresh verifier selected all eleven locales and checked 33 rendered tag states and 44 parser-generated alerts. Polish supplies a translated counterexample. Structural parity passes because the keys and placeholders exist. Translate the affected prose while preserving grammar/interpolation tokens. Actual speech output was not tested. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-019.json).
+
+DR-020 is independently confirmed as conditional P2. Unguarded language storage during module evaluation and theme storage before readiness registration can prevent App rendering. Nine independent tests passed, then each passed again in a fresh process. Production entry/mount paths failed under controlled read/property denial and real jsdom quota errors; normal-storage controls rendered a synthetic App body through the actual mount path. Storage must tolerate preference read/write failures. Native Tauri incidence remains unmeasured; no data loss or full-shell workflow is claimed. Post-boot observations do not expand the confirmed bootstrap finding. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-020.json).
+
+DR-021 was independently rejected. Twelve rendered tests establish that every locale's example after its field-label prefix works, as do all four tooltip examples. Entering the whole hint reproduces the reported parser outcomes, but the app never inserts or submits that hint. The label-plus-example interpretation and valid guidance refute the original material-defect inference. The original evidence and documentation wording remain preserved. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-021.json).
+
+Fresh verifiers were `/root/verify_stage13_locale`, `/root/verify_stage13_storage` and `/root/verify_stage13_placeholder`, each requested `gpt-6.1-sol` with high reasoning. Their suites passed 32 distinct cases. Cumulative confirmed counts are P0 0, P1 0, P2 14, P3 5; rejected 2; unresolved 0. Prior findings remain unchanged. No fix was applied.
+
+Coordinator verification passed 53 frontend tests across eight files, locale parity for eleven languages and the offline locale-tool script. Reviewer focused runs overlap this scope; nine supplemental reviewer probes address confirmations, modal churn, storage and locale guidance. Contracts reports an unintended broad run of 628 tests after merged include arrays expanded discovery; no raw broad-run log survives, so that count remains reviewer-reported. Behavior interrupted two similarly expanded runs with exit 130. Both corrected owned configs and passed their focused probes. The storage verifier isolated cases to remove an aggregate multiple-Solid diagnostic; locale verification corrected an ambiguous combobox query. No application changes made tests pass.
+
+Fourteen native cases passed. Six checked English/Polish settings at 1440/600/320px; three normal-motion and three real GTK reduced-motion cases covered image modal lifecycle/fullscreen, segmented keyboard selection and a dark/1000px workflow. Two supplemental cases selected/reloaded all eleven languages, changed the tile slider with ArrowRight and completed ten timed close/reopen cycles in WebKit. Interruption uses synthetic DOM dispatch. Each cycle observed closing then fully open presence and correct inertness; final modal/scroll locks were removed. The saved opening-phase field was sampled too late and is not credited. The controller separately rendered and dismissed Tag list over synthetic media. Four screenshots were inspected; others were only saved. Raw native logs corroborate 9 + 3 + 2 passing cases.
+
+Default-sandbox controller startup failed on local-socket EPERM; its approved isolated rerun succeeded. All owned processes/profiles were cleaned. Native checks use private X11/Xvfb with software rendering. Live OS reduced-motion changes and nested UiModal pairs have controlled component evidence only; the native lightbox confirmation is inline. Wayland, physical input, speech output, native choosers, full-process restart persistence, release packaging, full backend tests and production-scale benchmarks remain unverified. Desktop builds included TypeScript and production compilation. Locale inspection was structural and interaction-focused, not a fluent editorial review of every sentence.
+
+[Decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage13-decisions.tsv),
+[audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage13-trail-audit/trail-audit.md),
+[final checks](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage13-final-checks.json).
+The requested audit model is `gpt-5.6-sol`; observed telemetry and workspace transcript are unavailable. Preliminary flags prompted direct raw-log links, appended harness-pivot records and separate source-provenance counts. The final delta audit found no remaining factual or evidence-integrity flags. Five installed i18next/jsdom support files were first hashed during stage 13, so their original-baseline identities are unavailable. Repository package/lock/source hashes remain unchanged. Coverage checks compare 159 original-baseline hashes and one late-captured review dependency; final checks additionally recheck all 126 verifier source hashes. Record validation and diff checks pass. Only this progress document changes among tracked files; no worktree, commit or push was created.
+
 ## Exact resume action
 
-Stage 13, shared UI, overlays and localization, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and read [stage 13](13-shared-ui-overlays-localization.md) with its linked frontend and localization contracts. Preserve dual independent review, frozen originals, peer exchange and fresh candidate verification. Keep desktop/build ownership serialized and use only synthetic media and temporary profiles. Carry confirmed findings forward without fixes.
+Stage 14 integrated performance and stability is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and read [stage 14](14-integrated-performance-stability.md). Carry findings forward without fixes, preserve independent coverage and serialize builds/native sessions with synthetic fixtures and disposable profiles.

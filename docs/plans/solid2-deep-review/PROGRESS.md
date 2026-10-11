@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 03 complete; overall review partial.
-Current stage: none active; stage 04 is next.
-Current assignment: none; stage 03 reviews, peer handoffs and independent verification are complete.
-Next action: recheck source hashes, then begin stage 04, query sessions and page caching.
+Status: stages 00 through 04 complete; overall review partial.
+Current stage: none active; stage 05 is next.
+Current assignment: none; stage 04 reviews, peer handoffs, independent verification and trail audit are complete.
+Next action: recheck source hashes, then begin stage 05, metadata and mutation coordination.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 03 isolated desktop session stopped and temporary data removed.
+Runtime/build owner: coordinator `/root`; no stage 04 desktop session; native probes finished.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ Runtime/build owner: coordinator `/root`; stage 03 isolated desktop session stop
 | 01 | complete | Dual 116-path semantics review, peer exchange, 359 tests and RC/compiler/build probes |
 | 02 | complete | Dual 82-path reliability review, peer exchange, 625 tests plus shuffled run, independent P3 false-pass finding |
 | 03 | complete | Dual 18-path lifetime review, peer exchange, isolated desktop smoke and independent P2 startup-remount finding |
-| 04 | pending | Awaiting investigation |
+| 04 | complete | Dual eight-path review, peer exchange, native/frontend probes and two independently confirmed P2 findings |
 | 05 | pending | Awaiting investigation |
 | 06 | pending | Awaiting investigation |
 | 07 | pending | Awaiting investigation |
@@ -133,6 +133,34 @@ The trail auditor requested `gpt-5.6-sol`; observed model telemetry and a conver
 
 No live active-scan reload, Vite HMR delivery or failed production chunk download ran. Lazy retry used the installed Solid runtime with a synthetic thunk. Bare Xvfb accepted a Maximize click but did not establish a native state transition; minimize, drag/resize and close remain untested. No native video pixels, backend suite or release package verification ran. All generated evidence remains ignored. Only this progress file changed among tracked files; no worktree, commit or push was created. The overall review remains partial because stages 04-15 are pending.
 
+## Stage 04 evidence and limits
+
+Completed on 2026-10-11 with no application, existing-test, configuration or dependency drift from the original baseline. Two fresh reviewers inspected all eight assigned paths. `/root/stage04_frontend` traced reactive state, async ordering and sparse cache behavior across 26 paths. `/root/stage04_contracts` traced Rust/SQLite guarantees and frontend contract fidelity across 32 paths. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata was unavailable. Their initial notes, findings and inspection records were saved and hashed before peer exchange, then preserved unchanged.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[frontend review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage04-frontend/notes.md),
+[contract review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage04-contracts/notes.md),
+[coverage and hash checks](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage04-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage04-commands.json).
+
+Two new P2 defects were independently confirmed. Both predate the supplied review baseline; no fixes were applied.
+
+- DR-004: overlapping frontend queries can register in reverse order inside independently scheduled Tauri async command bodies. The backend accepts the older frontend request and supersedes the newer one. Frontend generation guards then discard the old ready response, leaving retained rows but no usable session or error until another explicit refresh. Fresh verifier `/root/verify_stage04_order`, requested `gpt-6-astra` with high reasoning, observed 51 registration inversions in 30,000 sequentially submitted native task pairs without inserted waits. The production query service returned older ready/newer superseded for an observed inversion. Three independent frontend cases checked both response orders, recovery and normal reversed-completion controls. This is not a desktop incidence estimate. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-004.json).
+- DR-005: a single ID vector exceeding the intentional 64 MiB session budget returns successful superseded even when its request token and cache epoch remain current. Initial load looks empty; previously cached summaries remain readable, while new-page and position reads lack a session. Fresh verifier `/root/verify_stage04_capacity`, requested `gpt-6.1-sol` with high reasoning, passed three native and three frontend cases. A nine-row/128-byte vector reproduced the classification at a 127-byte test budget and worked at 129 bytes. The actual production guard accepted capacity 8,388,608 i64 entries and rejected 8,388,609. More than 8,388,608 matches guarantees failure; no smaller exact row cutoff was established. Narrower filters can recover. Preserve the budget and return an actionable capacity error. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-005.json).
+
+Cumulative confirmed counts are P0 0, P1 0, P2 3, P3 2; rejected 0; unresolved 0. DR-001 through DR-003 remain unchanged.
+
+Executed verification:
+
+- Four focused frontend files passed 48 tests. Native query-manager tests passed 14; database tests passed 52, including snapshot, revision, ordering, cancellation and rollback checks.
+- Eight frontend-review probes passed, covering reversed starts, loading counters, repeated metadata patches, positions after eviction, complete ranges and pending-start disposal. Two contract-review probes and six independent verifier frontend probes passed. Native verifier evidence is described above.
+- The contract review initially concatenated root test includes and passed all 625 existing frontend tests plus two probes, 627 across 75 files. A corrected config then passed exactly two cases. The ignored run's `run_probe.py` now compares discovered files with the expected list before execution. Its guard accepted the one-file probe and refused the root 74-file suite without running tests.
+- Both peer handoffs are answered. Coverage and source-hash checks, preservation of six initial artifacts, and review-record validation passed. Direct path checks confirmed the native order-probe database and WAL/SHM files were removed. Capacity fixtures use TempDir cleanup; their paths were not logged, so removal was not independently checked by path.
+
+No live WebView query race, desktop session, multi-million-row SQLite query, production-scale performance measurement, full backend suite or release verification ran. Native scheduling/service and frontend model results are separate executed layers, connected by inspected dispatch and IPC contracts. No typecheck, lint or locale validation ran in this stage. All generated evidence stays ignored; only this progress document changed among tracked files. No worktree, commit or push was created.
+
+The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage04-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage04-trail-audit/trail-audit.md) retain the discovery-scope clarification and verification limits. The auditor requested `gpt-5.6-sol`; observed model metadata and a conversation transcript were unavailable. It found no remaining factual trail discrepancy. Overall review remains partial because stages 05-15 are pending.
+
 ## Exact resume action
 
-Run `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and inspect drift before assigning stage 04. Read [stage 04](04-query-sessions-page-caching.md), library-query/gallery, IPC and database contracts. Start two fresh independent perspectives on overlapping filters, superseded query starts, stale sessions, page eviction, positions, range loading, loading counters and disposal. Preserve initial reviews before peer exchange and assign every distinct candidate a fresh verifier. Carry DR-001, DR-002 and DR-003 forward without applying fixes during this read-only review.
+Run `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and inspect drift before assigning stage 05. Read [stage 05](05-metadata-mutation-coordination.md), search/tags/groups, data safety and relevant IPC contracts. Start two fresh perspectives on details, canonical tags, ownership tokens, mutation barriers, optimistic patches, partial responses and identity resets. Probe overlapping lightbox/bulk saves with maintenance, reversed completions, saving after details eviction and partial canonical results. Preserve initial reviews before peer exchange and assign each distinct candidate a fresh verifier. Use the ignored run's `run_probe.py` to check exact frontend probe discovery before execution. Carry DR-001 through DR-005 forward without applying fixes during this read-only review.

@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 07 complete; overall review partial.
-Current stage: none active; stage 08 is next.
-Current assignment: none; stage 07 reviews, peer handoffs, runtime checks and trail audit are complete.
-Next action: recheck source hashes, then begin stage 08, search and suggestions.
+Status: stages 00 through 08 complete; overall review partial.
+Current stage: none active; stage 09 is next.
+Current assignment: none; stage 08 reviews, peer exchange, verification and audit are complete.
+Next action: recheck source hashes, then begin stage 09, tag editing, bulk actions and groups.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 07 native tests finished; no desktop session ran.
+Runtime/build owner: coordinator `/root`; isolated stage 08 WebKit fixtures finished and cleaned; no full Tauri session ran.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -19,7 +19,7 @@ Runtime/build owner: coordinator `/root`; stage 07 native tests finished; no des
 | 05 | complete | Dual 18-path review, peer exchange, 19 supplemental probes and one independently confirmed P2 finding |
 | 06 | complete | Dual 21-path review, 100k/1m probes, native WebKit checks and three independent findings |
 | 07 | complete | Dual 13-path review, peer exchange, 48 frontend/47 native tests and 12 supplemental cases; no new candidates |
-| 08 | pending | Awaiting investigation |
+| 08 | complete | Dual 40-path review, peer exchange, native worker/input checks and two independently confirmed P2 findings |
 | 09 | pending | Awaiting investigation |
 | 10 | pending | Awaiting investigation |
 | 11 | pending | Awaiting investigation |
@@ -243,6 +243,38 @@ No desktop session, live Tauri channel-order experiment, WebKit rendering/pixel 
 
 The [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage07-decisions.tsv) and [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage07-trail-audit/trail-audit.md) retain the peer correction and separate follow-up. The auditor found two narrow evidence pointers, corrected through appended rows linking the inventory and separate supplemental/coverage results. No factual mismatch remains. Requested auditor model was `gpt-5.6-sol`; workspace transcript and observed model metadata were unavailable. Overall review remains partial because stages 08-15 remain pending.
 
+## Stage 08 evidence and limits
+
+Completed on 2026-10-11 at `2cea9aa`, including peer exchange, two independent verdicts and final trail audit. Two independent reviewers inspected all 40 assigned paths. `/root/stage08_behavior` covered input, reactive ownership and user actions across 71 paths; `/root/stage08_protocol` covered worker/vocabulary architecture and backend contracts across 69. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata is unavailable. Six initial review artifacts remain unchanged after peer exchange. Application, existing-test and configuration hashes match the original baseline.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[behavior review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage08-behavior/notes.md),
+[protocol review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage08-protocol/notes.md),
+[coverage and hashes](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage08-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage08-commands.json).
+
+Two pre-existing P2 findings were confirmed by separate fresh `gpt-6.1-sol` verifiers with high reasoning and unavailable observed model metadata. No fixes were applied.
+
+- DR-010: after suggestion worker failure, clicking Retry blurs the input and removes the button before click. Tab plus Enter also loses the control. Typing and editor remount keep the shared client failure latched. `/root/verify_stage08_retry` reproduced trusted pointer/key ordering in WebKitGTK 2.54.1 through actual SearchTagator, Solid and SuggestionClient with injected worker errors/replies. Failed states render zero options; direct retry and a fixture-only pointer focus guard render the cat option. Ordinary text submission works. Preserve both error state and control lifetime through focus transfer; removing only the JSX focus condition or adding only a pointer guard is insufficient. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-010.json).
+- DR-011: valid constructor and __proto__ tags look included in an empty tag-list selection. Single-click plus Apply replaces the prior filter with an empty search; double-click and Shift+Enter/Space throw a TypeError. Ordinary object membership reads inherited values, and __proto__ string assignment stores no own value. `/root/verify_stage08_selection` passed 17 cases through actual modal/search controls. Ordinary cat selections and typed include/exclude searches work. Rust acceptance is established through source/schema/contracts, not live IPC. Use Map or consistently preserved null-prototype records across lookup, insertion, copying and reset. No security exploitation is claimed. [Verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-011.json).
+
+Cumulative confirmed counts are P0 0, P1 0, P2 8, P3 3; rejected 0; unresolved 0. DR-001 through DR-009 remain unchanged.
+
+Executed verification:
+
+- Coordinator frontend suite passed 94 tests across 14 files; the behavior reviewer separately passed an overlapping 97 tests across 15 files. Rust checks passed ten database listing/query tests, six vocabulary integration tests and five normalization tests, 21 total.
+- Behavior probes passed seven cases plus two peer follow-ups. They cover reversed query replies, draft/applied filters retained across toolbar remount, editor disposal, large Fuse vocabulary and both findings. Remount proves application-lifetime retention, not process-restart persistence. Protocol checks passed seven, including one assertion on a separately executed real Worker artifact. Its other cases exercise failure/staleness, rendered controls and 10,000-tag hydration over 50 mocked pages. Fresh Retry verification adds four frontend cases; fresh selection verification adds 17.
+- Actual production worker/client/Fuse passed separate Bun Worker checks at 10,003/100,003 names and six native WebKit cases at up to 50,001 names. Native cases cover ranking/highlights, stale vocabulary/coalescing, disposal and worker error/retry. Single 50,001-name native cold/warm samples were 87/79 ms; these are synthetic observations without desktop responsiveness or memory thresholds.
+- Seven final native Retry cases passed with actual suggestion-option assertions. An initial listbox-presence recovery check was too weak because failure can retain an empty listbox. Its output and bundle remain preserved; the final run requires a rendered cat option. The first fixture source was reconstructed after execution without an original pre-build hash; final fixture hashes were captured before build and checked unchanged.
+- Peer exchange corrected initial constructor counterevidence: direct helper insertion works, but the modal double-action forwards an inherited function and throws. Two separate follow-up cases verify this and keyboard Retry. The coordinator mentioned overlapping selection candidates after both reviewers independently reported them but before behavior notes were saved; no peer artifacts were shared until both initial reviews were frozen.
+- Protocol and selection-verifier failed harness attempts remain saved. Early behavior probe raw logs were overwritten; their failures are explicitly reconstructed in notes. A nested Bun spawn returned EPERM; direct execution succeeded separately. The first native worker run started D-Bus before setting temporary XDG paths; its passing rerun applies isolation before launch. Native launcher/profile/server cleanup checks passed.
+
+No full Tauri session, live bridge or persistence workflow, screenshot/pixel check, physical hardware-input test, production-scale memory benchmark, full frontend/backend suite, application production build, typecheck, lint, locale or release verification ran. Frontend checks use jsdom and controlled IPC; actual worker and native component checks establish separate boundaries. XTest input is synthetic but produces trusted native events. Rust fixture cleanup paths were not individually audited. Only this progress document changed among tracked files. No worktree, commit or push was created.
+
+[Decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage08-decisions.tsv),
+[audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage08-trail-audit/trail-audit.md).
+Requested auditor model is `gpt-5.6-sol`; workspace transcript and observed model telemetry are unavailable. The audit found narrow evidence pointers, corrected with appended trail rows. No factual or evidence-integrity flag remains. Final coverage, source inventory, record validation and `git diff --check` passed. Overall review remains partial because stages 09-15 remain pending.
+
 ## Exact resume action
 
-Stage 08 is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 08](08-search-suggestions.md), search subsystem documentation and the linked worker/runtime contracts. Assign two fresh perspectives on debounce, query application, composition input, suggestion-worker generations, vocabulary changes, ranking, highlight and cleanup. Preserve initial reviews before peer exchange and independently verify each distinct candidate. Keep exact-file probe discovery and distinguish controlled frontend execution from native desktop behavior. Carry DR-001 through DR-009 forward without fixes.
+Stage 09, tag editing, bulk actions and groups, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 09](09-tag-editing-bulk-actions-groups.md), its owning search/tag/group and metadata contracts, and follow the same dual-review, saved-initial, peer-exchange and independent-verifier workflow. Keep exact-file probe discovery and separate controlled frontend evidence from native runtime claims. Carry DR-001 through DR-011 forward without fixes.

@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 09 complete; overall review partial.
-Current stage: none active; stage 10 is next.
-Current assignment: none; stage 09 reviews, peer exchange, runtime verification and audit are complete.
-Next action: recheck source hashes, then begin stage 10, lightbox model and image controls.
+Status: stages 00 through 10 complete; overall review partial.
+Current stage: none active; stage 11 is next.
+Current assignment: none; stage 10 reviews, peer exchange, independent verification and audit are complete.
+Next action: recheck source hashes, then begin stage 11, native video integration.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 09 Tauri controller and group-order E2E finished. Temporary profiles and recorded processes were cleaned.
+Runtime/build owner: coordinator `/root`; stage 10 Tauri controller and two standalone WebKit image probes finished. Temporary profiles, servers and recorded processes were cleaned.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -21,7 +21,7 @@ Runtime/build owner: coordinator `/root`; stage 09 Tauri controller and group-or
 | 07 | complete | Dual 13-path review, peer exchange, 48 frontend/47 native tests and 12 supplemental cases; no new candidates |
 | 08 | complete | Dual 40-path review, peer exchange, native worker/input checks and two independently confirmed P2 findings |
 | 09 | complete | Dual 22-path review, peer exchange, native tag/group persistence and 96-image ordering; no new candidates |
-| 10 | pending | Awaiting investigation |
+| 10 | complete | Dual 26-path review, native image/delete checks and four independently confirmed P2 findings |
 | 11 | pending | Awaiting investigation |
 | 12 | pending | Awaiting investigation |
 | 13 | pending | Awaiting investigation |
@@ -304,6 +304,37 @@ Native checks did not inject partial failure or delayed IPC; controlled frontend
 [decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage09-decisions.tsv).
 The [audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage09-trail-audit/trail-audit.md) requested `gpt-5.6-sol`; workspace transcript and observed telemetry are unavailable. Two appended corrections distinguish UI group reload from SQLite tag verification and clarify early peer-status disclosure. No factual discrepancy remains after correction; blinding, reconstruction and native-runtime limits remain explicit. Final coverage, source inventory, record validation and diff checks passed. Overall review remains partial because stages 10-15 are pending.
 
+## Stage 10 evidence and limits
+
+Completed on 2026-10-11, including peer exchange, independent verification and final trail audit. Both reviewers inspected all 26 assigned paths. `/root/stage10_behavior` covered navigation, details, pending edits, image controls and interaction across 54 paths; `/root/stage10_contracts` covered ownership, query recovery and filesystem/IPC contracts across 52, with a separate linked-contract addendum. Both requested `gpt-6.1-sol` with high reasoning; observed metadata is unavailable. Both initial reviews were saved before peer exchange. Six original artifacts remain unchanged, and application, existing-test and configuration hashes match the original baseline.
+
+[Report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[behavior review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage10-behavior/notes.md),
+[contract review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage10-contracts/notes.md),
+[coverage and hashes](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage10-coverage-check.json),
+[coordinator commands](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage10-commands.json).
+
+Five originals produced four distinct independently confirmed P2 findings. The two favorite-refresh reports share a cause and are merged. Independent reproductions found:
+
+- DR-012: a failed query page remains blocked on subsequent lightbox navigation attempts, but navigation status stays ready and exposes no modal Retry. Fresh verification used the real query and mounted modal. Cached Previous remains usable; explicit query retry/refresh recovers, and a rapid accumulated target can skip beyond the failed page. The original claim was narrowed accordingly.
+- DR-013: removing a favorite can commit successfully, then a failed query refresh produces the message that the favorite change was not saved. Fresh verification rendered the exact message and confirmed that following its button-retry advice toggles the favorite back on. Persistence itself is correct.
+- DR-014: a retired image's late load overwrites shared image controls. Two standalone WebKitGTK probes delivered natural delayed PNG loads. The independent fixture recorded trusted events, detached A and current B identities, B's fitted width changing from 100 to 800, and a B click writing zoom to detached A. This proves wrong layout dimensions and control targeting, not necessarily stretched picture pixels under object-fit.
+- DR-015: a favorite write can release its mutation token while still awaiting query refresh. CSV maintenance then resets identity; reopening the same ID adopts old pending ownership, and obsolete completion leaves the button disabled. Fresh verification used the actual settings import controller, operation runner, library/lightbox models and production action rail. The barrier correctly blocks an outstanding write; same-epoch completion and reopening after old completion work. Close/reopen recovers the stale UI.
+
+Fresh verifiers were `/root/verify_stage10_navigation`, `/root/verify_stage10_favorite_error`, `/root/verify_stage10_image`, requested `gpt-6.1-sol`, and `/root/verify_stage10_favorite_pending`, requested `gpt-6-astra`, all with high reasoning. Their [four verdict records](../../../raports/20261010T182819Z-solid2-deep-review/findings.json) link commands, counterevidence and source hashes. Observed model metadata is unavailable.
+
+Executed verification includes 114 coordinator frontend tests across eight files, overlapping reviewer suites of 113 each, and eleven Rust tests covering mutation recovery, asset validation, delete rows and rename rows. Supplemental failing guard assertions preserve three original reproductions; they are not a passing suite. Independent verifier probes cover each candidate and its counterexamples. Existing lightbox tests cover rapid/reversed responses, close during saves, deletion locking and media failure state separately.
+
+An isolated Tauri session rendered PNG pixels, exercised click zoom, reset, fullscreen/Escape and navigation, retained a saved tag through close/reopen, and displayed an unavailable-image error. Restoring that copied file and reopening returned the image element; no restored-pixel capture was taken. Visible deletion removed only the intended copied source and database row. Frontend reload and read-only SQLite confirmed deletion, other identities and the saved tag. Both native image probes used temporary HTTP fixtures and private WebKit contexts. Profiles, servers and recorded processes were cleaned. The controller build included TypeScript and production frontend compilation.
+
+The default-sandbox controller launch failed on socket EPERM and its approved isolated rerun succeeded. An initial desktop delete click timed out after controls faded, followed by a failed fill; revealing controls and typing the displayed Yes confirmation succeeded. The first standalone launcher had a quoting syntax error before browser startup; its failed log remains alongside the corrected result. Native fixture input hashes were captured before build and remained unchanged. No application source changed to make checks pass.
+
+Mixed DOM/native fullscreen was explored without jointly observing fullscreenElement and native-window state, so no defect or complete fullscreen agreement is claimed. Native checks did not inject delayed IPC or query failure. Natural image delivery used localhost PNGs in standalone WebKitGTK; delayed Tauri asset-protocol delivery and physical input remain unverified. No full desktop-process restart persistence, complete frontend/backend suite, production-scale benchmark, locale/lint check or release verification ran. Rename has supporting source and Rust coverage, not a current lightbox UI workflow. Stage 11 owns native playback internals.
+
+[Runtime detail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage10-coordinator-runtime.md),
+[decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage10-decisions.tsv).
+Cumulative confirmed counts are P0 0, P1 0, P2 12, P3 3; rejected 0; unresolved 0. DR-001 through DR-011 are unchanged. New findings are pre-existing relative to the unchanged baseline. The [trail audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage10-trail-audit/trail-audit.md), requested `gpt-5.6-sol`, found evidence-pointer and wording issues corrected through appended rows. No record-quality flag remains. Workspace transcript and observed telemetry are unavailable, so historical scheduling and actual model-family separation cannot be independently established. Final coverage, inventory, record validation and diff checks passed, including 147 verifier source-hash comparisons. No fixes, worktrees, commits or pushes were made. Only this progress document changes among tracked files.
+
 ## Exact resume action
 
-Stage 10, lightbox model and image controls, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 10](10-lightbox-model-image-controls.md), its owning lightbox and frontend/IPC contracts, and follow the dual-review, saved-initial, peer-exchange and independent-verifier workflow. Keep exact-file probe discovery and separate controlled frontend evidence from native runtime claims. Carry DR-001 through DR-011 forward without fixes.
+Stage 11, native video integration, is next. Recheck source hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Read [stage 11](11-native-video-integration.md), the lightbox/native-video contracts and required desktop recipes. Keep the dual-review, saved-initial, peer-exchange and independent-verifier workflow. Use exact-file probe discovery and separate controlled frontend evidence from native runtime claims. Carry confirmed findings forward without fixes.

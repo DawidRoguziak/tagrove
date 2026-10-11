@@ -1,13 +1,13 @@
 # Solid 2 review progress
 
-Status: stages 00 through 14 complete; overall review partial.
-Current stage: none active; stage 15 is next.
-Current assignment: none; stage 14 reviews, peer exchange, native checks, independent disposition and audit are complete.
-Next action: recheck source hashes, then begin stage 15 independent verification and final report.
+Status: stages 00 through 15 complete; review complete within the documented scope.
+Current stage: none active; stage 15 and the review plan are complete.
+Current assignment: none; independent audits, peer exchange and final evidence validation are complete.
+Next action: use the final report to plan repairs separately. No fixes were applied.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; stage 14 controller and five native cases finished. Temporary profiles, synthetic media roots and owned processes were cleaned.
+Runtime/build owner: coordinator `/root`; no runtime or build ran in stage 15. Earlier temporary profiles, synthetic media roots and owned processes have recorded cleanup.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ Runtime/build owner: coordinator `/root`; stage 14 controller and five native ca
 | 12 | complete | Dual 59-path review, eight native cases and fifty cycles; one confirmed P3, one rejected claim |
 | 13 | complete | Dual 37-path review, 14 native cases and final audit; confirmed P2/P3, one rejected claim |
 | 14 | complete | Dual 22-path review, 2,048-image timings, 100/50/30 cycles and one confirmed P3 |
-| 15 | pending | Awaiting investigation |
+| 15 | complete | Dual final audits, 241-file coverage, 22 dispositions and passing complete-record validation |
 
 ## Stage 00 evidence and limits
 
@@ -448,6 +448,34 @@ Cumulative confirmed counts are P0 0, P1 0, P2 14, P3 6; rejected 2; unresolved 
 [final checks](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage14-final-checks.json).
 The audit requested `gpt-5.6-sol`. Three incomplete evidence pointers were corrected with appended rows; the delta audit found no remaining flags. Final checks include 61 unchanged verifier source hashes. Workspace transcript and observed model telemetry are unavailable.
 
+## Stage 15 evidence and limits
+
+Completed on 2026-10-11 with two independent final investigations, peer exchange and final evidence audit. Both reviewers requested `gpt-6.1-sol` with high reasoning; observed metadata is unavailable. Sixteen initial artifacts were frozen before exchange and remain unchanged. No new application candidate arose. All stages 00 through 15 are complete within the documented review scope.
+
+[Final report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[finding catalogue](../../../raports/20261010T182819Z-solid2-deep-review/finding-catalogue.md),
+[coverage audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage15-coverage/notes.md),
+[verdict audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage15-verdicts/notes.md),
+[final checks](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage15-final-checks.json).
+
+Every one of the 241 included files has two distinct substantive perspectives in actual inspection records. The coverage reviewer additionally compared all included files against the original Git commit bytes. Review depth varies by perspective; discovery, intake and verification do not substitute for substantive review. All 28 originals map exactly once to 22 canonical claims. Six merged pairs retain matching causes, triggers and impacts. Every candidate has an independent verifier who originated none of its aliases.
+
+Final counts are P0 0, P1 0, P2 14 and P3 6 confirmed; two rejected and zero unresolved. All confirmed findings are present at the supplied baseline; their introducing commits were not identified. DR-017's staged UUID rename and DR-021's label-plus-example placeholder claims remain rejected with their original observations preserved. No fixes were applied.
+
+All 693 verifier hash entries match 224 current files. Of these, 211 have matching original-baseline Git blobs and thirteen are installed dependencies. The accumulated inventory contains 857 total hashes, not 857 supporting files; late captures do not prove installed-file identity at run start. Ninety-three historical initial artifacts and sixteen stage 15 originals remain unchanged, 109 checks in total. All seventy assignments are complete and all thirty-two handoffs are answered. The final validator accepts the record as complete.
+
+DR-007's canonical impact still said real-component verification was needed, although its independent native GalleryGrid verification had already passed in stage 06. The final summary now describes the actual result and its standalone synthetic-data limits. Original allegations, the before-record and verifier evidence remain preserved. Catalogue DR-003/DR-014 provenance notes distinguish unknown introduction history from established presence at the baseline. Peer exchange corrected a hash-total label and wording that could imply the RSS observations prove no regression. No verdict or priority changed.
+
+Stage 15 ran record, source-hash, baseline-blob, candidate-accounting, measurement-recalculation, link and Git diff checks. It did not rerun frontend/Rust tests, builds or desktop sessions. Earlier fresh verifier results remain applicable because source and causal dependencies are unchanged. The final report indexes ninety historical verifier command records and links stage-specific commands; overlapping suites are not added into a grand test total.
+
+The required response-order investigations and named scale/cycle workloads have saved evidence at the layers described in the report. Native race frequency, full-process restart persistence, Wayland, physical input, audio, native choosers, release packaging, unique-photo scale and retained-heap/leak freedom remain unverified. Historical stage 08/09 pre-freeze status/topic disclosures, some reconstructed or incomplete raw evidence and stage 12's nonrepeatable post-clear hash comparison remain explicit. These limits do not represent unperformed exact plan-required scenarios. Neither reviewer found a completion blocker.
+
+[Decision trail](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage15-decisions.tsv),
+[final trail audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage15-trail-audit/trail-audit.md).
+The requested auditor model was `gpt-5.6-sol`. Its two remaining draft flags prompted an explicit explanation of DR-022's code-and-contract-only verification and removal of unsupported repair ordering within priorities. The final delta found no remaining record-quality flags. Workspace transcript and observed model telemetry are unavailable, so actual model-family separation and all historical actions cannot be independently established.
+
+Only this progress document changes among tracked files. Reports, probes and raw evidence remain ignored under the run directory. No application/test/configuration edits, worktree, new desktop profile, commit or push were created in this stage.
+
 ## Exact resume action
 
-Stage 15 is next. Begin [independent verification and final report](15-independent-verification-final-report.md). Recheck hashes with `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py`. Carry all findings forward without fixes and preserve serialized builds/native sessions with disposable profiles.
+The review plan is complete. Use the final report and catalogue to plan repairs separately; this review applied no fixes. Revalidate current evidence with `python3 raports/20261010T182819Z-solid2-deep-review/verify_stage15.py` before relying on it after source changes.

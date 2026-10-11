@@ -1,20 +1,20 @@
 # Solid 2 review progress
 
-Status: stages 00 through 02 complete; overall review partial.
-Current stage: none active; stage 03 is next.
-Current assignment: none; stage 02 reviews, peer handoffs and independent verification are complete.
-Next action: recheck source hashes, then begin stage 03, bootstrap and application lifetime.
+Status: stages 00 through 03 complete; overall review partial.
+Current stage: none active; stage 04 is next.
+Current assignment: none; stage 03 reviews, peer handoffs and independent verification are complete.
+Next action: recheck source hashes, then begin stage 04, query sessions and page caching.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
-Runtime/build owner: coordinator `/root`; no desktop session was started.
+Runtime/build owner: coordinator `/root`; stage 03 isolated desktop session stopped and temporary data removed.
 
 | Stage | Status | Coverage / verification |
 | --- | --- | --- |
 | 00 | complete | Two independent inventories, peer exchange, 241-file map, hash checks and independent documentation verdict |
 | 01 | complete | Dual 116-path semantics review, peer exchange, 359 tests and RC/compiler/build probes |
 | 02 | complete | Dual 82-path reliability review, peer exchange, 625 tests plus shuffled run, independent P3 false-pass finding |
-| 03 | pending | Awaiting investigation |
+| 03 | complete | Dual 18-path lifetime review, peer exchange, isolated desktop smoke and independent P2 startup-remount finding |
 | 04 | pending | Awaiting investigation |
 | 05 | pending | Awaiting investigation |
 | 06 | pending | Awaiting investigation |
@@ -103,6 +103,36 @@ Both peer handoffs are answered; initial notes, findings and scope records remai
 
 No desktop session, HMR, native rendering, backend suite, live IPC/database workflow or release package verification ran in stage 02. Observer and worker mocks retain their documented limits. The overall review remains partial because stages 03-15 are pending.
 
+## Stage 03 evidence and limits
+
+Completed on 2026-10-11 with no application, existing-test, configuration or dependency drift from the original baseline. Two fresh reviewers inspected all 18 stage paths. `/root/stage03_lifecycle` traced reactive initialization, asynchronous registration and disposal. `/root/stage03_architecture` traced application ownership, recovery and native startup contracts. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata was unavailable. Initial notes, findings and inspection records were saved and hashed before peer exchange, then preserved unchanged.
+
+[Updated report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[lifecycle review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage03-lifecycle/notes.md),
+[architecture review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage03-architecture/notes.md),
+[coverage and hash check](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage03-coverage-check.json),
+[command record](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage03-commands.json).
+
+One new P2 defect, DR-003, was independently confirmed by `/root/verify_stage03_startup`, requested `gpt-6-astra` with high reasoning. Reloading the frontend after an automatic startup scan dispatches but before it completes can leave the replacement gallery empty or partially populated. The backend has consumed its once-only snapshot, so the replacement startup call returns null. Its progress subscription ends; the disposed original runtime cannot refresh the replacement query when scanning finishes. Empty or fully cached views do not request a page that could detect the stale revision. A new query or reload after completion recovers the results.
+
+The verifier's four-case probe awaits the actual production startup consumer through follow-up work and cleanup. Empty and two-row results remain stale after completion, then recover to seven rows on explicit refresh. Ordinary Settings/gallery switching preserves the runtime and works; remount after completion also works. Rust source confirms that the second startup call returns before the scan lock, and query admission does not wait for scanning. The active-scan race was not executed in a live native session. [Independent verdict](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-003.json).
+
+Repair direction is process-owned startup status/completion that replacement runtimes can observe without duplicating scanning. No fix was applied. Owning source matches the original baseline, so the defect is pre-existing relative to this review. Cumulative confirmed counts are P0 0, P1 0, P2 1, P3 2; rejected 0; unresolved 0. DR-001 and DR-002 remain unchanged.
+
+Executed verification:
+
+- Eight focused app/startup test files passed 36 tests. Four strengthened lifecycle probes passed, covering pending startup across view changes, late registration cleanup, disposed completions and Solid lazy-thunk rejection/retry. Two strengthened architecture probes also passed. The independent verifier passed four additional cases with a directly awaited consumer-completion barrier.
+- Review probe configurations initially concatenated root include globs and ran the existing suite alongside probes. Architecture passed 627 tests; the verifier passed 629. Lifecycle passed 628 cases with one synthetic-probe failure from a wrong button label. Corrected focused runs passed. Preserved logs and addenda distinguish these setup mistakes from application results.
+- The isolated controller passed typecheck, frontend production build and Tauri E2E build. Doctor verified the E2E title, disposable profile, sole synthetic root and private display. Settings opened, Escape retained the gallery search draft, an ordinary reload showed seven indexed items with the nonpersistent draft cleared, and Back returned from Settings. Both screenshots were opened and inspected. Repeated stop succeeded; direct PID and filesystem checks confirmed cleanup.
+- Peer exchange strengthened negative async assertions to wait for consumer completion. Both handoffs are answered. Source/hash checks, preserved initial artifact hashes, coverage accounting, review-record validation and `git diff --check` passed.
+
+[Desktop evidence](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage03-desktop.md),
+[cleanup check](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage03-cleanup-check.json),
+[decision trail and audit](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage03-trail-audit/trail-audit.md).
+The trail auditor requested `gpt-5.6-sol`; observed model telemetry and a conversation transcript were unavailable, so the audit checks persisted evidence without claiming verified cross-family execution.
+
+No live active-scan reload, Vite HMR delivery or failed production chunk download ran. Lazy retry used the installed Solid runtime with a synthetic thunk. Bare Xvfb accepted a Maximize click but did not establish a native state transition; minimize, drag/resize and close remain untested. No native video pixels, backend suite or release package verification ran. All generated evidence remains ignored. Only this progress file changed among tracked files; no worktree, commit or push was created. The overall review remains partial because stages 04-15 are pending.
+
 ## Exact resume action
 
-Run `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and inspect drift before assigning stage 03. Read [stage 03](03-bootstrap-application-lifetime.md), system architecture and frontend lifetime contracts. Start two independent substantive perspectives on initialization, view switching, startup/listener disposal, lazy-import failure/retry, HMR and window controls. Preserve initial reviews before peer exchange and assign every distinct candidate a fresh verifier. Carry DR-001 and DR-002 forward without applying fixes during this read-only review.
+Run `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and inspect drift before assigning stage 04. Read [stage 04](04-query-sessions-page-caching.md), library-query/gallery, IPC and database contracts. Start two fresh independent perspectives on overlapping filters, superseded query starts, stale sessions, page eviction, positions, range loading, loading counters and disposal. Preserve initial reviews before peer exchange and assign every distinct candidate a fresh verifier. Carry DR-001, DR-002 and DR-003 forward without applying fixes during this read-only review.

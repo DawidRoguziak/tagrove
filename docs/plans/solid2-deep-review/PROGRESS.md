@@ -1,9 +1,9 @@
 # Solid 2 review progress
 
-Status: stages 00 and 01 complete; overall review partial.
-Current stage: none active; stage 02 is next.
-Current assignment: none; stage 01 reviews and both peer handoffs are complete.
-Next action: recheck source hashes, then begin stage 02, test reliability.
+Status: stages 00 through 02 complete; overall review partial.
+Current stage: none active; stage 03 is next.
+Current assignment: none; stage 02 reviews, peer handoffs and independent verification are complete.
+Next action: recheck source hashes, then begin stage 03, bootstrap and application lifetime.
 
 Review baseline: `ad277bd53b23201af297bccc1e454272d8f3d349`, captured from a clean working tree on 2026-10-10.
 Active report directory: `raports/20261010T182819Z-solid2-deep-review/`.
@@ -13,7 +13,7 @@ Runtime/build owner: coordinator `/root`; no desktop session was started.
 | --- | --- | --- |
 | 00 | complete | Two independent inventories, peer exchange, 241-file map, hash checks and independent documentation verdict |
 | 01 | complete | Dual 116-path semantics review, peer exchange, 359 tests and RC/compiler/build probes |
-| 02 | pending | Awaiting investigation |
+| 02 | complete | Dual 82-path reliability review, peer exchange, 625 tests plus shuffled run, independent P3 false-pass finding |
 | 03 | pending | Awaiting investigation |
 | 04 | pending | Awaiting investigation |
 | 05 | pending | Awaiting investigation |
@@ -73,6 +73,36 @@ Final inventory/source-hash checks, initial-note hash preservation, review-recor
 
 No desktop session, native rendering, HMR, backend suite, lint, locale check or full frontend suite ran in stage 01. Detailed feature behavior, test reliability and integrated runtime checks remain assigned to later stages. The overall report is partial because stages 02-15 are pending.
 
+## Stage 02 evidence and limits
+
+Completed on 2026-10-11 with no application, existing-test, E2E, script, configuration or dependency drift from the original baseline. Two fresh reviewers inspected all 82 stage paths. `/root/stage02_scheduling` examined reactive scheduling, same-owner rerender, deferred completions and cleanup. `/root/stage02_harness` examined test architecture, mock fidelity, isolation and E2E support. Both requested `gpt-6.1-sol` with high reasoning; observed model metadata was unavailable. Inspection depth is recorded explicitly, including targeted excerpts in long scheduling suites and supporting controller/spec files.
+
+[Updated report](../../../raports/20261010T182819Z-solid2-deep-review/report.md),
+[scheduling review and completion addendum](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage02-scheduling/review-addendum.md),
+[harness review](../../../raports/20261010T182819Z-solid2-deep-review/agents/stage02-harness/notes.md),
+[initial artifact hashes and scope accounting](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage02-initial-reviews.json),
+[required command record](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage02-commands.json),
+[support checks](../../../raports/20261010T182819Z-solid2-deep-review/evidence/stage02-support-commands.json).
+
+One new P3 test-reliability defect, DR-002, was independently confirmed by fresh verifier `/root/verify_stage02_disposal`, requested `gpt-6.1-sol` with high reasoning. The negative assertion in `src/app/__tests__/runtime.test.ts:63` runs before the startup response handler and Solid publication have completed. All three original runtime tests still pass when an ignored Vite transform removes the disposal guard in memory. The verifier checked the exact transform and instrumented handler entry/exit. Natural microtasks then publish the late value without extra flushes. A corrected diagnostic assertion fails against the mutation; unchanged production retains the empty snapshot.
+
+Current production disposal handling is correct. This finding concerns a regression test that can report success without testing its stated behavior. Both adapter promise adoption and signal batching matter; a direct-return adapter mutant also passes the original assertion. Repair must await consumer completion and publication before checking absence. An already-true `waitFor` assertion is insufficient. [Independent verdict and evidence](../../../raports/20261010T182819Z-solid2-deep-review/verification/DR-002.json). No fix was applied.
+
+Cumulative confirmed counts are P0 0, P1 0, P2 0, P3 2; rejected 0; unresolved 0. DR-001 remains the stage 00 documentation finding. No application defect has been demonstrated in the completed scope.
+
+Executed verification:
+
+- Typecheck passed for both projects; lint checked 254 files without fixes; locale validation passed for 11 languages.
+- All 625 frontend tests across 74 files passed. A full shuffled run with seed `20261011` also passed 625 tests; the reviewer preserved its earlier focused 140-test run separately. One seed does not exhaust possible schedules.
+- Production build/module assertions passed, recording 193 application modules with the Solid entry and no forbidden dependencies.
+- Four disposable fake-build checks passed. All six controller support checks passed with local socket access, including process ownership/cleanup and synthetic media validation with ffprobe. The sandbox attempt failed specifically on localhost `EPERM`; an approved unrestricted rerun passed. No desktop app was launched.
+- Helper probes confirmed that `renderSolid` retains its component owner and DOM node across prop changes. `renderSettings.rerender` replaces its child subtree; its sole current rerender caller checks separate lock states and does not claim draft continuity.
+- Independent mutation probes reproduced DR-002 and distinguished adapter completion from signal publication. The intentional failing diagnostic is evidence of mutation sensitivity, not a failure in unchanged application source.
+
+Both peer handoffs are answered; initial notes, findings and scope records remain unchanged after exchange. Source/hash checks, review-record validation and `git diff --check` passed. All new probes, logs and review artifacts stay ignored under the run directory. Only this progress file changed among tracked files. No worktree, commit or push was created.
+
+No desktop session, HMR, native rendering, backend suite, live IPC/database workflow or release package verification ran in stage 02. Observer and worker mocks retain their documented limits. The overall review remains partial because stages 03-15 are pending.
+
 ## Exact resume action
 
-Run `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and inspect drift before assigning stage 02. Read [stage 02](02-test-reliability.md) and the testing contracts. Start two independent substantive perspectives on settle/flush assumptions, same-owner rerender, observer/worker mocks, deferred completions and cleanup. Execute that stage's typecheck, lint, locale check, frontend test and production-build requirements; serialize shared builds through the coordinator. Preserve initial reviews before peer exchange and assign every distinct candidate a fresh verifier. Stage 01 test passes do not count as completion of the test-reliability audit.
+Run `python3 raports/20261010T182819Z-solid2-deep-review/verify_inventory.py` and inspect drift before assigning stage 03. Read [stage 03](03-bootstrap-application-lifetime.md), system architecture and frontend lifetime contracts. Start two independent substantive perspectives on initialization, view switching, startup/listener disposal, lazy-import failure/retry, HMR and window controls. Preserve initial reviews before peer exchange and assign every distinct candidate a fresh verifier. Carry DR-001 and DR-002 forward without applying fixes during this read-only review.

@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "動画を再生できませんでした",
-      "image": "画像または GIF を表示できませんでした"
+      "image": "画像を表示できませんでした"
     },
     "tagSaving": "タグを保存中...",
     "retryTagSave": "再試行",

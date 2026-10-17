@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "Could not play video",
-      "image": "Could not display image or GIF"
+      "image": "Could not display image"
     },
     "tagSaving": "Saving tags...",
     "retryTagSave": "Retry",

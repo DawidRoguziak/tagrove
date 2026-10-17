@@ -152,6 +152,7 @@ export function LightboxMediaStage(props: {
                   >
                     <img
                       data-testid="lightbox-image"
+                      crossorigin="anonymous"
                       ref={props.controls.imageRef}
                       src={toMediaSrc(props.selected.path ?? "")}
                       alt={props.selected.file_name}

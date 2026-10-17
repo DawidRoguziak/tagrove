@@ -4,6 +4,11 @@ Implementation entry points: [selection lifecycle](../../src/features/lightbox/c
 
 The lightbox is the selected-asset workspace layered over the gallery. It owns full-media presentation, per-asset editing, deletion confirmation, image transforms, video playback, fullscreen, and keyboard navigation. Selection and mutation state live above the modal in `createLightbox`; `LightboxModal` and its presentation models own transient interaction state.
 
+Original images and GIFs load through the asset protocol with `crossorigin="anonymous"`,
+matching thumbnail requests. WebKitGTK requires this CORS mode from the HTTP development
+origin. The shared failure message says that the image could not be displayed; it does
+not imply that the selected file is a GIF.
+
 Related documentation:
 
 - [Library query and gallery](library-query-and-gallery.md) describes query sessions, summary objects, the global index, and the paged frontend cache used by lightbox navigation.

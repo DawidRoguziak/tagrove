@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "No se pudo reproducir el video",
-      "image": "No se pudo mostrar la imagen o el GIF"
+      "image": "No se pudo mostrar la imagen"
     },
     "tagSaving": "Guardando etiquetas...",
     "retryTagSave": "Reintentar",

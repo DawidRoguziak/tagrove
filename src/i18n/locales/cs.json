@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "Video nelze přehrát",
-      "image": "Obrázek nebo GIF nelze zobrazit"
+      "image": "Obrázek nelze zobrazit"
     },
     "tagSaving": "Ukládání tagů...",
     "retryTagSave": "Zkusit znovu",

@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "동영상을 재생할 수 없습니다",
-      "image": "이미지 또는 GIF를 표시할 수 없습니다"
+      "image": "이미지를 표시할 수 없습니다"
     },
     "tagSaving": "태그 저장 중...",
     "retryTagSave": "다시 시도",

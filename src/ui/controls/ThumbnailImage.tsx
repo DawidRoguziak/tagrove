@@ -21,6 +21,7 @@ function ImageSource(props: Props) {
   return (
     <img
       {...rest}
+      crossorigin="anonymous"
       ref={(el) => {
         image = el;
       }}

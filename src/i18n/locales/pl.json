@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "Nie można odtworzyć video",
-      "image": "Nie można wyświetlić obrazu lub GIF-a"
+      "image": "Nie można wyświetlić obrazu"
     },
     "tagSaving": "Zapisywanie tagów...",
     "retryTagSave": "Ponów",

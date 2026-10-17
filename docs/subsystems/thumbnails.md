@@ -6,6 +6,11 @@ This page owns JPEG preview identity, rendering, tool discovery, scheduling, pub
 
 Command names, payload shapes, channel serialization, and shared progress-event rules live in the [IPC contract](../architecture/ipc-contract.md). Database schema and transaction conventions live in [database persistence](database.md), scan-time metadata and fingerprints in [scanning and indexing](scanning-and-indexing.md), gallery range loading and presentation in [library query and gallery](library-query-and-gallery.md), and app-data, resource, and lock lifecycles in the [system overview](../architecture/system-overview.md).
 
+`ThumbnailImage` requests asset-protocol images with `crossorigin="anonymous"`.
+WebKitGTK needs CORS mode when the frontend runs at the HTTP development origin;
+without it, existing JPEG previews fail to display even when fetching the same
+asset URL succeeds. The shared component covers gallery, duplicate and group-order previews.
+
 ## Source versions, cache and target identity
 
 Every thumbnail job carries a `SourceVersion` — the exact source identity of `path`, `size_bytes`, and nanosecond `fingerprint_mtime_ns` read from SQLite when the task was created. The version travels through the scheduler task, is echoed back in the result, and acts as the compare-and-set guard for every database write. The database compare-and-set rejects a result whose source version no longer matches. File publication happens earlier and stale produced files are removed best-effort after that check.

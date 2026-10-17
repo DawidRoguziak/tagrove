@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "无法播放视频",
-      "image": "无法显示图像或 GIF"
+      "image": "无法显示图像"
     },
     "tagSaving": "正在保存标签...",
     "retryTagSave": "重试",

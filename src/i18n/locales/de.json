@@ -246,7 +246,7 @@
     },
     "mediaError": {
       "video": "Video konnte nicht wiedergegeben werden",
-      "image": "Bild oder GIF konnte nicht angezeigt werden"
+      "image": "Bild konnte nicht angezeigt werden"
     },
     "tagSaving": "Tags werden gespeichert...",
     "retryTagSave": "Erneut versuchen",

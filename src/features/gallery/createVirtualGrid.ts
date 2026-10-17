@@ -1,10 +1,6 @@
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import {
-  Virtualizer,
-  elementScroll,
-  observeElementOffset,
-  observeElementRect
-} from "@tanstack/virtual-core";
+import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
+import { Virtualizer, observeElementOffset, observeElementRect } from "@tanstack/virtual-core";
+import { scrollCoordinates } from "./scrollCoordinates";
 import type { LibraryRange } from "../../library/createLibrary";
 
 const GAP = 12;
@@ -21,7 +17,7 @@ export function createVirtualGrid(options: {
   onRange?: (range: LibraryRange) => void;
   rangeResetKey: number;
 }) {
-  const [geometry, setGeometry] = createSignal({ width: 0, margin: 0 });
+  const [geometry, setGeometry] = createSignal({ width: 0, margin: 0, viewport: 0 });
   const [version, setVersion] = createSignal(0);
   const columns = createMemo(() =>
     Math.max(1, Math.floor((geometry().width + GAP) / (options.tileSize + GAP)))
@@ -32,13 +28,52 @@ export function createVirtualGrid(options: {
       Math.floor((Math.max(geometry().width, options.tileSize) - GAP * (columns() - 1)) / columns())
     )
   );
+  let coordinates = scrollCoordinates(0, 0, 0);
+  let position = { physical: 0, logical: 0 };
+  let publishOffset: ((offset: number, scrolling: boolean) => void) | undefined;
+  const readOffset = (physical: number) => {
+    // Retain subpixel logical wheel steps when WebKit rounds scrollTop.
+    if (physical !== position.physical)
+      position = { physical, logical: coordinates.toLogical(physical) };
+    return position.logical;
+  };
+  const scrollTo = (logical: number) => {
+    const scroller = untrack(options.scroller);
+    if (!scroller) return;
+    const physical = Math.max(0, coordinates.toPhysical(logical));
+    scroller.scrollTop = physical;
+    const actual = scroller.scrollTop;
+    position = {
+      physical: actual,
+      logical:
+        Math.abs(actual - physical) < 1 ? Math.max(0, logical) : coordinates.toLogical(actual)
+    };
+    publishOffset?.(position.logical, false);
+    setVersion((value) => value + 1);
+  };
+  const scrollBy = (delta: number) => {
+    const scroller = untrack(options.scroller);
+    if (scroller) scrollTo(readOffset(scroller.scrollTop) + delta);
+  };
   const virtualizer = new Virtualizer<HTMLElement, Element>({
     count: 0,
     getScrollElement: () => options.scroller() ?? null,
     estimateSize: () => 188,
-    scrollToFn: elementScroll,
+    scrollToFn: (offset, { adjustments = 0 }) => scrollTo(offset + adjustments),
     observeElementRect,
-    observeElementOffset,
+    observeElementOffset: (instance, callback) => {
+      publishOffset = callback;
+      const cleanup = observeElementOffset(instance, (physical, scrolling) => {
+        // virtual-core's debounced scroll-end can carry the pre-resize offset.
+        // Read the current DOM value so it cannot retire a newer anchor write.
+        callback(readOffset(instance.scrollElement?.scrollTop ?? physical), scrolling);
+        setVersion((value) => value + 1);
+      });
+      return () => {
+        publishOffset = undefined;
+        cleanup?.();
+      };
+    },
     onChange: () => setVersion((value) => value + 1)
   });
   const dispose = virtualizer._didMount();
@@ -54,8 +89,11 @@ export function createVirtualGrid(options: {
           scroller.getBoundingClientRect().top -
           scroller.clientTop +
           scroller.scrollTop;
+        const viewport = scroller.clientHeight;
         setGeometry((previous) =>
-          previous.width === width && previous.margin === margin ? previous : { width, margin }
+          previous.width === width && previous.margin === margin && previous.viewport === viewport
+            ? previous
+            : { width, margin, viewport }
         );
       };
       measure();
@@ -64,26 +102,41 @@ export function createVirtualGrid(options: {
       observer.observe(grid);
       observer.observe(scroller);
       window.addEventListener("resize", measure);
+      const wheel = (event: WheelEvent) => {
+        if (!coordinates.compressed || event.ctrlKey || event.defaultPrevented || !event.deltaY)
+          return;
+        // An independently scrollable bulk inspector owns its own wheel input.
+        if (event.target instanceof Element && !gallery.contains(event.target)) return;
+        event.preventDefault();
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1;
+        scrollBy(event.deltaY * unit);
+      };
+      scroller.addEventListener("wheel", wheel, { passive: false });
       return () => {
+        scroller.removeEventListener("wheel", wheel);
         observer.disconnect();
         window.removeEventListener("resize", measure);
       };
     }
   );
-  let previous = { columns: 1, size: 188, margin: 0 };
+  let previous = { columns: 1, size: 188, margin: 0, count: 0, viewport: 0 };
   createEffect(
     () => ({
       count: geometry().width > 0 ? Math.ceil(options.assetCount / columns()) : 0,
       columns: columns(),
       size: size(),
       margin: geometry().margin,
-      scroller: options.scroller()
+      viewport: geometry().viewport,
+      scroller: options.scroller(),
+      grid: options.grid()
     }),
     (next) => {
-      const scrollTop = next.scroller?.scrollTop ?? 0;
+      const scrollTop = readOffset(next.scroller?.scrollTop ?? 0);
       const firstIndex =
         Math.floor(Math.max(0, scrollTop - previous.margin) / (previous.size + GAP)) *
         previous.columns;
+      const total = Math.max(0, next.count * (next.size + GAP) - GAP);
+      coordinates = scrollCoordinates(total, next.viewport, next.margin);
       virtualizer.setOptions({
         ...virtualizer.options,
         count: next.count,
@@ -97,11 +150,16 @@ export function createVirtualGrid(options: {
       virtualizer._willUpdate();
       if (previous.columns !== next.columns || previous.size !== next.size) {
         virtualizer.measure();
-        if (scrollTop > previous.margin)
-          virtualizer.scrollToOffset(
-            next.margin + Math.floor(firstIndex / next.columns) * (next.size + GAP)
-          );
       }
+      // Commit the bounded spacer before writing the anchor; the old spacer can
+      // otherwise clamp the new scrollTop during a compressed/uncompressed resize.
+      const grid = next.grid;
+      if (grid) grid.style.height = `${coordinates.height}px`;
+      if (scrollTop > previous.margin) {
+        const anchor = next.margin + Math.floor(firstIndex / next.columns) * (next.size + GAP);
+        const layoutChanged = previous.columns !== next.columns || previous.size !== next.size;
+        scrollTo(layoutChanged ? anchor : scrollTop);
+      } else scrollTo(scrollTop);
       previous = next;
       setVersion((value) => value + 1);
     }
@@ -115,12 +173,13 @@ export function createVirtualGrid(options: {
       Array.from({ length: Math.min(columnCount, count - row.index * columnCount) }, (_, lane) => ({
         index: row.index * columnCount + lane,
         lane,
-        start: row.start - geometry().margin
+        start: row.start - geometry().margin - (position.logical - position.physical)
       }))
     );
     return {
       items,
-      total: virtualizer.getTotalSize(),
+      total: coordinates.height,
+      shift: position.logical - position.physical,
       range: {
         startIndex: items[0]?.index ?? 0,
         endIndex: items[items.length - 1]?.index ?? -1,
@@ -132,8 +191,18 @@ export function createVirtualGrid(options: {
       }
     };
   });
+  const range = createMemo<LibraryRange>((previous) => {
+    const next = snapshot().range;
+    return previous &&
+      previous.startIndex === next.startIndex &&
+      previous.endIndex === next.endIndex &&
+      previous.visibleStartIndex === next.visibleStartIndex &&
+      previous.visibleEndIndex === next.visibleEndIndex
+      ? previous
+      : next;
+  });
   createEffect(
-    () => ({ range: snapshot().range, reset: options.rangeResetKey }),
+    () => ({ range: range(), reset: options.rangeResetKey }),
     ({ range }) => options.onRange?.(range)
   );
   createEffect(
@@ -141,7 +210,7 @@ export function createVirtualGrid(options: {
       more: options.hasMore,
       loading: options.isLoading,
       count: options.assetCount,
-      end: snapshot().range.endIndex,
+      end: range().endIndex,
       columns: columns()
     }),
     (value) => {
@@ -171,6 +240,10 @@ export function createVirtualGrid(options: {
     get totalSize() {
       return snapshot().total;
     },
+    get scrollShift() {
+      return snapshot().shift;
+    },
+    scrollBy,
     // Exposed for tests that observe the actual core measurement cache.
     virtualizer
   };

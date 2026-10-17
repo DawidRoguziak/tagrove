@@ -27,6 +27,12 @@ A SQLite transaction can protect only database statements. Filesystem rename/del
 
 The frontend serializes settings actions within the application-owned `createSettingsOperationRunner` and asks for confirmation before root removal, clear-library, bundle overwrite, and duplicate batches containing deletion. Confirmed bundle restore and clear-library additionally use the library-owned metadata-mutation maintenance barrier in `createAssetTagState`: they drain already-dispatched tag, favorite and group writes, block new ones, and invalidate identity-bound tag/details state before releasing the barrier whether the command resolves or rejects. On rejection they then attempt root/library refreshes because either backend workflow may have changed live state before returning an error. This remains user-interface orchestration only; bundle export/restore separately enforce their process-wide backend maintenance gate for direct IPC callers and other windows. Exact success refresh/reset order is documented in [settings operations](settings-operations.md).
 
+The identity epoch also scopes lightbox favorite pending ownership. Retired completions
+cannot disable a reused ID or clear a current operation. This frontend presentation rule
+does not cancel backend writes; the maintenance barrier still drains dispatched mutations.
+A successful favorite write and its later query refresh have separate outcomes. Refresh
+failure preserves the saved state and exposes query recovery rather than a save failure.
+
 ### Duplicate identity
 
 A duplicate means that at least two indexed rows have the same nonempty `file_name_key`. That key is the lowercase basename, not the full path, byte content, content hash, dimensions, size, or timestamp. Consequently, unrelated files named `IMG_0001.JPG` and `img_0001.jpg` are one duplicate group even if their contents differ, while byte-identical files with different basenames are not duplicates.

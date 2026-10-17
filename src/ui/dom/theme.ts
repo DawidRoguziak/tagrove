@@ -9,9 +9,13 @@ export function readInitialTheme(): AppTheme {
     return "dark";
   }
 
-  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (storedTheme === "light" || storedTheme === "dark") {
-    return storedTheme;
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") {
+      return storedTheme;
+    }
+  } catch {
+    // Use the default when preference storage is unavailable.
   }
 
   return "dark";
@@ -23,7 +27,11 @@ export function applyTheme(theme: AppTheme) {
   }
 
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // DOM and native theme changes do not require persistence.
+    }
 
     if (isTauri()) {
       void syncNativeWindowTheme(theme).catch(() => {});

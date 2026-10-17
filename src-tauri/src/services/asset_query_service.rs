@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -68,6 +68,7 @@ pub struct AssetQueryManager {
     next_session_id: AtomicU64,
     latest_request: Arc<AtomicU64>,
     cache: Mutex<QueryCache>,
+    owner_generations: Mutex<HashMap<String, u64>>,
     max_id_bytes: usize,
     #[cfg(test)]
     after_revision_read: Mutex<Option<Box<dyn FnOnce() + Send>>>,
@@ -79,16 +80,28 @@ impl AssetQueryManager {
             next_session_id: AtomicU64::new(1),
             latest_request: Arc::new(AtomicU64::new(0)),
             cache: Mutex::new(QueryCache::default()),
+            owner_generations: Mutex::new(HashMap::new()),
             max_id_bytes: MAX_RETAINED_ID_BYTES,
             #[cfg(test)]
             after_revision_read: Mutex::new(None),
         }
     }
 
-    /// Registers a query request in arrival order before any blocking work is
-    /// scheduled. The returned token identifies this request; a later
-    /// registration supersedes it.
-    pub fn begin_request(&self, _generation: u64) -> u64 {
+    /// Admission can run out of IPC order. Only a newer generation from the
+    /// same frontend owner may replace its previous request. Different owners
+    /// have independent counters, including after a frontend remount.
+    pub fn begin_request(&self, owner_id: &str, generation: u64) -> u64 {
+        let mut owners = self
+            .owner_generations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if owners
+            .get(owner_id)
+            .is_some_and(|previous| generation <= *previous)
+        {
+            return 0; // Reserved obsolete token; admitted tokens start at one.
+        }
+        owners.insert(owner_id.to_owned(), generation);
         self.latest_request.fetch_add(1, Ordering::SeqCst) + 1
     }
 
@@ -196,7 +209,7 @@ impl AssetQueryManager {
         let total = session.asset_ids.len();
         let session_id = session.id;
         drop(tx);
-        if !self.insert_session(session, request_id, epoch) {
+        if !self.insert_session(session, request_id, epoch)? {
             return Ok(StartAssetQueryResult::Superseded);
         }
 
@@ -294,13 +307,18 @@ impl AssetQueryManager {
         Some(session)
     }
 
-    fn insert_session(&self, session: QuerySession, request_id: u64, epoch: u64) -> bool {
+    fn insert_session(
+        &self,
+        session: QuerySession,
+        request_id: u64,
+        epoch: u64,
+    ) -> AppResult<bool> {
         if let Ok(mut cache) = self.cache.lock() {
             if cache.epoch != epoch || self.latest_request.load(Ordering::SeqCst) != request_id {
-                return false;
+                return Ok(false);
             }
             if session.asset_ids.capacity() * std::mem::size_of::<i64>() > self.max_id_bytes {
-                return false;
+                return Err("Query exceeds the retained session memory limit. Narrow your search and try again.".into());
             }
             prune(&mut cache);
             cache
@@ -317,9 +335,9 @@ impl AssetQueryManager {
             {
                 cache.sessions.pop_back();
             }
-            return true;
+            return Ok(true);
         }
-        false
+        Err("Query cache is unavailable. Retry your search.".into())
     }
 
     fn remove_session(&self, id: u64) {
@@ -454,7 +472,7 @@ mod tests {
     fn equal_key_reuses_cached_session_id() {
         let target = test_db(3);
         let manager = AssetQueryManager::new();
-        let request = manager.begin_request(1);
+        let request = manager.begin_request("test", 1);
         let first = start(&manager, &target.path, &filters(&[]), request, 1);
         let StartAssetQueryResult::Ready {
             session_id, total, ..
@@ -464,7 +482,7 @@ mod tests {
         };
         assert_eq!(total, 3);
 
-        let second_request = manager.begin_request(2);
+        let second_request = manager.begin_request("test", 2);
         let second = start(&manager, &target.path, &filters(&[]), second_request, 2);
         let StartAssetQueryResult::Ready {
             session_id: reused_session_id,
@@ -480,7 +498,7 @@ mod tests {
     fn position_uses_full_order_and_distinguishes_missing_from_stale() {
         let target = test_db(400);
         let manager = AssetQueryManager::new();
-        let request = manager.begin_request(1);
+        let request = manager.begin_request("test", 1);
         let StartAssetQueryResult::Ready {
             session_id, items, ..
         } = start(&manager, &target.path, &filters(&[]), request, 1)
@@ -533,8 +551,8 @@ mod tests {
 
         // Request A registers first but its blocking work is scheduled later;
         // request B registered after it must stay authoritative.
-        let request_a = manager.begin_request(1);
-        let request_b = manager.begin_request(2);
+        let request_a = manager.begin_request("test", 1);
+        let request_b = manager.begin_request("test", 2);
 
         let newest = start(&manager, &target.path, &filters(&[]), request_b, 2);
         assert!(matches!(newest, StartAssetQueryResult::Ready { .. }));
@@ -544,12 +562,54 @@ mod tests {
     }
 
     #[test]
+    fn inverted_admission_preserves_the_newest_filter_and_allows_a_new_owner() {
+        let target = test_db(3);
+        let manager = AssetQueryManager::new();
+        // The second IPC call is polled first, then the obsolete first call.
+        let newest = manager.begin_request("first-owner", 99);
+        let oldest = manager.begin_request("first-owner", 98);
+        assert_eq!(
+            start(&manager, &target.path, &filters(&[]), oldest, 98),
+            StartAssetQueryResult::Superseded
+        );
+        let (session, _, total) = ready_id(start(
+            &manager,
+            &target.path,
+            &filters(&["absent"]),
+            newest,
+            99,
+        ));
+        assert_eq!(total, 0);
+        assert!(matches!(
+            manager
+                .page(&target.runtime.admit().unwrap(), session, 0, 1)
+                .unwrap(),
+            AssetQueryPageResult::Ready { .. }
+        ));
+        assert_eq!(
+            start(&manager, &target.path, &filters(&[]), oldest, 98),
+            StartAssetQueryResult::Superseded
+        );
+        let replacement = manager.begin_request("remounted-owner", 1);
+        assert_eq!(
+            ready_id(start(&manager, &target.path, &filters(&[]), replacement, 1)).2,
+            3
+        );
+        assert_eq!(
+            start(&manager, &target.path, &filters(&[]), newest, 99),
+            StartAssetQueryResult::Superseded
+        );
+        // An old generation cannot become authoritative even after another owner queried.
+        assert_eq!(manager.begin_request("first-owner", 98), 0);
+    }
+
+    #[test]
     fn obsolete_client_generation_is_superseded() {
         let target = test_db(3);
         let manager = AssetQueryManager::new();
 
-        let stale_request = manager.begin_request(7);
-        manager.begin_request(8);
+        let stale_request = manager.begin_request("test", 7);
+        manager.begin_request("test", 8);
 
         let result = start(&manager, &target.path, &filters(&[]), stale_request, 7);
         assert_eq!(result, StartAssetQueryResult::Superseded);
@@ -559,7 +619,7 @@ mod tests {
     fn revision_bump_makes_page_stale_and_removes_session() {
         let target = test_db(3);
         let manager = AssetQueryManager::new();
-        let request = manager.begin_request(1);
+        let request = manager.begin_request("test", 1);
         let ready = start(&manager, &target.path, &filters(&[]), request, 1);
         let StartAssetQueryResult::Ready {
             session_id,
@@ -598,7 +658,7 @@ mod tests {
         let mut first_session_id = None;
         for index in 0..5 {
             let key_filters = filters(&[&format!("tag-{index}")]);
-            let request = manager.begin_request(index as u64 + 1);
+            let request = manager.begin_request("test", index as u64 + 1);
             let ready = start(
                 &manager,
                 &target.path,
@@ -629,7 +689,7 @@ mod tests {
     fn expired_sessions_become_stale() {
         let target = test_db(3);
         let manager = AssetQueryManager::new();
-        let request = manager.begin_request(1);
+        let request = manager.begin_request("test", 1);
         let ready = start(&manager, &target.path, &filters(&[]), request, 1);
         let StartAssetQueryResult::Ready { session_id, .. } = ready else {
             panic!("expected ready result");
@@ -653,7 +713,7 @@ mod tests {
     fn clear_invalidates_in_flight_requests_and_sessions() {
         let target = test_db(3);
         let manager = AssetQueryManager::new();
-        let request = manager.begin_request(1);
+        let request = manager.begin_request("test", 1);
         let ready = start(&manager, &target.path, &filters(&[]), request, 1);
         let StartAssetQueryResult::Ready { session_id, .. } = ready else {
             panic!("expected ready result");
@@ -667,13 +727,13 @@ mod tests {
         assert_eq!(stale, AssetQueryPageResult::Stale);
 
         // A request registered before clear() is superseded by it...
-        let orphan_request = manager.begin_request(9);
+        let orphan_request = manager.begin_request("test", 9);
         manager.clear();
         let late = start(&manager, &target.path, &filters(&[]), orphan_request, 9);
         assert_eq!(late, StartAssetQueryResult::Superseded);
 
         // ...while a request registered after the final clear() proceeds.
-        let fresh_request = manager.begin_request(2);
+        let fresh_request = manager.begin_request("replacement", 2);
         let fresh = start(&manager, &target.path, &filters(&[]), fresh_request, 2);
         assert!(matches!(fresh, StartAssetQueryResult::Ready { .. }));
     }
@@ -686,7 +746,7 @@ mod tests {
         let expected_revision = db::current_library_revision(&conn).expect("revision");
         drop(conn);
 
-        let request = manager.begin_request(1);
+        let request = manager.begin_request("test", 1);
         let ready = start(&manager, &target.path, &filters(&[]), request, 1);
         let StartAssetQueryResult::Ready {
             session_id,
@@ -716,10 +776,45 @@ mod tests {
     }
 
     #[test]
+    fn authoritative_capacity_failure_recovers_with_a_narrower_query() {
+        let target = test_db(32);
+        let mut manager = AssetQueryManager::new();
+        manager.max_id_bytes = 64;
+        let permit = target.runtime.admit().unwrap();
+        let request = manager.begin_request("test", 1);
+        let error = manager
+            .start(&permit, filters(&[]), 2, request, 1)
+            .expect_err("authoritative oversized query must fail explicitly");
+        assert!(error.to_string().contains("Narrow your search"));
+        assert_eq!(manager.latest_request.load(Ordering::SeqCst), request);
+        assert_eq!(manager.cache.lock().unwrap().epoch, 0);
+        let mut conn = db::open_connection(&target.path).unwrap();
+        db::set_asset_tags_with_revision(&mut conn, 1, &["small".into()]).unwrap();
+        db::set_asset_tags_with_revision(&mut conn, 2, &["small".into()]).unwrap();
+        let request = manager.begin_request("test", 2);
+        let (session, _, total) = ready_id(
+            manager
+                .start(&permit, filters(&["small"]), 1, request, 2)
+                .unwrap(),
+        );
+        assert_eq!(total, 2);
+        let AssetQueryPageResult::Ready { items, .. } =
+            manager.page(&permit, session, 1, 1).unwrap()
+        else {
+            panic!("page")
+        };
+        assert_eq!(items[0].id, 2);
+        assert_eq!(
+            manager.position(&permit, session, 2).unwrap(),
+            AssetQueryPositionResult::Resolved { index: 1 }
+        );
+    }
+
+    #[test]
     fn cache_budget_and_epoch_are_checked_at_insertion() {
         let mut manager = AssetQueryManager::new();
         manager.max_id_bytes = 16;
-        let request = manager.begin_request(1);
+        let request = manager.begin_request("test", 1);
         let session = |id| QuerySession {
             id,
             dependency_revision: 1,
@@ -728,13 +823,13 @@ mod tests {
             asset_ids: Arc::new(vec![1, 2]),
             last_accessed: Instant::now(),
         };
-        assert!(manager.insert_session(session(1), request, 0));
-        assert!(manager.insert_session(session(2), request, 0));
+        assert!(manager.insert_session(session(1), request, 0).unwrap());
+        assert!(manager.insert_session(session(2), request, 0).unwrap());
         assert!(manager.session_by_id(1).is_none());
         manager.clear();
-        let fresh = manager.begin_request(1);
-        assert!(!manager.insert_session(session(3), fresh, 0));
-        assert!(manager.insert_session(session(4), fresh, 1));
+        let fresh = manager.begin_request("replacement", 1);
+        assert!(!manager.insert_session(session(3), fresh, 0).unwrap());
+        assert!(manager.insert_session(session(4), fresh, 1).unwrap());
     }
 
     fn ready_id(result: StartAssetQueryResult) -> (u64, i64, usize) {
@@ -785,7 +880,7 @@ mod tests {
                 &manager,
                 &target.path,
                 &filter,
-                manager.begin_request(1),
+                manager.begin_request("test", 1),
                 1,
             ));
             let changed = db::set_asset_tags_with_revision(
@@ -830,7 +925,7 @@ mod tests {
                     &manager,
                     &target.path,
                     &filter,
-                    manager.begin_request(2),
+                    manager.begin_request("test", 2),
                     2
                 )),
                 (id, changed.revision, total)
@@ -871,7 +966,7 @@ mod tests {
             &manager,
             &target.path,
             &filter,
-            manager.begin_request(1),
+            manager.begin_request("test", 1),
             1,
         ));
         db::set_asset_favorite_with_revision(&mut conn, 20, false).unwrap();
@@ -882,7 +977,7 @@ mod tests {
                 &manager,
                 &target.path,
                 &filter,
-                manager.begin_request(2),
+                manager.begin_request("test", 2),
                 2
             )),
             (id, revision, 0)
@@ -892,7 +987,7 @@ mod tests {
             &manager,
             &target.path,
             &all,
-            manager.begin_request(3),
+            manager.begin_request("test", 3),
             3,
         ));
         let bulk = db::toggle_assets_favorite_bulk(&mut conn, &[20, 999]).unwrap();
@@ -921,7 +1016,7 @@ mod tests {
             &manager,
             &target.path,
             &filter,
-            manager.begin_request(1),
+            manager.begin_request("test", 1),
             1,
         ));
         db::set_asset_tags_with_revision(&mut conn, 20, &filter.tags_and).unwrap();
@@ -935,7 +1030,7 @@ mod tests {
             &manager,
             &target.path,
             &filter,
-            manager.begin_request(2),
+            manager.begin_request("test", 2),
             2,
         ));
         let removed = db::set_asset_tags_with_revision(&mut conn, 20, &[]).unwrap();
@@ -953,7 +1048,7 @@ mod tests {
             &manager,
             &target.path,
             &filter,
-            manager.begin_request(3),
+            manager.begin_request("test", 3),
             3,
         ));
         db::set_asset_tags_with_revision(&mut conn, 20, &filter.tags_and).unwrap();
@@ -984,7 +1079,7 @@ mod tests {
                         &manager,
                         &target.path,
                         &filter,
-                        manager.begin_request(1),
+                        manager.begin_request("test", 1),
                         1,
                     ))
                     .0,
@@ -1002,7 +1097,13 @@ mod tests {
                     match mode {
                         "fresh" | "cached" => {
                             let result = manager
-                                .start(&permit, filter.clone(), 32, manager.begin_request(2), 2)
+                                .start(
+                                    &permit,
+                                    filter.clone(),
+                                    32,
+                                    manager.begin_request("test", 2),
+                                    2,
+                                )
                                 .unwrap();
                             let StartAssetQueryResult::Ready {
                                 session_id,
@@ -1057,7 +1158,7 @@ mod tests {
                     &manager,
                     &target.path,
                     &filter,
-                    manager.begin_request(3),
+                    manager.begin_request("test", 3),
                     3,
                 ));
                 assert_eq!(revision, before + 1);

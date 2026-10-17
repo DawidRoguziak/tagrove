@@ -83,7 +83,8 @@ describe("shared gallery selection", () => {
     "query",
     "clear",
     "disable",
-    "dispose"
+    "dispose",
+    "identity"
   ])("discards a late selection after %s", async (action) => {
     const { model, load, result, cleanup } = mount();
     model.interact(click(9, 8));
@@ -101,6 +102,7 @@ describe("shared gallery selection", () => {
       ranges: [{ startIndex: 0, endIndex: 2 }]
     });
     if (action === "query") result.setQuery(1);
+    if (action === "identity") result.setIdentity(1);
     if (action === "clear") model.clear();
     if (action === "disable") model.toggle();
     if (action === "dispose") cleanup();
@@ -147,4 +149,22 @@ it("rejects a resolved range when its query changes before the Solid batch settl
   await pending;
   flush();
   expect([...model.ids]).toEqual([99]);
+});
+
+it("drops a settled failed retry on identity reset", async () => {
+  const { model, result, load } = mount();
+  load.mockRejectedValueOnce(new Error("failed read"));
+  await model.interact({
+    type: "rectangle-commit",
+    ranges: [{ startIndex: 0, endIndex: 1 }],
+    additive: false
+  });
+  flush();
+  expect(model.error).toContain("failed read");
+  result.setIdentity(1);
+  flush();
+  await model.retry();
+  expect(load).toHaveBeenCalledOnce();
+  expect(model.error).toBeNull();
+  expect(model.ids.size).toBe(0);
 });

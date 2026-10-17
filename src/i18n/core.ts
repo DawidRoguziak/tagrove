@@ -36,9 +36,13 @@ function resolveInitialLanguage(): AppLanguage {
     return FALLBACK_LANGUAGE;
   }
 
-  const stored = normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
-  if (stored) {
-    return stored;
+  try {
+    const stored = normalizeLanguage(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
+    if (stored) {
+      return stored;
+    }
+  } catch {
+    // Preference storage may be unavailable; browser language still applies.
   }
 
   return normalizeLanguage(window.navigator.language) ?? FALLBACK_LANGUAGE;
@@ -78,7 +82,11 @@ function persistLanguage(language: AppLanguage) {
   }
 
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    } catch {
+      // Persistence must not interrupt languageChanged listeners or boot.
+    }
   }
 }
 

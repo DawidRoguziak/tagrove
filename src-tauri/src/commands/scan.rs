@@ -155,22 +155,46 @@ fn set_scan_root_auto_scan_service(
 
 #[tauri::command]
 pub async fn scan_startup_roots(app: tauri::AppHandle) -> Result<Option<ScanSummary>, String> {
-    let roots = app
+    let startup = app
         .state::<crate::app::state::StartupScanState>()
-        .take_roots()?;
-    if roots.is_empty() {
-        return Ok(None);
-    }
-    tauri::async_runtime::spawn_blocking(move || {
+        .inner()
+        .clone();
+    run_startup_scan(&startup, move |roots| {
         let state = app.state::<AppState>();
         with_scan_lock(&state, |permit| {
             scan_service::scan_roots(&roots, &state, permit, &app)
         })
-        .map(Some)
         .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("startup scan worker failed: {e}"))?
+}
+
+async fn run_startup_scan(
+    startup: &crate::app::state::StartupScanState,
+    scan: impl FnOnce(Vec<String>) -> Result<ScanSummary, String> + Send + 'static,
+) -> Result<Option<ScanSummary>, String> {
+    use crate::app::state::StartupScanRequest;
+    let mut receiver = match startup.subscribe()? {
+        StartupScanRequest::Finished(result) => return result,
+        StartupScanRequest::Observe(receiver) => receiver,
+        StartupScanRequest::Start(roots, receiver) => {
+            let startup = startup.clone();
+            // A dropped command observer must not abandon completion publication.
+            tauri::async_runtime::spawn(async move {
+                let result = tauri::async_runtime::spawn_blocking(move || scan(roots))
+                    .await
+                    .map_err(|e| format!("startup scan worker failed: {e}"))
+                    .and_then(|result| result)
+                    .map(Some);
+                startup.finish(result);
+            });
+            receiver
+        }
+    };
+    receiver
+        .recv()
+        .await
+        .ok_or_else(|| "startup scan completion unavailable".to_string())?
 }
 
 #[cfg(test)]
@@ -188,6 +212,111 @@ mod tests {
     };
 
     use super::{add_scan_root_service, list_scan_roots_service, remove_scan_root_service};
+
+    fn startup_state() -> crate::app::state::StartupScanState {
+        crate::app::state::StartupScanState::new(vec![crate::models::ScanRoot {
+            path: "/enabled".into(),
+            auto_scan_on_startup: true,
+        }])
+    }
+
+    #[test]
+    fn startup_scan_observers_share_completion_and_replay_without_rescanning() {
+        use std::{
+            future::Future,
+            task::{Context, Waker},
+        };
+        let startup = startup_state();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let first_state = startup.clone();
+        let first = tauri::async_runtime::spawn(async move {
+            super::run_startup_scan(&first_state, move |roots| {
+                assert_eq!(roots, ["/enabled"]);
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                Ok(crate::models::ScanSummary {
+                    completion: crate::models::ScanCompletion::Complete,
+                    indexed: 3,
+                    removed: 0,
+                    failed: 0,
+                })
+            })
+            .await
+        });
+        entered_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        tauri::async_runtime::block_on(async {
+            // Poll the real command helper while the worker is blocked. This
+            // proves the replacement waits instead of returning null.
+            let mut replacement = std::pin::pin!(super::run_startup_scan(&startup, |_| panic!(
+                "must not rescan"
+            )));
+            let pending = replacement
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()));
+            first.abort();
+            release_tx.send(()).unwrap();
+            assert!(
+                pending.is_pending(),
+                "running startup scan must remain observable"
+            );
+            let result = replacement.await.unwrap().unwrap();
+            assert_eq!(result.indexed, 3);
+            let replay = super::run_startup_scan(&startup, |_| panic!("must not rescan"))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(replay).unwrap(),
+                serde_json::to_value(result).unwrap()
+            );
+        });
+    }
+
+    #[test]
+    fn startup_scan_retains_failures_and_worker_panics_without_retry() {
+        for panic_worker in [false, true] {
+            let startup = startup_state();
+            tauri::async_runtime::block_on(async {
+                let error = super::run_startup_scan(&startup, move |_| {
+                    if panic_worker {
+                        panic!("synthetic worker panic");
+                    }
+                    Err("synthetic scan failure".into())
+                })
+                .await
+                .unwrap_err();
+                assert!(error.contains(if panic_worker {
+                    "startup scan worker failed"
+                } else {
+                    "synthetic scan failure"
+                }));
+                assert_eq!(
+                    super::run_startup_scan(&startup, |_| panic!("must not retry"))
+                        .await
+                        .unwrap_err(),
+                    error
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn startup_scan_without_enabled_roots_never_starts_worker() {
+        let startup = crate::app::state::StartupScanState::new(vec![]);
+        tauri::async_runtime::block_on(async {
+            for _ in 0..2 {
+                assert!(
+                    super::run_startup_scan(&startup, |_| panic!("no startup work"))
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        });
+    }
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
         AppState {

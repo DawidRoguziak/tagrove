@@ -49,6 +49,7 @@ function options() {
     onFullscreenChange: vi.fn(),
     onError: vi.fn(),
     onNativeBounds: vi.fn(),
+    onEscape: vi.fn(),
     onPointerActivity: vi.fn()
   };
 }
@@ -77,6 +78,7 @@ function mountSession(initial: SessionOptions) {
       onLoadedMetadata: (value) => options().onLoadedMetadata(value),
       onFullscreenChange: (value) => options().onFullscreenChange(value),
       onNativeBounds: (value) => options().onNativeBounds?.(value),
+      onEscape: () => options().onEscape?.(),
       onPointerActivity: () => options().onPointerActivity?.()
     });
     return { session, setOptions };
@@ -100,6 +102,23 @@ describe("createNativeVideoSession", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("accepts early Escape only for the returned session and drops it after disposal", async () => {
+    const open = deferred<number>();
+    api.openVideo.mockReturnValueOnce(open.promise);
+    const opts = options();
+    const { unmount } = mountSession(opts);
+    await waitFor(() => expect(api.openVideo).toHaveBeenCalledOnce());
+    emit({ session_id: 10, type: "escape" });
+    expect(opts.onEscape).not.toHaveBeenCalled();
+    await act(async () => open.resolve(10));
+    expect(opts.onEscape).toHaveBeenCalledOnce();
+    emit({ session_id: 99, type: "escape" });
+    expect(opts.onEscape).toHaveBeenCalledOnce();
+    unmount();
+    emit({ session_id: 10, type: "escape" });
+    expect(opts.onEscape).toHaveBeenCalledOnce();
   });
 
   it("cancels a reservation that arrives after unmount without opening media", async () => {

@@ -19,20 +19,16 @@ export function createSuggestions(
     tags: string[];
     items: TagSuggestion[];
   } | null>(null);
-  const [failed, setFailed] = createSignal(false);
+  const [failure, setFailure] = createSignal<{ context: string; tags: string[] } | null>(null);
   const [retry, setRetry] = createSignal(0);
-  const key = createMemo(() =>
-    JSON.stringify([
-      options.eligible(),
-      options.token(),
-      [...options.used()],
-      options.excluded(),
-      retry()
-    ])
+  const context = createMemo(() =>
+    JSON.stringify([options.token(), [...options.used()], options.excluded()])
   );
+  const key = createMemo(() => JSON.stringify([context(), options.eligible(), retry()]));
   createEffect(
     () => ({
       key: key(),
+      context: context(),
       tags: options.tags(),
       token: options.token(),
       eligible: options.eligible(),
@@ -41,7 +37,6 @@ export function createSuggestions(
     }),
     (request) => {
       let current = true;
-      setFailed(false);
       const token = request.token;
       if (
         !request.eligible ||
@@ -50,13 +45,14 @@ export function createSuggestions(
         (!token.literal && !token.negative && /^(gn|tags)(:.*)?$/i.test(token.query))
       )
         return;
+      setFailure(null);
       void client
         .search(editor, request.tags, token, request.used, request.excluded)
         .then((items) => {
           if (current) setResult({ key: request.key, tags: request.tags, items });
         })
         .catch(() => {
-          if (current) setFailed(true);
+          if (current) setFailure({ context: request.context, tags: request.tags });
         });
       return () => {
         current = false;
@@ -73,7 +69,8 @@ export function createSuggestions(
         : EMPTY;
     },
     get failed() {
-      return failed();
+      const value = failure();
+      return value?.context === context() && value.tags === options.tags();
     },
     retry() {
       client.retry();

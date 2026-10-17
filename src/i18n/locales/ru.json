@@ -30,21 +30,21 @@
     "open": "Открыть список тегов",
     "modalTitle": "Список тегов",
     "closeModal": "Закрыть список тегов",
-    "filterLabel": "Filter tags",
-    "filterPlaceholder": "Type to filter tags",
-    "listLabel": "Tag list results",
-    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
-    "loading": "Loading tags...",
-    "loadingMore": "Loading more tags...",
-    "empty": "No tags available.",
-    "noMatches": "No tags match this filter.",
-    "applying": "Applying...",
-    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "filterLabel": "Фильтр тегов",
+    "filterPlaceholder": "Введите текст для фильтрации тегов",
+    "listLabel": "Результаты списка тегов",
+    "selectionSummary": "Включено: {{included}} | Исключено: {{excluded}}",
+    "loading": "Загрузка тегов...",
+    "loadingMore": "Загрузка дополнительных тегов...",
+    "empty": "Нет доступных тегов.",
+    "noMatches": "Нет тегов, соответствующих этому фильтру.",
+    "applying": "Применение...",
+    "tagButtonAria": "{{tag}}, состояние: {{state}}",
     "tagButtonTitle": "{{tag}} ({{state}})",
     "states": {
-      "inactive": "inactive",
-      "included": "included",
-      "excluded": "excluded"
+      "inactive": "неактивен",
+      "included": "включён",
+      "excluded": "исключён"
     }
   },
   "controls": {
@@ -75,10 +75,10 @@
       "label": "Только избранное"
     },
     "errors": {
-      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
-      "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
-      "groupNameMissingValue": "gN requires a group value after the colon.",
-      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+      "metaTagRequiresSolo": "Метатеги нужно использовать отдельно, без других тегов.",
+      "tagInvalidCharacters": "Теги не могут содержать пробельные символы, запятые, точки с запятой или управляющие символы.",
+      "groupNameMissingValue": "После двоеточия в gN необходимо указать название группы.",
+      "hasNoTagsInvalidCount": "tags принимает только неотрицательное целое число."
     },
     "suggestionsRetry": "Подсказки недоступны. Повторить"
   },

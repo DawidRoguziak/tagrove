@@ -90,7 +90,9 @@ describe("per-folder startup scans", () => {
     await openSettings();
     await waitForScanIdle();
     assert.equal((await paths()).length, 1);
-    assert.equal(await invoke("scan_startup_roots"), null);
+    assert.deepEqual(await invoke("scan_startup_roots"), {
+      completion: "complete", indexed: 1, removed: 0, failed: 0
+    });
 
     await browser.reloadSession();
     await ready();

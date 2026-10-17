@@ -253,6 +253,7 @@ describe("createLibrary", () => {
       mediaKind: "image",
       favoritesOnly: true,
       metaFilter: null,
+      ownerId: expect.any(String),
       generation: 1,
       pageSize: 2
     });
@@ -325,6 +326,7 @@ describe("createLibrary", () => {
         type: "groupName",
         groupName: "Trip-2026"
       },
+      ownerId: expect.any(String),
       generation: 1,
       pageSize: 10
     });

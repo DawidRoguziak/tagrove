@@ -13,6 +13,8 @@ export async function setScanRootAutoScan(path: string, enabled: boolean): Promi
   return await invoke<void>("set_scan_root_auto_scan", { path, enabled });
 }
 
+// Joins the process-owned startup scan, including its retained success or failure.
+// Null means the launch snapshot had no enabled roots.
 export async function scanStartupRoots(): Promise<ScanSummary | null> {
   return await invoke<ScanSummary | null>("scan_startup_roots");
 }

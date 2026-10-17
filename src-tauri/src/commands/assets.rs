@@ -46,15 +46,19 @@ pub async fn start_asset_query(
     kind: Option<String>,
     favorites_only: bool,
     meta_filter: Option<AssetMetaFilterInput>,
+    owner_id: String,
     generation: u64,
     page_size: usize,
     state: State<'_, AppState>,
 ) -> Result<StartAssetQueryResult, String> {
     let database = state.database.clone();
     let filters = normalize_query_filters(tags_and, tags_not, kind, favorites_only, meta_filter)?;
-    // Register arrival order before scheduling blocking work so a slower
-    // scheduler cannot invert supersession between two requests.
-    let request_id = database.queries.begin_request(generation);
+    if owner_id.is_empty() || owner_id.len() > 128 {
+        return Err("Invalid query owner ID".into());
+    }
+    // Async command admission may be reordered. Compare generations within
+    // the frontend owner before assigning the process-wide request token.
+    let request_id = database.queries.begin_request(&owner_id, generation);
     tauri::async_runtime::spawn_blocking(move || {
         database.queries.start(
             &database.admit()?,

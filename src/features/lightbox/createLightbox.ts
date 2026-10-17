@@ -47,12 +47,13 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
     positionRequest = 0;
   let selectedIndex: number | null = null,
     targetIndex: number | null = null;
+  let failedTarget: number | null = null;
   let queryEpoch = query.navigationSnapshot().epoch;
   let disposed = false;
   let releasePin = () => {};
   const intents = new Map<number, TagIntent>();
-  const favorites = new Set<number>(),
-    groups = new Set<number>();
+  const favorites = new Map<number, number>();
+  const groups = new Set<number>();
 
   function publish(value: SelectedAsset | null) {
     const changed = current?.id !== value?.id;
@@ -65,7 +66,11 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       releasePin();
       releasePin = value ? tags.pin(value.id) : () => {};
       keyDirty = orderDirty = false;
-      setFavoriteState(value && favorites.has(value.id) ? "pending" : "idle");
+      setFavoriteState(
+        value && favorites.get(value.id) === tags.captureGeneration(value.id).epoch
+          ? "pending"
+          : "idle"
+      );
       setGroupState(value && groups.has(value.id) ? "pending" : "idle");
     }
     if (!keyDirty) {
@@ -135,6 +140,7 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
     }
   }
   function resolvePosition(changedQuery = false) {
+    failedTarget = null;
     const request = ++positionRequest;
     navigationRequest++;
     if (!current) return;
@@ -172,6 +178,7 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       });
   }
   function select(summary: AssetSummary | null, index?: number) {
+    failedTarget = null;
     selectionRequest++;
     navigationRequest++;
     positionRequest++;
@@ -204,20 +211,30 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
     if (previous === null || query.navigationSnapshot().total === 0 || !current) return;
     const next =
       (previous + step + query.navigationSnapshot().total) % query.navigationSnapshot().total;
+    void loadTarget(next, previous);
+  }
+  async function loadTarget(next: number, previous: number, retry = false) {
+    if (!retry) failedTarget = null;
+    setNavigation("ready");
     targetIndex = next;
     const request = ++navigationRequest,
       epoch = query.navigationSnapshot().epoch;
-    void query
-      .getAssetAtAsync(next)
-      .then((asset) => {
-        if (disposed || request !== navigationRequest || epoch !== query.navigationSnapshot().epoch)
-          return;
-        if (asset) select(asset, next);
-        else targetIndex = previous;
-      })
-      .catch(() => {
-        if (request === navigationRequest) targetIndex = previous;
-      });
+    const isCurrent = () =>
+      !disposed && request === navigationRequest && epoch === query.navigationSnapshot().epoch;
+    const fail = () => {
+      if (!isCurrent()) return;
+      targetIndex = previous;
+      failedTarget = next;
+      setNavigation("failed");
+    };
+    try {
+      const asset = await (retry ? query.retryAssetAt(next) : query.getAssetAtAsync(next));
+      if (!isCurrent()) return;
+      if (asset) select(asset, next);
+      else fail();
+    } catch {
+      fail();
+    }
   }
   function drain(id: number) {
     const intent = intents.get(id);
@@ -407,20 +424,27 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       drain(current.id);
     },
     async retryNavigation() {
+      if (disposed || !current || query.navigationSnapshot().pending) return;
+      if (failedTarget !== null) {
+        if (query.navigationSnapshot().epoch !== queryEpoch || selectedIndex === null) return;
+        await loadTarget(failedTarget, selectedIndex, true);
+        return;
+      }
       const request = selectionRequest;
       try {
         await query.refresh();
-        if (selectionRequest === request) resolvePosition(true);
+        if (!disposed && selectionRequest === request) resolvePosition(true);
       } catch {
-        if (selectionRequest === request) setNavigation("failed");
+        if (!disposed && selectionRequest === request) setNavigation("failed");
       }
     },
     async toggleFavorite() {
       const asset = current;
-      if (!asset || favorites.has(asset.id)) return;
-      favorites.add(asset.id);
-      setFavoriteState("pending");
+      if (!asset) return;
       const epoch = tags.captureGeneration(asset.id).epoch;
+      if (favorites.get(asset.id) === epoch) return;
+      favorites.set(asset.id, epoch);
+      setFavoriteState("pending");
       try {
         await mutations.setFavorite(asset.id, !asset.is_favorite);
         if (
@@ -437,7 +461,7 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
         )
           setFavoriteState("failed");
       } finally {
-        favorites.delete(asset.id);
+        if (favorites.get(asset.id) === epoch) favorites.delete(asset.id);
       }
     },
     async saveMediaGroup() {

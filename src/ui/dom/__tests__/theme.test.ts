@@ -1,7 +1,18 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { syncNativeWindowTheme } from "../../../platform/tauri/window";
 import { applyTheme, readInitialTheme, THEME_STORAGE_KEY } from "../theme";
 
+vi.mock("../../../platform/tauri/window", () => ({
+  isTauri: () => true,
+  syncNativeWindowTheme: vi.fn().mockResolvedValue(undefined)
+}));
+
 describe("themeService", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.removeAttribute("data-theme");
@@ -32,5 +43,16 @@ describe("themeService", () => {
     applyTheme("dark");
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+  });
+
+  it("still synchronizes the native theme when persistence fails", () => {
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("Synthetic quota failure", "QuotaExceededError");
+    });
+
+    applyTheme("light");
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(syncNativeWindowTheme).toHaveBeenCalledExactlyOnceWith("light");
   });
 });

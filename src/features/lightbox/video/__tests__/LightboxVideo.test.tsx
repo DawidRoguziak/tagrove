@@ -9,6 +9,8 @@ import { renderSolid } from "../../../../test/renderSolid";
 import { settle as act } from "../../../../test/settle";
 import { asset, summary, deferred } from "../../__tests__/fixtures";
 import type { MpvVideoEvent } from "../../../../platform/tauri/contracts/video";
+import { createSignal } from "solid-js";
+import { UiModal } from "../../../../ui/overlays/UiModal";
 import i18n from "../../../../i18n/core";
 
 const video = vi.hoisted(() => ({
@@ -23,6 +25,7 @@ const video = vi.hoisted(() => ({
 const assets = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetDetails: vi.fn(),
+  deleteAsset: vi.fn(),
   toMediaSrc: (path: string) => `asset://${path}`
 }));
 vi.mock("../../../../platform/tauri/video", () => video);
@@ -40,16 +43,24 @@ async function setup() {
   await act(() => library.query.refresh());
   act(() => model.select(videoSummary(1)));
   const client = new SuggestionClient();
+  let openNested = () => {};
   const view = renderSolid(
-    () => (
-      <UiLayerProvider>
-        <LightboxModal model={model} client={client} knownTags={[]} />
-      </UiLayerProvider>
-    ),
+    () => {
+      const [nested, setNested] = createSignal(false);
+      openNested = () => setNested(true);
+      return (
+        <UiLayerProvider>
+          <LightboxModal model={model} client={client} knownTags={[]} />
+          <UiModal open={nested()} onClose={() => setNested(false)} ariaLabel="Nested">
+            <button type="button">Nested action</button>
+          </UiModal>
+        </UiLayerProvider>
+      );
+    },
     {}
   );
   await waitFor(() => expect(video.openVideo).toHaveBeenCalledOnce());
-  return { model, view };
+  return { model, view, openNested };
 }
 function emit(event: MpvVideoEvent, call = 0) {
   const callback: (event: MpvVideoEvent) => void = video.openVideo.mock.calls[call][4];
@@ -109,6 +120,62 @@ afterEach(() => {
 });
 
 describe("Solid native video lightbox", () => {
+  it("routes native Escape through confirmation, drawer and lightbox priority", async () => {
+    narrow = true;
+    const { model } = await setup();
+    await ready();
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Delete media" })));
+    act(() => resize.forEach((callback) => callback()));
+    await screen.findByTestId("lightbox-delete-confirm-dialog");
+    emit({ session_id: 10, type: "escape" });
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).toBeNull();
+    expect(model.selected?.id).toBe(1);
+    expect(document.getElementById("lightbox-sidebar-close-button")).toHaveAttribute("aria-expanded", "true");
+    emit({ session_id: 10, type: "escape" });
+    expect(document.getElementById("lightbox-sidebar-close-button")).toHaveAttribute("aria-expanded", "false");
+    expect(model.selected?.id).toBe(1);
+    emit({ session_id: 10, type: "escape" });
+    expect(model.selected).toBeNull();
+    expect(video.closeVideo).toHaveBeenCalledWith(10);
+  });
+
+  it("keeps pending deletion locked against native Escape", async () => {
+    const pending = deferred<never>();
+    assets.deleteAsset.mockReturnValueOnce(pending.promise);
+    const { model } = await setup();
+    await ready();
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Delete media" })));
+    act(() => fireEvent.input(document.getElementById("lightbox-delete-confirm-input")!, {
+      target: { value: "Yes" }
+    }));
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Confirm" })));
+    expect(assets.deleteAsset).toHaveBeenCalledOnce();
+    emit({ session_id: 10, type: "escape" });
+    expect(screen.getByTestId("lightbox-delete-confirm-dialog")).toBeInTheDocument();
+    expect(model.selected?.id).toBe(1);
+    await act(async () => pending.reject(new Error("synthetic delete failure")));
+    emit({ session_id: 10, type: "escape" });
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).toBeNull();
+    expect(model.selected?.id).toBe(1);
+  });
+
+  it("rejects native Escape behind a higher layer and from retired playback", async () => {
+    const { model, openNested } = await setup();
+    await ready();
+    act(openNested);
+    emit({ session_id: 10, type: "escape" });
+    expect(screen.getByRole("dialog", { name: "Nested" })).toBeInTheDocument();
+    expect(model.selected?.id).toBe(1);
+    act(() => fireEvent.keyDown(window, { key: "Escape" }));
+    act(() => model.select(videoSummary(2)));
+    await waitFor(() => expect(player()).toHaveAttribute("data-native-session", "20"));
+    emit({ session_id: 10, type: "escape" });
+    emit({ session_id: 10, type: "escape" }, 1);
+    expect(model.selected?.id).toBe(2);
+    emit({ session_id: 20, type: "escape" }, 1);
+    expect(model.selected).toBeNull();
+  });
+
   it("opens by asset ID with translated native labels and no HTML video", async () => {
     await setup();
     await ready();

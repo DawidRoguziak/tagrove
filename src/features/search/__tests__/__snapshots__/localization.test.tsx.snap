@@ -1,0 +1,419 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`search and tag-list translations > renders tag selection and parser errors in cs 1`] = `
+{
+  "errors": [
+    "Metatagy se musí používat samostatně, bez dalších tagů.",
+    "Tagy nesmí obsahovat bílé znaky, čárky, středníky ani řídicí znaky.",
+    "Za dvojtečkou v gN musí být název skupiny.",
+    "tags přijímá pouze nezáporné celé číslo.",
+  ],
+  "tagList": {
+    "filter": "Filtrovat tagy",
+    "list": "Výsledky seznamu tagů",
+    "messages": [
+      "Načítání tagů...",
+      "Načítání dalších tagů...",
+      "Nejsou k dispozici žádné tagy.",
+      "Tomuto filtru neodpovídají žádné tagy.",
+      "Aplikuje se...",
+    ],
+    "placeholder": "Pište pro filtrování tagů",
+    "states": [
+      {
+        "label": "alpha, stav: zahrnutý",
+        "title": "alpha (zahrnutý)",
+      },
+      {
+        "label": "beta, stav: vyloučený",
+        "title": "beta (vyloučený)",
+      },
+      {
+        "label": "gamma, stav: neaktivní",
+        "title": "gamma (neaktivní)",
+      },
+    ],
+    "summary": "Zahrnuté: 1 | Vyloučené: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in de 1`] = `
+{
+  "errors": [
+    "Metatags müssen allein und ohne weitere Tags verwendet werden.",
+    "Tags dürfen keine Leerraumzeichen, Kommas, Semikolons oder Steuerzeichen enthalten.",
+    "gN erfordert einen Gruppennamen nach dem Doppelpunkt.",
+    "tags akzeptiert nur eine nicht negative ganze Zahl.",
+  ],
+  "tagList": {
+    "filter": "Tags filtern",
+    "list": "Ergebnisse der Tagliste",
+    "messages": [
+      "Tags werden geladen...",
+      "Weitere Tags werden geladen...",
+      "Keine Tags verfügbar.",
+      "Keine Tags entsprechen diesem Filter.",
+      "Wird angewendet...",
+    ],
+    "placeholder": "Zum Filtern der Tags tippen",
+    "states": [
+      {
+        "label": "alpha, Status: eingeschlossen",
+        "title": "alpha (eingeschlossen)",
+      },
+      {
+        "label": "beta, Status: ausgeschlossen",
+        "title": "beta (ausgeschlossen)",
+      },
+      {
+        "label": "gamma, Status: inaktiv",
+        "title": "gamma (inaktiv)",
+      },
+    ],
+    "summary": "Eingeschlossen: 1 | Ausgeschlossen: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in en 1`] = `
+{
+  "errors": [
+    "Metatags must be used on their own, without other tags.",
+    "Tags cannot contain whitespace, commas, semicolons, or control characters.",
+    "gN requires a group value after the colon.",
+    "tags accepts only a non-negative integer value.",
+  ],
+  "tagList": {
+    "filter": "Filter tags",
+    "list": "Tag list results",
+    "messages": [
+      "Loading tags...",
+      "Loading more tags...",
+      "No tags available.",
+      "No tags match this filter.",
+      "Applying...",
+    ],
+    "placeholder": "Type to filter tags",
+    "states": [
+      {
+        "label": "alpha, state: included",
+        "title": "alpha (included)",
+      },
+      {
+        "label": "beta, state: excluded",
+        "title": "beta (excluded)",
+      },
+      {
+        "label": "gamma, state: inactive",
+        "title": "gamma (inactive)",
+      },
+    ],
+    "summary": "Included: 1 | Excluded: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in es 1`] = `
+{
+  "errors": [
+    "Las metaetiquetas deben usarse solas, sin otras etiquetas.",
+    "Las etiquetas no pueden contener espacios en blanco, comas, puntos y comas ni caracteres de control.",
+    "gN requiere un nombre de grupo después de los dos puntos.",
+    "tags solo acepta un número entero no negativo.",
+  ],
+  "tagList": {
+    "filter": "Filtrar etiquetas",
+    "list": "Resultados de la lista de etiquetas",
+    "messages": [
+      "Cargando etiquetas...",
+      "Cargando más etiquetas...",
+      "No hay etiquetas disponibles.",
+      "Ninguna etiqueta coincide con este filtro.",
+      "Aplicando...",
+    ],
+    "placeholder": "Escribe para filtrar etiquetas",
+    "states": [
+      {
+        "label": "alpha, estado: incluida",
+        "title": "alpha (incluida)",
+      },
+      {
+        "label": "beta, estado: excluida",
+        "title": "beta (excluida)",
+      },
+      {
+        "label": "gamma, estado: inactiva",
+        "title": "gamma (inactiva)",
+      },
+    ],
+    "summary": "Incluidas: 1 | Excluidas: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in fr 1`] = `
+{
+  "errors": [
+    "Les métatags doivent être utilisés seuls, sans autres tags.",
+    "Les tags ne peuvent pas contenir de caractères d'espacement, de virgules, de points-virgules ni de caractères de contrôle.",
+    "gN nécessite un nom de groupe après les deux-points.",
+    "tags accepte uniquement un entier positif ou nul.",
+  ],
+  "tagList": {
+    "filter": "Filtrer les tags",
+    "list": "Résultats de la liste des tags",
+    "messages": [
+      "Chargement des tags...",
+      "Chargement de tags supplémentaires...",
+      "Aucun tag disponible.",
+      "Aucun tag ne correspond à ce filtre.",
+      "Application en cours...",
+    ],
+    "placeholder": "Saisissez du texte pour filtrer les tags",
+    "states": [
+      {
+        "label": "alpha, état : inclus",
+        "title": "alpha (inclus)",
+      },
+      {
+        "label": "beta, état : exclu",
+        "title": "beta (exclu)",
+      },
+      {
+        "label": "gamma, état : inactif",
+        "title": "gamma (inactif)",
+      },
+    ],
+    "summary": "Inclus : 1 | Exclus : 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in it 1`] = `
+{
+  "errors": [
+    "I metatag devono essere usati da soli, senza altri tag.",
+    "I tag non possono contenere spazi bianchi, virgole, punti e virgola o caratteri di controllo.",
+    "gN richiede un nome di gruppo dopo i due punti.",
+    "tags accetta solo un numero intero non negativo.",
+  ],
+  "tagList": {
+    "filter": "Filtra tag",
+    "list": "Risultati dell'elenco dei tag",
+    "messages": [
+      "Caricamento dei tag...",
+      "Caricamento di altri tag...",
+      "Nessun tag disponibile.",
+      "Nessun tag corrisponde a questo filtro.",
+      "Applicazione in corso...",
+    ],
+    "placeholder": "Digita per filtrare i tag",
+    "states": [
+      {
+        "label": "alpha, stato: incluso",
+        "title": "alpha (incluso)",
+      },
+      {
+        "label": "beta, stato: escluso",
+        "title": "beta (escluso)",
+      },
+      {
+        "label": "gamma, stato: inattivo",
+        "title": "gamma (inattivo)",
+      },
+    ],
+    "summary": "Inclusi: 1 | Esclusi: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in ja 1`] = `
+{
+  "errors": [
+    "メタタグは他のタグと組み合わせず、単独で使用してください。",
+    "タグには空白文字、カンマ、セミコロン、制御文字を含めることはできません。",
+    "gN のコロンの後にグループ名を指定してください。",
+    "tags には 0 以上の整数のみ指定できます。",
+  ],
+  "tagList": {
+    "filter": "タグを絞り込む",
+    "list": "タグ一覧の結果",
+    "messages": [
+      "タグを読み込み中...",
+      "追加のタグを読み込み中...",
+      "利用できるタグはありません。",
+      "このフィルターに一致するタグはありません。",
+      "適用中...",
+    ],
+    "placeholder": "入力してタグを絞り込む",
+    "states": [
+      {
+        "label": "alpha、状態: 含める",
+        "title": "alpha (含める)",
+      },
+      {
+        "label": "beta、状態: 除外",
+        "title": "beta (除外)",
+      },
+      {
+        "label": "gamma、状態: 未選択",
+        "title": "gamma (未選択)",
+      },
+    ],
+    "summary": "含める: 1 | 除外: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in ko 1`] = `
+{
+  "errors": [
+    "메타태그는 다른 태그 없이 단독으로 사용해야 합니다.",
+    "태그에는 공백 문자, 쉼표, 세미콜론 또는 제어 문자를 포함할 수 없습니다.",
+    "gN의 콜론 뒤에 그룹 이름을 입력해야 합니다.",
+    "tags에는 0 이상의 정수만 사용할 수 있습니다.",
+  ],
+  "tagList": {
+    "filter": "태그 필터링",
+    "list": "태그 목록 결과",
+    "messages": [
+      "태그 불러오는 중...",
+      "추가 태그 불러오는 중...",
+      "사용 가능한 태그가 없습니다.",
+      "이 필터와 일치하는 태그가 없습니다.",
+      "적용 중...",
+    ],
+    "placeholder": "태그를 필터링하려면 입력하세요",
+    "states": [
+      {
+        "label": "alpha, 상태: 포함",
+        "title": "alpha (포함)",
+      },
+      {
+        "label": "beta, 상태: 제외",
+        "title": "beta (제외)",
+      },
+      {
+        "label": "gamma, 상태: 선택 안 됨",
+        "title": "gamma (선택 안 됨)",
+      },
+    ],
+    "summary": "포함: 1 | 제외: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in pl 1`] = `
+{
+  "errors": [
+    "Metatagi musza byc uzyte samodzielnie, bez innych tagow.",
+    "Tagi nie moga zawierac bialych znakow, przecinkow, srednikow ani znakow sterujacych.",
+    "gN wymaga nazwy grupy po dwukropku.",
+    "tags akceptuje tylko nieujemna liczbe calkowita.",
+  ],
+  "tagList": {
+    "filter": "Filtruj tagi",
+    "list": "Wyniki listy tagow",
+    "messages": [
+      "Ladowanie tagow...",
+      "Ladowanie kolejnych tagow...",
+      "Brak dostepnych tagow.",
+      "Brak tagow pasujacych do filtra.",
+      "Zatwierdzanie...",
+    ],
+    "placeholder": "Wpisz, aby filtrowac tagi",
+    "states": [
+      {
+        "label": "alpha, stan: dodany",
+        "title": "alpha (dodany)",
+      },
+      {
+        "label": "beta, stan: wykluczony",
+        "title": "beta (wykluczony)",
+      },
+      {
+        "label": "gamma, stan: nieaktywny",
+        "title": "gamma (nieaktywny)",
+      },
+    ],
+    "summary": "Dodane: 1 | Wykluczone: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in ru 1`] = `
+{
+  "errors": [
+    "Метатеги нужно использовать отдельно, без других тегов.",
+    "Теги не могут содержать пробельные символы, запятые, точки с запятой или управляющие символы.",
+    "После двоеточия в gN необходимо указать название группы.",
+    "tags принимает только неотрицательное целое число.",
+  ],
+  "tagList": {
+    "filter": "Фильтр тегов",
+    "list": "Результаты списка тегов",
+    "messages": [
+      "Загрузка тегов...",
+      "Загрузка дополнительных тегов...",
+      "Нет доступных тегов.",
+      "Нет тегов, соответствующих этому фильтру.",
+      "Применение...",
+    ],
+    "placeholder": "Введите текст для фильтрации тегов",
+    "states": [
+      {
+        "label": "alpha, состояние: включён",
+        "title": "alpha (включён)",
+      },
+      {
+        "label": "beta, состояние: исключён",
+        "title": "beta (исключён)",
+      },
+      {
+        "label": "gamma, состояние: неактивен",
+        "title": "gamma (неактивен)",
+      },
+    ],
+    "summary": "Включено: 1 | Исключено: 1",
+  },
+}
+`;
+
+exports[`search and tag-list translations > renders tag selection and parser errors in zh 1`] = `
+{
+  "errors": [
+    "元标签必须单独使用，不能与其他标签组合。",
+    "标签不能包含空白字符、逗号、分号或控制字符。",
+    "gN 的冒号后必须填写分组名称。",
+    "tags 仅接受非负整数。",
+  ],
+  "tagList": {
+    "filter": "筛选标签",
+    "list": "标签列表结果",
+    "messages": [
+      "正在加载标签...",
+      "正在加载更多标签...",
+      "没有可用的标签。",
+      "没有与此筛选条件匹配的标签。",
+      "正在应用...",
+    ],
+    "placeholder": "输入内容以筛选标签",
+    "states": [
+      {
+        "label": "alpha，状态：包含",
+        "title": "alpha (包含)",
+      },
+      {
+        "label": "beta，状态：排除",
+        "title": "beta (排除)",
+      },
+      {
+        "label": "gamma，状态：未选择",
+        "title": "gamma (未选择)",
+      },
+    ],
+    "summary": "包含：1 | 排除：1",
+  },
+}
+`;

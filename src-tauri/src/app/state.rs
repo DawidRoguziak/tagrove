@@ -38,32 +38,78 @@ impl StartupPopularTags {
     }
 }
 
-/// The launch snapshot is consumed even if scanning fails; only a new process retries.
-pub struct StartupScanState(Mutex<Vec<String>>);
+/// The launch snapshot and its terminal result outlive every frontend owner.
+#[derive(Clone)]
+pub struct StartupScanState(std::sync::Arc<Mutex<StartupScanPhase>>);
+
+type StartupScanResult = Result<Option<crate::models::ScanSummary>, String>;
+type StartupScanReceiver = tauri::async_runtime::Receiver<StartupScanResult>;
+
+enum StartupScanPhase {
+    Pending(Vec<String>),
+    Running(Vec<tauri::async_runtime::Sender<StartupScanResult>>),
+    Finished(StartupScanResult),
+}
+
+pub enum StartupScanRequest {
+    Start(Vec<String>, StartupScanReceiver),
+    Observe(StartupScanReceiver),
+    Finished(StartupScanResult),
+}
 
 impl StartupScanState {
     pub fn new(roots: Vec<crate::models::ScanRoot>) -> Self {
-        Self(Mutex::new(
-            roots
-                .into_iter()
-                .filter(|root| root.auto_scan_on_startup)
-                .map(|root| root.path)
-                .collect(),
-        ))
+        let roots: Vec<_> = roots
+            .into_iter()
+            .filter(|root| root.auto_scan_on_startup)
+            .map(|root| root.path)
+            .collect();
+        Self(std::sync::Arc::new(Mutex::new(if roots.is_empty() {
+            StartupScanPhase::Finished(Ok(None))
+        } else {
+            StartupScanPhase::Pending(roots)
+        })))
     }
 
-    pub fn take_roots(&self) -> Result<Vec<String>, String> {
-        let mut roots = self
+    pub fn subscribe(&self) -> Result<StartupScanRequest, String> {
+        let mut phase = self
             .0
             .lock()
             .map_err(|e| format!("startup scan lock failed: {e}"))?;
-        Ok(std::mem::take(&mut *roots))
+        match &mut *phase {
+            StartupScanPhase::Pending(roots) => {
+                let roots = std::mem::take(roots);
+                let (sender, receiver) = tauri::async_runtime::channel(1);
+                *phase = StartupScanPhase::Running(vec![sender]);
+                Ok(StartupScanRequest::Start(roots, receiver))
+            }
+            StartupScanPhase::Running(waiters) => {
+                let (sender, receiver) = tauri::async_runtime::channel(1);
+                waiters.retain(|waiter| !waiter.is_closed());
+                waiters.push(sender);
+                Ok(StartupScanRequest::Observe(receiver))
+            }
+            StartupScanPhase::Finished(result) => Ok(StartupScanRequest::Finished(result.clone())),
+        }
+    }
+
+    pub fn finish(&self, result: StartupScanResult) {
+        // No user work runs under this mutex. Retain the result even if every
+        // WebView that requested it has since gone away.
+        let mut phase = self.0.lock().unwrap_or_else(|error| error.into_inner());
+        if let StartupScanPhase::Running(waiters) =
+            std::mem::replace(&mut *phase, StartupScanPhase::Finished(result.clone()))
+        {
+            for waiter in waiters {
+                let _ = waiter.try_send(result.clone());
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod startup_tests {
-    use super::{StartupPopularTags, StartupScanState};
+    use super::{StartupPopularTags, StartupScanRequest, StartupScanState};
     use crate::{db, models::ScanRoot};
 
     fn popular_tags_snapshot(conn: &rusqlite::Connection) -> StartupPopularTags {
@@ -158,7 +204,13 @@ mod startup_tests {
         db::set_scan_root_auto_scan(&conn, "/enabled", false).unwrap();
         let roots = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..8)
-                .map(|_| scope.spawn(|| state.take_roots().unwrap()))
+                .map(|_| {
+                    scope.spawn(|| match state.subscribe().unwrap() {
+                        StartupScanRequest::Start(roots, _) => roots,
+                        StartupScanRequest::Observe(_) => vec![],
+                        StartupScanRequest::Finished(_) => panic!("scan has not finished"),
+                    })
+                })
                 .collect();
             handles
                 .into_iter()
@@ -166,15 +218,23 @@ mod startup_tests {
                 .collect::<Vec<_>>()
         });
         assert_eq!(roots, ["/enabled"]);
-        assert!(state.take_roots().unwrap().is_empty());
+        assert!(matches!(
+            state.subscribe().unwrap(),
+            StartupScanRequest::Observe(_)
+        ));
         let next_launch = StartupScanState::new(db::list_scan_root_settings(&conn).unwrap());
-        assert_eq!(next_launch.take_roots().unwrap(), ["/disabled"]);
-        assert!(StartupScanState::new(vec![ScanRoot {
-            path: "/off".into(),
-            auto_scan_on_startup: false
-        }])
-        .take_roots()
-        .unwrap()
-        .is_empty());
+        let StartupScanRequest::Start(roots, _) = next_launch.subscribe().unwrap() else {
+            panic!("new launch must start");
+        };
+        assert_eq!(roots, ["/disabled"]);
+        assert!(matches!(
+            StartupScanState::new(vec![ScanRoot {
+                path: "/off".into(),
+                auto_scan_on_startup: false
+            }])
+            .subscribe()
+            .unwrap(),
+            StartupScanRequest::Finished(Ok(None))
+        ));
     }
 }

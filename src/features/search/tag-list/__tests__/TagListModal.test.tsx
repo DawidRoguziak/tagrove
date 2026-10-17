@@ -198,6 +198,27 @@ describe("TagListModal", () => {
     await waitFor(() => expect(onApplySearch).toHaveBeenCalledWith("-cherry"));
   });
 
+  for (const name of ["constructor", "__proto__"]) {
+    it.each(["single", "double", "keyboard"])(`applies literal ${name} through %s selection`, async (action) => {
+      apiMocks.listTags.mockResolvedValue(createTagListPage([name]));
+      const onApplySearch = vi.fn().mockResolvedValue(undefined);
+      renderSolid(TagListModal, { open: true, onClose: vi.fn(), onApplySearch });
+      const tag = await screen.findByRole("button", { name: `${name}, state: inactive` });
+      if (action === "single") fireEvent.click(tag);
+      else if (action === "double") fireEvent.dblClick(tag);
+      else {
+        tag.focus();
+        fireEvent.keyDown(tag, { key: "Enter", shiftKey: true });
+      }
+      flush();
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+      flush();
+      await waitFor(() => expect(onApplySearch).toHaveBeenCalledExactlyOnceWith(
+        `${action === "single" ? "" : "-"}${name}`
+      ));
+    });
+  }
+
   it("keeps the modal open when applying the search fails", async () => {
     vi.useFakeTimers();
     apiMocks.listTags.mockResolvedValueOnce(createTagListPage(["Alpha"]));

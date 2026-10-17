@@ -122,7 +122,7 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 - the shared `ThumbnailScheduler`; and
 - atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and preserve cancellation without database or workflow locks.
 
-`StartupScanState` is separately managed by Tauri. It captures enabled scan roots after database initialization and recovery and atomically consumes them when shell initialization invokes the startup-scan command. Its empty state survives frontend reloads; preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline.
+`StartupScanState` is separately managed by Tauri. It captures enabled scan roots after database initialization and recovery. The first startup-scan invocation consumes that snapshot and starts one process-owned task. Concurrent invocations await the same task; later invocations replay its retained summary or error. A launch with no enabled roots returns null. Dropping a frontend observer does not cancel the task or lose its result. Preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline.
 
 `StartupPopularTags` is separately managed immutable state containing up to ten tag names
 ranked by library-wide assignment counts, then alphabetically. It is calculated once after

@@ -30,21 +30,21 @@
     "open": "Otevrit seznam tagu",
     "modalTitle": "Seznam tagu",
     "closeModal": "Zavrit seznam tagu",
-    "filterLabel": "Filter tags",
-    "filterPlaceholder": "Type to filter tags",
-    "listLabel": "Tag list results",
-    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
-    "loading": "Loading tags...",
-    "loadingMore": "Loading more tags...",
-    "empty": "No tags available.",
-    "noMatches": "No tags match this filter.",
-    "applying": "Applying...",
-    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "filterLabel": "Filtrovat tagy",
+    "filterPlaceholder": "Pište pro filtrování tagů",
+    "listLabel": "Výsledky seznamu tagů",
+    "selectionSummary": "Zahrnuté: {{included}} | Vyloučené: {{excluded}}",
+    "loading": "Načítání tagů...",
+    "loadingMore": "Načítání dalších tagů...",
+    "empty": "Nejsou k dispozici žádné tagy.",
+    "noMatches": "Tomuto filtru neodpovídají žádné tagy.",
+    "applying": "Aplikuje se...",
+    "tagButtonAria": "{{tag}}, stav: {{state}}",
     "tagButtonTitle": "{{tag}} ({{state}})",
     "states": {
-      "inactive": "inactive",
-      "included": "included",
-      "excluded": "excluded"
+      "inactive": "neaktivní",
+      "included": "zahrnutý",
+      "excluded": "vyloučený"
     }
   },
   "controls": {
@@ -75,10 +75,10 @@
       "label": "Pouze oblíbené"
     },
     "errors": {
-      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
-      "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
-      "groupNameMissingValue": "gN requires a group value after the colon.",
-      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+      "metaTagRequiresSolo": "Metatagy se musí používat samostatně, bez dalších tagů.",
+      "tagInvalidCharacters": "Tagy nesmí obsahovat bílé znaky, čárky, středníky ani řídicí znaky.",
+      "groupNameMissingValue": "Za dvojtečkou v gN musí být název skupiny.",
+      "hasNoTagsInvalidCount": "tags přijímá pouze nezáporné celé číslo."
     },
     "suggestionsRetry": "Návrhy nejsou dostupné. Zkusit znovu"
   },

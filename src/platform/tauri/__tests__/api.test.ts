@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
-import { getAssetSummariesByIds, getAssetQueryPosition, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
+import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
 import { listScanRoots, setScanRootAutoScan, scanStartupRoots } from "../scanning";
 import { beginVideoOpen, cancelVideoOpen, setVideoControlLabels, closeVideo, controlVideo, openVideo, setVideoBounds } from "../video";
 
@@ -53,6 +53,15 @@ describe("api contract", () => {
     coreMocks.invoke.mockResolvedValueOnce(null);
     await expect(scanStartupRoots()).resolves.toBeNull();
     expect(coreMocks.invoke).toHaveBeenLastCalledWith("scan_startup_roots");
+  });
+  it("preserves shared startup results and failures across repeated observations", async () => {
+    const summary = { completion: "complete", indexed: 3, removed: 0, failed: 0 };
+    coreMocks.invoke.mockResolvedValue(summary);
+    await expect(scanStartupRoots()).resolves.toEqual(summary);
+    await expect(scanStartupRoots()).resolves.toEqual(summary);
+    coreMocks.invoke.mockRejectedValue("scan failed");
+    await expect(scanStartupRoots()).rejects.toBe("scan failed");
+    expect(coreMocks.invoke).toHaveBeenCalledTimes(3);
   });
   it("sends bulk favorite IDs and returns the canonical toggle result", async () => {
     const summary = { processed_asset_ids: [1, 2], is_favorite: true, revision: 3 };
@@ -163,6 +172,9 @@ describe("api contract", () => {
     channel?.onmessage?.({ session_id: 17, type: "loading" });
     expect(onEvent).toHaveBeenCalledWith({ session_id: 17, type: "loading" });
 
+    channel?.onmessage?.({ session_id: 17, type: "escape" });
+    expect(onEvent).toHaveBeenLastCalledWith({ session_id: 17, type: "escape" });
+
     await setVideoBounds(17, bounds);
     await controlVideo(17, { type: "seek", time: 3.5 });
     await closeVideo(17);
@@ -213,5 +225,14 @@ describe("api contract", () => {
     await expect(
       setAssetsMediaGroupBulk([{ assetId: 3, mediaGroupOrder: 1 }], "trip")
     ).resolves.toEqual(result);
+  });
+
+  it("sends query owner and generation and preserves capacity rejection", async () => {
+    coreMocks.invoke.mockRejectedValueOnce("Query exceeds the retained session memory limit. Narrow your search and try again.");
+    await expect(startAssetQuery({ tagsAnd: ["small"], tagsNot: [], mediaKind: "all", favoritesOnly: false, ownerId: "owner-test", generation: 2 })).rejects.toContain("Narrow your search");
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("start_asset_query", {
+      tagsAnd: ["small"], tagsNot: [], kind: null, favoritesOnly: false, metaFilter: null,
+      ownerId: "owner-test", generation: 2, pageSize: 128
+    });
   });
 });

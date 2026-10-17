@@ -90,6 +90,9 @@ export function createScanSettings({
   const [scanRoots, setScanRoots] = createSignal<ScanRoot[]>([]);
   const [thumbnailBulkRunning, setThumbnailBulkRunning] = createSignal(false);
   const [cancelThumbnailRunning, setCancelThumbnailRunning] = createSignal(false);
+  // Stop replies belong to one render, even after its runner lock is released.
+  let activeThumbnailRender: symbol | null = null;
+  let cancelPending: symbol | null = null;
   const [removeRootConfirmPath, publishRemoveRootConfirmPath] = createSignal<string | null>(null);
   let pendingRoot: string | null = null;
   function setRemoveRootConfirmPath(path: string | null) {
@@ -134,9 +137,11 @@ export function createScanSettings({
         try {
           summary = await scanStartupRoots();
         } catch (error) {
+          if (disposed) return;
           await Promise.allSettled([refreshLibrary(), refreshScanRoots()]);
           throw error;
         }
+        if (disposed) return;
         if (summary) {
           await refreshLibrary();
           await refreshScanRoots();
@@ -284,6 +289,7 @@ export function createScanSettings({
         progressPhaseMatcher: isThumbnailProgressPhase
       },
       async () => {
+        activeThumbnailRender = Symbol();
         setThumbnailBulkRunning(true);
         try {
           const summary = await renderAllThumbnails();
@@ -293,6 +299,9 @@ export function createScanSettings({
             formatThumbnailSummary(t("settings.actions.summary.allThumbnailsLabel"), summary)
           );
         } finally {
+          activeThumbnailRender = null;
+          cancelPending = null;
+          setCancelThumbnailRunning(false);
           setThumbnailBulkRunning(false);
         }
       }
@@ -307,6 +316,7 @@ export function createScanSettings({
         progressPhaseMatcher: isThumbnailProgressPhase
       },
       async () => {
+        activeThumbnailRender = Symbol();
         setThumbnailBulkRunning(true);
         try {
           const summary = await renderFailedThumbnails();
@@ -316,33 +326,40 @@ export function createScanSettings({
             formatThumbnailSummary(t("settings.actions.summary.failedRetryLabel"), summary)
           );
         } finally {
+          activeThumbnailRender = null;
+          cancelPending = null;
+          setCancelThumbnailRunning(false);
           setThumbnailBulkRunning(false);
         }
       }
     );
   };
-  let cancelPending = false;
   const onCancelThumbnailRender = async () => {
-    if (cancelPending || disposed) {
+    const render = activeThumbnailRender;
+    if (!render || cancelPending || disposed) {
       return;
     }
-    cancelPending = true;
+    cancelPending = render;
     setCancelThumbnailRunning(true);
     try {
       const accepted = await cancelRenderAllThumbnails();
+      if (disposed || activeThumbnailRender !== render) return;
       if (accepted) {
         runner.setSectionMessage("scan", t("settings.actions.summary.stopRequested"));
       } else {
         runner.setSectionMessage("scan", t("settings.actions.summary.noThumbRenderRunning"));
       }
     } catch (error) {
+      if (disposed || activeThumbnailRender !== render) return;
       runner.setSectionMessage(
         "scan",
         `${t("settings.actions.errorPrefix.cancelThumbRender")}: ${String(error)}`
       );
     } finally {
-      cancelPending = false;
-      setCancelThumbnailRunning(false);
+      if (cancelPending === render) {
+        cancelPending = null;
+        setCancelThumbnailRunning(false);
+      }
     }
   };
   return {

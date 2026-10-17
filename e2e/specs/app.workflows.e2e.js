@@ -790,6 +790,7 @@ describe("MediaTagger desktop workflows", () => {
     }
 
     const query = await invokeTauriCommand("start_asset_query", {
+      ownerId: "app-workflows",
       tagsAnd: [],
       tagsNot: [],
       kind: null,
@@ -832,6 +833,7 @@ describe("MediaTagger desktop workflows", () => {
     await videoChoice.click();
     await waitForTileAtIndex(1);
     const videoQuery = await invokeTauriCommand("start_asset_query", {
+      ownerId: "app-workflows",
       tagsAnd: [],
       tagsNot: [],
       kind: "video",

@@ -49,12 +49,20 @@ Language has its own settings card and `settings-language` navigation destinatio
 2. Otherwise normalize `window.navigator.language` and use it when supported. `navigator.languages` is not consulted.
 3. Otherwise use `en`.
 
+Accessing `window.localStorage` or calling `getItem` may throw. Core treats either failure
+as an unavailable stored preference and continues with browser language or English.
+
 Normalization trims and lowercases the value, then returns the first `APP_LANGUAGES` code for which `normalized.startsWith(code)` is true. This accepts normal region variants such as `fr-FR`, `cs-CZ`, and `zh-CN`, but it is prefix matching rather than full BCP 47 parsing. A non-locale string beginning with a supported code can also match.
 
 On initialization and after every i18next `languageChanged` event, the normalized code is written to both:
 
 - `document.documentElement.lang`, for browser semantics and assistive technology;
 - `localStorage["media-tagger.language"]`, for the next launch.
+
+The storage write is best effort. Property-access errors, denied writes and quota failures
+do not prevent startup or interrupt subsequent `languageChanged` listeners. The selected
+language still updates i18next, the Solid binding and `<html lang>` for the current session.
+Persistence across launches requires a successful write.
 
 `changeAppLanguage` awaits `i18n.changeLanguage`. The Solid binding exposes this same async function as `setLanguage`; event handlers may intentionally discard its promise. i18next falls back to English for a key absent from the active resource.
 
@@ -103,6 +111,31 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 The gate also rejects missing or unexpected locale JSON files, duplicate language codes, and a language list that does not start with English. It is read-only and needs no network access. `scripts/locale-tools.test.mjs` covers these failure modes and the generator's preservation policy.
 
 Runtime tests for initial language resolution and persistence remain separate from resource parity. `src/test/setup.ts` awaits real i18next initialization and English before the test file runs. The shell tests check all ordered selector options and language changes, and the lightbox confirmation tests exercise the English `Yes` flow.
+
+`src/app/__tests__/preferenceStorage.test.tsx` resets application modules before each
+scenario so the real core evaluates under injected storage-property, read, write and
+quota failures. It mounts the real App through `mountApplication`, checks browser/English
+fallback, changes language/theme in Settings and checks ordinary persistence. Tauri calls
+are mocked; these tests do not establish native storage-failure frequency or WebView behavior.
+
+## Search and tag-list translations
+
+All eleven resources provide the tag-list filter, selection summary, include/exclude
+states, loading/empty/applying messages and four search validation errors. The grammar
+identifiers `gN` and `tags` stay literal in translated errors. `tagButtonTitle` may remain
+`{{tag}} ({{state}})` across locales because both values are interpolated; equality with
+English alone is not evidence of a missing translation.
+
+[`localization.test.tsx`](../../src/features/search/__tests__/localization.test.tsx)
+renders the production tag modal and search controller/wrapper in each language. It pins
+included/excluded counts, three accessible tag states, filter labels and placeholders,
+and all four parser-generated alerts. It also checks that applying selections still emits
+`alpha -beta`. Snapshots include the five loading/empty/applying resource messages;
+those five branches are not all rendered by this test. English and Polish are controls.
+
+These checks establish resource wording, interpolation and DOM output. They do not
+establish linguistic quality, screen-reader pronunciation or layout in every locale.
+Review snapshot changes as translated copy, rather than automatically accepting them.
 
 ## Locale generator
 

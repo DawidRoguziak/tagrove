@@ -2,6 +2,7 @@ import { cleanup, renderHook } from "@solidjs/testing-library";
 import { createSignal, flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVirtualGrid } from "../createVirtualGrid";
+import { MAX_GRID_HEIGHT } from "../scrollCoordinates";
 const callbacks = new Set<(entries: ResizeObserverEntry[]) => void>();
 class Observer {
   constructor(readonly callback: (entries: ResizeObserverEntry[]) => void) {}
@@ -30,11 +31,19 @@ function mount(count = 10000, delayed = false) {
   gallery.append(grid);
   document.body.append(scroller);
   let width = 988;
+  let top = 0;
+  let height = 600;
   Object.defineProperties(scroller, {
     offsetWidth: { get: () => width },
-    offsetHeight: { value: 600 },
-    clientHeight: { value: 600 },
-    scrollHeight: { value: 2000000 }
+    offsetHeight: { get: () => height },
+    clientHeight: { get: () => height },
+    scrollHeight: { get: () => Number.parseFloat(grid.style.height || "0") + 80 + 136 },
+    scrollTop: {
+      get: () => top,
+      set: (value: number) => {
+        top = Math.round(Math.max(0, Math.min(value, scroller.scrollHeight - height)));
+      }
+    }
   });
   Object.defineProperty(grid, "clientWidth", { get: () => width });
   vi.spyOn(scroller, "getBoundingClientRect").mockImplementation(
@@ -49,6 +58,7 @@ function mount(count = 10000, delayed = false) {
   const range = vi.fn();
   const view = renderHook(() => {
     const [ready, setReady] = createSignal(!delayed);
+    const [tile, setTile] = createSignal(188);
     const [loading, setLoading] = createSignal(false);
     const [total, setTotal] = createSignal(count);
     const [reset, setReset] = createSignal(0);
@@ -56,7 +66,9 @@ function mount(count = 10000, delayed = false) {
       get assetCount() {
         return total();
       },
-      tileSize: 188,
+      get tileSize() {
+        return tile();
+      },
       hasMore: false,
       get isLoading() {
         return loading();
@@ -70,13 +82,19 @@ function mount(count = 10000, delayed = false) {
         return reset();
       }
     });
-    return { model, setReady, setLoading, setTotal, setReset };
+    return { model, setReady, setLoading, setTotal, setReset, setTile };
   });
   flush();
   return {
     ...view,
     scroller,
+    gallery,
     range,
+    resizeHeight(next: number) {
+      height = next;
+      for (const callback of callbacks) callback([]);
+      flush();
+    },
     resize(next: number) {
       width = next;
       for (const callback of callbacks) callback([]);
@@ -138,6 +156,103 @@ describe("Solid adapter over real virtual-core", () => {
     expect(view.scroller.scrollTop).toBe(3280);
     expect(view.result.model.virtualItems.some((item) => item.index === 50)).toBe(true);
   });
+  it("reaches the millionth slot with bounded physical height, demand and mounted rows", () => {
+    const view = mount(1_000_000);
+    const model = view.result.model;
+    expect(model.totalSize).toBe(MAX_GRID_HEIGHT);
+    view.scroll(Number.MAX_SAFE_INTEGER);
+    expect(model.virtualItems[model.virtualItems.length - 1]?.index).toBe(999_999);
+    expect(model.virtualItems.length).toBeLessThan(70);
+    expect(view.range).toHaveBeenLastCalledWith(
+      expect.objectContaining({ endIndex: 999_999, visibleEndIndex: 999_999 })
+    );
+    const last = model.virtualItems[model.virtualItems.length - 1];
+    expect(last && last.start + 80 - view.scroller.scrollTop).toBeGreaterThan(0);
+    expect(last && last.start + 188 + 80 - view.scroller.scrollTop).toBeLessThanOrEqual(600);
+    // A compressed one-column layout used to saturate even earlier.
+    view.resize(188);
+    view.scroll(Number.MAX_SAFE_INTEGER);
+    expect(model.columnCount).toBe(1);
+    expect(model.virtualItems[model.virtualItems.length - 1]?.index).toBe(999_999);
+    expect(model.totalSize).toBe(MAX_GRID_HEIGHT);
+    view.cleanup();
+    expect(callbacks.size).toBe(0);
+  });
+
+  it("preserves global anchors across compressed resize, tile size, and uncompressed transitions", () => {
+    const view = mount(1_000_000);
+    view.scroll(MAX_GRID_HEIGHT / 2);
+    const first = view.range.mock.lastCall?.[0].visibleStartIndex;
+    view.resize(588);
+    expect(view.range.mock.lastCall?.[0].visibleStartIndex).toBe(Math.floor(first / 3) * 3);
+    view.result.setTile(340);
+    flush();
+    expect(view.range.mock.lastCall?.[0].visibleStartIndex).toBe(Math.floor(first / 3) * 3);
+    const beforeHeight = view.range.mock.lastCall?.[0].visibleStartIndex;
+    view.resizeHeight(450);
+    expect(view.range.mock.lastCall?.[0].visibleStartIndex).toBe(beforeHeight);
+    view.result.setTotal(100);
+    flush();
+    expect(view.result.model.totalSize).toBeLessThan(MAX_GRID_HEIGHT);
+    expect(view.result.model.virtualItems[view.result.model.virtualItems.length - 1]?.index).toBe(
+      99
+    );
+  });
+
+  it("keeps small wheel and edge-scroll deltas logical despite rounded physical offsets", () => {
+    const view = mount(1_000_000);
+    view.resize(188);
+    view.scroll(2_000_000);
+    const before = view.result.model.virtualizer.scrollOffset ?? 0;
+    view.range.mockClear();
+    for (let i = 0; i < 10; i++) {
+      view.gallery.dispatchEvent(
+        new WheelEvent("wheel", { deltaY: 1, bubbles: true, cancelable: true })
+      );
+      view.scroller.dispatchEvent(new Event("scroll"));
+      flush();
+    }
+    expect(view.result.model.virtualizer.scrollOffset).toBeCloseTo(before + 10);
+    expect(view.range).not.toHaveBeenCalled();
+    view.result.model.scrollBy(25);
+    flush();
+    expect(view.result.model.virtualizer.scrollOffset).toBeCloseTo(before + 35);
+    const zoom = new WheelEvent("wheel", {
+      deltaY: 100,
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true
+    });
+    view.gallery.dispatchEvent(zoom);
+    expect(zoom.defaultPrevented).toBe(false);
+    const offset = view.scroller.scrollTop;
+    view.cleanup();
+    view.gallery.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 200, bubbles: true, cancelable: true })
+    );
+    expect(view.scroller.scrollTop).toBe(offset);
+  });
+
+  it("ignores a delayed scroll-end offset captured before a resize anchor write", () => {
+    vi.useFakeTimers();
+    try {
+      const view = mount(1_000_000);
+      view.resize(588);
+      view.result.setTile(340);
+      flush();
+      view.scroll(2_000_000);
+      const before = view.result.model.virtualizer.scrollOffset;
+      view.resizeHeight(450);
+      expect(view.result.model.virtualizer.scrollOffset).toBe(before);
+      vi.advanceTimersByTime(200);
+      flush();
+      expect(view.result.model.virtualizer.scrollOffset).toBe(before);
+      view.cleanup();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retains a partial last row and no slots when empty", () => {
     const view = mount(12);
     expect(view.result.model.virtualItems.map((item) => item.index)).toEqual(

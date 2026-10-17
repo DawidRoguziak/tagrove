@@ -25,7 +25,7 @@ export function TagListModal(props: TagListModalProps) {
   const [query, setQuery] = createSignal("");
   const [isApplying, setApplying] = createSignal(false);
   let applying = false;
-  let selections: TagSelections = { included: {}, excluded: {} };
+  let selections: TagSelections = { included: new Map(), excluded: new Map() };
   const [selection, publish] = createSignal(selections);
   const data = createTagList({
     open: () => props.open,
@@ -71,7 +71,7 @@ export function TagListModal(props: TagListModalProps) {
       if (!open) {
         cancel();
         setQuery("");
-        update({ included: {}, excluded: {} });
+        update({ included: new Map(), excluded: new Map() });
         return;
       }
       const frame = requestAnimationFrame(() => input?.focus());
@@ -99,8 +99,8 @@ export function TagListModal(props: TagListModalProps) {
   }
   const selectionSummary = () =>
     t("tagList.selectionSummary", {
-      included: Object.keys(selection().included).length,
-      excluded: Object.keys(selection().excluded).length
+      included: selection().included.size,
+      excluded: selection().excluded.size
     });
   return (
     <UiModal
@@ -174,8 +174,8 @@ export function TagListModal(props: TagListModalProps) {
             onTagClick={handleTagClick}
             onTagDoubleClick={handleTagDoubleClick}
             getStateLabel={(tag) => {
-              const included = Boolean(selection().included[tag.trim().toLowerCase()]);
-              const excluded = Boolean(selection().excluded[tag.trim().toLowerCase()]);
+              const included = selection().included.has(tag.trim().toLowerCase());
+              const excluded = selection().excluded.has(tag.trim().toLowerCase());
               if (included) {
                 return t("tagList.states.included");
               }

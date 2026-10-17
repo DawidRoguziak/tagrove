@@ -227,6 +227,33 @@ describe("shared canonical metadata publication", () => {
     expect(library.tags.get(2)).toBeNull();
   });
 
+  it("does not restore captured details or tags into a reused identity", async () => {
+    const { result: library } = await setup();
+    const pending = deferred<SetAssetTagsSummary>();
+    api.setAssetTags.mockReturnValueOnce(pending.promise);
+    const write = library.mutations.saveTags(1, ["obsolete"]);
+    library.handleImportDbRestored();
+    const current = { ...detail(1), path: "/synthetic/reused.jpg", size_bytes: 99, tags: ["current"] };
+    api.getAssetDetails.mockResolvedValueOnce(current);
+    await library.details.load(1);
+    pending.resolve(saved(["obsolete"]));
+    await settle(() => write);
+    expect(library.details.get(1)).toEqual(current);
+    expect(library.tags.get(1)?.tags).toEqual(["current"]);
+  });
+
+  it("publishes saved tags without restoring an evicted complete record", async () => {
+    const { result: library } = await setup();
+    for (let id = 2; id <= 257; id++) await library.details.load(id);
+    expect(library.details.get(1)).toBeNull();
+    await settle(() => library.mutations.saveTags(1, ["dog"]));
+    expect(library.tags.get(1)?.tags).toEqual(["dog"]);
+    expect(library.details.get(1)).toBeNull();
+    const current = { ...detail(1), tags: ["dog"] };
+    api.getAssetDetails.mockResolvedValueOnce(current);
+    expect(await library.details.load(1)).toEqual(current);
+  });
+
   it("refreshes favorites-only queries after removal and bulk toggles", async () => {
     const { result: library } = await setup();
     await library.applyFilters({
@@ -241,7 +268,7 @@ describe("shared canonical metadata publication", () => {
     expect(api.startAssetQuery).toHaveBeenCalledTimes(4);
   });
 
-  it("waits for the single-favorite refresh and reports its failure after publishing durable success", async () => {
+  it("settles a saved favorite independently of its failed query refresh", async () => {
     const { result: library } = await setup();
     await library.applyFilters({
       filterInclude: [],
@@ -253,12 +280,12 @@ describe("shared canonical metadata publication", () => {
     api.startAssetQuery.mockReturnValueOnce(refresh.promise);
     const finished = vi.fn();
     const write = library.mutations.setFavorite(1, false).then(finished);
-    const rejection = expect(write).rejects.toThrow("refresh failed");
+    await settle(() => write);
     await waitFor(() => expect(api.startAssetQuery).toHaveBeenCalledTimes(3));
-    expect(finished).not.toHaveBeenCalled();
+    expect(finished).toHaveBeenCalledOnce();
     expect(library.query.getAssetAt(0)?.is_favorite).toBe(false);
     refresh.reject(new Error("refresh failed"));
-    await rejection;
+    await waitFor(() => expect(library.query.loadError).toBe("refresh failed"));
     expect(library.tags.beginMutation(1)).not.toBeNull();
   });
 

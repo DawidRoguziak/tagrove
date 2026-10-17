@@ -1,11 +1,12 @@
 import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
-import { cleanup, fireEvent as domEvent, screen } from "@solidjs/testing-library";
+import { cleanup, fireEvent as domEvent, screen, renderHook } from "@solidjs/testing-library";
 import { settle as act } from "../../../test/settle";
 import { renderSolid } from "../../../test/renderSolid";
 import { createSignal, createEffect, flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UiLayerProvider, createUiLayer } from "../../../ui/overlays/UiLayerProvider";
 import type { BulkSelectionHandler } from "../selection";
+import { createSelection } from "../createSelection";
 import { createGridHandlers } from "../createGridHandlers";
 
 class TestPointerEvent extends MouseEvent {
@@ -40,6 +41,8 @@ function Harness(props: {
   offset?: number;
   size?: number;
   enabled?: boolean;
+  shift?: () => number;
+  scrollBy?: (delta: number) => void;
   onSelect?: (selected: AssetSummary) => void;
 }) {
   const [gridRef, setGrid] = createSignal<HTMLDivElement>();
@@ -55,6 +58,8 @@ function Harness(props: {
       return props.offset ?? 0;
     },
     gridRef,
+    get scrollShift() { return props.shift?.() ?? 0; },
+    scrollBy: (delta) => { if (props.scrollBy) props.scrollBy(delta); else if (scroller()) scroller()!.scrollTop += delta; },
     scrollContainerRef: scroller,
     columnCount: 3,
     get tilePixelSize() {
@@ -154,6 +159,32 @@ afterEach(() => {
 });
 
 describe("gallery pointer gestures", () => {
+  it("maps a rectangle through the current logical shift without treating scroll as layout cancellation", () => {
+    const interaction = vi.fn(), scrollBy = vi.fn();
+    let shift = 11000;
+    renderSolid(Harness, { interaction, shift: () => shift, scrollBy });
+    layout();
+    down();
+    clock += 150;
+    move(150, 150);
+    expect(preview().ranges).toEqual([
+      { startIndex: 300, endIndex: 301 }, { startIndex: 303, endIndex: 304 }
+    ]);
+    expect(preview().rectangle.top).toBe(15);
+    shift = 11110;
+    move(150, 150);
+    tick();
+    expect(preview().ranges).toEqual([
+      { startIndex: 300, endIndex: 301 }, { startIndex: 303, endIndex: 304 },
+      { startIndex: 306, endIndex: 307 }
+    ]);
+    move(150, 399);
+    tick();
+    expect(scrollBy).toHaveBeenCalledWith(expect.any(Number));
+    expect(scrollBy.mock.lastCall?.[0]).toBeGreaterThan(0);
+    up(150, 150);
+    expect(interaction).toHaveBeenLastCalledWith(expect.objectContaining({type: "rectangle-commit"}));
+  });
   it("requires both a 150 ms hold and five pixels of movement", () => {
     const interaction = vi.fn();
     renderSolid(Harness, { interaction: interaction });
@@ -409,6 +440,7 @@ describe("gallery pointer gestures", () => {
       "query",
       "layout",
       "origin",
+      "resize",
       "disabled",
       "unmount"
     ])("cancels on %s", (cause) => {
@@ -418,7 +450,8 @@ describe("gallery pointer gestures", () => {
       down();
       clock += stage === "dragging" ? 150 : 149;
       move(150, 150);
-      if (cause === "blur") fireEvent.blur(window);
+      if (cause === "resize") fireEvent.resize(window);
+      else if (cause === "blur") fireEvent.blur(window);
       else if (cause === "query") view.rerender({ interaction: interaction, epoch: 1 });
       else if (cause === "layout") view.rerender({ interaction: interaction, size: 110 });
       else if (cause === "origin") view.rerender({ interaction: interaction, offset: 20 });
@@ -474,4 +507,71 @@ const fireEvent = new Proxy(domEvent, {
       return result;
     };
   }
+});
+
+it.each([
+  "query",
+  "disabled",
+  "press",
+  "click",
+  "unmount"
+])("cancels a failed selection retry on explicit %s", async (cause) => {
+  const load = vi.fn().mockRejectedValue(new Error("failed range"));
+  const { result: selection } = renderHook(() =>
+    createSelection({
+      queryEpoch: () => 0,
+      identityEpoch: () => 0,
+      getIdsRange: load
+    })
+  );
+  selection.toggle();
+  const interaction = selection.interact;
+  const view = renderSolid(Harness, { interaction });
+  layout();
+  await selection.interact({
+    type: "rectangle-commit",
+    ranges: [{ startIndex: 0, endIndex: 1 }],
+    additive: false
+  });
+  flush();
+  expect(selection.error).toContain("failed range");
+  if (cause === "query") view.rerender({ interaction, epoch: 1 });
+  if (cause === "disabled") view.rerender({ interaction, enabled: false });
+  if (cause === "press") down();
+  if (cause === "click") fireEvent.click(screen.getByText("tile"));
+  if (cause === "unmount") view.unmount();
+  flush();
+  expect(selection.error).toBeNull();
+  await selection.retry();
+  expect(load).toHaveBeenCalledOnce();
+});
+
+it("keeps a released rectangle read through layout changes while removing its old preview", async () => {
+  let finish: (ids: number[]) => void = () => {};
+  const { result: selection } = renderHook(() =>
+    createSelection({
+      queryEpoch: () => 0,
+      identityEpoch: () => 0,
+      getIdsRange: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    })
+  );
+  selection.toggle();
+  const interaction = selection.interact;
+  const view = renderSolid(Harness, { interaction });
+  layout();
+  down();
+  clock += 150;
+  move(125, 125);
+  up(125, 125);
+  expect(selection.busy).toBe(true);
+  expect(preview()).not.toBeNull();
+  view.rerender({ interaction, offset: 48 });
+  expect(preview()).toBeNull();
+  expect(selection.busy).toBe(true);
+  await act(async () => finish([1, 2, 3, 4, 5]));
+  expect([...selection.ids]).toEqual([1, 2, 4, 5]);
+  expect(selection.busy).toBe(false);
 });

@@ -198,8 +198,15 @@ export function SearchTagator(props: {
         }}
         placeholder={props.placeholder ?? t("search.placeholder")}
       />
-      {suggestions.failed && focused() ? (
-        <button type="button" onClick={suggestions.retry}>
+      {suggestions.failed && !props.disabled ? (
+        <button
+          type="button"
+          onClick={() => {
+            input()?.focus();
+            setOpen(!!props.value.trim());
+            suggestions.retry();
+          }}
+        >
           {t("search.suggestionsRetry")}
         </button>
       ) : null}

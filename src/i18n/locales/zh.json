@@ -30,21 +30,21 @@
     "open": "打开标签列表",
     "modalTitle": "标签列表",
     "closeModal": "关闭标签列表",
-    "filterLabel": "Filter tags",
-    "filterPlaceholder": "Type to filter tags",
-    "listLabel": "Tag list results",
-    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
-    "loading": "Loading tags...",
-    "loadingMore": "Loading more tags...",
-    "empty": "No tags available.",
-    "noMatches": "No tags match this filter.",
-    "applying": "Applying...",
-    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "filterLabel": "筛选标签",
+    "filterPlaceholder": "输入内容以筛选标签",
+    "listLabel": "标签列表结果",
+    "selectionSummary": "包含：{{included}} | 排除：{{excluded}}",
+    "loading": "正在加载标签...",
+    "loadingMore": "正在加载更多标签...",
+    "empty": "没有可用的标签。",
+    "noMatches": "没有与此筛选条件匹配的标签。",
+    "applying": "正在应用...",
+    "tagButtonAria": "{{tag}}，状态：{{state}}",
     "tagButtonTitle": "{{tag}} ({{state}})",
     "states": {
-      "inactive": "inactive",
-      "included": "included",
-      "excluded": "excluded"
+      "inactive": "未选择",
+      "included": "包含",
+      "excluded": "排除"
     }
   },
   "controls": {
@@ -75,10 +75,10 @@
       "label": "仅收藏"
     },
     "errors": {
-      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
-      "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
-      "groupNameMissingValue": "gN requires a group value after the colon.",
-      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+      "metaTagRequiresSolo": "元标签必须单独使用，不能与其他标签组合。",
+      "tagInvalidCharacters": "标签不能包含空白字符、逗号、分号或控制字符。",
+      "groupNameMissingValue": "gN 的冒号后必须填写分组名称。",
+      "hasNoTagsInvalidCount": "tags 仅接受非负整数。"
     },
     "suggestionsRetry": "建议不可用。重试"
   },

@@ -69,3 +69,38 @@ it("allows explicit retry after worker failure", async () => {
   flush();
   await waitFor(() => expect(result.items[0]?.value).toBe("cat"));
 });
+
+it("retains failure across blur but invalidates it when the draft or vocabulary changes", async () => {
+  const client = new SuggestionClient();
+  const search = vi.spyOn(client, "search").mockRejectedValue(new Error("worker"));
+  const excluded: string[] = [];
+  const { result, cleanup } = renderHook(() => {
+    const [focused, setFocused] = createSignal(true);
+    const [value, setValue] = createSignal("ca");
+    const [tags, setTags] = createSignal(["cat"]);
+    const model = createSuggestions(client, {
+      tags, token: () => readActiveToken(value(), value().length),
+      used: () => new Set<string>(), eligible: focused, excluded: () => excluded
+    });
+    return { model, setFocused, setValue, setTags };
+  });
+  await waitFor(() => expect(result.model.failed).toBe(true));
+  result.setFocused(false);
+  flush();
+  expect(result.model.failed).toBe(true);
+  expect(search).toHaveBeenCalledTimes(1);
+  result.setValue("");
+  flush();
+  expect(result.model.failed).toBe(false);
+  result.setValue("ca");
+  result.setFocused(true);
+  flush();
+  await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(result.model.failed).toBe(true));
+  result.setFocused(false);
+  result.setTags(["car"]);
+  flush();
+  expect(result.model.failed).toBe(false);
+  cleanup();
+  client.dispose();
+});

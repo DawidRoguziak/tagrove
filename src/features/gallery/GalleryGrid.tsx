@@ -85,6 +85,10 @@ export function GalleryGrid(props: GalleryGridProps) {
     get tileGap() {
       return virtual.tileGap;
     },
+    get scrollShift() {
+      return virtual.scrollShift;
+    },
+    scrollBy: virtual.scrollBy,
     getAssetAt: (index) => props.getAssetAt(index),
     get selectionModeEnabled() {
       return props.selectionModeEnabled;
@@ -197,7 +201,14 @@ export function GalleryGrid(props: GalleryGridProps) {
             />
           }
         >
-          <div ref={setGrid} style={{ height: `${virtual.totalSize}px`, position: "relative" }}>
+          <div
+            ref={setGrid}
+            style={{
+              height: `${virtual.totalSize}px`,
+              position: "relative",
+              "overflow-anchor": "none"
+            }}
+          >
             <For each={backplates()} keyed={false}>
               {(plate) => (
                 <div
@@ -220,7 +231,8 @@ export function GalleryGrid(props: GalleryGridProps) {
                 const lane = () => index % virtual.columnCount;
                 const start = () =>
                   Math.floor(index / virtual.columnCount) *
-                  (virtual.tilePixelSize + virtual.tileGap);
+                    (virtual.tilePixelSize + virtual.tileGap) -
+                  virtual.scrollShift;
                 return (
                   <Show
                     when={assetAtSlot()}

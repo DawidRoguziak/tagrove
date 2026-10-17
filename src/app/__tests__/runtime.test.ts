@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createAppRuntime } from "../createAppRuntime";
 import { LanguageProvider } from "../../i18n/solid";
 import { settle } from "../../test/settle";
+import * as tagsApi from "../../platform/tauri/tags";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -51,6 +52,21 @@ it("logs a failed snapshot and leaves the shared library usable", async () => {
 });
 
 it("ignores a startup snapshot that arrives after disposal", async () => {
+  const getStartupPopularTags = tagsApi.getStartupPopularTags;
+  const handlerCompletions: Promise<unknown>[] = [];
+  vi.spyOn(tagsApi, "getStartupPopularTags").mockImplementation(() => {
+    const response = getStartupPopularTags();
+    const then = response.then.bind(response);
+    // Keep the real adapter and capture completion of the runtime's consumer.
+    vi.spyOn(response, "then").mockImplementation((onFulfilled, onRejected) => {
+      const completion = then(onFulfilled, onRejected);
+      // The runtime registers success here and rejection on the chained catch.
+      // Vitest also observes the promise, but supplies both callbacks.
+      if (onFulfilled && !onRejected) handlerCompletions.push(completion);
+      return completion;
+    });
+    return response;
+  });
   let resolve!: (tags: string[]) => void;
   const pending = new Promise<string[]>((done) => { resolve = done; });
   const invoke = native.invoke.getMockImplementation();
@@ -60,6 +76,8 @@ it("ignores a startup snapshot that arrives after disposal", async () => {
   const { result, cleanup } = renderHook(createAppRuntime, { wrapper: LanguageProvider });
   await settle(() => result.start());
   cleanup();
-  await settle(() => resolve(["late"]));
+  expect(handlerCompletions).toHaveLength(1);
+  resolve(["late"]);
+  await settle(() => Promise.all(handlerCompletions));
   expect(result.popularTags()).toEqual([]);
 });

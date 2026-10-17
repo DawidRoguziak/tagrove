@@ -138,12 +138,18 @@ function LightboxContent(
     modal: true,
     container: controls.shell,
     closeOnEscape: () => !controls.isFullscreen && !confirm() && !deleting(),
-    onEscape: () => {
-      if (sidebar.narrow() && sidebar.open()) closeSidebar();
-      else close();
-    },
+    onEscape: dismissWindowedLayer,
     getRestoreFocus: props.getRestoreFocus
   });
+  function dismissWindowedLayer() {
+    if (sidebar.narrow() && sidebar.open()) closeSidebar();
+    else close();
+  }
+  function handleNativeEscape() {
+    if (!props.active || !layer.isTopLayer() || controls.isFullscreen || deletingNow) return;
+    if (confirm()) setConfirm(false);
+    else dismissWindowedLayer();
+  }
   let restoreTriggerFocus = true,
     wasOpen: boolean | undefined;
   function closeSidebar(restoreFocus = true) {
@@ -351,6 +357,7 @@ function LightboxContent(
                 detailsFailed={props.model.assetDetailsFailed}
                 retryDetails={props.model.retryDetails}
                 controls={controls}
+                onNativeEscape={handleNativeEscape}
                 onPointerActivity={activity.reveal}
                 onNativeBounds={handleNativeBounds}
               />

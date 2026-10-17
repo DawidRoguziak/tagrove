@@ -62,6 +62,8 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
     after: (result: T, accepted: number[]) => void | Promise<unknown>
   ) {
     const cached = new Map(ids.map((id) => [id, details.get(id)]));
+    // Canonical metadata may survive a refresh; captured path/size must not.
+    const detailsGeneration = details.generation;
     const tokens = acquire(ids);
     try {
       const result = await request();
@@ -75,7 +77,7 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
         if (!patch) continue;
         published.set(token.assetId, patch);
         const previous = cached.get(token.assetId);
-        if (previous) details.put({ ...previous, ...patch });
+        if (previous) details.put({ ...previous, ...patch }, detailsGeneration);
       }
       if (published.size) {
         query.patchAssets((rows) =>
@@ -131,7 +133,7 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
         () => assets.setAssetFavorite(id, favorite),
         () => new Map([[id, { is_favorite: favorite }]]),
         () => {
-          if (filters().appliedFavoritesOnly && !favorite) return query.refresh();
+          if (filters().appliedFavoritesOnly && !favorite) refresh();
         }
       );
     },

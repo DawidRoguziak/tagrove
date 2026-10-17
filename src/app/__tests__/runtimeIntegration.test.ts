@@ -5,6 +5,8 @@ import { LanguageProvider } from "../../i18n/solid";
 import { settle } from "../../test/settle";
 import { asset, summary, deferred } from "../../features/lightbox/__tests__/fixtures";
 import type { SetAssetTagsSummary } from "../../platform/tauri/contracts/tags";
+import type { ScanSummary } from "../../platform/tauri/contracts/scanning";
+import type { DuplicateScanSummary, DuplicateResolutionBatchSummary } from "../../platform/tauri/contracts/maintenance";
 
 const api = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => false, invoke: api.invoke }));
@@ -46,6 +48,58 @@ async function selectBulk(runtime: ReturnType<typeof createAppRuntime>) {
   });
   await waitFor(() => expect(runtime.bulk.tagDetailsLoading).toBe(false));
 }
+
+it.each(["rename", "rescan"])("does not restore pre-%s details when a delayed tag save completes", async operation => {
+  const runtime = await setup();
+  const pending = deferred<SetAssetTagsSummary>();
+  const original = api.invoke.getMockImplementation()!;
+  let changed = false;
+  api.invoke.mockImplementation((command: string, args: unknown) => {
+    if (command === "set_asset_tags") return pending.promise;
+    if (command === "get_asset_details") return Promise.resolve(asset(1, {
+      tags: [...persisted], file_name: fileName,
+      path: `/synthetic/${fileName}`, size_bytes: changed ? 99 : 10
+    }));
+    if (command === "find_duplicate_assets") return Promise.resolve({
+      groups: [{ file_name: "1.png", assets: [{ id: 1, path: "/synthetic/1.png", size_bytes: 10, record_version: 1 }] }],
+      duplicate_assets: 1, duplicate_groups: 1, revision: 1
+    } satisfies DuplicateScanSummary);
+    if (command === "apply_duplicate_resolution_batch") {
+      changed = true;
+      fileName = "renamed.png";
+      return Promise.resolve({ status: "committed", results: [], revision: 2, removed_thumbnails: 0 } satisfies DuplicateResolutionBatchSummary);
+    }
+    if (command === "rescan_all_roots") {
+      changed = true;
+      return Promise.resolve({ completion: "complete", indexed: 1, removed: 0, failed: 0 } satisfies ScanSummary);
+    }
+    return original(command, args);
+  });
+  settle(() => runtime.lightbox.saveTags(["saved"]));
+  expect(calls("set_asset_tags")).toHaveLength(1);
+  settle(() => { runtime.lightbox.close(); runtime.openSettings(); });
+  if (operation === "rename") {
+    await settle(() => runtime.settings.duplicates.onStart());
+    await settle(() => runtime.settings.duplicates.onSaveAll([
+      { assetId: 1, type: "rename", nextFileName: "renamed.png" }
+    ]));
+    expect(calls("apply_duplicate_resolution_batch")).toHaveLength(1);
+  } else {
+    await settle(() => runtime.settings.scan.onRescanAll());
+    expect(calls("rescan_all_roots")).toHaveLength(1);
+  }
+  expect(calls("start_asset_query")).toHaveLength(2);
+  expect(runtime.library.details.get(1)).toBeNull();
+  persisted = ["saved"];
+  pending.resolve(saved(persisted));
+  await waitFor(() => expect(runtime.library.tags.get(1)?.tags).toEqual(["saved"]));
+  expect(runtime.library.details.get(1)).toBeNull();
+  settle(() => { runtime.closeSettings(); runtime.lightbox.select(summary(1, { file_name: fileName })); });
+  await waitFor(() => expect(runtime.lightbox.selected?.size_bytes).toBe(99));
+  expect(runtime.lightbox.selected?.path).toBe(`/synthetic/${fileName}`);
+  expect(runtime.lightbox.tagEditor).toEqual(["saved"]);
+  expect(calls("get_asset_details")).toHaveLength(2);
+});
 
 it.each([false, true])("settings CSV drains pending edits and invalidates actual runtime caches, rejection=%s", async rejected => {
   const runtime = await setup();

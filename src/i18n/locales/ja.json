@@ -30,21 +30,21 @@
     "open": "タグ一覧を開く",
     "modalTitle": "タグ一覧",
     "closeModal": "タグ一覧を閉じる",
-    "filterLabel": "Filter tags",
-    "filterPlaceholder": "Type to filter tags",
-    "listLabel": "Tag list results",
-    "selectionSummary": "Included: {{included}} | Excluded: {{excluded}}",
-    "loading": "Loading tags...",
-    "loadingMore": "Loading more tags...",
-    "empty": "No tags available.",
-    "noMatches": "No tags match this filter.",
-    "applying": "Applying...",
-    "tagButtonAria": "{{tag}}, state: {{state}}",
+    "filterLabel": "タグを絞り込む",
+    "filterPlaceholder": "入力してタグを絞り込む",
+    "listLabel": "タグ一覧の結果",
+    "selectionSummary": "含める: {{included}} | 除外: {{excluded}}",
+    "loading": "タグを読み込み中...",
+    "loadingMore": "追加のタグを読み込み中...",
+    "empty": "利用できるタグはありません。",
+    "noMatches": "このフィルターに一致するタグはありません。",
+    "applying": "適用中...",
+    "tagButtonAria": "{{tag}}、状態: {{state}}",
     "tagButtonTitle": "{{tag}} ({{state}})",
     "states": {
-      "inactive": "inactive",
-      "included": "included",
-      "excluded": "excluded"
+      "inactive": "未選択",
+      "included": "含める",
+      "excluded": "除外"
     }
   },
   "controls": {
@@ -75,10 +75,10 @@
       "label": "お気に入りのみ"
     },
     "errors": {
-      "metaTagRequiresSolo": "Metatags must be used on their own, without other tags.",
-      "tagInvalidCharacters": "Tags cannot contain whitespace, commas, semicolons, or control characters.",
-      "groupNameMissingValue": "gN requires a group value after the colon.",
-      "hasNoTagsInvalidCount": "tags accepts only a non-negative integer value."
+      "metaTagRequiresSolo": "メタタグは他のタグと組み合わせず、単独で使用してください。",
+      "tagInvalidCharacters": "タグには空白文字、カンマ、セミコロン、制御文字を含めることはできません。",
+      "groupNameMissingValue": "gN のコロンの後にグループ名を指定してください。",
+      "hasNoTagsInvalidCount": "tags には 0 以上の整数のみ指定できます。"
     },
     "suggestionsRetry": "候補を表示できません。再試行"
   },

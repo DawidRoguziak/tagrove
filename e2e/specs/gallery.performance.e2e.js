@@ -5,12 +5,46 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
+import { e2eAppIdentifier } from "../build-e2e.js";
 
 // Opt-in: the ordinary desktop suite should not seed thousands of media files.
 const gallerySuite = process.env.MEDIATAGGER_GALLERY_PERF === "1" ? describe : describe.skip;
 const IMAGE_COUNT = 2048;
 const execFileAsync = promisify(execFile);
 let mediaRoot;
+const output = path.resolve("artifacts/gallery-performance");
+const thumbsRoot = path.join(
+  process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local/share"),
+  e2eAppIdentifier,
+  "thumbs"
+);
+let cachePreparation;
+
+async function thumbnailFiles() {
+  // File publication can precede SQLite publication. Read actual final files,
+  // not only thumb_path references, and keep snapshots outside the timed interval.
+  return (await fs.readdir(thumbsRoot)).filter(name => name.endsWith(".jpg") && !name.endsWith(".tmp.jpg")).sort();
+}
+
+async function visibleTiles() {
+  return browser.execute(() => {
+    const viewport = document.querySelector(".gallery-scroll").getBoundingClientRect();
+    return [...document.querySelectorAll("button[data-asset-index]")].filter(tile => {
+      const rect = tile.getBoundingClientRect();
+      return rect.bottom > viewport.top && rect.top < viewport.bottom;
+    }).map(tile => ({
+      index: Number(tile.dataset.assetIndex),
+      id: Number(tile.dataset.assetId),
+      thumbnail: decodeURIComponent(new URL(tile.querySelector("img").src).pathname).split("/").at(-1)
+    }));
+  });
+}
+
+function p95(values) {
+  assert.ok(values.length > 0, "a timing summary needs actual samples");
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+}
 
 async function invoke(command, payload = {}) {
   const response = await browser.executeAsync(
@@ -25,6 +59,16 @@ async function invoke(command, payload = {}) {
   );
   if (response.error) throw new Error(response.error);
   return response.value;
+}
+
+async function closePreviewToAsset(assetId) {
+  await $('button[aria-label="Close preview"]').click();
+  // The modal restores focus on an animation frame. Starting a scroll earlier
+  // can let that focus restoration scroll back to the triggering tile.
+  await browser.waitUntil(() => browser.execute(id =>
+    !document.querySelector('[role="dialog"]') &&
+    document.activeElement?.getAttribute("data-asset-id") === String(id), assetId
+  ), { timeout: 10000, timeoutMsg: "preview must close and restore focus before scrolling" });
 }
 
 async function scrollToAsset(index) {
@@ -71,6 +115,13 @@ gallerySuite("gallery scrolling performance", function () {
     }
     assert.ok((await fs.readdir(mediaRoot)).length <= 10000);
     await invoke("clear_library_data");
+    await invoke("clear_all_thumbnails");
+    cachePreparation = {
+      clearedLibraryAndThumbnails: true,
+      beforeScanFiles: await thumbnailFiles(),
+      osCache: "uncontrolled; fixture creation and indexing read source files"
+    };
+    assert.deepEqual(cachePreparation.beforeScanFiles, []);
     await invoke("add_scan_root", { path: mediaRoot });
     await invoke("rescan_all_roots");
     const ids = [];
@@ -101,6 +152,97 @@ gallerySuite("gallery scrolling performance", function () {
     if (mediaRoot) await fs.rm(mediaRoot, { recursive: true, force: true });
   });
 
+
+  it("measures first-use previews before metadata traversal, then revisits the same image route", async () => {
+    await $('#gallery-media-kind input[value="image"]').click();
+    await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
+    await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000 });
+    const initialVisible = await visibleTiles();
+    const initialMountedIds = await browser.execute(() =>
+      [...document.querySelectorAll("button[data-asset-id]")].map(tile => Number(tile.dataset.assetId))
+    );
+    // Startup/filtering already loaded the initial viewport. Its target at zero
+    // and the return legs do not belong in the first-use timing distribution.
+    const route = [...Array.from({ length: 15 }, (_, page) => (page + 1) * 128), 2047];
+    const results = {
+      cachePreparation: { ...cachePreparation, initialVisible, initialMountedIds, beforeSamplingFiles: await thumbnailFiles() },
+      filter: { kind: "image", tagsAnd: [], tagsNot: [], favoritesOnly: false },
+      route,
+      excludedIndices: [0],
+      viewport: await browser.execute(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio })),
+      measurement: "scroll request to visible JPEG decode; includes WebDriver overhead, excludes opacity fade and file snapshots",
+      passes: []
+    };
+    await fs.mkdir(output, { recursive: true });
+    for (const pass of ["firstTraversal", "revisit"]) {
+      const samples = [];
+      results.passes.push({ pass, samples });
+      for (const index of route) {
+        assert.equal(await $('#gallery-media-kind input[value="image"]').isSelected(), true);
+        const filesBefore = await thumbnailFiles();
+        await browser.execute(() => {
+          const state = { active: true, frames: [], previous: null };
+          window.galleryPerf = state;
+          function frame(time) {
+            if (!state.active) return;
+            if (state.previous !== null) state.frames.push(time - state.previous);
+            state.previous = time;
+            requestAnimationFrame(frame);
+          }
+          requestAnimationFrame(frame);
+        });
+        const started = performance.now();
+        let thumbnailMs;
+        let frames;
+        try {
+          await scrollToAsset(index);
+          await $(`button[data-asset-index="${index}"]`).waitForDisplayed({ timeout: 20000 });
+          await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000, interval: 50 });
+          thumbnailMs = performance.now() - started;
+        } finally {
+          frames = await browser.execute(() => {
+            window.galleryPerf.active = false;
+            return window.galleryPerf.frames;
+          });
+        }
+        const visible = await visibleTiles();
+        const reused = visible.filter(tile => filesBefore.includes(tile.thumbnail));
+        const provenance = reused.length === visible.length ? "existingPreviews"
+          : reused.length === 0 ? "firstUsePreviews" : "mixedPreviews";
+        samples.push({ index, thumbnailMs, frames, visible, filesBefore, provenance });
+        // Save raw observations before assertions, including a failed provenance check.
+        await fs.writeFile(path.join(output, "timings.json"), JSON.stringify(results, null, 2));
+        assert.ok(visible.some(tile => tile.index === index), "the requested target must be in the sampled viewport");
+        assert.ok(visible.every(tile => !initialMountedIds.includes(tile.id)), "initial loaded area is excluded");
+        assert.ok((await $$("button[data-asset-index]")).length < 200);
+        if (pass === "revisit") {
+          assert.equal(provenance, "existingPreviews", "the revisit must reuse files from the identical first route");
+          assert.deepEqual(visible, results.passes[0].samples[samples.length - 1].visible, "both passes sample the same image IDs and targets");
+        }
+      }
+    }
+    const firstUse = results.passes[0].samples.filter(sample => sample.provenance === "firstUsePreviews");
+    assert.ok(firstUse.length > 0, "first-use sampling must run before any metadata traversal warms the route");
+    results.summary = {};
+    for (const [label, samples] of [["firstUsePreviews", firstUse], ["revisit", results.passes[1].samples]]) {
+      const frames = samples.flatMap(sample => sample.frames);
+      results.summary[label] = {
+        sampleCount: samples.length,
+        frameP95Ms: p95(frames),
+        thumbnailP95Ms: p95(samples.map(sample => sample.thumbnailMs)),
+        frameSamples: frames.length
+      };
+    }
+    await fs.writeFile(path.join(output, "timings.json"), JSON.stringify(results, null, 2));
+    await browser.saveScreenshot(path.join(output, "gallery.png"));
+    console.log("Gallery timing observations, including WebDriver overhead:", JSON.stringify(results.summary));
+    // Untimed returns retain the page-eviction checks without polluting first-use samples.
+    for (const index of [128, 0]) {
+      await scrollToAsset(index);
+      await $(`button[data-asset-index="${index}"]`).waitForDisplayed({ timeout: 20000 });
+      await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000 });
+    }
+  });
 
   it("preserves sessions, scroll anchors and edits across unrelated mutations and evicted pages", async () => {
     await $('#gallery-media-kind input[value="image"]').click();
@@ -152,7 +294,7 @@ gallerySuite("gallery scrolling performance", function () {
       await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: anchor.id })).tags.includes(proofTag));
       await $('[role="dialog"] button[aria-label="Add to favorites"]').click();
       await browser.waitUntil(async () => (await invoke("get_asset_details", { assetId: anchor.id })).is_favorite);
-      await $('button[aria-label="Close preview"]').click();
+      await closePreviewToAsset(anchor.id);
       const readAnchor = () => browser.execute(id => ({
         top: document.querySelector(`button[data-asset-id="${id}"]`)?.getBoundingClientRect().top,
         scroll: document.querySelector(".gallery-scroll").scrollTop
@@ -176,7 +318,7 @@ gallerySuite("gallery scrolling performance", function () {
       await $(`button[data-asset-id="${anchor.id}"]`).click();
       await browser.waitUntil(async () => (await $('[data-testid="lightbox-tag-panel"]').getText()).includes(proofTag));
       await $('[role="dialog"] button[aria-label="Remove from favorites"]').waitForExist();
-      await $('button[aria-label="Close preview"]').click();
+      await closePreviewToAsset(anchor.id);
       evidence.push({ filter, anchor, baseline, pageOffsets: pages.map(entry => entry.args.offset), proofTag });
       // Each case gets its own trace, including its query start.
       await browser.execute(() => { window.queryTrace = []; });
@@ -214,48 +356,7 @@ gallerySuite("gallery scrolling performance", function () {
     await browser.saveScreenshot(path.join(output, "stable-metadata.png"));
   });
 
-  it("loads static GIF tiles, crosses the page cache, and keeps lightbox animation", async () => {
-    const results = {};
-    // Visit every page, then return through evicted pages. Both passes use the same route.
-    const route = [...Array.from({ length: 16 }, (_, page) => page * 128), 2047, 128, 0];
-    for (const pass of ["cold", "warm"]) {
-      const latencies = [];
-      await browser.execute(() => {
-        window.galleryPerf = { active: true, frames: [], previous: performance.now() };
-        function frame(time) {
-          const state = window.galleryPerf;
-          state.frames.push(time - state.previous);
-          state.previous = time;
-          if (state.active) requestAnimationFrame(frame);
-        }
-        requestAnimationFrame(frame);
-      });
-      for (const index of route) {
-        const started = Date.now();
-        await scrollToAsset(index);
-        await $(`button[data-asset-index="${index}"]`).waitForExist({ timeout: 20000 });
-        await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000, interval: 50 });
-        latencies.push(Date.now() - started);
-        assert.ok((await $$("button[data-asset-index]")).length < 200);
-      }
-      const frames = await browser.execute(() => {
-        window.galleryPerf.active = false;
-        return window.galleryPerf.frames;
-      });
-      frames.sort((a, b) => a - b);
-      latencies.sort((a, b) => a - b);
-      results[pass] = {
-        frameP95Ms: frames[Math.floor(frames.length * 0.95)],
-        thumbnailP95Ms: latencies[Math.floor(latencies.length * 0.95)],
-        frameSamples: frames.length
-      };
-    }
-    const output = path.resolve("artifacts/gallery-performance");
-    await fs.mkdir(output, { recursive: true });
-    await fs.writeFile(path.join(output, "timings.json"), JSON.stringify(results, null, 2));
-    await browser.saveScreenshot(path.join(output, "gallery.png"));
-    console.log("Gallery timing samples, including WebDriver overhead:", JSON.stringify(results));
-
+  it("loads static GIF tiles and keeps lightbox animation", async () => {
     await $('#gallery-media-kind input[value="gif"]').click();
     await $(".filter-input").click();
     await browser.keys("Enter");

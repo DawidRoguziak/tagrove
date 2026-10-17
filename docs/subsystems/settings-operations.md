@@ -100,7 +100,7 @@ The runner lifecycle is:
 7. On any listener/action/follow-up error, replace that section's message with `<translated error prefix>: <translated backend text>` and clear progress. Errors are presented, not rethrown by the runner.
 8. In `finally`, unregister the progress listener, clear that section's loading flag, clear global loading when it was set, and release both locks. The final message remains visible.
 
-Folder selection, startup-preference saves, duplicate scans and duplicate change application set `setGlobalLoading: false`; the other runner-backed actions use global loading. Duplicate operations still acquire the shared settings lock and show duplicate-section loading. Thumbnail cancellation deliberately bypasses `runExclusiveOperation`: it must remain callable while the bulk thumbnail operation owns the lock. Its separate `cancelThumbnailRunning` guard prevents duplicate stop requests, and the visible Stop button is disabled only by that flag.
+Folder selection, startup-preference saves, duplicate scans and duplicate change application set `setGlobalLoading: false`; the other runner-backed actions use global loading. Duplicate operations still acquire the shared settings lock and show duplicate-section loading. Thumbnail cancellation deliberately bypasses `runExclusiveOperation`: it must remain callable while the bulk thumbnail operation owns the lock. A synchronous pending token prevents duplicate Stop requests for the active render; `cancelThumbnailRunning` reflects that token in the disabled Stop button.
 
 Closing the settings page does not cancel an operation because the settings models remain owned by the application. Reopening the page exposes the same lock, messages, progress, roots, and duplicate results.
 
@@ -124,7 +124,7 @@ Both fallback progress messages and backend error text accept these formats, in 
 3. A dotted token containing only letters, digits, underscore, period, and hyphen is translated only when i18next resolves it to a different string.
 4. Empty, malformed, unknown, or free-form text is shown unchanged.
 
-Successful action summaries use frontend translation keys directly. Setting a summary through `setSectionMessage` clears stored progress by default. The thumbnail stop request does this too, although a later accepted progress event can repopulate it before the active render returns its final summary.
+Successful action summaries use frontend translation keys directly. Setting a summary through `setSectionMessage` clears stored progress by default. An active render's Stop response does this too, although a later accepted progress event can repopulate it before the render returns its final summary. Retired Stop responses leave both message and progress unchanged.
 
 ## Scan roots and rescanning
 
@@ -138,13 +138,15 @@ Per-root rescan calls `scanFolder(path)`; Rescan all is disabled when the fronte
 
 Each folder row includes a localized, accessible **Scan on app startup** checkbox. Its saved value is false for existing and newly added roots. Saving uses the shared runner with `setGlobalLoading: false`, updates the row after backend success, and keeps the previous value on error. The checkbox is disabled while a settings operation holds the lock. Enabling it takes effect at the next app launch.
 
-The shell invokes `scanOnStartup` at mount, independently of whether Settings is open. Synchronous once-only flags in the runtime and scan model prevent repeated dispatch; the backend process owns the authoritative once-only snapshot. The startup action uses the scan progress matcher and ordinary loading/summary behavior. A null response clears its pending message without refreshing the library. A scan result refreshes assets, tags, and roots; rejection attempts both refreshes before reporting the error because scan batches may already have committed. No automatic retry runs during that process.
+The shell invokes `scanOnStartup` at mount, independently of whether Settings is open. Synchronous once-only flags in the runtime and scan model prevent repeated dispatch; the backend process owns the authoritative once-only snapshot and retains its result. A replacement runtime joins an active startup scan or reads its terminal result. The startup action uses the scan progress matcher and ordinary loading/summary behavior. A null response means no roots were enabled at launch and clears the pending message without refreshing the library. A scan result refreshes assets, tags, and roots; rejection attempts both refreshes before reporting the error because scan batches may already have committed. Disposed scan models skip these completion follow-ups. No automatic retry runs during that process.
 
 ## Thumbnail bulk actions and cancellation
 
-Render all and Retry failed share the scan section and thumbnail progress matcher. Each sets `thumbnailBulkRunning` inside the runner action and clears it in an inner `finally`, so the Stop button exists only while the API call is outstanding. Their final summaries report generated, failed, skipped-failed, processed/total, and whether processing was cancelled.
+Render all and Retry failed share the scan section and thumbnail progress matcher. Each assigns a synchronous render token and sets `thumbnailBulkRunning` inside the runner action. Its inner `finally` retires the token and clears both bulk and Stop-pending state. The Stop button exists through the render call and its library refresh. Their final summaries report generated, failed, skipped-failed, processed/total, and whether processing was cancelled.
 
-Stop calls `cancelRenderAllThumbnails` outside the exclusive runner. While that request is outstanding only the Stop button is disabled. An accepted request reports that stopping was requested; a rejected request reports that no bulk render is running; an exception reports a scan-section cancellation error. The request is cooperative: it does not release the runner lock or clear `thumbnailBulkRunning`. The original render call remains responsible for returning, refreshing the library, publishing its final summary, and releasing the lock. Backend scheduling, cancellation checkpoints, and retry identity are covered by [thumbnails](thumbnails.md).
+Stop calls `cancelRenderAllThumbnails` outside the exclusive runner, only while a render token is active. While that render's Stop request is outstanding only the Stop button is disabled. A `true` reply reports that stopping was requested; `false` reports that no bulk render is running; an exception reports a scan-section cancellation error. All three may publish only while the captured render still owns the section and the model is mounted. Replies after render completion cannot overwrite its summary/error or a subsequent scan's progress. A new render may send Stop even if the previous render's reply is still pending; the old request's cleanup cannot clear the new request's pending token. The request is cooperative: it does not release the runner lock or clear `thumbnailBulkRunning`. The original render call remains responsible for returning, refreshing the library, publishing its final summary, and releasing the lock. Backend scheduling, cancellation checkpoints, and retry identity are covered by [thumbnails](thumbnails.md).
+
+Controlled response-order regressions in [`thumbnailStop.test.tsx`](../../src/features/settings/__tests__/thumbnailStop.test.tsx) cover both render modes, terminal success/failure, subsequent scan progress, newer pending Stop ownership, disposal and rendered controls. They mock adapter replies and do not measure native delivery timing. Run them with `bun run test -- src/features/settings`.
 
 ## Import and export UI orchestration
 
@@ -213,6 +215,13 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Apply duplicate changes | After the backend batch returns, refresh assets/query pages and known tags; scan duplicates; replace groups/count/revision; publish committed, rolled-back, or recovery-required summary. No root refresh or explicit thumbnail reset. |
 
 Picker or confirmation cancellation, an empty duplicate batch, and a no-op thumbnail stop perform no lifecycle reset. The runner has no generic compensating refresh. CSV import, database restore, and clear-library actions explicitly invalidate their affected caches inside the metadata barrier on both success and rejection, then attempt relevant refreshes before showing an error. CSV database work is transactional, but an IPC rejection alone does not establish what the frontend observed. Other follow-ups remain sequential; a failed refresh prevents later follow-ups and the intended success summary.
+
+Settings rename/rescan refreshes clear the shared details-cache generation. A metadata
+save held across that refresh can still publish canonical metadata, but cannot reinsert
+its captured old path or size. Identity-resetting maintenance also retires lightbox favorite
+pending ownership, so reusing an asset ID does not inherit an old disabled control.
+`runtimeIntegration.test.ts` exercises the actual Settings controllers with deferred IPC;
+`createLightbox.test.ts` covers old favorite completion while a new-epoch write is pending.
 
 ## Known limitations
 

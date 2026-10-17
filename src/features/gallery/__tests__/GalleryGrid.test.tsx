@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@solidj
 import { createSignal, flush } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createLibrary } from "../../../library/createLibrary";
+import { createSelection } from "../createSelection";
 import { GalleryGrid } from "../GalleryGrid";
 import { LanguageProvider } from "../../../i18n/solid";
 import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
@@ -51,14 +52,29 @@ const page = (offset: number, total = 26000) => ({
   total,
   items: Array.from({ length: Math.min(128, total - offset) }, (_, i) => asset(offset + i))
 });
+const observers = new Set<ResizeObserver>();
+const resizeCallbacks = new Map<ResizeObserver, ResizeObserverCallback>();
+function deliverResize() {
+  for (const observer of [...observers]) resizeCallbacks.get(observer)?.([], observer);
+  flush();
+}
 beforeEach(() => {
+  observers.clear();
+  resizeCallbacks.clear();
   vi.clearAllMocks();
   vi.stubGlobal(
     "ResizeObserver",
-    class {
-      observe() {}
+    class implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallbacks.set(this, callback);
+      }
+      observe() {
+        observers.add(this);
+      }
       unobserve() {}
-      disconnect() {}
+      disconnect() {
+        observers.delete(this);
+      }
     }
   );
   api.startAssetQuery.mockResolvedValue(page(0));
@@ -71,7 +87,13 @@ beforeEach(() => {
     this: HTMLElement
   ) {
     const scroller = this.closest<HTMLElement>("[data-scroller]");
-    return new DOMRect(0, this === scroller ? 0 : 80 - (scroller?.scrollTop ?? 0), 988, 600);
+    const bannerHeight = document.querySelector('[data-testid="gallery-load-error"]') ? 48 : 0;
+    return new DOMRect(
+      0,
+      this === scroller ? 0 : 80 + bannerHeight - (scroller?.scrollTop ?? 0),
+      988,
+      600
+    );
   });
   HTMLElement.prototype.scrollTo = function (options?: ScrollToOptions | number) {
     if (typeof options === "object") this.scrollTop = options.top ?? 0;
@@ -81,10 +103,18 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-async function mount() {
+async function mount(selectionEnabled = false, generating = false) {
   const { result: library } = renderHook(() => createLibrary());
+  const { result: selection } = renderHook(() =>
+    createSelection({
+      queryEpoch: () => library.query.queryEpoch,
+      identityEpoch: () => library.tags.epoch,
+      getIdsRange: library.query.getIdsRangeAsync
+    })
+  );
   await library.query.refresh();
   flush();
+  if (selectionEnabled) selection.toggle();
   const click = vi.fn(),
     range = vi.fn(library.handleVirtualRangeChange);
   const view = render(() => {
@@ -99,20 +129,23 @@ async function mount() {
             tileSize={188}
             hasMore={library.query.offset < library.query.total}
             isLoading={library.query.loading}
-            isGeneratingThumbnails={false}
-            pendingThumbnailCount={0}
+            isGeneratingThumbnails={generating}
+            pendingThumbnailCount={3}
             thumbnailStore={library.thumbnails.thumbnailStore}
             scroller={scroller}
             onReachEnd={library.query.handleReachEnd}
             onVirtualRangeChange={range}
             onSelect={click}
             hasScanRoots
-            selectionModeEnabled={false}
-            selectedAssetIds={new Set()}
-            onBulkSelectionInteraction={vi.fn()}
+            selectionModeEnabled={selection.enabled}
+            selectedAssetIds={selection.ids}
+            onBulkSelectionInteraction={selection.interact}
             onAddFirstFolder={vi.fn()}
-            loadError={library.query.loadError}
-            onLoadRetry={library.query.retryLoad}
+            loadError={selection.error ?? library.query.loadError}
+            onLoadRetry={() => {
+              void library.query.retryLoad();
+              void selection.retry();
+            }}
             queryEpoch={library.query.queryEpoch}
             pageFailureEpoch={library.query.pageFailureEpoch}
           />
@@ -128,7 +161,7 @@ async function mount() {
     fireEvent.scroll(scroller);
     flush();
   };
-  return { library, view, scroll, click, range };
+  return { library, selection, view, scroll, click, range, scroller };
 }
 it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and reloads beyond 12 cached pages", async () => {
   const { library, view, scroll, range } = await mount();
@@ -210,4 +243,104 @@ it("holds failed pages until explicit retry and replaces error placeholders on s
     expect(view.container.querySelector('button[data-asset-index="1000"]')).toBeInTheDocument()
   );
   expect(screen.queryByTestId("gallery-load-error")).not.toBeInTheDocument();
+});
+
+it.each([
+  "shift",
+  "rectangle",
+  "rectangle-replace"
+])("retries the original failed %s selection after the error banner moves the grid", async (kind) => {
+  const { library, selection, view, scroll } = await mount(true);
+  // Keep an existing ID outside the range as well as the range anchor.
+  selection.interact({
+    type: "click",
+    assetId: 9001,
+    assetIndex: 9000,
+    shift: false,
+    ctrlLike: false
+  });
+  const anchor = view.container.querySelector('button[data-asset-index="0"]');
+  if (!anchor) throw new Error("Missing anchor");
+  fireEvent.click(anchor);
+  flush();
+  for (let index = 256; index <= 4096; index += 256) {
+    scroll(index);
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(`button[data-asset-index="${index}"]`)
+      ).toBeInTheDocument()
+    );
+  }
+  expect(library.query.getAssetAt(0)).toBeUndefined();
+  expect([...selection.ids]).toEqual([9001, 1]);
+  api.getAssetQueryPage.mockImplementation(async (_session, offset) => {
+    if (offset === 0) throw new Error("synthetic offscreen page failure");
+    return page(offset);
+  });
+  const grid = view.container.querySelector('button[data-asset-index="4096"]')?.parentElement;
+  if (!grid) throw new Error("Missing measured grid");
+  const originalTop = grid.getBoundingClientRect().top;
+  if (kind === "shift") {
+    const target = view.container.querySelector('button[data-asset-index="4096"]');
+    if (!target) throw new Error("Missing range endpoint");
+    fireEvent.click(target, { shiftKey: true, ctrlKey: true });
+  } else {
+    // The released rectangle sends fixed global ranges through the same callback.
+    await selection.interact({
+      type: "rectangle-commit",
+      ranges: [{ startIndex: 0, endIndex: 4096 }],
+      additive: kind !== "rectangle-replace"
+    });
+  }
+  await screen.findByTestId("gallery-load-error");
+  await waitFor(() => expect(selection.busy).toBe(false));
+  const before = api.getAssetQueryPage.mock.calls.length;
+  expect(grid.getBoundingClientRect().top).toBe(originalTop + 48);
+  // Deliver the production virtualizer's measurement observer after the real banner renders.
+  deliverResize();
+  expect(selection.error).toContain("synthetic offscreen page failure");
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  expect(grid.getBoundingClientRect().top).toBe(originalTop + 48);
+  expect(api.getAssetQueryPage).toHaveBeenCalledTimes(before);
+  expect([...selection.ids]).toEqual([9001, 1]);
+  api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset));
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  const expectedIds = Array.from({ length: 4097 }, (_, i) => i + 1);
+  if (kind !== "rectangle-replace") expectedIds.unshift(9001);
+  await waitFor(() => expect([...selection.ids]).toEqual(expectedIds));
+  expect(api.getAssetQueryPage.mock.calls.slice(before).some(([, offset]) => offset === 0)).toBe(
+    true
+  );
+  expect(screen.queryByTestId("gallery-load-error")).not.toBeInTheDocument();
+  deliverResize();
+  expect([...selection.ids]).toEqual(expectedIds);
+});
+
+
+it("demands the final million-result page and passes the required total to the idle footer", async () => {
+  api.startAssetQuery.mockResolvedValue(page(0, 1_000_000));
+  api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset, 1_000_000));
+  const { library, view, scroller, click } = await mount();
+  expect(screen.queryByTestId("gallery-end-state")).toBeNull();
+  scroller.scrollTop = 4_000_000 - 600 + 80;
+  fireEvent.scroll(scroller);
+  flush();
+  await waitFor(() => expect(view.container.querySelector('button[data-asset-index="999999"]')).toBeInTheDocument());
+  expect(api.getAssetQueryPage).toHaveBeenCalledWith(1, 999936, 128);
+  expect(library.query.assets.length).toBeLessThanOrEqual(1536);
+  expect(view.container.querySelectorAll("[data-asset-index]").length).toBeLessThan(70);
+  expect(screen.getByTestId("gallery-end-state")).toHaveTextContent("1,000,000 items");
+  const last = view.container.querySelector('button[data-asset-index="999999"]');
+  if (!last) throw new Error("Missing final tile");
+  fireEvent.click(last);
+  expect(click).toHaveBeenCalledWith(expect.objectContaining({id: 1_000_000}));
+});
+
+it("shows thumbnail progress only while the query still has more rows", async () => {
+  const { library, scroll } = await mount(false, true);
+  expect(screen.getByRole("status")).toHaveTextContent("Generating thumbnails for 3 queued items.");
+  scroll(25999);
+  await waitFor(() => expect(library.query.offset).toBe(26000));
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByTestId("gallery-end-state")).toBeNull();
 });

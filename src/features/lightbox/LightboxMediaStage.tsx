@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import type { SelectedAsset } from "./types";
 import { toMediaSrc } from "../../platform/tauri/assets";
@@ -15,6 +15,7 @@ export function LightboxMediaStage(props: {
   detailsFailed: boolean;
   retryDetails: () => void;
   controls: ReturnType<typeof createImageControls>;
+  onNativeEscape?: () => void;
   onPointerActivity?: () => void;
   onNativeBounds?: (bounds: VideoBounds) => void;
 }) {
@@ -42,6 +43,10 @@ export function LightboxMediaStage(props: {
       <Show when={source()} keyed>
         {(_source) => {
           const [failed, setFailed] = createSignal(false);
+          let disposed = false;
+          onCleanup(() => {
+            disposed = true;
+          });
           createEffect(
             () => props.selected.kind === "video" && (props.selected.path === null || failed()),
             (cleared) => {
@@ -130,6 +135,7 @@ export function LightboxMediaStage(props: {
                         playerRef={props.controls.videoPlayerRef}
                         onLoadedMetadata={props.controls.onVideoLoadedMetadata}
                         onFullscreenChange={props.controls.onVideoFullscreenChange}
+                        onEscape={props.onNativeEscape}
                         onPointerActivity={props.onPointerActivity}
                         onNativeBounds={props.onNativeBounds}
                         onError={() => setFailed(true)}
@@ -151,7 +157,9 @@ export function LightboxMediaStage(props: {
                       alt={props.selected.file_name}
                       style={style()}
                       class={`max-h-full max-w-full shrink-0 select-none object-contain ${props.controls.isZoomed ? (props.controls.isDragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"}`}
-                      onLoad={props.controls.onLoad}
+                      onLoad={(event) => {
+                        if (!disposed && source() === _source) props.controls.onLoad(event);
+                      }}
                       onError={() => setFailed(true)}
                       onClick={props.controls.onClick}
                       draggable={false}

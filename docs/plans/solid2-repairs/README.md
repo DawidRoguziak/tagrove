@@ -1,6 +1,6 @@
 # Solid 2 review repairs
 
-This is the repair handoff from the [completed review](../solid2-deep-review/PROGRESS.md). Planning is complete; implementation has not started. [PROGRESS.md](PROGRESS.md) records the current repair batch and its verification.
+This is the repair handoff from the [completed review](../solid2-deep-review/PROGRESS.md). All fourteen batches are complete; all twenty confirmed findings are fixed. [PROGRESS.md](PROGRESS.md) records finding dispositions and verification.
 
 The review confirmed fourteen P2 and six P3 findings. No P0/P1 findings or unresolved candidates remain. This plan assigns every confirmed finding to one batch. DR-017 and DR-021 were rejected and are excluded from repairs.
 

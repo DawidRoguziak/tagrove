@@ -87,7 +87,7 @@ describe("createAssetQuery", () => {
     expect(result.assets.map((asset) => asset.id)).toEqual([9]);
   });
 
-  it("ignores a superseded start and keeps the previous cache visible", async () => {
+  it("exposes current supersession for retry while keeping the previous cache visible", async () => {
     apiMocks.startAssetQuery.mockResolvedValueOnce(readyStart([createSummary(1)], 1, 7));
     const { result } = await renderAssets();
     await settle(async () => {
@@ -96,12 +96,59 @@ describe("createAssetQuery", () => {
 
     apiMocks.startAssetQuery.mockResolvedValueOnce({ status: "superseded" });
     await settle(async () => {
-      await result.refresh();
+      await expect(result.refresh()).rejects.toThrow("superseded");
     });
 
     expect(result.total).toBe(1);
     expect(result.getAssetAt(0)?.id).toBe(1);
     expect(result.loading).toBe(false);
+    expect(result.loadError).toContain("superseded");
+    apiMocks.startAssetQuery.mockResolvedValueOnce(readyStart([createSummary(9)]));
+    await settle(() => result.retryLoad());
+    expect(result.loadError).toBeNull();
+    expect(result.getAssetAt(0)?.id).toBe(9);
+  });
+
+  it.each([true, false])("keeps the newest filter with reversed admission, newest reply first: %s", async (newestFirst) => {
+    let completeOld!: (value: object) => void;
+    let completeNew!: (value: object) => void;
+    apiMocks.startAssetQuery
+      .mockImplementationOnce(() => new Promise(resolve => { completeOld = resolve; }))
+      .mockImplementationOnce(() => new Promise(resolve => { completeNew = resolve; }));
+    let included = ["old"];
+    const { result } = renderHook(() => createAssetQuery({
+      pageSize: PAGE_SIZE,
+      filters: () => ({ filterInclude: included, filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: false }),
+      resetThumbnailQueue: vi.fn()
+    }));
+    const old = result.refresh();
+    included = ["new"];
+    const newest = result.refresh();
+    const finishOld = async () => { completeOld({ status: "superseded" }); await old; };
+    const finishNew = async () => { completeNew(readyStart([createSummary(9)])); await newest; };
+    await settle(newestFirst ? finishNew : finishOld);
+    await settle(newestFirst ? finishOld : finishNew);
+    expect(result.assets.map(asset => asset.id)).toEqual([9]);
+    expect(result.loadError).toBeNull();
+    const [first, second] = apiMocks.startAssetQuery.mock.calls.map(([params]) => params);
+    expect(first.ownerId).toBe(second.ownerId);
+    expect(first.generation).toBeLessThan(second.generation);
+    expect(second.tagsAnd).toEqual(["new"]);
+    expect(result.getAssetIndex(9)).toBe(0);
+  });
+
+  it("gives a remounted query a new owner even though generations restart", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([]));
+    const first = await renderAssets();
+    await settle(() => first.result.refresh());
+    await settle(() => first.result.refresh());
+    first.cleanup();
+    const replacement = await renderAssets();
+    await settle(() => replacement.result.refresh());
+    const calls = apiMocks.startAssetQuery.mock.calls.map(([params]) => params);
+    expect(calls[2].generation).toBe(1);
+    expect(calls[2].ownerId).toEqual(expect.any(String));
+    expect(calls[2].ownerId).not.toBe(calls[0].ownerId);
   });
 
   it("records a start failure in loadError and recovers through retryLoad", async () => {
@@ -204,7 +251,7 @@ describe("createAssetQuery", () => {
 
     apiMocks.startAssetQuery.mockResolvedValueOnce({ status: "superseded" });
     await settle(async () => {
-      await result.refresh();
+      await expect(result.refresh()).rejects.toThrow("superseded");
     });
     expect(result.queryEpoch).toBe(afterFirst + 1);
     expect(result.queryPending).toBe(false);
@@ -383,6 +430,28 @@ describe("createAssetQuery", () => {
       expect(await result.getIdsRangeAsync(4, 5)).toEqual([5, 6]);
     });
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries only the requested asset page and keeps other failed pages blocked", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
+    apiMocks.getAssetQueryPage.mockRejectedValue(new Error("offline"));
+    const { result } = await renderAssets();
+    await settle(() => result.refresh());
+    await settle(async () => {
+      await expect(result.getAssetAtAsync(2)).rejects.toThrow("offline");
+      await expect(result.getAssetAtAsync(4)).rejects.toThrow("offline");
+    });
+    apiMocks.getAssetQueryPage.mockResolvedValue({
+      ...readyStart([createSummary(5), createSummary(6)], 6), offset: 4
+    });
+    await settle(async () => expect((await result.retryAssetAt(4))?.id).toBe(5));
+    expect(result.loadError).toBe("offline");
+    await settle(async () => {
+      await expect(result.getAssetAtAsync(2)).rejects.toThrow("offline");
+    });
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(3);
+    expect(apiMocks.getAssetQueryPage).toHaveBeenLastCalledWith(7, 4, 2);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledOnce();
   });
 
   it.each([

@@ -2,6 +2,7 @@ import { renderHook, waitFor } from "@solidjs/testing-library";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ThumbnailRenderSummary } from "../../../platform/tauri/contracts/thumbnails";
 import type { ScanProgress } from "../../../platform/tauri/contracts/scanning";
 import { createSettings } from "../createSettings";
 import { LanguageProvider } from "../../../i18n/solid";
@@ -520,7 +521,9 @@ describe("useSettingsActions", () => {
     expect(refreshLibrary).toHaveBeenCalled();
     expect(result.scan.operationState.message).toBe("Removed root. Assets: 4, thumbnails: 9");
   });
-  it("reports when stop-thumbnail request is rejected or fails", async () => {
+  it("reports when an active render's stop request is rejected or fails", async () => {
+    const pending = deferred<ThumbnailRenderSummary>();
+    apiMocks.renderAllThumbnails.mockReturnValueOnce(pending.promise);
     apiMocks.cancelRenderAllThumbnails.mockResolvedValueOnce(false);
     const { result } = renderHook(
       () =>
@@ -533,6 +536,8 @@ describe("useSettingsActions", () => {
         }),
       { wrapper: LanguageProvider }
     );
+    const rendering = result.scan.onRenderAllThumbnails();
+    await waitFor(() => expect(result.scan.thumbnailBulkRunning).toBe(true));
     await act(async () => {
       await result.scan.onCancelThumbnailRender();
     });
@@ -543,6 +548,11 @@ describe("useSettingsActions", () => {
     });
     expect(result.scan.operationState.message).toContain("Cancel thumbnail render error");
     expect(result.scan.cancelThumbnailRunning).toBe(false);
+    pending.resolve({
+      generated: 0, stale: 0, failed: 0, skipped_failed: 0,
+      processed: 0, total: 0, cancelled: true
+    });
+    await act(() => rendering);
   });
   it("reports when duplicate-change save receives no changes", async () => {
     const { result } = renderHook(

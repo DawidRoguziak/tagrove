@@ -9,10 +9,10 @@ import { asset } from "./fixtures";
 vi.mock("../../../platform/tauri/assets", () => ({
   toMediaSrc: (path: string) => `asset://${path}`
 }));
-function ImageStage(props: { selected: SelectedAsset }) {
+function ImageStage(props: { selected: SelectedAsset; active?: boolean }) {
   const controls = createImageControls({
     selected: () => props.selected,
-    active: () => true,
+    active: () => props.active ?? true,
     keyboardEnabled: () => true,
     close: vi.fn(),
     previous: vi.fn(),
@@ -185,5 +185,38 @@ describe("lightbox image zoom rendering", () => {
     fireEvent.keyDown(window, { key: "+" });
     unmount();
     expect(cancelFrame).toHaveBeenCalledTimes(1);
+  });
+  it.each([false, true])("ignores a detached image load, same asset=%s", (sameId) => {
+    const { rerender } = renderSolid(ImageStage, { selected: portrait });
+    const previous = imageElement();
+    Object.defineProperties(previous, { naturalWidth: { value: 50 }, naturalHeight: { value: 5000 } });
+    rerender({ selected: { ...portrait, id: sameId ? portrait.id : 11, path: "/synthetic/next.png" } });
+    const current = imageElement();
+    Object.defineProperties(current, { naturalWidth: { value: 1600 }, naturalHeight: { value: 1200 } });
+    fireEvent.load(current);
+    zoomToTen();
+    const before = current.style.cssText;
+    fireEvent.load(previous);
+    flushFrame();
+    expect(current.style.cssText).toBe(before);
+    fireEvent.wheel(current, { deltaY: -Math.log(1.2) / 0.002, clientX: 450, clientY: 400 });
+    flushFrame();
+    expect(current.style.width).toBe("calc(800px * var(--lightbox-image-zoom, 1))");
+    expect(Number(current.style.getPropertyValue("--lightbox-image-zoom"))).toBeCloseTo(12);
+    expect(current.style.transform).toBe("translate(-10px, -20px)");
+  });
+  it.each(["inactive", "disposed"] as const)("ignores loads for an %s owner", (state) => {
+    const { rerender, unmount } = renderSolid(ImageStage, { selected: portrait });
+    const image = imageElement();
+    flushFrame();
+    if (state === "inactive") rerender({ selected: portrait, active: false });
+    else unmount();
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame");
+    Object.defineProperties(image, { naturalWidth: { value: 2000 }, naturalHeight: { value: 100 } });
+    const before = image.style.cssText;
+    fireEvent.load(image);
+    flushFrame();
+    expect(requestFrame).not.toHaveBeenCalled();
+    expect(image.style.cssText).toBe(before);
   });
 });

@@ -45,6 +45,7 @@ export function LightboxVideoPlayer(
     onLoadedMetadata: (size) => props.onLoadedMetadata(size),
     onFullscreenChange: (value) => props.onFullscreenChange(value),
     onError: () => props.onError(),
+    onEscape: () => props.onEscape?.(),
     onPointerActivity: () => props.onPointerActivity?.(),
     onNativeBounds: (bounds) => props.onNativeBounds?.(bounds)
   });

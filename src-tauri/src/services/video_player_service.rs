@@ -43,6 +43,7 @@ pub struct VideoEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum VideoEventPayload {
+    Escape,
     PointerActivity,
     Loading,
     Metadata {
@@ -328,6 +329,10 @@ impl VideoPlayerService {
 
     pub(crate) fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
         self.state().active.as_ref().map(|active| active.playback)
+    }
+
+    pub(crate) fn escape(&self, session_id: u64) {
+        self.send(session_id, VideoEventPayload::Escape);
     }
 
     pub(crate) fn pointer_activity(&self, session_id: u64) {
@@ -656,6 +661,33 @@ mod tests {
             })
             .is_err());
         assert!(!service.playback_snapshot().unwrap().fullscreen);
+    }
+
+    #[test]
+    fn escape_channel_serializes_current_session_and_rejects_retired_input() {
+        let service = service();
+        let (sender, receiver) = mpsc::channel();
+        activate(&service, 2, 7);
+        service.state().active.as_mut().unwrap().events = Channel::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                sender
+                    .send(serde_json::from_str::<serde_json::Value>(&json).unwrap())
+                    .unwrap();
+            }
+            Ok(())
+        });
+        service.escape(6);
+        assert!(receiver.try_recv().is_err());
+        service.escape(7);
+        assert_eq!(
+            receiver.try_recv().unwrap(),
+            serde_json::json!({
+                "session_id": 7, "type": "escape"
+            })
+        );
+        assert!(service.retire(7));
+        service.escape(7);
+        assert!(receiver.try_recv().is_err());
     }
 
     #[test]

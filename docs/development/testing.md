@@ -10,7 +10,7 @@ MediaTagger has four test layers. Use the lowest layer that can prove the behavi
 | --- | --- | --- | --- | --- |
 | Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx` | Vitest with `bun run test` | TypeScript helpers, models, Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
 | Rust unit | `#[cfg(test)]` modules beside backend code in `src-tauri/src/` | Cargo through `bun run test:backend` | Isolated database helpers, validation, scanning/indexing helpers, thumbnail scheduling and parsing, backup helpers, and command/service logic | A JavaScript caller, desktop window, packaged resources, or a complete application workflow |
-| Rust integration and backend workflow | `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` | Cargo through `bun run test:backend`, or the focused package scripts below | File-backed SQLite and temporary-filesystem behavior across multiple backend modules | Tauri startup, IPC serialization, WebDriver, UI, profile isolation, or packaging |
+| Rust integration and backend workflow | All Cargo-discovered integration targets in `src-tauri/tests/` | Cargo through `bun run test:backend`, or `cargo test --manifest-path src-tauri/Cargo.toml --locked --test <target>` for one target | File-backed SQLite and temporary-filesystem behavior across multiple backend modules; ignored diagnostics require explicit opt-in | Tauri startup, IPC serialization, WebDriver, UI, profile isolation, or packaging |
 | Desktop E2E | `e2e/specs/*.e2e.js` | WebdriverIO, `tauri-driver`, and WebKitWebDriver on Linux | A real unbundled debug Tauri window, the JavaScript-to-Rust invoke bridge, selected UI workflows, and E2E profile/build isolation | Production app data, all native dialogs, or all locales |
 
 Despite its filename, `src-tauri/tests/backend_e2e.rs` is not a desktop E2E test. It is one Rust test binary that builds a temporary file-backed database and exercises a CSV-style tag merge, media-group update, query, and library-clear workflow through Rust helpers. It does not launch Tauri, load the frontend, call the command layer through IPC, or validate the E2E Tauri profile. Only `e2e/specs/*.e2e.js` drives the desktop application.
@@ -24,7 +24,7 @@ Run commands from the repository root.
 | `bun run test` | Runs Vitest once through Node with an 8192 MiB old-space limit. Vitest discovers the frontend `*.test.ts` and `*.test.tsx` files. |
 | `bun run test:watch` | Starts Vitest in watch mode. |
 | `bun run test:build` | Runs a Vite production build and asserts the Solid entry, no React production modules/dependencies and no legacy source trees. Does not run TypeScript; use `build` or `typecheck` too. |
-| `bun run test:backend` | Runs locked Cargo tests, including Rust library unit tests and both integration test binaries in `src-tauri/tests/`. The application binary itself has `test = false`. |
+| `bun run test:backend` | Runs locked Cargo tests, including Rust library unit tests and all Cargo-discovered integration targets in `src-tauri/tests/`. Tests marked `#[ignore]` are skipped unless explicitly requested. The application binary itself has `test = false`. |
 | `bun run test:backend:integration` | Runs only the locked `backend_integration` Rust integration-test binary. |
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
@@ -63,6 +63,13 @@ batch boundaries. Deferred promises control races; queue tests use fake timers. 
 integration suites cover mutation admission/draining, canonical publication, query and
 identity invalidation, cache bounds and per-asset subscription cleanup. They mock platform
 IPC and do not establish native-bridge or desktop feature parity.
+
+The opt-in `e2e/specs/search-recovery.e2e.js` suite runs with
+`MEDIATAGGER_SEARCH_RECOVERY=1`. It uses temporary PNG fixtures and faults the first
+suggestion-worker construction after each reload. Retry then runs the real bundled worker.
+It checks native pointer and Tab/Enter recovery in search, lightbox and bulk editors,
+plus literal `constructor` and `__proto__` selection through the rendered tag modal.
+Run it on a private display with disposable XDG directories, using the isolation rules below.
 
 ## Continuous integration
 
@@ -103,10 +110,14 @@ The setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely
 
 Rust unit tests live in `#[cfg(test)]` modules beside their implementation. This is the right layer for private helpers, parsing and normalization, database query semantics, validation, scheduler behavior, and service/command branches that do not require a running Tauri application.
 
-The integration binaries use the public `media_tagger` library API:
+Cargo discovers integration targets in `src-tauri/tests/`. Inspect the current target list with `cargo metadata --manifest-path src-tauri/Cargo.toml --locked --offline --no-deps --format-version 1`, selecting targets whose `kind` contains `test`. The focused package scripts select only `backend_integration` and `backend_e2e`; they do not cover every integration target.
+
+The integration binaries use the public `media_tagger` library API. Examples include:
 
 - `backend_integration.rs` covers file-backed asset/tag queries, root-prefix deletion and distinct thumbnail paths, complete library clearing, bulk tag merge, and bulk media-group replacement.
 - `backend_e2e.rs` composes database and tag helpers into one backend workflow: export-shaped rows, CSV-style tag parsing/normalization/merge, filtering, group replacement, and library clearing. It does not invoke the CSV command parser itself.
+
+Ignored diagnostics require explicit opt-in. For example, run `cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_runtime metadata_scale_measurements -- --ignored --nocapture --test-threads=1` for isolated memory/timing measurements, or use the [tag-save benchmark command](#tag-save-performance-regressions). Discovering or building these targets in the default suite does not execute their ignored tests.
 
 Fixture and isolation patterns:
 
@@ -357,6 +368,22 @@ MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri --spec e2e/specs/gallery-
 
 `e2e/specs/video-speed.e2e.js` is opt-in with `MEDIATAGGER_NATIVE_VIDEO=1`. It uses generated MP4s and native XTest pointer/key events through `e2e/native-input.py`. WebDriver reads session snapshots and supplies DOM geometry; it does not click GTK controls. The spec checks outside dismissal over the picture, controls, sidebar and backdrop, trigger toggling, Escape before fullscreen, focus loss, zero bounds, stale bounds, and 30 speed-change/close/reopen cycles across two videos. Some cycles explicitly close the backend session while the menu is open to check teardown. A recovery case corrupts only its generated original, checks the failure UI, restores the bytes, clicks Retry and compares decoded frames. Mixed-media navigation also checks that leaving fullscreen video restores the GIF windowed layout.
 
+`e2e/specs/native-video-escape.e2e.js` uses the same opt-in and private-display setup.
+It proves GTK play focus with Space changing playback and GTK volume focus with
+End/Home changing volume, while DOM input counters remain empty. Escape must then
+close the windowed preview. Countercases cover WebView focus, speed-menu dismissal,
+fullscreen exit, inline delete confirmation and the narrow drawer. Screenshots and
+observations stay under `artifacts/native-video-escape/`. Run it by substituting this
+spec path in the command below. Session retirement, higher registered layers and
+pending deletion also have controlled frontend/Rust tests; desktop input cannot be
+established by dispatching a DOM `KeyboardEvent`.
+The drawer trigger and cleanup close use the native pointer helper to reveal fading
+controls and wait for hit-testable geometry before clicking. The helper approaches from
+an adjacent pixel so it still generates movement when the pointer already rests on the
+target. A native regression parks the pointer over each floating button, waits for zero
+opacity and disabled pointer input, then opens the drawer and closes the preview through
+that helper. An unchanged pointer coordinate must not be treated as user activity.
+
 The bottom-button fullscreen regression runs at 1000px and 600px in both themes with WebView, native play-button, and speed-menu focus. It pauses the short looping fixture to measure position preservation, checks the session and sidebar choice, and clicks the floating reopen/close controls above native video. Run just this case with `--mochaOpts.grep 'bottom-button fullscreen'`.
 
 Each cycle captures two native screenshots and uses `e2e/video-frames.py` to require colored, changing pixels inside the picture, excluding controls and sidebar. Evidence and pixel measurements remain under `artifacts/video-speed/<timestamp>/`. Dependencies beyond the ordinary desktop harness are Python with Pillow and PyGObject, libXtst, and ImageMagick `import`. The focus fixture opens a temporary GTK window in the isolated session.
@@ -454,6 +481,20 @@ remove a lock merely because a connection failed.
 
 `bun run test:packaging` also requires Gitleaks because failure/rollback fixtures pass through actual source preparation before their simulated Docker failures. They assert that the intended Docker/export failure was reached. For the real bundle audit and prerequisites, see [release privacy checks](linux-packaging.md#privacy-gate-and-release-inputs).
 
+## Gallery performance measurements
+
+Run the complete opt-in suite in its declared order, using a private Xvfb/D-Bus session and disposable XDG directories as described under [real desktop E2E](#real-desktop-e2e):
+
+```sh
+MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js
+```
+
+Do not use a single-case filter to verify cache provenance. The timing case must precede the stable-metadata traversal, GIF check and selection scenario. The fixture contains 2,048 PNGs, 12 GIFs and two videos. Library and thumbnail clearing precede indexing; startup/filtering then prepares some previews. Timing uses only images, at indices 128 through 1920 in steps of 128 and then 2047. The same route and filter apply to the revisit. The initial mounted area and untimed returns to 128/0 are excluded from first-use statistics.
+
+`artifacts/gallery-performance/timings.json` records preparation, initial visible/mounted IDs, initial final-JPEG filenames, route/filter, per-scroll file inventories, visible IDs/filenames, raw elapsed times and animation-frame intervals. It classifies samples by whether none, some or all visible JPEGs existed before the scroll. Only the first category enters the first-use summary, and at least one such sample is required. Every revisit sample must reuse existing files. Raw arrays retain order; percentile calculation sorts a copy. File inventories are outside the measured intervals.
+
+The observations measure scroll-to-visible-JPEG-decode with WebDriver/polling overhead. They exclude the subsequent opacity fade and do not flush the OS cache. First-use refers to preview files absent at the pre-scroll snapshot, not uncached source reads or proof that no render was queued. Revisits cross the 12-page frontend cache bound, so they are not promises of resident query pages or decoded images. Keep build profile, viewport, route, fixture and host conditions comparable; this suite has no portable latency threshold. Screenshots and measurements remain ignored local artifacts. See [gallery behavior](../subsystems/library-query-and-gallery.md#gallery-performance-verification) and [thumbnail reuse](../subsystems/thumbnails.md#cache-provenance-in-gallery-measurements).
+
 ## Choosing the test level
 
 For documentation-only changes, verify local links/anchors, referenced commands and symbols, and `git diff --check`. Run an existing focused test when it resolves a behavior claim. An explicitly requested workflow-validation stage, such as Solid migration stage 10, also runs its documented build and isolated smoke recipe. Ordinary prose edits do not require release builds or destructive desktop tests.
@@ -515,7 +556,29 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 bun run test:e2e:tauri -- --spec ./e2e/specs/startup-scan.e2e.js
 ```
 
-The focused frontend regression is `src/features/settings/__tests__/startupScan.test.tsx`; Rust tests cover launch-snapshot contention, schema migration, preference persistence, and old/new backup compatibility with root remapping.
+The focused frontend regressions are `src/features/settings/__tests__/startupScan.test.tsx`
+and `src/app/__tests__/startupScanRemount.test.ts`. Runtime tests defer completion across
+replacement with zero, fully cached and partially cached rows, cover retained success and
+failure, and await the actual startup action before checking disposal. Native tests in
+`app/state.rs` and `commands/scan.rs` cover launch-snapshot contention, shared waiting,
+abandoned observers, retained success/error, worker panic and no-work launches. Existing
+Rust tests also cover schema migration, preference persistence and backup compatibility.
+
+On Linux, opt into a real remount during native scanning:
+
+```sh
+MEDIATAGGER_STARTUP_REMOUNT=1 bun run test:e2e:tauri -- --spec ./e2e/specs/startup-scan-remount.e2e.js
+```
+
+Use the private display and temporary XDG directories from the isolated desktop recipe.
+The spec copies the guarded E2E binary to its own temporary directory and places a gated
+`ffprobe` wrapper beside it. The wrapper holds actual video metadata probing across a
+WebView reload, then delegates to `/usr/bin/ffprobe`. No application response is mocked.
+The spec checks gallery counts changing from 0 to 1 and 2 to 3 without another UI action,
+retained completion after another reload, one probe invocation and no gate timeout.
+Screenshots and result JSON remain under `artifacts/startup-scan-remount/`; the spec returns
+to the original E2E binary and removes its temporary executable, wrapper and media.
+This test requires `/usr/bin/python3`, `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`.
 
 ## Backend runtime regressions
 
@@ -717,3 +780,92 @@ tests; desktop CSV/bundle roundtrips call real commands directly.
 `MEDIATAGGER_REDUCED_MOTION=1` requires the actual WebView preference, configured through the
 isolated GTK profile. Run animation, thumbnail, activity and maintenance variants with it.
 Screenshots, timing samples and raw logs stay ignored under `artifacts/`.
+
+
+## Lightbox page recovery and late image loads
+
+`MEDIATAGGER_LIGHTBOX_RECOVERY=1` enables `e2e/specs/lightbox-recovery.e2e.js`.
+Run it with the private Xvfb display and disposable XDG profile described above:
+
+```sh
+MEDIATAGGER_LIGHTBOX_RECOVERY=1 bun run test:e2e:tauri --spec e2e/specs/lightbox-recovery.e2e.js
+```
+
+The spec indexes 132 copied PNG fixtures. It changes the requested offset of the second
+page to an invalid unsigned value at the fetch boundary, producing a real native rejection.
+It verifies cached Previous, visible lightbox Retry, exactly one fresh page request after
+restoring the payload, and navigation from index 127 to 128. A second case retains image A,
+navigates to loaded image B, then assigns a synthetic SVG source to detached A to deliver
+an actual WebKit load event. B retains its fitted dimensions and zoom, and subsequent zoom
+and reset still target B. This controls late DOM delivery, not the original asset protocol's
+network or decode timing. Screenshots and JSON observations stay in ignored
+`artifacts/lightbox-recovery/`; media and isolated app data are disposable.
+
+The focused model/component tests in `createLightbox.test.ts`, `imageControls.test.tsx`
+and `createAssetQuery.test.ts` cover prefetch failure, repeat Retry failure, selection/close/
+refresh/disposal races, target-only page recovery, ID/path image replacement, inactive
+owners and pan after late load. Run the affected frontend layer with:
+
+```sh
+bun run test -- src/features/lightbox src/library/query/__tests__/createAssetQuery.test.ts src/app/__tests__/lightboxRecovery.test.tsx
+```
+
+
+## Selection retry after layout changes
+
+`MEDIATAGGER_SELECTION_RECOVERY=1` enables `e2e/specs/selection-recovery.e2e.js`.
+Run with a private Xvfb display and disposable XDG profile as described above:
+
+```sh
+MEDIATAGGER_SELECTION_RECOVERY=1 bun run test:e2e:tauri --spec e2e/specs/selection-recovery.e2e.js
+```
+
+The spec indexes 2,052 copied PNG fixtures and traverses more than twelve query pages.
+It rejects an evicted offscreen page by sending a negative unsigned offset at the fetch
+boundary. Native Shift-click and rectangle selection must retain their previous IDs,
+render the gallery error banner, survive its actual ResizeObserver geometry change, and
+complete the original additive range through the visible Retry button. It records page
+requests and measured grid margins under ignored `artifacts/selection-recovery/`.
+The scroll helper allows one pixel at viewport edges because WebKit rounds `scrollTop`
+while active rectangle scrolling preserves fractional offsets. A failure records the
+last forty scroll attempts, including requested index, actual offsets and tile bounds.
+Frontend regressions in `GalleryGrid.test.tsx`, `createGridHandlers.test.tsx` and
+`createSelection.test.ts` cover the integrated query/selection/banner path, pending reads,
+live gesture cancellation, new input, mode/query changes, identity reset and disposal.
+
+
+## Million-result gallery layout
+
+Run `sh e2e/gallery-scale/run.sh` from the repository root. It builds the actual
+`GalleryGrid`, virtual-core, selection model and production CSS into a standalone
+fixture, then opens an ephemeral WebKitGTK 4.1 view on a private Xvfb display.
+Python needs PyGObject and GTK 3/WebKit2 4.1 typelibs. Native input uses libX11 and
+libXtst; screenshots require ImageMagick `import`. The runner uses temporary XDG
+folders, a loopback fixture server and its own display. It does not attach to Tauri
+or read the user's library. Do not run `webkit.py` against a normal desktop.
+
+Lazy synthetic summaries exercise one million results at one, five, six and eight
+columns, narrow width, tile-size changes, viewport-height changes and resize anchors.
+Assertions require final index 999999 to be visible, demanded and selected by native
+clicks, with a spacer no taller than 4,000,000 pixels and fewer than 120 mounted tiles.
+XTest drives the actual scrollbar thumb, wheel, Shift-click and rectangle selection.
+The fixture checks global selection IDs and range reads, then disposes the gallery
+and checks that further scroll/resize events publish no ranges. It also includes
+an uncompressed 100-result control. Screenshots, JSON results and profile/server
+cleanup evidence remain ignored under `artifacts/gallery-scale/`.
+
+This establishes native layout and input behavior with synthetic data. Range callbacks
+represent page demand; there is no million-row SQLite query, thumbnail rendering or
+performance comparison. The integrated `GalleryGrid.test.tsx` regression separately
+runs the real sparse page cache with a mocked transport, demands offset 999936 and
+checks the final tile, bounded cache and footer total. Footer tests exercise all four
+thumbnail-generation/`hasMore` combinations. The production caller passes
+`query.offset < query.total`; sparse viewport loading remains active after `hasMore`
+becomes false. For live media/IPC and timing provenance use the separate gallery
+browsing and performance suites above.
+
+```sh
+bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json
+bun run test -- src/features/gallery src/app/__tests__/gallery.test.tsx src/library/__tests__/createLibrary.test.ts src/library/query/__tests__/createAssetQuery.test.ts
+sh e2e/gallery-scale/run.sh
+```

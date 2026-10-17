@@ -1,4 +1,4 @@
-import { createEffect, createSignal, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, untrack } from "solid-js";
 import { createUiLayer } from "../../ui/overlays/UiLayerProvider";
 import type { AssetSummary } from "../../platform/tauri/contracts/assets";
 import type { BulkSelectionHandler, SelectionRange } from "./selection";
@@ -17,6 +17,8 @@ interface Options extends GridGeometry {
   selectionModeEnabled: boolean;
   queryEpoch: number;
   gridOffset: number;
+  scrollShift?: number;
+  scrollBy?: (delta: number) => void;
   gridRef: () => HTMLDivElement | undefined;
   scrollContainerRef?: () => HTMLElement | undefined;
   onCtrlWheelZoom?: (deltaY: number) => void;
@@ -68,6 +70,15 @@ export function createGridHandlers(options: Options) {
     setPreview(null);
     void options.onBulkSelectionInteraction?.({ type: "rectangle-cancel" });
   };
+  const cancelForLayout = () => {
+    if (gesture) cancel();
+    else {
+      // Released ranges use global indices. Layout only invalidates their preview,
+      // not a pending read or the retry intent retained after a failed read.
+      generation++;
+      setPreview(null);
+    }
+  };
   const clearSelection = () => {
     if (gesture) suppressClick = true;
     cancel();
@@ -93,17 +104,18 @@ export function createGridHandlers(options: Options) {
       viewport.top + scroller.clientTop,
       Math.min(active.latest.y, viewport.top + scroller.clientTop + scroller.clientHeight)
     );
-    const rect = rectangleBetween(active.start, { x: x - bounds.left, y: y - bounds.top });
+    const shift = options.scrollShift ?? 0;
+    const rect = rectangleBetween(active.start, { x: x - bounds.left, y: y - bounds.top + shift });
     const gallery = active.element.getBoundingClientRect();
     const left = Math.max(bounds.left + rect.left, viewport.left, gallery.left);
-    const top = Math.max(bounds.top + rect.top, viewport.top, gallery.top);
+    const top = Math.max(bounds.top + rect.top - shift, viewport.top, gallery.top);
     const right = Math.min(
       bounds.left + rect.left + rect.width,
       viewport.left + scroller.clientWidth,
       gallery.right
     );
     const bottom = Math.min(
-      bounds.top + rect.top + rect.height,
+      bounds.top + rect.top - shift + rect.height,
       viewport.top + scroller.clientHeight,
       gallery.bottom
     );
@@ -122,9 +134,11 @@ export function createGridHandlers(options: Options) {
     const bounds = scroller.getBoundingClientRect();
     const elapsed = Math.min(32, time - active.lastFrame);
     active.lastFrame = time;
-    scroller.scrollTop +=
+    const delta =
       (edgeScrollSpeed(active.latest.y, bounds.top, bounds.top + scroller.clientHeight) * elapsed) /
       1000;
+    if (options.scrollBy) options.scrollBy(delta);
+    else scroller.scrollTop += delta;
     updatePreview(active);
     frame = requestAnimationFrame(tick);
   };
@@ -150,7 +164,7 @@ export function createGridHandlers(options: Options) {
       pointerId: event.pointerId,
       pressedAt: performance.now(),
       element: event.currentTarget,
-      start: { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      start: { x: event.clientX - bounds.left, y: event.clientY - bounds.top + (options.scrollShift ?? 0) },
       origin: { x: event.clientX, y: event.clientY },
       latest: { x: event.clientX, y: event.clientY },
       additive: event.ctrlKey || event.metaKey,
@@ -210,10 +224,13 @@ export function createGridHandlers(options: Options) {
       });
     }
   };
+  // Geometry-only prop updates must not retire selection work.
+  const selectionMode = createMemo(() => options.selectionModeEnabled);
+  const queryEpoch = createMemo(() => options.queryEpoch);
+  createEffect(selectionMode, () => () => untrack(cancel));
+  createEffect(queryEpoch, () => () => untrack(cancel));
   createEffect(
     () => [
-      options.selectionModeEnabled,
-      options.queryEpoch,
       options.gridOffset,
       options.columnCount,
       options.tilePixelSize,
@@ -226,14 +243,14 @@ export function createGridHandlers(options: Options) {
       window.addEventListener("blur", cancel);
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp);
-      window.addEventListener("resize", cancel);
+      window.addEventListener("resize", cancelForLayout);
       const sizes = new Map<Element, string>();
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
           const size = `${entry.contentRect.width},${entry.contentRect.height}`;
           const previous = sizes.get(entry.target);
           sizes.set(entry.target, size);
-          if (previous !== undefined && previous !== size) cancel();
+          if (previous !== undefined && previous !== size) cancelForLayout();
         }
       });
       const grid = untrack(options.gridRef);
@@ -244,9 +261,9 @@ export function createGridHandlers(options: Options) {
         window.removeEventListener("blur", cancel);
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("resize", cancel);
+        window.removeEventListener("resize", cancelForLayout);
         observer.disconnect();
-        cancel();
+        cancelForLayout();
       };
     }
   );

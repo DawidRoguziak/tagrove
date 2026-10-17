@@ -47,6 +47,7 @@ export function createAssetQuery({
   onQueryChanged,
   onAssetsChanged
 }: Options) {
+  const ownerId = crypto.randomUUID();
   let state = {
     cache: EMPTY_CACHE,
     total: 0,
@@ -184,6 +185,7 @@ export function createAssetQuery({
         mediaKind: appliedMediaKind,
         favoritesOnly: appliedFavoritesOnly,
         metaFilter: metaFilter ? { ...metaFilter } : null,
+        ownerId,
         generation,
         pageSize
       });
@@ -195,7 +197,10 @@ export function createAssetQuery({
         patchCounter = currentPatchCounter;
         result = await getAssetQueryPage(result.session_id, result.offset, pageSize);
       }
-      if (generation !== currentGeneration || result.status === "superseded") return;
+      if (generation !== currentGeneration) return;
+      if (result.status === "superseded") {
+        throw new Error("Query was superseded. Retry your search.");
+      }
       if (result.status === "stale") {
         await refresh();
         return;
@@ -342,6 +347,13 @@ export function createAssetQuery({
     return page?.[index - pageOffset];
   };
 
+  const retryAssetAt = (index: number) => {
+    // Explicit lightbox recovery unblocks only its target, including an offscreen page.
+    failedPages.delete(Math.floor(index / pageSize) * pageSize);
+    if (failedPages.size === 0) publish({ loadError: null });
+    return getAssetAtAsync(index);
+  };
+
   /** Ordered snapshot IDs for a global index range; loads only the pages that
    * intersect it. Rejects when any required page fails to load, so callers can
    * leave their state untouched instead of applying a partial range. */
@@ -430,6 +442,7 @@ export function createAssetQuery({
     ensureRange,
     getAssetAt,
     getAssetAtAsync,
+    retryAssetAt,
     getIdsRangeAsync,
     getAssetIndex
   };

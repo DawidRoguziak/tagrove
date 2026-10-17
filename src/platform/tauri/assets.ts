@@ -18,6 +18,7 @@ export async function startAssetQuery(params: {
   mediaKind: "all" | "image" | "gif" | "video";
   favoritesOnly: boolean;
   metaFilter?: SearchMetaFilter | null;
+  ownerId: string;
   generation: number;
   pageSize?: number;
 }): Promise<StartAssetQueryResult> {
@@ -27,6 +28,7 @@ export async function startAssetQuery(params: {
     kind: params.mediaKind === "all" ? null : params.mediaKind,
     favoritesOnly: params.favoritesOnly,
     metaFilter: params.metaFilter ?? null,
+    ownerId: params.ownerId,
     generation: params.generation,
     pageSize: params.pageSize ?? 128
   });

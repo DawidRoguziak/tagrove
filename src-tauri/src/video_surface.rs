@@ -859,6 +859,8 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
         let window = window.clone();
         let player = player.clone();
         let session_id = Rc::clone(&controls.session_id);
+        let controls_root = controls.root.downgrade();
+        let gtk_window = gtk_window.downgrade();
         menu_keys.connect_key_pressed(move |_, key, _, _| {
             if key != *gtk::gdk::keys::constants::Escape {
                 return false;
@@ -875,7 +877,17 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
                 .filter(|snapshot| snapshot.session_id == session_id)
                 .is_some_and(|snapshot| snapshot.fullscreen);
             if !fullscreen {
-                return false;
+                // WebView focus keeps DOM Escape handling, including editor popups.
+                // Only GTK control focus needs the session channel to reach the layer owner.
+                let native_focus = gtk_window
+                    .upgrade()
+                    .and_then(|window| window.focused_widget())
+                    .zip(controls_root.upgrade())
+                    .is_some_and(|(focus, root)| focus.is_ancestor(&root));
+                if native_focus {
+                    player.escape(session_id);
+                }
+                return native_focus;
             }
             if let Err(error) =
                 set_fullscreen(&window, &player, session_id, FullscreenAction::Set(false))

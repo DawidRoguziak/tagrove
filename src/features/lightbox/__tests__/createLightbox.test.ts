@@ -326,6 +326,97 @@ describe("Solid lightbox selection and metadata", () => {
     expect(api.setAssetMediaGroup).not.toHaveBeenCalled();
     library.tags.settleMutation(token);
   });
+  it("keeps a saved favorite removed when query refresh fails and retries only the query", async () => {
+    const { box, library } = await setup();
+    await settle(() => library.mutations.setFavorite(1, true));
+    const favorites = { ...ready([1]), items: [summary(1, { is_favorite: true })] };
+    api.startAssetQuery.mockResolvedValueOnce(favorites);
+    await settle(() => library.applyFilters({
+      filterInclude: [], filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: true
+    }));
+    const refresh = deferred<ReturnType<typeof ready>>();
+    api.startAssetQuery.mockReturnValueOnce(refresh.promise);
+    const write = box.toggleFavorite();
+    await waitFor(() => expect(api.startAssetQuery).toHaveBeenCalledTimes(3));
+    refresh.reject(new Error("query failed"));
+    await settle(() => write);
+    await waitFor(() => expect(box.navigationStatus).toBe("failed"));
+    expect(library.query.loadError).toBe("query failed");
+    expect(box.selected?.is_favorite).toBe(false);
+    expect(box.favoritePending).toBe(false);
+    expect(box.favoriteFailed).toBe(false);
+    api.startAssetQuery.mockResolvedValueOnce(ready([]));
+    api.getAssetQueryPosition.mockResolvedValue({ status: "missing" });
+    await settle(box.retryNavigation);
+    await waitFor(() => expect(box.navigationStatus).toBe("missing"));
+    expect(library.query.loadError).toBeNull();
+    expect(box.selected?.is_favorite).toBe(false);
+    expect(api.setAssetFavorite.mock.calls).toEqual([[1, true], [1, false]]);
+  });
+  it("reports a genuine favorite write failure without changing saved state", async () => {
+    const { box } = await setup();
+    api.setAssetFavorite.mockRejectedValueOnce(new Error("write failed"));
+    await settle(box.toggleFavorite);
+    expect(box.favoritePending).toBe(false);
+    expect(box.favoriteFailed).toBe(true);
+    expect(box.selected?.is_favorite).toBe(false);
+    expect(api.startAssetQuery).toHaveBeenCalledTimes(1);
+  });
+  it.each([false, true])("scopes pending favorites and late completion to identity, rejected=%s", async rejected => {
+    const { box, library } = await setup();
+    const oldReply = deferred<void>();
+    api.setAssetFavorite.mockReturnValueOnce(oldReply.promise);
+    const oldWrite = box.toggleFavorite();
+    settle(box.close);
+    // Direct identity invalidation also has to tolerate a still-dispatched reply.
+    settle(library.handleImportDbRestored);
+    await settle(() => library.query.refresh());
+    settle(() => box.select(summary(1)));
+    await waitFor(() => expect(box.selected?.path).toBe("/synthetic/1.png"));
+    expect(box.favoritePending).toBe(false);
+    const newReply = deferred<void>();
+    api.setAssetFavorite.mockReturnValueOnce(newReply.promise);
+    const newWrite = box.toggleFavorite();
+    expect(api.setAssetFavorite).toHaveBeenCalledTimes(2);
+    if (rejected) oldReply.reject(new Error("obsolete failure"));
+    else oldReply.resolve();
+    await settle(() => oldWrite);
+    expect(box.selected?.is_favorite).toBe(false);
+    expect(box.favoritePending).toBe(true);
+    expect(box.favoriteFailed).toBe(false);
+    settle(() => { box.close(); box.select(summary(1)); });
+    expect(box.favoritePending).toBe(true);
+    await box.toggleFavorite();
+    expect(api.setAssetFavorite).toHaveBeenCalledTimes(2);
+    newReply.resolve();
+    await settle(() => newWrite);
+    expect(box.favoritePending).toBe(false);
+    expect(box.selected?.is_favorite).toBe(true);
+  });
+  it("releases favorite presentation ownership across identity maintenance", async () => {
+    const { box, library } = await setup();
+    const acknowledged = deferred<void>(), release = deferred<void>();
+    const save = library.mutations.setFavorite;
+    vi.spyOn(library.mutations, "setFavorite").mockImplementationOnce(async (id, favorite) => {
+      await save(id, favorite);
+      acknowledged.resolve();
+      await release.promise;
+    });
+    const oldWrite = box.toggleFavorite();
+    await acknowledged.promise;
+    settle(box.close);
+    await settle(() => library.runMaintenance("identity", async () => {}));
+    await settle(() => library.query.refresh());
+    settle(() => box.select(summary(1)));
+    await waitFor(() => expect(box.selected?.path).toBe("/synthetic/1.png"));
+    expect(box.favoritePending).toBe(false);
+    release.resolve();
+    await settle(() => oldWrite);
+    expect(box.favoritePending).toBe(false);
+    await settle(box.toggleFavorite);
+    expect(api.setAssetFavorite).toHaveBeenCalledTimes(2);
+    expect(box.selected?.is_favorite).toBe(true);
+  });
   it("closes only the deleted selection and preserves a committed delete on refresh failure", async () => {
     const { box } = await setup();
     api.startAssetQuery.mockRejectedValue(new Error("refresh"));
@@ -476,6 +567,54 @@ describe("Solid lightbox selection and metadata", () => {
     expect(box.selected?.id).toBe(260);
     expect(library.query.assets.length).toBeLessThanOrEqual(260);
   });
+  async function failedBoundary() {
+    api.startAssetQuery.mockResolvedValue(ready(Array.from({ length: 128 }, (_, i) => i + 1), 260));
+    api.getAssetQueryPage.mockRejectedValue(new Error("page unavailable"));
+    const view = await setup(false);
+    settle(() => view.box.select(summary(128), 127));
+    await waitFor(() => expect(view.library.query.loadError).toBe("page unavailable"));
+    settle(view.box.next);
+    await waitFor(() => expect(view.box.navigationStatus).toBe("failed"));
+    expect(view.box.selected?.id).toBe(128);
+    expect(api.getAssetQueryPage).toHaveBeenCalledTimes(1);
+    return view;
+  }
+  it("explicitly retries a page poisoned by adjacent prefetch and keeps cached Previous usable", async () => {
+    const { box, library } = await failedBoundary();
+    settle(box.previous);
+    await waitFor(() => expect(box.selected?.id).toBe(127));
+    settle(box.next);
+    await waitFor(() => expect(box.selected?.id).toBe(128));
+    settle(box.next);
+    await waitFor(() => expect(box.navigationStatus).toBe("failed"));
+    await settle(box.retryNavigation);
+    expect(box.navigationStatus).toBe("failed");
+    expect(api.getAssetQueryPage).toHaveBeenCalledTimes(2);
+    api.getAssetQueryPage.mockResolvedValue({ ...ready([129, 130], 260), offset: 128 });
+    await settle(box.retryNavigation);
+    expect(box.selected?.id).toBe(129);
+    expect(box.navigationStatus).toBe("ready");
+    expect(library.query.loadError).toBeNull();
+    expect(api.getAssetQueryPage).toHaveBeenCalledTimes(3);
+    expect(api.startAssetQuery).toHaveBeenCalledTimes(1);
+  });
+  it.each(["selection", "close", "refresh", "dispose"] as const)(
+    "rejects an obsolete page Retry after %s", async (change) => {
+      const { box, library, cleanup } = await failedBoundary();
+      const page = deferred<ReturnType<typeof ready>>();
+      api.getAssetQueryPage.mockReturnValue(page.promise);
+      const retry = box.retryNavigation();
+      settle(() => {
+        if (change === "selection") box.select(summary(127), 126);
+        if (change === "close") box.close();
+        if (change === "dispose") cleanup();
+      });
+      if (change === "refresh") await settle(() => library.query.refresh());
+      page.resolve({ ...ready([129, 130], 260), offset: 128 });
+      await settle(() => retry);
+      expect(box.selected?.id).toBe(change === "selection" ? 127 : change === "close" ? undefined : 128);
+    }
+  );
   it("invalidates a navigation target immediately when refresh starts in the same turn", async () => {
     const { box, library } = await setup();
     await settled();

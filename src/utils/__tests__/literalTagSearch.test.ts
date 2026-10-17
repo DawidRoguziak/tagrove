@@ -10,7 +10,7 @@ import { buildFilterDescriptor } from "../../features/search/filterService";
 const names = ["tags", "tags:3", "gn:trip", "-holiday", "-", 'say"hello', "path\\photo", '"', "\\", "normal"];
 it.each(names)("round trips stored tag %s through Tag list, typed search and suggestion replacement", name => {
   for (const mode of ["include", "exclude"] as const) {
-    const query = buildFilterInput(putTagInMode({ included: {}, excluded: {} }, name, mode));
+    const query = buildFilterInput(putTagInMode({ included: new Map(), excluded: new Map() }, name, mode));
     const expected = { mode: "tags", include: mode === "include" ? [name] : [], exclude: mode === "exclude" ? [name] : [], metaFilter: null, validationError: null };
     expect(parseSearchFilter(query)).toEqual(expected);
     const quoted = `${mode === "exclude" ? "-" : ""}${JSON.stringify(name)}`;

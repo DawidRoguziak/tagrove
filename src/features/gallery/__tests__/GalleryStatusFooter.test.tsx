@@ -12,6 +12,22 @@ afterEach(async () => {
 });
 
 describe("GalleryStatusFooter localization", () => {
+  it.each([
+    [true, true, true, false],
+    [true, false, false, false],
+    [false, true, false, false],
+    [false, false, false, true]
+  ])("generation=%s more=%s selects the matching footer branch", (generating, more, status, end) => {
+    const view = renderSolid(GalleryStatusFooter, {
+      isGeneratingThumbnails: generating,
+      hasMore: more,
+      generatingLabel: "Rendering 12 previews",
+      resultCount: 1_000_000
+    });
+    expect(Boolean(view.queryByRole("status"))).toBe(status);
+    expect(Boolean(view.queryByTestId("gallery-end-state"))).toBe(end);
+    if (end) expect(view.getByText("1,000,000 items")).toBeInTheDocument();
+  });
   it.each(APP_LANGUAGES)("formats counts in %s using its plural rules", async (language) => {
     await changeAppLanguage(language);
     const props = { isGeneratingThumbnails: false, hasMore: false, generatingLabel: "" };

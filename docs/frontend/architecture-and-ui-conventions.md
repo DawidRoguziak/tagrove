@@ -16,7 +16,8 @@ and [testing](../development/testing.md).
 
 [`main.tsx`](../../src/app/main.tsx) imports global CSS and calls
 [`mountApplication`](../../src/app/mountApplication.tsx) for `#root`. Bootstrap applies
-the stored theme before rendering and waits for `i18nReady`. It installs window capture
+the stored theme before rendering and waits for `i18nReady`. Preference storage failures
+do not prevent module initialization or mounting. It installs window capture
 suppression for native context menus, including editable fields and portals outside the
 root. The listener only prevents the default menu; ordinary event propagation and clipboard
 shortcuts remain available. `VITE_MEDIATAGGER_PERF=1` enables a PerformanceObserver for
@@ -103,7 +104,9 @@ boundaries, deferred promises, disposal and reopen checks.
 Late async listener registration must remove its listener immediately if the owner has
 already disposed. Query/detail replies and thumbnail channels use generations or tokens
 to prevent stale publication. Disposal does not imply cancellation of already-dispatched
-Rust work; document cancellation separately for each operation.
+Rust work; document cancellation separately for each operation. Lightbox image load callbacks
+also check the keyed source activation, current element and active/disposed controls owner;
+a DOM ref must not be reassigned by a late load event.
 
 ## Gallery and settings lifecycle
 
@@ -156,10 +159,19 @@ Theme and language are the only frontend preferences persisted in local storage:
 
 - `media-tagger.theme` accepts `light` or `dark`, defaulting to `dark`. Bootstrap and
   runtime changes use `ui/dom/theme.ts`, which sets `<html data-theme>`, saves the preference
-  and best-effort synchronizes the native window. Native theme errors are ignored.
+  and best-effort synchronizes the native window. Unavailable storage or failed reads use
+  `dark`. Failed writes do not block DOM, runtime state or native theme changes.
+  Native theme errors are ignored.
 - `media-tagger.language` uses the supported language registry, then browser language,
   then English. `i18n/core.ts` owns initialization and persistence to storage and `<html lang>`.
   `i18n/solid.tsx` provides the reactive translator and normalized language accessor.
+  Unavailable storage or failed reads fall back to browser language, then English.
+  Failed writes do not interrupt language listeners, reactive UI updates or `<html lang>`.
+
+Both owners catch storage-property access and storage-method errors at the preference
+boundary. A failed write leaves the selected preference active for the current runtime;
+it does not guarantee persistence on the next launch. Bootstrap and settings callers
+use these same owners without additional storage guards.
 
 Extend these owners for preference changes rather than reading storage in leaf components.
 The [localization guide](../development/localization.md) owns resource invariants.
@@ -174,7 +186,7 @@ Reusable controls live in [`src/ui/controls`](../../src/ui/controls); modal prim
 - `UiChip`, `UiAlert`, `UiProgressBar`, and `UiSlider` centralize common display/control styling. `UiAlert` always uses `role="alert"`.
 - `UiSegmentedControl` owns controlled native radio groups with translated labels, independent names, and content-based wrapping. An accessibility-hidden bold copy reserves each label’s selected width. The media filter uses it; filter submission stays in `SearchTagatorWrapper`.
 - `UiModal` is the standard portal dialog primitive described below.
-- `TagEditor` composes assigned chips and a borderless `SearchTagator` input inside one wrapping field. Callers supply controlled tags, draft, accessible labels, disabled/loading state, and mutation callbacks. Blank field space focuses the input; input focus highlights the field. The field scrolls to keep the focused input visible after chip changes and resizing.
+- `TagEditor` composes assigned chips and a borderless `SearchTagator` input inside one wrapping field. Callers supply controlled tags, draft, accessible labels, disabled/loading state, and mutation callbacks. Blank field space focuses the input; input focus highlights the field. The shared suggestion Retry stays mounted when focus leaves the input for the button. Activating it restores input focus and opens a new request; ordinary blur still closes the suggestion list. The field scrolls to keep the focused input visible after chip changes and resizing.
 - Exact-token and confirmation inputs disable browser autocorrection in their owning components.
 
 [`src/styles.css`](../../src/styles.css) imports Tailwind CSS, disables DaisyUI's stock theme set, and declares the app's `light` and `dark` DaisyUI themes. Components combine Tailwind utility classes, DaisyUI component classes such as `btn`, `progress`, and `loading`, and app CSS variables.
@@ -335,7 +347,7 @@ The layer manager's tabbable selector excludes disabled controls, hidden element
 
 When the lightbox panel is collapsed, reopen and close controls float at the top right of the media column. An open panel places Close beside its collapse arrow. Floating controls and the bottom action row fade after three seconds of inactivity; the open panel remains visible. Images and GIFs extend underneath them; windowed native video reserves 44px above its surface. Video fullscreen hides the controls and removes that space. Information controls live in the sidebar only.
 
-GTK video controls are native widgets outside the DOM layer manager. Changes to video bounds, fullscreen, or sidebar visibility need desktop verification as well as DOM tests. See [native media presentation](../subsystems/lightbox.md#media-presentation).
+GTK video controls are native widgets outside the DOM layer manager. Windowed Escape from those controls reaches `LightboxContent` through the session-checked video channel. The owner checks active/top-layer state and deletion/fullscreen locks, then dismisses confirmation before a narrow drawer or the preview. The event does not synthesize a DOM key or bypass layer ownership. WebView-focus Escape retains its normal DOM handling. Changes to video bounds, fullscreen, or sidebar visibility need desktop verification as well as DOM tests. See [native media presentation](../subsystems/lightbox.md#media-presentation).
 
 Bulk ordering lives only in the group-order modal. The sidebar retains its heading and opening button without inline previews, thumbnail requests, or drag listeners. Modal handles support ArrowLeft/ArrowRight for adjacent positions, with Up/Down moving by grid row. It uses the shared modal layer, keeps changes in a local draft until Save order, and restores the triggering button on close. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
 

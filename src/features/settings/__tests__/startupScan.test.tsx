@@ -97,7 +97,7 @@ describe("startup scanning", () => {
     expect(result.isOperationLocked).toBe(false);
   });
 
-  it("handles an empty or already consumed launch without a library refresh", async () => {
+  it("handles a launch with no enabled roots without a library refresh", async () => {
     const { result } = renderHook(() => useController(true), { wrapper: LanguageProvider });
     await waitFor(() => expect(events.unlisten).toHaveBeenCalled());
     expect(result.operationState.message).toBe("");

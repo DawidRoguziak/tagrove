@@ -45,6 +45,7 @@ export interface PlaybackSnapshot {
 }
 
 export type MpvVideoEvent = { session_id: number } & (
+  | { type: "escape" }
   | { type: "pointerActivity" }
   | { type: "loading" }
   | { type: "metadata"; duration: number; width: number; height: number }

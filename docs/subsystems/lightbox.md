@@ -45,8 +45,7 @@ player node and session, removes the top reservation, and hides DOM action panel
 
 Logical close disposes native playback before the retained modal fades. The player publishes
 explicit string values for boolean snapshot data attributes, preserving their reference
-contract. Native controls, persistence and decoding remain owned by the unchanged Rust/GTK
-backend.
+contract. Native controls, persistence and decoding remain owned by the Rust/GTK backend.
 
 ## Ownership and composition
 
@@ -94,9 +93,9 @@ Selected-ID changes initialize group drafts. Later canonical arrivals update unt
 
 ## Global navigation and library synchronization
 
-Selection records a global result index supplied by navigation or discovered by `getAssetIndex`. Arrow navigation uses the query's total count, not the currently materialized `assets` array. Previous is `(index - 1 + count) % count`; next is `(index + 1) % count`. Each key press synchronously advances a separate target index before page loading starts, so rapid presses accumulate rather than repeatedly calculating from the last committed selection. Each lookup captures a navigation request ID, and only the latest request may call `selectAsset`; direct selection, close, deletion, and identity reset invalidate pending navigation. `getAssetAtAsync` returns a cached page entry or loads the page containing the target, so navigation crosses page boundaries and wraps from first to last and last to first. Navigation is inert when the index is unknown, the result count is zero, or the target cannot be loaded.
+Selection records a global result index supplied by navigation or discovered by `getAssetIndex`. Arrow navigation uses the query's total count, not the currently materialized `assets` array. Previous is `(index - 1 + count) % count`; next is `(index + 1) % count`. Each key press synchronously advances a separate target index before page loading starts, so rapid presses accumulate rather than repeatedly calculating from the last committed selection. Each lookup captures a navigation request ID, and only the latest request may call `selectAsset`; direct selection, close, deletion, and identity reset invalidate pending navigation. `getAssetAtAsync` returns a cached page entry or loads the page containing the target, so navigation crosses page boundaries and wraps from first to last and last to first. Navigation is inert when the index is unknown or the result count is zero.
 
-When a target page fails or returns no record, navigation rolls its pending index back so the next key retries that position. A query refresh invalidates pending navigation immediately and shows a localized “Finding this photo in the results…” notice. Once the new session is ready, selection first checks its sparse cache, then resolves an uncached photo through `getAssetPosition`. The backend searches its ordered ID snapshot; the frontend does not fetch every intervening page.
+When a target page fails or returns no record, navigation rolls its pending index back, retains the failed target, and shows the localized navigation failure with Retry. This includes a page blocked by an earlier adjacent prefetch failure. Retry clears only that target page's failure and loads it again in the existing query session; another failure remains visible. Cached Previous/Next stays usable. New navigation, direct selection, close, query refresh and disposal retire the retry intent or its response. Position-lookup recovery still refreshes the query and resolves the selected ID. A query refresh invalidates pending navigation immediately and shows a localized “Finding this photo in the results…” notice. Once the new session is ready, selection first checks its sparse cache, then resolves an uncached photo through `getAssetPosition`. The backend searches its ordered ID snapshot; the frontend does not fetch every intervening page.
 
 A resolved index enables Next/Previous in the new order. A missing photo stays open with a notice explaining that it no longer belongs to the results, including when the query has zero matches. A failed lookup or refresh shows Retry, which refreshes the query and resolves the position again. Keys do not navigate while the position is unresolved. Another refresh, selection, close, or unmount invalidates the outstanding position response. A query that no longer contains the selected ID leaves the lightbox open with missing-position feedback.
 
@@ -122,6 +121,18 @@ Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and 
 Media-group apply trims the key and converts an empty key to null. The order uses a text field with a numeric keyboard hint and no native spinner arrows. Empty order becomes null. Nonempty edits must contain only digits and represent a positive safe integer, at most `9007199254740991`. Leading zeros are accepted and saved as the numeric value. Invalid typing or paste is rejected as a whole change without stripping characters. The field and Apply handler share validation; invalid preloaded drafts disable Apply and cannot be submitted. Existing stored orders remain visible and unchanged until explicitly edited or cleared. The generate button uses `crypto.randomUUID()` when available, with a timestamp/random fallback. Applying does not mutate the editor controls directly; the selected-object update rehydrates them.
 
 Delete runs under the scan/thumbnail lock. An existing source is journaled and staged before one database/revision transaction; a missing source explicitly removes stale metadata. The frontend inspects `DeleteAssetSummary`: missing source and post-commit cleanup staging are announced separately, while a pre-commit filesystem rejection remains in the confirmation dialog and states that metadata was preserved.
+
+Favorite pending ownership records the asset ID and identity epoch. Closing and reopening
+within that epoch preserves pending state. A reused ID in a new epoch is available for a
+new write, and an old completion cannot publish state or release the newer operation.
+After a favorite write succeeds, a Favorites-only refresh runs independently. Its failure
+exposes query/navigation recovery while the saved favorite stays changed and the save-error
+indicator stays clear. Retrying navigation refreshes the query without another favorite write.
+A genuine write rejection still uses the favorite save-error indicator.
+
+A delayed metadata save restores captured full details only within the same details-cache
+generation. After Settings rename/rescan refreshes the query, reopening fetches current
+path and size while retaining accepted canonical tags.
 
 ## Visual treatment
 
@@ -220,7 +231,7 @@ When the current OpenGL renderer identifies itself as llvmpipe, render-context i
 
 Playback snapshots and decoder-stop polling read libmpv flags through a private `c_int` adapter. `MPV_FORMAT_FLAG` writes a C integer; the installed libmpv2 6 wrapper's generic Rust `bool` getter allocates only one byte. The adapter converts the initialized integer only after a successful read and preserves each caller's error default. Dependencies and public payloads are unchanged.
 
-The native speed menu offers 0.5, 0.75, 1, 1.25, 1.5 and 2×. Selection queues a worker command; the authoritative playback snapshot updates the speed label. A GTK capture gesture claims the entire outside click, including release, over the picture, native controls, sidebar and backdrop. That click only dismisses the menu. The trigger toggles it, selection closes it, and the GTK window capture handler consumes Escape to dismiss it first. With no menu open, that handler explicitly exits fullscreen for the current video session and consumes the event, including when WebView or native controls have focus. Control failures use the existing error report. The popover is nonmodal because capture owns outside dismissal. Its visibility and trigger state are cleared together on close, replacement, focus loss and zero visible bounds. Dismissal runs outside the player mutex and surface borrow, and choice callbacks hold weak popover references.
+The native speed menu offers 0.5, 0.75, 1, 1.25, 1.5 and 2×. Selection queues a worker command; the authoritative playback snapshot updates the speed label. A GTK capture gesture claims the entire outside click, including release, over the picture, native controls, sidebar and backdrop. That click only dismisses the menu. The trigger toggles it, selection closes it, and the GTK window capture handler consumes Escape to dismiss it first. With no menu open, that handler explicitly exits fullscreen for the current video session and consumes the event, including when WebView or native controls have focus. When windowed GTK controls have focus, the same capture handler consumes Escape and sends a session-scoped `escape` intent. With WebView focus it leaves Escape to DOM handlers, including tag suggestions. The session model rejects retired input before calling `LightboxContent`. That owner ignores input while inactive, covered by a higher layer, fullscreen, or deleting. Otherwise it dismisses delete confirmation, then an open narrow drawer, then the preview. Control failures use the existing error report. The popover is nonmodal because capture owns outside dismissal. Its visibility and trigger state are cleared together on close, replacement, focus loss and zero visible bounds. Dismissal runs outside the player mutex and surface borrow, and choice callbacks hold weak popover references.
 
 Normal lightbox close/reopen hides and reuses the renderer. GLArea unrealize makes its owning context current before unregistering the libmpv update callback and freeing the renderer. Callback storage survives renderer destruction. GTK's private GLArea input window also passes input through; setting pass-through only on the parent overlay leaves picture clicks intercepted.
 
@@ -228,7 +239,7 @@ Video bounds clamp against the GTK content allocation in logical pixels. On Wayl
 
 ## Image fit, zoom, and pan
 
-`ResizeObserver` tracks the media viewport. Fit scale is `min(viewportWidth / intrinsicWidth, viewportHeight / intrinsicHeight)`. The `<img>` layout width and height are the fitted dimensions multiplied by `--lightbox-image-zoom`, which defaults to 1. Once dimensions are known, the image has no viewport maximum width or height; the stage clips overflow. Missing dimensions produce fit scale 1 and no explicit display size, with viewport maximums retained until load. Natural image dimensions replace summary/details dimensions after load.
+`ResizeObserver` tracks the media viewport. Fit scale is `min(viewportWidth / intrinsicWidth, viewportHeight / intrinsicHeight)`. The `<img>` layout width and height are the fitted dimensions multiplied by `--lightbox-image-zoom`, which defaults to 1. Once dimensions are known, the image has no viewport maximum width or height; the stage clips overflow. Missing dimensions produce fit scale 1 and no explicit display size, with viewport maximums retained until load. Natural image dimensions replace summary/details dimensions only after a load from the current image element under an active controls owner. The stage also checks its keyed asset-ID/kind/path activation and disposal before forwarding a load. Detached images, retired sources and closed or disposed owners cannot replace dimensions or the transform target.
 
 Zoom is a factor relative to the fitted size:
 
@@ -325,15 +336,19 @@ When changing lightbox behavior:
   covers sidebar, activity and clipboard state. [`keyboard.test.tsx`](../../src/features/lightbox/__tests__/keyboard.test.tsx)
   covers current callbacks, idle reveal, form/fullscreen keys and listener lifetime.
 - [`imageControls.test.tsx`](../../src/features/lightbox/__tests__/imageControls.test.tsx)
-  covers wheel anchoring, zoom/pan bounds, natural dimensions, navigation reset and frame
-  coalescing/cancellation. It does not establish decoded GIF timing or image sharpness.
+  covers wheel anchoring, zoom/pan bounds, natural dimensions, navigation reset, detached
+  loads across ID and path changes, inactive/disposed owners and frame coalescing/cancellation. It does not establish decoded GIF timing or image sharpness.
 - [`video/__tests__`](../../src/features/lightbox/video/__tests__) covers native session
   reservation/cancellation, early and retired events, coalesced bounds acknowledgements,
-  labels, recoverable/fatal errors, keyboard ownership and fullscreen continuity.
+  labels, recoverable/fatal errors, keyboard ownership, native Escape session/layer
+  priority, pending deletion locks and fullscreen continuity.
 - [`lightboxRecovery.test.tsx`](../../src/app/__tests__/lightboxRecovery.test.tsx) covers
   failed-view reopening and preservation of a healthy view during navigation.
 - [`UiModal.test.tsx`](../../src/ui/overlays/__tests__/UiModal.test.tsx) covers nested layers,
   presence, reduced motion, focus and inertness. These tests require the layer provider.
+- `e2e/specs/native-video-escape.e2e.js` checks XTest Escape after proven GTK play
+  and volume keyboard focus, WebView focus, speed-menu/fullscreen priority, inline
+  confirmation and the narrow drawer.
 - `e2e/specs/lightbox-images.e2e.js` and `e2e/specs/video-speed.e2e.js` exercise the actual
   WebView/native presentation with synthetic media. The latter checks GTK menu dismissal,
   focus/fullscreen ownership and 30 reopen cycles with decoded-frame comparisons. See

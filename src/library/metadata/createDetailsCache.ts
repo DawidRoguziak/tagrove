@@ -28,8 +28,8 @@ export function createDetailsCache(tags: AssetTagStateController) {
     entries.set(id, entry);
     return entry.details;
   }
-  function put(details: AssetDetails) {
-    if (disposed) return;
+  function put(details: AssetDetails, expectedGeneration: number) {
+    if (disposed || expectedGeneration !== generation) return;
     const token = tags.captureGeneration(details.id);
     if (!tags.isCurrent(token)) return;
     entries.delete(details.id);
@@ -59,7 +59,7 @@ export function createDetailsCache(tags: AssetTagStateController) {
         )
           return null;
         const canonical = { ...details, tags: tags.get(id)?.tags ?? details.tags };
-        put(canonical);
+        put(canonical, epoch);
         return canonical;
       })
       .finally(() => {
@@ -69,5 +69,14 @@ export function createDetailsCache(tags: AssetTagStateController) {
     pending.set(id, request);
     return request;
   }
-  return { get, put, load, clear, remove: (id: number) => entries.delete(id) };
+  return {
+    get generation() {
+      return generation;
+    },
+    get,
+    put,
+    load,
+    clear,
+    remove: (id: number) => entries.delete(id)
+  };
 }

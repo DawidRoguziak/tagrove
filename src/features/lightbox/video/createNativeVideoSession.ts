@@ -25,6 +25,7 @@ export interface SessionOptions {
   onLoadedMetadata: (dimensions: { width: number; height: number }) => void;
   onFullscreenChange: (fullscreen: boolean) => void;
   onError: () => void;
+  onEscape?: () => void;
   onPointerActivity?: () => void;
   onNativeBounds?: (bounds: VideoBounds) => void;
 }
@@ -117,6 +118,9 @@ export function createNativeVideoSession(options: SessionOptions) {
           setFullscreen(event.fullscreen);
           options.onFullscreenChange(event.fullscreen);
           scheduleBounds();
+          break;
+        case "escape":
+          options.onEscape?.();
           break;
         case "pointerActivity":
           options.onPointerActivity?.();

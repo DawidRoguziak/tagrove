@@ -1627,7 +1627,13 @@ mod tests {
             let old_session = {
                 let permit = state.database.admit().unwrap();
                 let crate::models::StartAssetQueryResult::Ready { session_id, .. } = manager
-                    .start(&permit, filters.clone(), 10, manager.begin_request(1), 1)
+                    .start(
+                        &permit,
+                        filters.clone(),
+                        10,
+                        manager.begin_request("backup-test", 1),
+                        1,
+                    )
                     .unwrap()
                 else {
                     panic!("ready")
@@ -1679,7 +1685,13 @@ mod tests {
             let crate::models::StartAssetQueryResult::Ready {
                 total, session_id, ..
             } = manager
-                .start(&permit, filters, 10, manager.begin_request(2), 2)
+                .start(
+                    &permit,
+                    filters,
+                    10,
+                    manager.begin_request("backup-test", 2),
+                    2,
+                )
                 .unwrap()
             else {
                 panic!("ready")

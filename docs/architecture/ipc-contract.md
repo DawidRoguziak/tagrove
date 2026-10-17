@@ -83,7 +83,7 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, registers the request in arrival order before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The backend registration token alone orders requests; frontend `generation` rejects late results locally. |
+| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `ownerId: string`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, admits only increasing generations within each owner before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The owner ID is nonempty and at most 128 UTF-8 bytes. Each frontend query model uses a new UUID, including after remount. Accepted requests receive process-wide registration tokens; frontend `generation` also rejects late results locally. |
 | `getAssetQueryPage` / `get_asset_query_page` | `sessionId: number`, `offset: number`, `limit: number` (default 128) | `AssetQueryPageResult` (`ready` or `stale`) | Returns summaries from the frozen session order. Limit is clamped to 1–256 and offset past the end is clamped to the total. |
 | `getAssetQueryPosition` / `get_asset_query_position` | `sessionId: number`, `assetId: number` | `AssetQueryPositionResult` | Returns `{ status: "resolved", index }`, `{ status: "missing" }`, or `{ status: "stale" }`. The index is zero-based in the full ordered snapshot; missing differs from expired, evicted, cleared, or dependency-stale sessions. No page or ID vector is transferred. |
 | `getAssetSummariesByIds` / `get_asset_summaries_by_ids` | `assetIds: number[]` | `AssetSummary[]` | At most 256 IDs; larger requests reject. Reuses the database summary lookup, preserves requested ID order, and omits missing records. Selection hydration runs at most four batches concurrently. |
@@ -152,7 +152,7 @@ Names are sorted, unique, and normalized. Impact is computed from actual persist
 
 `setScanRootAutoScan` / `set_scan_root_auto_scan` accepts `{ path: string, enabled: boolean }` and returns void. It updates only an existing root's saved preference, including unavailable folders; an unknown root rejects. It does not scan or change the library revision.
 
-`scanStartupRoots` / `scan_startup_roots` accepts no arguments and returns `ScanSummary | null`. It consumes the enabled-root snapshot captured by the backend at launch exactly once per process, even on failure. It runs through the existing scan lock, blocking pool, and progress events. Null means no pending roots, including repeated calls after a frontend reload. The frontend registers its listener before invoking this command.
+`scanStartupRoots` / `scan_startup_roots` accepts no arguments and returns `ScanSummary | null`. It consumes the enabled-root snapshot captured by the backend at launch exactly once per process, even on failure. It runs through the existing scan lock, blocking pool, and progress events. Concurrent calls await the same process-owned scan; completed calls replay the retained summary or string rejection. Null means the launch snapshot had no enabled roots, not that another caller consumed it. Dropping an observer does not cancel work or completion publication. The frontend registers its progress listener before invoking this command, but completion does not depend on event delivery. Each mounted runtime requests it once, refreshes its query and roots after success or failure, and skips those follow-ups if disposed. A retained result can cause an extra refresh after a later remount; it never launches another scan.
 
 Root normalization trims whitespace and removes trailing `/` except for the filesystem root `/`. It does not convert slash direction or canonicalize paths. `ScanSummary` always contains `completion`, `indexed`, `removed`, and `failed`; partial discovery/indexing failures produce `completion: "partial"` and preserve stale rows for the incomplete root.
 
@@ -217,9 +217,11 @@ A successful `start_asset_query` returns:
 
 Sessions bind an ordered asset-ID snapshot to normalized filters and their dependency revision. The public `revision` remains the global revision of the read snapshot. See [the query manager lifecycle](../subsystems/library-query-and-gallery.md#backend-session-and-page-contract) for snapshot construction, cancellation, reuse, and cache limits.
 
-- `superseded` is a successful start result, not an invoke error. A request whose backend registration token is no longer latest returns it, including on the cache-hit path. `createAssetQuery` also compares its local generation and ignores an obsolete response.
+- `superseded` is a successful start result, not an invoke error. An equal or lower owner generation, or a request whose backend registration token is no longer latest, returns it, including on the cache-hit path. `createAssetQuery` ignores responses from obsolete local generations. If its current start is superseded, it publishes a query error with explicit Retry and retains the old rows without an active session. It does not retry automatically.
 - `stale` is a successful page or position result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older dependency revision. A dependency revision mismatch also removes that session. `createAssetQuery` responds by starting a fresh query.
 - `ready` pages preserve the session order and report the effective (possibly end-clamped) offset. Relevant dependency changes and full invalidations make later pages stale. Unrelated metadata edits keep the session usable and appear in newly materialized summaries.
+
+An authoritative query exceeding the 64 MiB retained-ID budget rejects with a text error asking the user to narrow the search. It is not a superseded result; a fitting query can subsequently succeed. Frontend code uses ordinary query error handling and does not branch on the error wording.
 
 Because supersession and the cache are process-wide, requests from another window or independent caller can supersede or evict this window's work. Pooled database connections are acquired with a five-second bounded wait; exhaustion rejects the command with a text `database pool is busy` failure instead of blocking forever.
 
@@ -245,6 +247,21 @@ Current phase families are:
 - duplicates: `duplicates-scan`, `duplicates-scan-done`.
 
 Consumers must filter by phase because the event name is shared and broadcasts are not correlated to a command invocation. `createSettingsOperationRunner` subscribes only for the duration of an operation and applies a phase matcher. Messages are display text, not stable machine-readable error data. Most emit sites intentionally discard delivery errors; the command result is authoritative for operation completion.
+
+`cancel_render_all_thumbnails` returns an independent boolean reply, which can reach the frontend after the render command has completed. The scan controller captures a synchronous render token when sending Stop and checks it before publishing either success or rejection. A retired reply cannot replace a final result or clear a newer operation's progress or pending Stop state. The token is local frontend state; progress events and cancellation payloads remain uncorrelated on the wire.
+
+## Native video input channel
+
+`open_video`'s existing `Channel<MpvVideoEvent>` carries `{ session_id, type: "escape" }`
+when windowed GTK video controls have keyboard focus. It is an input intent, not a
+close command. GTK consumes speed-menu and fullscreen Escape first. WebView-focus
+Escape stays on the DOM path. The Rust service sends only for the current session;
+`createNativeVideoSession` checks the returned session ID and owner lifetime before
+calling the lightbox callback. An event arriving before open completes is buffered
+like the other channel event types. Retired or disposed sessions cannot dismiss a
+replacement preview. The frontend layer owner decides whether to dismiss inline
+confirmation, a narrow drawer, or the preview, and blocks input during deletion or
+while a higher registered layer is active.
 
 ## Boundary validation and normalization summary
 

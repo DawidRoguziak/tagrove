@@ -118,7 +118,7 @@ pub enum ScanCompletion {
     Partial,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ScanSummary {
     pub completion: ScanCompletion,
     pub indexed: usize,

@@ -4,8 +4,8 @@ import type { TagListPage } from "../../../platform/tauri/contracts/tags";
 export type TagSelectionMode = "include" | "exclude";
 
 export interface TagSelections {
-  included: Record<string, string>;
-  excluded: Record<string, string>;
+  included: ReadonlyMap<string, string>;
+  excluded: ReadonlyMap<string, string>;
 }
 
 export function normalizeTagName(tag: string): string {
@@ -73,11 +73,11 @@ export function getTagMode(selections: TagSelections, tag: string): TagSelection
     return null;
   }
 
-  if (selections.included[normalizedTag]) {
+  if (selections.included.has(normalizedTag)) {
     return "include";
   }
 
-  if (selections.excluded[normalizedTag]) {
+  if (selections.excluded.has(normalizedTag)) {
     return "exclude";
   }
 
@@ -90,14 +90,14 @@ export function removeTagSelection(selections: TagSelections, tag: string): TagS
     return selections;
   }
 
-  if (!selections.included[normalizedTag] && !selections.excluded[normalizedTag]) {
+  if (!selections.included.has(normalizedTag) && !selections.excluded.has(normalizedTag)) {
     return selections;
   }
 
-  const nextIncluded = { ...selections.included };
-  const nextExcluded = { ...selections.excluded };
-  delete nextIncluded[normalizedTag];
-  delete nextExcluded[normalizedTag];
+  const nextIncluded = new Map(selections.included);
+  const nextExcluded = new Map(selections.excluded);
+  nextIncluded.delete(normalizedTag);
+  nextExcluded.delete(normalizedTag);
 
   return {
     included: nextIncluded,
@@ -116,15 +116,15 @@ export function putTagInMode(
     return selections;
   }
 
-  const nextIncluded = { ...selections.included };
-  const nextExcluded = { ...selections.excluded };
-  delete nextIncluded[normalizedTag];
-  delete nextExcluded[normalizedTag];
+  const nextIncluded = new Map(selections.included);
+  const nextExcluded = new Map(selections.excluded);
+  nextIncluded.delete(normalizedTag);
+  nextExcluded.delete(normalizedTag);
 
   if (mode === "include") {
-    nextIncluded[normalizedTag] = trimmedTag;
+    nextIncluded.set(normalizedTag, trimmedTag);
   } else {
-    nextExcluded[normalizedTag] = trimmedTag;
+    nextExcluded.set(normalizedTag, trimmedTag);
   }
 
   return {
@@ -134,8 +134,8 @@ export function putTagInMode(
 }
 
 export function buildFilterInput(selections: TagSelections): string {
-  const includeTokens = sortTagsCaseInsensitive(Object.values(selections.included)).map(tag => serializeTagToken(tag));
-  const excludeTokens = sortTagsCaseInsensitive(Object.values(selections.excluded)).map(
+  const includeTokens = sortTagsCaseInsensitive([...selections.included.values()]).map(tag => serializeTagToken(tag));
+  const excludeTokens = sortTagsCaseInsensitive([...selections.excluded.values()]).map(
     (tag) => serializeTagToken(tag, true)
   );
 
@@ -155,11 +155,11 @@ export function applyDoubleSelectionAction(selections: TagSelections, tag: strin
   const normalizedTag = normalizeTagName(tag);
   const currentMode = getTagMode(selections, tag);
   if (currentMode === "include") {
-    return putTagInMode(selections, selections.included[normalizedTag] ?? tag, "exclude");
+    return putTagInMode(selections, selections.included.get(normalizedTag) ?? tag, "exclude");
   }
 
   if (currentMode === "exclude") {
-    return putTagInMode(selections, selections.excluded[normalizedTag] ?? tag, "include");
+    return putTagInMode(selections, selections.excluded.get(normalizedTag) ?? tag, "include");
   }
 
   return putTagInMode(selections, tag, "exclude");

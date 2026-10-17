@@ -23,6 +23,7 @@ export function createImageControls(options: {
 }) {
   let videoPlayer: LightboxVideoPlayerHandle | null = null;
   let shell: HTMLDivElement | undefined, image: HTMLImageElement | undefined;
+  let disposed = false;
   const [viewport, setViewport] = createSignal<HTMLDivElement>();
   const [size, setSize] = createSignal<MediaDimensions>({ width: 0, height: 0 });
   const [intrinsic, setIntrinsic] = createSignal<MediaDimensions>({ width: 0, height: 0 });
@@ -244,6 +245,7 @@ export function createImageControls(options: {
     };
   });
   onCleanup(() => {
+    disposed = true;
     finishDrag();
     if (frame !== undefined) cancelAnimationFrame(frame);
   });
@@ -287,7 +289,7 @@ export function createImageControls(options: {
       if (!drag && Date.now() >= suppressClose) options.close();
     },
     onLoad: ((event) => {
-      image = event.currentTarget;
+      if (disposed || !options.active() || !isImage() || event.currentTarget !== image) return;
       setIntrinsic({ width: image.naturalWidth, height: image.naturalHeight });
       paint();
     }) satisfies JSX.EventHandler<HTMLImageElement, Event>,

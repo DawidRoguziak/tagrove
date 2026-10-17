@@ -37,7 +37,7 @@ accepted canonical metadata still publishes to tags, summaries and the current s
 publishing nonempty ranges, owns observers under the mounted view and preserves global-index
 resize anchors. Thumbnail completion does not rebuild row measurements. Tiles use stable
 global-index keys, and each loaded tile subscribes only to its current asset's thumbnail.
-The image element resets its load/failure/fade state when its source changes.
+The image element resets its failure state when its source changes. Gallery images have no entrance animation.
 
 The current tests run real virtual-core at 10,000, 26,000 and 1,000,000 slots, drive sparse replacement,
 explicit page retry and eviction/reload across the 12-page bound, and exercise the native
@@ -142,12 +142,30 @@ are disposed with the gallery.
 
 The gallery requires a scroll-container accessor. The virtualizer uses only that element and waits while the ref is null. An owned compute/apply effect starts observation after all required elements exist. A second effect configures the virtualizer and restores the global-index anchor when columns or tile size change. This also applies when Back from Settings remounts the gallery. Using the gallery as a temporary fallback would mistake its full content height for the viewport, mount every slot, and demand pages across the entire library.
 
-The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex }`, with inclusive indices. Pixel movement within unchanged row ranges updates tile placement without republishing page demand. `createLibrary` loads pages intersecting the overscan range and replaces gallery thumbnail demand with visible and prefetch IDs from currently loaded summaries. Range/query-epoch changes request pages. Page arrivals update thumbnail demand separately without requesting evicted pages again. The grid also reports its range when its failure/reset key changes. Failed offsets remain blocked in that generation until explicit Retry. Empty ranges clear gallery thumbnail demand. Bulk and duplicate preview requests remain additive and independent of this replaceable demand.
+The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex, paused }`, with inclusive indices, or `null` when the gallery unmounts. Pixel movement within unchanged row ranges updates tile placement without republishing page demand, unless the pause state changes. `createLibrary` loads pages intersecting the overscan range and replaces gallery thumbnail demand with visible and prefetch IDs from currently loaded summaries. Range/query-epoch changes request pages. Page arrivals update thumbnail demand separately without requesting evicted pages again. The grid also reports its range when its failure/reset key changes. Failed offsets remain blocked in that generation until explicit Retry. Empty ranges clear gallery thumbnail demand. Bulk and duplicate preview requests remain additive and independent of this replaceable demand.
+
+Fast scrolling pauses automatic gallery loading. The adapter measures absolute distance
+in logical gallery pixels, including direction reversals and compressed wheel/rectangle
+scrolling. A single move of at least half the viewport height, or a full viewport within
+100 ms, starts the pause. Every position change extends it; duplicate scroll notifications
+do not. After 150 ms without movement the same range is republished with `paused: false`,
+even if its indices have not changed. Geometry changes and tile-size anchor writes reset
+the motion history without starting a pause. Unmount cancels the timer.
+
+During the pause, `createLibrary` remembers the latest range but skips automatic page
+reads, including on query-epoch changes. It replaces gallery thumbnail demand with empty
+lists. Page arrivals can populate the cache but cannot restart that demand while paused.
+Resume loads only the latest range, retaining the four-row overscan. Already dispatched
+reads and thumbnail batches can finish; caches and the thumbnail generation remain intact.
+Explicit lightbox/selection reads and additive preview demand continue. Unmount publishes
+`null` to release gallery demand while the application-owned library stays alive.
 
 Sparse viewport demand is the primary production loader. `AppGalleryView` passes
-`hasMore={library.query.offset < library.query.total}` and the query's `handleReachEnd`.
+`hasMore={library.query.offset < library.query.total}` and the library's `handleGalleryReachEnd`.
 The two-row near-end threshold remains active when more rows are available and the
-query is idle. `offset` is the greatest merged page end, so reaching the final sparse
+query is idle and scrolling is not paused. This callback ensures the current viewport,
+rather than the query's sequential offset, so resuming at the end cannot fetch an unrelated
+earlier page before reactive loading state publishes. `offset` is the greatest merged page end, so reaching the final sparse
 page can set `hasMore` false while earlier pages are absent. Viewport demand still
 loads those pages. Thumbnail progress renders outside the virtual-row computation,
 so progress-counter changes alone do not invalidate its layout.
@@ -155,10 +173,11 @@ so progress-counter changes alone do not invalidate its layout.
 ## Gallery presentation states
 
 - If `assetCount` is zero, the grid shows an empty state. It distinguishes “no folders” from “no results” using the scan-root list and offers the add-folder action only for the former.
+- During fast scrolling, every mounted slot is a static square without images, spinners, group backplates or thumbnail subscriptions. Slot positions, global indices, selection highlights and the bounded spacer remain active.
 - If a virtual slot's page is not cached, the grid renders a square pulsing placeholder. Once the summary arrives, the slot becomes an interactive tile.
 - Images and videos use a thumbnail when available; otherwise they use a transparent one-pixel placeholder. A preview load error also falls back to that placeholder. The per-tile spinner appears only while the thumbnail store reports that the asset is rendering and no thumbnail path is ready.
 - Mounted virtual tiles load their previews eagerly. TanStack Virtual already bounds the mounted range, and native image lazy loading is avoided because WebKitGTK can fail to schedule absolutely positioned, translated virtual items.
-- New gallery thumbnails stay transparent until loaded, then fade over the existing tile background with a 300 ms ease-in-out opacity animation. This includes cached images and tiles mounted during scrolling. A source change resets readiness; an unchanged-source rerender preserves it. Only the image participates in this fade, with no stagger or delay to queries, tile placement, controls, or selection feedback. Reduced-motion preferences show loaded images immediately. `ThumbnailImage` defaults to no fade outside the gallery.
+- Gallery thumbnails display at full opacity as soon as the browser loads them, including cached images and tiles remounted after scrolling. There is no entrance fade. A 300 ms fade previously left newly arriving rows dim during moderately fast scrolling and delayed visibility after the fast-scroll pause. Source changes still replace the image element and reset failure handling. The shared `ThumbnailImage` retains its opt-in fade for other consumers; the gallery does not request it.
 - GIFs always use a static JPEG thumbnail or the placeholder, including while idle, scrolling, and after a preview error. Gallery tiles never request original GIF sources. Opening a GIF in the lightbox retains animation. Neutral, opaque corner chips identify videos and GIFs with readable text in both themes. Photos have no media-kind chip; tile borders use the shared theme border color.
 - A nonblank media-group key marks the tile as grouped. Backplates join consecutive loaded virtual entries only when they share the exact key, are adjacent lanes, and sit on the same row; a group that crosses a row or unloaded gap is drawn as separate pieces. Different group keys also start separate pieces. Each decorative backing extends 4px around its tiles, with rounded corners behind the images and no pointer handling. The theme tokens `--gallery-group-bg` and `--gallery-group-edge` give dark mode a solid `#20382b` fill and a 1px inset `#52735c` edge. The inset preserves the gap between neighboring groups without changing tile geometry. Light mode keeps the primary color at 16% opacity with a transparent edge. Selection outlines and checkmarks retain the brighter primary color.
 - The status footer reports thumbnail generation only when `hasMore` is true, and reports “End of results” with a locale-formatted, pluralized result count when thumbnail generation is idle and `hasMore` is false. It does not represent asset-page loading. The other two combinations render no footer content. `GalleryGrid` passes its required `assetCount`, the query total from `AppGalleryView`, as the footer's required `resultCount`; there is no cached-array-length fallback. The centered footer follows the grid in normal document flow, with roughly 136px of vertical space, flexible dividers, a decorative success checkmark, and wrapping text. It scrolls with the gallery without covering the last row; empty collections retain their empty state and have no footer.
@@ -230,7 +249,7 @@ Inclusive range reads capture one session and generation, checking them after ev
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
 - `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, shared in-flight indexed page lookup, virtual-range thumbnail IDs, and clear-library reset.
 - `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews and per-asset thumbnail DOM isolation. `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior; `createVirtualGrid.test.tsx` covers ranges and measurements.
-- `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers fade readiness for delayed/cached loads, failures, source replacement, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail fade checks](../development/testing.md#gallery-thumbnail-fade) sample opacity during filtering and scrolling in both themes and with reduced motion.
+- `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers fade readiness for delayed/cached loads, failures, source replacement, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail checks](../development/testing.md#gallery-thumbnail-fade) require immediate full opacity during filtering and scrolling in both themes and with reduced motion.
 - `src/features/lightbox/__tests__/createLightbox.test.ts` covers detail/mutation races, identity-reset ID reuse, deletion tombstones, query-session cache invalidation, rapid navigation, and query-position recomputation. See [lightbox tests](lightbox.md#tests) for remaining navigation/prefetch scenarios.
 - `src/features/search/__tests__/createSearch.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.
 

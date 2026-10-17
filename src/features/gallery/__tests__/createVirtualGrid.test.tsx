@@ -22,8 +22,9 @@ afterEach(() => {
   document.body.replaceChildren();
   callbacks.clear();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
-function mount(count = 10000, delayed = false) {
+function mount(count = 10000, delayed = false, hasMore = false) {
   const scroller = document.createElement("div"),
     gallery = document.createElement("section"),
     grid = document.createElement("div");
@@ -56,6 +57,7 @@ function mount(count = 10000, delayed = false) {
     if (typeof arg === "object") scroller.scrollTop = arg.top ?? 0;
   });
   const range = vi.fn();
+  const reachEnd = vi.fn();
   const view = renderHook(() => {
     const [ready, setReady] = createSignal(!delayed);
     const [tile, setTile] = createSignal(188);
@@ -69,14 +71,14 @@ function mount(count = 10000, delayed = false) {
       get tileSize() {
         return tile();
       },
-      hasMore: false,
+      hasMore,
       get isLoading() {
         return loading();
       },
       gallery: () => (ready() ? gallery : undefined),
       grid: () => (ready() ? grid : undefined),
       scroller: () => (ready() ? scroller : undefined),
-      onReachEnd: vi.fn(),
+      onReachEnd: reachEnd,
       onRange: range,
       get rangeResetKey() {
         return reset();
@@ -90,6 +92,7 @@ function mount(count = 10000, delayed = false) {
     scroller,
     gallery,
     range,
+    reachEnd,
     resizeHeight(next: number) {
       height = next;
       for (const callback of callbacks) callback([]);
@@ -263,4 +266,79 @@ describe("Solid adapter over real virtual-core", () => {
     flush();
     expect(view.result.model.virtualItems).toEqual([]);
   });
+});
+
+it("pauses on a half-viewport jump and resumes the same range after 150ms without movement", () => {
+  vi.useFakeTimers();
+  const view = mount();
+  view.scroll(300);
+  expect(view.result.model.paused).toBe(true);
+  const latest = view.range.mock.lastCall?.[0];
+  vi.advanceTimersByTime(149); flush();
+  expect(view.result.model.paused).toBe(true);
+  // Duplicate scroll/end notifications must not extend the pause.
+  view.scroll(300);
+  vi.advanceTimersByTime(1); flush();
+  expect(view.range).toHaveBeenLastCalledWith({ ...latest, paused: false });
+  view.cleanup();
+  vi.useRealTimers();
+});
+
+it("keeps slow scrolling active and counts distance across direction changes in a rolling 100ms", () => {
+  vi.useFakeTimers();
+  const view = mount();
+  for (let top = 100; top <= 500; top += 100) {
+    view.scroll(top);
+    vi.advanceTimersByTime(101); flush();
+    expect(view.result.model.paused).toBe(false);
+  }
+  view.scroll(700);
+  vi.advanceTimersByTime(30);
+  view.scroll(500);
+  vi.advanceTimersByTime(30);
+  view.scroll(700);
+  expect(view.result.model.paused).toBe(true);
+  vi.advanceTimersByTime(100);
+  view.scroll(690);
+  vi.advanceTimersByTime(149); flush();
+  expect(view.result.model.paused).toBe(true);
+  vi.advanceTimersByTime(1); flush();
+  expect(view.result.model.paused).toBe(false);
+  view.cleanup();
+  vi.useRealTimers();
+});
+
+it("excludes geometry anchors from motion and clears paused demand and timers on disposal", () => {
+  vi.useFakeTimers();
+  const view = mount(1_000_000);
+  view.scroll(2_000_000);
+  vi.advanceTimersByTime(150); flush();
+  view.resize(588);
+  view.result.setTile(340); flush();
+  view.resizeHeight(450);
+  view.scroll(view.scroller.scrollTop);
+  expect(view.result.model.paused).toBe(false);
+  view.result.model.scrollBy(225); flush();
+  expect(view.result.model.paused).toBe(true);
+  view.cleanup();
+  expect(view.range).toHaveBeenLastCalledWith(null);
+  view.range.mockClear();
+  vi.advanceTimersByTime(1000); flush();
+  expect(view.range).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+  vi.useRealTimers();
+});
+
+
+it("does not reach-end load during a paused jump, including after loading finishes", () => {
+  vi.useFakeTimers();
+  const view = mount(10000, false, true);
+  view.scroll(Number.MAX_SAFE_INTEGER);
+  expect(view.result.model.paused).toBe(true);
+  view.result.setLoading(true); flush();
+  view.result.setLoading(false); flush();
+  expect(view.reachEnd).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(150); flush();
+  expect(view.reachEnd).toHaveBeenCalledOnce();
+  view.cleanup();
 });

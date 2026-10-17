@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import { Virtualizer, observeElementOffset, observeElementRect } from "@tanstack/virtual-core";
 import { scrollCoordinates } from "./scrollCoordinates";
-import type { LibraryRange } from "../../library/createLibrary";
+import type { LibraryRange, LibraryViewport } from "../../library/createLibrary";
 
 const GAP = 12;
 const rowKey = (index: number) => index;
@@ -14,11 +14,39 @@ export function createVirtualGrid(options: {
   grid: () => HTMLDivElement | undefined;
   scroller: () => HTMLElement | undefined;
   onReachEnd: () => void;
-  onRange?: (range: LibraryRange) => void;
+  onRange?: (viewport: LibraryViewport | null) => void;
   rangeResetKey: number;
 }) {
   const [geometry, setGeometry] = createSignal({ width: 0, margin: 0, viewport: 0 });
   const [version, setVersion] = createSignal(0);
+  const [paused, setPaused] = createSignal(false);
+  let lastOffset = 0;
+  let motion: { time: number; distance: number }[] = [];
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const observeMotion = (offset: number) => {
+    const distance = Math.abs(offset - lastOffset);
+    lastOffset = offset;
+    if (!distance) return;
+    const now = performance.now();
+    motion = motion.filter((sample) => now - sample.time <= 100);
+    motion.push({ time: now, distance });
+    const viewport = untrack(geometry).viewport;
+    const fast = viewport > 0 && (distance >= viewport / 2 ||
+      motion.reduce((sum, sample) => sum + sample.distance, 0) >= viewport);
+    if (fast || idleTimer !== undefined) {
+      setPaused(true);
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleTimer = undefined;
+        motion = [];
+        setPaused(false);
+      }, 150);
+    }
+  };
+  onCleanup(() => {
+    clearTimeout(idleTimer);
+    options.onRange?.(null);
+  });
   const columns = createMemo(() =>
     Math.max(1, Math.floor((geometry().width + GAP) / (options.tileSize + GAP)))
   );
@@ -37,7 +65,7 @@ export function createVirtualGrid(options: {
       position = { physical, logical: coordinates.toLogical(physical) };
     return position.logical;
   };
-  const scrollTo = (logical: number) => {
+  const scrollTo = (logical: number, userMotion = false) => {
     const scroller = untrack(options.scroller);
     if (!scroller) return;
     const physical = Math.max(0, coordinates.toPhysical(logical));
@@ -48,12 +76,17 @@ export function createVirtualGrid(options: {
       logical:
         Math.abs(actual - physical) < 1 ? Math.max(0, logical) : coordinates.toLogical(actual)
     };
+    if (userMotion) observeMotion(position.logical);
+    else {
+      lastOffset = position.logical;
+      motion = [];
+    }
     publishOffset?.(position.logical, false);
     setVersion((value) => value + 1);
   };
   const scrollBy = (delta: number) => {
     const scroller = untrack(options.scroller);
-    if (scroller) scrollTo(readOffset(scroller.scrollTop) + delta);
+    if (scroller) scrollTo(readOffset(scroller.scrollTop) + delta, true);
   };
   const virtualizer = new Virtualizer<HTMLElement, Element>({
     count: 0,
@@ -66,7 +99,9 @@ export function createVirtualGrid(options: {
       const cleanup = observeElementOffset(instance, (physical, scrolling) => {
         // virtual-core's debounced scroll-end can carry the pre-resize offset.
         // Read the current DOM value so it cannot retire a newer anchor write.
-        callback(readOffset(instance.scrollElement?.scrollTop ?? physical), scrolling);
+        const logical = readOffset(instance.scrollElement?.scrollTop ?? physical);
+        if (scrolling) observeMotion(logical);
+        callback(logical, scrolling);
         setVersion((value) => value + 1);
       });
       return () => {
@@ -202,11 +237,12 @@ export function createVirtualGrid(options: {
       : next;
   });
   createEffect(
-    () => ({ range: range(), reset: options.rangeResetKey }),
-    ({ range }) => options.onRange?.(range)
+    () => ({ ...range(), paused: paused(), reset: options.rangeResetKey }),
+    ({ reset: _reset, ...viewport }) => options.onRange?.(viewport)
   );
   createEffect(
     () => ({
+      paused: paused(),
       more: options.hasMore,
       loading: options.isLoading,
       count: options.assetCount,
@@ -215,6 +251,7 @@ export function createVirtualGrid(options: {
     }),
     (value) => {
       if (
+        !value.paused &&
         value.more &&
         !value.loading &&
         value.count > 0 &&
@@ -224,6 +261,9 @@ export function createVirtualGrid(options: {
     }
   );
   return {
+    get paused() {
+      return paused();
+    },
     get gridOffset() {
       return geometry().margin;
     },

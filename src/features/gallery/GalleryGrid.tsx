@@ -3,7 +3,7 @@ import { Portal } from "@solidjs/web";
 import type { AssetSummary } from "../../platform/tauri/contracts/assets";
 import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 import type { BulkSelectionHandler } from "./selection";
-import type { LibraryRange } from "../../library/createLibrary";
+import type { LibraryViewport } from "../../library/createLibrary";
 import { useLanguage } from "../../i18n/solid";
 import { GalleryEmptyState } from "./GalleryEmptyState";
 import { GalleryStatusFooter } from "./GalleryStatusFooter";
@@ -22,7 +22,7 @@ export interface GalleryGridProps {
   thumbnailStore: ThumbnailStore;
   scroller: () => HTMLElement | undefined;
   onReachEnd: () => void;
-  onVirtualRangeChange?: (range: LibraryRange) => void;
+  onVirtualRangeChange?: (viewport: LibraryViewport | null) => void;
   onCtrlWheelZoom?: (delta: number) => void;
   onSelect: (asset: AssetSummary) => void;
   hasScanRoots: boolean;
@@ -102,6 +102,7 @@ export function GalleryGrid(props: GalleryGridProps) {
     return () => element?.removeEventListener("click", handlers.handleClickCapture, true);
   });
   const entries = createMemo(() => {
+    if (virtual.paused) return [];
     props.assets;
     return virtual.virtualItems.map((item) => ({ ...item, asset: props.getAssetAt(item.index) }));
   });
@@ -164,6 +165,7 @@ export function GalleryGrid(props: GalleryGridProps) {
         onDragStart={(event) => event.preventDefault()}
         style={{ "touch-action": props.selectionModeEnabled ? "none" : undefined }}
         data-testid="gallery-grid"
+        data-scroll-paused={virtual.paused}
       >
         <Show when={handlers.preview}>
           <Portal>
@@ -228,6 +230,12 @@ export function GalleryGrid(props: GalleryGridProps) {
                   props.assets;
                   return props.getAssetAt(index);
                 });
+                const selectedAtSlot = () => {
+                  const asset = assetAtSlot();
+                  return props.selectionModeEnabled && handlers.isPreviewSelected(
+                    index, !!asset && props.selectedAssetIds.has(asset.id)
+                  );
+                };
                 const lane = () => index % virtual.columnCount;
                 const start = () =>
                   Math.floor(index / virtual.columnCount) *
@@ -235,12 +243,12 @@ export function GalleryGrid(props: GalleryGridProps) {
                   virtual.scrollShift;
                 return (
                   <Show
-                    when={assetAtSlot()}
+                    when={!virtual.paused && assetAtSlot()}
                     fallback={
                       <div
                         data-asset-index={index}
                         aria-hidden="true"
-                        class={`absolute z-[1] animate-pulse rounded-[var(--radius-surface)] bg-base-300/70 ${handlers.isPreviewSelected(index, false) ? "ring-2 ring-primary" : ""}`}
+                        class={`absolute z-[1] ${virtual.paused ? "" : "animate-pulse"} rounded-[var(--radius-surface)] bg-base-300/70 ${selectedAtSlot() ? "ring-2 ring-primary" : ""}`}
                         style={{
                           width: `${virtual.tilePixelSize}px`,
                           height: `${virtual.tilePixelSize}px`,
@@ -257,10 +265,7 @@ export function GalleryGrid(props: GalleryGridProps) {
                         start={start()}
                         size={virtual.tilePixelSize}
                         gap={virtual.tileGap}
-                        selected={
-                          props.selectionModeEnabled &&
-                          handlers.isPreviewSelected(index, props.selectedAssetIds.has(asset().id))
-                        }
+                        selected={selectedAtSlot()}
                         thumbnailStore={props.thumbnailStore}
                         onClick={handlers.handleTileClick}
                       />

@@ -116,6 +116,14 @@ As ready, stale, and failed messages arrive, the queue batches store publication
 
 `resetThumbnailQueue` cancels pending UI/process timers, increments the local generation, clears additive, visible, prefetch, in-flight, failed, pending-update, and rendering state, and clears the `ThumbnailStore`. It cannot cancel an invoke or backend scheduler work. Event callbacks and invoke-error handling compare their captured generation, so late work from before reset cannot repopulate frontend state. Reset also enables a previously failed ID to be queued again.
 
+Fast gallery scrolling clears only the replaceable visible/prefetch demand. It does not
+reset the queue generation, clear cached paths or suppress additive preview consumers.
+An already dispatched batch may still publish its results. Gallery tiles unmount their
+per-asset thumbnail bindings while static placeholders are displayed. After 150 ms with
+no position change, the latest viewport and overscan repopulate demand. Unmounting the
+gallery also clears its demand; queue disposal still belongs to the library owner.
+See [pause thresholds and range publication](library-query-and-gallery.md#virtual-range-loading-and-thumbnail-prefetch).
+
 `ThumbnailStore` owns thumbnail paths and rendering IDs, with subscriptions keyed by asset ID. Gallery tiles, bulk ordering previews, and duplicate previews consume per-item updates. Paths are retained for cached gallery pages and mounted preview subscribers; inactive paths and their versions are released on eviction or unsubscribe. Each changed asset gets a monotonically increasing in-memory version and only its listeners are notified. `GalleryTile` reads the reactive snapshot from `createAssetThumbnail`, so a completion updates that asset without rebuilding the virtual grid. The binding replaces its subscription only when asset identity changes. Versions are released when an asset has no stored path, rendering state, or listeners, and a store-wide increasing counter prevents reused versions after resubscription. A tile shows the transparent placeholder on absence or image-load error and shows a spinner only while rendering with no ready path. Static GIF previews and other gallery presentation rules are covered in [library query and gallery](library-query-and-gallery.md).
 
 `createAssetThumbnail.ts` binds the store to Solid. Each mounted asset owns one

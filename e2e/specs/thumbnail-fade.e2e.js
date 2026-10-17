@@ -28,8 +28,8 @@ async function startSampling() {
         if (!ids.has(image)) ids.set(image, ++nextId);
         const style = getComputedStyle(image);
         const rect = image.getBoundingClientRect();
-        return { id: ids.get(image), opacity: Number(style.opacity), ready: image.classList.contains("thumbnail-fade-in-ready"),
-          duration: style.animationDuration, easing: style.animationTimingFunction,
+        return { id: ids.get(image), opacity: Number(style.opacity), ready: image.complete && image.naturalWidth > 1,
+          animation: style.animationName,
           visible: rect.bottom > 100 && rect.top < innerHeight, tileOpacity: getComputedStyle(image.parentElement).opacity };
       });
       probe.frames.push({ images, galleryOpacity: getComputedStyle(document.querySelector(".gallery-scroll")).opacity });
@@ -39,7 +39,7 @@ async function startSampling() {
   });
 }
 
-async function finishSampling(name, requireVisibleFade = true) {
+async function finishSampling(name) {
   await browser.pause(450);
   const frames = await browser.execute(() => {
     window.__thumbnailProbe.running = false;
@@ -47,29 +47,20 @@ async function finishSampling(name, requireVisibleFade = true) {
   });
   await fs.writeFile(path.join(output, `${name}.json`), JSON.stringify(frames));
   assert.ok(frames.length > 3, "Sample real rendering frames");
-  const settled = new Set();
-  let intermediate = 0;
+  let loadedVisible = 0;
   for (const frame of frames) {
     assert.equal(frame.galleryOpacity, "1", "Gallery container stays opaque");
     for (const image of frame.images) {
       assert.equal(image.tileOpacity, "1", "Tile background and controls stay opaque");
-      if (settled.has(image.id)) assert.equal(image.opacity, 1, "An unchanged loaded image never flashes again");
-      if (!image.ready) {
-        assert.equal(image.opacity, 0, "Undecoded thumbnails stay transparent");
-        continue;
-      }
-      assert.equal(image.duration, reduced ? "0s" : "0.3s");
-      if (reduced) assert.equal(image.opacity, 1, "Reduced motion shows decoded thumbnails immediately");
-      else assert.equal(image.easing, "ease-in-out");
-      if (image.opacity === 1) settled.add(image.id);
-      if ((!requireVisibleFade || image.visible) && image.opacity > 0 && image.opacity < 1) intermediate++;
+      assert.equal(image.opacity, 1, "Gallery images never fade in, including newly mounted rows");
+      assert.equal(image.animation, "none", "Gallery images have no entrance animation");
+      if (image.ready && image.visible) loadedVisible++;
     }
   }
-  assert.ok(settled.size > 0, "Loaded thumbnails reach full opacity");
-  if (!reduced) assert.ok(intermediate > 0, "New thumbnails pass through intermediate opacity");
+  assert.ok(loadedVisible > 0, "Loaded thumbnails appear in the viewport");
 }
 
-suite("gallery thumbnail fade", function () {
+suite("immediate gallery thumbnails", function () {
   this.timeout(120000);
   before(async () => {
     await fs.mkdir(output, { recursive: true });
@@ -104,7 +95,7 @@ suite("gallery thumbnail fade", function () {
     if (root) await fs.rm(root, { recursive: true, force: true });
   });
   for (const theme of ["dark", "light"]) {
-    it(`fades new images during rapid filtering and scrolling in ${theme}, reduced motion ${reduced}`, async () => {
+    it(`shows new images immediately during rapid filtering and scrolling in ${theme}, reduced motion ${reduced}`, async () => {
       await $('button[aria-label="Open settings"]').click();
       await $(`.theme-choice:has(input[value="${theme}"])`).click();
       await $('button[aria-label="Back"]').click();
@@ -129,8 +120,7 @@ suite("gallery thumbnail fade", function () {
         { type: "scroll", x: 500, y: 400, deltaX: 0, deltaY: 1400, duration: 500 }
       ] }]);
       assert.ok(await browser.execute(() => document.querySelector(".gallery-scroll").scrollTop) > 0, "Native wheel scrolls the gallery");
-      // Cached overscan tiles can finish their fade before entering the viewport.
-      await finishSampling(`${theme}-scroll-${reduced}`, false);
+      await finishSampling(`${theme}-scroll-${reduced}`);
       await browser.saveScreenshot(path.join(output, `${theme}-${reduced}.png`));
     });
   }

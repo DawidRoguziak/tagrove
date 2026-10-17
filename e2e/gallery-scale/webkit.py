@@ -71,7 +71,7 @@ def execute_steps(steps, action_id):
         return False
     step, *remaining = steps
     kind = step['type']
-    delay = 60
+    delay = step.get('ms', 60)
     if kind == 'move':
         xtst.XTestFakeMotionEvent(display, -1, round(step['x']), round(step['y']), 0)
     elif kind == 'button':
@@ -82,7 +82,7 @@ def execute_steps(steps, action_id):
     elif kind == 'pause':
         delay = step['ms']
     elif kind == 'screenshot':
-        assert step['name'] in ['last-result', 'rectangle-selection']
+        assert step['name'] in ['last-result', 'rectangle-selection', 'performance-thumbnails', 'moderate-scroll']
         subprocess.run(['import', '-window', 'root', str(output / f"{step['name']}.png")], check=True)
     else:
         raise ValueError(kind)
@@ -121,7 +121,8 @@ def timeout():
     return False
 
 window.show_all()
-view.load_uri(f'http://127.0.0.1:{server.server_port}/index.html')
+page = 'performance.html' if os.environ.get('GALLERY_PERFORMANCE') == '1' else 'index.html'
+view.load_uri(f'http://127.0.0.1:{server.server_port}/{page}')
 GLib.timeout_add(50, poll)
 GLib.timeout_add_seconds(55, timeout)
 try:

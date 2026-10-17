@@ -360,4 +360,29 @@ describe("createThumbnailQueue", () => {
     await flushTimers(500);
     expect(apiMocks.ensureThumbnailsStream).toHaveBeenCalledTimes(2);
   });
+  it("clears pending gallery demand without dropping in-flight results or additive previews", async () => {
+    const pending = deferred<void>();
+    let emit: ((event: ThumbnailStreamEvent) => void) | undefined;
+    apiMocks.ensureThumbnailsStream.mockImplementationOnce((_id, _visible, _prefetch, callback) => {
+      emit = callback;
+      return pending.promise;
+    });
+    const { result } = createQueueHarness({ 99: "cached.jpg" });
+    settle(() => result.setGalleryThumbnailDemand([1], [2]));
+    await flushTimers(60);
+    settle(() => {
+      result.setGalleryThumbnailDemand([3], [4]);
+      result.queueThumbnailsByIds([4, 9]);
+      result.setGalleryThumbnailDemand([], []);
+      emit?.({ event: "ready", data: { asset_id: 1, thumb_path: "late.jpg" } });
+    });
+    pending.resolve();
+    await flushTimers();
+    expect(apiMocks.ensureThumbnailsStream.mock.calls.map(call => call.slice(0, 3))).toEqual([
+      [0, [1], [2]], [0, [4, 9], []]
+    ]);
+    expect(result.thumbnailStore.getPath(1)).toBe("late.jpg");
+    expect(result.thumbnailStore.getPath(99)).toBe("cached.jpg");
+  });
+
 });

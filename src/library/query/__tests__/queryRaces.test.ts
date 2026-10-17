@@ -77,6 +77,7 @@ describe("query lifetime and synchronous coordination", () => {
     await library.query.refresh();
     settle(() =>
       library.handleVirtualRangeChange({
+        paused: false,
         startIndex: 0,
         endIndex: 29,
         visibleStartIndex: 0,
@@ -99,6 +100,7 @@ describe("query lifetime and synchronous coordination", () => {
     await library.query.refresh();
     settle(() =>
       library.handleVirtualRangeChange({
+        paused: false,
         startIndex: 1,
         endIndex: 1,
         visibleStartIndex: 1,

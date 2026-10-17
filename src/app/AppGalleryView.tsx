@@ -98,7 +98,7 @@ export function AppGalleryView() {
               pendingThumbnailCount={library.thumbnails.pendingPageSize}
               thumbnailStore={library.thumbnails.thumbnailStore}
               scroller={scroller}
-              onReachEnd={library.query.handleReachEnd}
+              onReachEnd={library.handleGalleryReachEnd}
               onVirtualRangeChange={library.handleVirtualRangeChange}
               onCtrlWheelZoom={runtime.zoom}
               onSelect={runtime.lightbox.select}

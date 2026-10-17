@@ -12,6 +12,9 @@ export interface LibraryRange {
   visibleStartIndex: number;
   visibleEndIndex: number;
 }
+export interface LibraryViewport extends LibraryRange {
+  paused: boolean;
+}
 const DEFAULT_FILTERS: LibraryFilters = {
   filterInclude: [],
   filterExclude: [],
@@ -25,7 +28,7 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
   const details = createDetailsCache(tags);
   const vocabulary = createKnownTags();
   const thumbnails = createThumbnailQueue();
-  const [range, setRange] = createSignal<LibraryRange | null>(null);
+  const [range, setRange] = createSignal<LibraryViewport | null>(null);
   const query = createAssetQuery({
     ...options,
     filters: () => filters,
@@ -41,7 +44,7 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
   createEffect(
     () => ({ range: range(), epoch: query.queryEpoch }),
     ({ range }) => {
-      if (range) query.ensureRange(range.startIndex, range.endIndex);
+      if (range && !range.paused) query.ensureRange(range.startIndex, range.endIndex);
     }
   );
   createEffect(
@@ -50,7 +53,7 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
       query.assets;
       const visible: number[] = [];
       const prefetch: number[] = [];
-      if (!viewport) return null;
+      if (!viewport || viewport.paused) return { visible, prefetch };
       for (
         let index = Math.max(0, viewport.startIndex);
         index <= Math.min(query.total - 1, viewport.endIndex);
@@ -65,9 +68,7 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
       }
       return { visible, prefetch };
     },
-    (demand) => {
-      if (demand) thumbnails.setGalleryThumbnailDemand(demand.visible, demand.prefetch);
-    }
+    (demand) => thumbnails.setGalleryThumbnailDemand(demand.visible, demand.prefetch)
   );
   const mutations = createMutations({ tags, details, query, vocabulary, filters: () => filters });
   const refreshLibrary = () =>
@@ -104,8 +105,12 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
       };
       return query.refresh();
     },
-    handleVirtualRangeChange: (next: LibraryRange) => {
+    handleVirtualRangeChange: (next: LibraryViewport | null) => {
       setRange(next);
+    },
+    handleGalleryReachEnd() {
+      const viewport = range();
+      if (viewport && !viewport.paused) query.ensureRange(viewport.startIndex, viewport.endIndex);
     },
     handleRootRemoved: thumbnails.resetThumbnailQueue,
     resetIdentity,

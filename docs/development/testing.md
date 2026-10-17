@@ -339,8 +339,9 @@ The `ui.redesign.e2e.js` case selected by `--mochaOpts.grep 'corner badges'` che
 `e2e/specs/thumbnail-fade.e2e.js` is opt-in with `MEDIATAGGER_THUMBNAIL_FADE=1`.
 It creates 192 temporary colorful PNGs and samples image opacity on rendering frames
 during rapid tag-filter changes and native wheel scrolling in both themes. It checks
-the 300 ms ease-in-out fade, full opacity on tile backgrounds and the gallery container,
-and unchanged loaded images staying visible. Screenshots and samples remain under
+immediate full opacity and no entrance animation on gallery images, including newly
+mounted rows. Tile backgrounds and the gallery container stay opaque. The filename and
+opt-in flag retain their historical names. Screenshots and samples remain under
 `artifacts/thumbnail-fade/`.
 
 Run on a private X11 display with temporary XDG directories, using the GTK and GSettings
@@ -869,3 +870,102 @@ bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json
 bun run test -- src/features/gallery src/app/__tests__/gallery.test.tsx src/library/__tests__/createLibrary.test.ts src/library/query/__tests__/createAssetQuery.test.ts
 sh e2e/gallery-scale/run.sh
 ```
+
+## Fast gallery scrolling
+
+`createVirtualGrid.test.tsx` covers the half-viewport threshold, cumulative logical
+distance across reversals, slow motion, the 150 ms idle deadline, unchanged final
+ranges, geometry anchors, disposal and the near-end loading guard. The integrated
+`GalleryGrid.test.tsx` checks that paused slots contain no images or animations,
+have no thumbnail subscriptions, skip passing pages and resume the final range.
+Library tests retain late pages and independent selection/lightbox reads through
+pause and filter changes. Thumbnail queue tests preserve dispatched results,
+cached paths and additive previews when gallery demand is cleared.
+
+Run the gallery and library suite, type checks and native scale fixture with the
+commands in [million-result gallery layout](#million-result-gallery-layout).
+The native fixture waits past the pause deadline before inspecting loaded tiles.
+
+For a separate native timing run:
+
+```sh
+GALLERY_PERFORMANCE=1 sh e2e/gallery-scale/run.sh
+```
+
+`performance.tsx` uses the actual gallery, sparse page cache and thumbnail queue,
+with 26,000 synthetic summaries and generated SVG thumbnails. The Tauri transport
+is mocked, with 12 ms page replies and 20 ms thumbnail batches. XTest drags the real
+scrollbar thumb in sixty steps spaced 20 ms apart, repeating three times after
+query/cache reset. Both variants must reach index 25999. The script records rAF
+intervals during motion and the first 150 ms after the last position change,
+page/thumbnail invocation counts, requested thumbnail IDs, and time from the last
+scroll event to a loaded visible image and to image opacity above 0.95. It also
+checks that every paused frame has no images, pulsing placeholders or spinners.
+
+For before/after comparison, `GALLERY_BASELINE_DIR` can point to saved earlier
+copies of `createVirtualGrid.ts`, `GalleryGrid.tsx` and `createLibrary.ts`. The Vite
+fixture substitutes those three files while using the same remaining source,
+CSS and synthetic transport. Save these files before editing them, and preserve
+`artifacts/gallery-scale/result.json` after each run because the next run replaces
+it. Run both variants without concurrent builds or test suites. This is a frontend
+comparison on software-rendered Xvfb, not a SQLite, native IPC or real-media decode
+benchmark. Results include the pause's deliberate delay. Gallery images now appear at full opacity
+as soon as they load; the historical comparison below was recorded with the fade enabled.
+
+The runner leaves raw samples, request traces, screenshots and profile/server
+cleanup evidence in ignored `artifacts/gallery-scale/`. The performance screenshot
+is `performance-thumbnails.png`. The `GALLERY_BASELINE_DIR` substitution is confined
+to this fixture's Vite configuration and does not affect application builds.
+
+The initial fast-scroll verification on 2026-10-17, before removal of the gallery
+image fade, used WebKitGTK 2.54.1 on private Xvfb, with three passes
+per variant and no concurrent tests. Both variants stopped at the same physical
+scroll offset, 1,611,408 pixels, with the final result visible.
+
+| Metric per drag | Before | After |
+| --- | --- | --- |
+| rAF interval p95 | 21 to 23 ms | 17 ms |
+| Largest rAF interval | 22 to 28 ms | 17 to 18 ms |
+| Page requests | 56 to 62 | 2 |
+| Thumbnail batch requests | 17 to 19 | 1 |
+| Thumbnail IDs requested | 756 to 860 | 28 |
+| First loaded visible image after stopping | 33 to 85 ms | 233 to 238 ms |
+| Visible image opacity above 0.95 after stopping | 295 to 341 ms | 489 to 490 ms |
+
+The final two page reads were offsets 25856 and 25984, both in the current overscan
+range. An intermediate run exposed an unrelated offset-128 read through the old
+sequential near-end callback. The production caller now uses
+`library.handleGalleryReachEnd`, which ensures only the current range; the integrated
+million-result regression rejects earlier offsets. The timing fixture uses that
+callback when available and retains the old callback only for saved baseline sources.
+All 242 sampled paused frames across the final three passes had no images or animations.
+The longer image delay is the cost of the 150 ms pause plus queueing, loading and fade.
+These samples show reduced frontend work and more regular frames in this fixture;
+they do not establish timings for real media collections or GPU-rendered desktops.
+
+The focused run passed 217 tests across 19 files, application and fixture type checks,
+Biome lint and the production module-graph build check. The native million-result suite
+passed all ten layout/input scenarios. Baseline/final timing samples are saved locally
+as `performance-before.json` and `performance-after.json`, and scale results as
+`scale-result.json`, in `artifacts/gallery-scale/`. Both timing runs and the scale run
+confirmed removal of their temporary profiles and shutdown of their fixture servers.
+No Rust or full Tauri desktop suite was run for this frontend-only change.
+
+
+A follow-up on 2026-10-17 removed `fadeIn` from `GalleryTile` after reproducing dim
+incoming rows below the fast-scroll thresholds. The timing fixture now also drives
+forty actual DOM scroll-position changes of 240 pixels at 60 ms intervals in a
+600-pixel viewport. It samples decoded visible images each animation frame before
+the native scrollbar scenarios. This paced scenario uses DOM scrolling in WebKitGTK,
+not native wheel input; the existing three scrollbar drags still use XTest.
+
+Before the fix, 114 of 154 frames contained dimmed, already loaded images, with up
+to eight affected images and minimum opacity 0.574. After the fix, none of 156 frames
+contained dimmed images. Neither run activated the fast-scroll pause during this
+scenario. After native scrollbar dragging, loaded and fully visible image times
+now coincide at 223 to 240 ms after the last scroll event; p95 frame intervals stayed
+at 17 ms, with two final-range page requests and one thumbnail batch per drag.
+Raw results and screenshots are in `artifacts/gallery-scale/fade-before.json`,
+`fade-after.json`, `moderate-scroll-before.png` and `moderate-scroll-after.png`.
+This follow-up used the isolated WebKitGTK fixture; the updated full-Tauri
+`thumbnail-fade.e2e.js` expectations were not run in this check.

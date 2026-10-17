@@ -42,7 +42,6 @@ export function GalleryTile(props: {
       aria-pressed={props.selected ? "true" : "false"}
     >
       <ThumbnailImage
-        fadeIn
         className="block h-full w-full object-cover"
         src={src()}
         alt={props.asset.preview_path ?? props.asset.file_name}

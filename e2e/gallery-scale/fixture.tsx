@@ -26,7 +26,7 @@ async function until(check: () => boolean, label: string) {
   }
   throw new Error(label);
 }
-const settle = async () => { flush(); await pause(120); flush(); };
+const settle = async () => { flush(); await pause(200); flush(); };
 function assert(ok: unknown, label: string): asserts ok { if (!ok) throw new Error(label); }
 let actionId = 0;
 async function native(...steps: unknown[]) {
@@ -71,7 +71,7 @@ const dispose = render(() => {
           getAssetAt={index => index < count() ? asset(index) : undefined}
           hasMore={more()} isLoading={false} isGeneratingThumbnails={false} pendingThumbnailCount={0}
           thumbnailStore={new ThumbnailStore()} scroller={ref} onReachEnd={() => { reachEndCalls++; }}
-          onVirtualRangeChange={range => { ranges.push({...range}); }}
+          onVirtualRangeChange={range => { if (range) ranges.push({...range}); }}
           onSelect={value => { selected = value.id; }} hasScanRoots={true} onAddFirstFolder={() => {}}
           selectionModeEnabled={selection.enabled} selectedAssetIds={selection.ids} onBulkSelectionInteraction={selection.interact}
           loadError={null} onLoadRetry={() => {}} queryEpoch={1} pageFailureEpoch={0}/>

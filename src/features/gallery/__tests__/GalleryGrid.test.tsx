@@ -115,6 +115,14 @@ async function mount(selectionEnabled = false, generating = false) {
   await library.query.refresh();
   flush();
   if (selectionEnabled) selection.toggle();
+  let subscriptions = 0;
+  const store = library.thumbnails.thumbnailStore;
+  const subscribe = store.subscribe;
+  vi.spyOn(store, "subscribe").mockImplementation((id, listener) => {
+    subscriptions++;
+    const unsubscribe = subscribe(id, listener);
+    return () => { subscriptions--; unsubscribe(); };
+  });
   const click = vi.fn(),
     range = vi.fn(library.handleVirtualRangeChange);
   const view = render(() => {
@@ -133,7 +141,7 @@ async function mount(selectionEnabled = false, generating = false) {
             pendingThumbnailCount={3}
             thumbnailStore={library.thumbnails.thumbnailStore}
             scroller={scroller}
-            onReachEnd={library.query.handleReachEnd}
+            onReachEnd={library.handleGalleryReachEnd}
             onVirtualRangeChange={range}
             onSelect={click}
             hasScanRoots
@@ -161,13 +169,13 @@ async function mount(selectionEnabled = false, generating = false) {
     fireEvent.scroll(scroller);
     flush();
   };
-  return { library, selection, view, scroll, click, range, scroller };
+  return { library, selection, view, scroll, click, range, scroller, subscriptions: () => subscriptions };
 }
 it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and reloads beyond 12 cached pages", async () => {
   const { library, view, scroll, range } = await mount();
   expect(view.container.querySelectorAll("button[data-asset-id]").length).toBeLessThan(70);
   for (const [rangeValue] of range.mock.calls)
-    expect(rangeValue.endIndex - rangeValue.startIndex + 1).toBeLessThan(70);
+    if (rangeValue) expect(rangeValue.endIndex - rangeValue.startIndex + 1).toBeLessThan(70);
   let finish: (result: ReturnType<typeof page>) => void = () => {};
   api.getAssetQueryPage.mockImplementationOnce(
     () =>
@@ -177,6 +185,7 @@ it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and r
   );
   scroll(1000);
   expect(view.container.querySelector('[data-asset-index="1000"]')?.tagName).toBe("DIV");
+  await waitFor(() => expect(api.getAssetQueryPage).toHaveBeenCalled());
   finish(page(896));
   await waitFor(() =>
     expect(view.container.querySelector('button[data-asset-index="1000"]')).toBeInTheDocument()
@@ -200,7 +209,7 @@ it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and r
   expect(api.getAssetQueryPage).toHaveBeenCalledWith(1, 0, 128);
 });
 it("keeps GIFs static, updates only their thumbnail DOM and selects the current slot identity", async () => {
-  const { library, view, scroll, click, range } = await mount();
+  const { library, view, scroll, click, range, scroller } = await mount();
   const first = view.container.querySelector<HTMLButtonElement>('button[data-asset-index="0"]');
   if (!first) throw new Error("Missing first tile");
   expect(first.querySelector("img")?.src).not.toContain("animated.gif");
@@ -211,12 +220,15 @@ it("keeps GIFs static, updates only their thumbnail DOM and selects the current 
   library.thumbnails.thumbnailStore.complete({ 1: "/synthetic/still.jpg" }, [1]);
   flush();
   expect(first.querySelector("img")).toHaveAttribute("src", "/synthetic/still.jpg");
+  expect(first.querySelector("img")).not.toHaveClass("thumbnail-fade-in");
   expect(view.container.querySelector('button[data-asset-index="1"] img')).toBe(unchanged);
   expect(range).not.toHaveBeenCalled();
   fireEvent.click(first);
   expect(click).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }));
   const retained = view.container.querySelector('button[data-asset-index="25"]');
-  scroll(30);
+  scroller.scrollTop = 180;
+  fireEvent.scroll(scroller);
+  flush();
   expect(view.container.querySelector('button[data-asset-index="25"]')).toBe(retained);
   scroll(0);
   scroll(1000);
@@ -225,6 +237,7 @@ it("keeps GIFs static, updates only their thumbnail DOM and selects the current 
   );
   const current = view.container.querySelector('button[data-asset-index="1000"]');
   if (!current) throw new Error("Missing replacement tile");
+  expect(current.querySelector("img")).not.toHaveClass("thumbnail-fade-in");
   fireEvent.click(current);
   expect(click).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1001 }));
 });
@@ -327,6 +340,8 @@ it("demands the final million-result page and passes the required total to the i
   flush();
   await waitFor(() => expect(view.container.querySelector('button[data-asset-index="999999"]')).toBeInTheDocument());
   expect(api.getAssetQueryPage).toHaveBeenCalledWith(1, 999936, 128);
+  // Near-end notification must never fetch the old sequential offset after resume.
+  expect(api.getAssetQueryPage.mock.calls.every(([, offset]) => offset >= 999808)).toBe(true);
   expect(library.query.assets.length).toBeLessThanOrEqual(1536);
   expect(view.container.querySelectorAll("[data-asset-index]").length).toBeLessThan(70);
   expect(screen.getByTestId("gallery-end-state")).toHaveTextContent("1,000,000 items");
@@ -343,4 +358,28 @@ it("shows thumbnail progress only while the query still has more rows", async ()
   await waitFor(() => expect(library.query.offset).toBe(26000));
   expect(screen.queryByRole("status")).toBeNull();
   expect(screen.queryByTestId("gallery-end-state")).toBeNull();
+});
+
+
+it("renders static slots without subscriptions or passing-page requests and resumes the unchanged final range", async () => {
+  const { view, scroll, library, subscriptions } = await mount();
+  expect(subscriptions()).toBeGreaterThan(0);
+  scroll(1000);
+  scroll(2000);
+  scroll(3000);
+  expect(view.container.querySelectorAll("[data-asset-index]").length).toBeGreaterThan(0);
+  expect(view.container.querySelectorAll("img, .animate-pulse, .animate-spin")).toHaveLength(0);
+  expect(subscriptions()).toBe(0);
+  expect(api.getAssetQueryPage).not.toHaveBeenCalled();
+  expect(api.demand).toHaveBeenLastCalledWith([], []);
+  library.thumbnails.thumbnailStore.complete({ 1: "/synthetic/late.jpg" }, [1]);
+  flush();
+  expect(subscriptions()).toBe(0);
+  await waitFor(() => expect(view.container.querySelector('button[data-asset-index="3000"]')).toBeInTheDocument());
+  expect(api.getAssetQueryPage.mock.calls.map(([, offset]) => offset)).toEqual([2944]);
+  expect(subscriptions()).toBeGreaterThan(0);
+  expect(api.demand.mock.lastCall?.[0]).toContain(3001);
+  view.unmount(); flush();
+  expect(subscriptions()).toBe(0);
+  expect(api.demand).toHaveBeenLastCalledWith([], []);
 });

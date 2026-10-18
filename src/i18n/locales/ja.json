@@ -291,6 +291,8 @@
       "description": "フォルダーを追加し、手動でスキャンするか、アプリ起動時のスキャンを有効にします。",
       "chooseFolder": "フォルダーを選択",
       "attachedPaths": "接続されたスキャンパス",
+      "showMore": "もっと見る",
+      "showLess": "表示を減らす",
       "noPaths": "スキャンパスがありません",
       "rescan": "再スキャン",
       "remove": "削除",

@@ -128,6 +128,14 @@ Successful action summaries use frontend translation keys directly. Setting a su
 
 ## Scan roots and rescanning
 
+The scanned-folder list initially shows the first three roots in controller order. With more
+than three roots, a centered Show more button reveals the full list and changes to Show less.
+Expansion belongs to `ScanSettingsSection`: root refreshes preserve it, while closing and
+reopening Settings resets it. With three or fewer roots, all rows appear without a toggle.
+The toggle remains usable during operations and exposes `aria-expanded` and `aria-controls`.
+Collapsing only changes visible rows; per-root actions and full-library operations keep their
+existing scope.
+
 Choose Folder opens the native directory picker with multiple selection enabled. A returned string becomes a one-item list; an array is deduplicated by exact string equality; null or an empty array is cancellation. The action snapshots existing roots, calls `addScanRoot` sequentially for every selected path, reloads the root list, and derives its added/skipped summary from the before/after lists. Adding roots does not scan them and does not refresh the asset library.
 
 Remove first stores the exact root path and opens an in-app confirmation. Cancel clears only that candidate. Confirm clears the candidate before starting the exclusive operation, then removes the root and performs the success follow-ups shown below. The root is never removed merely by opening or closing the dialog.

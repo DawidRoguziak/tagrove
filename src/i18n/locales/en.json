@@ -291,6 +291,8 @@
       "description": "Add folders, scan them manually, or enable scanning on app startup.",
       "chooseFolder": "Choose folder",
       "attachedPaths": "Attached scan paths",
+      "showMore": "Show more",
+      "showLess": "Show less",
       "noPaths": "No scan paths",
       "rescan": "Rescan",
       "remove": "Remove",

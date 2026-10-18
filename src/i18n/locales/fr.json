@@ -291,6 +291,8 @@
       "description": "Ajoutez des dossiers, analysez-les manuellement ou activez l’analyse au démarrage de l’application.",
       "chooseFolder": "Choisir un dossier",
       "attachedPaths": "Chemins d’analyse attachés",
+      "showMore": "Afficher plus",
+      "showLess": "Afficher moins",
       "noPaths": "Aucun chemin d’analyse",
       "rescan": "Réanalyser",
       "remove": "Supprimer",

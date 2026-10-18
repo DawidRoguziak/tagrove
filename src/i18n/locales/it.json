@@ -291,6 +291,8 @@
       "description": "Aggiungi cartelle, scansionale manualmente o attiva la scansione all’avvio dell’app.",
       "chooseFolder": "Scegli cartella",
       "attachedPaths": "Percorsi di scansione collegati",
+      "showMore": "Mostra di più",
+      "showLess": "Mostra di meno",
       "noPaths": "Nessun percorso di scansione",
       "rescan": "Riscansiona",
       "remove": "Rimuovi",

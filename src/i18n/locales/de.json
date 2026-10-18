@@ -291,6 +291,8 @@
       "description": "Füge Ordner hinzu, scanne sie manuell oder aktiviere das Scannen beim App-Start.",
       "chooseFolder": "Ordner auswählen",
       "attachedPaths": "Verbundene Scanpfade",
+      "showMore": "Mehr anzeigen",
+      "showLess": "Weniger anzeigen",
       "noPaths": "Keine Scanpfade",
       "rescan": "Neu scannen",
       "remove": "Entfernen",

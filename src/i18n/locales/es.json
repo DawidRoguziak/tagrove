@@ -291,6 +291,8 @@
       "description": "Añade carpetas, escanéalas manualmente o activa el escaneo al iniciar la aplicación.",
       "chooseFolder": "Elegir carpeta",
       "attachedPaths": "Rutas de escaneo adjuntas",
+      "showMore": "Mostrar más",
+      "showLess": "Mostrar menos",
       "noPaths": "Sin rutas de escaneo",
       "rescan": "Reescanear",
       "remove": "Eliminar",

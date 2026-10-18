@@ -1,4 +1,4 @@
-import { createEffect, For } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For } from "solid-js";
 import { UiButton } from "../../../ui/controls/UiButton";
 import { UiIcon } from "../../../ui/controls/UiIcon";
 import { SectionOperationStatus } from "../SectionOperationStatus";
@@ -26,6 +26,9 @@ interface ScanSettingsSectionProps {
 }
 export function ScanSettingsSection(props: ScanSettingsSectionProps) {
   const { t } = useLanguage();
+  const [expanded, setExpanded] = createSignal(false);
+  const folderListId = createUniqueId();
+  const visibleRoots = createMemo(() => expanded() ? props.scanRoots : props.scanRoots.slice(0, 3));
   let sectionElement: HTMLElement | undefined;
   createEffect(
     () => props.highlighted,
@@ -73,8 +76,8 @@ export function ScanSettingsSection(props: ScanSettingsSectionProps) {
           {t("settings.scan.attachedPaths")}
         </h3>
         {props.scanRoots.length ? (
-          <ul class="m-0 grid list-none gap-2 p-0">
-            <For each={props.scanRoots}>
+          <ul id={folderListId} class="m-0 grid list-none gap-2 p-0">
+            <For each={visibleRoots()}>
               {({ path, auto_scan_on_startup }) => (
                 <li class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border-soft)] bg-base-200/38 p-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                   <span class="grid h-9 w-9 place-items-center rounded-[var(--radius-control)] bg-primary/10 text-primary-text">
@@ -119,6 +122,17 @@ export function ScanSettingsSection(props: ScanSettingsSectionProps) {
           </ul>
         ) : (
           <div class="p-5 text-[var(--text-muted)]">{t("settings.scan.noPaths")}</div>
+        )}
+        {props.scanRoots.length > 3 && (
+          <UiButton
+            variant="ghost"
+            className="justify-self-center"
+            aria-expanded={expanded() ? "true" : "false"}
+            aria-controls={folderListId}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {t(expanded() ? "settings.scan.showLess" : "settings.scan.showMore")}
+          </UiButton>
         )}
       </div>
 

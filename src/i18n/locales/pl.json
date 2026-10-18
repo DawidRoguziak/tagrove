@@ -291,6 +291,8 @@
       "description": "Dodaj foldery, skanuj je ręcznie lub włącz skanowanie przy uruchomieniu aplikacji.",
       "chooseFolder": "Wybierz folder",
       "attachedPaths": "Podlaczone sciezki skanowania",
+      "showMore": "Pokaż więcej",
+      "showLess": "Pokaż mniej",
       "noPaths": "Brak sciezek skanowania",
       "rescan": "Skanuj ponownie",
       "remove": "Usun",

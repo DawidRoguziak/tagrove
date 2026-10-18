@@ -291,6 +291,8 @@
       "description": "Přidejte složky, skenujte je ručně nebo zapněte skenování při spuštění aplikace.",
       "chooseFolder": "Vybrat složku",
       "attachedPaths": "Připojené cesty ke skenování",
+      "showMore": "Zobrazit více",
+      "showLess": "Zobrazit méně",
       "noPaths": "Žádné cesty ke skenování",
       "rescan": "Znovu prohledat",
       "remove": "Odstranit",

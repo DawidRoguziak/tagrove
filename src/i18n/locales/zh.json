@@ -291,6 +291,8 @@
       "description": "添加文件夹，手动扫描或启用应用启动时扫描。",
       "chooseFolder": "选择文件夹",
       "attachedPaths": "已附加的扫描路径",
+      "showMore": "显示更多",
+      "showLess": "收起",
       "noPaths": "没有扫描路径",
       "rescan": "重新扫描",
       "remove": "移除",

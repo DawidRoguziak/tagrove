@@ -291,6 +291,8 @@
       "description": "폴더를 추가하고 수동으로 스캔하거나 앱 시작 시 스캔을 활성화하세요.",
       "chooseFolder": "폴더 선택",
       "attachedPaths": "연결된 스캔 경로",
+      "showMore": "더 보기",
+      "showLess": "접기",
       "noPaths": "스캔 경로 없음",
       "rescan": "재스캔",
       "remove": "제거",

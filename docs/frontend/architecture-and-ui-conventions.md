@@ -51,6 +51,7 @@ icon source. See [branding](../development/setup-and-build.md#branding-assets).
 | `src/features/settings` | Operation models, progress, section views and confirmations. |
 | `src/ui` | Reusable controls, DOM behavior and overlay ownership. It does not import feature or library code. |
 | `src/i18n` | Resources, initialization, persistence and the Solid language binding. |
+| `src/utils` | Framework-free helpers: tag normalization (`media.ts`) and search-token quoting (`searchTokens.ts`). |
 | `src/test` | Shared DOM/Tauri mocks and owned test helpers. Tests otherwise live beside their owners. |
 
 Feature views consume explicit models and callbacks. Application-wide composition belongs
@@ -375,5 +376,4 @@ Bulk ordering lives only in the group-order modal. The sidebar retains its headi
 Use direct inputs/outputs for pure helpers, owned `renderHook` for models and Testing
 Library for components. `src/test/renderSolid.tsx` changes props under the same owner;
 `settle.ts` provides explicit batch boundaries. Deferred IPC establishes race ordering.
-The [behavior inventory](../solid2/BEHAVIOR-INVENTORY.md) maps migration coverage to final
-owners. Consult [testing](../development/testing.md) for commands and desktop opt-ins.
+Consult [testing](../development/testing.md) for commands and desktop opt-ins.

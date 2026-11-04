@@ -12,7 +12,7 @@ Maintenance closes admission, waits for admitted operations and their workers to
 
 Ordinary connections use WAL, `synchronous=NORMAL`, foreign keys, `temp_store=MEMORY`, a 64 MiB page-cache target, a 256 MiB mmap limit, and a five-second SQLite busy timeout. File-mutation journals and source-mutation commits use separate `synchronous=FULL` connections that never enter the idle pool. Startup recovery also uses FULL. This durability choice follows [SQLite's synchronous documentation](https://www.sqlite.org/pragma.html#pragma_synchronous). Restore path staging selects `temp_store=FILE`; CSV staging uses a separate automatically deleted disk database with a 2 MiB page-cache target.
 
-`db.rs` exposes the shared row types and compatibility API. SQL lives in `db/connections.rs`, `schema.rs`, `queries.rs`, `mutations.rs`, `scan_membership.rs`, and `thumbnails.rs`. Services coordinate these SQL functions with explicit runtime permits and progress sinks. Tauri commands schedule blocking SQL and filesystem work on `spawn_blocking`.
+`db.rs` exposes the shared row types and compatibility API. SQL lives in `db/connections.rs`, `schema.rs`, `queries.rs`, `mutations.rs`, `scan_membership.rs`, `thumbnails.rs`, and `query_revisions.rs` (library revision markers). Services coordinate these SQL functions with explicit runtime permits and progress sinks. Tauri commands schedule blocking SQL and filesystem work on `spawn_blocking`.
 
 ## Schema
 

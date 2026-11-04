@@ -41,8 +41,7 @@ The image element resets its failure state when its source changes. Gallery imag
 
 The current tests run real virtual-core at 10,000, 26,000 and 1,000,000 slots, drive sparse replacement,
 explicit page retry and eviction/reload across the 12-page bound, and exercise the native
-WebView with synthetic collections. See the [stage evidence](../solid2/PROGRESS.md) and
-[browsing desktop recipe](../development/testing.md#solid-feature-verification).
+WebView with synthetic collections. See the [browsing desktop recipe](../development/testing.md#solid-feature-verification).
 
 ## From applied filters to a session
 
@@ -72,7 +71,7 @@ The application-owned cache has these bounds:
 - most-recently-accessed promotion for lookup by key or session ID; and
 - reuse of an equal normalized-filter/dependency-revision key, including reuse of its session ID.
 
-A separate cache epoch changes on clear. Insertion checks both the request token and epoch under the cache mutex, preventing an in-flight build from repopulating a cleared cache. SQLite progress callbacks are removed before connection reuse. An authoritative session larger than the retained-ID budget rejects with a text error asking the user to narrow the search. It does not return `superseded`, evict existing sessions, or retry automatically. Empty and populated frontend views expose the query error and Retry; a new filter submission can recover with a fitting query. The retained-ID budget excludes transient SQLite allocations and vectors still held by in-flight readers; the [backend measurements](../development/backend-refactor-verification.md) report these separately.
+A separate cache epoch changes on clear. Insertion checks both the request token and epoch under the cache mutex, preventing an in-flight build from repopulating a cleared cache. SQLite progress callbacks are removed before connection reuse. An authoritative session larger than the retained-ID budget rejects with a text error asking the user to narrow the search. It does not return `superseded`, evict existing sessions, or retry automatically. Empty and populated frontend views expose the query error and Retry; a new filter submission can recover with a fitting query. The retained-ID budget excludes transient SQLite allocations and vectors still held by in-flight readers.
 
 The [IPC query states](../architecture/ipc-contract.md#query-session-states) define `ready`, `superseded`, and `stale`. The frontend stores or merges a current `ready` page, discards an obsolete local response, reports a still-current `superseded` start as a retryable query error while retaining the old cache, and starts a new query for a `stale` page.
 

@@ -39,7 +39,7 @@ Obsolete selections cannot publish editor feedback or restore focus to a new dra
 `features/bulk/GroupOrderModal.tsx` keeps an isolated order draft, virtualizes rows through
 virtual-core, and supports pointer and keyboard ordering. Failure or partial success retains
 the draft. Logical close releases interaction ownership while the closing frame retains its
-rows and metadata. The runtime loads the startup popular-tag snapshot once. The [behavior inventory](../solid2/BEHAVIOR-INVENTORY.md) maps reference assertions to current tests.
+rows and metadata. The runtime loads the startup popular-tag snapshot once.
 
 ## Workspace presentation
 

@@ -21,6 +21,7 @@
 /.vs/
 /.codex/
 /.opencode/
+/.claude/settings.local.json
 *.swp
 
 # Local configuration and logs

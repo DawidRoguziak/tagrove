@@ -139,7 +139,7 @@ Queue disposal cancels timers and rejects late events.
 
 ## Locks, progress, cleanup, and database consistency
 
-Generation, demand, bulk retry, and cancellation commands take the thumbnail read lock. `clear_all_thumbnails` takes the write lock, so it waits for active readers and excludes new ones while it clears. Root removal, asset delete/rename, database bundle operations, and library clearing use the combined scan lock then thumbnail write lock where they touch thumbnail ownership. The lock ordering and process isolation are defined in the [system overview](../architecture/system-overview.md).
+Generation, demand, and bulk retry commands take the thumbnail read lock; bulk cancellation takes no workflow lock and only sets the cancellation flag. `clear_all_thumbnails` takes the write lock, so it waits for active readers and excludes new ones while it clears. Root removal, asset delete/rename, database bundle operations, and library clearing use the combined scan lock then thumbnail write lock where they touch thumbnail ownership. The lock ordering and process isolation are defined in the [system overview](../architecture/system-overview.md).
 
 All thumbnail commands run on Tauri's blocking thread pool (`spawn_blocking`): each command acquires its workflow lock inside the blocking task, so no lock is ever held across an await and no async runtime thread is occupied by scheduler waits or SQLite work. Workflow locks recover from poisoning (`into_inner`) instead of rejecting every later command after a panicked holder; the thumbnail processor's panic guard additionally keeps scheduler state unpoisoned in practice.
 
@@ -192,4 +192,4 @@ Asset/root deletion and rename clear related rows and best-effort remove known t
 - `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` covers queue de-duplication, failure suppression, streamed ready merging, stale-generation rejection, and 64-item frontend batches.
 - `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers rendering indicators and gallery-level thumbnail status among the virtual-grid behaviors.
 
-The real ffmpeg test covers probe/render output and subprocess draining. Isolated desktop workflows exercise thumbnail generation through the WebView. Cleanup and cancellation interleavings remain unit-level checks; see the [verification record](../development/backend-refactor-verification.md).
+The real ffmpeg test covers probe/render output and subprocess draining. Isolated desktop workflows exercise thumbnail generation through the WebView. Cleanup and cancellation interleavings remain unit-level checks.

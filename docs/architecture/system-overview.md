@@ -35,7 +35,7 @@ flowchart LR
     IPC -. "promise, event, or Channel message" .-> UI
 ```
 
-Solid 2 is the only frontend after [migration stage 9](../solid2/09-parity-and-cutover.md).
+Solid 2 is the only frontend.
 The normal request path is:
 
 1. `src/app/main.tsx` calls `mountApplication`, which applies the persisted theme, loads i18next and mounts the application. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.
@@ -81,7 +81,7 @@ contracts and [testing](../development/testing.md) for their observed coverage.
 
 `src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`, which:
 
-1. creates a `tauri::Builder` and installs the dialog plugin;
+1. creates a `tauri::Builder` and installs the dialog and opener plugins;
 2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
@@ -102,14 +102,15 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 | `app/state.rs` | Process-wide shared runtime state. |
 | `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
+| `app/profile.rs` | Debug/test-only allowlist of the development and E2E identifiers used by the profile guard. |
 | `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
-| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, native video playback, scan orchestration, thumbnail workflows, backup/restore, and progress emission. |
+| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, native video playback (`video_player_service.rs`, asset-ID source authorization in `video_source_service.rs`, playback events in `video_events.rs`), scan orchestration, thumbnail workflows, backup/restore, CSV, and progress emission. |
 | `video_surface.rs` | GTK overlay/GLArea placement and libmpv OpenGL rendering. |
-| `db.rs` and `db/*` | Shared types plus separate connection, schema, query, mutation, scan-membership, and thumbnail SQL modules. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
+| `db.rs` and `db/*` | Shared types plus separate connection, schema, query, mutation, scan-membership, thumbnail, and query-revision SQL modules. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
 | `indexer.rs` | Supported-file discovery, fingerprints, and media metadata extraction. |
 | `thumbs.rs` | Image/video thumbnail creation and video duration probing. |
 | `models.rs` | Backend serializable data models. |
-| `utils/*` | Path and tag normalization helpers. |
+| `utils/*` | Path, tag, and text normalization helpers. |
 | `error.rs` | `AppError` and `AppResult`; command boundaries currently flatten errors to strings. |
 
 ### Managed state
@@ -167,9 +168,9 @@ Command-level workflow locks have the following matrix:
 | --- | --- | --- |
 | Database maintenance gate | Every SQLite connection; exclusive ownership for DB bundle export/restore | Exclusive ownership blocks new operations and drains admitted operations, including connections and workers. |
 | `scan_lock: Mutex<()>` | `scan_folder`, `rescan_all_roots` | Another scan and every combined destructive operation. |
-| Shared `thumb_lock` read guard | Render all/failed thumbnails, cancel bulk render, ensure one/page/streamed thumbnails | A destructive thumbnail write guard; multiple thumbnail readers may coexist. The bulk-render atomic separately rejects a second bulk render. |
+| Shared `thumb_lock` read guard | Render all/failed thumbnails, ensure one/page/streamed thumbnails (cancelling a bulk render takes no lock; it only sets the cancellation flag) | A destructive thumbnail write guard; multiple thumbnail readers may coexist. The bulk-render atomic separately rejects a second bulk render. |
 | Exclusive `thumb_lock` write guard | `clear_all_thumbnails` | All thumbnail render/ensure readers and combined destructive operations. |
-| `scan_lock` then exclusive `thumb_lock` | Remove scan root, delete or rename an asset file, clear library data | Scans, thumbnail work, and every other combined operation. |
+| `scan_lock` then exclusive `thumb_lock` | Remove scan root, delete an asset file, apply a duplicate-resolution batch, clear library data. The `rename_asset_file` handler also takes both locks but is not registered in `generate_handler!`, so the frontend cannot call it. | Scans, thumbnail work, and every other combined operation. |
 | Maintenance gate, then `scan_lock`, then exclusive `thumb_lock` | Export a DB bundle, import a DB bundle | All SQLite users, scans, thumbnail work, and every other combined operation. |
 | No workflow lock | Queries/details/tag and favorite/group writes, duplicate lookup, CSV import/export, scan-root list/add, and window-theme sync | Only SQLite/filesystem primitives and any operation-local synchronization apply. |
 
@@ -186,7 +187,7 @@ libmpv performs interactive playback; ffmpeg and ffprobe perform indexing and th
 Current configuration is permissive and should be treated as current state, not a recommended end state:
 
 - `capabilities/default.json` applies to the `main` window and grants `core:default`, `dialog:default` (open, save, and message dialogs), and the window permissions for minimize, toggle-maximize, close, drag and resize-drag. It also grants `opener:allow-open-url` scoped to the Tagrove GitHub repository and its subpages, with automatic HTML-link handling disabled. Application commands are those explicitly registered in `lib.rs`.
-- The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `['**']`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails use this path. Video sources are authorized by asset ID and opened only by libmpv.
+- The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `["**", "$APPDATA/thumbs/**"]` (the second entry is already covered by the first), allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails use this path. Video sources are authorized by asset ID and opened only by libmpv.
 - `app.security.csp` is `null`, so the configuration does not install a Content Security Policy.
 - Docker produces x86_64 Flatpak and AppImage packages. Flatpak uses GNOME 50 and installs under `/app`; AppImage builds on Debian 12. The Arch-native executable is an explicit option. Other platforms and ARM are not configured. See [packaging](../development/linux-packaging.md).
 
@@ -236,6 +237,7 @@ Use [testing](../development/testing.md) for the full test workflow. The most re
 - Rust unit tests in `db.rs`, `commands/*`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.
+- `src-tauri/tests/{backend_runtime,tag_vocabulary,thumbnail_bulk,thumbnail_clear}.rs`: runtime permits/locks, tag vocabulary, bulk thumbnail rendering, and thumbnail clearing; `tag_save_benchmark.rs` holds the ignored tag-save benchmark.
 - `e2e/build-e2e.js` and `e2e/wdio.conf.js`: destructive-test isolation and real desktop build/driver setup.
 - `e2e/specs/*.e2e.js`: real-window smoke and workflows covering settings, filtering, roots, bulk edits, lightbox mutations, CSV, and DB bundles.
 - `src-tauri/tauri.conf*.json`, `capabilities/default.json`, `Cargo.toml`, checked-in `icons/`, `package.json`, and `index.html`: configuration checks that tests do not fully replace.

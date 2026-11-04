@@ -2,13 +2,13 @@
 
 Implementation entry points: [Vitest configuration](../../vitest.config.ts), [frontend test setup](../../src/test/setup.ts), [CI workflow](../../.github/workflows/privacy.yml), [desktop harness](../../e2e/wdio.conf.js).
 
-MediaTagger has four test layers. Use the lowest layer that can prove the behavior, then add a higher layer when the change crosses a contract or runtime boundary.
+Tagrove has four test layers. Use the lowest layer that can prove the behavior, then add a higher layer when the change crosses a contract or runtime boundary.
 
 ## Test layer matrix
 
 | Layer | Location | Runner and command | What it exercises | What it does not prove |
 | --- | --- | --- | --- | --- |
-| Frontend unit and component | `src/**/__tests__/*.test.ts`, `src/**/__tests__/*.test.tsx` | Vitest with `bun run test` | TypeScript helpers, models, Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
+| Frontend unit and component | `vitest.config.ts` includes `src/**/*.{test,spec}.{ts,tsx}`; by convention tests live in `src/**/__tests__/` | Vitest with `bun run test` | TypeScript helpers, models, Solid rendering and interaction, frontend state transitions, and the JavaScript shape of mocked Tauri calls | A live Tauri bridge, SQLite, native dialogs, a WebView, or real filesystem behavior |
 | Rust unit | `#[cfg(test)]` modules beside backend code in `src-tauri/src/` | Cargo through `bun run test:backend` | Isolated database helpers, validation, scanning/indexing helpers, thumbnail scheduling and parsing, backup helpers, and command/service logic | A JavaScript caller, desktop window, packaged resources, or a complete application workflow |
 | Rust integration and backend workflow | All Cargo-discovered integration targets in `src-tauri/tests/` | Cargo through `bun run test:backend`, or `cargo test --manifest-path src-tauri/Cargo.toml --locked --test <target>` for one target | File-backed SQLite and temporary-filesystem behavior across multiple backend modules; ignored diagnostics require explicit opt-in | Tauri startup, IPC serialization, WebDriver, UI, profile isolation, or packaging |
 | Desktop E2E | `e2e/specs/*.e2e.js` | WebdriverIO, `tauri-driver`, and WebKitWebDriver on Linux | A real unbundled debug Tauri window, the JavaScript-to-Rust invoke bridge, selected UI workflows, and E2E profile/build isolation | Production app data, all native dialogs, or all locales |
@@ -51,8 +51,8 @@ Focused examples:
 ```bash
 bun run test -- src/features/lightbox/__tests__/LightboxModal.test.tsx
 bun run test -- --maxWorkers=1
-cargo test --manifest-path src-tauri/Cargo.toml module_or_test_name
-cargo test --manifest-path src-tauri/Cargo.toml --test backend_integration test_name
+cargo test --manifest-path src-tauri/Cargo.toml --locked module_or_test_name
+cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_integration test_name
 ```
 
 There is no numeric coverage threshold. Run the frontend and backend suites explicitly; they are not CI merge gates.
@@ -81,8 +81,7 @@ Frontend checks, Rust checks, application tests, and Linux packaging are run exp
 
 `vitest.config.ts` runs one Solid project across all source tests, using the Solid plugin,
 browser export conditions and inlined Solid dependencies. Pure tests execute once in the
-same project. See the [suite inventory](../solid2/BEHAVIOR-INVENTORY.md) for the reference
-suite replacements. Use file or directory arguments for focused runs. `tsconfig.json`
+same project. Use file or directory arguments for focused runs. `tsconfig.json`
 checks every application and test source with `jsxImportSource: @solidjs/web`.
 
 `vitest.config.ts` is part of the test contract:
@@ -141,6 +140,28 @@ The same worker regression runs 30 cycles of all six speed choices, alternating 
 ## Real desktop E2E
 
 Release production is documented in [setup and builds](setup-and-build.md#docker-packages). Its build does not run test suites.
+
+Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`, `app.workflows`, `group-order`, `popular-tags`, `review-fixes`, and `startup-scan`. The others skip unless their flag is `1`:
+
+| Spec | Flag |
+| --- | --- |
+| `about` | `MEDIATAGGER_ABOUT` |
+| `animations` | `MEDIATAGGER_ANIMATIONS` |
+| `gallery-browsing` | `MEDIATAGGER_GALLERY_BROWSING` |
+| `gallery.performance` | `MEDIATAGGER_GALLERY_PERF` |
+| `gallery-selection` | `MEDIATAGGER_GALLERY_SELECTION` |
+| `lightbox-activity` | `MEDIATAGGER_LIGHTBOX_ACTIVITY` |
+| `lightbox-images` | `MEDIATAGGER_LIGHTBOX_IMAGES` |
+| `lightbox-recovery` | `MEDIATAGGER_LIGHTBOX_RECOVERY` |
+| `native-video-escape`, `video-speed` | `MEDIATAGGER_NATIVE_VIDEO` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
+| `search-recovery` | `MEDIATAGGER_SEARCH_RECOVERY` |
+| `selection-recovery` | `MEDIATAGGER_SELECTION_RECOVERY` |
+| `settings-language` | `MEDIATAGGER_SETTINGS_LANGUAGE` |
+| `settings-maintenance` | `MEDIATAGGER_SETTINGS_MAINTENANCE` |
+| `startup-scan-remount` | `MEDIATAGGER_STARTUP_REMOUNT` |
+| `tag-editor` | `MEDIATAGGER_TAG_EDITOR` |
+| `thumbnail-fade` | `MEDIATAGGER_THUMBNAIL_FADE` |
+| `ui.redesign` | `MEDIATAGGER_UI_REDESIGN` |
 
 ### Linux prerequisites
 
@@ -262,7 +283,7 @@ The fixtures include long filenames and tags.
 It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the stacked bulk layout at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
 the private X11 display into a fresh timestamped `artifacts/ui-redesign/` subdirectory per run.
 The normal workflow suite covers narrow lightbox and native media behavior; the separate
-`MEDIATAGGER_GALLERY_PERF=1` suite exercises 2,048 images and cache eviction. It also checks selection summary IPC and full-selection metadata writes after eviction and filter changes. See [frontend refactor verification](frontend-refactor-verification.md) for the measured run and retention bounds.
+`MEDIATAGGER_GALLERY_PERF=1` suite exercises 2,048 images and cache eviction. It also checks selection summary IPC and full-selection metadata writes after eviction and filter changes.
 
 Run the opt-in spec through the existing harness on a private X11 display with temporary
 XDG data/config/cache directories. Preserve all profile and cleanup guards. Example after
@@ -427,7 +448,7 @@ Component tests cover pending-deletion guards and the first navigation shortcut 
 ### Persistent desktop control
 
 `e2e/control.js` reuses the E2E build configuration and shared media fixtures without running
-the Mocha suite. The [MediaTagger verification skill](../../.cursor/skills/verify-mediatagger/SKILL.md)
+the Mocha suite. The [MediaTagger verification skill](../../.claude/skills/verify-mediatagger/SKILL.md) (`/verify-mediatagger` in Claude Code)
 contains the complete launch, doctor, interaction, evidence, and cleanup workflow, with
 recipes for gallery/search, settings, and lightbox.
 
@@ -591,7 +612,7 @@ Run the opt-in metadata measurements alone so SQLite's process-wide allocator co
 cargo test --manifest-path src-tauri/Cargo.toml --test backend_runtime -- --ignored --nocapture --test-threads=1
 ```
 
-The fixtures contain 1,000 and 10,000 metadata rows and no media collection. The output distinguishes Rust ID-vector capacity from additional peak SQLite allocation and checks indexed filename lookup plus seven-row thumbnail pages. See [the verification record](backend-refactor-verification.md) for measured results and desktop limitations.
+The fixtures contain 1,000 and 10,000 metadata rows and no media collection. The output distinguishes Rust ID-vector capacity from additional peak SQLite allocation and checks indexed filename lookup plus seven-row thumbnail pages.
 
 ## Review fix regressions
 
@@ -751,8 +772,7 @@ artifacts accompany this report.
 
 ## Solid feature verification
 
-Migration-only shell/reference specs and renderer switches have been removed. Historical
-React/Solid comparison commands and results remain in [migration progress](../solid2/PROGRESS.md).
+Migration-only shell/reference specs and renderer switches have been removed.
 `bun run test:build` checks the actual production module graph for the Solid entry and
 absence of React, its adapters and the removed source trees.
 

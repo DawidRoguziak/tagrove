@@ -122,6 +122,20 @@ describe("BulkActionsSidebar", () => {
     expect(screen.getByLabelText("Add tag")).toHaveValue("");
   });
 
+  it("explains an invalid tag, keeps the draft and does not submit it", async () => {
+    const controller = createController({ selectedAssetIds: new Set([1]), tagMode: "single" });
+    renderSolid(Sidebar, { controller });
+    const input = screen.getByLabelText("Add tag");
+    await userEvent.type(input, "two;tags{Enter}");
+    expect(screen.getByTestId("bulk-tag-invalid")).toHaveTextContent(
+      "Tags cannot contain whitespace, commas, semicolons, or control characters."
+    );
+    expect(input).toHaveValue("two;tags");
+    expect(controller.onAddTag).not.toHaveBeenCalled();
+    await userEvent.type(input, "{Backspace}");
+    expect(screen.queryByTestId("bulk-tag-invalid")).not.toBeInTheDocument();
+  });
+
   it("cancels deferred tag focus when selection changes before re-enabling", async () => {
     let settle: (saved: boolean) => void = () => {};
     const pending = new Promise<boolean>((resolve) => {

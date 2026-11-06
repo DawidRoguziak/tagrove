@@ -73,6 +73,7 @@ function LightboxContent(
   const [deleting, setDeleting] = createSignal(false),
     [deleteError, setDeleteError] = createSignal<string | null>(null);
   const [draft, setDraft] = createSignal("");
+  const [tagInvalid, setTagInvalid] = createSignal(false);
   let deletingNow = false,
     generation = 0,
     input: HTMLInputElement | undefined;
@@ -86,6 +87,7 @@ function LightboxContent(
       setConfirm(false);
       setDeleteError(null);
       setDraft("");
+      setTagInvalid(false);
       deletingNow = false;
       setDeleting(false);
     }
@@ -194,7 +196,13 @@ function LightboxContent(
   function addTag(value: string) {
     if (props.model.tagEditingDisabled) return;
     const tag = value.trim().toLowerCase();
-    if (!isValidTag(tag) || props.model.tagEditor.includes(tag)) return;
+    if (!isValidTag(tag)) {
+      // Keep the draft so the user can correct it; an empty submit stays silent.
+      setTagInvalid(tag.length > 0);
+      return;
+    }
+    setTagInvalid(false);
+    if (props.model.tagEditor.includes(tag)) return;
     props.model.saveTags(normalizeTags([...props.model.tagEditor, tag]));
     setDraft("");
     const request = generation;
@@ -407,6 +415,7 @@ function LightboxContent(
                 sidebarVisible={sidebarVisible()}
                 selectedTags={props.tags}
                 tagDraft={draft()}
+                tagInvalid={tagInvalid()}
                 knownTags={props.knownTags}
                 tagInputRef={(node) => {
                   input = node;
@@ -420,7 +429,10 @@ function LightboxContent(
                   if (!props.model.tagEditingDisabled)
                     props.model.saveTags(props.model.tagEditor.filter((value) => value !== tag));
                 }}
-                onTagDraftChange={setDraft}
+                onTagDraftChange={(value) => {
+                  setDraft(value);
+                  setTagInvalid(false);
+                }}
                 onAddTag={addTag}
                 onRetryTags={props.model.retryTags}
                 onRetryTagDetails={props.model.retryDetails}

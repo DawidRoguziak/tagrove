@@ -171,7 +171,7 @@ Do not infer archive contents, overwrite atomicity, CSV matching, validation, or
 
 ## Clear library
 
-The danger-zone button opens a named confirmation dialog. No clear command runs until Yes is chosen. Yes closes the confirmation first, starts an exclusive danger operation, listens only for `library-clear*` progress, and enters the shared tag-mutation maintenance barrier before calling `clearLibraryData`. The barrier waits for active tag writes, blocks new ones, and remains held through the direct frontend reset. Because clear can reject after partial commits, that reset also runs on rejection; scan roots and the library are then refreshed best-effort before the runner publishes the error. On success, roots are reloaded and the removed asset/root/thumbnail counts are reported. No closes the dialog without changing the section message.
+The danger-zone button opens a named confirmation dialog. No clear command runs until Yes is chosen. Yes closes the confirmation first, starts an exclusive danger operation, listens only for `library-clear*` progress, and enters the shared tag-mutation maintenance barrier before calling `clearLibraryData`. The barrier waits for admitted metadata writes, queued or active, blocks new ones, and remains held through the direct frontend reset. Because clear can reject after partial commits, that reset also runs on rejection; scan roots and the library are then refreshed best-effort before the runner publishes the error. On success, roots are reloaded and the removed asset/root/thumbnail counts are reported. No closes the dialog without changing the section message.
 
 ## Duplicate resolver
 

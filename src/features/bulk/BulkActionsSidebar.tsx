@@ -33,6 +33,7 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
   const [orderModalContext, setOrderModalContext] = createSignal<string | null>(null);
   const [orderModalActivated, setOrderModalActivated] = createSignal(false);
   const [tagDraft, setTagDraft] = createSignal("");
+  const [tagInvalid, setTagInvalid] = createSignal(false);
   let tagInput: HTMLInputElement | undefined;
   let disposed = false;
   onCleanup(() => {
@@ -69,6 +70,7 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
       if (ids === lastSelection) return;
       lastSelection = ids;
       setTagDraft("");
+      setTagInvalid(false);
       setPendingTagFocus(null);
     }
   );
@@ -90,6 +92,12 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
   );
   const addTagAndRestoreFocus = (tag: string) => {
     const attempted = normalizeBulkTag(tag);
+    if (!attempted) {
+      // Keep an invalid draft for correction instead of clearing it silently.
+      setTagInvalid(tag.trim().length > 0);
+      return;
+    }
+    setTagInvalid(false);
     setTagDraft(attempted);
     const selection = props.controller.selectedAssetIds;
     void props.controller
@@ -275,7 +283,10 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
           }
           getRemoveTagAriaLabel={(tag) => t("bulk.tagModal.removeTagAria", { tag })}
           draft={tagDraft()}
-          onDraftChange={setTagDraft}
+          onDraftChange={(value) => {
+            setTagDraft(value);
+            setTagInvalid(false);
+          }}
           knownTags={props.controller.knownTags}
           onAddTag={addTagAndRestoreFocus}
           inputId="bulk-tag-draft-input"
@@ -305,6 +316,11 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
               </For>
             </div>
           </div>
+        ) : null}
+        {tagInvalid() ? (
+          <UiAlert tone="error" data-testid="bulk-tag-invalid">
+            {t("search.errors.tagInvalidCharacters")}
+          </UiAlert>
         ) : null}
         {props.controller.tagDetailsFailed ? (
           <UiAlert tone="error" title={t("bulk.panel.tagLoadFailedTitle")}>

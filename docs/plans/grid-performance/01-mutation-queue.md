@@ -76,7 +76,9 @@ Etap 02 usuwa przyczyny po stronie backendu (pula, skan). Ten etap sprawia, że 
 
 ## Status
 
-todo — 2026-11-04
+done — 2026-11-06
+
+Decyzja: [ADR 0001](../../adr/0001-per-asset-metadata-write-queue.md).
 
 ## Notatki agentów
 
@@ -88,3 +90,22 @@ todo — 2026-11-04
   - Tag: 0/20 nieudanych we wszystkich biegach; zapis p50 35–129 ms, max 230–1348 ms (debug).
   - Backend w tym czasie nie zwrócił żadnego błędu zapisu (także 0 z 224 w teście Rust).
 - Wniosek: objaw z sekcji „Objaw” to przyczyna 1 (odrzucenie zapisu favorite, gdy na assecie trwa zapis tagu). Skan tylko wydłuża okno wyścigu. Ten sam scenariusz po etapie 01 powinien dać 0/20 dla like i tagu (wiersz „Nieudane operacje” w tabeli etapu 07).
+
+### 2026-11-06 — agent etapu 01
+- Zrobione:
+  - Kolejka FIFO per asset w koordynatorze `createAssetTagState.enqueueMutation(ids)` (turn z `begin()`/`release()`); `beginMutation` nie jest już publiczne. Odejście od kroku 1: kolejka nie siedzi w samym `createMutations`, bo bariera maintenance i `waitForIdle` muszą liczyć także zapisy czekające. Bariera czeka więc na zapisy przyjęte przed nią.
+  - Ogony są łączone przy przyjęciu dla wszystkich ID naraz, więc zakleszczenie jest niemożliwe bez sortowania ID. Pusty asset startuje w tym samym ticku (synchroniczna szybka ścieżka), więc IPC idzie od razu jak dotąd. Reset tożsamości czyści kolejki nowej epoki; zapis przyjęty przed resetem odpada w `begin()`.
+  - `createMutations.write`: baza detali czytana przy starcie zapisu, a nie przy przyjęciu. `turn.release()` przed `after()`. `saveTags` przyjmuje funkcję liczoną z kanonicznych tagów przy starcie.
+  - Lightbox: `drain()` robi rebase intencji na czele kolejki (bez Retry); guardy favorite i grupy zastąpione licznikami pending. Powtórny toggle serca odwraca ostatnią żądaną wartość. Przycisk serca dalej jest `disabled` podczas własnego zapisu.
+  - Bulk: blokady zamienione na liczniki; zapis jednego assetu funkcją (bez zgubionych tagów przy szybkim dodawaniu); ponowienie odczytu detali (max 3 próby) po refreshu lub zapisie.
+  - Niepoprawny tag w lightboxie i bulk pokazuje istniejący komunikat `search.errors.tagInvalidCharacters` i zostawia draft. Nowych kluczy i18n nie ma.
+  - Dokumentacja: `search-tags-and-media-groups.md`, `lightbox.md`, `frontend/architecture-and-ui-conventions.md`, `data-safety-and-portability.md`, `settings-operations.md`; ADR 0001.
+- Odkryte:
+  - Bez synchronicznej szybkiej ścieżki zapis wywołany tuż przed resetem tożsamości byłby odrzucany (`mutations.test.ts`, „does not publish a stale identity…”).
+  - Zakolejkowana zamiana pełnej listy tagów policzona przy kliknięciu nadpisałaby wcześniejszy zapis; stąd forma funkcyjna i rebase w lightboxie.
+  - Zakolejkowane serce dziedziczy opóźnienie zapisu tagu przed sobą (patrz Testy). Wolne zapisy backendu pod skanem to etap 02.
+- Zostało: kolumnę „Po 01–06” w etapie 07 wypełnia orkiestrator po falach A–C.
+- Testy:
+  - `bun run test` → pass (80 plików, 787 testów); `bun run typecheck`, `bun run lint`, `bun run locale:check`, `git diff --check` → pass.
+  - `MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1 bun run test:e2e:tauri --spec e2e/specs/grid-baseline.e2e.js` → pass. Like 0/20 nieudanych (było 9/20, 12/20, 15/20), bez wywołań odrzuconych przed IPC; tag 0/20. Serce od kliknięcia do UI: p50 84 ms, p95 1629 ms, max 2984 ms (debug). Najdłuższe czekały w kolejce na zapis tagu (tag IPC max 3032 ms, sam zapis serca 2 ms). Profil XDG i `TMPDIR` tym razem na tmpfs (pomiar „Przed” był na dysku).
+  - Regresja E2E (`MEDIATAGGER_TAG_EDITOR=1`, `MEDIATAGGER_GALLERY_SELECTION=1`, `MEDIATAGGER_LIGHTBOX_RECOVERY=1`, `MEDIATAGGER_SETTINGS_MAINTENANCE=1`): `tag-editor` 6/6, `gallery-selection` 7/7, `group-order` 1/1, `lightbox-recovery` 2/2, `settings-maintenance` 3/3 → pass. `tag-editor` i `lightbox-recovery` wymagają profilu XDG pod `/tmp/mediatagger-*` (pierwszy bieg z innym katalogiem padł na tym warunku w `before`).

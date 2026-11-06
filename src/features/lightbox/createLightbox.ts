@@ -24,6 +24,34 @@ function rebase(intent: TagIntent, canonical: string[]) {
   }
   intent.confirmed = canonical;
 }
+/** Pending favorite/group writes per asset and identity epoch; writes queue, never reject. */
+function createPendingWrites<T = undefined>() {
+  const entries = new Map<number, { epoch: number; count: number; failed: boolean; value?: T }>();
+  return {
+    has: (id: number, epoch: number) => entries.get(id)?.epoch === epoch,
+    /** The value requested by the newest pending write, used to chain queued toggles. */
+    latest: (id: number, epoch: number) => {
+      const entry = entries.get(id);
+      return entry?.epoch === epoch ? entry.value : undefined;
+    },
+    start(id: number, epoch: number, value?: T) {
+      const entry = entries.get(id);
+      if (entry?.epoch === epoch) {
+        entry.count += 1;
+        entry.value = value;
+      } else entries.set(id, { epoch, count: 1, failed: false, value });
+    },
+    /** Returns the settled state after the asset's last pending write, otherwise null. */
+    finish(id: number, epoch: number, failed: boolean): WriteState | null {
+      const entry = entries.get(id);
+      if (!entry || entry.epoch !== epoch) return failed ? "failed" : "idle";
+      entry.failed ||= failed;
+      if (--entry.count > 0) return null;
+      entries.delete(id);
+      return entry.failed ? "failed" : "idle";
+    }
+  };
+}
 
 /** Application-owned selection. Commands advance their targets before Solid publishes state. */
 export function createLightbox(library: ReturnType<typeof createLibrary>) {
@@ -52,8 +80,8 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
   let disposed = false;
   let releasePin = () => {};
   const intents = new Map<number, TagIntent>();
-  const favorites = new Map<number, number>();
-  const groups = new Set<number>();
+  const favoriteWrites = createPendingWrites<boolean>();
+  const groupWrites = createPendingWrites();
 
   function publish(value: SelectedAsset | null) {
     const changed = current?.id !== value?.id;
@@ -66,12 +94,13 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       releasePin();
       releasePin = value ? tags.pin(value.id) : () => {};
       keyDirty = orderDirty = false;
+      const epoch = value ? tags.captureGeneration(value.id).epoch : null;
       setFavoriteState(
-        value && favorites.get(value.id) === tags.captureGeneration(value.id).epoch
-          ? "pending"
-          : "idle"
+        value && epoch !== null && favoriteWrites.has(value.id, epoch) ? "pending" : "idle"
       );
-      setGroupState(value && groups.has(value.id) ? "pending" : "idle");
+      setGroupState(
+        value && epoch !== null && groupWrites.has(value.id, epoch) ? "pending" : "idle"
+      );
     }
     if (!keyDirty) {
       keyDraft = value?.media_group_key ?? "";
@@ -239,11 +268,23 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
   function drain(id: number) {
     const intent = intents.get(id);
     if (!intent?.desired || intent.state !== "idle" || !tags.get(id)) return;
-    const requested = intent.desired;
+    let requested = intent.desired;
     intent.state = "pending";
     syncTags();
     void mutations
-      .saveTags(id, requested)
+      .saveTags(id, (canonical) => {
+        // Another writer queued ahead changed the tags: merge this add/remove intent onto it.
+        if (
+          intents.get(id) === intent &&
+          intent.desired &&
+          !sameTags(intent.confirmed, canonical)
+        ) {
+          rebase(intent, canonical);
+          requested = intent.desired ?? requested;
+          if (current?.id === id) syncTags();
+        }
+        return requested;
+      })
       .then((result) => {
         if (disposed || intents.get(id) !== intent) return;
         intent.confirmed = result.tags;
@@ -442,57 +483,45 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       const asset = current;
       if (!asset) return;
       const epoch = tags.captureGeneration(asset.id).epoch;
-      if (favorites.get(asset.id) === epoch) return;
-      favorites.set(asset.id, epoch);
+      const shown = () =>
+        !disposed && current?.id === asset.id && epoch === tags.captureGeneration(asset.id).epoch;
+      // Queued behind pending writes on this asset; a repeated toggle reverses the newest one.
+      const favorite = !(favoriteWrites.latest(asset.id, epoch) ?? asset.is_favorite);
+      favoriteWrites.start(asset.id, epoch, favorite);
       setFavoriteState("pending");
+      let failed = false;
       try {
-        await mutations.setFavorite(asset.id, !asset.is_favorite);
-        if (
-          !disposed &&
-          current?.id === asset.id &&
-          epoch === tags.captureGeneration(asset.id).epoch
-        )
-          setFavoriteState("idle");
+        await mutations.setFavorite(asset.id, favorite);
       } catch {
-        if (
-          !disposed &&
-          current?.id === asset.id &&
-          epoch === tags.captureGeneration(asset.id).epoch
-        )
-          setFavoriteState("failed");
+        failed = true;
       } finally {
-        if (favorites.get(asset.id) === epoch) favorites.delete(asset.id);
+        const state = favoriteWrites.finish(asset.id, epoch, failed);
+        if (state && shown()) setFavoriteState(state);
       }
     },
     async saveMediaGroup() {
       const asset = current,
         order = parseMediaGroupOrder(orderDraft),
         key = keyDraft;
-      if (!asset || order === undefined || groups.has(asset.id)) return;
-      groups.add(asset.id);
-      setGroupState("pending");
+      if (!asset || order === undefined) return;
       const epoch = tags.captureGeneration(asset.id).epoch;
+      const shown = () =>
+        !disposed && current?.id === asset.id && epoch === tags.captureGeneration(asset.id).epoch;
+      groupWrites.start(asset.id, epoch);
+      setGroupState("pending");
+      let failed = false;
       try {
         await mutations.setMediaGroup(asset.id, key.trim() || null, order);
-        if (
-          !disposed &&
-          current?.id === asset.id &&
-          epoch === tags.captureGeneration(asset.id).epoch
-        ) {
+        if (shown() && current) {
           if (keyDraft === key) keyDirty = false;
           if (parseMediaGroupOrder(orderDraft) === order) orderDirty = false;
           publish(current);
-          setGroupState("idle");
         }
       } catch {
-        if (
-          !disposed &&
-          current?.id === asset.id &&
-          epoch === tags.captureGeneration(asset.id).epoch
-        )
-          setGroupState("failed");
+        failed = true;
       } finally {
-        groups.delete(asset.id);
+        const state = groupWrites.finish(asset.id, epoch, failed);
+        if (state && shown()) setGroupState(state);
       }
     },
     deleteSelected: () => (current ? mutations.deleteAsset(current.id) : Promise.resolve(null))

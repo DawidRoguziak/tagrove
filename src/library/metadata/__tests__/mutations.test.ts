@@ -65,6 +65,15 @@ function saved(tags = ["dog"]): SetAssetTagsSummary {
     revision: 2
   };
 }
+const flush = async () => {
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+};
+/** No admitted write remains: a fresh write starts without waiting. */
+async function expectIdle(library: ReturnType<typeof createLibrary>) {
+  const turn = await library.tags.enqueueMutation([1, 2]);
+  expect(turn.begin()).toHaveLength(2);
+  turn.release();
+}
 async function setup() {
   const view = renderHook(() => createLibrary());
   await settle(() => view.result.refreshLibrary());
@@ -94,30 +103,58 @@ describe("shared canonical metadata publication", () => {
     );
   });
 
-  it("rejects same-turn duplicate writes and publishes canonical tags only after backend success", async () => {
+  it("queues a favorite behind a pending tag save and publishes both canonical results in order", async () => {
     const { result: library } = await setup();
     const pending = deferred<SetAssetTagsSummary>();
     api.setAssetTags.mockReturnValueOnce(pending.promise);
+    api.setAssetFavorite.mockResolvedValue(undefined);
     const oldRead = library.tags.captureGeneration(1);
     const notifications = vi.fn();
     library.mutations.subscribe(notifications);
     const write = library.mutations.saveTags(1, ["DOG"]);
-    await expect(library.mutations.setFavorite(1, true)).rejects.toThrow("Metadata is busy");
+    const favorite = library.mutations.setFavorite(1, true);
+    await flush();
+    expect(api.setAssetTags).toHaveBeenCalledOnce();
     expect(api.setAssetFavorite).not.toHaveBeenCalled();
     expect(library.tags.get(1)?.tags).toEqual(["cat"]);
     expect(library.details.get(1)).toBeNull();
     expect(notifications).not.toHaveBeenCalled();
     const during = library.tags.captureGeneration(1);
     pending.resolve(saved());
-    await settle(() => write);
+    await settle(() => Promise.all([write, favorite]));
+    expect(api.setAssetFavorite).toHaveBeenCalledExactlyOnceWith(1, true);
+    expect(api.setAssetTags.mock.invocationCallOrder[0]).toBeLessThan(
+      api.setAssetFavorite.mock.invocationCallOrder[0]
+    );
     expect(library.tags.get(1)?.tags).toEqual(["dog"]);
-    expect(library.details.get(1)?.tags).toEqual(["dog"]);
+    // The favorite overlays the details its predecessor published, not an older snapshot.
+    expect(library.details.get(1)).toMatchObject({ tags: ["dog"], is_favorite: true });
     expect(library.query.getAssetAt(0)).not.toHaveProperty("tags");
+    expect(library.query.getAssetAt(0)?.is_favorite).toBe(true);
     expect(library.tags.publishDetails(1, ["old"], oldRead)).toBe(false);
     expect(library.tags.publishDetails(1, ["during"], during)).toBe(false);
-    expect(notifications).toHaveBeenCalledOnce();
+    expect(notifications).toHaveBeenCalledTimes(2);
     expect(api.startAssetQuery).toHaveBeenCalledOnce();
     expect(api.listTags).toHaveBeenCalledOnce();
+  });
+
+  it("runs the next queued write after a failure and computes queued replacements from canonical tags", async () => {
+    const { result: library } = await setup();
+    const failing = deferred<SetAssetTagsSummary>();
+    api.setAssetTags.mockReturnValueOnce(failing.promise);
+    api.setAssetTags.mockImplementation(async (_id: number, tags: string[]) => saved(tags));
+    const first = library.mutations.saveTags(1, ["lost"]);
+    const second = library.mutations.saveTags(1, (canonical) => [...canonical, "dog"]);
+    await flush();
+    expect(api.setAssetTags).toHaveBeenCalledOnce();
+    failing.reject(new Error("locked"));
+    await expect(first).rejects.toThrow("locked");
+    await settle(() => second);
+    expect(api.setAssetTags).toHaveBeenLastCalledWith(1, ["cat", "dog"]);
+    const third = library.mutations.saveTags(1, (canonical) => [...canonical, "bird"]);
+    await settle(() => third);
+    expect(api.setAssetTags).toHaveBeenLastCalledWith(1, ["cat", "dog", "bird"]);
+    expect(library.tags.get(1)?.tags).toEqual(["cat", "dog", "bird"]);
   });
 
   it("keeps canonical state on rejection, releases ownership and allows retry", async () => {
@@ -130,23 +167,27 @@ describe("shared canonical metadata publication", () => {
     expect(library.tags.get(1)?.tags).toEqual(["dog"]);
   });
 
-  it("acquires bulk ownership all-or-none and settles a partial canonical result", async () => {
+  it("waits for every bulk target, never sends a reduced subset and settles a partial canonical result", async () => {
     const { result: library } = await setup();
-    const held = library.tags.beginMutation(2)!;
-    await expect(library.mutations.mergeTags([1, 2], ["dog"])).rejects.toThrow("busy");
-    expect(api.mergeAssetTagsBulk).not.toHaveBeenCalled();
-    library.tags.settleMutation(held);
+    const held = await library.tags.enqueueMutation([2]);
+    const [token] = held.begin();
     api.mergeAssetTagsBulk.mockResolvedValue({
       results: [{ asset_id: 1, tags: ["cat", "dog"], changed: true }],
       processed_assets: 1,
       vocabulary_changed: false,
       query_impact: { type: "none" }
     });
-    await settle(() => library.mutations.mergeTags([1, 2], ["dog"]));
+    const merge = library.mutations.mergeTags([1, 2], ["dog"]);
+    await flush();
+    expect(api.mergeAssetTagsBulk).not.toHaveBeenCalled();
+    library.tags.settleMutation(token);
+    held.release();
+    await settle(() => merge);
+    expect(api.mergeAssetTagsBulk).toHaveBeenCalledExactlyOnceWith([1, 2], ["dog"]);
     expect(library.tags.get(1)?.tags).toEqual(["cat", "dog"]);
     expect(library.tags.get(2)).toBeNull();
     expect(api.startAssetQuery).toHaveBeenCalledTimes(2);
-    expect(library.tags.beginMutation(2)).not.toBeNull();
+    await expectIdle(library);
   });
 
   it("uses the current applied filter when a save settles", async () => {
@@ -170,21 +211,28 @@ describe("shared canonical metadata publication", () => {
     expect(api.startAssetQuery).toHaveBeenCalledTimes(3);
   });
 
-  it("drains active writes before maintenance, blocks new admissions synchronously, resets even on failure", async () => {
+  it("drains active and queued writes before maintenance, blocks new admissions synchronously, resets even on failure", async () => {
     const { result: library } = await setup();
     const pending = deferred<void>();
     api.setAssetFavorite.mockReturnValueOnce(pending.promise);
     const write = library.mutations.setFavorite(1, true);
+    api.setAssetMediaGroup.mockResolvedValue(undefined);
+    const queued = library.mutations.setMediaGroup(1, "trip", 1);
+    await flush();
     const maintenance = vi.fn(async () => {
       throw new Error("restore failed");
     });
     const barrier = library.runMaintenance("identity", maintenance);
     const rejection = expect(barrier).rejects.toThrow("restore failed");
-    await expect(library.mutations.setFavorite(2, true)).rejects.toThrow("busy");
+    await expect(library.mutations.setFavorite(2, true)).rejects.toThrow(
+      "paused during maintenance"
+    );
     await Promise.resolve();
     expect(maintenance).not.toHaveBeenCalled();
     pending.resolve();
     await write;
+    await queued;
+    expect(api.setAssetMediaGroup).toHaveBeenCalledExactlyOnceWith(1, "trip", 1);
     await settle(() => rejection);
     expect(maintenance).toHaveBeenCalledOnce();
     expect(library.query.assets).toEqual([]);
@@ -286,7 +334,7 @@ describe("shared canonical metadata publication", () => {
     expect(library.query.getAssetAt(0)?.is_favorite).toBe(false);
     refresh.reject(new Error("refresh failed"));
     await waitFor(() => expect(library.query.loadError).toBe("refresh failed"));
-    expect(library.tags.beginMutation(1)).not.toBeNull();
+    await expectIdle(library);
   });
 
   it("publishes normalized groups and uses canonical bulk acknowledgement", async () => {
@@ -319,6 +367,25 @@ describe("shared canonical metadata publication", () => {
       }
     ]);
     expect(api.startAssetQuery).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects a write queued behind its asset's deletion without sending IPC", async () => {
+    const { result: library } = await setup();
+    const deletion = deferred<unknown>();
+    api.deleteAsset.mockReturnValueOnce(deletion.promise);
+    const removing = library.mutations.deleteAsset(1);
+    const favorite = library.mutations.setFavorite(1, true);
+    const rejection = expect(favorite).rejects.toThrow("deleted");
+    deletion.resolve({
+      removed_assets: 1,
+      removed_thumbnails: 0,
+      source_status: "deleted",
+      revision: 2,
+      recovery_path: null
+    });
+    await rejection;
+    await settle(() => removing);
+    expect(api.setAssetFavorite).not.toHaveBeenCalled();
   });
 
   it("keeps deletion tombstones and prevents old detail reads from resurrecting the asset", async () => {

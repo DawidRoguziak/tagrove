@@ -9,6 +9,14 @@ export interface AssetTagGenerationToken {
 
 export type AssetTagMutationToken = AssetTagGenerationToken;
 
+/** One admitted metadata write. It reaches the head of every target ID's queue before `begin`. */
+export interface AssetTagMutationTurn {
+  /** Starts exclusive tokens synchronously; throws when the identity or asset is gone. */
+  begin: () => AssetTagMutationToken[];
+  /** Frees the queue slot and barrier accounting. Idempotent. */
+  release: () => void;
+}
+
 export interface AuthoritativeAssetTags {
   known: true;
   tags: string[];
@@ -35,7 +43,14 @@ export interface AssetTagStateController {
   get: (assetId: number) => AuthoritativeAssetTags | null;
   captureGeneration: (assetId: number) => AssetTagGenerationToken;
   publishDetails: (assetId: number, tags: string[], token: AssetTagGenerationToken) => boolean;
-  beginMutation: (assetId: number) => AssetTagMutationToken | null;
+  /**
+   * Admits a write behind earlier writes on any of its IDs. Throws synchronously during
+   * maintenance. Returns the turn directly when nothing is queued, so idle writes dispatch
+   * in the same tick; otherwise resolves when the turn reaches the head of every queue.
+   */
+  enqueueMutation: (
+    assetIds: readonly number[]
+  ) => AssetTagMutationTurn | Promise<AssetTagMutationTurn>;
   settleMutation: (token: AssetTagMutationToken, tags?: string[]) => boolean;
   runWithMutationBarrier: <T>(operation: () => Promise<T>) => Promise<T>;
   remove: (assetId: number, identityToken?: AssetTagGenerationToken) => boolean;
@@ -55,8 +70,12 @@ export function createAssetTagState(): AssetTagStateController {
   const pins = new Map<number, number>();
   const inactive = new Map<number, true>();
   let currentEpoch = 0;
-  const activeMutationTokens = new Set<string>();
-  const activeMutationDrainWaiters = new Set<() => void>();
+  // Per-ID tail of the write queue. Admission links every target ID at once, so the
+  // dependency graph follows admission order and overlapping bulk writes cannot deadlock.
+  const tails = new Map<number, Promise<void>>();
+  // Queued and running writes; maintenance and detail re-reads wait for both.
+  let admitted = 0;
+  const drainWaiters = new Set<() => void>();
   let barrierRequestCount = 0;
   let barrierTail: Promise<void> = Promise.resolve();
   let disposed = false;
@@ -100,9 +119,12 @@ export function createAssetTagState(): AssetTagStateController {
     );
   };
   const waitForIdle = async () => {
-    if (activeMutationTokens.size > 0) {
-      await new Promise<void>((resolve) => activeMutationDrainWaiters.add(resolve));
-    }
+    if (admitted > 0) await new Promise<void>((resolve) => drainWaiters.add(resolve));
+  };
+  const notifyDrained = () => {
+    const waiters = [...drainWaiters];
+    drainWaiters.clear();
+    for (const resolve of waiters) resolve();
   };
 
   const getClock = (assetId: number): AssetClock => {
@@ -158,29 +180,60 @@ export function createAssetTagState(): AssetTagStateController {
     return true;
   };
 
-  const releaseActiveMutation = (token: AssetTagMutationToken) => {
-    const key = `${token.epoch}:${token.assetId}:${token.generation}`;
-    if (!activeMutationTokens.delete(key) || activeMutationTokens.size !== 0) return;
-    const waiters = [...activeMutationDrainWaiters];
-    activeMutationDrainWaiters.clear();
-    for (const resolve of waiters) resolve();
-  };
-
-  const beginMutation = (assetId: number): AssetTagMutationToken | null => {
-    if (disposed || barrierRequestCount > 0) return null;
-    const clock = getClock(assetId);
-    if (clock.activeMutation !== null || clock.deleted) return null;
-    clock.generation = ++nextGeneration;
-    clock.activeMutation = clock.generation;
-    inactive.delete(assetId);
-    const token = { assetId, epoch: currentEpoch, generation: clock.generation };
-    activeMutationTokens.add(`${token.epoch}:${token.assetId}:${token.generation}`);
-    return token;
+  const enqueueMutation = (
+    assetIds: readonly number[]
+  ): AssetTagMutationTurn | Promise<AssetTagMutationTurn> => {
+    // Admission is synchronous: maintenance denies new writes before any queueing.
+    if (disposed) throw new Error("Tag mutation coordinator is unavailable");
+    if (barrierRequestCount > 0) throw new Error("Metadata changes are paused during maintenance.");
+    const ids = [...new Set(assetIds)];
+    const epoch = currentEpoch;
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const previous = new Set<Promise<void>>();
+    for (const id of ids) {
+      const tail = tails.get(id);
+      if (tail) previous.add(tail);
+      tails.set(id, finished);
+    }
+    admitted += 1;
+    let used = false;
+    let released = false;
+    const turn: AssetTagMutationTurn = {
+      begin() {
+        if (used || released) throw new Error("Metadata write turn was already used");
+        used = true;
+        if (disposed) throw new Error("Tag mutation coordinator is unavailable");
+        if (epoch !== currentEpoch)
+          throw new Error("The library changed before this metadata change started.");
+        if (ids.some((id) => clocks.get(id)?.deleted))
+          throw new Error("The asset was deleted before this metadata change started.");
+        if (ids.some((id) => (clocks.get(id)?.activeMutation ?? null) !== null))
+          throw new Error("Metadata write started out of queue order");
+        // One pass per ID: an active clock leaves the inactive LRU before the next prune.
+        return ids.map((assetId) => {
+          const clock = getClock(assetId);
+          clock.generation = ++nextGeneration;
+          clock.activeMutation = clock.generation;
+          inactive.delete(assetId);
+          return { assetId, epoch: currentEpoch, generation: clock.generation };
+        });
+      },
+      release() {
+        if (released) return;
+        released = true;
+        for (const id of ids) if (tails.get(id) === finished) tails.delete(id);
+        finish();
+        admitted -= 1;
+        if (admitted === 0) notifyDrained();
+      }
+    };
+    return previous.size ? Promise.all(previous).then(() => turn) : turn;
   };
 
   const settleMutation = (token: AssetTagMutationToken, rawTags?: string[]): boolean => {
-    // Release barrier accounting even when reset/deletion made this token stale.
-    releaseActiveMutation(token);
     if (disposed || token.epoch !== currentEpoch) return false;
     const clock = getClock(token.assetId);
     if (clock.activeMutation !== token.generation || clock.generation !== token.generation)
@@ -219,11 +272,8 @@ export function createAssetTagState(): AssetTagStateController {
     try {
       await previousBarrier;
       if (disposed) throw new Error("Tag mutation coordinator is unavailable");
-      if (activeMutationTokens.size > 0) {
-        await new Promise<void>((resolve) => {
-          activeMutationDrainWaiters.add(resolve);
-        });
-      }
+      // Writes admitted before the barrier, including queued ones, finish first.
+      await waitForIdle();
       if (disposed) throw new Error("Tag mutation coordinator is unavailable");
       return await operation();
     } finally {
@@ -248,6 +298,9 @@ export function createAssetTagState(): AssetTagStateController {
 
   const reset = () => {
     currentEpoch += 1;
+    // A new identity starts with empty queues. Older admitted writes still count for
+    // maintenance and are rejected by `begin` once they reach the head.
+    tails.clear();
     entries.clear();
     clocks.clear();
     inactive.clear();
@@ -257,10 +310,7 @@ export function createAssetTagState(): AssetTagStateController {
 
   onCleanup(() => {
     disposed = true;
-    activeMutationTokens.clear();
-    const waiters = [...activeMutationDrainWaiters];
-    activeMutationDrainWaiters.clear();
-    for (const resolve of waiters) resolve();
+    notifyDrained();
   });
 
   return {
@@ -276,7 +326,7 @@ export function createAssetTagState(): AssetTagStateController {
     get,
     captureGeneration,
     publishDetails,
-    beginMutation,
+    enqueueMutation,
     settleMutation,
     runWithMutationBarrier,
     remove,

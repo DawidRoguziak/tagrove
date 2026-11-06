@@ -38,3 +38,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 
 | ADR | Title | Status | Date |
 | --- | --- | --- | --- |
+| [0001](0001-per-asset-metadata-write-queue.md) | Queue metadata writes per asset instead of rejecting busy writers | Accepted | 2026-11-06 |

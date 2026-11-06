@@ -1,6 +1,6 @@
 # Wydajność gridu i niezawodność mutacji: plan etapowy
 
-Status: **plan**. Kod nie został jeszcze zmieniony. Odnośniki `plik:linia` dotyczą commita `f71c8a9` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji**. Bieżący stan każdego etapu jest w jego sekcji `## Status` i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `f71c8a9` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 ## Cel
 

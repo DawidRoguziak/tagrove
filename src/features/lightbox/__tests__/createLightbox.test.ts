@@ -203,18 +203,43 @@ describe("Solid lightbox selection and metadata", () => {
     await settled();
     expect(api.setAssetTags).toHaveBeenLastCalledWith(1, ["b"]);
   });
-  it("rebases failed intent onto an external winner before Retry", async () => {
+  it("queues behind an external writer and rebases its intent onto the winner without Retry", async () => {
     const { box, library } = await setup();
-    const token = library.tags.beginMutation(1)!;
+    const external = await library.tags.enqueueMutation([1]);
+    const [token] = external.begin();
     settle(() => box.saveTags(["mine"]));
     await settled();
-    expect(box.tagFailed).toBe(true);
+    expect(box.tagFailed).toBe(false);
+    expect(box.tagSaving).toBe(true);
     expect(api.setAssetTags).not.toHaveBeenCalled();
     settle(() => library.tags.settleMutation(token, ["cat", "external"]));
-    expect(box.tagEditor).toEqual(["external", "mine"]);
-    settle(box.retryTags);
+    external.release();
     await settled();
-    expect(api.setAssetTags).toHaveBeenLastCalledWith(1, ["external", "mine"]);
+    expect(api.setAssetTags).toHaveBeenCalledExactlyOnceWith(1, ["external", "mine"]);
+    expect(box.tagFailed).toBe(false);
+    expect(box.tagEditor).toEqual(["external", "mine"]);
+  });
+  it("queues a favorite behind a pending tag save and publishes both in click order", async () => {
+    const { box } = await setup();
+    const tagWrite = deferred<ReturnType<typeof saved>>();
+    api.setAssetTags.mockReturnValueOnce(tagWrite.promise);
+    api.setAssetFavorite.mockResolvedValue(undefined);
+    settle(() => box.saveTags(["cat", "dog"]));
+    const favorite = box.toggleFavorite();
+    await settled();
+    expect(box.favoritePending).toBe(true);
+    expect(api.setAssetFavorite).not.toHaveBeenCalled();
+    await settle(async () => tagWrite.resolve(saved(1, ["cat", "dog"])));
+    await settle(() => favorite);
+    expect(api.setAssetFavorite).toHaveBeenCalledExactlyOnceWith(1, true);
+    expect(api.setAssetTags.mock.invocationCallOrder[0]).toBeLessThan(
+      api.setAssetFavorite.mock.invocationCallOrder[0]
+    );
+    expect(box.favoriteFailed).toBe(false);
+    expect(box.favoritePending).toBe(false);
+    expect(box.tagFailed).toBe(false);
+    expect(box.selected?.is_favorite).toBe(true);
+    expect(box.tagEditor).toEqual(["cat", "dog"]);
   });
   it("retains retry intent while maintenance denies writes", async () => {
     const { box, library } = await setup();
@@ -311,20 +336,37 @@ describe("Solid lightbox selection and metadata", () => {
     await settle(box.saveMediaGroup);
     expect(api.setAssetMediaGroup).toHaveBeenLastCalledWith(1, "draft", 7);
   });
-  it("excludes duplicate metadata commands synchronously and reports contention", async () => {
+  it("queues repeated metadata commands, stays pending until the last settles and reports failures", async () => {
     const { box, library } = await setup();
     const write = deferred<void>();
-    api.setAssetFavorite.mockReturnValueOnce(write.promise);
-    const one = box.toggleFavorite(),
+    api.setAssetFavorite.mockReturnValueOnce(write.promise).mockResolvedValue(undefined);
+    let one!: Promise<void>, two!: Promise<void>;
+    settle(() => {
+      one = box.toggleFavorite();
       two = box.toggleFavorite();
-    expect(api.setAssetFavorite).toHaveBeenCalledTimes(1);
-    write.resolve();
+    });
+    expect(api.setAssetFavorite).toHaveBeenCalledExactlyOnceWith(1, true);
+    expect(box.favoritePending).toBe(true);
+    await settle(async () => write.resolve());
     await settle(() => Promise.all([one, two]));
-    const token = library.tags.beginMutation(1)!;
-    await settle(box.saveMediaGroup);
-    expect(box.groupFailed).toBe(true);
+    // The second toggle queued behind the first and reversed it.
+    expect(api.setAssetFavorite).toHaveBeenCalledTimes(2);
+    expect(api.setAssetFavorite).toHaveBeenLastCalledWith(1, false);
+    expect(box.selected?.is_favorite).toBe(false);
+    expect(box.favoritePending).toBe(false);
+    expect(box.favoriteFailed).toBe(false);
+    const external = await library.tags.enqueueMutation([1]);
+    const [token] = external.begin();
+    api.setAssetMediaGroup.mockRejectedValueOnce(new Error("locked"));
+    const group = box.saveMediaGroup();
+    await settled();
+    expect(box.groupPending).toBe(true);
     expect(api.setAssetMediaGroup).not.toHaveBeenCalled();
-    library.tags.settleMutation(token);
+    settle(() => library.tags.settleMutation(token));
+    external.release();
+    await settle(() => group);
+    expect(api.setAssetMediaGroup).toHaveBeenCalledOnce();
+    expect(box.groupFailed).toBe(true);
   });
   it("keeps a saved favorite removed when query refresh fails and retries only the query", async () => {
     const { box, library } = await setup();
@@ -386,12 +428,18 @@ describe("Solid lightbox selection and metadata", () => {
     expect(box.favoriteFailed).toBe(false);
     settle(() => { box.close(); box.select(summary(1)); });
     expect(box.favoritePending).toBe(true);
-    await box.toggleFavorite();
+    // A repeated toggle queues behind the pending one in this identity and reverses it.
+    let repeated!: Promise<void>;
+    settle(() => {
+      repeated = box.toggleFavorite();
+    });
     expect(api.setAssetFavorite).toHaveBeenCalledTimes(2);
     newReply.resolve();
-    await settle(() => newWrite);
+    await settle(() => Promise.all([newWrite, repeated]));
+    expect(api.setAssetFavorite).toHaveBeenNthCalledWith(2, 1, true);
+    expect(api.setAssetFavorite).toHaveBeenNthCalledWith(3, 1, false);
     expect(box.favoritePending).toBe(false);
-    expect(box.selected?.is_favorite).toBe(true);
+    expect(box.selected?.is_favorite).toBe(false);
   });
   it("releases favorite presentation ownership across identity maintenance", async () => {
     const { box, library } = await setup();

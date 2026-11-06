@@ -40,9 +40,10 @@ export function createBulk(
   const [favoriteFailed, setFavoriteFailed] = createSignal(false);
   const [partial, setPartial] = createSignal<{ processed: number; requested: number } | null>(null);
   let disposed = false;
-  let tagLock = false;
-  let groupLock = false;
-  let favoriteLock = false;
+  // Writes queue per asset in library.mutations; these only count pending UI state.
+  let tagWrites = 0;
+  let groupWrites = 0;
+  let favoriteWrites = 0;
   let draft = "";
   let dirty = false;
   let initialized: ReadonlySet<number> | null = null;
@@ -102,19 +103,34 @@ export function createBulk(
         return;
       }
       setDetailsState("loading");
-      void library.details
-        .load(id)
-        .then(() => {
-          if (active) setDetailsState(library.tags.get(id) ? "idle" : "failed");
-        })
-        .catch(() => {
-          if (active) setDetailsState("failed");
-        });
+      void readTags(id, () => active && !disposed);
       return () => {
         active = false;
       };
     }
   );
+  /** Loads the complete tag base; a query refresh or write that discarded a read is retried. */
+  async function readTags(id: number, active: () => boolean) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const token = library.tags.captureGeneration(id);
+      const generation = library.details.generation;
+      try {
+        await library.details.load(id);
+      } catch {
+        break;
+      }
+      if (!active()) return;
+      if (library.tags.get(id)) {
+        setDetailsState("idle");
+        return;
+      }
+      // A current, unchanged read that published nothing is a genuine failure.
+      if (library.tags.isCurrent(token) && generation === library.details.generation) break;
+      await library.tags.waitForIdle();
+      if (!active()) return;
+    }
+    if (active()) setDetailsState("failed");
+  }
   onCleanup(() => {
     disposed = true;
   });
@@ -133,25 +149,20 @@ export function createBulk(
     const tag = remove ? raw : normalizeBulkTag(raw);
     const context = capture();
     const ids = [...context.ids];
-    if (
-      !context.enabled ||
-      context.busy ||
-      !ids.length ||
-      !tag ||
-      tagLock ||
-      (remove && ids.length !== 1)
-    )
+    if (!context.enabled || context.busy || !ids.length || !tag || (remove && ids.length !== 1))
       return false;
     const base = ids.length === 1 ? library.tags.get(ids[0])?.tags : undefined;
     if (ids.length === 1 && !base) return false;
-    tagLock = true;
+    // Applied to the canonical tags when the write leaves the asset's queue.
+    const change = (tags: string[]) =>
+      remove ? tags.filter((value) => value !== tag) : mergeTagLists(tags, [tag]);
+    if (base && !remove && change(base).length === base.length) return true;
+    tagWrites += 1;
     setTagApplying(true);
     setTagFailed(false);
     try {
       if (base) {
-        const next = remove ? base.filter((value) => value !== tag) : mergeTagLists(base, [tag]);
-        if (!remove && next.length === base.length) return true;
-        await library.mutations.saveTags(ids[0], next);
+        await library.mutations.saveTags(ids[0], change);
       } else {
         const result = await library.mutations.mergeTags(ids, [tag]);
         if (context.current()) {
@@ -166,14 +177,14 @@ export function createBulk(
       if (context.current()) setTagFailed(true);
       return false;
     } finally {
-      tagLock = false;
-      if (!disposed) setTagApplying(false);
+      tagWrites -= 1;
+      if (!disposed && tagWrites === 0) setTagApplying(false);
     }
   }
   async function toggleFavorite() {
     const context = capture();
-    if (!context.enabled || context.busy || !context.ids.size || favoriteLock) return;
-    favoriteLock = true;
+    if (!context.enabled || context.busy || !context.ids.size) return;
+    favoriteWrites += 1;
     setFavoriteApplying(true);
     setFavoriteFailed(false);
     try {
@@ -187,8 +198,8 @@ export function createBulk(
     } catch {
       if (context.current()) setFavoriteFailed(true);
     } finally {
-      favoriteLock = false;
-      if (!disposed) setFavoriteApplying(false);
+      favoriteWrites -= 1;
+      if (!disposed && favoriteWrites === 0) setFavoriteApplying(false);
     }
   }
   async function applyGroup(explicitOrder?: number[]): Promise<BulkGroupSaveResult> {
@@ -199,7 +210,6 @@ export function createBulk(
       context.busy ||
       !context.ids.size ||
       !metadata.ready ||
-      groupLock ||
       ids.length !== context.ids.size ||
       new Set(ids).size !== ids.length ||
       ids.some((id) => !context.ids.has(id))
@@ -211,7 +221,7 @@ export function createBulk(
       single &&
       key &&
       normalizeGroupKey(single.media_group_key ?? "").toLowerCase() === key.toLowerCase();
-    groupLock = true;
+    groupWrites += 1;
     setGroupApplying(true);
     setGroupFailed(false);
     try {
@@ -235,8 +245,8 @@ export function createBulk(
       if (context.current()) setGroupFailed(true);
       return { status: "failed" };
     } finally {
-      groupLock = false;
-      if (!disposed) setGroupApplying(false);
+      groupWrites -= 1;
+      if (!disposed && groupWrites === 0) setGroupApplying(false);
     }
   }
   return {

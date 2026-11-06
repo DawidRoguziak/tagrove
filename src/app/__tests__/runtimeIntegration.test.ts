@@ -148,7 +148,7 @@ it("clearing through settings discards the cached identity before an ID is reuse
   expect(calls("get_asset_details")).toHaveLength(2);
 });
 
-it.each(["lightbox", "bulk"] as const)("shares locks and canonical tags when %s writes first", async first => {
+it.each(["lightbox", "bulk"] as const)("queues the second editor and merges onto canonical tags when %s writes first", async first => {
   const runtime = await setup();
   await selectBulk(runtime);
   const pending = deferred<SetAssetTagsSummary>();
@@ -158,17 +158,18 @@ it.each(["lightbox", "bulk"] as const)("shares locks and canonical tags when %s 
   if (first === "lightbox") settle(() => runtime.lightbox.saveTags(["cat", "dog"]));
   else bulkWrite = runtime.bulk.onAddTag("dog");
   await waitFor(() => expect(calls("set_asset_tags")).toHaveLength(1));
-  if (first === "lightbox") expect(await runtime.bulk.onAddTag("bird")).toBe(false);
+  // The second editor queues instead of failing; it sends nothing until the first settles.
+  if (first === "lightbox") bulkWrite = runtime.bulk.onAddTag("bird");
   else settle(() => runtime.lightbox.saveTags(["cat", "bird"]));
   await settle(async () => { await Promise.resolve(); });
   expect(calls("set_asset_tags")).toHaveLength(1);
   persisted = ["cat", "dog"];
   pending.resolve(saved(persisted));
-  if (bulkWrite) await settle(() => bulkWrite!);
-  await waitFor(() => expect(runtime.bulk.singleAssetTags).toEqual(["cat", "dog"]));
-  if (first === "lightbox") expect(await settle(() => runtime.bulk.onAddTag("bird"))).toBe(true);
-  else settle(() => runtime.lightbox.retryTags());
   await waitFor(() => expect(calls("set_asset_tags")).toHaveLength(2));
   expect(calls("set_asset_tags")[1]).toEqual(["set_asset_tags", { assetId: 1, tags: ["cat", "dog", "bird"] }]);
+  expect(await settle(() => bulkWrite!)).toBe(true);
   await waitFor(() => expect(runtime.lightbox.selected?.tags).toEqual(["cat", "dog", "bird"]));
+  await waitFor(() => expect(runtime.bulk.singleAssetTags).toEqual(["cat", "dog", "bird"]));
+  expect(runtime.lightbox.tagFailed).toBe(false);
+  expect(runtime.bulk.tagSaveFailed).toBe(false);
 });

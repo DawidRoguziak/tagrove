@@ -7,6 +7,7 @@ import { useLanguage } from "../../i18n/solid";
 interface LightboxTagPanelProps {
   selectedTags: string[];
   tagDraft: string;
+  tagInvalid: boolean;
   knownTags: string[];
   tagInputRef: (node: HTMLInputElement) => void;
   client: SuggestionClient;
@@ -51,6 +52,11 @@ export function LightboxTagPanel(props: LightboxTagPanelProps) {
         getRemoveTagAriaLabel={(tag) => t("lightbox.removeTagAria", { tag })}
       />
 
+      {props.tagInvalid ? (
+        <UiAlert tone="error" data-testid="lightbox-tag-invalid">
+          {t("search.errors.tagInvalidCharacters")}
+        </UiAlert>
+      ) : null}
       {props.tagDetailsLoading ? (
         <p class="m-0 text-xs text-[var(--text-muted)]" role="status">
           {t("lightbox.tagDetailsLoading")}

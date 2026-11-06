@@ -17,6 +17,7 @@ interface LightboxToolbarProps {
   sidebarVisible: boolean;
   selectedTags: string[];
   tagDraft: string;
+  tagInvalid: boolean;
   knownTags: string[];
   tagInputRef: (node: HTMLInputElement) => void;
   client: SuggestionClient;
@@ -123,6 +124,7 @@ export function LightboxToolbar(props: LightboxToolbarProps) {
         <LightboxTagPanel
           selectedTags={props.selectedTags}
           tagDraft={props.tagDraft}
+          tagInvalid={props.tagInvalid}
           client={props.client}
           knownTags={props.knownTags}
           tagInputRef={props.tagInputRef}

@@ -43,32 +43,31 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
       refresh();
     void vocabulary.refreshKnownTagsAfterMutation(vocabularyChanged).catch(() => {});
   }
-  function acquire(ids: number[]) {
-    const tokens: AssetTagMutationToken[] = [];
-    for (const id of new Set(ids)) {
-      const token = tags.beginMutation(id);
-      if (!token) {
-        for (const held of tokens) tags.settleMutation(held);
-        throw new Error("Metadata is busy. Retry after the current operation.");
-      }
-      tokens.push(token);
-    }
-    return tokens;
-  }
+  /**
+   * Queues the write behind earlier writes on any of its IDs. Only maintenance, deletion,
+   * an identity reset or disposal reject it; the base state is read once the turn arrives.
+   */
   async function write<T>(
     ids: number[],
     request: () => Promise<T>,
     changes: (result: T) => Map<number, Patch>,
     after: (result: T, accepted: number[]) => void | Promise<unknown>
   ) {
-    const cached = new Map(ids.map((id) => [id, details.get(id)]));
-    // Canonical metadata may survive a refresh; captured path/size must not.
-    const detailsGeneration = details.generation;
-    const tokens = acquire(ids);
+    const unique = [...new Set(ids)];
+    const admission = tags.enqueueMutation(unique);
+    // An idle asset starts in the same tick; only a busy one waits for its predecessors.
+    const turn = admission instanceof Promise ? await admission : admission;
+    let tokens: AssetTagMutationToken[] = [];
+    let result: T;
+    const accepted: number[] = [];
     try {
-      const result = await request();
+      // Captured after earlier queued writes settled; starting tokens invalidates the cache.
+      const cached = new Map(unique.map((id) => [id, details.get(id)]));
+      // Canonical metadata may survive a refresh; captured path/size must not.
+      const detailsGeneration = details.generation;
+      tokens = turn.begin();
+      result = await request();
       const patches = changes(result);
-      const accepted: number[] = [];
       const published = new Map<number, Patch>();
       for (const token of tokens) {
         const patch = patches.get(token.assetId);
@@ -91,12 +90,20 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
         );
         for (const listener of listeners) listener({ type: "updated", patches: published });
       }
-      if (accepted.length) await after(result, accepted);
-      return result;
     } finally {
-      // Also releases active IPC accounting after reset, failure or owner disposal.
+      // Settling also advances generations after failure, reset or owner disposal.
       for (const token of tokens) tags.settleMutation(token);
+      // Secondary refreshes below must not hold the next queued write. `after` still starts
+      // synchronously, so its local patches (such as a deletion tombstone) precede that write.
+      turn.release();
     }
+    if (accepted.length) await after(result, accepted);
+    return result;
+  }
+  function canonicalTags(id: number) {
+    const known = tags.get(id);
+    if (!known) throw new Error("The complete tag list is not loaded.");
+    return known.tags;
   }
   return {
     subscribe(listener: (commit: MetadataCommit) => void) {
@@ -105,10 +112,17 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
         listeners.delete(listener);
       };
     },
-    saveTags(id: number, next: string[]) {
+    /**
+     * Replaces the complete tag list. A function receives the canonical tags when the
+     * write reaches the head of the asset's queue, so it cannot undo an earlier write.
+     */
+    saveTags(id: number, next: readonly string[] | ((canonical: string[]) => readonly string[])) {
       return write(
         [id],
-        () => tagApi.setAssetTags(id, [...next]),
+        () =>
+          tagApi.setAssetTags(id, [
+            ...(typeof next === "function" ? next(canonicalTags(id)) : next)
+          ]),
         (result) => new Map([[result.asset_id, { tags: result.tags }]]),
         (result) => tagRefresh(result.query_impact, result.vocabulary_changed, false)
       );

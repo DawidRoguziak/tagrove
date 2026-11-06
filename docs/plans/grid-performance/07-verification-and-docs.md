@@ -111,3 +111,6 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
   - `TMPDIR=/var/tmp cargo test --manifest-path src-tauri/Cargo.toml --locked --release --test grid_baseline -- --ignored --nocapture --test-threads=1` → pass 3/3 (cztery biegi, ostatni na ostatecznym kodzie); bez `--ignored` → 3 ignored.
   - `MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1 bun run test:e2e:tauri --spec e2e/specs/grid-baseline.e2e.js` na prywatnym Xvfb → pass 3/3 w biegach 2–4. Bieg 1 padł na `render_all_thumbnails` (poprawione) i miał scenariusz bez ciągłego skanu.
   - `bun run rust:fmt`, `bun run rust:clippy`, `bun run lint`, `bun run format:check`, `bun run privacy:check` → pass; `git diff --check` → czysto.
+
+### 2026-11-06 — agent etapu 01
+- Z etapu 01: bieg pośredni `grid-baseline.e2e.js` po etapie 01 (tylko frontend, przed 02–06): like 0/20 i tag 0/20 nieudanych; serce od kliknięcia do UI p50 84 ms, p95 1629 ms, max 2984 ms. Kolumny „Po 01–06” nie wypełniam, bo jest na pomiar po falach A–C. Uwaga: ten bieg miał XDG i `TMPDIR` na tmpfs.

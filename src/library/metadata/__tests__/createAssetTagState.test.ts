@@ -1,20 +1,29 @@
 import { settle } from "../../../test/settle";
 import { renderHook } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
-import { createAssetTagState } from "../createAssetTagState";
+import { createAssetTagState, type AssetTagStateController } from "../createAssetTagState";
+
+/** Admits a write and starts its tokens once it reaches the head of every queue. */
+async function begin(state: AssetTagStateController, ids: number[]) {
+  const turn = await state.enqueueMutation(ids);
+  return { turn, tokens: turn.begin() };
+}
+const flush = async () => {
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+};
 
 describe("createAssetTagState", () => {
-  it("blocks details while a mutation is pending and publishes its canonical result", () => {
+  it("blocks details while a mutation is pending and publishes its canonical result", async () => {
     const { result } = renderHook(() => createAssetTagState());
     const initialRead = result.captureGeneration(7);
     settle(() => {
       expect(result.publishDetails(7, ["cat"], initialRead)).toBe(true);
     });
     const pendingRead = result.captureGeneration(7);
-    let mutation!: NonNullable<ReturnType<typeof result.beginMutation>>;
-    settle(() => {
-      mutation = result.beginMutation(7)!;
-    });
+    const {
+      turn,
+      tokens: [mutation]
+    } = await begin(result, [7]);
 
     expect(result.publishDetails(7, ["stale"], pendingRead)).toBe(false);
     expect(result.get(7)?.tags).toEqual(["cat"]);
@@ -22,39 +31,86 @@ describe("createAssetTagState", () => {
     settle(() => {
       expect(result.settleMutation(mutation, [" Cat ", "dog", "cat"])).toBe(true);
     });
+    turn.release();
     expect(result.get(7)?.tags).toEqual(["cat", "dog"]);
   });
 
-  it("grants only one mutation token per asset until the owner settles", () => {
+  it("queues writes on one asset in admission order and lets a failed write release the next", async () => {
     const { result } = renderHook(() => createAssetTagState());
-    const first = result.beginMutation(5);
-
-    expect(first).not.toBeNull();
-    expect(result.beginMutation(5)).toBeNull();
-    settle(() => {
-      expect(result.settleMutation(first!)).toBe(true);
+    const order: string[] = [];
+    const first = await begin(result, [5]);
+    const second = Promise.resolve(result.enqueueMutation([5])).then((turn) => {
+      order.push("second");
+      return turn;
     });
-    expect(result.beginMutation(5)).not.toBeNull();
+    const third = Promise.resolve(result.enqueueMutation([5])).then((turn) => {
+      order.push("third");
+      return turn;
+    });
+    await flush();
+    expect(order).toEqual([]);
+
+    // The first write fails: it settles without tags and releases its slot.
+    settle(() => result.settleMutation(first.tokens[0]));
+    first.turn.release();
+    const secondTurn = await second;
+    expect(order).toEqual(["second"]);
+    const [secondToken] = secondTurn.begin();
+    secondTurn.release();
+    await flush();
+    expect(order).toEqual(["second", "third"]);
+    expect(result.settleMutation(secondToken)).toBe(true);
+    (await third).release();
   });
 
-  it("invalidates reads started during a mutation even when the mutation fails", () => {
+  it("orders overlapping multi-asset writes by admission without deadlock", async () => {
     const { result } = renderHook(() => createAssetTagState());
-    let mutation!: NonNullable<ReturnType<typeof result.beginMutation>>;
-    settle(() => {
-      mutation = result.beginMutation(3)!;
+    const started: string[] = [];
+    const a = await begin(result, [2, 1]);
+    const b = Promise.resolve(result.enqueueMutation([3, 2])).then((turn) => {
+      started.push("b");
+      return turn;
     });
+    const c = Promise.resolve(result.enqueueMutation([1, 3])).then((turn) => {
+      started.push("c");
+      return turn;
+    });
+    const d = Promise.resolve(result.enqueueMutation([4])).then((turn) => {
+      started.push("d");
+      return turn;
+    });
+    await flush();
+    expect(started).toEqual(["d"]);
+    a.turn.release();
+    const bTurn = await b;
+    await flush();
+    expect(started).toEqual(["d", "b"]);
+    bTurn.release();
+    (await c).release();
+    (await d).release();
+    expect(started).toEqual(["d", "b", "c"]);
+  });
+
+  it("invalidates reads started during a mutation even when the mutation fails", async () => {
+    const { result } = renderHook(() => createAssetTagState());
+    const {
+      turn,
+      tokens: [mutation]
+    } = await begin(result, [3]);
     const readDuringMutation = result.captureGeneration(3);
     settle(() => {
       result.settleMutation(mutation);
     });
+    turn.release();
 
     expect(result.publishDetails(3, ["possibly stale"], readDuringMutation)).toBe(false);
     expect(result.get(3)).toBeNull();
   });
 
-  it("holds maintenance until active mutations settle and rejects new mutations immediately", async () => {
+  it("holds maintenance until queued and active writes finish and rejects new admissions immediately", async () => {
     const { result } = renderHook(() => createAssetTagState());
-    const active = result.beginMutation(1)!;
+    const active = await begin(result, [1]);
+    const queued = result.enqueueMutation([1]);
     const events: string[] = [];
 
     let maintenance!: Promise<void>;
@@ -64,25 +120,33 @@ describe("createAssetTagState", () => {
       });
     });
 
-    expect(result.beginMutation(2)).toBeNull();
+    expect(() => result.enqueueMutation([2])).toThrow("paused during maintenance");
+    settle(() => {
+      expect(result.settleMutation(active.tokens[0], ["saved"])).toBe(true);
+    });
+    active.turn.release();
+    await flush();
     expect(events).toEqual([]);
 
+    // A write admitted before the barrier still runs before maintenance.
+    const queuedTurn = await queued;
+    const [queuedToken] = queuedTurn.begin();
+    settle(() => result.settleMutation(queuedToken));
     await settle(async () => {
-      expect(result.settleMutation(active, ["saved"])).toBe(true);
+      queuedTurn.release();
       await maintenance;
     });
 
     expect(events).toEqual(["maintenance"]);
-    const afterMaintenance = result.beginMutation(2);
-    expect(afterMaintenance).not.toBeNull();
-    settle(() => {
-      result.settleMutation(afterMaintenance!);
-    });
+    const afterMaintenance = await begin(result, [2]);
+    expect(afterMaintenance.tokens).toHaveLength(1);
+    afterMaintenance.turn.release();
   });
 
-  it("keeps active IPC accounted for across reset before allowing maintenance", async () => {
+  it("keeps admitted writes accounted for across reset and rejects their late start", async () => {
     const { result } = renderHook(() => createAssetTagState());
-    const active = result.beginMutation(4)!;
+    const active = await begin(result, [4]);
+    const queued = result.enqueueMutation([4]);
     let maintenanceStarted = false;
     const maintenance = result.runWithMutationBarrier(async () => {
       maintenanceStarted = true;
@@ -92,11 +156,30 @@ describe("createAssetTagState", () => {
     await Promise.resolve();
     expect(maintenanceStarted).toBe(false);
 
+    expect(result.settleMutation(active.tokens[0], ["stale result"])).toBe(false);
+    active.turn.release();
+    const queuedTurn = await queued;
+    expect(() => queuedTurn.begin()).toThrow("library changed");
     await settle(async () => {
-      expect(result.settleMutation(active, ["stale result"])).toBe(false);
+      queuedTurn.release();
       await maintenance;
     });
     expect(maintenanceStarted).toBe(true);
+  });
+
+  it("rejects a queued write for an asset deleted while it waited", async () => {
+    const { result } = renderHook(() => createAssetTagState());
+    const active = await begin(result, [6]);
+    const queued = result.enqueueMutation([6]);
+    settle(() => {
+      result.settleMutation(active.tokens[0]);
+      result.remove(6);
+    });
+    active.turn.release();
+    const queuedTurn = await queued;
+    expect(() => queuedTurn.begin()).toThrow("deleted");
+    queuedTurn.release();
+    await result.waitForIdle();
   });
 
   it("serializes maintenance requests and releases the barrier after thrown errors", async () => {
@@ -110,18 +193,19 @@ describe("createAssetTagState", () => {
       events.push("second");
     });
 
-    expect(result.beginMutation(8)).toBeNull();
+    expect(() => result.enqueueMutation([8])).toThrow("paused during maintenance");
     await settle(async () => {
       await expect(first).rejects.toThrow("maintenance failed");
       await second;
     });
     expect(events).toEqual(["first", "second"]);
-    expect(result.beginMutation(8)).not.toBeNull();
+    (await begin(result, [8])).turn.release();
   });
 
-  it("cancels waiting maintenance on coordinator unmount instead of leaving it locked", async () => {
+  it("cancels waiting maintenance and queued writes on coordinator unmount", async () => {
     const { result, cleanup: unmount } = renderHook(() => createAssetTagState());
-    expect(result.beginMutation(12)).not.toBeNull();
+    const active = await begin(result, [12]);
+    const queued = result.enqueueMutation([12]);
     const maintenance = result.runWithMutationBarrier(async () => {});
     const rejection = expect(maintenance).rejects.toThrow(
       "Tag mutation coordinator is unavailable"
@@ -130,6 +214,10 @@ describe("createAssetTagState", () => {
     unmount();
 
     await rejection;
+    active.turn.release();
+    const queuedTurn = await queued;
+    expect(() => queuedTurn.begin()).toThrow("unavailable");
+    expect(() => result.enqueueMutation([13])).toThrow("unavailable");
   });
 
   it("global reset rejects old reads while allowing a reused ID to load fresh details", () => {
@@ -157,16 +245,19 @@ describe("createAssetTagState", () => {
     expect(result.publishDetails(11, ["also deleted"], readAfterDeletion)).toBe(false);
     expect(result.get(11)).toBeNull();
   });
-  it("bounds inactive records, pins editors and mutations, and rejects tokens after eviction", () => {
+
+  it("bounds inactive records, pins editors and mutations, and rejects tokens after eviction", async () => {
     const { result } = renderHook(() => createAssetTagState());
     const release = result.pin(1);
     const pinned = result.captureGeneration(1);
     const stale = result.captureGeneration(2);
-    let mutation!: NonNullable<ReturnType<typeof result.beginMutation>>;
+    const {
+      turn,
+      tokens: [mutation]
+    } = await begin(result, [3]);
     settle(() => {
       result.publishDetails(1, ["pinned"], pinned);
       result.publishDetails(2, ["old"], stale);
-      mutation = result.beginMutation(3)!;
       for (let id = 4; id < 519; id++)
         result.publishDetails(id, ["cached"], result.captureGeneration(id));
     });
@@ -177,10 +268,22 @@ describe("createAssetTagState", () => {
       expect(result.settleMutation(mutation, ["saved"])).toBe(true);
       release();
     });
+    turn.release();
     const retained = Array.from({ length: 518 }, (_, index) => result.get(index + 1)).filter(
       Boolean
     );
     expect(retained.length).toBeLessThanOrEqual(512);
     expect(result.get(3)?.tags).toEqual(["saved"]);
+  });
+
+  it("keeps every target of a large bulk write active while the inactive LRU prunes", async () => {
+    const { result } = renderHook(() => createAssetTagState());
+    const ids = Array.from({ length: 1200 }, (_, index) => index + 1);
+    const { turn, tokens } = await begin(result, ids);
+    settle(() => {
+      for (const token of tokens) expect(result.settleMutation(token, ["bulk"])).toBe(true);
+    });
+    turn.release();
+    expect(result.get(1200)?.tags).toEqual(["bulk"]);
   });
 });

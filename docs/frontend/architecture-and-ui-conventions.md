@@ -70,7 +70,7 @@ boundary changes.
 | Search draft/applied descriptor | `features/search/createSearch` | Application lifetime. Commands keep synchronous drafts and publish reactive state; every valid submission invokes the library once. |
 | Sparse query pages and navigation snapshot | `library/query/createAssetQuery` | Application lifetime; 128-item pages and at most 12 pages. Generations discard obsolete responses. |
 | Complete details | `library/metadata/createDetailsCache` | One shared 256-entry LRU for lightbox and bulk. Query changes clear it; identity/generation checks reject stale metadata. Concurrent reads for one ID share a promise. |
-| Canonical tags and metadata write ownership | `library/metadata/createAssetTagState` | Application lifetime; per-ID exclusive tokens, identity epoch, deletion invalidation and maintenance barrier. Active users pin records; inactive records have a 512-entry retention bound. |
+| Canonical tags and metadata write ownership | `library/metadata/createAssetTagState` | Application lifetime; per-ID FIFO write queue with exclusive tokens ([ADR 0001](../adr/0001-per-asset-metadata-write-queue.md)), identity epoch, deletion invalidation and maintenance barrier. Active users pin records; inactive records have a 512-entry retention bound. |
 | Known tags and suggestion worker | `createKnownTags` and runtime `SuggestionClient` | Application lifetime. The worker starts lazily, coalesces requests per editor and terminates on disposal. |
 | Thumbnail paths, rendering and queue | `createThumbnailQueue` and `ThumbnailStore` | Application lifetime. Queue reset invalidates callbacks and clears the store. Mounted previews retain per-asset subscriptions. |
 | Selected IDs and range anchor | `features/gallery/createSelection` | Survives view/query changes and page eviction. Query changes cancel ranges and clear the anchor; identity reset clears IDs. |
@@ -137,8 +137,8 @@ mounted after first activation so its closing content can finish the exit animat
 
 ## Successful mutations and local patches
 
-`library/metadata/createMutations.ts` acquires per-asset ownership, awaits the platform
-command, publishes canonical tag results and patches loaded summaries/shared details.
+`library/metadata/createMutations.ts` queues each write per asset, starts it once earlier
+writes on its IDs settle, awaits the platform command, publishes canonical tag results and patches loaded summaries/shared details.
 `queryImpact.ts` evaluates the filter active when the write settles. Known-tag refresh is
 best effort; group changes always refresh query order. Favorites refresh when membership
 requires it. Feature models retain drafts, pending states and retry intent.
@@ -148,7 +148,7 @@ replacement until canonical tags are known. An unsuccessful command makes no suc
 Partial bulk results publish only acknowledged IDs and trigger missing-ID recovery.
 
 Settings CSV import, restore and clear use `library.tags.runWithMutationBarrier` to deny
-new metadata writes and drain dispatched writes. They invalidate affected identity/cache
+new metadata writes and drain admitted writes, both queued and dispatched. They invalidate affected identity/cache
 state inside the barrier on both success and rejection, then refresh after release.
 Restore resets query and thumbnails; clear also empties vocabulary. See the exact
 [settings reset matrix](../subsystems/settings-operations.md#exact-success-refresh-and-reset-matrix).

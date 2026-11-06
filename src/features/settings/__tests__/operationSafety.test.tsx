@@ -200,8 +200,8 @@ describe("settings and actual metadata maintenance barrier", () => {
     "clear"
   ] as const)("drains writes, invalidates under the barrier and unlocks after uncertain %s failure", async (kind) => {
     const view = settings();
-    const active = view.tags.beginMutation(1);
-    if (!active) throw new Error("Missing mutation token");
+    const activeTurn = await view.tags.enqueueMutation([1]);
+    const [active] = activeTurn.begin();
     const backend = deferred<never>();
     const command =
       kind === "csv"
@@ -227,16 +227,18 @@ describe("settings and actual metadata maintenance barrier", () => {
       for (let i = 0; i < 8; i++) await Promise.resolve();
     });
     expect(command).not.toHaveBeenCalled();
-    expect(view.tags.beginMutation(2)).toBeNull();
+    expect(() => view.tags.enqueueMutation([2])).toThrow("paused during maintenance");
     settle(() => view.tags.settleMutation(active, ["saved"]));
+    activeTurn.release();
     await waitFor(() => expect(command).toHaveBeenCalledTimes(1));
     view.invalidate.mockImplementation(() => {
-      expect(view.tags.beginMutation(2)).toBeNull();
+      expect(() => view.tags.enqueueMutation([2])).toThrow("paused during maintenance");
     });
     view.refresh.mockImplementation(async () => {
-      const token = view.tags.beginMutation(3);
-      expect(token).not.toBeNull();
-      if (token) view.tags.settleMutation(token);
+      const turn = await view.tags.enqueueMutation([3]);
+      const [token] = turn.begin();
+      view.tags.settleMutation(token);
+      turn.release();
     });
     backend.reject(new Error("uncertain IPC failure"));
     await settle(() => running);
@@ -244,7 +246,7 @@ describe("settings and actual metadata maintenance barrier", () => {
     expect(view.tags.get(1)).toBeNull();
     expect(view.refresh).toHaveBeenCalledTimes(1);
     expect(view.model.scan.isOperationLocked).toBe(false);
-    expect(view.tags.beginMutation(4)).not.toBeNull();
+    (await view.tags.enqueueMutation([4])).release();
   });
   it("keeps the original render lock while admitting only one stop request", async () => {
     const render = deferred<never>(),

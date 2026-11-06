@@ -171,19 +171,38 @@ describe("bulk canonical editing", () => {
     expect(await settle(() => bulk.onAddTag("dog"))).toBe(true);
     expect(bulk.tagSaveFailed).toBe(false);
   });
-  it("rejects same-turn duplicate saves and releases the lock after contention", async () => {
+  it("queues single-asset saves behind other writers and keeps every quick addition", async () => {
     const { bulk, library } = await setup();
-    const token = library.tags.beginMutation(1)!;
-    expect(await settle(() => bulk.onAddTag("dog"))).toBe(false);
+    const external = await library.tags.enqueueMutation([1]);
+    const [token] = external.begin();
+    let queued!: Promise<boolean>;
+    settle(() => {
+      queued = bulk.onAddTag("dog");
+    });
+    expect(bulk.tagApplying).toBe(true);
+    await Promise.resolve();
     expect(api.setAssetTags).not.toHaveBeenCalled();
-    library.tags.settleMutation(token);
+    settle(() => library.tags.settleMutation(token, ["cat", "external"]));
+    external.release();
+    expect(await settle(() => queued)).toBe(true);
+    // The replacement is computed from the canonical tags the earlier writer left behind.
+    expect(api.setAssetTags).toHaveBeenLastCalledWith(1, ["cat", "external", "dog"]);
     const pending = deferred<SetAssetTagsSummary>();
     api.setAssetTags.mockReturnValueOnce(pending.promise);
-    const first = bulk.onAddTag("dog");
-    expect(await bulk.onAddTag("bird")).toBe(false);
-    pending.resolve(saved(1, ["cat", "dog"]));
-    await settle(() => first);
-    expect(api.setAssetTags).toHaveBeenCalledTimes(1);
+    const first = bulk.onAddTag("bird");
+    const second = bulk.onAddTag("fish");
+    pending.resolve(saved(1, ["cat", "external", "dog", "bird"]));
+    expect(await settle(() => Promise.all([first, second]))).toEqual([true, true]);
+    expect(api.setAssetTags).toHaveBeenCalledTimes(3);
+    expect(api.setAssetTags).toHaveBeenLastCalledWith(1, [
+      "cat",
+      "external",
+      "dog",
+      "bird",
+      "fish"
+    ]);
+    expect(bulk.singleAssetTags).toEqual(["cat", "external", "dog", "bird", "fish"]);
+    expect(bulk.tagApplying).toBe(false);
   });
   it("does not publish old detail reads into a replacement selection", async () => {
     const pending = deferred<AssetDetails>();
@@ -214,15 +233,44 @@ describe("bulk canonical editing", () => {
     expect(bulk.selectedAssets.map((a) => a.id)).toEqual([1, 2000]);
     expect(api.getAssetDetails).toHaveBeenCalledTimes(1);
   });
-  it("releases every acquired lock if a merge contends", async () => {
+  it("queues a merge behind a writer on one target and sends the complete ID set", async () => {
     const { bulk, library } = await setup([1, 2]);
-    const token = library.tags.beginMutation(2)!;
-    expect(await settle(() => bulk.onAddTag("dog"))).toBe(false);
+    const external = await library.tags.enqueueMutation([2]);
+    const [token] = external.begin();
+    const merge = bulk.onAddTag("dog");
+    await Promise.resolve();
     expect(api.mergeAssetTagsBulk).not.toHaveBeenCalled();
-    const first = library.tags.beginMutation(1);
-    expect(first).not.toBeNull();
-    if (first) library.tags.settleMutation(first);
-    library.tags.settleMutation(token);
+    settle(() => library.tags.settleMutation(token));
+    external.release();
+    expect(await settle(() => merge)).toBe(true);
+    expect(api.mergeAssetTagsBulk).toHaveBeenCalledExactlyOnceWith([1, 2], ["dog"]);
+  });
+  it("runs a tag and a favorite on the same selection in click order", async () => {
+    const { bulk } = await setup([1, 2]);
+    const pending = deferred<unknown>();
+    api.mergeAssetTagsBulk.mockReturnValueOnce(pending.promise);
+    const tag = bulk.onAddTag("dog");
+    const favorite = bulk.onToggleFavorite();
+    await Promise.resolve();
+    expect(api.toggleAssetsFavoriteBulk).not.toHaveBeenCalled();
+    pending.resolve({
+      processed_assets: 2,
+      results: [
+        { asset_id: 1, tags: ["cat", "dog"], changed: true },
+        { asset_id: 2, tags: ["cat", "dog"], changed: true }
+      ],
+      query_impact: { type: "none" },
+      vocabulary_changed: false
+    });
+    expect(await settle(() => tag)).toBe(true);
+    await settle(() => favorite);
+    expect(api.toggleAssetsFavoriteBulk).toHaveBeenCalledExactlyOnceWith([1, 2]);
+    expect(api.mergeAssetTagsBulk.mock.invocationCallOrder[0]).toBeLessThan(
+      api.toggleAssetsFavoriteBulk.mock.invocationCallOrder[0]
+    );
+    expect(bulk.tagSaveFailed).toBe(false);
+    expect(bulk.favoriteFailed).toBe(false);
+    expect(bulk.allSelectedFavorites).toBe(true);
   });
   it("ignores obsolete selection errors and bulk feedback", async () => {
     const { bulk, selection } = await setup([1, 2]);
@@ -313,21 +361,26 @@ describe("bulk favorites and groups", () => {
     await settle(bulk.onToggleFavorite);
     expect(bulk.favoriteFailed).toBe(false);
   });
-  it("blocks duplicate favorites and drains dispatched writes before maintenance", async () => {
+  it("queues repeated favorites and drains them before maintenance", async () => {
     const { bulk, library } = await setup();
     const pending = deferred<BulkFavoriteSummary>();
     api.toggleAssetsFavoriteBulk.mockReturnValueOnce(pending.promise);
     const first = bulk.onToggleFavorite();
-    await bulk.onToggleFavorite();
+    const second = bulk.onToggleFavorite();
     const maintenance = vi.fn();
     const barrier = library.runMaintenance("metadata", async () => maintenance());
     await Promise.resolve();
     expect(maintenance).not.toHaveBeenCalled();
-    pending.resolve({ processed_asset_ids: [1], is_favorite: true, revision: 2 });
-    await settle(() => first);
-    await settle(() => barrier);
-    expect(maintenance).toHaveBeenCalledOnce();
     expect(api.toggleAssetsFavoriteBulk).toHaveBeenCalledOnce();
+    pending.resolve({ processed_asset_ids: [1], is_favorite: true, revision: 2 });
+    await settle(() => Promise.all([first, second]));
+    await settle(() => barrier);
+    expect(api.toggleAssetsFavoriteBulk).toHaveBeenCalledTimes(2);
+    expect(maintenance).toHaveBeenCalledOnce();
+    expect(api.toggleAssetsFavoriteBulk.mock.invocationCallOrder[1]).toBeLessThan(
+      maintenance.mock.invocationCallOrder[0]
+    );
+    expect(bulk.favoriteApplying).toBe(false);
   });
   it("ignores stale identity completions", async () => {
     const { bulk, library, selection } = await setup();
@@ -555,9 +608,9 @@ describe("bulk partial publication and query changes", () => {
     expect(bulk.partialResult).toEqual({ processed: 1, requested: 2 });
     expect(library.tags.get(1)?.tags).toEqual(["canonical"]);
     expect(library.tags.get(2)).toBeNull();
-    const token = library.tags.beginMutation(2);
-    expect(token).not.toBeNull();
-    if (token) library.tags.settleMutation(token);
+    const turn = await library.tags.enqueueMutation([2]);
+    expect(turn.begin()).toHaveLength(1);
+    turn.release();
   });
   it("keeps drafts and all selected IDs across filtered query replacement", async () => {
     const { bulk, library } = await setup([1, 2000]);
@@ -608,12 +661,10 @@ describe("bulk partial publication and query changes", () => {
     expect(selection.ids.size).toBe(0);
     expect(bulk.singleAssetTags).toEqual([]);
   });
-  it("does not send group IPC under contention and rejects duplicate same-turn group saves", async () => {
+  it("queues group saves behind another writer and repeated saves behind each other", async () => {
     const { bulk, library } = await setup([1, 2]);
-    const token = library.tags.beginMutation(2)!;
-    expect(await settle(() => bulk.onApplyGroup())).toEqual({ status: "failed" });
-    expect(api.setAssetsMediaGroupBulk).not.toHaveBeenCalled();
-    library.tags.settleMutation(token);
+    const external = await library.tags.enqueueMutation([2]);
+    const [token] = external.begin();
     const pending = deferred<{
       processed_asset_ids: number[];
       processed_assets: number;
@@ -622,7 +673,12 @@ describe("bulk partial publication and query changes", () => {
     }>();
     api.setAssetsMediaGroupBulk.mockReturnValueOnce(pending.promise);
     const first = bulk.onApplyGroup();
-    expect(await bulk.onApplyGroup()).toEqual({ status: "ignored" });
+    const second = bulk.onApplyGroup();
+    await Promise.resolve();
+    expect(api.setAssetsMediaGroupBulk).not.toHaveBeenCalled();
+    settle(() => library.tags.settleMutation(token));
+    external.release();
+    await waitFor(() => expect(api.setAssetsMediaGroupBulk).toHaveBeenCalledOnce());
     pending.resolve({
       processed_asset_ids: [1, 2],
       processed_assets: 2,
@@ -630,7 +686,41 @@ describe("bulk partial publication and query changes", () => {
       media_group_key: null
     });
     expect(await settle(() => first)).toEqual({ status: "saved" });
-    expect(api.setAssetsMediaGroupBulk).toHaveBeenCalledOnce();
+    expect(await settle(() => second)).toEqual({ status: "saved" });
+    expect(api.setAssetsMediaGroupBulk).toHaveBeenCalledTimes(2);
+    expect(bulk.groupApplying).toBe(false);
+  });
+  it("re-reads complete tags when a query refresh discards a pending detail read", async () => {
+    const view = renderHook(() => {
+      const library = createLibrary();
+      const selection = createSelection({
+        queryEpoch: () => library.query.queryEpoch,
+        identityEpoch: () => library.tags.epoch,
+        getIdsRange: library.query.getIdsRangeAsync
+      });
+      return { library, selection, bulk: createBulk(library, selection, () => false) };
+    });
+    const { library, selection, bulk } = view.result;
+    await settle(() => library.refreshLibrary());
+    const pending = deferred<AssetDetails>();
+    api.getAssetDetails.mockReturnValueOnce(pending.promise);
+    settle(() => selection.toggle());
+    settle(() =>
+      selection.interact({
+        type: "click",
+        assetId: 1,
+        assetIndex: 0,
+        ctrlLike: false,
+        shift: false
+      })
+    );
+    await waitFor(() => expect(api.getAssetDetails).toHaveBeenCalledOnce());
+    await settle(() => library.query.refresh());
+    await settle(async () => pending.resolve(asset(1)));
+    await waitFor(() => expect(bulk.singleAssetTags).toEqual(["cat"]));
+    expect(bulk.tagDetailsFailed).toBe(false);
+    expect(bulk.tagDetailsLoading).toBe(false);
+    expect(api.getAssetDetails).toHaveBeenCalledTimes(2);
   });
 });
 

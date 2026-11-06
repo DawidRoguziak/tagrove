@@ -205,6 +205,22 @@ describe("Solid image lightbox", () => {
     await tick();
     expect(screen.getByRole("dialog", { name: "Preview 1.png" })).toBeInTheDocument();
   });
+  it("explains an invalid tag, keeps the draft and sends no save", async () => {
+    const { box } = await setup();
+    const user = userEvent.setup();
+    const input = screen.getByRole("combobox", { name: "Add tag" });
+    await user.type(input, "two;tags{Enter}");
+    await tick();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Tags cannot contain whitespace, commas, semicolons, or control characters."
+    );
+    expect(input).toHaveValue("two;tags");
+    expect(box.tagEditor).toEqual(["cat"]);
+    expect(api.setAssetTags).not.toHaveBeenCalled();
+    await user.type(input, "{Backspace}");
+    await tick();
+    expect(screen.queryByTestId("lightbox-tag-invalid")).not.toBeInTheDocument();
+  });
   it("keeps input arrows and suggestion Escape inside the editor", async () => {
     const { box } = await setup();
     const user = userEvent.setup();

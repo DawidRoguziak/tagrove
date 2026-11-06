@@ -13,3 +13,6 @@ Format: `YYYY-MM-DD | etap NN | rola | status | jedno zdanie | link do etapu`
 2026-11-06 | etap 03 | orkiestrator | todo | Z etapu 07: rebuild 30 ms (100k) / 377–383 ms (1M), wykluczenie tagu 657–665 ms; plan z dwoma temp B-tree | [03](03-sort-key-and-indexes.md)
 2026-11-06 | etap 05 | orkiestrator | todo | Z etapu 07: baza gridu (stop → komplet 16–193 ms, klatki 17–25 ms, 379–589 węzłów) | [05](05-custom-virtual-grid.md)
 2026-11-06 | etap 06 | orkiestrator | todo | Z etapu 07: miniatura 24 MP 99 ms (release); pusty cache p50 354 ms na kafel (debug) | [06](06-thumb-protocol.md)
+2026-11-06 | etap 01 | agent etapu 01 | done | Kolejka FIFO zapisów per asset ([ADR 0001](../../adr/0001-per-asset-metadata-write-queue.md)); w `grid-baseline` like 0/20 i tag 0/20 nieudanych | [01](01-mutation-queue.md)
+2026-11-06 | etap 02 | agent etapu 01 | todo | Z etapu 01: zapisy pod skanem do ~3 s (debug) widać teraz jako czas pending serca | [02](02-backend-contention.md)
+2026-11-06 | etap 07 | agent etapu 01 | in progress | Z etapu 01: bieg pośredni `grid-baseline` (like/tag 0/20); kolumna „Po 01–06” czeka na fale A–C | [07](07-verification-and-docs.md)

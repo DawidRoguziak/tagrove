@@ -88,3 +88,6 @@ todo — 2026-11-04
   - Bumpy rewizji: 43–49 na skan 20k plików (punkt 3 potwierdzony). Przy odczycie strony co 100 ms prawie każda strona jest `stale`: 44–49 rebuildów na 54–59 odczytów. Rebuild przy 100k pod obciążeniem skanem: p50 80 ms, p95 126 ms (bez skanu 30 ms).
   - W E2E (debug) żaden zapis nie zwrócił błędu; `set_asset_tags` p50 35 ms, max 230 ms.
 - Wniosek: dla objawu „like nie działa” backend nie jest przyczyną (patrz etap 01). Ten etap dotyczy opóźnień (max ~0,3–0,7 s), lawiny rebuildów i miniatur.
+
+### 2026-11-06 — agent etapu 01
+- Z etapu 01: po wprowadzeniu kolejki per asset wszystkie zapisy dochodzą do backendu, więc jego opóźnienie widać teraz wprost jako czas pending. W `grid-baseline.e2e.js` (debug, skan 20k co ~1,4 s) zapisy podczas skanu: `set_asset_tags` max 3032 ms i 1431 ms, `set_asset_favorite` 929–1532 ms w 3 z 20 prób; pozostałe poniżej ~330 ms. Serce za takim tagiem czeka do ~3 s. To jest cel tego etapu.

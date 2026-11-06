@@ -167,13 +167,25 @@ to a single selected asset. An empty snapshot hides the section.
 
 ## Metadata coordination
 
-`src/library/metadata/createAssetTagState.ts` owns canonical tags, exclusive per-asset
-mutation tokens, identity epochs, tombstones, pins and the 512-entry inactive-record limit.
-Maintenance admission blocks new writes immediately and drains already-dispatched work.
+`src/library/metadata/createAssetTagState.ts` owns canonical tags, the per-asset write
+queue and its exclusive mutation tokens, identity epochs, tombstones, pins and the 512-entry
+inactive-record limit ([ADR 0001](../adr/0001-per-asset-metadata-write-queue.md)).
+`enqueueMutation(ids)` admits a write behind every earlier admitted write on any of its IDs
+(FIFO per asset). Admission links all target IDs at once, so overlapping bulk writes run in
+admission order and cannot deadlock. An idle write starts in the same tick; a queued one starts
+when it reaches the head of every target queue. A write is rejected only when maintenance is
+active at admission, when the asset was deleted or the identity epoch changed while it waited,
+or after disposal. A failed write releases its queue slot, so later writes still run. An
+identity reset starts empty queues for the new epoch. Maintenance admission blocks new writes
+immediately and drains every admitted write, queued or dispatched, before its operation.
 Disposal releases drain waiters; queued maintenance rejects before running its operation.
 
-`createMutations.ts` centralizes tag, favorite, group and deletion commands. Bulk
-admission is all-or-none. Backend acknowledgements publish only accepted identities, patch
+`createMutations.ts` centralizes tag, favorite, group and deletion commands. A multi-asset
+write waits for all of its IDs and is never sent with a reduced subset. The cached details it
+patches are read when the write starts, not when it was queued, so a queued write cannot
+reinsert a predecessor's stale snapshot. `saveTags` also accepts a function that computes the
+complete replacement from the canonical tags at start, which keeps queued add/remove edits
+from undoing earlier writes. Backend acknowledgements publish only accepted identities, patch
 cached details and summaries, notify consumers, and evaluate the current query's refresh
 rules. Summary rows never gain detail-only tags. `queryImpact.ts` owns the refresh predicate and its direct tests.
 
@@ -189,9 +201,9 @@ rebases failed add/remove intent onto an external writer's canonical tags before
 
 ## Tag mutations
 
-One tag cannot contain whitespace, comma, semicolon, or a control character. Lightbox, bulk, normal search, CSV, and backend command boundaries apply this rule; the backend remains authoritative. Replacements are serialized per asset by the shell-lived selection owner and rapid edits coalesce to the latest desired complete array. Both lightbox and bulk consume shell-owned `createAssetTagState`, which records whether each complete tag base is known. Every affected ID must acquire an exclusive mutation-start generation before IPC. A second writer for the same ID sends no command. Multi-asset bulk is all-or-none at lock acquisition: if any selected ID is busy, already-acquired tokens are released and the command is not sent with a reduced subset. Favorite and group writes acquire the same ownership so CSV maintenance can drain every field it may overwrite. Pending writes block detail publication, and settlement advances the generation again so reads started before or during the mutation stay invalid even after failure. A summary-derived editor placeholder is never accepted as a complete tag base. The backend normalizes again, validates the asset, replaces mappings when needed, repairs `tag_count`, canonicalizes legacy tag spelling, removes orphan rows, and conditionally bumps the library revision in the same transaction. After backend success the frontend publishes canonical response tags, patches loaded/detail state, and refreshes known tags best-effort.
+One tag cannot contain whitespace, comma, semicolon, or a control character. Lightbox, bulk, normal search, CSV, and backend command boundaries apply this rule; the backend remains authoritative. Replacements are serialized per asset by the shell-lived selection owner and rapid edits coalesce to the latest desired complete array. Both lightbox and bulk consume shell-owned `createAssetTagState`, which records whether each complete tag base is known. Every affected ID acquires an exclusive mutation-start generation from the per-asset write queue before IPC. A second writer for the same ID waits in that queue and sends its command after the first settles, whether it succeeded or failed; it is not rejected as busy. Single-asset bulk edits and lightbox replacements compute their complete list from the canonical tags at that point, so a queued edit merges onto the earlier result. A multi-asset bulk write waits for every selected ID and is never sent with a reduced subset. Favorite and group writes use the same queue, so a heart click while a tag save is pending runs after it, and CSV maintenance can drain every field it may overwrite. Pending writes block detail publication, and settlement advances the generation again so reads started before or during the mutation stay invalid even after failure. A summary-derived editor placeholder is never accepted as a complete tag base. The backend normalizes again, validates the asset, replaces mappings when needed, repairs `tag_count`, canonicalizes legacy tag spelling, removes orphan rows, and conditionally bumps the library revision in the same transaction. After backend success the frontend publishes canonical response tags, patches loaded/detail state, and refreshes known tags best-effort.
 
-With one bulk-selected asset, the sidebar loads current tags through `get_asset_details` unless the shared authoritative state already knows them. Each chip removal or submitted tag sends the complete replacement through `set_asset_tags` only while that base is known. Loading and save failures are distinct: a loading failure leaves editing disabled and has a details Retry, while a save failure retains the draft and reports a persistence error.
+With one bulk-selected asset, the sidebar loads current tags through `get_asset_details` unless the shared authoritative state already knows them. Each chip removal or submitted tag sends the complete replacement through `set_asset_tags` only while that base is known; the replacement is computed from the canonical tags when the queued write starts. An invalid submitted tag keeps its draft and shows the shared tag-validation alert without sending a command. If a query refresh or a write discards the details read, the sidebar re-reads up to three times before showing the loading error. Loading and save failures are distinct: a loading failure leaves editing disabled and has a details Retry, while a save failure retains the draft and reports a persistence error.
 
 With multiple selected assets, the sidebar is add-only. Every submitted nonempty trimmed, lowercased tag is immediately sent through `merge_asset_tags_bulk`; the backend keeps existing tags and merges the new value into every existing target without duplicates. Tags successfully added during the current selection are shown as non-removable confirmation chips.
 
@@ -205,7 +217,7 @@ Favorite toggle is backend-first: it sends the inverse of the selected asset's c
 
 The bulk inspector header has a heart toggle using the lightbox button style. It operates on the complete selected-ID set, including evicted gallery rows. In one transaction, the backend reads existing selected rows: if all are favorites it removes them from favorites; otherwise it favorites them all. Missing IDs are skipped, returned as absent from the processed IDs, and pruned from selection before a query refresh. An empty processed set does not bump the revision. The button is disabled for an empty selection and during the write. It is filled only when every selected ID has a loaded summary and every summary is a favorite; mixed or incompletely loaded selections use an outline and a generic toggle label.
 
-Bulk favorites acquire every selected asset's metadata mutation token before dispatch. Success patches loaded summaries, bulk details, and lightbox details/selection; stale identity results do not patch. Rejection keeps the selection and displays an inline retry message. Success retains the selection and refreshes a favorites-only query after either toggle direction, so favoriting selected items outside its loaded results makes them appear again. Selection changes during a write do not change its captured target IDs or display its errors against a different selection.
+Bulk favorites queue behind pending writes on any selected asset and acquire every selected asset's metadata mutation token before dispatch. Success patches loaded summaries, bulk details, and lightbox details/selection; stale identity results do not patch. Rejection keeps the selection and displays an inline retry message. Success retains the selection and refreshes a favorites-only query after either toggle direction, so favoriting selected items outside its loaded results makes them appear again. Selection changes during a write do not change its captured target IDs or display its errors against a different selection.
 
 A media group consists of a nullable display key and nullable numeric order:
 
@@ -217,7 +229,7 @@ The ordering heading offers **Sort in larger view** for a nonblank group draft a
 
 The modal copies the controller order into a local draft. **Save order** submits that explicit complete selection through the existing group mutation path and applies the current group key with one-based positions. Complete success synchronizes the sidebar and closes the modal; rejection retains the draft for retry. Partial success reports the processed count and stays open; closing keeps acknowledged writes. Cancel, Escape, and backdrop dismissal discard only unsaved modal edits. Saving disables dismissal and ordering. Selection or group-context changes invalidate the modal. Apply group remains available in the sidebar with the current controller order. Reordering takes place only in the modal.
 
-Both single and bulk group actions await backend success before patching loaded objects. Bulk failure preserves the sidebar draft and displays an inline error; success keeps the sidebar and selection open with the saved state. Lightbox tag replacements are serialized per asset and expose saving/failure/Retry state; favorite and group controls disable while their write is pending and expose failures, including busy metadata ownership. Backend group filtering is an exact match on the trimmed lowercase key, while stored display spelling is retained. Media-group membership affects adjacency and global ordering as detailed in [database](database.md) and [library query and gallery](library-query-and-gallery.md).
+Both single and bulk group actions await backend success before patching loaded objects. Bulk failure preserves the sidebar draft and displays an inline error; success keeps the sidebar and selection open with the saved state. Lightbox tag replacements are serialized per asset and expose saving/failure/Retry state; favorite and group controls disable while their own write is pending (a double-click guard) and expose failures. A favorite or group write behind a pending tag save queues instead of failing. Backend group filtering is an exact match on the trimmed lowercase key, while stored display spelling is retained. Media-group membership affects adjacency and global ordering as detailed in [database](database.md) and [library query and gallery](library-query-and-gallery.md).
 
 Revision behavior for tag, favorite, and group writes is defined in [database persistence](database.md#library-revision-and-query-sessions). Favorite and single-group setters bump even for a missing ID or a no-op, in the same transaction as the update. Tag replacement rejects missing IDs and bumps only for a change or invariant repair.
 

@@ -150,6 +150,7 @@ Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`,
 | `gallery-browsing` | `MEDIATAGGER_GALLERY_BROWSING` |
 | `gallery.performance` | `MEDIATAGGER_GALLERY_PERF` |
 | `gallery-selection` | `MEDIATAGGER_GALLERY_SELECTION` |
+| `grid-baseline` | `MEDIATAGGER_GRID_BASELINE` |
 | `lightbox-activity` | `MEDIATAGGER_LIGHTBOX_ACTIVITY` |
 | `lightbox-images` | `MEDIATAGGER_LIGHTBOX_IMAGES` |
 | `lightbox-recovery` | `MEDIATAGGER_LIGHTBOX_RECOVERY` |
@@ -516,6 +517,37 @@ Do not use a single-case filter to verify cache provenance. The timing case must
 `artifacts/gallery-performance/timings.json` records preparation, initial visible/mounted IDs, initial final-JPEG filenames, route/filter, per-scroll file inventories, visible IDs/filenames, raw elapsed times and animation-frame intervals. It classifies samples by whether none, some or all visible JPEGs existed before the scroll. Only the first category enters the first-use summary, and at least one such sample is required. Every revisit sample must reuse existing files. Raw arrays retain order; percentile calculation sorts a copy. File inventories are outside the measured intervals.
 
 The observations measure scroll-to-visible-JPEG-decode with WebDriver/polling overhead. They exclude the subsequent opacity fade and do not flush the OS cache. First-use refers to preview files absent at the pre-scroll snapshot, not uncached source reads or proof that no render was queued. Revisits cross the 12-page frontend cache bound, so they are not promises of resident query pages or decoded images. Keep build profile, viewport, route, fixture and host conditions comparable; this suite has no portable latency threshold. Screenshots and measurements remain ignored local artifacts. See [gallery behavior](../subsystems/library-query-and-gallery.md#gallery-performance-verification) and [thumbnail reuse](../subsystems/thumbnails.md#cache-provenance-in-gallery-measurements).
+
+## Grid-performance baseline
+
+The [grid-performance plan](../plans/grid-performance/README.md) records numbers before and after its stages in the results table of [stage 07](../plans/grid-performance/07-verification-and-docs.md#wyniki). Two opt-in measurements produce them. Neither has thresholds; compare runs made with the same build profile on the same idle host.
+
+`src-tauri/tests/grid_baseline.rs` contains three ignored diagnostics. Run them alone, in release mode, with `TMPDIR` on a disk-backed filesystem, because a tmpfs `/tmp` hides SQLite write costs:
+
+```sh
+TMPDIR=/var/tmp cargo test --manifest-path src-tauri/Cargo.toml --locked --release \
+  --test grid_baseline -- --ignored --nocapture --test-threads=1
+```
+
+- `query_rebuild_and_page_baseline` seeds synthetic 100,000- and 1,000,000-row libraries with SQL. The rows contain kinds, favorites, four-item media groups, 2,000 vocabulary tags, a `common` and a `rare` tag, a scan-root mapping and pseudo-random modification times, 0.1% of them zero. It bumps the revision before each `AssetQueryManager::start` call, so every sample rebuilds the ID vector. The filters are none, favorites, an included tag, a rare tag, an excluded tag and a media kind. It also times cached starts and 128-item pages.
+- `mutation_latency_and_rebuilds_during_scan_baseline` times the revision-aware favorite and tag writes through the database runtime, first idle on 100,000 rows. It then repeats them during ten `scan_folder`-shaped scans of 20,000 new small JPEGs. During each scan, a simulated user writes every 50 ms, and a simulated gallery reads a page every 100 ms and rebuilds the session whenever the page is stale. The output reports scan duration, revision bumps, rebuilds, latency distributions and failed writes.
+- `jpeg_24mp_thumbnail_baseline` generates a 6000×4000 JPEG and times `thumbs::create_image_thumb`.
+
+Each output line starts with `[baseline]` and contains only counts and timings. Rust-side samples exclude IPC, serialization and the WebView.
+
+`e2e/specs/grid-baseline.e2e.js` is opt-in with `MEDIATAGGER_GRID_BASELINE=1`. Run the whole spec, because its three cases share one library and must run in order. It uses the isolated desktop recipe above, and setting `TMPDIR` to a disk-backed directory keeps the media and app data off tmpfs:
+
+```sh
+MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1 bun run test:e2e:tauri --spec e2e/specs/grid-baseline.e2e.js
+```
+
+With ffmpeg, the spec generates 240 browse JPEGs and 20,000 scan JPEGs at 320×240, plus the shared GIF and two MP4 fixtures. The scan files get modification times spread over 2015–2023, so the browse images stay first in the gallery. It indexes the browse folder and wraps the IPC fetch bridge to record command timings.
+
+1. A single 20,000-file scan takes about two seconds in this build, while each preview operation takes about a second of WebDriver input. So the page runs a loop that alternates `scan_folder` on the 20,000 files with `remove_scan_root`, and the loop ends after a scan. While the loop runs, the spec opens 20 previews. In each one it types a new tag, presses Enter and immediately clicks the favorite button with WebDriver input. An in-page frame loop timestamps the input and the moment the UI shows the tag chip and the favorite state. Each operation is then labelled with its load phase (scan, remove or between) and classified from the UI, the IPC trace and the persisted details as failed, without IPC, delayed (over one second) or successful. The favorite button changes only after the backend succeeds. The tag chip, however, appears at once as a pending intent, so a tag counts as confirmed only when its `set_asset_tags` call returns. The spec also counts `start_asset_query` calls and stale pages during scan phases.
+2. It renders all thumbnails, reloads, and drives scripted decaying flings and jumps by setting `scrollTop` on animation frames. For each one it records the time from stop to complete visible tiles, frame gaps in the following second, frames with `data-scroll-paused` set, mounted tiles and grid DOM nodes. WebKitGTK 2.54 does not expose `longtask` entries, so frame gaps come from `requestAnimationFrame` intervals.
+3. It clears thumbnails, reloads and jumps to six cold positions. For each visible tile it records the time from the jump to its first real thumbnail load.
+
+`artifacts/grid-baseline/<timestamp>/results.json` keeps the raw samples, and screenshots are stored next to it. The desktop build is the unbundled debug E2E profile, so backend work in this spec runs unoptimized. The scripted flings are DOM scrolling, not native kinetic input, and Xvfb uses software rendering.
 
 ## Choosing the test level
 

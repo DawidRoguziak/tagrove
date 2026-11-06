@@ -125,3 +125,10 @@ todo — 2026-11-04
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-06 — orkiestrator (etap 07, krok 0)
+- Z etapu 07: wartości bazowe obecnej kolejki miniatur.
+  - Miniatura JPEG 24 MP (6000×4000, release, `thumbs::create_image_thumb`): 99 ms. Kryterium „~2× szybciej” oznacza ≤ ~50 ms.
+  - Pusty cache, build E2E debug, pliki 320×240: kafle z danymi 180 ms po skoku, miniatura per kafel p50 354 ms, p95 444 ms, max 485 ms, komplet widocznych p50 449 ms.
+  - `render_all_thumbnails` dla 20 243 plików: 82 s w debug.
+- Czasy w E2E obejmują niezoptymalizowany Rust (profil debug). Porównania po zmianie rób tym samym specem i profilem.

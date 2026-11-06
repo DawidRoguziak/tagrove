@@ -59,21 +59,55 @@ Wszystko na **syntetycznych** danych w katalogach tymczasowych. Nigdy nie używa
 
 | Metryka | Przed | Po 01–06 | Po 08–09 |
 | --- | --- | --- | --- |
-| Rebuild wektora 100k / 1M (ms) | | | |
-| Strona galerii (ms) | | | |
-| Favorite bez skanu / podczas skanu (ms) | | | |
-| Nieudane operacje like/tag w scenariuszu (n/20) | | | |
-| Rebuildy podczas skanu 20k | | | |
-| Stop flingu → komplet kafli (ms) | | | |
-| Najdłuższa klatka po flingu (ms) | | | |
-| Węzły DOM w gridzie | | | |
-| Viewport → miniatura, pusty cache (ms) | | | |
-| Miniatura JPEG 24 MP (ms) | | | |
+| Rebuild wektora 100k / 1M (ms) | 30 / 377–383 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 56 / 657–665 | | |
+| Strona galerii (ms) | 0,09 / 0,14 w Rust (128 elementów); IPC w E2E (debug, 20k): p50 3, max 6 | | |
+| Favorite bez skanu / podczas skanu (ms) | 0,02 / p50 4–53, p95 130–429, max 329–529 (Rust, release, trzy biegi); E2E (debug) od kliknięcia do UI: p50 29, p95 196 | | |
+| Nieudane operacje like/tag w scenariuszu (n/20) | like 9/20 (w dwóch wcześniejszych biegach 12/20 i 15/20), zawsze bez wywołania IPC; tag 0/20 | | |
+| Rebuildy podczas skanu 20k | 43–49 bumpów rewizji na skan. Przy przewijaniu (strona co 100 ms) prawie każda strona jest `stale`: 4–5 rebuildów na skan trwający 0,8–1 s. E2E z otwartym podglądem, bez przewijania: 1 na 66 skanów | | |
+| Stop flingu → komplet kafli (ms) | wygasający fling w dół: 16 (jedna klatka); fling w górę: 181; skok paskiem: 192–193 | | |
+| Najdłuższa klatka po flingu (ms) | 17–25 (odstępy `requestAnimationFrame`; `longtask` niedostępny w WebKitGTK 2.54) | | |
+| Węzły DOM w gridzie | w spoczynku 379 (63 kafle, 35 widocznych); po flingu 547–589 (91–98 kafli) | | |
+| Viewport → miniatura, pusty cache (ms) | kafel p50 354, p95 444, max 485; komplet widocznych p50 449; kafle z danymi po 180 | | |
+| Miniatura JPEG 24 MP (ms) | 99 (release, `thumbs::create_image_thumb`) | | |
+
+### Warunki pomiaru „Przed” (2026-11-06)
+
+- Host: AMD Ryzen 7 9800X3D (16 wątków), 30 GiB RAM, NVMe, btrfs na LUKS, Linux (CachyOS). WebKitGTK 2.54.2, Rust 1.98.0, Node 26.7.0, Bun 1.4.0, ffmpeg n9.0.2. Kod aplikacji z commita `04bb342` (Rust bez zmian względem `ad96392`).
+- Backend: `TMPDIR=/var/tmp cargo test --manifest-path src-tauri/Cargo.toml --locked --release --test grid_baseline -- --ignored --nocapture --test-threads=1`. Dane i scenariusze opisuje `docs/development/testing.md`, sekcja „Grid-performance baseline”.
+- E2E: `MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1 bun run test:e2e:tauri --spec e2e/specs/grid-baseline.e2e.js` na prywatnym Xvfb 1440×1100 (okno 1440×1000, DPR 1, renderowanie programowe). Katalogi XDG i `TMPDIR` są tymczasowe, na dysku. Build E2E jest debug, więc praca backendu w tym specu (miniatury, skan, IPC) idzie w niezoptymalizowanym Ruście.
+- Kolumna „Przed” w wierszach E2E pochodzi z biegu weryfikacyjnego ostatecznej wersji specu. W nawiasach jest rozrzut z dwóch wcześniejszych biegów tego samego scenariusza. Surowe próbki leżą lokalnie w ignorowanym `artifacts/grid-baseline/<znacznik czasu>/results.json`.
+- Skan 20 000 małych plików trwa 0,8–1 s (release) i ~1,5 s (debug E2E), czyli krócej niż 20 operacji przez WebDriver. Dlatego scenariusz E2E przeplata `scan_folder` z `remove_scan_root` tego samego folderu, a każda operacja ma zapisaną fazę.
+
+### Wnioski z pomiaru bazowego
+
+- Like zawodzi we frontendzie: klik w serce, gdy zapis tagu na tym samym assecie jest w toku, jest odrzucany bez IPC (UI: „The favorite change was not saved”). Backend nie odrzucił żadnego zapisu (0 z 224 w trzech biegach Rust, 0 błędów IPC w E2E). To przyczyna 1 z etapu 01.
+- Zapisy podczas skanu są wolniejsze, ale nie zawodzą: max ~0,3–0,7 s w release, czekanie na połączenie z puli ≤ 0,6 ms. Wyczerpania puli przy tym obciążeniu nie zaobserwowano.
+- Rebuild przy 100k jest tani (30 ms), przy 1M kosztuje 377–665 ms zależnie od filtra. Przy ~45 bumpach na skan 20k przewijający użytkownik płaci rebuild prawie przy każdej stronie (etapy 02, 03, 04).
+- Ciepły grid: wygasający fling kończy się kompletem w jednej klatce. Skok i szybki fling w górę kosztują ~180–190 ms, co odpowiada 150 ms progowi pauzy wirtualizera (`createVirtualGrid.ts`) plus ~30–40 ms. Po flingu w gridzie jest 91–98 kafli i 547–589 węzłów (etap 05).
+- Zimne miniatury: ~350–450 ms na kafel w buildzie debug. Pełne `render_all_thumbnails` dla 20 243 plików 320×240 trwa 82 s w debug (etap 06).
 
 ## Status
 
-todo — 2026-11-04
+in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czekają)
 
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-06 — orkiestrator (krok 0)
+- Zrobione: generator danych i pomiary bazowe.
+  - `src-tauri/tests/grid_baseline.rs`: trzy diagnostyki `#[ignore]` (rebuild i strony dla 100k/1M; zapisy favorite/tag bez skanu i podczas skanów 20k z symulowanym przewijaniem; miniatura JPEG 24 MP).
+  - `e2e/specs/grid-baseline.e2e.js` (`MEDIATAGGER_GRID_BASELINE=1`): like/tag pod obciążeniem skanem, fling i DOM przy ciepłym cache, viewport → miniatura przy pustym cache.
+  - Opis w `docs/development/testing.md` („Grid-performance baseline”, tabela flag) i `grid_baseline` na liście targetów w `CLAUDE.md`. Kolumna „Przed” w tabeli wyników.
+- Odkryte:
+  - Błąd like odtworzony w prawdziwej aplikacji, przyczyna we frontendzie (szczegóły w etapie 01).
+  - Skan 20k małych plików trwa 0,8–1 s (release) i ~1,5 s (debug E2E), dlatego scenariusz E2E przeplata skan z usuwaniem folderu.
+  - Wiersze bez mapowania w `asset_scan_roots` znikają przy zakończonym skanie dowolnego folderu (`prune_completed_scan_root_generation`, `src-tauri/src/db/scan_membership.rs:267`). To zgodne z dokumentacją, ale syntetyczne bazy muszą mieć mapowanie.
+  - WebKitGTK 2.54 nie udostępnia `longtask`; klatki mierzone są przez `requestAnimationFrame`.
+  - `render_all_thumbnails` trwa dłużej niż limit skryptu WebDrivera. WDIO ponawia `executeAsync`, a ponowienie kończy się „Thumbnail render is already running”. Długie komendy uruchamia się w stronie i odpytuje o wynik (`invokeLong` w specu).
+  - Chip tagu w podglądzie pojawia się od razu jako zamiar w toku, więc potwierdzenie zapisu tagu liczy się z IPC, nie z UI.
+- Zostało: fala D (pomiary po 01–06, bramki jakości, desktop E2E, zgodność dokumentacji) i weryfikacja po fali E. Commit kroku 0 czeka na akceptację użytkownika.
+- Testy:
+  - `TMPDIR=/var/tmp cargo test --manifest-path src-tauri/Cargo.toml --locked --release --test grid_baseline -- --ignored --nocapture --test-threads=1` → pass 3/3 (cztery biegi, ostatni na ostatecznym kodzie); bez `--ignored` → 3 ignored.
+  - `MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1 bun run test:e2e:tauri --spec e2e/specs/grid-baseline.e2e.js` na prywatnym Xvfb → pass 3/3 w biegach 2–4. Bieg 1 padł na `render_all_thumbnails` (poprawione) i miał scenariusz bez ciągłego skanu.
+  - `bun run rust:fmt`, `bun run rust:clippy`, `bun run lint`, `bun run format:check`, `bun run privacy:check` → pass; `git diff --check` → czysto.

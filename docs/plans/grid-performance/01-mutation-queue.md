@@ -81,3 +81,10 @@ todo — 2026-11-04
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-06 — orkiestrator (etap 07, krok 0)
+- Z etapu 07: błąd odtworzony w prawdziwej aplikacji (`e2e/specs/grid-baseline.e2e.js`, build E2E debug). Scenariusz: podgląd, wpisanie nowego tagu, Enter i od razu klik w serce, 20 razy, pod obciążeniem skanem.
+  - Like: 9/20, 12/20 i 15/20 nieudanych w trzech biegach. Za każdym razem bez wywołania `set_asset_favorite`, a UI pokazuje „The favorite change was not saved”. W biegu, w którym skan skończył się przed operacjami: 1/20.
+  - Tag: 0/20 nieudanych we wszystkich biegach; zapis p50 35–129 ms, max 230–1348 ms (debug).
+  - Backend w tym czasie nie zwrócił żadnego błędu zapisu (także 0 z 224 w teście Rust).
+- Wniosek: objaw z sekcji „Objaw” to przyczyna 1 (odrzucenie zapisu favorite, gdy na assecie trwa zapis tagu). Skan tylko wydłuża okno wyścigu. Ten sam scenariusz po etapie 01 powinien dać 0/20 dla like i tagu (wiersz „Nieudane operacje” w tabeli etapu 07).

@@ -79,3 +79,12 @@ todo — 2026-11-04
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-06 — orkiestrator (etap 07, krok 0)
+- Z etapu 07: pomiar bazowy `src-tauri/tests/grid_baseline.rs` (release, baza na dysku, biblioteka 100k, 10 skanów `scan_folder` po 20k nowych plików, zapis użytkownika co 50 ms, odczyt strony co 100 ms).
+  - Favorite bez skanu: p50 0,02 ms. Podczas skanu (trzy biegi): p50 4–53 ms, p95 130–429 ms, max 329–529 ms.
+  - Tagi bez skanu: p50 0,12 ms. Podczas skanu: p50 18–34 ms, p95 179–430 ms, max 531–729 ms.
+  - Nieudane zapisy: 0 z 68, 0 z 74 i 0 z 82. Czekanie na połączenie z puli: max 0,6 ms. Wyczerpania puli i scenariusza „~25 s” (punkt 4) przy tym obciążeniu nie zaobserwowano.
+  - Bumpy rewizji: 43–49 na skan 20k plików (punkt 3 potwierdzony). Przy odczycie strony co 100 ms prawie każda strona jest `stale`: 44–49 rebuildów na 54–59 odczytów. Rebuild przy 100k pod obciążeniem skanem: p50 80 ms, p95 126 ms (bez skanu 30 ms).
+  - W E2E (debug) żaden zapis nie zwrócił błędu; `set_asset_tags` p50 35 ms, max 230 ms.
+- Wniosek: dla objawu „like nie działa” backend nie jest przyczyną (patrz etap 01). Ten etap dotyczy opóźnień (max ~0,3–0,7 s), lawiny rebuildów i miniatur.

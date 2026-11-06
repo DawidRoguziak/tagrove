@@ -104,3 +104,11 @@ todo — 2026-11-04
 
 ## Notatki agentów
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-06 — orkiestrator (etap 07, krok 0)
+- Z etapu 07: wartości bazowe obecnego gridu (`e2e/specs/grid-baseline.e2e.js`, 20 243 elementy, okno 1440×1000, Xvfb, ciepłe miniatury):
+  - wygasający fling w dół (2–19 tys. px): komplet kafli jedną klatkę po zatrzymaniu; pauza wirtualizera aktywna przez 121–173 ze 137–194 klatek szybkich flingów;
+  - fling w górę i skoki paskiem: 181–193 ms od zatrzymania do kompletu;
+  - najdłuższa klatka w sekundzie po zatrzymaniu: 17–25 ms (rAF; `longtask` niedostępny);
+  - DOM gridu: 379 węzłów i 63 kafle w spoczynku, 547–589 węzłów i 91–98 kafli po flingu.
+- Uwaga do kryterium „< 16 ms”: pomiar idzie przez odstępy rAF na programowym renderowaniu Xvfb, gdzie jedna klatka to ~16,7 ms. Porównuj z bazą (17–25 ms), nie z wartością bezwzględną.

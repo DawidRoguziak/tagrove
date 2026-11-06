@@ -80,3 +80,12 @@ todo — 2026-11-04
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-06 — orkiestrator (etap 07, krok 0)
+- Z etapu 07: krok 1 (pomiar bazowy) zrobiony w `src-tauri/tests/grid_baseline.rs` (`query_rebuild_and_page_baseline`, release). Pełna ścieżka `AssetQueryManager::start` z rebuildem, p50:
+  - bez filtrów: 30 ms (100k), 377–383 ms (1M, trzy biegi); szacunek z punktu 1 był zawyżony dla 100k;
+  - wykluczenie tagu `common` (80%): 56 ms / 657–665 ms, najwolniejszy wariant (punkt 3);
+  - tag `common` (20%): 18 / 224 ms; favorites: 6,5 / 88 ms; kind video: 4,7 / 61 ms; rzadki tag: 1,4 / 12 ms;
+  - sesja z cache: 0,08 ms; strona 128 elementów: 0,09 / 0,14 ms.
+- `EXPLAIN QUERY PLAN` obecnego zapytania bez filtrów (skopiowany SQL, sqlite3 CLI 3.54; aplikacja ma wbudowane SQLite z libsqlite3-sys 0.30.1, czyli 3.46.0): `MATERIALIZE grouped_bucket_stats` (`SCAN a`, `USE TEMP B-TREE FOR GROUP BY`), `SCAN a`, `BLOOM FILTER ON bs`, `SEARCH bs USING AUTOMATIC COVERING INDEX (sort_bucket=?)`, `USE TEMP B-TREE FOR ORDER BY`.
+- Cel z kryteriów (< 150 ms przy 1M bez filtrów) to około 2,5× szybciej niż baza.

@@ -302,61 +302,110 @@ pub fn update_asset_thumbnail_path_if_version_matches(
     thumbnail_cas_execute(conn, asset_id, thumb_path, version)
 }
 
-/// Versioned batch write of thumbnail paths. Each row is a compare-and-set
-/// guarded by the source version captured when its render started; IDs whose
-/// guard no longer matches are returned so callers can remove their produced
-/// files instead of leaving stale-version targets behind.
-pub fn update_asset_thumbnail_paths_batch_versioned(
+/// Result of one thumbnail job as it is published to SQLite.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThumbnailWriteOutcome {
+    /// Store this path and clear the source version's failure marker.
+    Ready(String),
+    /// Clear the stored path and record a failure for the source version.
+    Failed(&'static str),
+}
+
+/// One thumbnail result: the compare-and-set path write plus the failure
+/// marker change, both guarded by the source version the job started from.
+#[derive(Debug, Clone)]
+pub struct ThumbnailWrite {
+    pub asset_id: i64,
+    pub version: crate::thumbs::SourceVersion,
+    pub record_version: i64,
+    pub outcome: ThumbnailWriteOutcome,
+}
+
+/// Publishes thumbnail results in one IMMEDIATE transaction. Each path write is
+/// a compare-and-set on its source version; only an applied write changes the
+/// failure marker of that `record_version`. IDs whose guard no longer matches
+/// are returned (and nothing is written for them) so callers can remove their
+/// produced files instead of leaving stale-version targets behind.
+pub fn commit_thumbnail_results(
     conn: &Connection,
-    updates: &[(i64, Option<String>, crate::thumbs::SourceVersion)],
+    writes: &[ThumbnailWrite],
 ) -> anyhow::Result<Vec<i64>> {
-    if updates.is_empty() {
+    if writes.is_empty() {
         return Ok(Vec::new());
     }
-
     let mut stale = Vec::new();
-    let tx = conn.unchecked_transaction()?;
-    for (asset_id, thumb_path, version) in updates {
-        let outcome = thumbnail_cas_execute(&tx, *asset_id, thumb_path.as_deref(), version)?;
-        if outcome == ThumbnailCasOutcome::VersionMismatch {
-            stale.push(*asset_id);
+    let tx = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    for write in writes {
+        let path = match &write.outcome {
+            ThumbnailWriteOutcome::Ready(path) => Some(path.as_str()),
+            ThumbnailWriteOutcome::Failed(_) => None,
+        };
+        match thumbnail_cas_execute(&tx, write.asset_id, path, &write.version)? {
+            ThumbnailCasOutcome::VersionMismatch => stale.push(write.asset_id),
+            ThumbnailCasOutcome::Applied => match write.outcome {
+                ThumbnailWriteOutcome::Ready(_) => {
+                    clear_thumbnail_failure_if_version_matches(
+                        &tx,
+                        write.asset_id,
+                        write.record_version,
+                    )?;
+                }
+                ThumbnailWriteOutcome::Failed(error) => {
+                    record_thumbnail_failure_if_version_matches(
+                        &tx,
+                        write.asset_id,
+                        write.record_version,
+                        Some(error),
+                    )?;
+                }
+            },
         }
     }
     tx.commit()?;
     Ok(stale)
 }
 
+/// Thumbnail rows in requested order, each with whether a failure marker for
+/// its current `record_version` exists. Both come from one statement, so a
+/// stored path and its source version are read from the same snapshot.
 pub fn get_assets_for_thumbnails_by_ids(
     conn: &Connection,
     asset_ids: &[i64],
-) -> anyhow::Result<Vec<ThumbnailAsset>> {
+) -> anyhow::Result<Vec<(ThumbnailAsset, bool)>> {
     if asset_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut by_id = HashMap::<i64, ThumbnailAsset>::with_capacity(asset_ids.len());
+    let mut by_id = HashMap::<i64, (ThumbnailAsset, bool)>::with_capacity(asset_ids.len());
     for chunk in asset_ids.chunks(500) {
         let placeholders = vec!["?"; chunk.len()].join(",");
         let sql = format!(
-            "SELECT id, path, kind, modified_at, duration_ms, thumb_path, size_bytes, fingerprint_mtime_ns, record_version
-             FROM assets WHERE id IN ({placeholders})"
+            "SELECT a.id, a.path, a.kind, a.modified_at, a.duration_ms, a.thumb_path, a.size_bytes,
+                    a.fingerprint_mtime_ns, a.record_version, tf.asset_id IS NOT NULL
+             FROM assets a
+             LEFT JOIN thumbnail_failures tf
+               ON tf.asset_id = a.id AND tf.source_record_version = a.record_version
+             WHERE a.id IN ({placeholders})"
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
-            Ok(ThumbnailAsset {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                kind: row.get(2)?,
-                modified_at: row.get(3)?,
-                duration_ms: row.get(4)?,
-                thumb_path: row.get(5)?,
-                size_bytes: row.get(6)?,
-                fingerprint_mtime_ns: row.get(7)?,
-                record_version: row.get(8)?,
-            })
+            Ok((
+                ThumbnailAsset {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    kind: row.get(2)?,
+                    modified_at: row.get(3)?,
+                    duration_ms: row.get(4)?,
+                    thumb_path: row.get(5)?,
+                    size_bytes: row.get(6)?,
+                    fingerprint_mtime_ns: row.get(7)?,
+                    record_version: row.get(8)?,
+                },
+                row.get(9)?,
+            ))
         })?;
         for row in rows {
-            let asset = row?;
-            by_id.insert(asset.id, asset);
+            let entry = row?;
+            by_id.insert(entry.0.id, entry);
         }
     }
     Ok(asset_ids
@@ -391,5 +440,82 @@ mod candidate_page_tests {
         let tail = thumbnail_candidates_page(&conn, after, 2055, usize::MAX, false).unwrap();
         assert_eq!(tail.len(), 7);
         assert_eq!(tail.first().unwrap().0.id, after + 1);
+    }
+
+    fn scanned_asset(conn: &Connection, path: &str, mtime_ns: i64) -> crate::thumbs::SourceVersion {
+        conn.execute(
+            "INSERT INTO assets(path, kind, size_bytes, modified_at, fingerprint_mtime_ns)
+             VALUES (?1, 'image', 10, 1, ?2)",
+            params![path, mtime_ns],
+        )
+        .unwrap();
+        crate::thumbs::SourceVersion::new(path, 10, mtime_ns)
+    }
+
+    #[test]
+    fn thumbnail_results_commit_paths_and_failure_markers_in_one_transaction() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        let ready = scanned_asset(&conn, "/media/ready.jpg", 1);
+        let failed = scanned_asset(&conn, "/media/failed.jpg", 2);
+        let reindexed = scanned_asset(&conn, "/media/reindexed.jpg", 3);
+        record_thumbnail_failure_if_version_matches(&conn, 1, 1, Some("old failure")).unwrap();
+
+        let commits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = commits.clone();
+        conn.commit_hook(Some(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            false
+        }));
+        let stale = commit_thumbnail_results(
+            &conn,
+            &[
+                ThumbnailWrite {
+                    asset_id: 1,
+                    version: ready,
+                    record_version: 1,
+                    outcome: ThumbnailWriteOutcome::Ready("/thumbs/ready.jpg".into()),
+                },
+                ThumbnailWrite {
+                    asset_id: 2,
+                    version: failed,
+                    record_version: 1,
+                    outcome: ThumbnailWriteOutcome::Failed("render failed"),
+                },
+                ThumbnailWrite {
+                    asset_id: 3,
+                    version: crate::thumbs::SourceVersion::new(
+                        reindexed.path.clone(),
+                        10,
+                        reindexed.mtime_ns + 1,
+                    ),
+                    record_version: 1,
+                    outcome: ThumbnailWriteOutcome::Ready("/thumbs/stale.jpg".into()),
+                },
+            ],
+        )
+        .unwrap();
+        conn.commit_hook(None::<fn() -> bool>);
+
+        assert_eq!(commits.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(stale, vec![3]);
+        let thumb = |id: i64| {
+            conn.query_row("SELECT thumb_path FROM assets WHERE id = ?1", [id], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(thumb(1).as_deref(), Some("/thumbs/ready.jpg"));
+        assert_eq!(thumb(2), None);
+        assert_eq!(thumb(3), None, "a stale result writes nothing");
+        assert_eq!(list_failed_thumbnail_asset_ids(&conn).unwrap(), vec![2]);
+
+        let flagged = get_assets_for_thumbnails_by_ids(&conn, &[3, 2, 1, 99]).unwrap();
+        let summary: Vec<_> = flagged
+            .iter()
+            .map(|(asset, failed)| (asset.id, *failed))
+            .collect();
+        assert_eq!(summary, vec![(3, false), (2, true), (1, false)]);
+        assert!(commit_thumbnail_results(&conn, &[]).unwrap().is_empty());
     }
 }

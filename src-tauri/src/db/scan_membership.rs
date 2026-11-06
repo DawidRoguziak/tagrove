@@ -247,7 +247,7 @@ pub fn touch_scan_root_assets(
     if asset_ids.is_empty() {
         return Ok(());
     }
-    let tx = conn.unchecked_transaction()?;
+    let tx = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let mut stmt = tx.prepare(
         "INSERT INTO asset_scan_roots(asset_id, root_path, last_seen_generation)
          VALUES (?1, ?2, ?3)
@@ -269,7 +269,7 @@ pub fn prune_completed_scan_root_generation(
     root: &str,
     generation: i64,
 ) -> anyhow::Result<usize> {
-    let tx = conn.unchecked_transaction()?;
+    let tx = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     tx.execute(
         "DELETE FROM asset_scan_roots WHERE root_path = ?1 AND last_seen_generation != ?2",
         params![root, generation],

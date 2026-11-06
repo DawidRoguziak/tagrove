@@ -318,13 +318,13 @@ impl UserOps {
 }
 
 /// The same work as `set_asset_favorite` and `set_asset_tags` after IPC:
-/// admit, take a pooled connection, run the revision-aware write.
+/// admit, take a user-write connection, run the revision-aware write.
 fn user_operation(state: &AppState, ops: &mut UserOps, step: usize, rows: i64) {
     let asset_id = 1 + (step as i64 * 2_477) % rows;
     let started = Instant::now();
     let favorite = step.is_multiple_of(2);
     let result = (|| -> AppResult<f64> {
-        let mut conn = state.database.admit()?.connection()?;
+        let mut conn = state.database.admit()?.user_write_connection()?;
         let waited = ms(started);
         if favorite {
             db::set_asset_favorite_with_revision(&mut conn, asset_id, step.is_multiple_of(4))?;
@@ -421,10 +421,13 @@ fn mutation_latency_and_rebuilds_during_scan_baseline() {
             let progress_events = &progress_events;
             let scan = scope.spawn(move || {
                 let started = Instant::now();
-                // Mirrors `scan_folder`, including the connection it holds.
+                // Mirrors `scan_folder_service`: the registration connection is
+                // returned before the scan takes its own.
                 let scanned = with_scan_lock(state, |permit| {
-                    let conn = permit.connection()?;
-                    db::add_scan_root(&conn, &media_root)?;
+                    {
+                        let conn = permit.connection()?;
+                        db::add_scan_root(&conn, &media_root)?;
+                    }
                     let sink = |_progress: ScanProgress| -> AppResult<()> {
                         progress_events.fetch_add(1, Ordering::Relaxed);
                         Ok(())

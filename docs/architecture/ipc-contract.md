@@ -179,7 +179,7 @@ type ThumbnailStreamEvent =
   | { event: "done"; data: { ready: number; failed: number; stale: number } };
 ```
 
-`ready` is sent only after the version-checked database update accepts the existing or generated thumbnail. Rejected versions produce `stale`, remain retryable, and are excluded from ready/failure counts. Batch results include stale IDs and render summaries include a stale count. After processing, failures/stale IDs and one `done` summary are sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter as the `requestId` and to ignore late messages after reset.
+`ready` is sent only after the database confirms the thumbnail for its source version: a version-checked update committed it, or an existing stored path was read together with that version in one snapshot. Rejected versions produce `stale`, remain retryable, and are excluded from ready/failure counts. Batch results include stale IDs and render summaries include a stale count. After processing, failures/stale IDs and one `done` summary are sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter as the `requestId` and to ignore late messages after reset.
 
 ## Import, export, and destructive data operations
 

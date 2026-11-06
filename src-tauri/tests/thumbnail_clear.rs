@@ -120,7 +120,7 @@ fn rescan_then_clear_all_removes_obsolete_and_current_files_and_regenerates() {
             .unwrap(),
         0
     );
-    let regenerated = media_tagger::app::locks::with_thumb_read_lock(&state, |permit| {
+    let regenerated = media_tagger::app::locks::with_thumb_operation(&state, |permit| {
         thumb_service::ensure_asset_thumbnail(1, &state, permit)
     })
     .unwrap()

@@ -118,6 +118,89 @@ fn source_journal_connections_are_full_and_pool_connections_remain_normal() {
     assert_eq!(synchronous(&operation.connection().unwrap()), 1);
 }
 
+fn runtime_with_asset(dir: &std::path::Path) -> std::sync::Arc<DatabaseRuntime> {
+    let runtime = DatabaseRuntime::new(dir.join("media.db"));
+    {
+        let conn = runtime.admit().unwrap().connection().unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &asset()).unwrap();
+    }
+    runtime
+}
+
+#[test]
+fn favorite_write_uses_the_reserve_when_ordinary_checkouts_are_exhausted() {
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = runtime_with_asset(dir.path());
+    // A scan, query rebuilds and thumbnail work hold every ordinary checkout.
+    let busy = runtime.admit().unwrap();
+    let held: Vec<_> = (0..6).map(|_| busy.connection().unwrap()).collect();
+
+    // The same steps as `set_asset_favorite_service`.
+    let started = std::time::Instant::now();
+    let mut conn = runtime.admit().unwrap().user_write_connection().unwrap();
+    db::set_asset_favorite_with_revision(&mut conn, 1, true).unwrap();
+    drop(conn);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    drop(held);
+}
+
+#[test]
+fn user_write_is_not_starved_by_back_to_back_background_transactions() {
+    use std::{
+        sync::{atomic::Ordering, Arc},
+        time::{Duration, Instant},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = runtime_with_asset(dir.path());
+    let stop = Arc::new(AtomicBool::new(false));
+    let background_runtime = runtime.clone();
+    let background_stop = stop.clone();
+    // Shaped like scan batches: each holds the write lock for ~30 ms and the
+    // next one begins right after the commit.
+    let background = std::thread::spawn(move || {
+        let permit = background_runtime.admit().unwrap();
+        let conn = permit.connection().unwrap();
+        let mut batches = 0;
+        while !background_stop.load(Ordering::SeqCst) {
+            permit.yield_to_user_writes();
+            let tx = rusqlite::Transaction::new_unchecked(
+                &conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+            .unwrap();
+            std::thread::sleep(Duration::from_millis(30));
+            tx.commit().unwrap();
+            batches += 1;
+        }
+        batches
+    });
+    std::thread::sleep(Duration::from_millis(100));
+
+    let mut worst = Duration::ZERO;
+    for step in 0..10 {
+        let started = Instant::now();
+        let mut conn = runtime.admit().unwrap().user_write_connection().unwrap();
+        db::set_asset_favorite_with_revision(&mut conn, 1, step % 2 == 0).unwrap();
+        drop(conn);
+        worst = worst.max(started.elapsed());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    stop.store(true, Ordering::SeqCst);
+    let batches = background.join().unwrap();
+    assert!(batches >= 5, "background writer ran {batches} batches");
+    // At most the batch in progress plus millisecond polling, not the
+    // default busy handler's 100 ms naps that can miss every gap.
+    assert!(
+        worst < Duration::from_millis(250),
+        "worst user write {worst:?}"
+    );
+}
+
 #[test]
 fn real_scan_crosses_batches_preserves_overlapping_membership_and_reports_partial_roots() {
     let dir = tempfile::tempdir().unwrap();

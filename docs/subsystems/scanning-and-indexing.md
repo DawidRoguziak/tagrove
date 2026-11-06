@@ -65,8 +65,21 @@ Each valid root is processed as one streaming pipeline:
 3. One SQL query per discovery batch fetches existing fingerprints by exact paths. An unchanged `(kind, size_bytes, modified_at_ns)` asset bypasses metadata probing and is queued for a root-generation touch. Everything else enters the worker task queue.
 4. The task queue is a bounded synchronous channel with capacity **1,024**. The scan starts `min(available_parallelism, 8)` workers, with a minimum of one; the current streaming call supplies an unknown/unbounded file count, so the discovered count does not reduce this number. Workers share the task receiver and inspect files concurrently. The result channel is also bounded, at **1,544** entries (`1,024 + 512 + 8`), so workers apply backpressure instead of accumulating unbounded metadata.
 5. Unchanged IDs are flushed when their accumulator reaches **512**, but a whole discovery batch is appended before that check; one touch transaction can therefore contain **512–1,023** IDs, with a final transaction of **1–511**. Successful changed/new results commit in transactions of at most **512** assets. Each changed upsert writes the asset metadata, exact nanosecond fingerprint, and `(asset_id, root_path, generation)` mapping.
+
+   Touch, batch and prune transactions are `BEGIN IMMEDIATE`. Before each one, the scan yields to pending user metadata writes (favorite, tags, groups) for at most 250 ms; see [database connection policy](database.md#database-location-and-connection-policy).
 6. During discovery, ready worker results are drained so database writes and indexing overlap the walk. After discovery, the sender is closed, remaining unchanged touches and worker results are consumed, the last partial write batch is committed, and all workers are joined.
 7. Only a complete root enters generation pruning. After all supplied roots, a non-empty scan bumps the library revision once and runs `PRAGMA optimize` once.
+
+The whole scan uses one pooled connection. `scan_folder` and `rescan_all_roots` return the connection they used to register or list roots before the pipeline starts.
+
+Changed-file batches throttle revision bumps (`ScanRevisionThrottle`):
+
+- the first committed batch bumps inside its transaction;
+- later batches bump at most once per second (`SCAN_REVISION_INTERVAL`);
+- a prune that removes assets bumps in its own transaction;
+- the final bump after all roots is unconditional.
+
+Touches do not bump because they change only root membership, which queries do not read. If the scan returns an error or panics after committing an unbumped batch, the writer bumps once on the way out (best effort). Query sessions and duplicate snapshots live only in process memory, so this keeps a running gallery from rebuilding its session on every batch without leaving it stale after the scan. With `MEDIATAGGER_PERF=1`, the `[perf] name=scan` line reports `revision_bumps`, `user_write_yields` and `yield_ms`.
 
 `ScanSummary.indexed` includes both unchanged files successfully touched for the root and changed/new files successfully written. It is therefore a processed-success count, not a count of newly inserted or materially changed rows.
 
@@ -108,7 +121,7 @@ The scan is not one database transaction. Unchanged touches, each changed write 
 
 - a warning-level traversal, fingerprint, or per-file indexing failure returns a successful partial summary; completed batches remain stored and stale cleanup for that root is skipped;
 - a hard database, queue, worker-disconnect, thread-spawn, or worker-panic error fails the command; earlier transactions remain committed, later roots are not processed, and the final revision bump and optimization may not run;
-- a final revision-bump failure can leave earlier touch/write transactions committed, but changed write batches and destructive prunes each carry their own transactional revision bump;
+- a final revision-bump failure can leave earlier touch/write transactions committed. Destructive prunes carry their own transactional bump. Changed write batches committed within a second of the previous bump do not, so the scan retries one bump on its error path;
 - an optimization failure happens after the revision bump and turns the command into an error even though scan data and the new revision are already committed; and
 - explicit root removal commits its database deletion and revision together before best-effort thumbnail deletions.
 
@@ -124,7 +137,8 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 - Generation values come from wall-clock time rather than a persistent monotonic sequence. The scan mutex prevents simultaneous scans in one process, but uniqueness is not enforced by SQLite.
 - Scan pruning removes database rows but does not delete their thumbnail files. Reindexing a file whose whole-second modification time changed also clears the database thumbnail path without deleting the old file. Root removal does delete recorded thumbnails, but only best-effort after the database commit; failed deletions are not returned as errors.
 - Progress is best effort, shared with other workflows, uncorrelated, and uneven for small or unchanged roots. Human-readable messages are not a stable API.
-- The scan is not one transaction. Each changed batch and destructive prune invalidates sessions atomically, but a hard failure can still leave an intentionally partial sequence of committed batches; there is no resume journal or cancellation mechanism.
+- The scan is not one transaction. Destructive prunes invalidate sessions atomically. Changed batches invalidate them at most one second later, or at the scan's end or failure. A hard failure can still leave an intentionally partial sequence of committed batches; there is no resume journal or cancellation mechanism.
+- While a scan runs, an open gallery session can miss new rows, or show a changed row at its old position, for up to about one second.
 - Current focused tests do not execute the full Tauri `scan_roots` pipeline with overlapping roots, forced partial discovery, generation pruning, batch-boundary failures, worker panic/disconnect, or revision/optimization fault injection.
 
 ## Safe change checklist
@@ -144,7 +158,8 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 
 - `src-tauri/src/utils/paths.rs` covers whitespace trimming, trailing Unix separators, and filesystem-root preservation.
 - `src-tauri/src/indexer.rs` covers case-insensitive supported extensions, recursive supported-file collection, and success/failure for existing versus missing files.
-- `src-tauri/src/services/scan_service.rs` covers worker-count resolution, the empty summary, root validity, and the older prefix-based stale cleanup helper.
+- `src-tauri/src/services/scan_service.rs` covers worker-count resolution, the empty summary, root validity, the older prefix-based stale cleanup helper, the revision throttle, the error-path bump, and a real 1,500-file scan (one checked-out connection, bump count bounded by elapsed seconds).
+- `src-tauri/src/commands/scan.rs` also runs `scan_folder_service` and `rescan_all_roots_service` with a progress sink that checks they hold one connection.
 - `src-tauri/src/commands/scan.rs` covers rejecting an invalid root, persisting a valid normalized root, and explicit root removal deleting an orphan asset and its thumbnail.
 - `src-tauri/src/db.rs` covers escaped root-prefix boundaries and both low-level thumbnail preservation and precise-fingerprint reference release.
 - `src-tauri/src/thumbs.rs` covers ffprobe/ffmpeg duration parsing and related duration/seek edge cases; these are parser tests rather than live-tool scan integration.

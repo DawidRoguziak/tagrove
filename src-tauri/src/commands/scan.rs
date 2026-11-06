@@ -6,7 +6,7 @@ use crate::{
     app::{locks::with_scan_and_thumb_lock, locks::with_scan_lock, state::AppState},
     db,
     models::{RemoveRootSummary, ScanRoot, ScanSummary},
-    services::{scan_service, thumb_service},
+    services::{progress::ProgressSink, scan_service, thumb_service},
     utils::paths::normalize_root_path,
 };
 
@@ -14,20 +14,32 @@ use crate::{
 pub async fn scan_folder(path: String, app: tauri::AppHandle) -> Result<ScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_scan_lock(&state, |permit| {
-            let normalized = normalize_root_path(&path);
-            let root = PathBuf::from(&normalized);
-            if !root.exists() || !root.is_dir() {
-                return Err("Folder path does not exist or is not a directory".into());
-            }
-            let conn = permit.connection()?;
-            db::add_scan_root(&conn, &normalized)?;
-            scan_service::scan_roots(&[normalized], &state, permit, &app)
-        })
-        .map_err(|e| e.to_string())
+        scan_folder_service(path, &state, &app)
     })
     .await
     .map_err(|e| format!("scan worker failed: {e}"))?
+}
+
+fn scan_folder_service(
+    path: String,
+    state: &AppState,
+    progress: &impl ProgressSink,
+) -> Result<ScanSummary, String> {
+    with_scan_lock(state, |permit| {
+        let normalized = normalize_root_path(&path);
+        let root = PathBuf::from(&normalized);
+        if !root.exists() || !root.is_dir() {
+            return Err("Folder path does not exist or is not a directory".into());
+        }
+        // Return this connection before the scan takes its own, so a scan
+        // occupies one pooled connection.
+        {
+            let conn = permit.connection()?;
+            db::add_scan_root(&conn, &normalized)?;
+        }
+        scan_service::scan_roots(&[normalized], state, permit, progress)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -113,15 +125,24 @@ fn remove_scan_root_service(path: String, state: &AppState) -> Result<RemoveRoot
 pub async fn rescan_all_roots(app: tauri::AppHandle) -> Result<ScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_scan_lock(&state, |permit| {
-            let conn = permit.connection()?;
-            let roots = db::list_scan_roots(&conn)?;
-            scan_service::scan_roots(&roots, &state, permit, &app)
-        })
-        .map_err(|e| e.to_string())
+        rescan_all_roots_service(&state, &app)
     })
     .await
     .map_err(|e| format!("rescan worker failed: {e}"))?
+}
+
+fn rescan_all_roots_service(
+    state: &AppState,
+    progress: &impl ProgressSink,
+) -> Result<ScanSummary, String> {
+    with_scan_lock(state, |permit| {
+        let roots = {
+            let conn = permit.connection()?;
+            db::list_scan_roots(&conn)?
+        };
+        scan_service::scan_roots(&roots, state, permit, progress)
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -211,7 +232,10 @@ mod tests {
         app::state::AppState, db, models::NewAsset, services::thumb_scheduler::ThumbnailScheduler,
     };
 
-    use super::{add_scan_root_service, list_scan_roots_service, remove_scan_root_service};
+    use super::{
+        add_scan_root_service, list_scan_roots_service, remove_scan_root_service,
+        rescan_all_roots_service, scan_folder_service,
+    };
 
     fn startup_state() -> crate::app::state::StartupScanState {
         crate::app::state::StartupScanState::new(vec![crate::models::ScanRoot {
@@ -344,6 +368,48 @@ mod tests {
             duration_ms: None,
             thumb_path: thumb_path.map(|value| value.to_string_lossy().to_string()),
         }
+    }
+
+    #[test]
+    fn scan_commands_hold_one_connection_while_scanning() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("media.db");
+        let thumbs_dir = tmp.path().join("thumbs");
+        let conn = db::open_connection(&db_path).expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        drop(conn);
+        let root = tmp.path().join("library");
+        fs::create_dir_all(&root).expect("create root");
+        image::RgbImage::new(2, 2)
+            .save(root.join("seed.png"))
+            .expect("seed image");
+        for index in 0..150 {
+            fs::copy(
+                root.join("seed.png"),
+                root.join(format!("copy-{index}.png")),
+            )
+            .expect("copy image");
+        }
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let most = std::sync::atomic::AtomicUsize::new(0);
+        let events = std::sync::atomic::AtomicUsize::new(0);
+        let sink = |_progress: crate::models::ScanProgress| -> crate::error::AppResult<()> {
+            events.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            most.fetch_max(
+                state.database.checked_out_connections(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
+            Ok(())
+        };
+
+        let first =
+            scan_folder_service(root.to_string_lossy().into(), &state, &sink).expect("scan folder");
+        assert_eq!(first.indexed, 151);
+        let again = rescan_all_roots_service(&state, &sink).expect("rescan");
+        assert_eq!(again.indexed, 151);
+        assert!(events.load(std::sync::atomic::Ordering::SeqCst) > 0);
+        assert_eq!(most.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(state.database.checked_out_connections(), 0);
     }
 
     #[test]

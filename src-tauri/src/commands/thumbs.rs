@@ -1,7 +1,7 @@
 use tauri::{ipc::Channel, Manager};
 
 use crate::{
-    app::{locks::with_thumb_lock, locks::with_thumb_read_lock, state::AppState},
+    app::{locks::with_thumb_lock, locks::with_thumb_operation, state::AppState},
     models::{ThumbnailBatchResult, ThumbnailRenderSummary, ThumbnailStreamEvent, VideoToolStatus},
     services::thumb_service,
     thumbs,
@@ -10,7 +10,8 @@ use crate::{
 // Every thumbnail command performs blocking work (SQLite, filesystem scans,
 // scheduler waits). Each body runs on the blocking thread pool via
 // `spawn_blocking`, and the thumb lock is acquired inside that blocking task
-// so no lock is ever held across an await.
+// so no lock is ever held across an await. Render/ensure services take the
+// shared guard per short section (`thumb_read_section`), not while waiting.
 
 #[tauri::command]
 pub async fn get_video_tool_status(app: tauri::AppHandle) -> Result<VideoToolStatus, String> {
@@ -32,7 +33,7 @@ pub async fn render_all_thumbnails(
 ) -> Result<ThumbnailRenderSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_thumb_read_lock(&state, |permit| {
+        with_thumb_operation(&state, |permit| {
             thumb_service::render_all_thumbnails(&state, permit, &app)
         })
         .map_err(|e| e.to_string())
@@ -47,7 +48,7 @@ pub async fn render_failed_thumbnails(
 ) -> Result<ThumbnailRenderSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_thumb_read_lock(&state, |permit| {
+        with_thumb_operation(&state, |permit| {
             thumb_service::render_failed_thumbnails(&state, permit, &app)
         })
         .map_err(|e| e.to_string())
@@ -82,7 +83,7 @@ pub async fn ensure_asset_thumbnail(
 ) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_thumb_read_lock(&state, |permit| {
+        with_thumb_operation(&state, |permit| {
             thumb_service::ensure_asset_thumbnail(asset_id, &state, permit)
         })
         .map_err(|e| e.to_string())
@@ -98,7 +99,7 @@ pub async fn ensure_page_thumbnails(
 ) -> Result<ThumbnailBatchResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_thumb_read_lock(&state, |permit| {
+        with_thumb_operation(&state, |permit| {
             thumb_service::ensure_page_thumbnails(asset_ids, &state, permit, &app)
         })
         .map_err(|e| e.to_string())
@@ -117,7 +118,7 @@ pub async fn ensure_thumbnails(
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        with_thumb_read_lock(&state, |permit| {
+        with_thumb_operation(&state, |permit| {
             thumb_service::ensure_thumbnails_stream(
                 request_id,
                 visible_ids,

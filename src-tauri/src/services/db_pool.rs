@@ -7,7 +7,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-const MAX_CONNECTIONS: usize = 4;
+/// Upper bound on open pooled connections.
+const MAX_CONNECTIONS: usize = 8;
+/// Checkouts kept free for short user metadata writes (favorite, tags,
+/// groups), so readers and background work cannot take every connection.
+const USER_WRITE_RESERVE: usize = 2;
+const ORDINARY_CHECKOUTS: usize = MAX_CONNECTIONS - USER_WRITE_RESERVE;
+const POOL_WAIT: Duration = Duration::from_secs(5);
+/// Longest time one background write transaction defers to user writes.
+const USER_WRITE_YIELD_LIMIT: Duration = Duration::from_millis(250);
 
 #[derive(Default)]
 struct Admission {
@@ -21,12 +29,20 @@ struct Pool {
     total: usize,
 }
 
+impl Pool {
+    fn checked_out(&self) -> usize {
+        self.total - self.idle.len()
+    }
+}
+
 pub struct DatabaseRuntime {
     path: PathBuf,
     admission: Mutex<Admission>,
     changed: Condvar,
     pool: Mutex<Pool>,
     available: Condvar,
+    user_writes: Mutex<usize>,
+    user_writes_done: Condvar,
     pub queries: AssetQueryManager,
 }
 
@@ -38,6 +54,8 @@ impl DatabaseRuntime {
             changed: Condvar::new(),
             pool: Mutex::new(Pool::default()),
             available: Condvar::new(),
+            user_writes: Mutex::new(0),
+            user_writes_done: Condvar::new(),
             queries: AssetQueryManager::new(),
         })
     }
@@ -68,6 +86,43 @@ impl DatabaseRuntime {
             runtime: self.clone(),
         })
     }
+
+    /// Pooled connections currently checked out (diagnostics and tests).
+    pub fn checked_out_connections(&self) -> usize {
+        self.pool
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .checked_out()
+    }
+
+    fn checkout(&self, limit: usize) -> AppResult<Connection> {
+        let deadline = Instant::now() + POOL_WAIT;
+        let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if pool.checked_out() < limit {
+                if let Some(connection) = pool.idle.pop() {
+                    return Ok(connection);
+                }
+                if pool.total < MAX_CONNECTIONS {
+                    pool.total += 1;
+                    drop(pool);
+                    return db::open_connection_untracked(&self.path).map_err(|error| {
+                        self.pool.lock().unwrap_or_else(|e| e.into_inner()).total -= 1;
+                        self.available.notify_all();
+                        error.into()
+                    });
+                }
+            }
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .ok_or("database pool is busy: timed out waiting for a free connection")?;
+            pool = self
+                .available
+                .wait_timeout(pool, remaining)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
 }
 
 struct AdmittedOperation {
@@ -85,6 +140,28 @@ impl Drop for AdmittedOperation {
     }
 }
 
+/// Marks one user write as waiting for, or holding, the SQLite write lock.
+/// Background writers defer new transactions while any ticket exists.
+struct UserWriteTicket(Arc<DatabaseRuntime>);
+impl UserWriteTicket {
+    fn new(runtime: &Arc<DatabaseRuntime>) -> Self {
+        *runtime
+            .user_writes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) += 1;
+        Self(runtime.clone())
+    }
+}
+impl Drop for UserWriteTicket {
+    fn drop(&mut self) {
+        let mut waiting = self.0.user_writes.lock().unwrap_or_else(|e| e.into_inner());
+        *waiting -= 1;
+        if *waiting == 0 {
+            self.0.user_writes_done.notify_all();
+        }
+    }
+}
+
 /// Clones share one admission, including connections and child workers.
 #[derive(Clone)]
 pub struct OperationPermit(Arc<AdmittedOperation>);
@@ -95,39 +172,52 @@ impl std::fmt::Debug for OperationPermit {
 }
 impl OperationPermit {
     pub fn connection(&self) -> AppResult<PooledConnection> {
-        let runtime = &self.0.runtime;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut pool = runtime.pool.lock().unwrap_or_else(|e| e.into_inner());
-        let connection = loop {
-            if let Some(connection) = pool.idle.pop() {
-                break connection;
-            }
-            if pool.total < MAX_CONNECTIONS {
-                pool.total += 1;
-                drop(pool);
-                match db::open_connection_untracked(&runtime.path) {
-                    Ok(connection) => break connection,
-                    Err(error) => {
-                        runtime.pool.lock().unwrap_or_else(|e| e.into_inner()).total -= 1;
-                        runtime.available.notify_one();
-                        return Err(error.into());
-                    }
-                }
-            }
-            let remaining = deadline
-                .checked_duration_since(Instant::now())
-                .ok_or("database pool is busy: timed out waiting for a free connection")?;
-            pool = runtime
-                .available
-                .wait_timeout(pool, remaining)
-                .unwrap_or_else(|e| e.into_inner())
-                .0;
-        };
+        let connection = self.0.runtime.checkout(ORDINARY_CHECKOUTS)?;
         Ok(PooledConnection {
             connection: Some(connection),
             permit: self.clone(),
             reusable: true,
+            user_write: None,
         })
+    }
+
+    /// Connection for one short user metadata write. It may use the reserved
+    /// checkouts, polls a busy write lock every millisecond, and makes
+    /// background writers yield until it is dropped.
+    pub fn user_write_connection(&self) -> AppResult<PooledConnection> {
+        let runtime = &self.0.runtime;
+        let ticket = UserWriteTicket::new(runtime);
+        let connection = runtime.checkout(MAX_CONNECTIONS)?;
+        let pooled = PooledConnection {
+            connection: Some(connection),
+            permit: self.clone(),
+            reusable: true,
+            user_write: Some(ticket),
+        };
+        pooled.busy_handler(Some(db::poll_busy_lock_quickly))?;
+        Ok(pooled)
+    }
+
+    /// Background writers call this before each write transaction. It waits
+    /// while user writes are pending, at most `USER_WRITE_YIELD_LIMIT`, and
+    /// returns the time spent waiting.
+    pub fn yield_to_user_writes(&self) -> Duration {
+        let runtime = &self.0.runtime;
+        let waiting = runtime
+            .user_writes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if *waiting == 0 {
+            return Duration::ZERO;
+        }
+        let started = Instant::now();
+        drop(
+            runtime
+                .user_writes_done
+                .wait_timeout_while(waiting, USER_WRITE_YIELD_LIMIT, |waiting| *waiting > 0)
+                .unwrap_or_else(|e| e.into_inner()),
+        );
+        started.elapsed()
     }
 
     /// Source-file journals need power-loss durability and must not alter pooled settings.
@@ -138,6 +228,7 @@ impl OperationPermit {
             connection: Some(connection),
             permit: self.clone(),
             reusable: false,
+            user_write: None,
         })
     }
 }
@@ -186,6 +277,8 @@ pub struct PooledConnection {
     connection: Option<Connection>,
     permit: OperationPermit,
     reusable: bool,
+    // Dropped after the connection is back in the pool.
+    user_write: Option<UserWriteTicket>,
 }
 impl Deref for PooledConnection {
     type Target = Connection;
@@ -204,13 +297,17 @@ impl Drop for PooledConnection {
             connection.progress_handler(0, None::<fn() -> bool>);
             let runtime = &self.permit.0.runtime;
             if self.reusable {
+                // A user-write checkout replaced the busy handler; an idle
+                // connection must carry the ordinary timeout again.
+                let restored =
+                    self.user_write.is_none() || connection.busy_timeout(db::BUSY_TIMEOUT).is_ok();
                 let mut pool = runtime.pool.lock().unwrap_or_else(|e| e.into_inner());
-                if connection.is_autocommit() {
+                if restored && connection.is_autocommit() {
                     pool.idle.push(connection);
                 } else {
                     pool.total -= 1;
                 }
-                runtime.available.notify_one();
+                runtime.available.notify_all();
             }
         }
     }
@@ -304,6 +401,81 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn ordinary_checkouts_leave_the_user_write_reserve_free() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = DatabaseRuntime::new(dir.path().join("media.db"));
+        let permit = runtime.admit().unwrap();
+        let mut held: Vec<_> = (0..ORDINARY_CHECKOUTS)
+            .map(|_| permit.connection().unwrap())
+            .collect();
+        assert_eq!(runtime.checked_out_connections(), ORDINARY_CHECKOUTS);
+
+        let (tx, rx) = mpsc::channel();
+        let waiter = permit.clone();
+        let worker = std::thread::spawn(move || {
+            let connection = waiter.connection().unwrap();
+            tx.send(()).unwrap();
+            drop(connection);
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
+
+        let started = Instant::now();
+        let user = permit.user_write_connection().unwrap();
+        assert!(started.elapsed() < Duration::from_millis(100));
+        assert_eq!(runtime.checked_out_connections(), ORDINARY_CHECKOUTS + 1);
+        drop(user);
+        assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
+
+        held.pop();
+        rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker.join().unwrap();
+        drop(held);
+        assert_eq!(runtime.checked_out_connections(), 0);
+    }
+
+    #[test]
+    fn user_write_checkout_restores_the_default_busy_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = DatabaseRuntime::new(dir.path().join("media.db"));
+        let permit = runtime.admit().unwrap();
+        let busy_timeout = |conn: &Connection| {
+            conn.query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
+                .unwrap()
+        };
+        let user = permit.user_write_connection().unwrap();
+        // A custom busy handler replaces the timeout handler.
+        assert_eq!(busy_timeout(&user), 0);
+        drop(user);
+        let reused = permit.connection().unwrap();
+        assert_eq!(runtime.pool.lock().unwrap().total, 1);
+        assert_eq!(busy_timeout(&reused), 5_000);
+    }
+
+    #[test]
+    fn background_writers_yield_until_user_writes_finish_within_a_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = DatabaseRuntime::new(dir.path().join("media.db"));
+        let permit = runtime.admit().unwrap();
+        assert_eq!(permit.yield_to_user_writes(), Duration::ZERO);
+
+        let user = permit.user_write_connection().unwrap();
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            drop(user);
+        });
+        let waited = permit.yield_to_user_writes();
+        releaser.join().unwrap();
+        assert!(waited >= Duration::from_millis(40), "{waited:?}");
+        assert!(waited < USER_WRITE_YIELD_LIMIT, "{waited:?}");
+
+        let stuck = permit.user_write_connection().unwrap();
+        let waited = permit.yield_to_user_writes();
+        assert!(waited >= USER_WRITE_YIELD_LIMIT, "{waited:?}");
+        assert!(waited < USER_WRITE_YIELD_LIMIT * 4, "{waited:?}");
+        drop(stuck);
     }
 
     #[test]

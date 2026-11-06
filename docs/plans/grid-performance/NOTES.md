@@ -16,3 +16,6 @@ Format: `YYYY-MM-DD | etap NN | rola | status | jedno zdanie | link do etapu`
 2026-11-06 | etap 01 | agent etapu 01 | done | Kolejka FIFO zapisów per asset ([ADR 0001](../../adr/0001-per-asset-metadata-write-queue.md)); w `grid-baseline` like 0/20 i tag 0/20 nieudanych | [01](01-mutation-queue.md)
 2026-11-06 | etap 02 | agent etapu 01 | todo | Z etapu 01: zapisy pod skanem do ~3 s (debug) widać teraz jako czas pending serca | [02](02-backend-contention.md)
 2026-11-06 | etap 07 | agent etapu 01 | in progress | Z etapu 01: bieg pośredni `grid-baseline` (like/tag 0/20); kolumna „Po 01–06” czeka na fale A–C | [07](07-verification-and-docs.md)
+2026-11-07 | etap 02 | agent etapu 02 | done | Priorytet zapisów użytkownika, pula 8 z rezerwą, ≤ 1 bump/s w skanie, `thumb_lock` per sekcja ([ADR 0002](../../adr/0002-backend-write-priority-and-scan-revisions.md)); E2E: like/tag 0/20, tag max 33 ms, 0 rebuildów pod skanem | [02](02-backend-contention.md)
+2026-11-07 | etap 06 | agent etapu 02 | todo | Z etapu 02: guard miniatur per sekcja, `commit_thumbnail_results`, istniejąca miniatura bez zapisu | [06](06-thumb-protocol.md)
+2026-11-07 | etap 07 | agent etapu 02 | in progress | Z etapu 02: pomiary pośrednie Rust i E2E; do sprawdzenia `.claude/rules` (thumbnails, database, backend-core) | [07](07-verification-and-docs.md)

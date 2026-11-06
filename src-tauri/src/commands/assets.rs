@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 use serde::Deserialize;
 use tauri::{Manager, State};
@@ -289,9 +292,13 @@ fn set_asset_tags_service(
     state: &AppState,
 ) -> Result<SetAssetTagsSummary, String> {
     (|| {
-        let mut conn = state.database.admit()?.connection()?;
         let tags = normalize_and_validate_tags(tags)?;
-        db::set_asset_tags_with_revision(&mut conn, asset_id, &tags).map_err(Into::into)
+        let started = Instant::now();
+        let mut conn = state.database.admit()?.user_write_connection()?;
+        let pool_wait = started.elapsed();
+        let summary = db::set_asset_tags_with_revision(&mut conn, asset_id, &tags)?;
+        log_user_write_perf("set_asset_tags", started, pool_wait);
+        Ok(summary)
     })()
     .map_err(|e: crate::error::AppError| e.to_string())
 }
@@ -317,7 +324,6 @@ fn merge_asset_tags_bulk_service(
     state: &AppState,
 ) -> Result<BulkTagMergeSummary, String> {
     (|| {
-        let mut conn = state.database.admit()?.connection()?;
         let mut seen = HashSet::new();
         let normalized_asset_ids = asset_ids
             .into_iter()
@@ -325,6 +331,7 @@ fn merge_asset_tags_bulk_service(
             .filter(|asset_id| seen.insert(*asset_id))
             .collect::<Vec<_>>();
         let normalized_tags = normalize_and_validate_tags(tags)?;
+        let mut conn = state.database.admit()?.user_write_connection()?;
 
         let (results, revision, query_impact, vocabulary_changed) =
             db::merge_asset_tags_bulk_with_revision(
@@ -363,12 +370,25 @@ pub async fn toggle_assets_favorite_bulk(
 ) -> Result<crate::models::BulkFavoriteSummary, String> {
     let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut conn = database.admit()?.connection()?;
+        let mut conn = database.admit()?.user_write_connection()?;
         db::toggle_assets_favorite_bulk(&mut conn, &asset_ids).map_err(crate::error::AppError::from)
     })
     .await
     .map_err(|e| format!("bulk favorite worker failed: {e}"))?
     .map_err(|e| e.to_string())
+}
+
+/// `MEDIATAGGER_PERF=1` timing of one user metadata write: the wait for a
+/// pooled connection and the write transaction. No paths or values.
+fn log_user_write_perf(name: &str, started: Instant, pool_wait: Duration) {
+    if std::env::var_os("MEDIATAGGER_PERF").is_some() {
+        let write = started.elapsed().saturating_sub(pool_wait);
+        eprintln!(
+            "[perf] name={name} pool_wait_ms={:.2} write_ms={:.2}",
+            pool_wait.as_secs_f64() * 1_000.0,
+            write.as_secs_f64() * 1_000.0
+        );
+    }
 }
 
 #[tauri::command]
@@ -392,8 +412,11 @@ fn set_asset_favorite_service(
     state: &AppState,
 ) -> Result<(), String> {
     (|| {
-        let mut conn = state.database.admit()?.connection()?;
+        let started = Instant::now();
+        let mut conn = state.database.admit()?.user_write_connection()?;
+        let pool_wait = started.elapsed();
         db::set_asset_favorite_with_revision(&mut conn, asset_id, is_favorite)?;
+        log_user_write_perf("set_asset_favorite", started, pool_wait);
         Ok(())
     })()
     .map_err(|e: crate::error::AppError| e.to_string())
@@ -422,13 +445,13 @@ fn set_asset_media_group_service(
     state: &AppState,
 ) -> Result<(), String> {
     (|| {
-        let mut conn = state.database.admit()?.connection()?;
         let normalized_key = media_group_key
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
         let normalized_order = media_group_order.filter(|value| value.is_finite());
+        let mut conn = state.database.admit()?.user_write_connection()?;
         db::set_asset_media_group_with_revision(
             &mut conn,
             asset_id,
@@ -468,7 +491,6 @@ fn set_assets_media_group_bulk_service(
     state: &AppState,
 ) -> Result<BulkMediaGroupSummary, String> {
     (|| {
-        let mut conn = state.database.admit()?.connection()?;
         let normalized_key = media_group_key
             .as_deref()
             .map(str::trim)
@@ -488,6 +510,7 @@ fn set_assets_media_group_bulk_service(
             })
             .collect::<Vec<_>>();
 
+        let mut conn = state.database.admit()?.user_write_connection()?;
         let (processed_asset_ids, updated_assets) = db::set_assets_media_group_bulk(
             &mut conn,
             &normalized_updates,

@@ -74,7 +74,7 @@ Dokumentacja do przeczytania:
 
 ## Status
 
-todo — 2026-11-04
+done — 2026-11-07 (commit czeka na akceptację użytkownika). Decyzje: [ADR 0002](../../adr/0002-backend-write-priority-and-scan-revisions.md).
 
 ## Notatki agentów
 
@@ -91,3 +91,60 @@ todo — 2026-11-04
 
 ### 2026-11-06 — agent etapu 01
 - Z etapu 01: po wprowadzeniu kolejki per asset wszystkie zapisy dochodzą do backendu, więc jego opóźnienie widać teraz wprost jako czas pending. W `grid-baseline.e2e.js` (debug, skan 20k co ~1,4 s) zapisy podczas skanu: `set_asset_tags` max 3032 ms i 1431 ms, `set_asset_favorite` 929–1532 ms w 3 z 20 prób; pozostałe poniżej ~330 ms. Serce za takim tagiem czeka do ~3 s. To jest cel tego etapu.
+
+### 2026-11-07 — agent etapu 02
+- Zrobione (szczegóły i odrzucone warianty: ADR 0002):
+  - Krok 1: skan trzyma jedno połączenie. `scan_folder_service` i `rescan_all_roots_service` (`src-tauri/src/commands/scan.rs`) zwalniają połączenie rejestracji przed `scan_roots`.
+  - Krok 2: pula 8 połączeń, zwykłe checkouty najwyżej 6, rezerwa 2 dla `user_write_connection()` (favorite, tagi, grupy, także bulk).
+    - Bilet zapisu użytkownika plus `yield_to_user_writes()` (≤ 250 ms na transakcję): skan i bulk miniatur ustępują przed każdą transakcją.
+    - Busy handler zapisu użytkownika odpytuje co 1 ms w budżecie 5 s (`db::poll_busy_lock_quickly`).
+  - Krok 3: `ScanRevisionThrottle`: pierwszy batch od razu, potem ≤ 1 bump/s. Prune z usunięciami bumpuje sam. Końcowy bump bezwarunkowy. Bump na błędzie lub panice z `Drop` dla `ScanWriter`.
+  - Kroki 4 i 6: batch, touch i prune skanu w `BEGIN IMMEDIATE`. Wyniki miniatur w `commit_thumbnail_results` (CAS plus marker failure w jednej transakcji). Strumień grupuje gotowe wyniki (≤ 64). Bulk commituje po ≤ 256 z yield. Istniejąca miniatura nie wymaga zapisu.
+  - Krok 5: `with_thumb_operation` plus `thumb_read_section`. Guard tylko na krótkie sekcje, nigdy w czasie czekania na scheduler. Bulk bierze epokę clear per stronę. `with_thumb_read_lock` usunięty.
+  - Krok 7: `[perf] name=set_asset_favorite|set_asset_tags pool_wait_ms write_ms`. Linia `[perf] name=scan` ma pola `revision_bumps`, `user_write_yields` i `yield_ms`.
+  - Dokumentacja: `database.md`, `scanning-and-indexing.md`, `thumbnails.md`, `system-overview.md` oraz jedno zdanie o `ready` w `ipc-contract.md` (za zgodą użytkownika). ADR 0002 jest w indeksie.
+- Odkryte:
+  - Główna przyczyna opóźnień to głodzenie zapisu. Bundlowany SQLite (`HAVE_USLEEP`) śpi w busy handlerze do 100 ms na próbę, a batche skanu idą prawie bez przerw.
+    - W lokalnych wynikach E2E każda wolna operacja przypadała na fazę `scan`; `remove_scan_root` trwał 184 ms.
+    - Test `user_write_is_not_starved_by_back_to_back_background_transactions` bez priorytetu kończy się błędem po ~20 s (4 × 5 s busy timeout), a z priorytetem przechodzi.
+  - Punkt 7 problemów się nie potwierdził. Batch skanu zaczyna się od `INSERT … ON CONFLICT` (`src-tauri/src/db/scan_membership.rs:26`), więc nie ma upgrade'u odczytu do zapisu ani `SQLITE_BUSY_SNAPSHOT`. `IMMEDIATE` wprowadzone dla jawności.
+  - Nic trwałego nie zależy od bumpa w każdym batchu.
+    - Sesje zapytań i migawka duplikatów żyją w pamięci, a markery odbudowuje start (`db/query_revisions.rs:6`).
+    - Rozwiązywanie duplikatów bierze `scan_lock`, więc widzi bump końcowy.
+    - Etap 04 nie potrzebuje osobnej rewizji „scan progress”. Bump przy starcie nie jest potrzebny.
+  - Istniejąca miniatura robiła 2 zapisy (no-op UPDATE też bierze blokadę zapisu), czyli do 256 zapisów na jedno `ensure_thumbnails`.
+  - `src-tauri/src/services/thumb_service.rs` ma w repo mieszane końce linii (CRLF i LF). `rustfmt` w trybie zapisu normalizuje cały plik, a `--check` tego nie zgłasza. Niezmienione linie zachowały CRLF, żeby diff pokazywał tylko faktyczne zmiany.
+  - Metryka `revision_bumps` w `grid_baseline.rs` liczy też bumpy samych zapisów użytkownika (favorite bumpuje zawsze), więc po zmianie skan dokłada do niej ~2 bumpy.
+- Pomiar Rust (`TMPDIR=/var/tmp cargo test --manifest-path src-tauri/Cargo.toml --locked --release --test grid_baseline -- --ignored --nocapture --test-threads=1`). Host bez obciążenia przez drugą sesję (`pgrep` puste, load ~0,6–1,3). Przed: HEAD `9d8a721`, drzewo czyste. Po: drzewo z tym etapem.
+
+  | Metryka (10 skanów po 20k, 100k wierszy) | Przed | Po |
+  | --- | --- | --- |
+  | favorite podczas skanu p50 / p95 / max (ms) | 34 / 129 / 179 | 4,4 / 24 / 35 |
+  | tag podczas skanu p50 / p95 / max (ms) | 34 / 529 / 639 | 4,4 / 19 / 31 |
+  | rebuildy na skan (strona co 100 ms) | 4–5 (49 na 60 odczytów) | 1 (10 na 70 odczytów) |
+  | `revision_bumps` na skan (z zapisami użytkownika) | 45–53 | 8–17 |
+  | czas skanu (ms) | 811–1178 | 665–801 |
+  | operacje użytkownika: wykonane / nieudane / > 1 s | 84 / 0 / 0 | 138 / 0 / 0 |
+  | czekanie na pulę max (ms) | 0,32 | 0,32 |
+- Testy:
+  - `cargo test --manifest-path src-tauri/Cargo.toml --locked` → pass (204 unit plus wszystkie targety integracyjne).
+  - Nowe testy:
+    - `db_pool.rs`: rezerwa, przywrócenie busy timeout, ograniczony yield;
+    - `backend_runtime.rs`: wyczerpane zwykłe checkouty, transakcje w tle jedna za drugą;
+    - `scan_service.rs`: throttle, bump z `Drop`, realny skan 1500 plików z 1 połączeniem i liczbą bumpów ≤ 2 + sekundy;
+    - `commands/scan.rs`: obie komendy trzymają 1 połączenie;
+    - `db/thumbnails.rs`: 1 commit na grupę, markery, stale bez zapisu;
+    - `thumb_service.rs`: czekający writer `with_scan_and_thumb_lock` nie blokuje nowego strumienia, istniejąca miniatura bez blokady zapisu, failure czyszczone razem ze ścieżką.
+  - `bun run rust:fmt` → pass. `bun run rust:clippy` → pass.
+  - Desktop E2E: `MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1 bun run test:e2e:tauri --spec e2e/specs/grid-baseline.e2e.js` → 3 passing.
+    - Warunki: prywatny Xvfb 1440×1100, XDG pod `/tmp/mediatagger-*` (tmpfs, tak jak w biegu po etapie 01), `TMPDIR` na dysku (`/var/tmp`).
+    - W drzewie był ten etap oraz niezacommitowany frontend etapu 05 z drugiej sesji: zmieniony `DuplicateResolverDialog.tsx`, nowe `gridGeometry.ts` i `createVirtualList.ts`. `bun run typecheck` przechodził. Galeria w tym biegu nadal używała starego wirtualizera.
+    - Wynik: like 0/20 i tag 0/20 nieudanych, wszystkie 40 operacji w fazie skanu.
+      - `set_asset_tags`: `ipcMs` p50 14, p95 31, max 33 ms (po etapie 01: max 3032 ms).
+      - `set_asset_favorite`: `ipcMs` max 32 ms; serce od kliknięcia do UI p50 33, p95 51, max 57 ms (po etapie 01: p95 1629, max 2984 ms).
+      - `start_asset_query` i `stale` w czasie skanów: 0 i 0.
+      - Skan 20k p50 1269 ms (wcześniej 1364), `remove_scan_root` 162 ms (wcześniej 184).
+    - Backend `[perf]`: skan 20k robi 3 bumpy rewizji (wcześniej ~40), 0–4 ustąpienia na skan po ≤ 2 ms. Czekanie na pulę ≤ 0,01 ms. Zapis favorite i tagów w debug max 31–32 ms.
+    - Grid i miniatury bez regresji względem bazy: settle p50 17 ms, kafel przy pustym cache p50 361 ms, `render_all_thumbnails` 81 s.
+    - Surowe próbki: lokalny, ignorowany `artifacts/grid-baseline/2026-11-06T23-21-11-295Z/results.json`.
+- Zostało: commit po akceptacji użytkownika. Kolumnę „Po 01–06” w etapie 07 wypełnia orkiestrator w fali D.

@@ -132,3 +132,12 @@ todo — 2026-11-04
   - Pusty cache, build E2E debug, pliki 320×240: kafle z danymi 180 ms po skoku, miniatura per kafel p50 354 ms, p95 444 ms, max 485 ms, komplet widocznych p50 449 ms.
   - `render_all_thumbnails` dla 20 243 plików: 82 s w debug.
 - Czasy w E2E obejmują niezoptymalizowany Rust (profil debug). Porównania po zmianie rób tym samym specem i profilem.
+
+### 2026-11-07 — agent etapu 02
+- Z etapu 02: publikacja miniatur i `thumb_lock` działają teraz inaczej ([ADR 0002](../../adr/0002-backend-write-priority-and-scan-revisions.md)). Handler `thumb://` powinien przejąć te reguły.
+  - Komendy render/ensure wchodzą przez `with_thumb_operation` (sam permit). Guard odczytu `thumb_read_section` (`src-tauri/src/app/locks.rs`) jest brany tylko na krótkie sekcje: odczyt wierszy, enqueue, commit, usuwanie plików. Nigdy nie jest trzymany w czasie czekania na scheduler. Delete, rename i clear czekają więc najwyżej jedną sekcję.
+  - `db::commit_thumbnail_results` zapisuje CAS ścieżki i marker failure w jednej transakcji `IMMEDIATE` (`src-tauri/src/db/thumbnails.rs`).
+  - `get_assets_for_thumbnails_by_ids` zwraca flagę failure. Istniejąca ścieżka odczytana razem z wersją jest gotowa bez zapisu. `ready` w kontrakcie IPC brzmi teraz: „po potwierdzeniu wersji w bazie”.
+  - Strumień publikuje wyniki grupami (to, co już czeka, do 64 sztuk).
+  - Bulk publikuje transakcjami po ≤ 256 wierszy, z `permit.yield_to_user_writes()` przed każdą, i bierze epokę clear per strona.
+  - Komenda `thumb://` w async musi brać guard wewnątrz `spawn_blocking`, nie przez `.await`.

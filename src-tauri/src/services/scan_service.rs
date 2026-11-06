@@ -2,7 +2,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{mpsc, Arc, Mutex},
     thread,
-    time::UNIX_EPOCH,
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use crate::{
@@ -11,7 +11,10 @@ use crate::{
     error::AppResult,
     indexer,
     models::{ScanCompletion, ScanSummary},
-    services::progress::emit_progress,
+    services::{
+        db_pool::{OperationPermit, PooledConnection},
+        progress::emit_progress,
+    },
 };
 
 #[cfg(test)]
@@ -24,6 +27,103 @@ const SCAN_DB_BATCH_SIZE: usize = 512;
 // queued tasks plus that batch before the next result drain.
 const SCAN_RESULT_QUEUE_CAPACITY: usize =
     SCAN_QUEUE_CAPACITY + SCAN_DB_BATCH_SIZE + MAX_SCAN_WORKERS;
+/// Minimum spacing of library-revision bumps from committed scan batches.
+const SCAN_REVISION_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Decides which committed scan batches carry a library-revision bump.
+///
+/// Query sessions and duplicate snapshots live only in process memory, so the
+/// revision has to move before readers can observe new rows for long, not with
+/// every commit. The first batch bumps at once, later batches at most once per
+/// interval, and the scan always bumps when it ends or fails.
+#[derive(Debug)]
+struct ScanRevisionThrottle {
+    interval: Duration,
+    last_bump: Option<Instant>,
+    unbumped_commits: bool,
+    bumps: usize,
+}
+
+impl ScanRevisionThrottle {
+    fn new(interval: Duration) -> Self {
+        Self {
+            interval,
+            last_bump: None,
+            unbumped_commits: false,
+            bumps: 0,
+        }
+    }
+
+    /// Whether the batch about to commit must bump inside its transaction.
+    fn due(&self, now: Instant) -> bool {
+        self.last_bump
+            .is_none_or(|last| now.saturating_duration_since(last) >= self.interval)
+    }
+
+    /// Records a committed query-visible change and whether it bumped.
+    fn committed(&mut self, bumped: bool, now: Instant) {
+        if bumped {
+            self.last_bump = Some(now);
+            self.unbumped_commits = false;
+            self.bumps += 1;
+        } else {
+            self.unbumped_commits = true;
+        }
+    }
+}
+
+/// The scan's single pooled connection and its write policy: IMMEDIATE
+/// transactions, yielding to waiting user writes, and throttled revisions.
+struct ScanWriter<'a> {
+    conn: PooledConnection,
+    permit: &'a OperationPermit,
+    revisions: ScanRevisionThrottle,
+    yields: usize,
+    yield_time: Duration,
+}
+
+impl<'a> ScanWriter<'a> {
+    fn new(permit: &'a OperationPermit) -> AppResult<Self> {
+        Ok(Self {
+            conn: permit.connection()?,
+            permit,
+            revisions: ScanRevisionThrottle::new(SCAN_REVISION_INTERVAL),
+            yields: 0,
+            yield_time: Duration::ZERO,
+        })
+    }
+
+    /// Lets queued favorite/tag/group writes commit before the next batch.
+    fn yield_to_user_writes(&mut self) {
+        let waited = self.permit.yield_to_user_writes();
+        if !waited.is_zero() {
+            self.yields += 1;
+            self.yield_time += waited;
+        }
+    }
+
+    fn begin_immediate(&self) -> rusqlite::Result<rusqlite::Transaction<'_>> {
+        rusqlite::Transaction::new_unchecked(&self.conn, rusqlite::TransactionBehavior::Immediate)
+    }
+
+    /// The unconditional bump after all roots; its failure fails the scan.
+    fn finish(&mut self) -> AppResult<()> {
+        db::bump_library_revision(&self.conn)?;
+        self.revisions.committed(true, Instant::now());
+        Ok(())
+    }
+}
+
+impl Drop for ScanWriter<'_> {
+    fn drop(&mut self) {
+        // An error or panic must not leave committed rows behind an unchanged
+        // revision for the rest of the process. Best effort: the error that
+        // ended the scan is already being reported.
+        if self.revisions.unbumped_commits {
+            let _ = db::bump_library_revision(&self.conn);
+        }
+    }
+}
 
 pub fn sort_scan_roots_by_created_desc(
     roots: Vec<crate::models::ScanRoot>,
@@ -78,7 +178,7 @@ pub fn scan_roots(
     let mut removed = 0usize;
     let mut failed = 0usize;
     let mut completion = ScanCompletion::Complete;
-    let conn = permit.connection()?;
+    let mut writer = ScanWriter::new(permit)?;
 
     for (root_idx, root_str) in roots.iter().enumerate() {
         let root = PathBuf::from(root_str);
@@ -174,7 +274,7 @@ pub fn scan_roots(
             discovery_batch.push((path, kind, fingerprint));
             if discovery_batch.len() >= SCAN_DB_BATCH_SIZE {
                 dispatch_discovery_batch(
-                    &conn,
+                    &mut writer,
                     &mut discovery_batch,
                     &task_sender,
                     &mut unchanged_ids,
@@ -184,7 +284,7 @@ pub fn scan_roots(
                     generation,
                 )?;
                 drain_ready_scan_results(
-                    &conn,
+                    &mut writer,
                     &result_receiver,
                     &mut pending_writes,
                     &mut completed_changed,
@@ -211,7 +311,7 @@ pub fn scan_roots(
         })?;
         let total = discovery.discovered;
         dispatch_discovery_batch(
-            &conn,
+            &mut writer,
             &mut discovery_batch,
             &task_sender,
             &mut unchanged_ids,
@@ -221,7 +321,7 @@ pub fn scan_roots(
             generation,
         )?;
         drain_ready_scan_results(
-            &conn,
+            &mut writer,
             &result_receiver,
             &mut pending_writes,
             &mut completed_changed,
@@ -233,7 +333,8 @@ pub fn scan_roots(
         drop(task_sender);
 
         if !unchanged_ids.is_empty() {
-            db::touch_scan_root_assets(&conn, &unchanged_ids, root_str, generation)?;
+            writer.yield_to_user_writes();
+            db::touch_scan_root_assets(&writer.conn, &unchanged_ids, root_str, generation)?;
             unchanged_count += unchanged_ids.len();
             unchanged_ids.clear();
         }
@@ -242,7 +343,7 @@ pub fn scan_roots(
                 .recv()
                 .map_err(|e| format!("scan worker disconnected: {e}"))?;
             accept_scan_result(
-                &conn,
+                &mut writer,
                 result,
                 &mut pending_writes,
                 &mut completed_changed,
@@ -266,7 +367,8 @@ pub fn scan_roots(
                 );
             }
         }
-        changed_indexed += flush_scan_batch(&conn, &mut pending_writes, root_str, generation)?;
+        changed_indexed +=
+            flush_scan_batch(&mut writer, &mut pending_writes, root_str, generation)?;
         indexed += unchanged_count + changed_indexed;
         failed += discovery.traversal_errors + discovery_failures + changed_failed;
 
@@ -279,8 +381,13 @@ pub fn scan_roots(
         let root_scan_complete =
             discovery.is_complete() && discovery_failures == 0 && changed_failed == 0;
         if root_scan_complete {
+            writer.yield_to_user_writes();
             let removed_for_root =
-                db::prune_completed_scan_root_generation(&conn, root_str, generation)?;
+                db::prune_completed_scan_root_generation(&writer.conn, root_str, generation)?;
+            if removed_for_root > 0 {
+                // The prune bumped inside its own transaction.
+                writer.revisions.committed(true, Instant::now());
+            }
             removed += removed_for_root;
             let _ = emit_progress(
                 app,
@@ -310,12 +417,15 @@ pub fn scan_roots(
         }
     }
 
-    db::bump_library_revision(&conn)?;
-    db::optimize(&conn)?;
+    writer.finish()?;
+    db::optimize(&writer.conn)?;
     if std::env::var_os("MEDIATAGGER_PERF").is_some() {
         eprintln!(
-            "[perf] name=scan elapsed_ms={} indexed={indexed} removed={removed} failed={failed}",
-            started.elapsed().as_millis()
+            "[perf] name=scan elapsed_ms={} indexed={indexed} removed={removed} failed={failed} revision_bumps={} user_write_yields={} yield_ms={}",
+            started.elapsed().as_millis(),
+            writer.revisions.bumps,
+            writer.yields,
+            writer.yield_time.as_millis()
         );
     }
     Ok(ScanSummary {
@@ -336,7 +446,7 @@ fn scan_generation() -> i64 {
 
 #[allow(clippy::too_many_arguments)]
 fn dispatch_discovery_batch(
-    conn: &rusqlite::Connection,
+    writer: &mut ScanWriter<'_>,
     batch: &mut Vec<(PathBuf, String, indexer::FileFingerprint)>,
     sender: &mpsc::SyncSender<(PathBuf, String, indexer::FileFingerprint)>,
     unchanged_ids: &mut Vec<i64>,
@@ -352,7 +462,7 @@ fn dispatch_discovery_batch(
         .iter()
         .map(|(path, _, _)| path.to_string_lossy().to_string())
         .collect::<Vec<_>>();
-    let existing = db::list_asset_fingerprints_by_paths(conn, &paths)?;
+    let existing = db::list_asset_fingerprints_by_paths(&writer.conn, &paths)?;
     for (path, kind, fingerprint) in batch.drain(..) {
         let path_text = path.to_string_lossy().to_string();
         let current = existing.get(&path_text);
@@ -372,7 +482,8 @@ fn dispatch_discovery_batch(
         }
     }
     if unchanged_ids.len() >= SCAN_DB_BATCH_SIZE {
-        db::touch_scan_root_assets(conn, unchanged_ids, root, generation)?;
+        writer.yield_to_user_writes();
+        db::touch_scan_root_assets(&writer.conn, unchanged_ids, root, generation)?;
         *unchanged_count += unchanged_ids.len();
         unchanged_ids.clear();
     }
@@ -380,7 +491,7 @@ fn dispatch_discovery_batch(
 }
 
 fn flush_scan_batch(
-    conn: &rusqlite::Connection,
+    writer: &mut ScanWriter<'_>,
     pending: &mut Vec<indexer::IndexedItem>,
     root: &str,
     generation: i64,
@@ -388,7 +499,9 @@ fn flush_scan_batch(
     if pending.is_empty() {
         return Ok(0);
     }
-    let tx = conn.unchecked_transaction()?;
+    writer.yield_to_user_writes();
+    let bump = writer.revisions.due(Instant::now());
+    let tx = writer.begin_immediate()?;
     for item in pending.iter() {
         db::upsert_scanned_asset(
             &tx,
@@ -398,10 +511,14 @@ fn flush_scan_batch(
             generation,
         )?;
     }
-    // Every committed indexing batch invalidates query sessions immediately so
-    // a crash can never leave indexed rows without a revision bump.
-    db::bump_library_revision_in_tx(&tx)?;
+    // Sessions are in-memory, so a crash cannot leave a stale one behind; a
+    // live process sees these rows after the next throttled, final, or
+    // error-path bump (`ScanRevisionThrottle`, `ScanWriter::drop`).
+    if bump {
+        db::bump_library_revision_in_tx(&tx)?;
+    }
     tx.commit()?;
+    writer.revisions.committed(bump, Instant::now());
     let written = pending.len();
     pending.clear();
     Ok(written)
@@ -409,7 +526,7 @@ fn flush_scan_batch(
 
 #[allow(clippy::too_many_arguments)]
 fn drain_ready_scan_results(
-    conn: &rusqlite::Connection,
+    writer: &mut ScanWriter<'_>,
     receiver: &mpsc::Receiver<indexer::IndexResult>,
     pending: &mut Vec<indexer::IndexedItem>,
     completed: &mut usize,
@@ -420,7 +537,7 @@ fn drain_ready_scan_results(
 ) -> AppResult<()> {
     while let Ok(result) = receiver.try_recv() {
         accept_scan_result(
-            conn, result, pending, completed, indexed, failed, root, generation,
+            writer, result, pending, completed, indexed, failed, root, generation,
         )?;
     }
     Ok(())
@@ -428,7 +545,7 @@ fn drain_ready_scan_results(
 
 #[allow(clippy::too_many_arguments)]
 fn accept_scan_result(
-    conn: &rusqlite::Connection,
+    writer: &mut ScanWriter<'_>,
     result: indexer::IndexResult,
     pending: &mut Vec<indexer::IndexedItem>,
     completed: &mut usize,
@@ -443,7 +560,7 @@ fn accept_scan_result(
         pending.push(item);
     }
     if pending.len() >= SCAN_DB_BATCH_SIZE {
-        *indexed += flush_scan_batch(conn, pending, root, generation)?;
+        *indexed += flush_scan_batch(writer, pending, root, generation)?;
     }
     Ok(())
 }
@@ -513,6 +630,130 @@ mod tests {
             duration_ms: None,
             thumb_path: None,
         }
+    }
+
+    #[test]
+    fn revision_throttle_bumps_first_batch_then_once_per_interval() {
+        use std::time::{Duration, Instant};
+        let start = Instant::now();
+        let second = Duration::from_secs(1);
+        let mut throttle = super::ScanRevisionThrottle::new(second);
+        assert!(throttle.due(start), "the first batch always bumps");
+        throttle.committed(true, start);
+        assert!(!throttle.unbumped_commits);
+
+        for offset in [1, 400, 999] {
+            let now = start + Duration::from_millis(offset);
+            assert!(!throttle.due(now), "batch at +{offset} ms must not bump");
+            throttle.committed(false, now);
+        }
+        assert!(throttle.unbumped_commits);
+
+        let later = start + second;
+        assert!(throttle.due(later));
+        throttle.committed(true, later);
+        assert!(!throttle.unbumped_commits);
+        assert_eq!(throttle.bumps, 2);
+    }
+
+    fn writer_fixture() -> (
+        tempfile::TempDir,
+        std::sync::Arc<crate::services::db_pool::DatabaseRuntime>,
+    ) {
+        let dir = tempdir().expect("tempdir");
+        let runtime = crate::services::db_pool::DatabaseRuntime::new(dir.path().join("media.db"));
+        db::init_schema(&runtime.admit().unwrap().connection().unwrap()).unwrap();
+        (dir, runtime)
+    }
+
+    fn revision(runtime: &std::sync::Arc<crate::services::db_pool::DatabaseRuntime>) -> i64 {
+        db::current_library_revision(&runtime.admit().unwrap().connection().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn scan_writer_bumps_on_early_exit_only_when_commits_are_uncovered() {
+        let (_dir, runtime) = writer_fixture();
+        let permit = runtime.admit().unwrap();
+        let before = revision(&runtime);
+
+        // Error/panic exit after an unbumped batch: Drop bumps once.
+        let mut writer = super::ScanWriter::new(&permit).unwrap();
+        writer.revisions.committed(true, std::time::Instant::now());
+        writer.revisions.committed(false, std::time::Instant::now());
+        drop(writer);
+        assert_eq!(revision(&runtime), before + 1);
+
+        // Every commit already covered: no extra bump.
+        let mut writer = super::ScanWriter::new(&permit).unwrap();
+        writer.revisions.committed(true, std::time::Instant::now());
+        drop(writer);
+        assert_eq!(revision(&runtime), before + 1);
+
+        // The success path always bumps, and Drop then has nothing to do.
+        let mut writer = super::ScanWriter::new(&permit).unwrap();
+        writer.revisions.committed(false, std::time::Instant::now());
+        writer.finish().unwrap();
+        drop(writer);
+        assert_eq!(revision(&runtime), before + 2);
+    }
+
+    #[test]
+    fn scan_holds_one_connection_and_throttles_batch_revisions() {
+        let (dir, runtime) = writer_fixture();
+        let root = dir.path().join("library");
+        fs::create_dir_all(&root).unwrap();
+        let seed = root.join("seed.png");
+        image::RgbImage::new(2, 2).save(&seed).unwrap();
+        // Three changed-file batches (512 + 512 + 476).
+        for index in 1..1_500 {
+            fs::copy(&seed, root.join(format!("copy-{index}.png"))).unwrap();
+        }
+        db::add_scan_root(
+            &runtime.admit().unwrap().connection().unwrap(),
+            &root.to_string_lossy(),
+        )
+        .unwrap();
+        let state = crate::app::state::AppState {
+            database: runtime.clone(),
+            db_path: dir.path().join("media.db"),
+            thumbs_dir: dir.path().join("thumbs"),
+            ffmpeg_path: "ffmpeg".into(),
+            scan_lock: std::sync::Mutex::new(()),
+            thumb_lock: std::sync::RwLock::new(()),
+            thumb_scheduler: crate::services::thumb_scheduler::ThumbnailScheduler::new(
+                1,
+                "ffmpeg".into(),
+            ),
+            thumbnail_render_all_running: std::sync::atomic::AtomicBool::new(false),
+            thumbnail_render_all_cancel_requested: std::sync::atomic::AtomicBool::new(false),
+            thumbnail_generation: std::sync::atomic::AtomicU64::new(0),
+        };
+        let before = revision(&runtime);
+        let most_checked_out = std::sync::atomic::AtomicUsize::new(0);
+        let sink = |_progress: crate::models::ScanProgress| -> crate::error::AppResult<()> {
+            most_checked_out.fetch_max(
+                runtime.checked_out_connections(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
+            Ok(())
+        };
+        let started = std::time::Instant::now();
+        let permit = runtime.admit().unwrap();
+        let summary =
+            super::scan_roots(&[root.to_string_lossy().into()], &state, &permit, &sink).unwrap();
+        let elapsed = started.elapsed();
+        assert_eq!(summary.indexed, 1_500);
+        assert_eq!(
+            most_checked_out.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        let bumps = revision(&runtime) - before;
+        // First batch plus the final bump, and at most one per elapsed second.
+        assert!(bumps >= 2, "{bumps}");
+        assert!(
+            bumps <= 2 + elapsed.as_secs() as i64,
+            "{bumps} in {elapsed:?}"
+        );
     }
 
     #[test]

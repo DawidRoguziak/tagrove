@@ -182,9 +182,9 @@ mod tests {
         set_asset_favorite, set_asset_favorite_with_revision, set_asset_media_group,
         set_asset_media_group_with_revision, set_asset_tags, set_asset_tags_with_revision,
         set_assets_media_group_bulk, try_list_ordered_asset_ids_with_meta,
-        update_asset_thumbnail_path_if_version_matches,
-        update_asset_thumbnail_paths_batch_versioned, upsert_asset, upsert_scanned_asset,
-        validate_backup_database, AssetMetaFilter, ThumbnailCasOutcome,
+        update_asset_thumbnail_path_if_version_matches, upsert_asset, upsert_scanned_asset,
+        validate_backup_database, AssetMetaFilter, ThumbnailCasOutcome, ThumbnailWrite,
+        ThumbnailWriteOutcome,
     };
 
     #[test]
@@ -1496,11 +1496,21 @@ mod tests {
 
         let fresh = crate::thumbs::SourceVersion::new("C:\\media\\a.jpg", 10, 1_000_000_000);
         let stale = crate::thumbs::SourceVersion::new("C:\\media\\b.jpg", 20, 9_999_999_999);
-        let stale_ids = update_asset_thumbnail_paths_batch_versioned(
+        let stale_ids = super::commit_thumbnail_results(
             &conn,
             &[
-                (1, Some("C:\\thumbs\\a.jpg".to_string()), fresh),
-                (2, Some("C:\\thumbs\\b-stale.jpg".to_string()), stale),
+                ThumbnailWrite {
+                    asset_id: 1,
+                    version: fresh,
+                    record_version: 1,
+                    outcome: ThumbnailWriteOutcome::Ready("C:\\thumbs\\a.jpg".to_string()),
+                },
+                ThumbnailWrite {
+                    asset_id: 2,
+                    version: stale,
+                    record_version: 1,
+                    outcome: ThumbnailWriteOutcome::Ready("C:\\thumbs\\b-stale.jpg".to_string()),
+                },
             ],
         )
         .expect("batch cas");

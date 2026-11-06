@@ -114,3 +114,23 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
 
 ### 2026-11-06 — agent etapu 01
 - Z etapu 01: bieg pośredni `grid-baseline.e2e.js` po etapie 01 (tylko frontend, przed 02–06): like 0/20 i tag 0/20 nieudanych; serce od kliknięcia do UI p50 84 ms, p95 1629 ms, max 2984 ms. Kolumny „Po 01–06” nie wypełniam, bo jest na pomiar po falach A–C. Uwaga: ten bieg miał XDG i `TMPDIR` na tmpfs.
+
+### 2026-11-07 — agent etapu 02
+- Z etapu 02: pomiary pośrednie po etapie 02, przed 03–06. Kolumny „Po 01–06” nie wypełniam. Szczegóły i warunki są w notatkach etapu 02.
+  - `grid_baseline` (release, ten sam host, przed i po w jednej sesji):
+    - favorite pod skanem: p95 129 → 24 ms, max 179 → 35 ms;
+    - tag pod skanem: p95 529 → 19 ms, max 639 → 31 ms;
+    - rebuildy: 4–5 → 1 na skan;
+    - nieudane operacje: 0.
+  - `grid-baseline.e2e.js` (debug; XDG na tmpfs, `TMPDIR` na dysku):
+    - like i tag 0/20 nieudanych;
+    - `set_asset_tags` max 33 ms, serce do UI max 57 ms;
+    - 0 rebuildów i 0 stron `stale` w czasie skanów;
+    - 3 bumpy rewizji na skan 20k.
+- Z etapu 02: metryka `revision_bumps` w `grid_baseline.rs` liczy też bumpy samych zapisów użytkownika (favorite bumpuje zawsze). Bumpy skanu widać w `[perf] name=scan revision_bumps=…`.
+- Z etapu 02: do sprawdzenia zgodności w fali D:
+  - `.claude/rules/thumbnails.md` („render/ensure take the `thumb_lock` read guard”): teraz guard per krótka sekcja przez `thumb_read_section`;
+  - `.claude/rules/database.md` (5 s busy timeout): zapis użytkownika ma ten sam budżet, ale odpytuje co 1 ms;
+  - `.claude/rules/backend-core.md`: zapisy użytkownika używają `user_write_connection()`.
+
+  Strony `docs/` i ADR 0002 są już zaktualizowane.

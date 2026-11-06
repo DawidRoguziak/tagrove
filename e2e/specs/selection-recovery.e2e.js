@@ -101,7 +101,9 @@ suite("selection recovery after banner layout", function () {
         });
         await browser.performActions([{ id: "modifiers", type: "key", actions: [{ type: "keyDown", value: "\uE009" }] }]);
         await pointer([{ type: "pointerMove", duration: 0, ...start }, { type: "pointerDown", button: 0 },
-          { type: "pause", duration: 200 }, { type: "pointerMove", duration: 100, x: start.x + 10, y: start.y + 10 }]);
+          // Hold below the 48px top edge zone: edge auto-scroll would otherwise keep the
+          // fast-scroll pause alive while this test jumps the scroller, so tiles never mount.
+          { type: "pause", duration: 200 }, { type: "pointerMove", duration: 100, x: start.x + 10, y: start.y + 120 }]);
         await $('[data-testid="gallery-selection-rectangle"]').waitForDisplayed();
       }
       // Traverse more than twelve pages so the range must reload an evicted page.

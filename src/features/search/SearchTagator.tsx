@@ -174,7 +174,9 @@ export function SearchTagator(props: {
         aria-activedescendant={
           popup() && active() >= 0 ? `${listId}-option-${active()}` : undefined
         }
-        onFocus={() => {
+        // focusin/focusout, not focus/blur: WebKitWebDriver input can focus the field
+        // without a `focus` event, which would leave suggestions permanently closed.
+        onFocusIn={() => {
           setFocused(true);
           updateCaret();
           setOpen(!!props.value.trim());
@@ -192,7 +194,7 @@ export function SearchTagator(props: {
           setActive(defaultActive());
         }}
         onKeyDown={keydown}
-        onBlur={() => {
+        onFocusOut={() => {
           setFocused(false);
           setOpen(false);
         }}

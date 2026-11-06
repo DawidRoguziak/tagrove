@@ -57,6 +57,22 @@ describe("SearchTagator", () => {
     expect(listbox).not.toBeInTheDocument();
   });
 
+  it("opens suggestions when focus arrives only as focusin", async () => {
+    renderSolid(ControlledSearchTagator, { knownTags: ["cat", "car"], initialValue: "" });
+    const input = screen.getByRole("combobox", { name: "Search tags" }) as HTMLInputElement;
+    // WebKitWebDriver typing dispatches focusin and input without a focus event.
+    fireEvent.focusIn(input);
+    fireEvent.input(input, { target: { value: "ca" } });
+
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent).sort()).toEqual(["car", "cat"]);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.focusOut(input);
+    await waitFor(() => expect(screen.queryByRole("option")).not.toBeInTheDocument());
+    expect(input).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("shows suggestions and applies selected suggestion with keyboard", async () => {
     renderSolid(ControlledSearchTagator, { knownTags: ["cat", "car", "dog"], initialValue: "ca" });
 

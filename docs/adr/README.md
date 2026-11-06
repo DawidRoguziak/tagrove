@@ -1,0 +1,40 @@
+# Architecture Decision Records
+
+This folder holds Tagrove's Architecture Decision Records (ADRs). An ADR captures one significant decision: the context it was made in, the options that were considered, what was chosen, and the consequences. The owning pages in `docs/` describe how the system works now; ADRs explain why it works that way.
+
+## When to write an ADR
+
+Write an ADR in the same change that introduces the decision when it:
+
+- changes an architecture invariant from `CLAUDE.md` or `docs/architecture/` (module boundaries, import direction, state ownership, lock order, startup order);
+- changes the SQLite schema, query semantics, ordering, or library-revision rules;
+- adds, changes, or removes an IPC command, event, or channel contract in a way that is not purely additive;
+- adds or replaces a significant dependency, runtime, or toolchain (for example the video backend, the virtualizer, the search engine, or the package manager);
+- affects data safety: deletion, restore, backup format, or the file-mutation journal;
+- affects profiles, app-data isolation, packaging, or the security surface;
+- deliberately rejects a reasonable alternative that someone is likely to propose again.
+
+Do not write an ADR for bug fixes, refactors that keep behavior and boundaries, UI copy, or test-only changes. When in doubt, write a short one.
+
+## How to write one
+
+1. Copy `template.md` to `NNNN-short-kebab-title.md`, using the next free four-digit number. Numbers are never reused.
+2. Fill in every section. Keep it short: usually one screen. Link to code (`path:line`), the owning `docs/` page, and the plan in `docs/plans/` if one exists.
+3. Set the status to `Proposed` while the change is under review and to `Accepted` when it lands.
+4. Update the owning `docs/` page in the same change, so the current behavior is documented there and not only in the ADR.
+5. Add a row to the index below.
+
+The same public-repository rules apply as everywhere else: no secrets, private paths, personal media, or private data in examples.
+
+## Lifecycle
+
+An accepted ADR is not rewritten. To change a decision, write a new ADR and set the old one's status to `Superseded by NNNN`, linking both ways. The only edits allowed to an accepted ADR are its status line, links to related ADRs, and fixes to typos or broken links.
+
+Statuses: `Proposed`, `Accepted`, `Rejected`, `Deprecated`, `Superseded by NNNN`.
+
+Plans in `docs/plans/` describe staged work. When a plan stage makes a decision that meets the criteria above, record it as an ADR and link the ADR from the plan.
+
+## Index
+
+| ADR | Title | Status | Date |
+| --- | --- | --- | --- |

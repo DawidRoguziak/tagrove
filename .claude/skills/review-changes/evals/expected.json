@@ -1,0 +1,65 @@
+{
+  "base_commit": "55e98f4",
+  "cases": [
+    {
+      "patch": "patches/01-ipc-unregistered.patch",
+      "expect": [
+        {
+          "path": "src-tauri/src/commands/assets.rs",
+          "about": "count_favorite_assets is not in generate_handler! (lib.rs), so countFavoriteAssets() rejects at runtime; ipc-contract.md and api.test.ts not updated",
+          "min_priority": "P2",
+          "lenses": ["review-conventions", "review-rust"]
+        }
+      ]
+    },
+    {
+      "patch": "patches/02-lock-order.patch",
+      "expect": [
+        {
+          "path": "src-tauri/src/commands/assets.rs",
+          "about": "delete takes thumb_lock before scan_lock, inverting the scan -> thumb order of with_scan_and_thumb_lock; concurrent scan/clear can deadlock; bypasses app/locks.rs helpers",
+          "min_priority": "P1",
+          "lenses": ["review-rust"]
+        }
+      ]
+    },
+    {
+      "patch": "patches/03-locale-missing.patch",
+      "expect": [
+        {
+          "path": "src/i18n/locales/pl.json",
+          "about": "gallery.endOfResultsHint added to 10 locales but missing from pl.json",
+          "min_priority": "P3",
+          "lenses": ["review-conventions", "review-frontend"]
+        }
+      ]
+    },
+    {
+      "patch": "patches/04-stale-details.patch",
+      "expect": [
+        {
+          "path": "src/features/lightbox/createLightbox.ts",
+          "about": "after await details.load the request/selection check is gone, so a slow reply for a previous asset publishes over the current selection during fast navigation",
+          "min_priority": "P2",
+          "lenses": ["review-frontend"]
+        }
+      ]
+    },
+    {
+      "patch": "patches/05-selection-scan.patch",
+      "expect": [
+        {
+          "path": "src/features/gallery/GalleryGrid.tsx",
+          "about": "isSelectedId copies the whole selection Set into an array per tile evaluation: O(selection) per visible tile instead of O(1) Set.has",
+          "min_priority": "P2",
+          "lenses": ["review-performance", "review-frontend"]
+        }
+      ]
+    },
+    {
+      "patch": "patches/06-clean-control.patch",
+      "expect": [],
+      "note": "Behavior-preserving constant extraction; any confirmed finding is a false positive"
+    }
+  ]
+}

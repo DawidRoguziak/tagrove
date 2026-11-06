@@ -1,0 +1,34 @@
+diff --git a/src-tauri/src/commands/assets.rs b/src-tauri/src/commands/assets.rs
+index 6f767ea..e9a6250 100644
+--- a/src-tauri/src/commands/assets.rs
++++ b/src-tauri/src/commands/assets.rs
+@@ -548,15 +548,20 @@ pub async fn delete_asset(
+ }
+ 
+ fn delete_asset_service(asset_id: i64, state: &AppState) -> Result<DeleteAssetSummary, String> {
+-    with_scan_and_thumb_lock(state, |permit| {
+-        let conn = permit.durable_connection()?;
+-        Ok(asset_mutation_service::delete_asset(
+-            &conn,
+-            &state.thumbs_dir,
+-            asset_id,
+-        )?)
+-    })
+-    .map_err(|e| e.to_string())
++    // Hold the thumbnail lock first so a running thumbnail render cannot
++    // recreate the file we are about to delete.
++    let permit = state.database.admit().map_err(|e| e.to_string())?;
++    let _thumb_guard = state
++        .thumb_lock
++        .write()
++        .unwrap_or_else(std::sync::PoisonError::into_inner);
++    let _scan_guard = state
++        .scan_lock
++        .lock()
++        .unwrap_or_else(std::sync::PoisonError::into_inner);
++    let conn = permit.durable_connection().map_err(|e| e.to_string())?;
++    asset_mutation_service::delete_asset(&conn, &state.thumbs_dir, asset_id)
++        .map_err(|e| e.to_string())
+ }
+ 
+ #[tauri::command]

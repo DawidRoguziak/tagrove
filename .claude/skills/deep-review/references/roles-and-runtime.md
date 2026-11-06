@@ -1,53 +1,51 @@
-# Roles and runtime checks
+# Runtime proof
 
-Choose perspectives appropriate to each bounded area. Two copies of the same assignment
-are not two perspectives. All reviewers inspect callers, guards, contracts and tests beyond
-the changed lines. A performance finding needs a mechanism and relevant scale; a design
-risk needs a concrete change or failure scenario and consequence. Cosmetic preferences,
-unsupported rewrites and missing tests alone are not findings.
+Each lens's review heuristics live in `.claude/agents/review-*.md`, and the bar lives in
+`../review-changes/references/signal-bar.md`. This page covers only the runtime owner: the
+single general-purpose agent, or the coordinator itself, that executes code to settle a
+verdict.
 
-- Frontend: trace user actions through components, state, hooks, services and IPC. Check
-  async completion order, identity, cancellation, invalidation, virtualized rendering,
-  keyboard/focus behavior, accessible semantics and locale placeholder parity.
-- Backend: trace commands through services, workers, SQLite and filesystem resources.
-  Check transactions, revision invalidation, lock order, queue bounds, partial failures,
-  file identity, rollback, subprocess/native lifetimes and boundary validation.
-- Architecture: trace producers and consumers across boundaries, including serialization,
-  state ownership, persistence, shutdown, recovery, coupling and test assumptions.
-- Discovery: map ownership, callers, relevant documentation and existing test entry points.
-  Return facts and bounded follow-up areas. This is not a substantive review perspective.
-- Verification: judge the original claim. Check reachability, validation and counterexamples.
-  Confirm through executed evidence or a concrete source-and-contract trace. Runtime facts
-  still uncertain remain unresolved. Environment failures are gaps, not defect reproductions.
-  Preserve conflicting evidence. New issues go back to the coordinator for another verifier.
+## When to run
 
-Read the repository [test matrix](../../../../docs/development/testing.md#test-layer-matrix)
-and inspect current package scripts before execution. Focused frontend unit tests, Rust
-unit/integration tests and desktop E2E are allowed. Select the lowest layer that proves
-the claim. New probes stay in the ignored run folder with synthetic fixtures.
+Run code only when a verdict depends on a runtime fact the code can't show, such as event
+order, WebKit behavior, actual SQL plans, or a payload Rust really accepts. Pick the lowest
+layer from the [test matrix](../../../../docs/development/testing.md#choosing-the-test-level)
+and inspect the current package scripts first.
 
-The coordinator names one runtime owner in `run.json`. That owner serializes desktop
-sessions and all shared frontend/E2E builds, including builds requested by other agents.
-Other agents request runtime evidence by message and do not launch their own sessions.
+- Use focused Vitest, Rust unit and integration tests, and desktop E2E.
+- New probes stay inside the run directory and use synthetic fixtures. Never change app code
+  to make a check pass.
+- Environment failures are gaps, not reproductions of a defect.
 
-For desktop checks use [verify-mediatagger](../../verify-mediatagger/SKILL.md)
-and its feature recipes. Start with `bun run app:control start`, keep the foreground
-session alive, require `READY`, then run `doctor`. The controller supplies synthetic media,
-temporary XDG directories and a private authenticated display. Record the exact session
-identity, title, app-data root and display checks before interaction. Never attach to or
-launch an installed production app, production-profile binary or production data.
+## Serialization
 
-If development-mode behavior itself needs checking, use `bun run tauri:dev` with fresh
-temporary `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `XDG_RUNTIME_DIR`, synthetic
-media and a private display. Inspect [profile isolation](../../../../docs/architecture/system-overview.md)
-and current launch configuration first. Do not use the user's normal desktop/profile.
+`run.json.runtime_owner` names the one owner. It serializes every desktop session and shared
+frontend or E2E build, because these share `dist/`, `src-tauri/target-e2e` and ports
+4444/4446/4447. Other agents request runtime evidence through the coordinator. Never kill
+processes by name, and never delete a lock just because a client can't connect.
 
-Record commands, working directory, exit results and observations. Inspect screenshots
-with the image viewer. Verify persisted effects by reopening/reloading or reading the
-temporary database. A successful capture command proves no rendered pixels by itself.
-Respect known native rendering and input limitations; unavailable drivers, native dialogs,
-video pixels or required tests remain explicit gaps. Do not change app code to make checks pass.
+## Desktop checks
 
-Stop the owned session, confirm processes exited, temporary data was removed and evidence
-survived. Controller artifacts may remain in ignored `artifacts/app-control/`; put a concise
-sanitized runtime record and evidence copies in `verification/` and link the originals.
+1. Use [verify-mediatagger](../../verify-mediatagger/SKILL.md) and its feature recipes.
+2. Start with `bun run app:control start`, keep the foreground session alive, wait for
+   `READY`, then run `doctor`. The controller supplies synthetic media, temporary XDG
+   directories and a private display.
+3. Before interacting, record the session identity, title, app-data root and display. Never
+   attach to an installed app, a production-profile binary or production data.
+
+If you need to test dev-mode behavior itself, use `bun run tauri:dev` with fresh temporary
+`XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `XDG_RUNTIME_DIR`, synthetic media and
+a private display. Read the profile isolation section of
+[system-overview.md](../../../../docs/architecture/system-overview.md) first.
+
+## Evidence and cleanup
+
+- Record each command with its working directory, exit code and the specific observation in
+  the verification file.
+- Look at screenshots with the image viewer. A capture command that succeeded doesn't prove
+  any pixels rendered.
+- Check persisted effects by reloading or by reading the temporary database.
+- Known limits stay explicit gaps: native dialogs, MP4 pixels under Xvfb, and missing drivers.
+- When done, stop the owned session and confirm that the processes exited and the temporary
+  data is gone. Copy sanitized evidence into `verification/` and link any originals left in
+  the ignored `artifacts/app-control/`.

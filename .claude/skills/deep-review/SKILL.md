@@ -1,138 +1,144 @@
 ---
 name: deep-review
-description: Explicit multi-agent review of MediaTagger changes, files, modules, or the whole project. Independently investigate, exchange evidence, and verify candidates; save local reports under raports/. Use only when explicitly requested as deep-review.
+description: Explicit, saved multi-agent audit of Tagrove changes, paths, or the whole project. Two independent specialist lenses per area, an independent verifier per finding, optional test and runtime proof, and validated records under raports/. Use only when explicitly requested as deep-review.
 disable-model-invocation: true
-argument-hint: "[current changes | <path> | whole project]"
+argument-hint: "[current changes | --range <A..B> | --base <rev> | <path>... | whole project]"
 ---
 
 # Deep review
 
-Review behavior and substantiated security, data-safety, performance, UX, architecture,
-and maintainability risks. Propose corrections without applying them. Reports default
-to English. Invoke as `/deep-review current changes`, `/deep-review src/features/lightbox`,
-or `/deep-review whole project`. With no target, review staged, unstaged, and relevant
-untracked changes against `HEAD`. An empty diff produces a no-changes report.
+This is the heavy variant of `/review-changes`. It uses the same specialist agents
+(`.claude/agents/review-*.md`), the same signal bar
+([signal-bar.md](../review-changes/references/signal-bar.md)) and the same verifier. On top of
+those it adds a whole-path or whole-project scope, two independent lenses on every file,
+optional runtime proof, and records that a script can validate. It proposes corrections and
+never applies them. Reports are written in English.
+
+Examples: `/deep-review` (branch plus uncommitted work), `/deep-review --base origin/main`,
+`/deep-review src/features/lightbox`, `/deep-review whole project`.
 
 ## Boundaries
 
-Only the coordinator spawns agents and owns shared indexes and the final report.
-Workers own `agents/<assignment>/` and their assigned verification files. Never create
-worktrees. Preserve application files, existing changes, and historical reports.
-Keep all generated review artifacts under this run's ignored repository-root `raports/`
-folder, including temporary probes. Existing test tools may retain their already-ignored
-artifacts elsewhere; link or copy sanitized evidence into the run. Never force-add reports.
-Do not copy secrets, private media, databases, or private logs into evidence.
+- Only the coordinator spawns agents and writes records. Specialists are read-only, so you
+  save their output yourself.
+- Never create worktrees. Never edit application files or reset existing changes. Keep every
+  artifact, including temporary probes, inside this run's directory under the ignored
+  `raports/`. Never force-add reports.
+- Never copy secrets, private media, databases or private logs into evidence.
+- Fresh agents get the brief and their assignment, and never your conclusions. Don't use
+  `fork`. Exclude `raports/` and `docs/review/` from searches during the independent phase.
 
-Initial reviewers must not read peer notes or previous reports. Exclude `raports/` and
-`docs/review/` from broad source searches. Read only explicitly assigned synthetic fixtures,
-coordinator-provided context and owned output there. Open peer evidence only after the coordinator starts collaboration.
-A delegated worker follows its assignment, without launching another review team.
+## 1. Initialize and scope
 
-## Start and map
-
-Read [the record contract](references/records.md). From the repository root run:
+Read [the record contract](references/records.md). Then, from the repository root:
 
 ```sh
-python3 .claude/skills/deep-review/scripts/init_review.py
-# Explicit scope, with the requested source roots:
+python3 .claude/skills/deep-review/scripts/init_review.py                          # branch + uncommitted
+python3 .claude/skills/deep-review/scripts/init_review.py --base origin/main       # explicit base
+python3 .claude/skills/deep-review/scripts/init_review.py release --range v1.2..HEAD # committed range only
 python3 .claude/skills/deep-review/scripts/init_review.py lightbox --path src/features/lightbox
+python3 .claude/skills/deep-review/scripts/init_review.py whole-project --path .
 ```
 
-The initializer creates a collision-safe UTC directory and captures Git status, `HEAD`,
-and file hashes. It does not decide relevance or finish a review. Record the user's
-request, comparison base, exclusions and supporting paths in `run.json`. For a requested
-commit range, capture that diff explicitly and use `--path` for its files. For a whole
-project review use `--path .`, then inventory subsystems and queue bounded batches.
-Generated and vendored files are excluded by Git's ignore rules. If Git or `HEAD` is
-unavailable, record the limitation and an explicit source inventory; do not claim a clean diff.
+The initializer resolves the change set with `review-changes/scripts/collect_scope.py`, so the
+default is `merge-base(main)..HEAD` plus the working tree. It creates a collision-safe run
+directory and records the baseline hashes.
 
-Route through the documentation index in repository [CLAUDE.md](../../../CLAUDE.md).
-Read the primary topic and linked contracts needed for this scope. Source, executable
-configuration and tests establish behavior. Record documentation drift as a candidate.
-Write `context.md` with project facts, dependency map, callers, contracts, test entry
-points and exclusions. Add supporting source hashes using the helper's `snapshot`
-function before assigning those files. Divide substantive scope into coverage areas.
-Every area needs at least two independent reviewer identities and different perspectives.
-Discovery alone and subsequent verification do not replace those perspectives.
+- Record the user's request and any exclusions in `run.json`.
+- If `no_changes` is true, write the no-changes report and stop. No agents are needed.
+- For a whole project, inventory the subsystems from the CLAUDE.md layout and queue bounded
+  batches of at most about 40 files per assignment.
 
-## Models and assignment
+## 2. Context and areas
 
-Read [roles and runtime checks](references/roles-and-runtime.md). Record the model
-aliases accepted by the live `Agent` tool schema as `model_availability` (source:
-"Agent tool schema"). Spawn every worker with the `Agent` tool, `subagent_type:
-"general-purpose"` (workers must write their own files, so read-only types such as
-`Explore` cannot be used), an explicit `model`, and a self-contained prompt; do not use
-`fork`, because fresh workers must not inherit the coordinator's context or conclusions.
-This skill explicitly asks for `effort: "high"` on review and verification workers.
-Run at most three workers concurrently and queue the rest. Only the coordinator spawns.
+1. Route through the CLAUDE.md documentation index and read the owning pages for the scope.
+2. Run `collect_scope.py` (or read its output) to get the matched `.claude/rules` and docs.
+3. Write `context.md` with:
+   - the intent;
+   - the dependency map (callers and contracts);
+   - the rules and docs that apply;
+   - the test entry points;
+   - the exclusions.
+4. Hash every supporting file you assign, with `init_review.snapshot`, and add it to
+   `baseline.hashes`.
+5. Split the scope into coverage areas. Every area needs **two completed review assignments
+   with different lenses**:
 
-| Assignment | Model |
+| Area content | Lenses (pick at least 2) |
 | --- | --- |
-| Code mapping, documentation lookup, test discovery | `sonnet` |
-| Frontend behavior, accessibility, localization | `opus` |
-| Rust, SQLite, IPC, filesystem correctness | `opus` |
-| Architecture, maintainability, performance, test adequacy | `opus` |
-| Runtime reproduction, ordinary independent verification | `opus` |
-| Difficult concurrency, data-loss/security risks, disputed conclusions | `opus`, `effort: "max"` |
+| Rust, SQLite, IPC, filesystem | `review-rust` + `review-conventions` (+ `review-performance` on hot paths) |
+| Frontend, models, a11y, i18n | `review-frontend` + `review-conventions` (+ `review-performance` for gallery/query) |
+| Hot paths (gallery, query, thumbnails, scan, db) | the domain lens + `review-performance` |
+| Docs, tooling, packaging | `review-conventions` + the domain lens the change affects |
 
-If a model alias is rejected, fall back to `opus`, then to omitting `model` (inherit the
-coordinator's model), and record the substitution. Record requested and selected models,
-effort, returned agent IDs, failure reasons, and observed model metadata when exposed. A
-requested model is not proof of the model that ran; use null when it is not exposed.
-Missing delegation means partial coverage, never simulated agents. The coordinator keeps
-the invoking session's model and does not claim to change it.
+## 3. Independent review
 
-The independent investigation and separate validation pattern adapts
-[Anthropic's review workflow](https://github.com/anthropics/claude-code/blob/main/plugins/code-review/commands/code-review.md).
-Do not import that workflow's publishing steps or exclusions of pre-existing issues.
+Launch the assignments with the Agent tool, using `subagent_type: "<lens>"`. Launch
+independent ones in one message. The skill explicitly requests `effort: "high"` (the default
+in the agent files).
 
-## Independent review, then collaboration
+Each prompt contains:
+- the repository root, the run path and the baseline `head`/`comparison_base`;
+- the diff command, or for path mode the file list;
+- the assignment's files, rules and docs;
+- the user's concerns;
+- "read-only; return the signal-bar JSON and summary".
 
-Give each fresh worker its assignment ID, role, repository root, run path, source
-baseline, bounded requested and supporting paths, applicable documentation, ownership,
-and this skill's boundaries. Include the record contract and role reference. Do not
-supply other reviewers' conclusions. Ask for actual inspected paths, commands, limitations,
-and independent findings in its own files. Save even a zero-finding investigation.
+For every finished agent, save its JSON array verbatim to `agents/<id>/findings.json` and
+its summary to `agents/<id>/notes.md`. Then record the returned agent ID, lens, model, effort
+and status in `run.json`. Save the original files before any merging, and never modify them
+afterwards.
 
-Wait until the relevant independent notes and findings are saved before opening a
-collaboration round. Preserve those originals. Send messages pointing to written evidence,
-ask specific questions, and let reviewers read relevant peer notes, investigate cross-module
-effects, and save responses in their own `collaboration.md`. Track each handoff in
-`run.json` with sender, recipient, evidence, question, response and status. Continue a
-running or finished worker with `SendMessage` to its agent ID; workers answer in their own
-files and final reply. Keep unanswered or blocked questions visible.
+Collaboration is optional. When an agent raises a cross-lens question that bears on a
+candidate, continue the other agent with `SendMessage` and record the exchange in `handoffs`.
+Save the reply to `agents/<recipient>/collaboration.md`. Unanswered handoffs keep the run
+partial.
 
-Merge only candidates with the same cause, trigger and impact. Give each distinct candidate
-a stable `DR-NNN` ID. Preserve every original ID, author and evidence reference in
-`findings.json`, including duplicate mappings. Explicit user concerns require a disposition,
-even when guards refute them. Do not replace an unproven defect with a different design risk.
+## 4. Merge
 
-Assign every distinct candidate to a fresh verifier who did not originate any merged
-claim. Supply the claim and all evidence, including counterevidence, without a desired
-verdict. The verifier reads current source, callers and contracts and tries to falsify
-it. Agreement is insufficient. Run focused checks where a material runtime fact needs
-proof. Save `confirmed`, `rejected`, or `unresolved` with evidence and verified hashes.
-A verifier's newly discovered issue needs a different verifier. Route difficult disputes
-to an `opus` verifier with `effort: "max"`; preserve disagreement if evidence cannot settle it.
+Give each distinct candidate a stable `DR-NNN` ID in `findings.json`.
 
-## Finish
+- Merge originals only when they share a cause, a trigger and an impact.
+- Keep every original ID, every originator and all evidence, and map duplicates.
+- Never swap an unproven defect for a different design risk.
+- Explicit user concerns need a disposition even when guards refute them; record them as
+  intake originals.
 
-Check assignment coverage, handoffs, aliases and independent verdicts. Follow up only to
-resolve a specific gap. Record blocked work as partial. Recheck changed source affecting
-a finding or mark it stale and unresolved; never reset concurrent edits. Include supporting
-contracts in each finding's verified hashes, not just the highlighted line.
+## 5. Verify
 
-Write `report.md` with scope and status, prioritized confirmed findings and proportionate
-corrections, introduced versus pre-existing classification, rejected count, unresolved
-concerns, coverage, verification results and material gaps. Summarize commands and observed
-results, inspected screenshots, persistence checks and cleanup when applicable.
+For each candidate, launch a fresh `review-verifier` that did not originate any of its
+merged claims. Pass the candidate with its evidence and counterevidence, and don't say which
+verdict you expect.
+
+- Use `effort: "max"` for P0/P1, for disputes and for user concerns.
+- Save the result as `verification/DR-NNN.json`.
+- A verifier's `new_issue` becomes a new candidate and goes to a different verifier.
+
+**Runtime proof** applies when a verdict depends on a runtime fact (tests, E2E and the
+desktop app are allowed in this skill). Assign one general-purpose runtime owner and follow
+[roles-and-runtime.md](references/roles-and-runtime.md). Pick the lowest test layer that
+proves the claim, and record the commands and observations in the verification file
+(`basis: "executed"` or `"both"`).
+
+## 6. Finish
+
+1. Recheck hashes. For changed sources, re-verify the finding or mark it `stale` and
+   `uncertain`.
+2. Write `report.md` covering:
+   - the scope and status;
+   - confirmed findings grouped by priority, each with the proportionate correction and
+     whether it was introduced or pre-existing;
+   - uncertain items, each with the missing fact;
+   - the rejected count;
+   - coverage by area and lens;
+   - the commands and their results;
+   - gaps and cleanup.
+3. Validate the run until it is clean:
 
 ```sh
 python3 .claude/skills/deep-review/scripts/validate_review.py raports/<run>
 ```
 
-Resolve validation errors. A valid partial report is still partial. Finish only when every
-assignment and handoff is accounted for and all candidates have independent verdicts, or
-explicitly report remaining work as partial. The no-changes case needs no workers. Return
-a link to `report.md`, confirmed counts by priority, rejected/unresolved counts and material
-verification gaps. Do not claim that an untested area passed.
+A valid partial report is still partial; never claim that an untested area passed. Return
+the link to `report.md`, the confirmed counts by priority, the uncertain and rejected counts,
+and the material gaps.

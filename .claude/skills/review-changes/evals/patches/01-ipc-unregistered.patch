@@ -1,0 +1,39 @@
+diff --git a/src-tauri/src/commands/assets.rs b/src-tauri/src/commands/assets.rs
+index 6f767ea..462a588 100644
+--- a/src-tauri/src/commands/assets.rs
++++ b/src-tauri/src/commands/assets.rs
+@@ -131,6 +131,19 @@ pub async fn get_asset_summaries_by_ids(
+     .map_err(|e: crate::error::AppError| e.to_string())
+ }
+ 
++#[tauri::command]
++pub async fn count_favorite_assets(state: State<'_, AppState>) -> Result<i64, String> {
++    let database = state.database.clone();
++    tauri::async_runtime::spawn_blocking(move || {
++        let conn = database.admit()?.connection()?;
++        conn.query_row("SELECT COUNT(*) FROM assets WHERE is_favorite = 1", [], |row| row.get(0))
++            .map_err(Into::into)
++    })
++    .await
++    .map_err(|e| format!("favorite count worker failed: {e}"))?
++    .map_err(|e: crate::error::AppError| e.to_string())
++}
++
+ #[tauri::command]
+ pub async fn get_asset_details(
+     asset_id: i64,
+diff --git a/src/platform/tauri/assets.ts b/src/platform/tauri/assets.ts
+index 7c20fca..2013bab 100644
+--- a/src/platform/tauri/assets.ts
++++ b/src/platform/tauri/assets.ts
+@@ -104,6 +104,10 @@ export function toMediaSrc(path: string): string {
+   return convertFileSrc(path);
+ }
+ 
++export async function countFavoriteAssets(): Promise<number> {
++  return await invoke<number>("count_favorite_assets");
++}
++
+ export async function getAssetSummariesByIds(assetIds: number[]): Promise<AssetSummary[]> {
+   return await invoke<AssetSummary[]>("get_asset_summaries_by_ids", { assetIds });
+ }

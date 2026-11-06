@@ -56,6 +56,7 @@ src-tauri/src/           Rust crate `media_tagger`
 src-tauri/tests/         Rust integration targets
 e2e/                     WebdriverIO desktop E2E (specs/), app:control driver (control.js)
 docs/                    owning documentation per subsystem (see index below)
+  adr/                   Architecture Decision Records (NNNN-title.md, template.md)
 packaging/, scripts/     Linux packaging (Flatpak/AppImage/native), privacy and locale tooling
 ```
 
@@ -68,6 +69,10 @@ packaging/, scripts/     Linux packaging (Flatpak/AppImage/native), privacy and 
 - Lock order is maintenance gate → `scan_lock` → exclusive `thumb_lock`, always through the helpers in `app/locks.rs`. Locks are taken inside `spawn_blocking` and never held across an `.await`.
 - A write that changes query results bumps the library revision in the same SQLite transaction.
 - Schema changes go through the idempotent `init_schema`; there is no migration runner.
+
+## Architecture Decision Records
+
+From now on, significant decisions are recorded as ADRs in `docs/adr/`, in the same change that introduces them. The criteria, numbering, and lifecycle are in `docs/adr/README.md`; start from `docs/adr/template.md`. In short: write one for changes to architecture invariants, schema or query semantics, non-additive IPC contract changes, significant dependencies, data safety, profiles/packaging/security, or a deliberately rejected alternative. Accepted ADRs are not rewritten; a new ADR supersedes the old one. The owning `docs/` page is still updated in the same change, and the ADR is added to the index in `docs/adr/README.md`.
 
 ## Commands
 
@@ -139,7 +144,8 @@ A mocked `invoke` assertion does not prove that Rust accepts the payload. If you
 ## Skills
 
 - `/verify-mediatagger`: launch and drive the real E2E build on a private Xvfb display (clicks, typing, screenshots, console logs) using disposable media. Use it to see a UI change working.
-- `/deep-review [scope]`: an evidence-based multi-agent review that writes reports to the ignored `raports/`. Run it only when the user explicitly asks for it. Ordinary review requests use a normal review, not this workflow.
+- `/review-changes [base|A..B|path] [--staged] [--save]`: the default review for ordinary review requests. It is read-only (no edits, builds or tests). By default it reviews the branch against `merge-base(main)` plus uncommitted work. It picks specialist lenses from `.claude/agents/` (`review-rust`, `review-frontend`, `review-performance`, `review-conventions`), and each finding gets an independent `review-verifier`. Results go to the terminal; `--save` also writes them to `raports/`. The shared bar and finding format are in `.claude/skills/review-changes/references/signal-bar.md`, and the seeded-defect evals are in its `evals/`.
+- `/deep-review [scope]`: an evidence-based, saved audit using the same specialists. It requires two lenses per area and an independent verifier per finding, may run tests and E2E as proof, and writes validated records (schema 2) to the ignored `raports/`. Run it only when the user explicitly asks for it.
 
 ## Documentation index
 
@@ -148,6 +154,7 @@ Read only the pages relevant to the task. For work that crosses subsystems, also
 | Topic | Page |
 | --- | --- |
 | Architecture, startup order, module boundaries, profiles, app-data isolation, locking, security surface, naming | `docs/architecture/system-overview.md` |
+| Architecture decisions: why things are the way they are, rejected alternatives, when to write an ADR | `docs/adr/README.md` |
 | Tauri commands, payloads, serialization, query sessions, channels, progress events, contract-change rules | `docs/architecture/ipc-contract.md` |
 | Frontend composition, state ownership, layer boundaries, UI primitives, modals, theme, a11y | `docs/frontend/architecture-and-ui-conventions.md` |
 | SQLite schema, migrations, pooling, derived fields, query semantics, ordering, library revisions | `docs/subsystems/database.md` |

@@ -1,0 +1,25 @@
+diff --git a/src/features/gallery/GalleryGrid.tsx b/src/features/gallery/GalleryGrid.tsx
+index f8cf865..8281961 100644
+--- a/src/features/gallery/GalleryGrid.tsx
++++ b/src/features/gallery/GalleryGrid.tsx
+@@ -35,6 +35,11 @@ export interface GalleryGridProps {
+   queryEpoch: number;
+   pageFailureEpoch: number;
+ }
++/** Selection lookup that also tolerates array-backed selections from older callers. */
++function isSelectedId(ids: ReadonlySet<number> | readonly number[], id: number): boolean {
++  return Array.from(ids).some((candidate) => candidate === id);
++}
++
+ export function GalleryGrid(props: GalleryGridProps) {
+   const { t } = useLanguage();
+   const [gallery, setGallery] = createSignal<HTMLElement>();
+@@ -233,7 +238,7 @@ export function GalleryGrid(props: GalleryGridProps) {
+                 const selectedAtSlot = () => {
+                   const asset = assetAtSlot();
+                   return props.selectionModeEnabled && handlers.isPreviewSelected(
+-                    index, !!asset && props.selectedAssetIds.has(asset.id)
++                    index, !!asset && isSelectedId(props.selectedAssetIds, asset.id)
+                   );
+                 };
+                 const lane = () => index % virtual.columnCount;

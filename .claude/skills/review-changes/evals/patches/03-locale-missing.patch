@@ -1,0 +1,132 @@
+diff --git a/src/features/gallery/GalleryStatusFooter.tsx b/src/features/gallery/GalleryStatusFooter.tsx
+index 1cba4e2..265eb3f 100644
+--- a/src/features/gallery/GalleryStatusFooter.tsx
++++ b/src/features/gallery/GalleryStatusFooter.tsx
+@@ -33,6 +33,7 @@ export function GalleryStatusFooter(props: GalleryStatusFooterProps) {
+           <h2 class="max-w-full text-xl font-semibold text-base-content">
+             {t("gallery.endOfResults")}
+           </h2>
++          <p class="text-sm text-[var(--text-muted)]">{t("gallery.endOfResultsHint")}</p>
+           <p class="flex max-w-full items-center justify-center gap-2 font-mono text-[14px] text-[var(--text-muted)]">
+             <span class="size-1.5 shrink-0 rounded-full bg-success" aria-hidden="true" />
+             <span class="min-w-0 [overflow-wrap:anywhere]">
+diff --git a/src/i18n/locales/cs.json b/src/i18n/locales/cs.json
+index dfa742d..36f3655 100644
+--- a/src/i18n/locales/cs.json
++++ b/src/i18n/locales/cs.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "Návrhy nejsou dostupné. Zkusit znovu"
+   },
+   "gallery": {
++    "endOfResultsHint": "Posuňte se nahoru a pokračujte",
+     "noFoldersTitle": "Nejsou připojené žádné složky",
+     "noFoldersDescription": "Přidejte první složku, abyste mohli začít procházet a označovat média.",
+     "addFirstFolder": "Přidat první složku",
+diff --git a/src/i18n/locales/de.json b/src/i18n/locales/de.json
+index e2f7873..25f5e18 100644
+--- a/src/i18n/locales/de.json
++++ b/src/i18n/locales/de.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "Vorschläge nicht verfügbar. Erneut versuchen"
+   },
+   "gallery": {
++    "endOfResultsHint": "Nach oben scrollen, um weiter zu stöbern",
+     "noFoldersTitle": "Keine Ordner verbunden",
+     "noFoldersDescription": "Fügen Sie Ihren ersten Ordner hinzu, um Medien zu durchsuchen und zu taggen.",
+     "addFirstFolder": "Ersten Ordner hinzufügen",
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index 34396f5..b108e95 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "Suggestions unavailable. Retry"
+   },
+   "gallery": {
++    "endOfResultsHint": "Scroll up to keep browsing",
+     "noFoldersTitle": "No folders attached",
+     "noFoldersDescription": "Add your first folder to start browsing and tagging media.",
+     "addFirstFolder": "Add first folder",
+diff --git a/src/i18n/locales/es.json b/src/i18n/locales/es.json
+index 4618842..4335d8f 100644
+--- a/src/i18n/locales/es.json
++++ b/src/i18n/locales/es.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "Sugerencias no disponibles. Reintentar"
+   },
+   "gallery": {
++    "endOfResultsHint": "Desplázate hacia arriba para seguir",
+     "noFoldersTitle": "No hay carpetas adjuntas",
+     "noFoldersDescription": "Añade tu primera carpeta para empezar a explorar y etiquetar contenido multimedia.",
+     "addFirstFolder": "Añadir primera carpeta",
+diff --git a/src/i18n/locales/fr.json b/src/i18n/locales/fr.json
+index 0347193..b6489bc 100644
+--- a/src/i18n/locales/fr.json
++++ b/src/i18n/locales/fr.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "Suggestions indisponibles. Réessayer"
+   },
+   "gallery": {
++    "endOfResultsHint": "Faites défiler vers le haut pour continuer",
+     "noFoldersTitle": "Aucun dossier attaché",
+     "noFoldersDescription": "Ajoutez votre premier dossier pour commencer à parcourir et taguer les médias.",
+     "addFirstFolder": "Ajouter le premier dossier",
+diff --git a/src/i18n/locales/it.json b/src/i18n/locales/it.json
+index 42776d1..a6b5ea8 100644
+--- a/src/i18n/locales/it.json
++++ b/src/i18n/locales/it.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "Suggerimenti non disponibili. Riprova"
+   },
+   "gallery": {
++    "endOfResultsHint": "Scorri verso l'alto per continuare",
+     "noFoldersTitle": "Nessuna cartella collegata",
+     "noFoldersDescription": "Aggiungi la prima cartella per iniziare a sfogliare e taggare i media.",
+     "addFirstFolder": "Aggiungi prima cartella",
+diff --git a/src/i18n/locales/ja.json b/src/i18n/locales/ja.json
+index d6cdf59..3cc6b1f 100644
+--- a/src/i18n/locales/ja.json
++++ b/src/i18n/locales/ja.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "候補を表示できません。再試行"
+   },
+   "gallery": {
++    "endOfResultsHint": "上にスクロールして閲覧を続けます",
+     "noFoldersTitle": "フォルダーが接続されていません",
+     "noFoldersDescription": "最初のフォルダーを追加して、メディアの閲覧とタグ付けを開始しましょう。",
+     "addFirstFolder": "最初のフォルダーを追加",
+diff --git a/src/i18n/locales/ko.json b/src/i18n/locales/ko.json
+index a3dc7ee..798d816 100644
+--- a/src/i18n/locales/ko.json
++++ b/src/i18n/locales/ko.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "추천을 사용할 수 없습니다. 다시 시도"
+   },
+   "gallery": {
++    "endOfResultsHint": "위로 스크롤하여 계속 둘러보세요",
+     "noFoldersTitle": "연결된 폴더가 없습니다",
+     "noFoldersDescription": "첫 번째 폴더를 추가하여 미디어를 둘러보고 태그를 지정하세요.",
+     "addFirstFolder": "첫 번째 폴더 추가",
+diff --git a/src/i18n/locales/ru.json b/src/i18n/locales/ru.json
+index 7844dc8..f66b693 100644
+--- a/src/i18n/locales/ru.json
++++ b/src/i18n/locales/ru.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "Подсказки недоступны. Повторить"
+   },
+   "gallery": {
++    "endOfResultsHint": "Прокрутите вверх, чтобы продолжить",
+     "noFoldersTitle": "Папки не подключены",
+     "noFoldersDescription": "Добавьте первую папку, чтобы начать просмотр и добавление тегов к медиа.",
+     "addFirstFolder": "Добавить первую папку",
+diff --git a/src/i18n/locales/zh.json b/src/i18n/locales/zh.json
+index 52bf764..b3288ea 100644
+--- a/src/i18n/locales/zh.json
++++ b/src/i18n/locales/zh.json
+@@ -83,6 +83,7 @@
+     "suggestionsRetry": "建议不可用。重试"
+   },
+   "gallery": {
++    "endOfResultsHint": "向上滚动以继续浏览",
+     "noFoldersTitle": "未添加任何文件夹",
+     "noFoldersDescription": "添加第一个文件夹以开始浏览和标记媒体。",
+     "addFirstFolder": "添加第一个文件夹",

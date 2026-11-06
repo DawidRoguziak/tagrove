@@ -1,0 +1,13 @@
+diff --git a/src/features/lightbox/createLightbox.ts b/src/features/lightbox/createLightbox.ts
+index ed10bb0..0a643b3 100644
+--- a/src/features/lightbox/createLightbox.ts
++++ b/src/features/lightbox/createLightbox.ts
+@@ -121,7 +121,7 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
+         const token = tags.captureGeneration(id),
+           queryVersion = query.navigationSnapshot().epoch;
+         const value = await details.load(id);
+-        if (!valid(request, epoch) || current?.id !== id) return;
++        if (disposed) return;
+         if (!tags.isCurrent(token) || queryVersion !== query.navigationSnapshot().epoch) {
+           await tags.waitForIdle();
+           continue;

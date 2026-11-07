@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { listAssetsForAssertions } from "../assets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const iconsRoot = path.resolve(__dirname, "..", "..", "src-tauri", "icons");
@@ -41,7 +42,7 @@ async function ensureMediaIndexed() {
   await invokeTauriCommand("rescan_all_roots");
   await browser.waitUntil(
     async () => {
-      const page = await invokeTauriCommand("list_assets", {
+      const page = await listAssetsForAssertions({
         offset: 0,
         limit: 2,
         tagsAnd: [],
@@ -185,7 +186,7 @@ describe("MediaTagger desktop smoke", () => {
     });
     await browser.waitUntil(
       async () => {
-        const page = await invokeTauriCommand("list_assets", {
+        const page = await listAssetsForAssertions({
           offset: 0,
           limit: 2,
           tagsAnd: [uniqueTag],

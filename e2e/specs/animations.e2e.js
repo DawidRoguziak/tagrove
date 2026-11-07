@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const suite = process.env.MEDIATAGGER_ANIMATIONS === "1" ? describe : describe.skip;
 const reduced = process.env.MEDIATAGGER_REDUCED_MOTION === "1";
@@ -410,7 +411,7 @@ suite("animation scroll geometry", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    const page = await invoke("list_assets", { offset: 0, limit: 1, tagsAnd: [], tagsNot: [], kind: "all", favoritesOnly: false });
+    const page = await listAssetsForAssertions({ offset: 0, limit: 1, tagsAnd: [], tagsNot: [], kind: "all", favoritesOnly: false });
     await invoke("set_asset_tags", { assetId: page.items[0].id, tags: ["motion-example", `motion-${"long-label-".repeat(18)}`] });
     assert.equal(await browser.execute(() => matchMedia("(prefers-reduced-motion: reduce)").matches), reduced,
       "Launch with matching GTK gtk-enable-animations setting; do not emulate reduced motion with injected CSS");

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { listAssetsForAssertions } from "../assets.js";
 
 const suite = process.env.MEDIATAGGER_THUMBNAIL_FADE === "1" ? describe : describe.skip;
 const reduced = process.env.MEDIATAGGER_REDUCED_MOTION === "1";
@@ -76,7 +77,7 @@ suite("immediate gallery thumbnails", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    const page = await invoke("list_assets", { offset: 0, limit: 256, tagsAnd: [], tagsNot: [], kind: "all", favoritesOnly: false });
+    const page = await listAssetsForAssertions({ offset: 0, limit: 256, tagsAnd: [], tagsNot: [], kind: "all", favoritesOnly: false });
     await invoke("merge_asset_tags_bulk", { assetIds: page.items.filter((_, index) => index % 2 === 0).map(item => item.id), tags: ["fade"] });
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();

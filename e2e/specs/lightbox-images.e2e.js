@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const suite = process.env.MEDIATAGGER_LIGHTBOX_IMAGES === "1" ? describe : describe.skip;
 const output = path.resolve("artifacts/lightbox-images");
@@ -33,7 +34,7 @@ suite("image lightbox parity", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", {path: root});
     await invoke("rescan_all_roots");
-    const page = await invoke("list_assets", {offset:0, limit:2, tagsAnd:[], tagsNot:[], kind:"image", favoritesOnly:false});
+    const page = await listAssetsForAssertions({offset:0, limit:2, tagsAnd:[], tagsNot:[], kind:"image", favoritesOnly:false});
     previewAssetId = page.items.find(item => path.basename(item.path) === "synthetic-1.png").id;
     for (const item of page.items) await invoke("set_asset_tags", {assetId:item.id,tags:item.id === previewAssetId ? ["synthetic-tag", "long_".repeat(25)] : ["suggestion-only"]});
   });

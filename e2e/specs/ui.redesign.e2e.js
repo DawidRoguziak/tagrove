@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const execFileAsync = promisify(execFile);
 const suite = process.env.MEDIATAGGER_UI_REDESIGN === "1" ? describe : describe.skip;
@@ -68,7 +69,7 @@ suite("UI redesign desktop review", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    const page = await invoke("list_assets", { offset: 0, limit: 200, tagsAnd: [], tagsNot: [], kind: "image", favoritesOnly: false });
+    const page = await listAssetsForAssertions({ offset: 0, limit: 200, tagsAnd: [], tagsNot: [], kind: "image", favoritesOnly: false });
     imageId = page.items.find(asset => path.basename(asset.path) === longFilename).id;
     await invoke("set_asset_tags", { assetId: imageId, tags: ["architecture", "reference", "studio", "long_tag_".repeat(18)] });
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
@@ -170,7 +171,7 @@ suite("UI redesign desktop review", function () {
   });
 
   it("shows corner badges, floating image controls and modal-only ordering in both themes", async () => {
-    const page = await invoke("list_assets", { offset: 0, limit: 200, tagsAnd: [], tagsNot: [], favoritesOnly: false });
+    const page = await listAssetsForAssertions({ offset: 0, limit: 200, tagsAnd: [], tagsNot: [], favoritesOnly: false });
     const gifId = page.items.find(asset => asset.kind === "gif").id;
     for (const theme of ["light", "dark"]) {
       await browser.setWindowSize(1000, 720);
@@ -510,7 +511,7 @@ suite("UI redesign desktop review", function () {
     // Index a valid temporary original, then corrupt it as an external file change.
     await fs.copyFile(path.join(root, 'study-1.png'), path.join(root, 'unreadable-original.png'));
     await invoke('rescan_all_roots');
-    const page = await invoke('list_assets', { offset: 0, limit: 200, tagsAnd: [], tagsNot: [], kind: 'image', favoritesOnly: false });
+    const page = await listAssetsForAssertions({ offset: 0, limit: 200, tagsAnd: [], tagsNot: [], kind: 'image', favoritesOnly: false });
     const broken = page.items.find((asset) => asset.path === path.join(root, 'unreadable-original.png'));
     assert.ok(broken, 'The temporary original must be indexed before opening it');
     await fs.writeFile(path.join(root, 'unreadable-original.png'), 'invalid PNG fixture');

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const run = promisify(execFile);
 const enabled = process.env.MEDIATAGGER_SEARCH_RECOVERY === "1";
@@ -36,7 +37,7 @@ async function nativeClick(selector, action = "click") {
     await copyPngFixtures(root, "recovery", 2);
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    const page = await invoke("list_assets", {
+    const page = await listAssetsForAssertions({
       offset: 0, limit: 10, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false, metaFilter: null
     });
     await invoke("set_asset_tags", { assetId: page.items[0].id, tags: ["cat", "constructor", "__proto__"] });

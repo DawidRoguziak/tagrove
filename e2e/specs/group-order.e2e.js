@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 let mediaRoot;
 const output = path.resolve("artifacts/group-order", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -47,7 +48,7 @@ async function waitForGone(selector) {
 }
 
 async function persistedOrder() {
-  const page = await invoke("list_assets", {
+  const page = await listAssetsForAssertions({
     offset: 0,
     limit: 100,
     tagsAnd: [],

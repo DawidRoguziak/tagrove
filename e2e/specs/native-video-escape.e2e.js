@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createPlayableFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const run = promisify(execFile);
 const output = path.resolve("artifacts/native-video-escape", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -122,7 +123,7 @@ suite("native video Escape routing", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    const page = await invoke("list_assets", {
+    const page = await listAssetsForAssertions({
       offset: 0, limit: 20, tagsAnd: [], tagsNot: [], kind: "video", favoritesOnly: false });
     assetId = page.items[0].id;
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));

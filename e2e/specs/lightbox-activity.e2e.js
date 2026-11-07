@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createPlayableFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const run = promisify(execFile);
 const suite = process.env.MEDIATAGGER_LIGHTBOX_ACTIVITY === "1" ? describe : describe.skip;
@@ -83,7 +84,7 @@ suite("lightbox activity desktop", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    assets = (await invoke("list_assets", { offset: 0, limit: 20, tagsAnd: [], tagsNot: [], favoritesOnly: false })).items;
+    assets = (await listAssetsForAssertions({ offset: 0, limit: 20, tagsAnd: [], tagsNot: [], favoritesOnly: false })).items;
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();
     await $('button[data-asset-id]').waitForDisplayed({ timeout: 20000 });

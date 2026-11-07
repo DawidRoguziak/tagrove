@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
 import { e2eWindowTitle } from "../build-e2e.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 async function invoke(command, payload = {}) {
   const result = await browser.executeAsync((name, args, done) => {
@@ -21,7 +22,7 @@ async function ready() {
 }
 
 async function paths() {
-  const page = await invoke("list_assets", {
+  const page = await listAssetsForAssertions({
     offset: 0, limit: 100, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false
   });
   return page.items.map(asset => asset.path).sort();

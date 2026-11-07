@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
 import { e2eWindowTitle } from "../build-e2e.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const suite = process.env.MEDIATAGGER_SETTINGS_MAINTENANCE === "1" ? describe : describe.skip;
 const evidence = path.resolve("artifacts/settings-maintenance");
@@ -193,7 +194,7 @@ suite("settings maintenance ownership and duplicate batches", () => {
       await (await dialog()).$("button=Close").click();
       await $('button[aria-label="Back"]').click();
       await browser.refresh();
-      const assets = await invoke("list_assets", {
+      const assets = await listAssetsForAssertions({
         offset: 0,
         limit: 10,
         tagsAnd: [],

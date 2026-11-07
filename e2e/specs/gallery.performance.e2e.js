@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 import { e2eAppIdentifier } from "../build-e2e.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 // Opt-in: the ordinary desktop suite should not seed thousands of media files.
 const gallerySuite = process.env.MEDIATAGGER_GALLERY_PERF === "1" ? describe : describe.skip;
@@ -133,7 +134,7 @@ gallerySuite("gallery scrolling performance", function () {
     await invoke("rescan_all_roots");
     const ids = [];
     for (let offset = 0; offset < IMAGE_COUNT; offset += 500) {
-      const page = await invoke("list_assets", { offset, limit: 500, tagsAnd: [], tagsNot: [], kind: "image", favoritesOnly: false });
+      const page = await listAssetsForAssertions({ offset, limit: 500, tagsAnd: [], tagsNot: [], kind: "image", favoritesOnly: false });
       ids.push(...page.items.map(item => item.id));
     }
     assert.equal(ids.length, IMAGE_COUNT);

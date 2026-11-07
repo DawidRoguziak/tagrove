@@ -15,7 +15,7 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 - Native video events use a `type` discriminant and include `session_id`. Video controls use camelCase discriminants and fields because their Rust enum has both `rename_all = "camelCase"` and `rename_all_fields = "camelCase"`.
 - Rust `Option<T>` becomes `T | null` over IPC. The wrappers explicitly send `null` for media kind `"all"`, an absent search meta-filter, and nullable media-group values. `get_asset_details` also uses `null` for a missing row. Rust `()` is exposed as `Promise<void>`.
 - Rust `i64`, `u64`, and `usize` values are represented as JavaScript `number`. Current IDs, counts, revisions, offsets, and session IDs are expected to remain within JavaScript's safe-integer range; the type layer does not enforce that bound.
-- `src/platform/tauri/contracts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `LegacyAsset` is the TypeScript name for Rust's full `Asset` row returned by `list_assets`; `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
+- `src/platform/tauri/contracts` mirrors the serialized Rust models used by the wrappers. `AssetDetails` is flattened on the Rust side and therefore correctly extends `AssetSummary` in TypeScript. `AssetQueryFilters` is a frontend description rather than a returned transport model. `ScanSummary.completion` is required because Rust always emits it.
 - All registered command failures reject the invoke promise with text. Command boundaries return `Result<_, String>` and flatten `AppError`, worker-join failures, validation failures, and platform errors to a message; there is no structured IPC error code or error payload.
 
 Consumers import payloads from their owning contract module directly. `SelectedAsset` is frontend view state in
@@ -43,10 +43,8 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 
 | Rust / TypeScript model | Serialized fields |
 | --- | --- |
-| `Asset` / `LegacyAsset` | `id`, `path`, `kind`, `size_bytes`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_path?`, `is_favorite`, `media_group_key?`, `media_group_order?`, `tags` |
 | `AssetSummary` / `AssetSummary` | `id`, `file_name`, `preview_path?`, `kind`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_version`, `is_favorite`, `media_group_key?`, `media_group_order?` |
 | `AssetDetails` / `AssetDetails` | All `AssetSummary` fields flattened into the object, plus `path`, `size_bytes`, `thumb_path?`, `tags` |
-| `AssetPage` / `AssetPage` | `items: LegacyAsset[]`, `total` |
 | `TagListPage` / `TagListPage` | `items: string[]`, `total` |
 | `StartAssetQueryResult` / `StartAssetQueryResult` | `ready` has `session_id`, `revision`, `total`, `offset`, `items: AssetSummary[]`; `superseded` has only `status` |
 | `AssetQueryPageResult` / `AssetQueryPageResult` | `ready` has the same fields as query-start `ready`; `stale` has only `status` |
@@ -78,7 +76,7 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 
 ## Asset queries and reads
 
-The session API is the primary gallery query path. `listAssets`/`list_assets` remains a registered legacy page API and is still used by some tests as a mock implementation aid, but production gallery code uses `startAssetQuery` followed by `getAssetQueryPage`.
+The session API is the only library query path: `startAssetQuery` followed by `getAssetQueryPage`. The former `list_assets` OFFSET page API was removed ([ADR 0009](../adr/0009-remove-list-assets-command.md)); desktop E2E reads the library for assertions through sessions (`e2e/assets.js`).
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
@@ -96,7 +94,6 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 | `setVideoBounds` / `set_video_bounds` | `sessionId`, finite non-negative `bounds` | `void` | Rejects stale sessions and moves/resizes the native surface using WebView coordinates and scale factor. |
 | `controlVideo` / `control_video` | `sessionId`, tagged `command` | `void` | Rejects stale sessions. Playback commands are queued to the worker; execution failure arrives as `controlError`; property reads keep the snapshot authoritative. Supports play, pause, `togglePause`, non-negative absolute seek, `seekRelative` with finite signed `seconds`, volume 0–1, mute, rate 0.25–4, nonblank track IDs, and native-window fullscreen set/toggle. Pause toggles and relative seeks use current libmpv state on the worker, preserve pause state when seeking, and bound seeks to the media timeline. Fullscreen completes on the GTK thread before acknowledgement; its toggle computes the next state atomically there. |
 | `closeVideo` / `close_video` | `sessionId` | `void` | Invalidates the current session, queues decoder stop, hides its GTK surface, and exits its fullscreen. Closing retired sessions is an idempotent no-op. |
-| `listAssets` / `list_assets` | `offset`, `limit`, `tagsAnd`, `tagsNot`, `kind`, `favoritesOnly`, `metaFilter` | `AssetPage` | Legacy direct query returning full `Asset` rows. Negative offsets become 0 and limits are clamped to 1–500. It does not provide session consistency. |
 | `listTags` / `list_tags` | `query: string`, `offset: number`, `limit: number` | `TagListPage` | Trims the search query, matches tag names case-insensitively, clamps offset to at least 0, and clamps limit to 1–200. |
 | `getStartupPopularTags` / `get_startup_popular_tags` | none | `string[]` | Returns up to ten cached tag names, ordered by startup assignment count descending then name ascending with SQLite NOCASE ties. Reads immutable process state without SQLite or workflow locks. Captured after initialization/recovery and before startup scanning; remains fixed through frontend reload, restore, and clear until process restart. Calculation failure logs and stores an empty list. |
 
@@ -306,14 +303,13 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 
 - Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check.
 - `thumb://` requests cannot be cancelled: WebKitGTK gives the handler no signal when an `<img>` goes away, so a queued render still runs and answers a request nobody reads.
-- `list_assets` remains registered because desktop E2E uses it for direct workflow assertions; production gallery code uses query sessions.
 - IPC errors are text only. Consumers cannot reliably distinguish validation, not-found, busy, filesystem, database, worker, or platform failures except by message text.
 - Numeric Rust IDs/counters are exposed as JavaScript `number` without an explicit safe-integer guard.
 - Event delivery is best effort. `process-progress` sends commonly ignore delivery errors; events can be missed and must not be used as a commit signal.
 - `process-progress` is a shared broadcast with free-form `phase` and human-readable `message`; it has no request ID, sequence number, or version.
 - Favorite and media-group setters resolve even if an unknown asset ID changed zero rows. Tag replacement, delete, and rename reject unknown IDs; bulk tag/group operations skip missing IDs and report processed counts or IDs.
 - Runtime validation is uneven: unsupported query kinds degrade to no filter and non-finite group order degrades to `null`.
-- `src/platform/tauri/__tests__/api.test.ts` covers legacy `listAssets`, tag mutation, native video session/channel payloads, and media-path conversion, but it does not exhaustively lock down every wrapper, response shape, or event.
+- `src/platform/tauri/__tests__/api.test.ts` covers query-session payloads, tag mutation, native video session/channel payloads, and media-path conversion, but it does not exhaustively lock down every wrapper, response shape, or event.
 
 ## Safe contract-change checklist
 

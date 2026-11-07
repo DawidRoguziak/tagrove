@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const suite = process.env.MEDIATAGGER_LIGHTBOX_RECOVERY === "1" ? describe : describe.skip;
 const output = path.resolve("artifacts/lightbox-recovery");
@@ -32,7 +33,7 @@ suite("lightbox recovery and image ownership", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    rows = (await invoke("list_assets", { offset: 0, limit: 132, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false })).items;
+    rows = (await listAssetsForAssertions({ offset: 0, limit: 132, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false })).items;
     assert.equal(rows.length, 132);
   });
   after(async () => {

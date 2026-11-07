@@ -8,7 +8,6 @@ import type {
   DeleteAssetSummary,
   BulkFavoriteSummary,
   BulkMediaGroupSummary,
-  AssetPage,
   AssetQueryIdRangeResult,
   AssetQueryPositionResult,
   AssetQuerySectionsResult,
@@ -105,26 +104,6 @@ export async function getAssetQueryPage(
 
 export async function getAssetDetails(assetId: number): Promise<AssetDetails | null> {
   return await invoke<AssetDetails | null>("get_asset_details", { assetId });
-}
-
-export async function listAssets(params: {
-  offset: number;
-  limit: number;
-  tagsAnd: string[];
-  tagsNot: string[];
-  mediaKind: "all" | "image" | "gif" | "video";
-  favoritesOnly: boolean;
-  metaFilter?: SearchMetaFilter | null;
-}): Promise<AssetPage> {
-  return await invoke<AssetPage>("list_assets", {
-    offset: params.offset,
-    limit: params.limit,
-    tagsAnd: params.tagsAnd,
-    tagsNot: params.tagsNot,
-    kind: params.mediaKind === "all" ? null : params.mediaKind,
-    favoritesOnly: params.favoritesOnly,
-    metaFilter: params.metaFilter ?? null
-  });
 }
 
 export async function toggleAssetsFavoriteBulk(assetIds: number[]): Promise<BulkFavoriteSummary> {

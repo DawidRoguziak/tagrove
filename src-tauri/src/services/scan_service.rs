@@ -830,7 +830,8 @@ mod tests {
         assert_eq!(removed, 1);
 
         let conn = db::open_connection(&db_path).expect("reopen db");
-        let page = db::list_assets(&conn, 0, 50, &[], &[], None, false).expect("list assets");
+        let page = db::test_support::session_page(&conn, 0, 50, &[], &[], None, false)
+            .expect("list assets");
         assert_eq!(page.total, 1);
         assert_eq!(page.items[0].path, current.to_string_lossy().to_string());
     }

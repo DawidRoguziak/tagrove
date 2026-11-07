@@ -503,7 +503,8 @@ mod tests {
         assert!(roots.is_empty());
 
         let conn = db::open_connection(&db_path).expect("reopen db");
-        let page = db::list_assets(&conn, 0, 50, &[], &[], None, false).expect("list assets");
+        let page = db::test_support::session_page(&conn, 0, 50, &[], &[], None, false)
+            .expect("list assets");
         assert_eq!(page.total, 0);
     }
 }

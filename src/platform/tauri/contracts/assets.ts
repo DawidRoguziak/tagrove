@@ -35,22 +35,6 @@ export interface AssetDetails extends AssetSummary {
   tags: string[];
 }
 
-export interface LegacyAsset {
-  id: number;
-  path: string;
-  kind: MediaKind;
-  size_bytes: number;
-  modified_at: number;
-  width: number | null;
-  height: number | null;
-  duration_ms: number | null;
-  thumb_path: string | null;
-  is_favorite: boolean;
-  media_group_key: string | null;
-  media_group_order: number | null;
-  tags: string[];
-}
-
 export interface AssetQueryFilters {
   tags_and: string[];
   tags_not: string[];
@@ -151,11 +135,6 @@ export interface BulkMediaGroupSummary {
   processed_assets: number;
   updated_assets: number;
   media_group_key: string | null;
-}
-
-export interface AssetPage {
-  items: LegacyAsset[];
-  total: number;
 }
 
 export type AssetQueryPositionResult =

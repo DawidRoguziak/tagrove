@@ -8,9 +8,9 @@ use tauri::{Manager, State};
 
 use crate::{
     app::{locks::with_scan_and_thumb_lock, state::AppState},
-    db::{self, list_assets_with_meta as db_list_assets_with_meta, AssetMetaFilter},
+    db::{self, AssetMetaFilter},
     models::{
-        AssetDetails, AssetPage, AssetQueryPageResult, AssetQueryPositionResult, AssetSummary,
+        AssetDetails, AssetQueryPageResult, AssetQueryPositionResult, AssetSummary,
         BulkMediaGroupSummary, BulkTagMergeSummary, DeleteAssetSummary,
         DuplicateResolutionBatchInput, DuplicateResolutionBatchSummary, DuplicateScanSummary,
         RenameAssetSummary, SetAssetTagsSummary, StartAssetQueryResult, TagListPage,
@@ -222,92 +222,6 @@ fn normalize_query_filters(
         favorites_only,
         meta_filter: normalized_meta_filter,
     })
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn list_assets(
-    offset: i64,
-    limit: i64,
-    tags_and: Vec<String>,
-    tags_not: Vec<String>,
-    kind: Option<String>,
-    favorites_only: bool,
-    meta_filter: Option<AssetMetaFilterInput>,
-    app: tauri::AppHandle,
-) -> Result<AssetPage, String> {
-    let app_state = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app_state.state::<AppState>();
-        list_assets_service(
-            offset,
-            limit,
-            tags_and,
-            tags_not,
-            kind,
-            favorites_only,
-            meta_filter,
-            &state,
-        )
-    })
-    .await
-    .map_err(|e| format!("list_assets worker failed: {e}"))?
-}
-
-#[allow(clippy::too_many_arguments)]
-fn list_assets_service(
-    offset: i64,
-    limit: i64,
-    tags_and: Vec<String>,
-    tags_not: Vec<String>,
-    kind: Option<String>,
-    favorites_only: bool,
-    meta_filter: Option<AssetMetaFilterInput>,
-    state: &AppState,
-) -> Result<AssetPage, String> {
-    (|| {
-        let conn = state.database.admit()?.connection()?;
-        let normalized_tags = normalize_and_validate_tags(tags_and)?;
-        let normalized_tags_not = normalize_and_validate_tags(tags_not)?;
-        let normalized_kind = kind.and_then(|value| {
-            let lowered = value.trim().to_lowercase();
-            match lowered.as_str() {
-                "image" | "gif" | "video" => Some(lowered),
-                _ => None,
-            }
-        });
-        let normalized_meta_filter = match meta_filter {
-            Some(AssetMetaFilterInput::HasNoTags { tag_count }) => {
-                if tag_count < 0 {
-                    return Err("Invalid hasNoTags meta filter".into());
-                }
-                Some(AssetMetaFilter::HasNoTags { tag_count })
-            }
-            Some(AssetMetaFilterInput::GroupName { group_name }) => {
-                let trimmed = group_name.trim();
-                if trimmed.is_empty() {
-                    return Err("Invalid groupName meta filter".into());
-                }
-                Some(AssetMetaFilter::GroupName {
-                    group_name: trimmed.to_string(),
-                })
-            }
-            None => None,
-        };
-
-        db_list_assets_with_meta(
-            &conn,
-            offset.max(0),
-            limit.clamp(1, 500),
-            &normalized_tags,
-            &normalized_tags_not,
-            normalized_kind.as_deref(),
-            favorites_only,
-            normalized_meta_filter.as_ref(),
-        )
-        .map_err(Into::into)
-    })()
-    .map_err(|e: crate::error::AppError| e.to_string())
 }
 
 #[tauri::command]

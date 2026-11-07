@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { copyPngFixtures, createPlayableFixtures, createLightboxFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const tempMediaRoots = [];
 const tempArtifacts = [];
@@ -88,24 +89,6 @@ async function submitSearchQuery(value) {
   await waitForSearchInputValue(value);
   await browser.keys("Escape");
   await browser.keys("Enter");
-}
-
-async function listAssetsForAssertions({
-  tagsAnd = [],
-  tagsNot = [],
-  kind = null,
-  favoritesOnly = false,
-  metaFilter = null
-} = {}) {
-  return invokeTauriCommand("list_assets", {
-    offset: 0,
-    limit: 200,
-    tagsAnd,
-    tagsNot,
-    kind,
-    favoritesOnly,
-    metaFilter
-  });
 }
 
 async function waitForTileAtIndex(index) {

@@ -6,23 +6,6 @@ pub struct ScanRoot {
 
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize)]
-pub struct Asset {
-    pub id: i64,
-    pub path: String,
-    pub kind: String,
-    pub size_bytes: i64,
-    pub modified_at: i64,
-    pub width: Option<i64>,
-    pub height: Option<i64>,
-    pub duration_ms: Option<i64>,
-    pub thumb_path: Option<String>,
-    pub is_favorite: bool,
-    pub media_group_key: Option<String>,
-    pub media_group_order: Option<f64>,
-    pub tags: Vec<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AssetSummary {
     pub id: i64,
@@ -103,12 +86,6 @@ pub enum AssetQueryPositionResult {
     Resolved { index: usize },
     Missing,
     Stale,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AssetPage {
-    pub items: Vec<Asset>,
-    pub total: i64,
 }
 
 #[derive(Debug, Serialize)]

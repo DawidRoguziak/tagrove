@@ -1753,7 +1753,8 @@ mod tests {
             let conn = db::open_connection(&target_db_path).expect("open restored db");
             let roots = db::list_scan_roots(&conn).expect("list restored roots");
             assert_eq!(roots, vec![source_root.to_string_lossy().to_string()]);
-            let page = db::list_assets(&conn, 0, 50, &[], &[], None, false).expect("list assets");
+            let page = db::test_support::session_page(&conn, 0, 50, &[], &[], None, false)
+                .expect("list assets");
             assert_eq!(page.total, 1);
             let revision = db::current_library_revision(&conn).unwrap();
             assert_eq!(
@@ -1867,7 +1868,8 @@ mod tests {
         .expect("import mapped bundle");
 
         let conn = db::open_connection(&target_db).expect("open restored db");
-        let page = db::list_assets(&conn, 0, 10, &[], &[], None, false).expect("list assets");
+        let page = db::test_support::session_page(&conn, 0, 10, &[], &[], None, false)
+            .expect("list assets");
         assert_eq!(page.total, 1);
         let asset = &page.items[0];
         assert_eq!(asset.id, 1);

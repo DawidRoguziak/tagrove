@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
 import { e2eWindowTitle } from "../build-e2e.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 async function invoke(command, payload = {}) {
   const result = await browser.executeAsync(
@@ -58,7 +59,7 @@ describe("startup popular tags", () => {
     fixture = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-popular-tags-"));
     await copyPngFixtures(fixture, "popular", 3);
     await invoke("scan_folder", { path: fixture });
-    const page = await invoke("list_assets", {
+    const page = await listAssetsForAssertions({
       offset: 0,
       limit: 100,
       tagsAnd: [],

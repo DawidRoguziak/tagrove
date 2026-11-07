@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 let mediaRoot;
 const evidence = path.resolve("artifacts/app-review/2026-09-06/fix-verification");
 async function invoke(command, payload = {}) {
@@ -35,7 +36,7 @@ async function scrollToAsset(index) {
 
 
 async function list() {
-  return invoke("list_assets", { offset: 0, limit: 500, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false, metaFilter: null });
+  return listAssetsForAssertions({ offset: 0, limit: 500, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false, metaFilter: null });
 }
 async function submit(value) {
   await $('button[aria-label="Clear all search filters"]').click();

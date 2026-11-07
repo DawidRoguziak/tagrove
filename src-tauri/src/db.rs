@@ -25,8 +25,8 @@ use anyhow::Context;
 use rusqlite::{params, Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 
 use crate::models::{
-    Asset, AssetDetails, AssetPage, AssetSummary, AssetTagResult, DuplicateAsset, DuplicateGroup,
-    NewAsset, SetAssetTagsSummary, TagListPage, TagQueryImpact, ThumbnailAsset,
+    AssetDetails, AssetSummary, AssetTagResult, DuplicateAsset, DuplicateGroup, NewAsset,
+    SetAssetTagsSummary, TagListPage, TagQueryImpact, ThumbnailAsset,
 };
 use crate::utils::{
     tags::{merge_tags, normalize_and_validate_tags, normalize_tags, parse_legacy_tags},
@@ -168,29 +168,118 @@ pub enum ThumbnailCasOutcome {
     VersionMismatch,
 }
 
+/// Test-only view of a query session: the ordered session vector (the gallery's
+/// own path), cut to one page and read through `get_asset_details`. It replaced
+/// the removed `list_assets` OFFSET query in tests (grid-performance stage 10).
+#[cfg(test)]
+pub(crate) mod test_support {
+    use rusqlite::Connection;
+
+    use super::{get_asset_details, list_ordered_asset_ids_with_meta, AssetMetaFilter};
+
+    pub(crate) struct SessionAsset {
+        pub id: i64,
+        pub path: String,
+        pub thumb_path: Option<String>,
+        pub is_favorite: bool,
+        pub media_group_key: Option<String>,
+        pub media_group_order: Option<f64>,
+        pub tags: Vec<String>,
+    }
+
+    pub(crate) struct SessionPage {
+        pub items: Vec<SessionAsset>,
+        pub total: usize,
+    }
+
+    pub(crate) fn session_page(
+        conn: &Connection,
+        offset: usize,
+        limit: usize,
+        tags_and: &[String],
+        tags_not: &[String],
+        kind: Option<&str>,
+        favorites_only: bool,
+    ) -> anyhow::Result<SessionPage> {
+        session_page_with_meta(
+            conn,
+            offset,
+            limit,
+            tags_and,
+            tags_not,
+            kind,
+            favorites_only,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn session_page_with_meta(
+        conn: &Connection,
+        offset: usize,
+        limit: usize,
+        tags_and: &[String],
+        tags_not: &[String],
+        kind: Option<&str>,
+        favorites_only: bool,
+        meta_filter: Option<&AssetMetaFilter>,
+    ) -> anyhow::Result<SessionPage> {
+        let ids = list_ordered_asset_ids_with_meta(
+            conn,
+            tags_and,
+            tags_not,
+            kind,
+            favorites_only,
+            meta_filter,
+        )?;
+        let items = ids
+            .iter()
+            .skip(offset)
+            .take(limit)
+            .map(|id| {
+                let details = get_asset_details(conn, *id)?
+                    .ok_or_else(|| anyhow::anyhow!("asset {id} has no details"))?;
+                Ok(SessionAsset {
+                    id: details.summary.id,
+                    path: details.path,
+                    thumb_path: details.thumb_path,
+                    is_favorite: details.summary.is_favorite,
+                    media_group_key: details.summary.media_group_key,
+                    media_group_order: details.summary.media_group_order,
+                    tags: details.tags,
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Ok(SessionPage {
+            items,
+            total: ids.len(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::{params, Connection};
 
     use crate::models::NewAsset;
 
+    use super::test_support::{session_page, session_page_with_meta};
     use super::{
         add_scan_root, clear_thumbnail_failure, count_inconsistent_sort_keys,
         current_library_revision, delete_asset_by_id_with_thumb,
         delete_assets_by_prefix_with_thumbs, get_asset_media_group, get_asset_path_and_thumb_by_id,
-        init_schema, list_asset_summaries_by_ids, list_assets, list_assets_for_csv_export,
-        list_assets_for_thumbnail_render, list_assets_with_meta,
-        list_duplicate_assets_by_file_name_key, list_duplicate_file_name_counts,
-        list_failed_assets_for_thumbnail_render, list_failed_thumbnail_asset_ids,
-        list_ordered_asset_ids_with_meta, list_tags_page, merge_asset_tags_bulk,
-        merge_asset_tags_bulk_with_revision, prune_completed_scan_root_generation,
-        record_thumbnail_failure, rename_asset_file_by_id, root_descendant_like_pattern,
-        set_asset_favorite, set_asset_favorite_with_revision, set_asset_media_group,
-        set_asset_media_group_with_revision, set_asset_tags, set_asset_tags_with_revision,
-        set_assets_media_group_bulk, try_list_ordered_asset_ids_with_meta,
-        update_asset_thumbnail_path_if_version_matches, upsert_asset, upsert_scanned_asset,
-        validate_backup_database, AssetMetaFilter, ThumbnailCasOutcome, ThumbnailWrite,
-        ThumbnailWriteOutcome,
+        init_schema, list_asset_summaries_by_ids, list_assets_for_csv_export,
+        list_assets_for_thumbnail_render, list_duplicate_assets_by_file_name_key,
+        list_duplicate_file_name_counts, list_failed_assets_for_thumbnail_render,
+        list_failed_thumbnail_asset_ids, list_ordered_asset_ids_with_meta, list_tags_page,
+        merge_asset_tags_bulk, merge_asset_tags_bulk_with_revision,
+        prune_completed_scan_root_generation, record_thumbnail_failure, rename_asset_file_by_id,
+        root_descendant_like_pattern, set_asset_favorite, set_asset_favorite_with_revision,
+        set_asset_media_group, set_asset_media_group_with_revision, set_asset_tags,
+        set_asset_tags_with_revision, set_assets_media_group_bulk,
+        try_list_ordered_asset_ids_with_meta, update_asset_thumbnail_path_if_version_matches,
+        upsert_asset, upsert_scanned_asset, validate_backup_database, AssetMetaFilter,
+        ThumbnailCasOutcome, ThumbnailWrite, ThumbnailWriteOutcome,
     };
 
     #[test]
@@ -280,7 +369,7 @@ mod tests {
 
         assert!(prune_completed_scan_root_generation(&conn, "/media", 2).is_err());
         assert_eq!(
-            list_assets(&conn, 0, 10, &[], &[], None, false)
+            session_page(&conn, 0, 10, &[], &[], None, false)
                 .expect("assets")
                 .total,
             1
@@ -357,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn list_assets_respects_kind_and_tag_filters_with_and_not_logic() {
+    fn session_order_respects_kind_and_tag_filters_with_and_not_logic() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -374,7 +463,7 @@ mod tests {
         )
         .expect("tags 3");
 
-        let page = list_assets(
+        let page = session_page(
             &conn,
             0,
             50,
@@ -391,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn list_assets_paginates_in_modified_desc_order() {
+    fn session_order_paginates_in_modified_desc_order() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -399,14 +488,14 @@ mod tests {
         insert_asset(&conn, "C:\\media\\b.jpg", "image", 20);
         insert_asset(&conn, "C:\\media\\c.jpg", "image", 10);
 
-        let page = list_assets(&conn, 1, 1, &[], &[], None, false).expect("list");
+        let page = session_page(&conn, 1, 1, &[], &[], None, false).expect("list");
         assert_eq!(page.total, 3);
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].path, "C:\\media\\b.jpg");
     }
 
     #[test]
-    fn list_assets_keeps_media_group_adjacent_and_sorts_by_group_order() {
+    fn session_order_keeps_media_group_adjacent_and_sorts_by_group_order() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -420,7 +509,7 @@ mod tests {
         set_asset_media_group(&conn, 3, Some("group-alpha"), None).expect("set null order");
         set_asset_media_group(&conn, 4, Some("group-alpha"), Some(1.0)).expect("set order 1");
 
-        let page = list_assets(&conn, 0, 50, &[], &[], None, false).expect("list");
+        let page = session_page(&conn, 0, 50, &[], &[], None, false).expect("list");
         let ordered_paths = page
             .items
             .iter()
@@ -439,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn list_assets_positions_group_by_newest_asset_in_group() {
+    fn session_order_positions_group_by_newest_asset_in_group() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -454,7 +543,7 @@ mod tests {
         set_asset_media_group(&conn, 4, Some("group-new"), Some(1.0)).expect("new 1");
         set_asset_media_group(&conn, 5, Some("group-new"), Some(2.0)).expect("new 2");
 
-        let page = list_assets(&conn, 0, 50, &[], &[], None, false).expect("list");
+        let page = session_page(&conn, 0, 50, &[], &[], None, false).expect("list");
         let ordered_paths = page
             .items
             .iter()
@@ -473,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn list_assets_filters_favorites_only() {
+    fn session_order_filters_favorites_only() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -482,14 +571,14 @@ mod tests {
 
         set_asset_favorite(&conn, 2, true).expect("favorite b");
 
-        let page = list_assets(&conn, 0, 50, &[], &[], None, true).expect("list favorites");
+        let page = session_page(&conn, 0, 50, &[], &[], None, true).expect("list favorites");
         assert_eq!(page.total, 1);
         assert_eq!(page.items[0].path, "C:\\media\\b.jpg");
         assert!(page.items[0].is_favorite);
     }
 
     #[test]
-    fn list_assets_filters_exact_tag_count_metatags() {
+    fn session_order_filters_exact_tag_count_metatags() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -505,7 +594,7 @@ mod tests {
         )
         .expect("tags 3");
 
-        let zero_tags = list_assets_with_meta(
+        let zero_tags = session_page_with_meta(
             &conn,
             0,
             50,
@@ -519,7 +608,7 @@ mod tests {
         assert_eq!(zero_tags.total, 1);
         assert_eq!(zero_tags.items[0].path, "C:\\media\\zero.jpg");
 
-        let two_tags = list_assets_with_meta(
+        let two_tags = session_page_with_meta(
             &conn,
             0,
             50,
@@ -535,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn list_assets_filters_group_name_as_exact_case_insensitive_match() {
+    fn session_order_filters_group_name_as_exact_case_insensitive_match() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -547,7 +636,7 @@ mod tests {
         set_asset_media_group(&conn, 2, Some("trip-2026"), Some(2.0)).expect("group b");
         set_asset_media_group(&conn, 3, Some("Trip-2027"), Some(1.0)).expect("group other");
 
-        let page = list_assets_with_meta(
+        let page = session_page_with_meta(
             &conn,
             0,
             50,
@@ -1361,14 +1450,14 @@ mod tests {
         assert_eq!(processed, 2);
         assert_eq!(updated, 2);
 
-        let a_tags = list_assets(&conn, 0, 10, &[], &[], None, false)
+        let a_tags = session_page(&conn, 0, 10, &[], &[], None, false)
             .expect("list")
             .items
             .into_iter()
             .find(|asset| asset.id == 1)
             .expect("asset 1")
             .tags;
-        let b_tags = list_assets(&conn, 0, 10, &[], &[], None, false)
+        let b_tags = session_page(&conn, 0, 10, &[], &[], None, false)
             .expect("list")
             .items
             .into_iter()
@@ -1429,7 +1518,7 @@ mod tests {
         assert_eq!(processed, vec![2, 1]);
         assert_eq!(updated, 2);
 
-        let page = list_assets(&conn, 0, 10, &[], &[], None, false).expect("list");
+        let page = session_page(&conn, 0, 10, &[], &[], None, false).expect("list");
         let first = page
             .items
             .iter()
@@ -1743,7 +1832,7 @@ mod tests {
             ))
         );
 
-        let page = list_assets(&conn, 0, 10, &[], &[], None, false).expect("list after delete");
+        let page = session_page(&conn, 0, 10, &[], &[], None, false).expect("list after delete");
         assert!(page.items.is_empty());
     }
 
@@ -1948,7 +2037,7 @@ mod tests {
         let after_favorite = current_library_revision(&conn).expect("revision after favorite");
         assert_eq!(after_favorite, baseline + 1);
         assert_eq!(
-            list_assets_with_meta(&conn, 0, 50, &[], &[], None, true, None)
+            session_page_with_meta(&conn, 0, 50, &[], &[], None, true, None)
                 .expect("favorites page")
                 .total,
             1

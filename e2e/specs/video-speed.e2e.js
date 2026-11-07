@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createPlayableFixtures } from "../fixtures.js";
+import { listAssetsForAssertions } from "../assets.js";
 
 const run = promisify(execFile);
 const suite = process.env.MEDIATAGGER_NATIVE_VIDEO === "1" ? describe : describe.skip;
@@ -99,7 +100,7 @@ suite("native video speed and reopening", function () {
     await invoke("clear_library_data");
     await invoke("add_scan_root", { path: root });
     await invoke("rescan_all_roots");
-    const page = await invoke("list_assets", { offset: 0, limit: 20, tagsAnd: [], tagsNot: [], kind: "video", favoritesOnly: false });
+    const page = await listAssetsForAssertions({ offset: 0, limit: 20, tagsAnd: [], tagsNot: [], kind: "video", favoritesOnly: false });
     ids = page.items.map(asset => asset.id);
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();
@@ -328,7 +329,7 @@ suite("native video speed and reopening", function () {
   });
   it("restores windowed GIF geometry when navigating from fullscreen video", async () => {
     if (await $(player).isExisting()) await close();
-    const page = await invoke("list_assets", { offset: 0, limit: 20, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false });
+    const page = await listAssetsForAssertions({ offset: 0, limit: 20, tagsAnd: [], tagsNot: [], kind: null, favoritesOnly: false });
     const gif = page.items.findIndex(asset => asset.kind === "gif");
     assert.ok(gif >= 0);
     const previous = page.items[(gif + page.items.length - 1) % page.items.length];

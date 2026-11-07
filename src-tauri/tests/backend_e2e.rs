@@ -1,4 +1,6 @@
 use std::{collections::HashMap, path::Path};
+#[path = "support/assets.rs"]
+mod support;
 
 use media_tagger::{
     db,
@@ -81,7 +83,7 @@ fn backend_end_to_end_csv_merge_and_library_clear_workflow() {
         }
     }
 
-    let page = db::list_assets(
+    let page = support::session_page(
         &conn,
         0,
         50,
@@ -109,7 +111,7 @@ fn backend_end_to_end_csv_merge_and_library_clear_workflow() {
     assert_eq!(updated_groups, 2);
 
     let grouped =
-        db::list_assets(&conn, 0, 50, &[], &[], Some("image"), false).expect("grouped page");
+        support::session_page(&conn, 0, 50, &[], &[], Some("image"), false).expect("grouped page");
     let beach = grouped
         .items
         .iter()
@@ -129,7 +131,8 @@ fn backend_end_to_end_csv_merge_and_library_clear_workflow() {
     assert_eq!(removed_assets, 2);
     assert_eq!(removed_roots, 1);
 
-    let remaining = db::list_assets(&conn, 0, 50, &[], &[], None, false).expect("remaining assets");
+    let remaining =
+        support::session_page(&conn, 0, 50, &[], &[], None, false).expect("remaining assets");
     assert_eq!(remaining.total, 0);
     let roots = db::list_scan_roots(&conn).expect("remaining roots");
     assert!(roots.is_empty());

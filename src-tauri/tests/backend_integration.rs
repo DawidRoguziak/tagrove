@@ -1,4 +1,6 @@
 use std::path::Path;
+#[path = "support/assets.rs"]
+mod support;
 
 use media_tagger::{db, models::NewAsset};
 use tempfile::tempdir;
@@ -43,7 +45,7 @@ fn sqlite_file_db_supports_asset_tag_query_flow() {
     db::set_asset_tags(&conn, 2, &["cat".to_string(), "dog".to_string()]).expect("tags b");
     db::set_asset_tags(&conn, 3, &["cat".to_string(), "vacation".to_string()]).expect("tags c");
 
-    let filtered = db::list_assets(
+    let filtered = support::session_page(
         &conn,
         0,
         100,
@@ -63,7 +65,7 @@ fn sqlite_file_db_supports_asset_tag_query_flow() {
     assert_eq!(removed, 2);
     assert_eq!(thumbs.len(), 2);
 
-    let left = db::list_assets(&conn, 0, 100, &[], &[], None, false).expect("left assets");
+    let left = support::session_page(&conn, 0, 100, &[], &[], None, false).expect("left assets");
     assert_eq!(left.total, 1);
     assert_eq!(left.items[0].path, c.to_string_lossy().to_string());
 }
@@ -132,8 +134,8 @@ fn clear_library_data_removes_assets_roots_tags_and_failures() {
         baseline_revision + 1
     );
 
-    let page =
-        db::list_assets(&conn, 0, 100, &[], &[], None, false).expect("list assets after clear");
+    let page = support::session_page(&conn, 0, 100, &[], &[], None, false)
+        .expect("list assets after clear");
     assert_eq!(page.total, 0);
 
     let roots = db::list_scan_roots(&conn).expect("list roots after clear");
@@ -168,7 +170,7 @@ fn clear_library_data_rolls_back_deletes_when_revision_bump_fails() {
 
     assert!(db::clear_library_data(&conn).is_err());
     assert_eq!(
-        db::list_assets(&conn, 0, 10, &[], &[], None, false)
+        support::session_page(&conn, 0, 10, &[], &[], None, false)
             .expect("assets")
             .total,
         1
@@ -245,7 +247,7 @@ fn set_assets_media_group_bulk_overwrites_existing_values() {
     assert_eq!(processed, vec![2, 1]);
     assert_eq!(updated, 2);
 
-    let page = db::list_assets(&conn, 0, 100, &[], &[], None, false).expect("list assets");
+    let page = support::session_page(&conn, 0, 100, &[], &[], None, false).expect("list assets");
     let first_asset = page
         .items
         .iter()

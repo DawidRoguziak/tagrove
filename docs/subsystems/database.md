@@ -144,7 +144,7 @@ The primary gallery path normalizes filters at the command boundary and builds a
 - `HasNoTags { tag_count }` is historically named but means exact tag count for every non-negative value, including zero. The session query compares `assets.tag_count` directly.
 - `GroupName` is an exact, case-insensitive, outer-whitespace-insensitive group match through `media_group_key_normalized`; it is not a substring search. A blank group name and a negative tag count are rejected by the IPC boundary.
 
-The registered legacy `list_assets` path applies the same user-visible composition and ordering, but computes exact tag counts from `asset_tags` and tests raw group text with `lower(trim(...))` instead of using the denormalized columns. Offset is floored at zero and limit is clamped to 1–500. Session pages clamp limit to 1–256 and clamp an offset beyond the end to the total.
+Session pages clamp limit to 1–256 and clamp an offset beyond the end to the total. There is no second query implementation: the former `list_assets` OFFSET query was removed ([ADR 0009](../adr/0009-remove-list-assets-command.md)), and filter-semantics tests (`session_order_*` in `src-tauri/src/db.rs`) run on the session order.
 
 ## Gallery and media-group ordering
 

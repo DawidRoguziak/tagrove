@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
 import { applySelectionMutation, getAssetQuerySections } from "../assets";
-import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, getAssetQueryIdRange, decodeAssetIdRange, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
+import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, getAssetQueryIdRange, decodeAssetIdRange, setAssetsMediaGroupBulk, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
 import { idRangeBuffer } from "../../../test/idRange";
 import { thumbnailUrl } from "../thumbnails";
 import { listScanRoots, setScanRootAutoScan, scanStartupRoots } from "../scanning";
@@ -121,29 +121,6 @@ describe("api contract", () => {
     coreMocks.invoke.mockReset();
     coreMocks.convertFileSrc.mockClear();
     coreMocks.channels.length = 0;
-  });
-
-  it("maps mediaKind=all to null kind in listAssets invoke payload", async () => {
-    coreMocks.invoke.mockResolvedValueOnce({ items: [], total: 0 });
-
-    await listAssets({
-      offset: 10,
-      limit: 20,
-      tagsAnd: ["cat"],
-      tagsNot: ["dog"],
-      mediaKind: "all",
-      favoritesOnly: true
-    });
-
-    expect(coreMocks.invoke).toHaveBeenCalledWith("list_assets", {
-      offset: 10,
-      limit: 20,
-      tagsAnd: ["cat"],
-      tagsNot: ["dog"],
-      kind: null,
-      favoritesOnly: true,
-      metaFilter: null
-    });
   });
 
   it.each([

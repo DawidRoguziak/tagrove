@@ -157,6 +157,8 @@ The same worker regression runs 30 cycles of all six speed choices, alternating 
 
 Release production is documented in [setup and builds](setup-and-build.md#docker-packages). Its build does not run test suites.
 
+Specs that need the library contents for assertions call `listAssetsForAssertions` from `e2e/assets.js` (it replaced the removed `list_assets` command, [ADR 0009](../adr/0009-remove-list-assets-command.md)). It runs a query session under its own owner (`e2e-assertions`) and returns `{ items, total }` with `AssetDetails` items in gallery order. A start from any owner supersedes a start that is still running, so the helper waits until the app has no `start_asset_query` in flight and presses the gallery's Retry if it still interrupted one; call it while the gallery is idle when possible.
+
 Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`, `app.workflows`, `group-order`, `popular-tags`, `review-fixes`, and `startup-scan`. The others skip unless their flag is `1`:
 
 | Spec | Flag |

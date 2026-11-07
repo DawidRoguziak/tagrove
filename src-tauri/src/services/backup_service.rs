@@ -1552,6 +1552,98 @@ mod tests {
     }
 
     #[test]
+    fn imports_version_three_bundle_and_backfills_sort_keys() {
+        let tmp = tempdir().unwrap();
+        let source_db = tmp.path().join("source.db");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&root).unwrap();
+        {
+            let conn = db::open_connection(&source_db).unwrap();
+            db::init_schema(&conn).unwrap();
+            db::add_scan_root(&conn, &root.to_string_lossy()).unwrap();
+            for (name, modified_at) in [("a.jpg", 10), ("b.jpg", 30), ("c.jpg", 20)] {
+                let asset = crate::models::NewAsset {
+                    path: root.join(name).to_string_lossy().into_owned(),
+                    kind: "image".into(),
+                    size_bytes: 1,
+                    modified_at,
+                    width: None,
+                    height: None,
+                    duration_ms: None,
+                    thumb_path: None,
+                };
+                db::upsert_scanned_asset(&conn, &asset, modified_at, &root.to_string_lossy(), 1)
+                    .unwrap();
+            }
+            db::set_asset_media_group(&conn, 1, Some("trip"), Some(1.0)).unwrap();
+            db::set_asset_media_group(&conn, 2, Some("trip"), None).unwrap();
+            // A package written before performance_schema_version 4.
+            for name in db::SORT_KEY_TRIGGERS {
+                conn.execute_batch(&format!("DROP TRIGGER {name};"))
+                    .unwrap();
+            }
+            conn.execute_batch(
+                "DROP INDEX idx_assets_sort_key;
+                 DROP INDEX idx_assets_group_bucket;
+                 ALTER TABLE assets DROP COLUMN sort_bucket_time;
+                 ALTER TABLE assets DROP COLUMN sort_bucket_id;
+                 ALTER TABLE assets DROP COLUMN sort_group_null_order;
+                 UPDATE library_metadata SET value = 3 WHERE key = 'performance_schema_version';
+                 PRAGMA wal_checkpoint(TRUNCATE);",
+            )
+            .unwrap();
+        }
+        let archive = tmp.path().join("v3.zip");
+        let mut zip = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+        zip.start_file("media.db", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(&fs::read(&source_db).unwrap()).unwrap();
+        zip.start_file("manifest.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(
+            serde_json::to_string(&serde_json::json!({
+                "format_version": 2, "application_id": super::BUNDLE_APPLICATION_ID,
+                "schema_version": 3, "source_platform": "linux", "roots": [root.to_string_lossy()],
+                "source_thumbs_dir": tmp.path().join("old-thumbs").to_string_lossy()
+            }))
+            .unwrap()
+            .as_bytes(),
+        )
+        .unwrap();
+        zip.finish().unwrap();
+        let profile = tmp.path().join("profile");
+        let thumbs = profile.join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let target_db = profile.join("media.db");
+        let conn = db::open_connection(&target_db).unwrap();
+        db::init_schema(&conn).unwrap();
+        drop(conn);
+        let state = create_test_state(&target_db, &thumbs);
+        import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            vec![],
+            &state,
+            &state.database.maintenance().unwrap(),
+        )
+        .unwrap();
+        let conn = db::open_connection(&target_db).unwrap();
+        assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
+        assert_eq!(
+            db::list_ordered_asset_ids_with_meta(&conn, &[], &[], None, false, None).unwrap(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT value FROM library_metadata WHERE key = 'performance_schema_version'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            4
+        );
+    }
+
+    #[test]
     fn import_db_bundle_restores_database_and_thumbnails() {
         for with_markers in [false, true] {
             let tmp = tempdir().expect("tempdir");

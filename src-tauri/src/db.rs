@@ -13,7 +13,12 @@ pub use scan_membership::*;
 mod thumbnails;
 pub use thumbnails::*;
 
-use std::{collections::HashMap, path::Path, thread, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    thread,
+    time::Duration,
+};
 
 use anyhow::Context;
 use rusqlite::{params, Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
@@ -169,10 +174,10 @@ mod tests {
     use crate::models::NewAsset;
 
     use super::{
-        add_scan_root, clear_thumbnail_failure, current_library_revision,
-        delete_asset_by_id_with_thumb, delete_assets_by_prefix_with_thumbs, get_asset_media_group,
-        get_asset_path_and_thumb_by_id, grouped_bucket_stats_sql, init_schema,
-        list_asset_summaries_by_ids, list_assets, list_assets_for_csv_export,
+        add_scan_root, clear_thumbnail_failure, count_inconsistent_sort_keys,
+        current_library_revision, delete_asset_by_id_with_thumb,
+        delete_assets_by_prefix_with_thumbs, get_asset_media_group, get_asset_path_and_thumb_by_id,
+        init_schema, list_asset_summaries_by_ids, list_assets, list_assets_for_csv_export,
         list_assets_for_thumbnail_render, list_assets_with_meta,
         list_duplicate_assets_by_file_name_key, list_duplicate_file_name_counts,
         list_failed_assets_for_thumbnail_render, list_failed_thumbnail_asset_ids,
@@ -652,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn grouped_bucket_stats_exclude_singleton_buckets() {
+    fn sort_keys_treat_blank_group_keys_as_singleton_buckets() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
 
@@ -675,22 +680,30 @@ mod tests {
         )
         .expect("seed real group");
 
-        let sql = format!(
-            "WITH filtered_assets AS (
-               SELECT id, modified_at, media_group_key FROM assets
-             ),
-             grouped_bucket_stats AS (
-               {}
-             )
-             SELECT COUNT(*), MIN(sort_bucket) FROM grouped_bucket_stats",
-            grouped_bucket_stats_sql()
-        );
-        let (bucket_count, bucket): (i64, String) = conn
-            .query_row(&sql, [], |row| Ok((row.get(0)?, row.get(1)?)))
-            .expect("grouped bucket stats");
+        let keys = conn
+            .prepare(
+                "SELECT id, sort_bucket_time, sort_bucket_id, sort_group_null_order
+                 FROM assets ORDER BY id",
+            )
+            .expect("sort key query")
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .expect("sort key rows")
+            .collect::<Result<Vec<(i64, i64, i64, i64)>, _>>()
+            .expect("sort keys");
 
-        assert_eq!(bucket_count, 1);
-        assert_eq!(bucket, "group:real-group");
+        assert_eq!(
+            keys,
+            vec![
+                (1, 50, 1, 0),
+                (2, 40, 2, 0),
+                (3, 30, 3, 0),
+                (4, 20, 5, 1),
+                (5, 20, 5, 1),
+            ]
+        );
+        assert_eq!(count_inconsistent_sort_keys(&conn).expect("consistency"), 0);
     }
 
     #[test]
@@ -811,7 +824,7 @@ mod tests {
                 |row| row.get::<_, i64>(0)
             )
             .expect("performance version"),
-            3
+            4
         );
     }
 
@@ -864,6 +877,169 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("startup scan preferences"));
+    }
+
+    fn grouped_backup_fixture() -> Connection {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        for (path, modified_at) in [
+            ("/media/a.jpg", 10),
+            ("/media/b.jpg", 30),
+            ("/media/c.jpg", 20),
+        ] {
+            insert_asset(&conn, path, "image", modified_at);
+        }
+        set_asset_media_group(&conn, 1, Some("trip"), Some(1.0)).expect("group 1");
+        set_asset_media_group(&conn, 2, Some("trip"), None).expect("group 2");
+        conn
+    }
+
+    #[test]
+    fn backup_validation_accepts_consistent_sort_keys() {
+        let conn = grouped_backup_fixture();
+        validate_backup_database(&conn, false).expect("consistent backup");
+    }
+
+    #[test]
+    fn backup_validation_rejects_inconsistent_sort_keys() {
+        let conn = grouped_backup_fixture();
+        // Writing only the derived column bypasses the triggers.
+        conn.execute("UPDATE assets SET sort_bucket_time = 999 WHERE id = 1", [])
+            .expect("tamper");
+        let error = validate_backup_database(&conn, false).expect_err("tampered keys");
+        assert!(error
+            .to_string()
+            .contains("inconsistent asset ordering keys"));
+    }
+
+    #[test]
+    fn backup_validation_rejects_missing_sort_key_columns_at_version_four() {
+        let conn = grouped_backup_fixture();
+        for name in super::SORT_KEY_TRIGGERS {
+            conn.execute_batch(&format!("DROP TRIGGER {name};"))
+                .expect("drop trigger");
+        }
+        conn.execute_batch(
+            "DROP INDEX idx_assets_sort_key; ALTER TABLE assets DROP COLUMN sort_bucket_time;",
+        )
+        .expect("drop column");
+        assert!(validate_backup_database(&conn, false).is_err());
+    }
+
+    #[test]
+    fn backup_validation_rejects_unexpected_triggers_and_views() {
+        for statement in [
+            "CREATE TRIGGER foreign_trigger AFTER INSERT ON tags BEGIN SELECT 1; END;",
+            "CREATE VIEW foreign_view AS SELECT id FROM assets;",
+        ] {
+            let conn = grouped_backup_fixture();
+            conn.execute_batch(statement).expect("foreign object");
+            let error = validate_backup_database(&conn, false).expect_err("foreign object");
+            assert!(error.to_string().contains("unexpected database"), "{error}");
+        }
+    }
+
+    #[test]
+    fn init_schema_replaces_a_trigger_body_stored_under_a_sort_key_name() {
+        let conn = grouped_backup_fixture();
+        conn.execute_batch(
+            "DROP TRIGGER assets_sort_key_insert_singleton;
+             CREATE TRIGGER assets_sort_key_insert_singleton AFTER INSERT ON assets
+             BEGIN UPDATE library_metadata SET value = -1 WHERE key = 'revision'; END;",
+        )
+        .expect("planted trigger");
+        init_schema(&conn).expect("reinit");
+        insert_asset(&conn, "/media/d.jpg", "image", 40);
+        assert!(current_library_revision(&conn).expect("revision") > 0);
+        assert_eq!(count_inconsistent_sort_keys(&conn).expect("consistency"), 0);
+    }
+
+    #[test]
+    fn init_schema_repairs_keys_after_a_stray_deferral_marker() {
+        let conn = grouped_backup_fixture();
+        conn.execute(
+            "INSERT INTO library_metadata(key, value) VALUES ('sort_keys_deferred', 1)",
+            [],
+        )
+        .expect("marker");
+        // Group triggers are off while the marker exists.
+        set_asset_media_group(&conn, 3, Some("trip"), Some(2.0)).expect("group 3");
+        assert!(count_inconsistent_sort_keys(&conn).expect("count") > 0);
+        init_schema(&conn).expect("reinit");
+        assert_eq!(count_inconsistent_sort_keys(&conn).expect("count"), 0);
+        let markers: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM library_metadata WHERE key = 'sort_keys_deferred'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("markers");
+        assert_eq!(markers, 0);
+    }
+
+    #[test]
+    fn failed_bulk_group_rolls_back_the_deferral_marker() {
+        let mut conn = grouped_backup_fixture();
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER fail_bulk BEFORE UPDATE OF media_group_key ON assets
+             WHEN NEW.id = 3 BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;",
+        )
+        .expect("failure trigger");
+        assert!(set_assets_media_group_bulk(
+            &mut conn,
+            &[(1, Some(1.0)), (3, Some(2.0))],
+            Some("other")
+        )
+        .is_err());
+        let markers: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM library_metadata WHERE key = 'sort_keys_deferred'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("markers");
+        assert_eq!(markers, 0);
+        assert_eq!(count_inconsistent_sort_keys(&conn).expect("count"), 0);
+    }
+
+    #[test]
+    fn unfiltered_order_streams_the_sort_key_index_without_a_temp_sort() {
+        let conn = grouped_backup_fixture();
+        conn.execute_batch("ANALYZE;").expect("analyze");
+        let plan = conn
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN SELECT id FROM assets ORDER BY {}",
+                super::queries::SORT_KEY_ORDER_SQL
+            ))
+            .expect("explain")
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("plan rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("plan");
+        let plan = plan.join(" | ");
+        assert!(plan.contains("idx_assets_sort_key"), "{plan}");
+        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+    }
+
+    #[test]
+    fn summaries_by_ids_keep_order_across_padded_chunks() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        for index in 0..600 {
+            insert_asset(&conn, &format!("/media/{index}.jpg"), "image", index);
+        }
+        let mut ids = (1..=600).rev().collect::<Vec<i64>>();
+        ids.push(9_999);
+        ids.insert(3, 5);
+        let summaries = list_asset_summaries_by_ids(&conn, &ids).expect("summaries");
+        let returned = summaries
+            .iter()
+            .map(|summary| summary.id)
+            .collect::<Vec<_>>();
+        // Request order, first occurrence of a duplicate, unknown IDs skipped.
+        let mut expected = (1..=600).rev().filter(|id| *id != 5).collect::<Vec<i64>>();
+        expected.insert(3, 5);
+        assert_eq!(returned, expected);
     }
 
     #[test]

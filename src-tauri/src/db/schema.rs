@@ -11,6 +11,9 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         schema_version <= SCHEMA_VERSION,
         "database schema version {schema_version} is newer than supported version {SCHEMA_VERSION}"
     );
+    // Before any write: a restored database could carry a trigger under one of
+    // these names with a different body. They are recreated below.
+    drop_sort_key_triggers(conn)?;
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS assets (
@@ -95,12 +98,7 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
           FOREIGN KEY(root_path) REFERENCES scan_roots(path) ON DELETE CASCADE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_assets_kind ON assets(kind);
-        CREATE INDEX IF NOT EXISTS idx_assets_modified_at ON assets(modified_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
         CREATE INDEX IF NOT EXISTS idx_tags_normalized_name ON tags(lower(trim(name)));
-        CREATE INDEX IF NOT EXISTS idx_asset_tags_tag ON asset_tags(tag_id);
-        CREATE INDEX IF NOT EXISTS idx_asset_tags_asset ON asset_tags(asset_id);
         CREATE INDEX IF NOT EXISTS idx_thumbnail_failures_last_failed_at ON thumbnail_failures(last_failed_at DESC);
         ",
     )?;
@@ -176,6 +174,32 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
     if performance_schema_version < 3 {
         migrate_canonical_keys_and_tags(conn)?;
     }
+    // A committed deferral marker would disable the bucket triggers; it can
+    // only come from an interrupted writer bug or a crafted database.
+    let stray_deferral = conn.execute(
+        "DELETE FROM library_metadata WHERE key = 'sort_keys_deferred'",
+        [],
+    )? > 0;
+    if performance_schema_version < 4 || stray_deferral {
+        backfill_sort_keys(conn)?;
+    }
+    // Derived ordering keys are maintained by triggers. They are recreated on
+    // every start so their SQL is always the canonical text below, including
+    // in a restored backup (ADR 0004).
+    install_sort_key_triggers(conn)?;
+    conn.execute_batch(
+        "
+        CREATE INDEX IF NOT EXISTS idx_assets_sort_key ON assets(
+          sort_bucket_time DESC, sort_bucket_id DESC, sort_group_null_order,
+          media_group_order, modified_at DESC, id DESC
+        );
+        DROP INDEX IF EXISTS idx_assets_kind;
+        DROP INDEX IF EXISTS idx_assets_modified_at;
+        DROP INDEX IF EXISTS idx_tags_name;
+        DROP INDEX IF EXISTS idx_asset_tags_tag;
+        DROP INDEX IF EXISTS idx_asset_tags_asset;
+        ",
+    )?;
     optimize(conn)?;
     conn.pragma_update(None, "application_id", APPLICATION_ID)?;
     if conn.query_row("SELECT COUNT(*) FROM pragma_table_info('thumbnail_failures') WHERE name = 'source_record_version'", [], |row| row.get::<_, i64>(0))? == 0 {
@@ -645,10 +669,28 @@ pub(super) fn validate_backup_data(
         anyhow::ensure!(invalid == 0, "backup table {table} contains invalid values");
     }
 
+    // Only the trigger set this application installs may exist; init_schema
+    // drops and recreates those by name before writing (ADR 0004).
+    let mut stmt = conn.prepare(
+        "SELECT type, name FROM sqlite_schema WHERE type IN ('trigger', 'view') ORDER BY name",
+    )?;
+    let objects = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+    for (object_type, name) in objects {
+        anyhow::ensure!(
+            object_type == "trigger" && SORT_KEY_TRIGGERS.contains(&name.as_str()),
+            "backup contains an unexpected database {object_type}"
+        );
+    }
+
     let metadata_rows = conn.query_row(
         "SELECT COUNT(*) FROM library_metadata
          WHERE (key = 'revision' AND value >= 1)
-             OR (key = 'performance_schema_version' AND value BETWEEN 0 AND 3)",
+             OR (key = 'performance_schema_version' AND value BETWEEN 0 AND 4)",
         [],
         |row| row.get::<_, i64>(0),
     )?;
@@ -698,6 +740,21 @@ pub(super) fn validate_backup_data(
             invalid_derived_assets == 0,
             "backup contains inconsistent derived asset values"
         );
+        if performance_schema_version >= 4 {
+            validate_table_columns(
+                conn,
+                "assets",
+                &[
+                    "sort_bucket_time",
+                    "sort_bucket_id",
+                    "sort_group_null_order",
+                ],
+            )?;
+            anyhow::ensure!(
+                count_inconsistent_sort_keys(conn)? == 0,
+                "backup contains inconsistent asset ordering keys"
+            );
+        }
         if performance_schema_version >= 3 {
             let mut stmt = conn.prepare("SELECT file_name, file_name_key FROM assets")?;
             let rows = stmt.query_map([], |row| {
@@ -763,6 +820,9 @@ pub(super) fn ensure_performance_columns(conn: &Connection) -> anyhow::Result<()
         ("file_name_key", "TEXT NOT NULL DEFAULT ''"),
         ("media_group_key_normalized", "TEXT"),
         ("record_version", "INTEGER NOT NULL DEFAULT 1"),
+        ("sort_bucket_time", "INTEGER"),
+        ("sort_bucket_id", "INTEGER"),
+        ("sort_group_null_order", "INTEGER"),
     ] {
         let exists = {
             let mut stmt = conn.prepare("PRAGMA table_info(assets)")?;
@@ -944,4 +1004,287 @@ pub(super) fn migrate_canonical_keys_and_tags(conn: &Connection) -> anyhow::Resu
     )?;
     tx.commit()?;
     Ok(())
+}
+
+/// Predicate for an asset that belongs to a media-group bucket, written for the
+/// row alias `x`. A NULL, empty, or whitespace-only key is a singleton bucket.
+macro_rules! grouped {
+    ($x:literal) => {
+        concat!(
+            $x,
+            ".media_group_key IS NOT NULL AND trim(",
+            $x,
+            ".media_group_key) <> ''"
+        )
+    };
+}
+
+/// Bucket identity: the key coerced to TEXT, so a BLOB key and a TEXT key with
+/// the same bytes share one bucket (the legacy `'group:' || key` coercion).
+macro_rules! bucket {
+    ($x:literal) => {
+        concat!("CAST(", $x, ".media_group_key AS TEXT)")
+    };
+}
+
+/// Recomputes the stored ordering keys of every member of the bucket `$key`
+/// (an SQL expression evaluating to the TEXT bucket identity). Only rows whose
+/// keys actually change are written. The subqueries are not correlated with
+/// the updated row, so SQLite evaluates each once per statement.
+macro_rules! recompute_bucket_sql {
+    ($key:literal) => {
+        concat!(
+            "UPDATE assets SET
+               sort_bucket_time = (SELECT MAX(g.modified_at) FROM assets g
+                 WHERE ",
+            grouped!("g"),
+            " AND ",
+            bucket!("g"),
+            " = ",
+            $key,
+            "),
+               sort_bucket_id = (SELECT MAX(g.id) FROM assets g
+                 WHERE ",
+            grouped!("g"),
+            " AND ",
+            bucket!("g"),
+            " = ",
+            $key,
+            "),
+               sort_group_null_order = (media_group_order IS NULL)
+             WHERE ",
+            grouped!("assets"),
+            " AND ",
+            bucket!("assets"),
+            " = ",
+            $key,
+            "
+               AND (sort_bucket_time IS NOT (SELECT MAX(g.modified_at) FROM assets g
+                      WHERE ",
+            grouped!("g"),
+            " AND ",
+            bucket!("g"),
+            " = ",
+            $key,
+            ")
+                 OR sort_bucket_id IS NOT (SELECT MAX(g.id) FROM assets g
+                      WHERE ",
+            grouped!("g"),
+            " AND ",
+            bucket!("g"),
+            " = ",
+            $key,
+            ")
+                 OR sort_group_null_order IS NOT (media_group_order IS NULL));"
+        )
+    };
+}
+
+/// Names of the triggers that maintain `sort_bucket_time`, `sort_bucket_id`
+/// and `sort_group_null_order`. Backup validation accepts no other trigger.
+pub const SORT_KEY_TRIGGERS: [&str; 6] = [
+    "assets_sort_key_insert_singleton",
+    "assets_sort_key_insert_grouped",
+    "assets_sort_key_update_singleton",
+    "assets_sort_key_update_old_bucket",
+    "assets_sort_key_update_new_bucket",
+    "assets_sort_key_delete_grouped",
+];
+
+const SORT_KEY_CHANGED: &str = "OLD.id IS NOT NEW.id
+      OR OLD.modified_at IS NOT NEW.modified_at
+      OR OLD.media_group_key IS NOT NEW.media_group_key
+      OR OLD.media_group_order IS NOT NEW.media_group_order";
+
+fn drop_sort_key_triggers(conn: &Connection) -> anyhow::Result<()> {
+    for name in SORT_KEY_TRIGGERS {
+        conn.execute_batch(&format!("DROP TRIGGER IF EXISTS {name};"))?;
+    }
+    Ok(())
+}
+
+pub(super) fn install_sort_key_triggers(conn: &Connection) -> anyhow::Result<()> {
+    drop_sort_key_triggers(conn)?;
+    let update_of = "AFTER UPDATE OF id, modified_at, media_group_key, media_group_order ON assets";
+    conn.execute_batch(&format!(
+        "
+        CREATE INDEX IF NOT EXISTS idx_assets_group_bucket
+          ON assets(CAST(media_group_key AS TEXT), modified_at)
+          WHERE media_group_key IS NOT NULL AND trim(media_group_key) <> '';
+
+        CREATE TRIGGER assets_sort_key_insert_singleton AFTER INSERT ON assets
+        WHEN NOT ({grouped_new})
+        BEGIN
+          UPDATE assets SET sort_bucket_time = NEW.modified_at, sort_bucket_id = NEW.id,
+                            sort_group_null_order = 0
+          WHERE id = NEW.id;
+        END;
+
+        CREATE TRIGGER assets_sort_key_insert_grouped AFTER INSERT ON assets
+        WHEN {grouped_new} AND {not_deferred}
+        BEGIN
+          {recompute_new}
+        END;
+
+        CREATE TRIGGER assets_sort_key_update_singleton {update_of}
+        WHEN ({changed}) AND NOT ({grouped_new})
+        BEGIN
+          UPDATE assets SET sort_bucket_time = NEW.modified_at, sort_bucket_id = NEW.id,
+                            sort_group_null_order = 0
+          WHERE id = NEW.id;
+        END;
+
+        CREATE TRIGGER assets_sort_key_update_old_bucket {update_of}
+        WHEN ({changed}) AND {grouped_old} AND {not_deferred}
+        BEGIN
+          {recompute_old}
+        END;
+
+        CREATE TRIGGER assets_sort_key_update_new_bucket {update_of}
+        WHEN ({changed}) AND {grouped_new} AND {not_deferred}
+        BEGIN
+          {recompute_new}
+        END;
+
+        CREATE TRIGGER assets_sort_key_delete_grouped AFTER DELETE ON assets
+        WHEN {grouped_old} AND {not_deferred}
+        BEGIN
+          {recompute_old}
+        END;
+        ",
+        grouped_new = grouped!("NEW"),
+        grouped_old = grouped!("OLD"),
+        changed = SORT_KEY_CHANGED,
+        not_deferred =
+            "NOT EXISTS (SELECT 1 FROM library_metadata WHERE key = 'sort_keys_deferred')",
+        recompute_new = recompute_bucket_sql!("CAST(NEW.media_group_key AS TEXT)"),
+        recompute_old = recompute_bucket_sql!("CAST(OLD.media_group_key AS TEXT)"),
+    ))?;
+    Ok(())
+}
+
+/// One-time backfill for `performance_schema_version` 4: computes every
+/// asset's ordering keys from its whole bucket in one transaction.
+pub(super) fn backfill_sort_keys(conn: &Connection) -> anyhow::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(concat!(
+        "UPDATE assets SET sort_bucket_time = modified_at, sort_bucket_id = id,
+                           sort_group_null_order = 0
+         WHERE NOT (",
+        grouped!("assets"),
+        ");
+         WITH buckets AS (
+           SELECT ",
+        bucket!("a"),
+        " AS bucket, MAX(a.modified_at) AS bucket_time,
+                  MAX(a.id) AS bucket_id
+           FROM assets a WHERE ",
+        grouped!("a"),
+        "
+           GROUP BY 1
+         )
+         UPDATE assets SET sort_bucket_time = buckets.bucket_time,
+                           sort_bucket_id = buckets.bucket_id,
+                           sort_group_null_order = (assets.media_group_order IS NULL)
+         FROM buckets
+         WHERE ",
+        grouped!("assets"),
+        " AND ",
+        bucket!("assets"),
+        " = buckets.bucket;
+         UPDATE library_metadata SET value = 4 WHERE key = 'performance_schema_version';"
+    ))?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Counts assets whose stored ordering keys differ from a full recomputation.
+pub fn count_inconsistent_sort_keys(conn: &Connection) -> anyhow::Result<i64> {
+    Ok(conn.query_row(
+        concat!(
+            "WITH buckets AS (
+               SELECT ",
+            bucket!("a"),
+            " AS bucket, MAX(a.modified_at) AS bucket_time,
+                      MAX(a.id) AS bucket_id
+               FROM assets a WHERE ",
+            grouped!("a"),
+            "
+               GROUP BY 1
+             )
+             SELECT COUNT(*) FROM assets
+             LEFT JOIN buckets ON ",
+            grouped!("assets"),
+            " AND ",
+            bucket!("assets"),
+            " = buckets.bucket
+             WHERE typeof(assets.sort_bucket_time) <> 'integer'
+                OR typeof(assets.sort_bucket_id) <> 'integer'
+                OR typeof(assets.sort_group_null_order) <> 'integer'
+                OR assets.sort_bucket_time IS NOT
+                     CASE WHEN ",
+            grouped!("assets"),
+            " THEN buckets.bucket_time
+                          ELSE assets.modified_at END
+                OR assets.sort_bucket_id IS NOT
+                     CASE WHEN ",
+            grouped!("assets"),
+            " THEN buckets.bucket_id
+                          ELSE assets.id END
+                OR assets.sort_group_null_order IS NOT
+                     CASE WHEN ",
+            grouped!("assets"),
+            " THEN (assets.media_group_order IS NULL)
+                          ELSE 0 END"
+        ),
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+/// Defers the per-row group-bucket triggers for the rest of one transaction.
+///
+/// Every row that joins or leaves a group would otherwise rescan its whole
+/// bucket, which makes grouping N assets O(N²). Bulk writers begin a deferral,
+/// record the old and new key of every row they change, and call `finish`
+/// before committing: it removes the marker row and recomputes each touched
+/// bucket once. Singleton keys stay maintained by their triggers throughout.
+/// The marker lives in `library_metadata` inside the writer's transaction, so
+/// an error that rolls the transaction back also removes it.
+pub struct DeferredSortKeys {
+    buckets: HashSet<String>,
+}
+
+const SORT_KEYS_DEFERRED: &str = "sort_keys_deferred";
+
+impl DeferredSortKeys {
+    pub fn begin(conn: &Connection) -> anyhow::Result<Self> {
+        conn.execute(
+            "INSERT INTO library_metadata(key, value) VALUES (?1, 1)
+             ON CONFLICT(key) DO UPDATE SET value = 1",
+            params![SORT_KEYS_DEFERRED],
+        )?;
+        Ok(Self {
+            buckets: HashSet::new(),
+        })
+    }
+
+    /// Records a group key a changed row had before or has after the write.
+    pub fn touch(&mut self, media_group_key: Option<&str>) {
+        if let Some(key) = media_group_key {
+            self.buckets.insert(key.to_string());
+        }
+    }
+
+    pub fn finish(self, conn: &Connection) -> anyhow::Result<()> {
+        conn.execute(
+            "DELETE FROM library_metadata WHERE key = ?1",
+            params![SORT_KEYS_DEFERRED],
+        )?;
+        let mut stmt = conn.prepare(recompute_bucket_sql!("?1"))?;
+        for key in self.buckets {
+            stmt.execute(params![key])?;
+        }
+        Ok(())
+    }
 }

@@ -133,6 +133,9 @@ fn seed_library(path: &Path, rows: i64) -> Duration {
     .unwrap();
     tx.commit().unwrap();
     db::bump_library_revision(&conn).unwrap();
+    // Sort-key columns are maintained by triggers (ADR 0004), so raw-SQL
+    // seeding produces the same keys as the app's write paths.
+    assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
     db::optimize(&conn).unwrap();
     let stored: i64 = conn
         .query_row("SELECT COUNT(*) FROM assets", [], |row| row.get(0))
@@ -281,6 +284,88 @@ fn query_rebuild_and_page_baseline() {
             summary(&page_samples)
         );
     }
+}
+
+/// Stage 03 (ADR 0004): one-time sort-key backfill on upgrade, the plan of the
+/// unfiltered order query, and bulk grouping cost with trigger maintenance.
+#[test]
+#[ignore = "baseline diagnostic: run explicitly, alone, in release mode"]
+fn sort_key_backfill_plan_and_bulk_group_baseline() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("media.db");
+    seed_library(&path, 1_000_000);
+    {
+        let conn = db::open_connection(&path).unwrap();
+        // Reconstruct the version 3 state: no triggers, no sort index, no keys.
+        for name in db::SORT_KEY_TRIGGERS {
+            conn.execute_batch(&format!("DROP TRIGGER {name};"))
+                .unwrap();
+        }
+        conn.execute_batch(
+            "DROP INDEX idx_assets_sort_key;
+             DROP INDEX idx_assets_group_bucket;
+             UPDATE assets SET sort_bucket_time = NULL, sort_bucket_id = NULL,
+                               sort_group_null_order = NULL;
+             UPDATE library_metadata SET value = 3 WHERE key = 'performance_schema_version';
+             PRAGMA wal_checkpoint(TRUNCATE);",
+        )
+        .unwrap();
+    }
+    let conn = db::open_connection(&path).unwrap();
+    let started = Instant::now();
+    db::init_schema(&conn).unwrap();
+    println!(
+        "[baseline] metric=sort_key_upgrade_init_schema rows=1000000 ms={:.0}",
+        ms(started)
+    );
+    assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
+
+    let plan = conn
+        .prepare(
+            "EXPLAIN QUERY PLAN SELECT id FROM assets ORDER BY sort_bucket_time DESC,
+               sort_bucket_id DESC, sort_group_null_order ASC, media_group_order ASC,
+               modified_at DESC, id DESC",
+        )
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(3))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    println!(
+        "[baseline] metric=order_plan filter=none plan={:?}",
+        plan.join(" | ")
+    );
+    drop(conn);
+
+    let mut conn = db::open_connection(&path).unwrap();
+    for (name, descending) in [("newest_first", true), ("oldest_first", false)] {
+        // 5,000 ungrouped assets into one new group, processed in time order:
+        // oldest first is the worst case (every member raises the bucket).
+        let order = if descending { "DESC" } else { "ASC" };
+        let ids = conn
+            .prepare(&format!(
+                "SELECT id FROM assets WHERE media_group_key IS NULL
+                 ORDER BY modified_at {order}, id {order} LIMIT 5000"
+            ))
+            .unwrap()
+            .query_map([], |row| row.get::<_, i64>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let updates = ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (*id, Some(index as f64 + 1.0)))
+            .collect::<Vec<_>>();
+        let started = Instant::now();
+        db::set_assets_media_group_bulk(&mut conn, &updates, Some(&format!("bulk-{name}")))
+            .unwrap();
+        println!(
+            "[baseline] metric=bulk_group_5000 order={name} rows=1000000 ms={:.0}",
+            ms(started)
+        );
+    }
+    assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
 }
 
 fn app_state(db_path: PathBuf, thumbs: PathBuf) -> AppState {

@@ -24,3 +24,6 @@ Format: `YYYY-MM-DD | etap NN | rola | status | jedno zdanie | link do etapu`
 2026-11-07 | etap 04 | agent etapu 05 | todo | Z etapu 05: interfejs `hasMore`/`onReachEnd` zostawiony do usunięcia; `getAssetAt` w memo komórek | [04](04-query-cache.md)
 2026-11-07 | etap 06 | agent etapu 05 | todo | Z etapu 05: `ThumbnailImage` z jednym `<img>`, recykling kafli przy flingu | [06](06-thumb-protocol.md)
 2026-11-07 | etap 08 | agent etapu 05 | todo | Z etapu 05: API modelu scrolla i pasek trybu okna dla scrubbera | [08](08-timeline-scrubber.md)
+2026-11-07 | etap 03 | agent etapu 03 | done | Sort-key utrzymywany triggerami, porządek dokładny także z filtrami ([ADR 0004](../../adr/0004-trigger-maintained-gallery-sort-keys.md)); rebuild 1M bez filtrów 384 → 32 ms, exclude 671 → 420 ms, skan 20k bez spowolnienia; `list_assets` zostaje (odłożone) | [03](03-sort-key-and-indexes.md)
+2026-11-07 | etap 07 | agent etapu 03 | in progress | Z etapu 03: pomiary pośrednie Rust i E2E; propozycja migracji 17 speców z `list_assets` | [07](07-verification-and-docs.md)
+2026-11-07 | etap 04 | agent etapu 03 | todo | Z etapu 03: `lib.rs`, `commands/assets.rs`, `src/platform/tauri` i `ipc-contract.md` nietknięte; `list_assets` zostaje | [04](04-query-cache.md)

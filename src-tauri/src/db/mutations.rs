@@ -348,6 +348,7 @@ pub fn set_assets_media_group_bulk(
     retry_immediate_transaction(conn, |tx| {
         let mut processed_assets = Vec::new();
         let mut updated_assets = 0usize;
+        let mut sort_keys = DeferredSortKeys::begin(tx)?;
 
         let mut get_current_stmt =
             tx.prepare("SELECT media_group_key, media_group_order FROM assets WHERE id = ?1")?;
@@ -380,11 +381,14 @@ pub fn set_assets_media_group_bulk(
             }
 
             update_stmt.execute(params![media_group_key, media_group_order, asset_id])?;
+            sort_keys.touch(current_key.as_deref());
+            sort_keys.touch(media_group_key);
             updated_assets += 1;
         }
 
         drop(update_stmt);
         drop(get_current_stmt);
+        sort_keys.finish(tx)?;
 
         if updated_assets > 0 {
             bump_library_revision_in_tx(tx)?;
@@ -678,6 +682,7 @@ pub fn import_csv_record_batches(
         let mut assets_updated = 0usize;
         let mut find_assets_stmt =
             tx.prepare("SELECT id FROM assets WHERE file_name_key = ?1 ORDER BY id ASC")?;
+        let mut sort_keys = DeferredSortKeys::begin(tx)?;
 
         let mut rows_read = 0;
         loop {
@@ -739,6 +744,8 @@ pub fn import_csv_record_batches(
                                 next_group_key.as_deref(),
                                 next_group_order,
                             )?;
+                            sort_keys.touch(current_group_key.as_deref());
+                            sort_keys.touch(next_group_key.as_deref());
                             changed = true;
                         }
                     }
@@ -747,6 +754,7 @@ pub fn import_csv_record_batches(
             }
         }
         drop(find_assets_stmt);
+        sort_keys.finish(tx)?;
         cleanup_orphan_tags(tx)?;
         if assets_updated > 0 {
             bump_library_revision_in_tx(tx)?;

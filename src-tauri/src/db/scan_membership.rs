@@ -23,7 +23,9 @@ pub(super) fn upsert_asset_with_fingerprint(
 ) -> anyhow::Result<()> {
     let file_name = extract_file_name(&asset.path);
     let file_name_key = canonical_key(&file_name);
-    conn.execute(
+    // Cached: preparing an `assets` write compiles the sort-key triggers into
+    // it, which would otherwise be repeated for every scanned file.
+    conn.prepare_cached(
         "
         INSERT INTO assets(path, file_name, file_name_key, kind, size_bytes, modified_at, width, height, duration_ms, thumb_path, fingerprint_mtime_ns, indexed_at)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, unixepoch())
@@ -49,7 +51,8 @@ pub(super) fn upsert_asset_with_fingerprint(
           fingerprint_mtime_ns=excluded.fingerprint_mtime_ns,
           indexed_at=unixepoch();
         ",
-        params![
+    )?
+    .execute(params![
             asset.path,
             file_name,
             file_name_key,
@@ -228,13 +231,13 @@ pub fn upsert_scanned_asset(
     generation: i64,
 ) -> anyhow::Result<()> {
     upsert_asset_with_fingerprint(conn, asset, fingerprint_mtime_ns)?;
-    conn.execute(
+    conn.prepare_cached(
         "INSERT INTO asset_scan_roots(asset_id, root_path, last_seen_generation)
          SELECT id, ?1, ?2 FROM assets WHERE path = ?3
          ON CONFLICT(asset_id, root_path) DO UPDATE SET
            last_seen_generation = excluded.last_seen_generation",
-        params![root, generation, asset.path],
-    )?;
+    )?
+    .execute(params![root, generation, asset.path])?;
     Ok(())
 }
 

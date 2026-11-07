@@ -745,16 +745,6 @@ pub fn optimize(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(super) fn grouped_bucket_stats_sql() -> &'static str {
-    "SELECT
-       'group:' || media_group_key AS sort_bucket,
-       MAX(modified_at) AS bucket_modified_at,
-       MAX(id) AS bucket_max_id
-     FROM filtered_assets
-     WHERE media_group_key IS NOT NULL AND trim(media_group_key) <> ''
-     GROUP BY 'group:' || media_group_key"
-}
-
 pub fn list_ordered_asset_ids_with_meta(
     conn: &Connection,
     tags_and: &[String],
@@ -775,9 +765,46 @@ pub fn list_ordered_asset_ids_with_meta(
     .unwrap_or_default())
 }
 
+/// Column order of `idx_assets_sort_key`; an unfiltered query streams it.
+pub(super) const SORT_KEY_ORDER_SQL: &str = "sort_bucket_time DESC, sort_bucket_id DESC,
+    sort_group_null_order ASC, media_group_order ASC, modified_at DESC, id DESC";
+
+const CANCEL_CHECK_INTERVAL: usize = 256;
+
+/// Resolves tag names to IDs. `tags.name` is `COLLATE NOCASE`, so the match is
+/// the same as the former name join.
+fn resolve_tag_ids(conn: &Connection, names: &[String]) -> anyhow::Result<Vec<i64>> {
+    let placeholders = vec!["?"; names.len()].join(",");
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id FROM tags WHERE name IN ({placeholders})"
+    ))?;
+    let ids = stmt
+        .query_map(rusqlite::params_from_iter(names.iter()), |row| row.get(0))?
+        .collect::<Result<Vec<i64>, _>>()?;
+    Ok(ids)
+}
+
+/// One filtered row with the stored keys needed to rebuild its bucket order.
+struct FilteredOrderRow {
+    id: i64,
+    modified_at: i64,
+    bucket: i64,
+    null_order: i64,
+    group_order: Option<f64>,
+}
+
 /// Builds the ordered matching-ID list, cooperatively aborting through
 /// `cancel_check` (checked periodically while streaming rows). `Ok(None)`
 /// means the build was cancelled; the partial list is discarded.
+///
+/// Ordering (ADR 0004): every nonblank media-group key forms one bucket, every
+/// other asset its own bucket. Buckets sort by their newest *matching* member's
+/// `modified_at` and then their highest matching ID, both descending; within a
+/// bucket rows with a group order come first (ascending), then
+/// `modified_at DESC, id DESC`. Without filters every member matches, so the
+/// trigger-maintained whole-bucket keys in `idx_assets_sort_key` give the order
+/// directly. With filters, `sort_bucket_id` identifies the bucket and the
+/// matching-member statistics are recomputed here.
 pub fn try_list_ordered_asset_ids_with_meta(
     conn: &Connection,
     tags_and: &[String],
@@ -800,30 +827,38 @@ pub fn try_list_ordered_asset_ids_with_meta(
         where_clauses.push("a.is_favorite = 1".to_string());
     }
     if !tags_and.is_empty() {
-        let placeholders = vec!["?"; tags_and.len()].join(",");
+        let tag_ids = resolve_tag_ids(conn, tags_and)?;
+        // The former `HAVING COUNT(DISTINCT t.id) = <names>` matched nothing
+        // when a name was missing or two names denoted the same tag.
+        if tag_ids.len() != tags_and.len() {
+            return Ok(Some(Vec::new()));
+        }
+        let placeholders = vec!["?"; tag_ids.len()].join(",");
         where_clauses.push(format!(
             "a.id IN (
-              SELECT at.asset_id
-              FROM asset_tags at
-              JOIN tags t ON t.id = at.tag_id
-              WHERE t.name IN ({placeholders})
-              GROUP BY at.asset_id
-              HAVING COUNT(DISTINCT t.id) = ?
+              SELECT asset_id FROM asset_tags
+              WHERE tag_id IN ({placeholders})
+              GROUP BY asset_id
+              HAVING COUNT(*) = ?
             )"
         ));
-        values.extend(tags_and.iter().cloned().map(Value::Text));
-        values.push(Value::Integer(tags_and.len() as i64));
+        values.extend(tag_ids.iter().copied().map(Value::Integer));
+        values.push(Value::Integer(tag_ids.len() as i64));
     }
     if !tags_not.is_empty() {
-        let placeholders = vec!["?"; tags_not.len()].join(",");
-        where_clauses.push(format!(
-            "NOT EXISTS (
-              SELECT 1 FROM asset_tags atn
-              JOIN tags tn ON tn.id = atn.tag_id
-              WHERE atn.asset_id = a.id AND tn.name IN ({placeholders})
-            )"
-        ));
-        values.extend(tags_not.iter().cloned().map(Value::Text));
+        let tag_ids = resolve_tag_ids(conn, tags_not)?;
+        if !tag_ids.is_empty() {
+            let placeholders = vec!["?"; tag_ids.len()].join(",");
+            // Uncorrelated: SQLite builds the excluded-ID set once instead of
+            // probing asset_tags per row. asset_id is NOT NULL, so NOT IN is
+            // exactly NOT EXISTS here.
+            where_clauses.push(format!(
+                "a.id NOT IN (
+                  SELECT asset_id FROM asset_tags WHERE tag_id IN ({placeholders})
+                )"
+            ));
+            values.extend(tag_ids.iter().copied().map(Value::Integer));
+        }
     }
     match meta_filter {
         Some(AssetMetaFilter::HasNoTags { tag_count }) => {
@@ -837,67 +872,93 @@ pub fn try_list_ordered_asset_ids_with_meta(
         None => {}
     }
 
-    let where_sql = if where_clauses.is_empty() {
-        String::new()
-    } else {
-        format!(" WHERE {}", where_clauses.join(" AND "))
-    };
-    let grouped_bucket_stats_sql = grouped_bucket_stats_sql();
-    let sql = format!(
-        "
-        WITH filtered_assets AS (
-          SELECT
-            a.id,
-            a.modified_at,
-            a.media_group_key,
-            a.media_group_order
-          FROM assets a
-          {where_sql}
-        ),
-        grouped_bucket_stats AS (
-          {grouped_bucket_stats_sql}
-        )
-        SELECT fa.id
-        FROM filtered_assets fa
-        LEFT JOIN grouped_bucket_stats bs
-          ON fa.media_group_key IS NOT NULL
-          AND trim(fa.media_group_key) <> ''
-          AND bs.sort_bucket = 'group:' || fa.media_group_key
-        ORDER BY
-          CASE
-            WHEN fa.media_group_key IS NOT NULL AND trim(fa.media_group_key) <> ''
-              THEN bs.bucket_modified_at
-            ELSE fa.modified_at
-          END DESC,
-          CASE
-            WHEN fa.media_group_key IS NOT NULL AND trim(fa.media_group_key) <> ''
-              THEN bs.bucket_max_id
-            ELSE fa.id
-          END DESC,
-          CASE
-            WHEN fa.media_group_key IS NOT NULL
-              AND trim(fa.media_group_key) <> ''
-              AND fa.media_group_order IS NULL
-            THEN 1 ELSE 0
-          END ASC,
-          fa.media_group_order ASC,
-          fa.modified_at DESC,
-          fa.id DESC
-        "
-    );
+    // Excluding only unknown tags filters nothing, so it takes the index path.
+    if where_clauses.is_empty() {
+        let mut stmt = conn.prepare_cached(&format!(
+            "SELECT id FROM assets ORDER BY {SORT_KEY_ORDER_SQL}"
+        ))?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        let mut ids = Vec::new();
+        for (index, row) in rows.enumerate() {
+            if index % CANCEL_CHECK_INTERVAL == 0 && cancel_check() {
+                return Ok(None);
+            }
+            ids.push(row?);
+        }
+        return Ok(Some(ids));
+    }
 
-    let mut ids = Vec::new();
+    let sql = format!(
+        "SELECT a.id, a.modified_at, a.sort_bucket_id, a.sort_group_null_order,
+                a.media_group_order
+         FROM assets a
+         WHERE {}",
+        where_clauses.join(" AND ")
+    );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(values.iter()), |row| row.get(0))?;
-    const CANCEL_CHECK_INTERVAL: usize = 256;
+    let rows = stmt.query_map(rusqlite::params_from_iter(values.iter()), |row| {
+        Ok(FilteredOrderRow {
+            id: row.get(0)?,
+            modified_at: row.get(1)?,
+            bucket: row.get(2)?,
+            null_order: row.get(3)?,
+            group_order: row.get(4)?,
+        })
+    })?;
+    let mut matched = Vec::new();
+    // Matching-member statistics per bucket: (newest modified_at, highest ID).
+    let mut buckets = HashMap::<i64, (i64, i64)>::new();
     for (index, row) in rows.enumerate() {
         if index % CANCEL_CHECK_INTERVAL == 0 && cancel_check() {
             return Ok(None);
         }
-        ids.push(row?);
+        let row = row?;
+        buckets
+            .entry(row.bucket)
+            .and_modify(|(time, id)| {
+                *time = (*time).max(row.modified_at);
+                *id = (*id).max(row.id);
+            })
+            .or_insert((row.modified_at, row.id));
+        matched.push(row);
     }
+    if cancel_check() {
+        return Ok(None);
+    }
+
+    let mut keyed = matched
+        .into_iter()
+        .map(|row| (buckets[&row.bucket], row))
+        .collect::<Vec<_>>();
+    keyed.sort_unstable_by(|(left_bucket, left), (right_bucket, right)| {
+        right_bucket
+            .0
+            .cmp(&left_bucket.0)
+            .then(right_bucket.1.cmp(&left_bucket.1))
+            .then(left.null_order.cmp(&right.null_order))
+            // SQLite sorts NULL first and compares numbers by value (-0.0 = 0.0);
+            // stored orders are never NaN.
+            .then_with(|| match (left.group_order, right.group_order) {
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(l), Some(r)) => l.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal),
+            })
+            .then(right.modified_at.cmp(&left.modified_at))
+            .then(right.id.cmp(&left.id))
+    });
+    if cancel_check() {
+        return Ok(None);
+    }
+    // A fresh allocation: collecting in place would keep the wider row buffer
+    // as the retained session vector's capacity.
+    let mut ids = Vec::with_capacity(keyed.len());
+    ids.extend(keyed.iter().map(|(_, row)| row.id));
     Ok(Some(ids))
 }
+
+/// Placeholder counts for summary lookups. A page is at most 256 IDs.
+const SUMMARY_CHUNK_SIZES: [usize; 3] = [16, 64, 256];
 
 pub fn list_asset_summaries_by_ids(
     conn: &Connection,
@@ -908,19 +969,27 @@ pub fn list_asset_summaries_by_ids(
     }
 
     let mut by_id = HashMap::<i64, AssetSummary>::with_capacity(asset_ids.len());
-    for chunk in asset_ids.chunks(500) {
-        let placeholders = vec!["?"; chunk.len()].join(",");
+    for chunk in asset_ids.chunks(SUMMARY_CHUNK_SIZES[SUMMARY_CHUNK_SIZES.len() - 1]) {
+        // Pad to a fixed placeholder count so the cached statement is reused;
+        // NULL never matches `id IN (...)`.
+        let size = SUMMARY_CHUNK_SIZES
+            .iter()
+            .copied()
+            .find(|size| *size >= chunk.len())
+            .expect("chunk fits the largest size");
+        let placeholders = vec!["?"; size].join(",");
         let sql = format!(
             "SELECT id, file_name, CASE WHEN kind IN ('gif', 'video') THEN path ELSE NULL END, kind,
                     modified_at, width, height, duration_ms, thumb_path,
                     is_favorite, media_group_key, media_group_order
              FROM assets WHERE id IN ({placeholders})"
         );
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(chunk.iter()),
-            parse_asset_summary_row,
-        )?;
+        let mut stmt = conn.prepare_cached(&sql)?;
+        let params = chunk
+            .iter()
+            .map(|id| Some(*id))
+            .chain(std::iter::repeat_n(None, size - chunk.len()));
+        let rows = stmt.query_map(rusqlite::params_from_iter(params), parse_asset_summary_row)?;
         for row in rows {
             let summary = row?;
             by_id.insert(summary.id, summary);

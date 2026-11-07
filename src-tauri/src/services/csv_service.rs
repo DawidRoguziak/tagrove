@@ -592,6 +592,37 @@ mod tests {
     }
 
     #[test]
+    fn import_maintains_group_sort_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("media.db");
+        let input = dir.path().join("input.csv");
+        let runtime = crate::services::db_pool::DatabaseRuntime::new(path);
+        let permit = runtime.admit().unwrap();
+        {
+            let conn = permit.connection().unwrap();
+            db::init_schema(&conn).unwrap();
+            db::upsert_asset(&conn, &asset("/one/a.jpg")).unwrap();
+            db::upsert_asset(&conn, &asset("/one/b.jpg")).unwrap();
+        }
+        std::fs::write(
+            &input,
+            "file_name,tags,favorite,media_group_key,media_group_order\na.jpg,,false,trip,2\nb.jpg,,false,trip,\n",
+        )
+        .unwrap();
+        super::import_tags_csv(input.to_str().unwrap(), &permit).unwrap();
+        let conn = permit.connection().unwrap();
+        assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
+        let keys = conn
+            .prepare("SELECT sort_bucket_id, sort_group_null_order FROM assets ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(keys, [(2, 0), (2, 1)]);
+    }
+
+    #[test]
     fn export_limit_failure_preserves_existing_destination() {
         let dir = tempfile::tempdir().unwrap();
         let data = dir.path().join("profile");

@@ -145,3 +145,15 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
 - Z etapu 05: bramka limitu wysokości jest powtarzalna przez `GALLERY_HEIGHT_PROBE=1 sh e2e/gallery-scale/run.sh` (opis w `docs/development/testing.md`, „Scroll height probe”). Po aktualizacji WebKitGTK uruchom ją ponownie.
 - Z etapu 05: przy porównaniach fixture `GALLERY_PERFORMANCE=1` „przed/po” trzeba robić dwoma biegami na dwóch commitach (podmiana `GALLERY_BASELINE_DIR` usunięta). Wyniki etapu 05 leżą w ignorowanym `artifacts/gallery-scale/`: `performance-before-05.json`, `performance-after-05.json`, `scale-before-05.json`, `scale-after-05.json`, `height-probe-scale{1,2}.json`.
 - Z etapu 05: do przeglądu w fali D zostają ostrzeżenia WebDrivera „element click intercepted” w `group-order` i `review-fixes`. Występowały już w pełnym biegu z 2026-10-03, a specy przechodzą.
+
+### 2026-11-07 — agent etapu 03
+- Z etapu 03: pomiary pośrednie po etapach 01, 02, 05 i 03, przed 04 i 06. Kolumny „Po 01–06” nie wypełniam. Szczegóły w notatkach etapu 03.
+  - `grid_baseline.rs` (release, p50 przy 1M): rebuild bez filtrów 384 → 32 ms, exclude_common 671 → 420 ms, favorite pod skanem p50 4,3 → 2,0 ms;
+  - nowa diagnostyka `sort_key_backfill_plan_and_bulk_group_baseline`: backfill przy upgrade ~1,5 s, plan bez filtrów, bulk 5000 do jednej grupy 146–171 ms;
+  - `grid-baseline.e2e.js` (debug), dwa biegi: skan 20k p50 695 ms (było ~1266 ms), like i tag 0/20 nieudanych. Pojedyncze zapisy 120–180 ms wypadają w fazie `remove_scan_root`, która nie ustępuje zapisom użytkownika; to ograniczenie istniało już wcześniej.
+- Z etapu 03: usunięcie `list_assets` odłożone (decyzja użytkownika). Do zrobienia w osobnej zmianie:
+  - komenda w `commands/assets.rs` i `lib.rs`, wrapper `listAssets` z testem w `src/platform/tauri/__tests__/api.test.ts`, typ w `contracts/`, `ipc-contract.md`;
+  - funkcje `list_assets`/`list_assets_with_meta` w `db/queries.rs` oraz ich testy w `db.rs`, `backend_integration.rs`, `backend_e2e.rs` i `scan_service.rs`;
+  - 17 speców E2E: startup-scan, search-recovery, lightbox-images, lightbox-recovery, group-order, app.workflows, ui.redesign, settings-maintenance, gallery.performance, native-video-escape, thumbnail-fade, animations, video-speed, lightbox-activity, review-fixes, app.smoke, popular-tags.
+
+  Propozycja: helper w `e2e/` (np. `listAssetsForAssertions`), który w przeglądarce woła `start_asset_query` z własnym `ownerId` (np. `e2e-assertions`) i rosnącym `generation`, pobiera strony po 256 przez `get_asset_query_page`, a pola `path`/`tags`/`size_bytes` (których `AssetSummary` nie ma dla obrazów) przez `get_asset_details`. Zwraca `{ items, total }` w kształcie `Asset`. Uwaga: start z innego ownera przerywa niedokończony start aplikacji (globalny token żądania), więc helper wołać, gdy galeria jest spokojna.

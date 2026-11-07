@@ -45,6 +45,7 @@ Ordinary connections use WAL, `synchronous=NORMAL`, foreign keys, `temp_store=ME
 | `file_name_key` | Required lowercase filename lookup key, default `''`. |
 | `media_group_key_normalized` | Optional lowercase, trimmed group lookup key. |
 | `indexed_at` | Required Unix timestamp, defaulting to `unixepoch()`; refreshed by asset upsert. |
+| `sort_bucket_time`, `sort_bucket_id`, `sort_group_null_order` | Derived ordering keys, maintained by triggers ([ADR 0004](../adr/0004-trigger-maintained-gallery-sort-keys.md)). For a group member they hold the whole group's newest `modified_at`, its highest ID, and `media_group_order IS NULL`; for a singleton `(modified_at, id, 0)`. `sort_bucket_id` is a unique integer bucket identity. Nullable only so `ALTER TABLE` can add them; the backfill fills every row. |
 | `record_version` | Required monotonic file-record version, default `1`; increments when scan upsert changes source fingerprint fields and when an application rename changes path identity. Duplicate mutation inputs use it with the expected path as a compare-and-swap guard. |
 
 The remaining tables are:
@@ -56,7 +57,7 @@ The remaining tables are:
 | `scan_roots` | `path TEXT PRIMARY KEY` plus `auto_scan_on_startup INTEGER NOT NULL DEFAULT 0 CHECK(auto_scan_on_startup IN (0, 1))`. No creation timestamp is stored. |
 | `asset_scan_roots` | Composite primary key `(asset_id, root_path)` plus required `last_seen_generation`. Both foreign keys cascade, so deletion of either the asset or root removes the mapping. One asset can remain owned by another overlapping root. |
 | `thumbnail_failures` | One row per `asset_id`, with required `failure_count`, optional `last_error`, required `last_failed_at`, required `asset_modified_at`, and required `source_record_version`. It deliberately has no declared foreign key; database helpers remove orphaned and source-version-stale rows. |
-| `library_metadata` | Integer values keyed by text. The reserved dependency namespace is `query_revision:`, described below. Other reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `3`). It has no foreign-key relationships. SQLite `application_id` and `user_version` separately identify the application and complete schema generation; neither replaces these runtime/backfill rows. |
+| `library_metadata` | Integer values keyed by text. The reserved dependency namespace is `query_revision:`, described below. Other reserved rows are `revision` (initially `1`) and `performance_schema_version` (initially `0`, migrated to `4`). A `sort_keys_deferred` row exists only inside a bulk writer's transaction (see [ordering](#gallery-and-media-group-ordering)). It has no foreign-key relationships. SQLite `application_id` and `user_version` separately identify the application and complete schema generation; neither replaces these runtime/backfill rows. |
 | `pending_file_operations` | Durable source-file recovery journal keyed by `(operation_id, asset_id)`, storing action, original/staging/final paths, and a `committed` flag set in the same transaction as asset mutation/revision. It deliberately survives asset deletion and is reconciled at startup. |
 
 Deleting an `assets` row automatically removes `asset_tags` and `asset_scan_roots`. Deleting a `scan_roots` row automatically removes its root mappings. Tags are not deleted by cascade when their final asset mapping disappears; tag replacement deletes only removed candidate IDs that have no remaining asset references. Asset removal, imports, and maintenance retain global orphan-tag cleanup. Thumbnail failures likewise require explicit cleanup because they are not foreign-keyed.
@@ -71,12 +72,7 @@ In addition to primary-key and unique indexes created by SQLite, initialization 
 
 | Index | Definition / purpose |
 | --- | --- |
-| `idx_assets_kind` | `assets(kind)` |
-| `idx_assets_modified_at` | `assets(modified_at DESC)` |
-| `idx_tags_name` | `tags(name)`; additional to the unique constraint-backed index. |
 | `idx_tags_normalized_name` | Non-unique `tags(lower(trim(name)))`; bounds legacy canonicalization lookups to matching rows. Created on every initialization when absent, including existing databases, without changing schema or backup versions. |
-| `idx_asset_tags_tag` | `asset_tags(tag_id)` |
-| `idx_asset_tags_asset` | `asset_tags(asset_id)` |
 | `idx_thumbnail_failures_last_failed_at` | `thumbnail_failures(last_failed_at DESC)` |
 | `idx_assets_file_name` | `assets(file_name COLLATE NOCASE)` |
 | `idx_assets_gallery_kind_favorite` | `assets(kind, is_favorite, modified_at DESC, id DESC)` |
@@ -85,6 +81,10 @@ In addition to primary-key and unique indexes created by SQLite, initialization 
 | `idx_assets_file_name_key` | `assets(file_name_key, modified_at DESC, id DESC)` |
 | `idx_asset_tags_tag_asset` | `asset_tags(tag_id, asset_id)` |
 | `idx_asset_scan_roots_generation` | `asset_scan_roots(root_path, last_seen_generation, asset_id)` |
+| `idx_assets_sort_key` | `assets(sort_bucket_time DESC, sort_bucket_id DESC, sort_group_null_order, media_group_order, modified_at DESC, id DESC)`; the unfiltered gallery order is a covering scan of it. |
+| `idx_assets_group_bucket` | Partial `assets(CAST(media_group_key AS TEXT), modified_at)` over grouped rows; bucket lookups for the sort-key triggers. |
+
+Every initialization drops `idx_assets_kind`, `idx_assets_modified_at`, `idx_tags_name`, `idx_asset_tags_tag`, and `idx_asset_tags_asset` if present. The first four duplicated the leading columns of a unique key or another index; `idx_assets_modified_at` served no query.
 
 ## In-place initialization, migrations, and backfills
 
@@ -96,7 +96,9 @@ There is no separate migration runner. `init_schema` is idempotent in-place init
 4. It creates the query-performance indexes.
 5. When the version read at the beginning is below `2`, it backfills `asset_scan_roots` for every stored root. Matching uses the exact root path or an escaped descendant prefix with the stored root's slash style, and inserted mappings use generation `0`; it then records version `2`.
 6. Below version `3`, one transaction rebuilds every `file_name_key` with Rust Unicode lowercase and converts legacy delimiter-bearing tags into the same normalized tokens that CSV and search can represent. It repairs mappings/counts, removes orphan tags, conditionally bumps the library revision when visible data changed, and records version `3`.
-7. It runs `PRAGMA optimize` and records the current application ID and schema version.
+7. Below version `4`, one transaction fills the sort-key columns for every row (singletons, then one aggregate per group bucket) and records version `4`. About 1.5 s for 1,000,000 assets in release. The same backfill runs if a committed `sort_keys_deferred` marker is found, which is then deleted.
+8. It drops and recreates the six `assets_sort_key_*` triggers from canonical SQL, creates the sort-key indexes, and drops the redundant indexes. The trigger names are dropped first, before any other write, so a restored database cannot run a different body stored under those names.
+9. It runs `PRAGMA optimize` and records the current application ID and schema version. Bundled SQLite 3.46 applies a temporary analysis limit (2000) inside `PRAGMA optimize`, so no `analysis_limit` is set.
 
 `performance_schema_version` gates these derived-data and mapping backfills only. It is not a complete historical schema version: presence checks, `CREATE ... IF NOT EXISTS`, and index creation handle structural compatibility independently. Bundle validation permits markerless legacy databases only when the known core tables, columns, declared types, metadata rows, integrity, foreign keys, and stored value types are valid; future or foreign markers are rejected before migration.
 
@@ -113,6 +115,8 @@ Application-mediated writes maintain these invariants:
 Root-prefix SQL escapes `%`, `_`, and `^` before using `LIKE ... ESCAPE '^'`. On Unix, discovery skips non-UTF-8 paths rather than storing a lossy identity.
 
 These are code invariants, not SQLite generated columns, checks, or triggers. Callers that issue ad hoc SQL or call low-level helpers with unnormalized values can violate them.
+
+The sort-key columns are the exception: SQLite triggers maintain them for every write, including ad hoc SQL, fixtures, restore staging, and an older binary on the same database. Only a write to the derived columns themselves can make them inconsistent; `count_inconsistent_sort_keys` compares them with a full recomputation, and backup validation uses it.
 
 ## Tag vocabulary changes
 
@@ -133,8 +137,8 @@ invalidates all queries and increments revision without changing vocabulary.
 The primary gallery path normalizes filters at the command boundary and builds an ordered ID snapshot:
 
 - All filter families combine with logical `AND`.
-- `tags_and` means the asset must contain every requested tag. SQL groups mappings per asset and requires the number of distinct matched tag IDs to equal the number of normalized requested tags.
-- `tags_not` means the asset must contain none of the requested tags; one matching excluded tag rejects it through `NOT EXISTS`.
+- `tags_and` means the asset must contain every requested tag. The session query first resolves the names to tag IDs (`tags.name` is `COLLATE NOCASE`). If fewer IDs than requested names resolve (a missing tag, or two names for one tag), the result is empty. Otherwise SQL groups mappings per asset and requires the count to equal the number of IDs.
+- `tags_not` means the asset must contain none of the requested tags. The resolved IDs become `a.id NOT IN (SELECT asset_id FROM asset_tags WHERE tag_id IN (...))`, an uncorrelated set built once. Unknown excluded names are dropped; if none resolve, the filter disappears.
 - `favorites_only` requires `is_favorite = 1`; false adds no favorite predicate.
 - A supported kind requires exact equality on `assets.kind`. The IPC boundary lowercases kind and discards unsupported values, which therefore act like no kind filter.
 - `HasNoTags { tag_count }` is historically named but means exact tag count for every non-negative value, including zero. The session query compares `assets.tag_count` directly.
@@ -144,14 +148,28 @@ The registered legacy `list_assets` path applies the same user-visible compositi
 
 ## Gallery and media-group ordering
 
-The legacy and session queries use the same bucket ordering:
+The legacy and session queries use the same bucket ordering ([ADR 0004](../adr/0004-trigger-maintained-gallery-sort-keys.md)):
 
-1. Every nonblank `media_group_key` forms a group bucket. Every ungrouped asset forms its own singleton bucket.
+1. Every nonblank `media_group_key` (non-NULL and `trim(key) <> ''`) forms a group bucket, identified by `CAST(media_group_key AS TEXT)`, so a BLOB key and a TEXT key with the same bytes share one bucket. Every other asset forms its own singleton bucket.
 2. Buckets sort by their newest member's `modified_at` descending, then their maximum asset ID descending.
 3. Within a bucket, rows with a non-null `media_group_order` come before rows whose order is null.
 4. Members then sort by `media_group_order` ascending, `modified_at` descending, and `id` descending.
 
-This keeps the members returned by a query adjacent and positions the whole group by its newest matching member. Filtering happens before bucket statistics are calculated, so only members that pass the active filters affect the visible group's position. Summary materialization fetches IDs in chunks of 500 and reconstructs the requested ID order after SQLite returns the rows.
+This keeps the members returned by a query adjacent and positions the whole group by its newest matching member. Filtering happens before bucket statistics are calculated, so only members that pass the active filters affect the visible group's position.
+
+How the session query computes it (`try_list_ordered_asset_ids_with_meta`):
+
+- **No filter:** every member matches, so the stored whole-bucket keys are the answer. The query is `SELECT id FROM assets ORDER BY` the `idx_assets_sort_key` columns, a covering index scan with no temporary B-tree.
+- **Any filter:** SQL returns matching rows with `(id, modified_at, sort_bucket_id, sort_group_null_order, media_group_order)` and no `ORDER BY`. Rust recomputes the newest matching `modified_at` and highest matching ID per `sort_bucket_id`, then sorts by the tuple above. NULL group order sorts first, and numbers compare by value as in SQLite (`-0.0` equals `0.0`).
+- The order is identical to the former single-query implementation. `golden_order` in `src-tauri/tests/backend_integration.rs` compares it with a verbatim copy of the old SQL for 19 filter combinations.
+
+Maintenance of the stored keys:
+
+- Six triggers (`SORT_KEY_TRIGGERS` in `db/schema.rs`) set a singleton's own keys on insert and update. They recompute a group bucket when a member joins, leaves, is deleted, or changes `modified_at` or `media_group_order`, and they write only rows whose keys change. Updates that do not change `id`, `modified_at`, `media_group_key`, or `media_group_order` do not fire them.
+- A bucket recompute reads the whole bucket, so N per-row joins to one group would be O(N²). Bulk writers (`set_assets_media_group_bulk`, CSV import) therefore use `DeferredSortKeys`. It inserts the `sort_keys_deferred` marker, which turns the group triggers off. It records every changed row's old and new key, and before commit deletes the marker and recomputes each touched bucket once. Grouping 5,000 assets takes about 150 ms at 1M rows.
+- Statements that insert or delete `assets`, or update ordering columns, compile the triggers into their program. Hot loops must use `prepare_cached`, as the scan upsert does.
+
+Summary materialization pads each chunk to 16, 64, or 256 placeholders (NULL never matches) so the cached statement is reused, and reconstructs the requested ID order after SQLite returns the rows.
 
 ## Library revision and query sessions
 
@@ -202,7 +220,7 @@ Bulk group transactions collect processed IDs in requested order from the rows r
 
 - Schema initialization is not wrapped in one encompassing transaction. A failure can leave some tables, columns, indexes, or backfills applied while `performance_schema_version` still has its earlier value. Re-running initialization is intended to continue, but the version rows do not prove that every structural statement committed as one unit.
 - The version-1 and version-2 backfills each perform multiple autocommit statements before updating their marker. The version read once near the start is reused for both decisions. There is no downgrade path, checksum, or migration history. `init_schema` rejects a future `user_version`; the separate performance backfill marker is not a complete schema compatibility check.
-- Derived columns are maintained only by application code. There are no triggers or constraints checking `tag_count`, `file_name_key`, `media_group_key_normalized`, boolean range, non-negative sizes/counts, valid media kinds, finite group order, or path/root normalization. A database already at performance version `3` is not given a general derived-data rebuild.
+- Apart from the trigger-maintained sort keys, derived columns are maintained only by application code. There are no triggers or constraints checking `tag_count`, `file_name_key`, `media_group_key_normalized`, boolean range, non-negative sizes/counts, valid media kinds, finite group order, or path/root normalization. A database already at performance version `4` is not given a general derived-data rebuild.
 - `thumbnail_failures.asset_id` has no foreign key. Most deletion paths clean failures explicitly and read paths purge stale rows, but referential integrity is eventual and helper-dependent.
 - Media-group ordering buckets use the case-preserving raw `media_group_key`, while group filtering uses the normalized key. Consequently, differently cased stored keys can match one group filter but form separate ordering buckets.
 - A session snapshots IDs and order, not complete asset rows. If query-visible code changes a row without a successful revision bump, later pages can materialize changed summaries against the old ID order. Media-group single-item setters deliberately invalidate for no-ops and missing IDs; favorite setters bump globally but preserve dependency markers in those cases; tag replacement is no-op-aware and rejects missing IDs.
@@ -230,7 +248,8 @@ Bulk group transactions collect processed IDs in requested order from the rows r
 
 - `src-tauri/src/db.rs` unit tests cover root-prefix safety, AND/NOT/kind and favorite filters, exact tag counts, exact case-insensitive group filtering, pagination and grouped ordering, legacy-column addition, filename/thumbnail upsert behavior, tag search and merge, group mutations, failure-version cleanup, deletion, duplicate filename lookup, and rename persistence.
 - `src-tauri/src/utils/tags.rs` tests lock down trimming, lowercasing, de-duplication, stable merge order, and CSV tag splitting.
-- `src-tauri/tests/backend_integration.rs` uses a file-backed database for asset/tag/query flow, distinct thumbnail collection, library clearing, transactional bulk tag merge, and bulk group replacement.
+- `src-tauri/tests/backend_integration.rs` uses a file-backed database for asset/tag/query flow, distinct thumbnail collection, library clearing, transactional bulk tag merge, and bulk group replacement. Its `golden_order` module pins the gallery order (recorded lists plus a legacy-SQL reference over a random fixture), and `sort_key_maintenance` checks the trigger-maintained keys after random single, bulk, scan, delete, and raw-SQL writes and after a version-3 upgrade run twice.
+- `src-tauri/tests/grid_baseline.rs` (ignored, release) measures rebuild times, scan contention, the version-4 upgrade backfill, the unfiltered query plan, and bulk grouping at 1M rows.
 - `src-tauri/tests/backend_e2e.rs` covers the database-level CSV merge/group/library-clear workflow across multiple helpers.
 - Command/service tests in `commands/scan.rs`, `services/scan_service.rs`, `services/csv_service.rs`, and `services/backup_service.rs` cover root persistence/removal, safe scan cleanup, CSV parsing and atomic publication, standalone bundle snapshots, legacy sidecar import, restore validation, and restored database/thumbnail contents.
 

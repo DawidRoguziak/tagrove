@@ -85,3 +85,7 @@ todo — 2026-11-04
 - Z etapu 05: etap 05 zostawił interfejs `hasMore`/`isLoading`/`onReachEnd` w `createVirtualGrid` bez zmian (efekt reach-end na końcu pliku) i `GalleryStatusFooter` nietknięty. Można je usuwać zgodnie z krokiem 5.
   - Wywołania w harnessie: `e2e/gallery-scale/fixture.tsx` (licznik `reachEndCalls`) i `performance.tsx` (`onReachEnd={model.handleGalleryReachEnd}`).
 - Z etapu 05: `getAssetAt(index)` jest wołane z memo każdej komórki puli wierszy (`GalleryGrid.tsx`, `assetAt`). Mutowalny cache z sygnałem `version` musi więc dalej powiadamiać te memo. Pokrywa to test „keeps loaded tiles mounted through a fast jump…” w `GalleryGrid.test.tsx`.
+
+### 2026-11-07 — agent etapu 03
+- Z etapu 03: etap 03 nie zmienia `src-tauri/src/lib.rs`, `commands/assets.rs`, `src/platform/tauri/*` ani `docs/architecture/ipc-contract.md`. `list_assets` zostaje (usunięcie odłożone, patrz etap 07), więc te pliki są wolne dla etapu 04.
+- Z etapu 03: rebuild wektora ID przy 1M trwa teraz ~32 ms bez filtrów i 36–420 ms z filtrami (release). Wektor z filtrami jest budowany w Rust (`try_list_ordered_asset_ids_with_meta`, `db/queries.rs`), z kontrolą anulowania przed sortowaniem i po nim. Pojemność wektora sesji jest dokładna (nowa alokacja), co jest ważne dla limitu pamięci sesji.

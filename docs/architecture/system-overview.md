@@ -31,7 +31,7 @@ flowchart LR
     CORE --> TOOLS
     SVC --> VIDEO --> GTK
     CMD -. "Result serialized as value or error string" .-> IPC
-    SVC -. "progress / thumbnail and video channels" .-> IPC
+    SVC -. "progress events / video channels" .-> IPC
     IPC -. "promise, event, or Channel message" .-> UI
 ```
 
@@ -40,10 +40,10 @@ The normal request path is:
 
 1. `src/app/main.tsx` calls `mountApplication`, which applies the persisted theme, loads i18next and mounts the application. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.
 2. `src/app/App.tsx` composes language, runtime and UI-layer owners. `createAppRuntime` owns library, search, selection, bulk, lightbox and settings models across view changes. Settings and lightbox are lazy-loaded and prefetched after 1.5 seconds; the gallery is eagerly imported.
-3. Feature and library models call typed functions in `src/platform/tauri`. Its subsystem modules construct command payloads, thumbnail/video channels and image/GIF URLs.
+3. Feature and library models call typed functions in `src/platform/tauri`. Its subsystem modules construct command payloads, video channels, `thumb://` thumbnail URLs and image/GIF URLs.
 4. Tauri dispatches the request to a function registered by `tauri::generate_handler!` in `src-tauri/src/lib.rs`. Command functions validate or normalize inputs, obtain `AppState`, acquire a workflow lock where required, and either perform a small operation or delegate to a service.
 5. Services coordinate scanning, query sessions, backups, progress, and thumbnail scheduling. `db.rs` owns SQL; `indexer.rs` discovers and inspects media; `thumbs.rs` performs image/video probing and rendering; filesystem mutations occur in the command or service responsible for that workflow.
-6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; on-demand thumbnail batches and native video sessions use channels.
+6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; native video sessions use channels. On-demand thumbnails are not IPC: tiles load the `thumb://` scheme.
 
 Concrete examples:
 
@@ -60,7 +60,7 @@ flowchart TD
     Boot["main / mountApplication"] --> App["App providers"]
     App --> Runtime["createAppRuntime: application lifetime"]
     App --> Layers["UiLayerProvider: focus and modal stack"]
-    Runtime --> Library["createLibrary: query, details, tags, thumbnails, vocabulary"]
+    Runtime --> Library["createLibrary: query, details, tags, vocabulary"]
     Runtime --> Models["search, selection, bulk, lightbox, settings models"]
     App --> Gallery["Gallery view: eager, remounted after Settings"]
     App --> Settings["Settings view: lazy, unmounted on Back"]
@@ -168,7 +168,7 @@ Command-level workflow locks have the following matrix:
 | --- | --- | --- |
 | Database maintenance gate | Every SQLite connection; exclusive ownership for DB bundle export/restore | Exclusive ownership blocks new operations and drains admitted operations, including connections and workers. |
 | `scan_lock: Mutex<()>` | `scan_folder`, `rescan_all_roots` | Another scan and every combined destructive operation. |
-| Shared `thumb_lock` read guard, per short section | Render all/failed thumbnails, ensure one/page/streamed thumbnails. They enter with `with_thumb_operation` (permit only) and take `thumb_read_section` around row reads, enqueueing, publication commits and file removals, never while waiting for the scheduler. Cancelling a bulk render takes no lock; it only sets the cancellation flag. | A destructive thumbnail write guard for the duration of one section; multiple thumbnail readers may coexist. The bulk-render atomic separately rejects a second bulk render. |
+| Shared `thumb_lock` read guard, per short section | Render all/failed thumbnails and `thumb://` requests. They enter with `with_thumb_operation` (permit only) and take `thumb_read_section` around row reads, enqueueing, publication commits and file removals, never while waiting for the scheduler. Cancelling a bulk render takes no lock; it only sets the cancellation flag. | A destructive thumbnail write guard for the duration of one section; multiple thumbnail readers may coexist. The bulk-render atomic separately rejects a second bulk render. |
 | Exclusive `thumb_lock` write guard | `clear_all_thumbnails` | All thumbnail render/ensure readers and combined destructive operations. |
 | `scan_lock` then exclusive `thumb_lock` | Remove scan root, delete an asset file, apply a duplicate-resolution batch, clear library data. The `rename_asset_file` handler also takes both locks but is not registered in `generate_handler!`, so the frontend cannot call it. | Scans, thumbnail work, and every other combined operation. |
 | Maintenance gate, then `scan_lock`, then exclusive `thumb_lock` | Export a DB bundle, import a DB bundle | All SQLite users, scans, thumbnail work, and every other combined operation. |

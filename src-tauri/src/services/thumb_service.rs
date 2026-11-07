@@ -703,8 +703,8 @@ pub fn finish_thumbnail_request(
 }
 
 /// Publishes finished renders together: one transaction per captured clear
-/// generation, under one read section, like the former page stream. With
-/// `synchronous=FULL` a commit per thumbnail would cost one fsync each.
+/// generation, under one read section, like the former page stream. Fewer
+/// `IMMEDIATE` transactions mean fewer write-lock acquisitions under scans.
 /// Returns the served bytes per input, in order; `None` when stale or failed.
 pub fn finish_thumbnail_requests(
     pending: Vec<PendingThumbnail>,

@@ -18,22 +18,22 @@ without dispatching its action. Closing only the settings view does not dispose 
 Thumbnail cancellation has its own synchronous lock. Confirmed root removal, restore and
 mixed duplicate batches consume synchronous pending values before dispatch.
 
-The duplicate resolver uses `ui/dom/createVirtualList.ts` with measured row heights, the library's per-asset thumbnail subscriptions,
+The duplicate resolver uses `ui/dom/createVirtualList.ts` with measured row heights, `thumb://` previews through `ThumbnailImage`,
 and one form model. Visible rows carry their group from the same scan snapshot, so an old
 virtual index cannot read a removed group during a rescan. Confirmation dialogs retain their
 path, counts and disabled state through exit with `createModalSnapshot`.
 
 Rows keep stable identities within a scan snapshot while virtual positions update
-reactively, preserving visible editors, focus and thumbnail subscriptions during scrolling.
+reactively, preserving visible editors, focus and preview images during scrolling.
 Measurement registration runs in `onSettled`, after attachment and `data-index`
 initialization; rows removed before that callback are skipped. A row that grows above the
 viewport shifts `scrollTop` by its growth, so visible content stays in place. The duplicate
-dialog component tests exercise measured spacing and focus/subscription retention with
+dialog component tests exercise measured spacing and focus retention with
 synthetic DOM dimensions; `createVirtualList.test.ts` covers the list primitive itself.
 
 The operation ordering below uses `platform/tauri`
 wrappers and `library.tags.runWithMutationBarrier` for CSV import, restore and clear.
-Restore resets identity, query and thumbnails, retaining vocabulary until refresh; clear
+Restore resets identity and query, retaining vocabulary until refresh; clear
 also empties vocabulary immediately. The [IPC](../architecture/ipc-contract.md) and [profile](../architecture/system-overview.md#profiles-identifiers-and-data-isolation) contracts remain backend-owned.
 
 ## Settings layout
@@ -72,7 +72,7 @@ The panel also mounts the remove-root, clear-library, duplicate resolver, duplic
 | `createDuplicateSettings` | Resolver visibility, pending delete confirmation, duplicate snapshot/revision, and one backend batch application. |
 | `createDangerZoneSettings` | Clear-library confirmation and action. |
 
-Duplicate previews use the library's per-asset thumbnail store and queue. `createAppRuntime` supplies lifecycle callbacks from `createLibrary`; settings does not maintain a second asset cache.
+Duplicate previews load `thumb://` URLs from each duplicate's `thumb_version`, like gallery tiles; settings keeps no thumbnail state and no second asset cache.
 
 ## Exclusive operation runner
 
@@ -178,7 +178,7 @@ The danger-zone button opens a named confirmation dialog. No clear command runs 
 
 Start opens the resolver before beginning an exclusive duplicate scan. The scan does not set global library loading, but it does lock all settings operations and drives duplicate-section progress. Its result replaces the stored groups and asset count. Rescan performs the same operation without changing dialog visibility.
 
-The resolver virtualizes duplicate groups and queues thumbnails only for asset IDs in its current virtual range. Missing previews use a transparent placeholder; a preview load error also falls back to that placeholder. When the dialog is open and either `open` or `groups` changes, its local form is reset:
+The resolver virtualizes duplicate groups, so only rows in its current virtual range mount and request `thumb://` previews. Missing previews use a transparent placeholder; a preview load error also falls back to that placeholder. When the dialog is open and either `open` or `groups` changes, its local form is reset:
 
 - rename inputs are seeded from each path's basename;
 - staged changes are cleared;
@@ -220,7 +220,7 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Export database bundle | Publish copied-file/thumbnail summary only. No refresh/reset. |
 | Import confirmed database bundle | Reset metadata identity and query; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
 | Clear library | Reset metadata identity; replace assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
-| Find/rescan duplicates | Replace duplicate groups and count; publish scan summary. No library/root refresh or thumbnail reset, although visible duplicate IDs may be queued for previews. |
+| Find/rescan duplicates | Replace duplicate groups and count; publish scan summary. No library/root refresh or thumbnail reset; mounted rows request their previews through `thumb://`. |
 | Apply duplicate changes | After the backend batch returns, refresh assets/query pages and known tags; scan duplicates; replace groups/count/revision; publish committed, rolled-back, or recovery-required summary. No root refresh or explicit thumbnail reset. |
 
 Picker or confirmation cancellation, an empty duplicate batch, and a no-op thumbnail stop perform no lifecycle reset. The runner has no generic compensating refresh. CSV import, database restore, and clear-library actions explicitly invalidate their affected caches inside the metadata barrier on both success and rejection, then attempt relevant refreshes before showing an error. CSV database work is transactional, but an IPC rejection alone does not establish what the frontend observed. Other follow-ups remain sequential; a failed refresh prevents later follow-ups and the intended success summary.

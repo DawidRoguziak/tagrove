@@ -61,7 +61,7 @@ Solid library model tests live beside `src/library` owners and run with `bun run
 They use Solid Testing Library's owned `renderHook` and `src/test/settle.ts` for explicit
 batch boundaries. Deferred promises control races; queue tests use fake timers. The model
 integration suites cover mutation admission/draining, canonical publication, query and
-identity invalidation, cache bounds and per-asset subscription cleanup. They mock platform
+identity invalidation and cache bounds. They mock platform
 IPC and do not establish native-bridge or desktop feature parity.
 
 The opt-in `e2e/specs/search-recovery.e2e.js` suite runs with
@@ -300,7 +300,7 @@ The fixtures include long filenames and tags.
 It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the stacked bulk layout at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
 the private X11 display into a fresh timestamped `artifacts/ui-redesign/` subdirectory per run.
 The normal workflow suite covers narrow lightbox and native media behavior; the separate
-`MEDIATAGGER_GALLERY_PERF=1` suite exercises 2,048 images and cache eviction. It also checks selection summary IPC and full-selection metadata writes after eviction and filter changes.
+`MEDIATAGGER_GALLERY_PERF=1` suite exercises 3,584 images (28 pages, more than the 24-page frontend cache) and asserts that a revisited page is fetched again after eviction. It also checks selection summary IPC and full-selection metadata writes after eviction and filter changes.
 
 Run the opt-in spec through the existing harness on a private X11 display with temporary
 XDG data/config/cache directories. Preserve all profile and cleanup guards. Example after
@@ -314,7 +314,9 @@ MEDIATAGGER_UI_REDESIGN=1 bun run test:e2e:tauri --spec e2e/specs/ui.redesign.e2
 
 `e2e/specs/animations.e2e.js` is opt-in with `MEDIATAGGER_ANIMATIONS=1`. It seeds
 192 temporary PNGs and long labels, then samples scroll dimensions and positions on
-every rendering frame before, during and after interaction. Both themes run at 699,
+every rendering frame before, during and after interaction. The segmented-selection cases
+click through `e2e/native-input.py`, so `XDG_DATA_HOME` must be a fresh `/tmp/mediatagger-*`
+directory. Both themes run at 699,
 700, 767, 768, 999 and 1000 CSS pixels. Hover/press, bottom-of-gallery selection,
 suggestions, standard dialogs, bulk inspector, inline information/confirmation and
 repeated lightbox drawer toggles are covered. Modal samples also record opening and
@@ -395,7 +397,7 @@ source replacement, unchanged-source rerenders, and the default without fading.
 
 ### Gallery selection gestures
 
-`e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages and eviction; normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.
+`e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages (about 17 pages, below the 24-page cache, so it does not force eviction; range selection resolves IDs in the backend); normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.
 
 Run through the existing isolated harness on a private X11 display with temporary XDG directories:
 
@@ -528,7 +530,7 @@ Run the complete opt-in suite in its declared order, using a private Xvfb/D-Bus 
 MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js
 ```
 
-Do not use a single-case filter to verify cache provenance. The timing case must precede the stable-metadata traversal, GIF check and selection scenario. The fixture contains 2,048 PNGs, 12 GIFs and two videos. Library and thumbnail clearing precede indexing; startup/filtering then prepares some previews. Timing uses only images, at indices 128 through 1920 in steps of 128 and then 2047. The same route and filter apply to the revisit. The initial mounted area and untimed returns to 128/0 are excluded from first-use statistics.
+Do not use a single-case filter to verify cache provenance. The timing case must precede the stable-metadata traversal, GIF check and selection scenario. The fixture contains 3,584 PNGs, 12 GIFs and two videos. Library and thumbnail clearing precede indexing; startup/filtering then prepares some previews. Timing uses only images, at indices 128 through 1920 in steps of 128 and then the last index (3583). The same route and filter apply to the revisit. The initial mounted area and untimed returns to 128/0 are excluded from first-use statistics.
 
 `artifacts/gallery-performance/timings.json` records preparation, initial visible/mounted IDs, initial final-JPEG filenames, route/filter, per-scroll file inventories, visible IDs/filenames, raw elapsed times and animation-frame intervals. It classifies samples by whether none, some or all visible JPEGs existed before the scroll. Only the first category enters the first-use summary, and at least one such sample is required. Every revisit sample must reuse existing files. Raw arrays retain order; percentile calculation sorts a copy. File inventories are outside the measured intervals.
 
@@ -652,7 +654,7 @@ This test requires `/usr/bin/python3`, `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`.
 
 ## Backend runtime regressions
 
-`backend_runtime.rs` exercises precise fingerprint/version coupling, version-2 failure migration, dedicated FULL-synchronous connections, and a real 514-file scan across batching and overlapping roots. Unit tests cover maintenance admission/draining, pool callback cleanup, query cache budget/epoch, stale thumbnail stream publication and frontend reload, directory-sync failures after successful moves, disk-staged CSV row order/clears, and bounded subprocess diagnostics/timeouts.
+`backend_runtime.rs` exercises precise fingerprint/version coupling, version-2 failure migration, dedicated FULL-synchronous connections, and a real 514-file scan across batching and overlapping roots. Unit tests cover maintenance admission/draining, pool callback cleanup, query cache budget/epoch, stale `thumb://` renders that are never served and re-render on retry, directory-sync failures after successful moves, disk-staged CSV row order/clears, and bounded subprocess diagnostics/timeouts.
 
 Run the opt-in metadata measurements alone so SQLite's process-wide allocator counters are attributable:
 
@@ -827,7 +829,7 @@ absence of React, its adapters and the removed source trees.
 `src/test/renderSolid.tsx` updates props under one component owner; `settle.ts` supplies
 explicit batch boundaries. Virtual grid tests retain 10,000/26,000/1,000,000-slot limits,
 row-pool identity, null-ref startup, resize anchoring and cleanup. Query/cache tests
-exercise page eviction and per-asset thumbnail updates. Model tests use deferred IPC for
+exercise page eviction and in-place page merges. Model tests use deferred IPC for
 canonical publication, contention, partial responses and disposal.
 
 Run opt-in suites under the private display and disposable XDG profile described above:
@@ -839,8 +841,8 @@ MEDIATAGGER_TAG_EDITOR=1 MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri 
 MEDIATAGGER_SETTINGS_MAINTENANCE=1 bun run test:e2e:tauri --spec e2e/specs/settings-maintenance.e2e.js
 ```
 
-Gallery browsing indexes 2,048 PNGs plus GIF/video fixtures, crosses 16 pages, returns to
-evicted ranges and records geometry at 1440/600/320px in English/Polish and both themes.
+Gallery browsing indexes 2,048 PNGs plus GIF/video fixtures, crosses 16 pages (within the
+24-page cache, so eviction is covered by `gallery.performance`), keeps the DOM bounded, and records geometry at 1440/600/320px in English/Polish and both themes.
 Tag-editor tests verify persisted writes, vocabulary IPC counts and focus. Maintenance
 holds delivery of a real scan response across settings remount, and verifies mixed duplicate
 batches against files and reloaded rows. Native chooser interaction is mocked in frontend
@@ -931,8 +933,8 @@ This establishes native layout and input behavior with synthetic data. Range cal
 represent page demand; there is no million-row SQLite query, thumbnail rendering or
 performance comparison. The integrated `GalleryGrid.test.tsx` regression separately
 runs the real sparse page cache with a mocked transport, demands offset 999936 and
-checks the final tile, bounded cache and footer total. Footer tests exercise both
-thumbnail-generation states; there is no sequential `hasMore`/reach-end loader, so
+checks the final tile, bounded cache and footer total. Footer tests check the
+end state and its language change; there is no sequential `hasMore`/reach-end loader, so
 sparse viewport demand is the only page loader. For live media/IPC and timing provenance
 use the separate gallery browsing and performance suites above.
 
@@ -962,13 +964,12 @@ offsets and stopped painting the marker at both scales; `MAX_GRID_HEIGHT` derive
 
 `createVirtualGrid.test.tsx` covers the half-viewport threshold, cumulative logical
 distance across reversals, slow motion, the 150 ms idle deadline, unchanged final
-ranges, geometry anchors, disposal and the near-end loading guard. The integrated
-`GalleryGrid.test.tsx` checks that a fast jump keeps loaded tiles, images and
-subscriptions while page and thumbnail demand stop, that paused placeholders do not
+ranges, geometry anchors and disposal. The integrated
+`GalleryGrid.test.tsx` checks that a fast jump keeps loaded tiles and images
+while page and thumbnail demand stop, that paused placeholders do not
 pulse, and that uncached slots skip passing pages and resume the final range.
 Library tests retain late pages and independent selection/lightbox reads through
-pause and filter changes. Thumbnail queue tests preserve dispatched results,
-cached paths and additive previews when gallery demand is cleared.
+pause and filter changes.
 
 Run the gallery and library suite, type checks and native scale fixture with the
 commands in [million-result gallery layout](#million-result-gallery-layout).

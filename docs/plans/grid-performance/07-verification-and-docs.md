@@ -59,16 +59,16 @@ Wszystko na **syntetycznych** danych w katalogach tymczasowych. Nigdy nie używa
 
 | Metryka | Przed | Po 01–06 | Po 08–09 |
 | --- | --- | --- | --- |
-| Rebuild wektora 100k / 1M (ms) | 30 / 377–383 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 56 / 657–665 | | |
-| Strona galerii (ms) | 0,09 / 0,14 w Rust (128 elementów); IPC w E2E (debug, 20k): p50 3, max 6 | | |
-| Favorite bez skanu / podczas skanu (ms) | 0,02 / p50 4–53, p95 130–429, max 329–529 (Rust, release, trzy biegi); E2E (debug) od kliknięcia do UI: p50 29, p95 196 | | |
-| Nieudane operacje like/tag w scenariuszu (n/20) | like 9/20 (w dwóch wcześniejszych biegach 12/20 i 15/20), zawsze bez wywołania IPC; tag 0/20 | | |
-| Rebuildy podczas skanu 20k | 43–49 bumpów rewizji na skan. Przy przewijaniu (strona co 100 ms) prawie każda strona jest `stale`: 4–5 rebuildów na skan trwający 0,8–1 s. E2E z otwartym podglądem, bez przewijania: 1 na 66 skanów | | |
-| Stop flingu → komplet kafli (ms) | wygasający fling w dół: 16 (jedna klatka); fling w górę: 181; skok paskiem: 192–193 | | |
-| Najdłuższa klatka po flingu (ms) | 17–25 (odstępy `requestAnimationFrame`; `longtask` niedostępny w WebKitGTK 2.54) | | |
-| Węzły DOM w gridzie | w spoczynku 379 (63 kafle, 35 widocznych); po flingu 547–589 (91–98 kafli) | | |
-| Viewport → miniatura, pusty cache (ms) | kafel p50 354, p95 444, max 485; komplet widocznych p50 449; kafle z danymi po 180 | | |
-| Miniatura JPEG 24 MP (ms) | 99 (release, `thumbs::create_image_thumb`) | | |
+| Rebuild wektora 100k / 1M (ms) | 30 / 377–383 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 56 / 657–665 | 3,8 / 32 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 30 / 415–425 | |
+| Strona galerii (ms) | 0,09 / 0,14 w Rust (128 elementów); IPC w E2E (debug, 20k): p50 3, max 6 | 0,10–0,11 / 0,13 w Rust; IPC w E2E: p50 6–7, max 7–8. Binarny zakres ID 1M: 0,44 (bez „Przed”) | |
+| Favorite bez skanu / podczas skanu (ms) | 0,02 / p50 4–53, p95 130–429, max 329–529 (Rust, release, trzy biegi); E2E (debug) od kliknięcia do UI: p50 29, p95 196 | 0,02 / p50 1,6–3,2, p95 10–24, max 11–88 (Rust, release, trzy biegi); E2E od kliknięcia do UI: p50 13–20, p95 170–171, max 182–192 | |
+| Nieudane operacje like/tag w scenariuszu (n/20) | like 9/20 (w dwóch wcześniejszych biegach 12/20 i 15/20), zawsze bez wywołania IPC; tag 0/20 | like 0/20, tag 0/20 (dwa biegi E2E); Rust 0 z 292 zapisów pod skanem | |
+| Rebuildy podczas skanu 20k | 43–49 bumpów rewizji na skan. Przy przewijaniu (strona co 100 ms) prawie każda strona jest `stale`: 4–5 rebuildów na skan trwający 0,8–1 s. E2E z otwartym podglądem, bez przewijania: 1 na 66 skanów | Rust: 1 rebuild na skan (30/30 rund); bumpy skanu ≤ 1/s. E2E: 2 bumpy skanu na skan 20k (`[perf] name=scan`), 1 `start_asset_query` i 1 strona `stale` na 19–20 skanów | |
+| Stop flingu → komplet kafli (ms) | wygasający fling w dół: 16 (jedna klatka); fling w górę: 181; skok paskiem: 192–193 | 16 we wszystkich flingach (także w górę); skok paskiem: 183–194 | |
+| Najdłuższa klatka po flingu (ms) | 17–25 (odstępy `requestAnimationFrame`; `longtask` niedostępny w WebKitGTK 2.54) | 17 po flingach, 24–25 po skoku paskiem | |
+| Węzły DOM w gridzie | w spoczynku 379 (63 kafle, 35 widocznych); po flingu 547–589 (91–98 kafli) | stałe 407 węzłów i 98 kafli, w spoczynku i po każdym flingu | |
+| Viewport → miniatura, pusty cache (ms) | kafel p50 354, p95 444, max 485; komplet widocznych p50 449; kafle z danymi po 180 | kafel p50 287–304, p95 387–396, max 398–430; komplet widocznych p50 405–410; kafle z danymi po 178–184 | |
+| Miniatura JPEG 24 MP (ms) | 99 (release, `thumbs::create_image_thumb`) | 85 (release, trzy biegi; etap 06 zmierzył 78 w innej sesji) | |
 
 ### Warunki pomiaru „Przed” (2026-11-06)
 
@@ -86,9 +86,35 @@ Wszystko na **syntetycznych** danych w katalogach tymczasowych. Nigdy nie używa
 - Ciepły grid: wygasający fling kończy się kompletem w jednej klatce. Skok i szybki fling w górę kosztują ~180–190 ms, co odpowiada 150 ms progowi pauzy wirtualizera (`createVirtualGrid.ts`) plus ~30–40 ms. Po flingu w gridzie jest 91–98 kafli i 547–589 węzłów (etap 05).
 - Zimne miniatury: ~350–450 ms na kafel w buildzie debug. Pełne `render_all_thumbnails` dla 20 243 plików 320×240 trwa 82 s w debug (etap 06).
 
+### Warunki pomiaru „Po 01–06” (2026-11-07)
+
+- Ten sam host, wersje WebKitGTK, Rusta i ffmpeg co w „Przed”. Kod z commita `b06a7a0` (etap 06), bez zmian w kodzie aplikacji poza komentarzem w `thumb_service.rs`.
+- Backend: ta sama komenda co w „Przed”, trzy biegi, `TMPDIR` na dysku.
+- E2E: ten sam spec i flagi, dwa biegi na prywatnym Xvfb 1440×1100. XDG i `TMPDIR` są tymczasowe, na dysku (`/var/tmp`), tak jak w „Przed”.
+- Wartości pośrednie z etapów 01–06 są w ich notatkach. Tu jest tylko powtórka na jednym HEAD.
+
+### Wnioski po falach A–C
+
+- Like i tag nie zawodzą: 0/20 w obu biegach E2E i 0 z 292 zapisów pod skanem w Rust.
+- Zapisy pod skanem: p95 favorite spadło z 130–429 do 10–24 ms (release). W E2E p95 od kliknięcia do UI wynosi ~170 ms. Najwolniejsze próbki wypadają w fazie `remove_scan_root`, która nie ustępuje zapisom użytkownika (znane z etapu 03).
+- Rebuild 1M bez filtrów: 377–383 → 32 ms. Z wykluczeniem tagu: 657–665 → 415–425 ms, i to zostaje najdroższy filtr. Skan robi ~2 bumpy rewizji zamiast ~45, więc przewijanie pod skanem prawie nie płaci rebuildów.
+- Grid: każdy fling kończy się kompletem w jednej klatce (także w górę, było 181 ms). DOM jest stały: 407 węzłów i 98 kafli. Skok paskiem dalej kosztuje ~185–195 ms, bo strona spoza cache czeka na koniec pauzy (150 ms).
+- Zimne miniatury przez `thumb://`: per kafel p50 287–304 ms (było 354), komplet widocznych 405–410 ms (było 449). JPEG 24 MP 85 ms (było 99).
+
+## Otwarte tematy (nie robione w etapie 07)
+
+1. **Scope asset protocol `"**"`** (`src-tauri/tauri.conf.json`). Etap 06 usunął `$APPDATA/thumbs/**`, ale oryginały dalej idą przez scope `**`. Zawężenie do rootów skanu to osobny temat bezpieczeństwa; ADR, gdy zapadnie decyzja.
+2. **HiDPI, drugi rozmiar miniatur.** Pominięte decyzją użytkownika w etapie 06. Miniatury mają 390 px, kafle szersze przy DPR > 1 są skalowane w górę (`docs/subsystems/thumbnails.md`).
+3. **Usunięcie `list_assets`.** Odłożone decyzją użytkownika. Używa go 17 speców E2E (lista i propozycja helpera w notatce etapu 03 w tym pliku); `gallery.performance` też woła go w `before`.
+4. **Bramka wysokości gridu po aktualizacji WebKitGTK.** `MAX_GRID_HEIGHT` 16M pochodzi z bramki 2^24 px w WebKitGTK 2.54.2. Po aktualizacji uruchom `GALLERY_HEIGHT_PROBE=1 sh e2e/gallery-scale/run.sh` (`docs/development/testing.md`, „Scroll height probe”).
+5. **Stały spec 100k** dla Shift-click i refreshu głęboko w liście. Pomiary etapu 04 pochodzą z tymczasowego speca spoza repo.
+6. **Audyty zależności.** `bun run quality` kończy się na `audit:js`: zod 4.4.3, GHSA-mrhx-c7xc-m3w5 (high, poprawka w 4.6.6). `audit:rust` zgłasza `zip` 2.4.2 (RUSTSEC-2026-0367/0368/0369/0429) i `zstd`/`zstd-safe`/`zstd-sys` (RUSTSEC-2026-0391/0398/0403/0410). To nowe advisory, niezwiązane z etapami 01–06; na czystym HEAD wynik jest taki sam. Advisory `zip` dotyczą `extract`, którego aplikacja nie woła (`backup_service.rs` czyta wpisy przez `by_index` z własną walidacją). Aktualizacja wymaga zmiany lockfile'ów, więc tylko za zgodą użytkownika.
+7. **`alt` kafla wideo to pełna ścieżka.** `GalleryTile` używa `preview_path ?? file_name`, a dla wideo `preview_path` jest ścieżką pliku. Czytniki ekranu czytają więc całą ścieżkę. Zachowanie istnieje od migracji na Solid, nie jest regresją.
+8. **Pojedyncza wolna próbka w `gallery.performance`.** Rewizyta z gotowymi miniaturami trwa ~90 ms na cel, ale jedna próbka miała 1,6 s (indeks 384). W logu nie ma 503. Do obserwacji przy kolejnych biegach.
+
 ## Status
 
-in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czekają)
+in progress — 2026-11-07 (krok 0 i fala D zrobione; weryfikacja po fali E czeka)
 
 ## Notatki agentów
 
@@ -168,3 +194,59 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
 - Z etapu 06: kolumna „Po 01–06”, `grid-baseline` cold (debug): per kafel p50 286 / p95 389 ms (przed 354 / 444), komplet widocznych p50 403 ms (przed 449); warm bez zmian (settle p50 16 ms).
 - Z etapu 06: miniatura JPEG 24 MP 78 ms (przed 98), wideo 1080p GOP 250 48 ms (przed 202).
 - Z etapu 06: harness `e2e/gallery-scale` rejestruje syntetyczny schemat `thumb` w `webkit.py`, a liczba żądań miniatur to teraz zmiany `src` na `thumb://`; liczby z poprzednich biegów („ensure_thumbnails batches”) nie są porównywalne.
+
+### 2026-11-07 — orkiestrator (fala D)
+- Zrobione:
+  - commit etapu 06 (`b06a7a0`) przed falą D, za zgodą użytkownika;
+  - kolumna „Po 01–06”, warunki pomiaru i wnioski; osobna sekcja „Otwarte tematy”;
+  - opt-in specy i harness `gallery-scale` (wyniki niżej);
+  - zgodność `.claude/rules/`, `CLAUDE.md` i `docs/` ze źródłem.
+- Naprawione regresje (wszystkie w testach, nie w aplikacji):
+  - `gallery.performance.e2e.js`: `visibleThumbnailsReady` czekał na `src` kończący się `.jpg`, więc po `thumb://` (etap 06) każdy przypadek padał po 20 s. Warunek: `src` zaczyna się od `thumb://`. Asercja GIF sprawdza URL `thumb://`.
+  - `gallery.performance.e2e.js`: przy cache 24 stron (etap 04) fixture 2048 plików (16 stron) nie wymuszał ewikcji. Teraz 3584 pliki (28 stron), pętle liczone z `IMAGE_COUNT`, nowa asercja: strona kotwicy jest pobrana ponownie po przejściu przez wszystkie strony.
+  - `e2e/gallery-scale/performance.tsx`: licznik żądań `thumb://` widział tylko zmiany `src` na zamontowanych `<img>`, a kafle tworzone po zatrzymaniu (z gotowym `src`) pomijał, przez co dawał 0. Teraz liczy też wstawione obrazy: 24 żądania na przeciągnięcie, czyli dokładnie widoczne kafle.
+- Odkryte:
+  - Dokumentacja po etapie 06 dalej opisywała usuniętą kolejkę i store miniatur, „subskrypcje” kafli, kanały miniatur i licznik w stopce. Poprawione:
+    - `CLAUDE.md` (Layout, indeks);
+    - `docs/architecture/system-overview.md` (diagramy, przepływ IPC, tabela blokad);
+    - `docs/frontend/architecture-and-ui-conventions.md`;
+    - `docs/subsystems/{library-query-and-gallery,thumbnails,database,settings-operations,lightbox}.md`;
+    - `docs/development/testing.md`.
+  - `docs/subsystems/thumbnails.md` i komentarz `finish_thumbnail_requests` (`src-tauri/src/services/thumb_service.rs`) twierdziły, że grupowanie commitów oszczędza fsync przy `synchronous=FULL`. Publikator używa zwykłego połączenia WAL z `synchronous=NORMAL` (`db/connections.rs`), więc commit nie robi fsync; grupowanie zmniejsza tylko liczbę blokad zapisu `IMMEDIATE`. Zmiana dotyczy tylko komentarza.
+  - `.claude/rules/database.md` i `backend-core.md` były poprawne, ale niepełne. Dopisane: pula 8 z rezerwą 2 na `user_write_connection()` (poll co 1 ms), `yield_to_user_writes()`, `with_thumb_operation` i `thumb_read_section`. Reguła `thumbnails.md` jest zgodna z `app/locks.rs`.
+  - `lightbox.md` wskazywał nieistniejące `selectAsset` i `tryCloseLightbox`. Teraz: `select` w `createLightbox.ts` i `tryClose` kontrolek obrazu.
+  - Segmentowane przypadki `animations` klikają przez `e2e/native-input.py`, który wymaga `XDG_DATA_HOME` pod `/tmp/mediatagger-*`. Pierwszy bieg z XDG pod `/var/tmp` dał 12 porażek środowiskowych. Dopisane w `testing.md`.
+  - `gallery-selection` (2051 plików) i `gallery-browsing` (2048) nie wymuszają już ewikcji przy cache 24 stron; opis w `testing.md` poprawiony. Ewikcję pokrywa `gallery.performance`.
+- `/verify-mediatagger` (7 plików syntetycznych):
+  - kafle ładują `thumb://localhost/<id>?v=<16 hex>`, wszystkie 7 miniatur widoczne (zrzut), stopka pokazuje tylko koniec wyników;
+  - tag i favorite w lightboxie przetrwały przeładowanie;
+  - bulk tag na dwóch assetach: wyszukiwanie zwraca dokładnie te dwa;
+  - „Rescan all” i „Render thumbnails” dały 7/7, 0 failed;
+  - konsola: tylko dwa komunikaty `ResizeObserver loop`.
+- Niezweryfikowane przez `/verify-mediatagger`:
+  - delete: przycisk w pływającym pasku jest ukryty bez ruchu wskaźnika, a kontroler nie ma komendy ruchu;
+  - fling, PageDown, Ctrl+wheel, prostokąt i Shift-click przez duży zakres oraz like/tag podczas długiego skanu: kontroler ma tylko 7 plików. Pokrywają to `grid-baseline`, `gallery-selection`, `gallery.performance` i `gallery-scale`;
+  - delete i rename w trakcie generowania miniatur: przy 7 plikach render trwa milisekundy. Pokrywają to tylko testy jednostkowe w `thumb_service.rs`: `stale_render_is_never_served_and_a_retry_renders_again`, `waiting_exclusive_thumb_lock_does_not_stall_new_thumbnail_work` i `publish_updates_drops_everything_after_generation_reset`. Na desktopie pozostaje to niezweryfikowane.
+- Zostało: otwarte tematy 1–8 wyżej; weryfikacja po fali E. Commit fali D czeka na akceptację użytkownika.
+- Testy:
+  - `grid_baseline` (release, `--ignored`) → pass 4/4 w trzech biegach;
+  - `grid-baseline.e2e.js` → pass 3/3 w dwóch biegach;
+  - E2E pass:
+    - `app.smoke` 4/4;
+    - `gallery.performance` 4/4 (po poprawkach; pierwszy bieg 3 porażki z powodu `.jpg`);
+    - `gallery-selection` 7/7;
+    - `ui.redesign` 12/12;
+    - `animations` 27/27 (drugi bieg, XDG pod `/tmp/mediatagger-*`);
+    - `gallery-browsing` 2/2;
+    - `thumbnail-fade` 2/2;
+    - `group-order` 1/1;
+    - `review-fixes` 3/3;
+    - `lightbox-recovery` 2/2;
+    - `selection-recovery` 2/2.
+  - Ostrzeżenia „element click intercepted” w `group-order` (2) i `review-fixes` (1) są bez zmian względem etapu 05; WebDriver ponawia klik.
+  - `sh e2e/gallery-scale/run.sh` → ok (12 scenariuszy, milion wyników, 16M px).
+  - `GALLERY_PERFORMANCE=1 sh e2e/gallery-scale/run.sh` → ok: klatki p95 17 ms, 0 > 25 ms, 2 strony i 24 żądania `thumb://` na przeciągnięcie, 0 w pauzie, widoczne miniatury 166–201 ms po zatrzymaniu.
+  - `bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json` → pass.
+  - `bun run test` → 817/817; `bun run test:backend` → 261 pass, 6 ignored.
+  - `bun run quality` → locale, typecheck, lint, format, rustfmt i clippy pass. `audit:js` i `audit:rust` fail na nowych advisory (temat 6), tak samo na czystym HEAD.
+  - `bun run privacy:check`: test etapu 06 w `thumb_protocol.rs` miał syntetyczną ścieżkę w katalogu domowym. Skaner nie widział jej, póki plik był nieśledzony, a po pierwszym commicie etapu 06 zgłosił ją jako prywatną ścieżkę. Ścieżkę zmieniłem na `/srv/media/a.jpg` i poprawiłem commit etapu 06 (amend, przed wypchnięciem). `cargo test thumb_protocol` → 5/5; `privacy:check` → pass.

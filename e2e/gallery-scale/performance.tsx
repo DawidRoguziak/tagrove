@@ -29,15 +29,25 @@ mockIPC(async (command, payload) => {
   }
   throw new Error(`Unexpected synthetic command: ${command}`);
 });
-// Every `src` set to a thumb:// URL is one thumbnail request.
+// Every `src` set to a thumb:// URL is one thumbnail request: a changed `src` on a
+// mounted image, or an image inserted with its `src` already set (new tiles).
+const recordThumbnail = (img: HTMLImageElement) => {
+  if (!img.src.startsWith("thumb://")) return;
+  const id = Number(/^thumb:\/\/localhost\/(\d+)/.exec(img.src)?.[1]);
+  requests.push({ command: img.src.includes("&c=1") ? "thumb-cached-only" : "thumb", ids: [id], time: performance.now() });
+};
 new MutationObserver(records => {
   for (const record of records) {
-    const target = record.target;
-    if (!(target instanceof HTMLImageElement) || !target.src.startsWith("thumb://")) continue;
-    const id = Number(/^thumb:\/\/localhost\/(\d+)/.exec(target.src)?.[1]);
-    requests.push({ command: target.src.includes("&c=1") ? "thumb-cached-only" : "thumb", ids: [id], time: performance.now() });
+    if (record.type === "attributes") {
+      if (record.target instanceof HTMLImageElement) recordThumbnail(record.target);
+      continue;
+    }
+    for (const node of record.addedNodes) {
+      if (node instanceof HTMLImageElement) recordThumbnail(node);
+      else if (node instanceof HTMLElement) node.querySelectorAll("img").forEach(recordThumbnail);
+    }
   }
-}).observe(document, { subtree: true, attributes: true, attributeFilter: ["src"] });
+}).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"] });
 await i18nReady;
 let library: ReturnType<typeof createLibrary> | undefined;
 let scroller: HTMLElement | undefined;

@@ -84,7 +84,7 @@ In addition to primary-key and unique indexes created by SQLite, initialization 
 | `idx_assets_sort_key` | `assets(sort_bucket_time DESC, sort_bucket_id DESC, sort_group_null_order, media_group_order, modified_at DESC, id DESC)`; the unfiltered gallery order is a covering scan of it. |
 | `idx_assets_group_bucket` | Partial `assets(CAST(media_group_key AS TEXT), modified_at)` over grouped rows; bucket lookups for the sort-key triggers. |
 
-Every initialization drops `idx_assets_kind`, `idx_assets_modified_at`, `idx_tags_name`, `idx_asset_tags_tag`, and `idx_asset_tags_asset` if present. The first four duplicated the leading columns of a unique key or another index; `idx_assets_modified_at` served no query.
+Every initialization drops `idx_assets_kind`, `idx_assets_modified_at`, `idx_tags_name`, `idx_asset_tags_tag`, and `idx_asset_tags_asset` if present. `idx_assets_modified_at` served no query; the other four duplicated the leading columns of a unique key or another index.
 
 ## In-place initialization, migrations, and backfills
 
@@ -228,7 +228,7 @@ Bulk group transactions collect processed IDs in requested order from the rows r
 - The legacy delete-by-prefix helper combines cleanup statements without a surrounding transaction. Clear-library and journaled single/batch asset mutations use their own transactions.
 - Database transactions cannot make filesystem workflows atomic. Safe file mutations stage on each source filesystem and use a durable journal plus rollback/recovery outcomes; final staged-delete and thumbnail cleanup remain post-commit work. Bundle restore separately uses its own staging and rollback attempts.
 - The pool bounds checkout at five seconds per acquisition attempt and reports a busy failure when exhausted; user writes have two reserved checkouts. Maintenance closes admission, lets admitted operations and their children finish, then closes idle connections and clears sessions. A stalled admitted operation can stall maintenance without a timeout.
-- User-write priority is cooperative. It covers the scan and bulk thumbnail publication. Other writers (thumbnail stream results, CSV import, restore, file mutations) do not yield, and a background writer stops yielding after 250 ms per transaction.
+- User-write priority is cooperative. It covers the scan and bulk thumbnail publication. Other writers (`thumb://` result publication, CSV import, restore, file mutations) do not yield, and a background writer stops yielding after 250 ms per transaction.
 - During a scan, a session can miss newly indexed rows or show a changed row at its old position for up to about one second, until the next throttled or final bump.
 
 ## Safe schema-change checklist

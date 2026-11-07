@@ -9,7 +9,11 @@ import { e2eAppIdentifier } from "../build-e2e.js";
 
 // Opt-in: the ordinary desktop suite should not seed thousands of media files.
 const gallerySuite = process.env.MEDIATAGGER_GALLERY_PERF === "1" ? describe : describe.skip;
-const IMAGE_COUNT = 2048;
+// More pages than the frontend cache keeps (MAX_CACHED_PAGES = 24 of 128 rows),
+// so the traversal below really evicts and refetches pages.
+const PAGE_SIZE = 128;
+const IMAGE_COUNT = 28 * PAGE_SIZE;
+const PAGE_COUNT = IMAGE_COUNT / PAGE_SIZE;
 const execFileAsync = promisify(execFile);
 let mediaRoot;
 const output = path.resolve("artifacts/gallery-performance");
@@ -99,7 +103,8 @@ async function visibleThumbnailsReady() {
       slots.length > 0 &&
       slots.every((tile) => {
         const img = tile.querySelector("img");
-        return img?.complete && img.naturalWidth > 1 && img.src.endsWith(".jpg");
+        // Generated previews load through `thumb://`, never the original file.
+        return img?.complete && img.naturalWidth > 1 && img.src.startsWith("thumb://");
       })
     );
   });
@@ -165,7 +170,7 @@ gallerySuite("gallery scrolling performance", function () {
     );
     // Startup/filtering already loaded the initial viewport. Its target at zero
     // and the return legs do not belong in the first-use timing distribution.
-    const route = [...Array.from({ length: 15 }, (_, page) => (page + 1) * 128), 2047];
+    const route = [...Array.from({ length: 15 }, (_, page) => (page + 1) * 128), IMAGE_COUNT - 1];
     const results = {
       cachePreparation: { ...cachePreparation, initialVisible, initialMountedIds, beforeSamplingFiles: await thumbnailFiles() },
       filter: { kind: "image", tagsAnd: [], tagsNot: [], favoritesOnly: false },
@@ -306,7 +311,7 @@ gallerySuite("gallery scrolling performance", function () {
       let current = await readAnchor();
       assert.ok(Math.abs(current.scroll - anchor.scroll) < 2, "save retains scroll position");
       assert.ok(Math.abs(current.top - anchor.top) < 2, "save retains visible anchor");
-      for (const index of [...Array.from({ length: 16 }, (_, page) => page * 128), 2047, 128, anchor.index]) {
+      for (const index of [...Array.from({ length: PAGE_COUNT }, (_, page) => page * PAGE_SIZE), IMAGE_COUNT - 1, 128, anchor.index]) {
         await scrollToAsset(index);
         await $(`button[data-asset-index="${index}"]`).waitForExist({ timeout: 20000 });
         await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000 });
@@ -317,7 +322,12 @@ gallerySuite("gallery scrolling performance", function () {
       const trace = await browser.execute(() => window.queryTrace);
       assert.equal(trace.filter(entry => entry.command === "start_asset_query").length, baseline.starts);
       const pages = trace.filter(entry => entry.command === "get_asset_query_page");
-      assert.ok(new Set(pages.map(entry => entry.args.offset)).size >= 16);
+      assert.ok(new Set(pages.map(entry => entry.args.offset)).size >= PAGE_COUNT);
+      const anchorOffset = Math.floor(anchor.index / PAGE_SIZE) * PAGE_SIZE;
+      assert.ok(
+        pages.filter(entry => entry.args.offset === anchorOffset).length >= 2,
+        "the anchor page was evicted and fetched again"
+      );
       assert.ok(pages.every(entry => entry.result.status === "ready" && entry.result.session_id === baseline.session));
       await $(`button[data-asset-id="${anchor.id}"]`).click();
       await browser.waitUntil(async () => (await $('[data-testid="lightbox-tag-panel"]').getText()).includes(proofTag));
@@ -367,7 +377,7 @@ gallerySuite("gallery scrolling performance", function () {
     const gif = await $('button[data-asset-id] img[alt$=".gif"]');
     await gif.waitForDisplayed({ timeout: 20000 });
     await browser.waitUntil(visibleThumbnailsReady, { timeout: 20000, interval: 50 });
-    assert.ok((await gif.getAttribute("src")).endsWith(".jpg"));
+    assert.match(await gif.getAttribute("src"), /^thumb:\/\/localhost\/\d+\?v=[0-9a-f]{16}/);
     await gif.click();
     const openedGif = await $('[role="dialog"] img[src$=".gif"]');
     await openedGif.waitForDisplayed({ timeout: 10000 });
@@ -430,7 +440,7 @@ gallerySuite("gallery scrolling performance", function () {
     }, ids);
     await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes("Selected: 3"));
     await $('#bulk-group-key-input').setValue("selection-proof");
-    for (let index = 128; index < 2048; index += 128) {
+    for (let index = PAGE_SIZE; index < IMAGE_COUNT; index += PAGE_SIZE) {
       await scrollToAsset(index);
       await $(`button[data-asset-index="${index}"]`).waitForExist({ timeout: 20000 });
     }

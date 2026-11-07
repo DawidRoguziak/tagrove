@@ -40,7 +40,7 @@ The product name everywhere a user sees it is **Tagrove**. The internal names st
 src/                     Solid frontend
   app/                   bootstrap, App.tsx providers, createAppRuntime.ts (app-lifetime models), views
   platform/tauri/        the ONLY place that calls Tauri IPC; wire types in contracts/
-  library/               query page cache, details/metadata/mutations, thumbnails queue, tag vocabulary
+  library/               query page cache, details/metadata/mutations, tag vocabulary
   features/              gallery, search, tagging, bulk, lightbox (image/, video/), settings
   ui/                    controls/, dom/, overlays/ (UiLayerProvider, UiModal)
   i18n/                  i18next core + 11 locale JSONs (en canonical)
@@ -160,7 +160,7 @@ Read only the pages relevant to the task. For work that crosses subsystems, also
 | SQLite schema, migrations, pooling, derived fields, query semantics, ordering, library revisions | `docs/subsystems/database.md` |
 | Scan roots, discovery, fingerprints, incremental indexing, partial scans, cleanup | `docs/subsystems/scanning-and-indexing.md` |
 | Query sessions, page cache, summary/details boundary, virtual gallery, invalidation | `docs/subsystems/library-query-and-gallery.md` |
-| Thumbnail identity, rendering, ffmpeg discovery, scheduler, queue, streaming, cleanup | `docs/subsystems/thumbnails.md` |
+| Thumbnail identity, rendering, ffmpeg discovery, scheduler, `thumb://` protocol, cleanup | `docs/subsystems/thumbnails.md` |
 | Search grammar, tag discovery, tag list, bulk selection, tag mutations, favorites, media groups | `docs/subsystems/search-tags-and-media-groups.md` |
 | Lightbox selection/details, navigation, editing, deletion, image controls, video, fullscreen, keys | `docs/subsystems/lightbox.md` |
 | Settings controllers, operation runner, progress, scan/thumbnail actions, duplicates, confirmations | `docs/subsystems/settings-operations.md` |

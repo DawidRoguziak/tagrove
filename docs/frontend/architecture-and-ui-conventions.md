@@ -42,8 +42,8 @@ icon source. See [branding](../development/setup-and-build.md#branding-assets).
 | --- | --- |
 | `src/app` | Bootstrap, feature composition, view choice, runtime context, lazy boundaries and window controls. |
 | `src/platform/tauri` | Typed command payloads, channels, events, native dialogs, media URLs and window operations. Wire types live in `contracts/`. It does not import feature state or UI. |
-| `src/library` | Query/page cache, shared details, metadata coordination/mutations, vocabulary and thumbnails. It does not import feature components. |
-| `src/features/gallery` | Virtual-core adapter, tiles, gesture geometry and selected IDs. |
+| `src/library` | Query/page cache, shared details, metadata coordination/mutations and vocabulary. It does not import feature components. |
+| `src/features/gallery` | Own virtualizer (`gridGeometry`, `createVirtualGrid`), tiles, gesture geometry and selected IDs. |
 | `src/features/search` | Search drafts, applied descriptors, suggestions/worker and tag-list browser. |
 | `src/features/tagging` | Shared `TagEditor`, consumed by lightbox and bulk. |
 | `src/features/bulk` | Selected metadata, group drafts, sidebar and order dialog. |
@@ -103,7 +103,7 @@ User-visible values still publish through reactive state. Tests use explicit sch
 boundaries, deferred promises, disposal and reopen checks.
 
 Late async listener registration must remove its listener immediately if the owner has
-already disposed. Query/detail replies and thumbnail channels use generations or tokens
+already disposed. Query/detail replies and video channels use generations or tokens
 to prevent stale publication. Disposal does not imply cancellation of already-dispatched
 Rust work; document cancellation separately for each operation. Lightbox image load callbacks
 also check the keyed source activation, current element and active/disposed controls owner;
@@ -150,7 +150,7 @@ Partial bulk results publish only acknowledged IDs and trigger missing-ID recove
 Settings CSV import, restore and clear use `library.tags.runWithMutationBarrier` to deny
 new metadata writes and drain admitted writes, both queued and dispatched. They invalidate affected identity/cache
 state inside the barrier on both success and rejection, then refresh after release.
-Restore resets query and thumbnails; clear also empties vocabulary. See the exact
+Restore resets the query; clear also empties vocabulary. See the exact
 [settings reset matrix](../subsystems/settings-operations.md#exact-success-refresh-and-reset-matrix).
 These frontend rules do not replace backend transactions or workflow locks.
 
@@ -367,7 +367,7 @@ Bulk ordering lives only in the group-order modal. The sidebar retains its headi
 - `src/app/__tests__` covers bootstrap/disposal, runtime composition, view replacement,
   language/theme persistence, lazy loading/failure and lightbox error recovery.
 - `src/library/**/__tests__` covers query/cache bounds, races, metadata admission,
-  canonical publication, maintenance, vocabulary and per-asset thumbnail isolation.
+  canonical publication, maintenance, and vocabulary.
 - `src/features/**/__tests__` covers feature models and DOM behavior. Virtual grid, order and
   duplicate-list tests drive `features/gallery/gridGeometry.ts`, `createVirtualGrid` and
   `ui/dom/createVirtualList.ts` with controlled DOM geometry.

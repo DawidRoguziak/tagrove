@@ -1001,10 +1001,12 @@ fn validate_archive_with_limits(
 
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
-        let safe_path = sanitize_zip_entry_path(entry.name())?;
+        // zip 9 decodes entry names fallibly; an undecodable name rejects the archive.
+        let name = entry.name()?.into_owned();
+        let safe_path = sanitize_zip_entry_path(&name)?;
         let size = entry.size();
         if size > max_entry_bytes {
-            return Err(format!("Backup entry exceeds the size limit: {}", entry.name()).into());
+            return Err(format!("Backup entry exceeds the size limit: {name}").into());
         }
         expanded_bytes = expanded_bytes
             .checked_add(size)
@@ -1015,11 +1017,7 @@ fn validate_archive_with_limits(
         let compressed = entry.compressed_size();
         if size > 0 && (compressed == 0 || size > compressed.saturating_mul(MAX_COMPRESSION_RATIO))
         {
-            return Err(format!(
-                "Backup entry exceeds the compression ratio limit: {}",
-                entry.name()
-            )
-            .into());
+            return Err(format!("Backup entry exceeds the compression ratio limit: {name}").into());
         }
         if entry.is_dir() {
             continue;
@@ -1300,7 +1298,7 @@ fn sanitize_zip_entry_path(entry_name: &str) -> AppResult<PathBuf> {
 }
 
 fn write_archive_entry_to_file(
-    entry: &mut zip::read::ZipFile<'_>,
+    entry: &mut zip::read::ZipFile<'_, fs::File>,
     destination: &Path,
     expected_size: u64,
 ) -> AppResult<()> {
@@ -1444,6 +1442,7 @@ mod tests {
                     .by_index(idx)
                     .expect("archive entry")
                     .name()
+                    .expect("entry name")
                     .to_string()
             })
             .collect::<Vec<_>>();

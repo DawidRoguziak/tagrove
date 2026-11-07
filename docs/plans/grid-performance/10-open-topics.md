@@ -23,9 +23,17 @@ Zamknąć tematy, które nie wymagają decyzji (część A), i przygotować prop
 | 13 | Nowa łatka `05-selection-scan.patch` na aktualnym `GalleryGrid.tsx` (defekt dla `isSelected`) | `git apply --check` na HEAD |
 | 7 | `alt` kafla = `file_name`, nie `preview_path` | test `GalleryTile.test.tsx` |
 
-### Część B (propozycje, czekają na decyzję)
+### Część B (decyzje użytkownika 2026-11-07)
 
-Tematy 1, 3, 6, 10 i 11. Propozycje są w notatce orkiestratora niżej.
+Propozycje są w notatce orkiestratora niżej.
+
+| Temat | Decyzja | Wynik |
+| --- | --- | --- |
+| 1. Scope asset protocol `"**"` | C: bez zmian | odłożone |
+| 3. `list_assets` | usunąć, jeśli aplikacja go nie używa | potwierdzone i usunięte, [ADR 0009](../../adr/0009-remove-list-assets-command.md) |
+| 6. Audyty zależności | tak (zgoda na lockfile'y) | zod 4.6.7, `zip` 9.4.1 tylko z Deflate, [ADR 0010](../../adr/0010-zip-9-deflate-only.md) |
+| 10. Miesiące osi czasu | A: zostaje UTC | bez zmian (ADR 0007) |
+| 11. Blokada zapisu specu na 1M | bez zmian | bez zmian (ADR 0008) |
 
 ### Odłożone bez zmian
 
@@ -43,7 +51,7 @@ Tematy 1, 3, 6, 10 i 11. Propozycje są w notatce orkiestratora niżej.
 
 ## Status
 
-in progress — 2026-11-07 (część A gotowa razem z pomiarem tematu 9; część B czeka na decyzję)
+done — 2026-11-07 (część A i decyzje części B; tematy 3 i 6 zrobione, 1, 10 i 11 bez zmian decyzją użytkownika; czeka na commit)
 
 ## Notatki agentów
 
@@ -89,3 +97,19 @@ in progress — 2026-11-07 (część A gotowa razem z pomiarem tematu 9; częś�
 - Zrobione: oba biegi `grid-baseline.e2e.js` na bezczynnym hoście (ok. 21:31–21:37), profil jak w „Przed” (XDG i `TMPDIR` pod `/var/tmp`, Xvfb 1440×1100). Wiersze (\*) w kolumnie „Po 08–09” etapu [07](07-verification-and-docs.md) zastąpione, warunki pomiaru zaktualizowane.
 - Odkryte: obciążenie sprawdzane nie tylko przed startem. Monitor zapisywał co 10 s load i dwa procesy z największym CPU; gra nie pojawiła się w żadnej próbce. Szczyt load 16,8 to sam `media_tagger` przy `render_all_thumbnails` (85–86 s, fala D ~79 s). Obok przeglądarka ~0,8 rdzenia.
 - Testy: `MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1 bun run test:e2e:tauri --spec e2e/specs/grid-baseline.e2e.js` → 3/3 w obu biegach. Strona IPC p50 3–7 / max 9–10 ms; serce do UI p50 24–25, p95 115–151, max 166–176 ms; like/tag 0/20; settle p50 16–17, skok paskiem p95 198–199 ms; klatka max 27–28 ms; DOM 407/98; cold per kafel p50 297–325, p95 405–426 ms, komplet widocznych p50 412–428 ms, kafle z danymi po 180–183 ms.
+
+### 2026-11-07 — orkiestrator (część B: tematy 3 i 6)
+- Zrobione:
+  - **Temat 3:** aplikacja nie używała `list_assets`: wrapper `listAssets` importował tylko `api.test.ts`, a funkcje SQL `list_assets*` miały jednego wywołującego, czyli samą komendę. Usunięte: komenda i serwis (`commands/assets.rs`), wpis `generate_handler!`, `db::list_assets`/`list_assets_with_meta`/`parse_asset_row`, modele `Asset`/`AssetPage`, wrapper, typy `LegacyAsset`/`AssetPage`, test API. Testy Rust używają pomocników ścieżki sesji (`db::test_support`, `src-tauri/tests/support/assets.rs`); siedem testów semantyki filtrów działa teraz na tej ścieżce (`session_order_*`). 17 speców E2E używa `listAssetsForAssertions` (`e2e/assets.js`). [ADR 0009](../../adr/0009-remove-list-assets-command.md); `ipc-contract.md`, `database.md`, `testing.md` poprawione.
+  - **Temat 6:** zod `^4.6.6` (4.6.7, w `bun.lock` zmienia się tylko zod). `zip` 2.4.2 → 9.4.1 z `default-features = false, features = ["deflate-flate2"]` (advisory `zip` wymagają ≥ 9.0.0); `cargo update -p zip` usunął 23 crate'y (w tym `zstd*`, `bzip2`, lzma/xz, aes, zopfli) i dodał `typed-path`, `nix` 0.31, `cfg_aliases`. `ZipFile::name()` zwraca teraz `Result`: nieczytelna nazwa wpisu odrzuca backup. [ADR 0010](../../adr/0010-zip-9-deflate-only.md); `data-safety-and-portability.md` poprawiony.
+- Odkryte:
+  - `start_asset_query` ma globalny token żądań: start z dowolnego ownera unieważnia trwający start innego, a aplikacja pokazuje wtedy błąd ładowania. Helper E2E czeka, aż aplikacja nie ma startu w toku, i w razie czego klika Retry (ADR 0009).
+  - `app.workflows` miał lokalną funkcję o tej samej nazwie (`listAssetsForAssertions`, stąd nazwa z propozycji etapu 03); usunięta na rzecz wspólnego helpera.
+  - Semantyka filtrów starej ścieżki (dokładne liczenie tagów z `asset_tags`, surowy tekst grupy) i ścieżki sesji (kolumny zdenormalizowane) jest zgodna: wszystkie przeniesione testy przeszły bez zmian asercji.
+  - `git diff --check` traktuje CR jako biały znak na końcu linii; nowe i zmienione linie w plikach z CRLF (`backend_e2e.rs`, `app.smoke.e2e.js`) mają LF, jak we wcześniejszych commitach.
+  - Ostrzeżenia WebDrivera „element click intercepted” (klik ponowiony po ~0,5 s, test przechodzi): `group-order` 2, `review-fixes` 2, `ui.redesign` 36, `settings-maintenance` 4; dotyczą przycisków nagłówka („Enable bulk actions”, „Back”) w czasie przejść widoku, nie galerii. Na HEAD nie porównywane.
+- Testy:
+  - E2E (prywatny Xvfb, XDG pod `/tmp/mediatagger-*`, każdy spec z własną flagą) → 17/17 pass: app.smoke 4, app.workflows 13, review-fixes 3, popular-tags 1, group-order 1, startup-scan 1, search-recovery 12, gallery.performance 4, thumbnail-fade 2, settings-maintenance 3, lightbox-images 2, lightbox-recovery 2, ui.redesign 12, lightbox-activity 14, animations 27, native-video-escape 8, video-speed 7. Wszystkie katalogi tymczasowe usunięte.
+  - `bun run quality` → pass w całości (pierwszy raz w tym planie; 13 ostrzeżeń „unmaintained/unsound” w zależnościach Tauri/GTK, bez zmian). `bun run test:backend` → pass (lib 242, integracyjne bez porażek); `bun run test:packaging` → 18/18; `bun run test` → 845/845; `privacy:check`, `test:privacy` → pass; `git diff --check` czysto, `--numstat` identyczny z `--ignore-cr-at-eol`.
+- Niezweryfikowane: odtworzenie backupu zapisanego przez build z `zip` 2 (oba piszą standardowy Deflate z ZIP64; testy round-trip przechodzą na `zip` 9).
+

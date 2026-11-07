@@ -54,7 +54,7 @@
     "fuse.js": "^7.5.0",
     "i18next": "^25.10.10",
     "solid-js": "2.0.0-rc.13",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.13",

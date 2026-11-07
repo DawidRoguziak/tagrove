@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} éléments",
     "resultCount_other": "{{formattedCount}} éléments",
     "loadError": "Le chargement de la bibliothèque a échoué.",
-    "retry": "Réessayer"
+    "retry": "Réessayer",
+    "scrollbarLabel": "Position dans la galerie"
   },
   "bulk": {
     "orderModal": {

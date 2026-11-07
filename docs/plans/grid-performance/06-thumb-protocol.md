@@ -141,3 +141,13 @@ todo — 2026-11-04
   - Strumień publikuje wyniki grupami (to, co już czeka, do 64 sztuk).
   - Bulk publikuje transakcjami po ≤ 256 wierszy, z `permit.yield_to_user_writes()` przed każdą, i bierze epokę clear per strona.
   - Komenda `thumb://` w async musi brać guard wewnątrz `spawn_blocking`, nie przez `.await`.
+
+### 2026-11-07 — agent etapu 05
+- Z etapu 05: `ThumbnailImage` (`src/ui/controls/ThumbnailImage.tsx`) ma teraz jeden `<img>` przez całe życie komponentu.
+  - Zmiana `src` podmienia atrybut. Stan load i failure należy do konkretnego `src`, a obraz jest ukryty klasą `invisible` do `load` (albo do `complete` w cache) bieżącego źródła.
+  - Atrybuty: `decoding="async"`, `crossorigin="anonymous"`. Testy: `src/ui/controls/__tests__/ThumbnailImage.test.tsx`.
+  - URL `thumb://` z `thumb_version` może więc zmieniać tylko `src` na tym samym elemencie. Punkt „brak nowego `<img>` przy zmianie `src`” jest już spełniony.
+- Z etapu 05: `GalleryTile` przyjmuje `asset`, `index`, `selected`, `thumbnailStore` i `onClick`; pozycję daje CSS grid wiersza.
+  - Komórki są recyklowane: przy przejściu wiersza ten sam kafel dostaje inny `asset`, a `createAssetThumbnail` przełącza subskrypcję.
+  - Pauza szybkiego scrolla wstrzymuje tylko popyt (zakres w `createLibrary`). Zamontowane kafle zostają, więc `thumb://` musi znieść zmianę `src` w trakcie flingu bez dodatkowego IPC.
+- Z etapu 05: harness `e2e/gallery-scale` nie ma już `GALLERY_BASELINE_DIR` (stare źródła wymagały virtual-core). Porównanie przed/po robi się dwoma biegami na dwóch commitach.

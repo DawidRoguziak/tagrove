@@ -85,6 +85,13 @@ describe("DuplicateResolverDialog", () => {
     const scroller = input.closest("[data-index]")?.parentElement?.parentElement;
     if (!scroller) throw new Error("Missing duplicate list scroller");
     const subscriptions = subscribe.mock.calls.length;
+    // Each synthetic group N owns asset IDs 2N+1 and 2N+2.
+    const mountedIds = new Set(
+      [...document.querySelectorAll<HTMLElement>("[data-index]")].flatMap((row) => {
+        const index = Number(row.dataset.index);
+        return [index * 2 + 1, index * 2 + 2];
+      })
+    );
     settle(() => {
       scroller.scrollTop = 1;
       fireEvent.scroll(scroller);
@@ -92,7 +99,10 @@ describe("DuplicateResolverDialog", () => {
     expect(screen.getAllByRole("textbox")[0]).toBe(input);
     expect(input).toHaveFocus();
     expect(input).toHaveValue("draft.png");
-    expect(subscribe).toHaveBeenCalledTimes(subscriptions);
+    // Rows that stay mounted keep their subscriptions; only newly windowed rows subscribe.
+    expect(
+      subscribe.mock.calls.slice(subscriptions).filter(([id]) => mountedIds.has(id))
+    ).toEqual([]);
   });
   it("does not render when closed", () => {
     render(() => (

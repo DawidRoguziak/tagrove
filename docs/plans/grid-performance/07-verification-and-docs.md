@@ -134,3 +134,14 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
   - `.claude/rules/backend-core.md`: zapisy użytkownika używają `user_write_connection()`.
 
   Strony `docs/` i ADR 0002 są już zaktualizowane.
+
+### 2026-11-07 — agent etapu 05
+- Z etapu 05: pomiar pośredni po falach 01, 02 i 05, przed 03, 04 i 06. Kolumny „Po 01–06” nie wypełniam. `grid-baseline.e2e.js` (debug, Xvfb 1440×1100, XDG pod `/tmp`, `TMPDIR` na dysku, maszyna wolna):
+  - stop → komplet kafli: 16 ms we wszystkich flingach, także w górę (było 181–193 ms); skoki paskiem 180–181 ms, bo dane spoza cache wciąż czekają na koniec pauzy (150 ms) i stronę;
+  - najdłuższa klatka po zatrzymaniu: 17–20 ms;
+  - DOM gridu: stałe 211 węzłów i 98 kafli;
+  - zimny cache: kafle z danymi 173 ms, komplet p50 482 ms;
+  - like i tag 0/20 nieudanych.
+- Z etapu 05: bramka limitu wysokości jest powtarzalna przez `GALLERY_HEIGHT_PROBE=1 sh e2e/gallery-scale/run.sh` (opis w `docs/development/testing.md`, „Scroll height probe”). Po aktualizacji WebKitGTK uruchom ją ponownie.
+- Z etapu 05: przy porównaniach fixture `GALLERY_PERFORMANCE=1` „przed/po” trzeba robić dwoma biegami na dwóch commitach (podmiana `GALLERY_BASELINE_DIR` usunięta). Wyniki etapu 05 leżą w ignorowanym `artifacts/gallery-scale/`: `performance-before-05.json`, `performance-after-05.json`, `scale-before-05.json`, `scale-after-05.json`, `height-probe-scale{1,2}.json`.
+- Z etapu 05: do przeglądu w fali D zostają ostrzeżenia WebDrivera „element click intercepted” w `group-order` i `review-fixes`. Występowały już w pełnym biegu z 2026-10-03, a specy przechodzą.

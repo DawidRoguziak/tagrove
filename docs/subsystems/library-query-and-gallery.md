@@ -33,15 +33,19 @@ restore its captured complete record only if that generation still matches. A qu
 or explicit clear therefore prevents a delayed save from restoring old path/size fields;
 accepted canonical metadata still publishes to tags, summaries and the current selection.
 
-`features/gallery/createVirtualGrid.ts` adapts the pinned `@tanstack/virtual-core` dependency. It waits for measured grid width before
-publishing nonempty ranges, owns observers under the mounted view and preserves global-index
-resize anchors. Thumbnail completion does not rebuild row measurements. Tiles use stable
-global-index keys, and each loaded tile subscribes only to its current asset's thumbnail.
-The image element resets its failure state when its source changes. Gallery images have no entrance animation.
+`features/gallery/createVirtualGrid.ts` is the gallery's own virtualizer over the pure
+geometry in `gridGeometry.ts` ([ADR 0003](../adr/0003-custom-gallery-virtualizer.md)). It waits for
+measured grid width before publishing nonempty ranges, owns observers under the mounted view
+and preserves global-index resize anchors. `GalleryGrid` renders a fixed pool of row slots;
+crossing a row re-indexes one slot, so thumbnail completion, page arrivals and scrolling
+create no tile components. Each loaded tile subscribes only to its current asset's thumbnail.
+The image element keeps its identity and resets load and failure state when its source changes.
+Gallery images have no entrance animation.
 
-The current tests run real virtual-core at 10,000, 26,000 and 1,000,000 slots, drive sparse replacement,
-explicit page retry and eviction/reload across the 12-page bound, and exercise the native
-WebView with synthetic collections. See the [browsing desktop recipe](../development/testing.md#solid-feature-verification).
+The current tests cover the geometry and model at 10,000, 26,000 and 1,000,000 slots, drive
+sparse replacement, explicit page retry and eviction/reload across the 12-page bound, and
+exercise the native WebView with synthetic collections. See the
+[browsing desktop recipe](../development/testing.md#solid-feature-verification).
 
 ## From applied filters to a session
 
@@ -118,34 +122,62 @@ Selecting a tile opens the lightbox with a `SelectedAsset` view built from the s
 
 ## Virtual range loading and thumbnail prefetch
 
-`createVirtualGrid` gives TanStack Virtual the row count, `ceil(assetCount / columnCount)`, with one lane and a module-stable row-index key function. Each mounted row expands to its global asset indices. Virtual slots use global-index keys. A loaded asset replaces a placeholder inside its slot; a changed asset identity updates that slot and its thumbnail subscription. Scroll events, thumbnail updates, and page arrivals reuse existing row measurements instead of rebuilding a layout for every asset.
+Square tiles make every position arithmetic. `gridLayout` derives columns, tile size, stride
+and `ceil(assetCount / columnCount)` rows from the measured width; `rowRange` maps an offset to
+visible rows plus four rows of overscan on either side, all in O(1). `GalleryGrid` renders
+`ceil(viewport / stride) + 1 + 8` row slots. Slot `s` shows the row congruent to `s` modulo the
+pool, positioned by one 2D `translate` per row (`contain: strict`, a box padded by half a gap so
+backplates and selection rings are not clipped); a CSS grid places the cells inside it. Slots
+are ordered by row, so DOM order follows visual order for focus and screen readers; crossing a
+row moves two offscreen row nodes. A cell reads `getAssetAt(index)`: a loaded asset renders a
+tile, an uncached one a placeholder, and a changed asset updates that tile and its thumbnail
+subscription without remounting it.
 
-The grid measures its content width and its origin inside the actual scroll container. Tiles remain square with a 12-pixel gap and four rows of overscan on either side. The full-width search/tools header sits outside the gallery scroll container, which fills the remaining window height and owns the scrollbar below both header rows. Header wrapping adjusts that viewport through CSS layout. Bulk mode adds a 360px inspector at widths of at least 1000px; it sticks to the content viewport's top and scrolls independently within that viewport's height. The existing resize observers measure the narrower grid and retain the visible anchor. Changes to tile size or column count invalidate row measurements and keep the previous first visible asset in view. The scroll container, gallery, and grid have resize observation; listeners are removed on unmount.
+The grid measures its content width and its origin inside the actual scroll container only
+from resize observers; the scroll path reads nothing but `scrollTop`, and the row range signal
+changes only when the first, last or visible rows change. Tiles remain square with a 12-pixel gap. The full-width search/tools header sits outside the gallery scroll container, which fills the remaining window height and owns the scrollbar below both header rows. Header wrapping adjusts that viewport through CSS layout. Bulk mode adds a 360px inspector at widths of at least 1000px; it sticks to the content viewport's top and scrolls independently within that viewport's height. The existing resize observers measure the narrower grid and retain the visible anchor. Changes to tile size or column count invalidate row measurements and keep the previous first visible asset in view. The scroll container, gallery, and grid have resize observation; listeners are removed on unmount.
 
-The physical grid spacer is capped at 4,000,000 pixels by `scrollCoordinates.ts`,
-below WebKit's layout-height limit. Virtual-core still measures the logical rows.
-Its offset observer translates the physical scrollbar position to the logical offset;
-mounted tiles and group backplates subtract the difference between those offsets.
-The header margin and footer tail keep a one-to-one pixel mapping. Small collections
-retain an identity mapping. Grid width, viewport height and tile-size changes rebuild
-the mapping, with column/size changes preserving the first visible global index.
-The adapter writes the new bounded height before restoring that anchor, so the old
-spacer cannot clamp the new position.
+The physical grid spacer is capped at `MAX_GRID_HEIGHT` = 16,000,000 pixels. WebKitGTK 2.54
+keeps layout, scroll offsets, transforms, hit testing and painting exact only below 2^24 CSS
+pixels at device scales 1 and 2; above it odd offsets round and translated rows stop painting
+(measured by `e2e/gallery-scale/height-probe.tsx`). Content up to that height scrolls natively
+with the spacer as its full height and a window base of zero. Taller content scrolls natively
+inside a physical window that starts at the logical offset `base`; rows render at
+`rowTop - base`, and `scrollShift` exposes `base` to rectangle selection. Wheel, touchpad
+inertia, PageUp/PageDown and the arrow keys stay native and one-to-one. The base moves, with
+one `scrollTop` write in the same frame as the row positions, after 150 ms without motion
+when the viewport is outside the middle half of the window, or immediately when native
+scrolling comes within two viewports of a window edge the base could still move past.
+Home/End reach the ends of the whole result: in this mode the window listener handles them
+for the gallery, the scroller and the body (a recycled row can drop focus to the body), but
+not for text controls or the bulk inspector.
 
-On compressed grids, a nonpassive wheel listener converts pixel, line and page deltas
-to logical pixels. Ctrl-wheel remains tile zoom; the bulk inspector keeps its own
-scrolling. Subpixel logical offsets survive WebKit rounding of physical `scrollTop`.
-Rectangle edge scrolling uses the same logical scroll command. The native scrollbar
-still spans the whole result set. Listeners, observers and virtual-core subscriptions
-are disposed with the gallery.
+In the windowed mode the scroller carries `data-gallery-windowed`; `styles.css` hides its
+native bar, which would span only the window, and `createVirtualGrid` pads the removed gutter
+back so the column count does not change. `GalleryScrollbar` replaces it: a sticky
+`role="scrollbar"` named “Gallery position” with `aria-valuenow` set to the first visible
+item, thumb drag, a track press that jumps to the pointer, and Arrow/Page/Home/End keys.
+Grid width, viewport height and tile-size changes preserve the first visible global index;
+the spacer height is written before that anchor, so the old spacer cannot clamp it. While the
+viewport top is still above the grid (including the first width measurement after a mount),
+column changes keep the physical position instead, so the margin stays visible. A
+margin-only change, such as the error banner, keeps `scrollTop` and moves the grid. Column
+count, tile size, margin, pool size and spacer height are memos, so effects keyed on them
+(such as the rectangle-selection handlers, which cancel a drag on layout changes) do not
+rerun when only the rendered rows change. Writes are
+clamped in JavaScript because WebKitGTK resets `scrollTop = Number.MAX_SAFE_INTEGER` to zero.
+Ctrl-wheel remains tile zoom; the gallery never intercepts plain wheel input. Subpixel
+logical offsets survive WebKit rounding of physical `scrollTop`, and rectangle edge
+scrolling uses the same logical scroll command. Listeners, observers, timers and the
+windowed attribute are removed with the gallery.
 
-The gallery requires a scroll-container accessor. The virtualizer uses only that element and waits while the ref is null. An owned compute/apply effect starts observation after all required elements exist. A second effect configures the virtualizer and restores the global-index anchor when columns or tile size change. This also applies when Back from Settings remounts the gallery. Using the gallery as a temporary fallback would mistake its full content height for the viewport, mount every slot, and demand pages across the entire library.
+The gallery requires a scroll-container accessor. The virtualizer uses only that element and waits while the ref is null. An owned compute/apply effect starts observation after all required elements exist. A second effect sets the spacer height, restores the global-index anchor when columns or tile size change, and moves the window when the result shrinks below its base. This also applies when Back from Settings remounts the gallery. Using the gallery as a temporary fallback would mistake its full content height for the viewport, mount every slot, and demand pages across the entire library.
 
 The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex, paused }`, with inclusive indices, or `null` when the gallery unmounts. Pixel movement within unchanged row ranges updates tile placement without republishing page demand, unless the pause state changes. `createLibrary` loads pages intersecting the overscan range and replaces gallery thumbnail demand with visible and prefetch IDs from currently loaded summaries. Range/query-epoch changes request pages. Page arrivals update thumbnail demand separately without requesting evicted pages again. The grid also reports its range when its failure/reset key changes. Failed offsets remain blocked in that generation until explicit Retry. Empty ranges clear gallery thumbnail demand. Bulk and duplicate preview requests remain additive and independent of this replaceable demand.
 
-Fast scrolling pauses automatic gallery loading. The adapter measures absolute distance
-in logical gallery pixels, including direction reversals and compressed wheel/rectangle
-scrolling. A single move of at least half the viewport height, or a full viewport within
+Fast scrolling pauses automatic gallery loading, not rendering. The model measures absolute
+distance in logical gallery pixels, including direction reversals, rectangle edge scrolling
+and drags of the windowed scrollbar. A single move of at least half the viewport height, or a full viewport within
 100 ms, starts the pause. Every position change extends it; duplicate scroll notifications
 do not. After 150 ms without movement the same range is republished with `paused: false`,
 even if its indices have not changed. Geometry changes and tile-size anchor writes reset
@@ -172,13 +204,13 @@ so progress-counter changes alone do not invalidate its layout.
 ## Gallery presentation states
 
 - If `assetCount` is zero, the grid shows an empty state. It distinguishes “no folders” from “no results” using the scan-root list and offers the add-folder action only for the former.
-- During fast scrolling, every mounted slot is a static square without images, spinners, group backplates or thumbnail subscriptions. Slot positions, global indices, selection highlights and the bounded spacer remain active.
-- If a virtual slot's page is not cached, the grid renders a square pulsing placeholder. Once the summary arrives, the slot becomes an interactive tile.
+- During fast scrolling, tiles whose summaries are cached stay mounted with their thumbnails, backplates and subscriptions; only page and thumbnail demand pause. Placeholders for uncached slots stop pulsing while paused.
+- If a virtual slot's page is not cached, the grid renders a square placeholder (`div[data-asset-index]`, pulsing outside the pause). Once the summary arrives, the slot becomes an interactive tile.
 - Images and videos use a thumbnail when available; otherwise they use a transparent one-pixel placeholder. A preview load error also falls back to that placeholder. The per-tile spinner appears only while the thumbnail store reports that the asset is rendering and no thumbnail path is ready.
-- Mounted virtual tiles load their previews eagerly. TanStack Virtual already bounds the mounted range, and native image lazy loading is avoided because WebKitGTK can fail to schedule absolutely positioned, translated virtual items.
-- Gallery thumbnails display at full opacity as soon as the browser loads them, including cached images and tiles remounted after scrolling. There is no entrance fade. A 300 ms fade previously left newly arriving rows dim during moderately fast scrolling and delayed visibility after the fast-scroll pause. Source changes still replace the image element and reset failure handling. The shared `ThumbnailImage` retains its opt-in fade for other consumers; the gallery does not request it.
+- Mounted virtual tiles load their previews eagerly with `decoding="async"`. The row pool already bounds the mounted range, and native image lazy loading is avoided because WebKitGTK can fail to schedule translated virtual items.
+- Gallery thumbnails display at full opacity as soon as the browser loads them, including cached images and tiles remounted after scrolling. There is no entrance fade. A 300 ms fade previously left newly arriving rows dim during moderately fast scrolling and delayed visibility after the fast-scroll pause. A source change keeps the image element, resets load and failure handling, and hides the previous picture until the new source has loaded (or is already complete), so a recycled tile never shows another asset's thumbnail. The shared `ThumbnailImage` retains its opt-in fade for other consumers; the gallery does not request it.
 - GIFs always use a static JPEG thumbnail or the placeholder, including while idle, scrolling, and after a preview error. Gallery tiles never request original GIF sources. Opening a GIF in the lightbox retains animation. Neutral, opaque corner chips identify videos and GIFs with readable text in both themes. Photos have no media-kind chip; tile borders use the shared theme border color.
-- A nonblank media-group key marks the tile as grouped. Backplates join consecutive loaded virtual entries only when they share the exact key, are adjacent lanes, and sit on the same row; a group that crosses a row or unloaded gap is drawn as separate pieces. Different group keys also start separate pieces. Each decorative backing extends 4px around its tiles, with rounded corners behind the images and no pointer handling. The theme tokens `--gallery-group-bg` and `--gallery-group-edge` give dark mode a solid `#20382b` fill and a 1px inset `#52735c` edge. The inset preserves the gap between neighboring groups without changing tile geometry. Light mode keeps the primary color at 16% opacity with a transparent edge. Selection outlines and checkmarks retain the brighter primary color.
+- A nonblank media-group key marks the tile as grouped. Each row computes its own backplates: they join consecutive loaded cells only when they share the exact key and sit in adjacent lanes; a group that crosses a row or unloaded gap is drawn as separate pieces. Different group keys also start separate pieces. Each decorative backing extends 4px around its tiles, with rounded corners behind the images and no pointer handling. The theme tokens `--gallery-group-bg` and `--gallery-group-edge` give dark mode a solid `#20382b` fill and a 1px inset `#52735c` edge. The inset preserves the gap between neighboring groups without changing tile geometry. Light mode keeps the primary color at 16% opacity with a transparent edge. Selection outlines and checkmarks retain the brighter primary color.
 - The status footer reports thumbnail generation only when `hasMore` is true, and reports “End of results” with a locale-formatted, pluralized result count when thumbnail generation is idle and `hasMore` is false. It does not represent asset-page loading. The other two combinations render no footer content. `GalleryGrid` passes its required `assetCount`, the query total from `AppGalleryView`, as the footer's required `resultCount`; there is no cached-array-length fallback. The centered footer follows the grid in normal document flow, with roughly 136px of vertical space, flexible dividers, a decorative success checkmark, and wrapping text. It scrolls with the gallery without covering the last row; empty collections retain their empty state and have no footer.
 
 The focused gallery and App tests cover totals, sparse caches, footer visibility, and locale changes. The desktop case in `e2e/specs/ui.redesign.e2e.js` selected by `--mochaOpts.grep 'footer'` checks scroll geometry, the final row, typography, narrow windows, and bulk mode in English and Polish under both themes. Run it with `MEDIATAGGER_UI_REDESIGN=1` and the [isolated desktop setup](../development/testing.md#animation-geometry). It saves synthetic screenshots and measurements under `artifacts/ui-redesign/`.
@@ -247,14 +279,14 @@ Inclusive range reads capture one session and generation, checking them after ev
 - `src/library/query/__tests__/createAssetQuery.test.ts` covers first-page replacement, current supersession error/retry and obsolete-response rejection, start/page failure error state with retry recovery, stale-triggered restarts, page-failure epoch signaling, and late-generation response rejection.
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
 - `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate reach-end suppression, shared in-flight indexed page lookup, virtual-range thumbnail IDs, and clear-library reset.
-- `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews and per-asset thumbnail DOM isolation. `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior; `createVirtualGrid.test.tsx` covers ranges and measurements.
-- `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers fade readiness for delayed/cached loads, failures, source replacement, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail checks](../development/testing.md#gallery-thumbnail-fade) require immediate full opacity during filtering and scrolling in both themes and with reduced motion.
+- `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews, per-asset thumbnail DOM isolation, loaded tiles kept through a fast jump, one-slot recycling with constant DOM and row order, per-row backplates and the windowed scrollbar. `gridGeometry.test.ts` covers layout, ranges, anchors and window bases at 10k/26k/1M slots; `createVirtualGrid.test.tsx` covers ranges, anchors, the windowed mode, the pause and disposal; `GalleryScrollbar.test.tsx` covers its accessibility, pointer and keyboard input. `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior.
+- `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers one element across source changes, hiding until the current source loads, async decoding, fade readiness for delayed/cached loads, failures, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail checks](../development/testing.md#gallery-thumbnail-fade) require immediate full opacity during filtering and scrolling in both themes and with reduced motion.
 - `src/features/lightbox/__tests__/createLightbox.test.ts` covers detail/mutation races, identity-reset ID reuse, deletion tombstones, query-session cache invalidation, rapid navigation, and query-position recomputation. See [lightbox tests](lightbox.md#tests) for remaining navigation/prefetch scenarios.
 - `src/features/search/__tests__/createSearch.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.
 
 ### Gallery performance verification
 
-`src/features/gallery/__tests__/createVirtualGrid.test.tsx` runs the installed TanStack virtualizer with 10,000 numeric slots and asserts that scrolling and page/status updates do not rebuild row measurements. It also checks external-scroll offsets, partial rows, and resize anchoring. A 26,000-slot regression mounts initially null parent refs, bounds every intermediate commit and range callback on cold mount and Settings return, and checks scrolling, resize anchoring, observer cleanup, and real page-loader demand through owner disposal and remounting. These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. Queue/store tests cover latest-viewport priority, additive consumers, reset/unmount races, atomic tile updates, and version cleanup; page-cache tests cross the 12-page bound and reload evicted pages.
+`src/features/gallery/__tests__/createVirtualGrid.test.tsx` mounts 10,000 and 26,000 slots with initially null parent refs, bounds every range callback on cold mount and remount, and checks that demand is republished only when rows change, resize and margin anchoring, partial rows, observer and timer cleanup, and the one-million-slot window (End/Home, edge and idle rebasing, subpixel edge scrolling, return to native mode). These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. Queue/store tests cover latest-viewport priority, additive consumers, reset/unmount races, atomic tile updates, and version cleanup; page-cache tests cross the 12-page bound and reload evicted pages.
 
 The opt-in desktop spec uses 2,048 copied PNGs, 12 GIFs, and two videos in a temporary root. Its first case samples an image-only route before metadata traversal, then revisits the identical route without clearing caches. The starting target at index zero, the initially mounted area, and the final return legs are excluded from timing. Each sample records the final JPEG filenames present before scrolling and the visible thumbnail filenames after decoding. Only samples with no pre-existing visible previews enter the first-use summary; mixed samples stay in the raw record. Every revisit sample must find all visible previews already on disk. These labels describe preview-file reuse, not an OS-cold cache or a fully resident frontend page cache.
 

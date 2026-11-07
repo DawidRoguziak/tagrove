@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} elementów",
     "resultCount_other": "{{formattedCount}} elementu",
     "loadError": "Nie udało się wczytać biblioteki.",
-    "retry": "Ponów"
+    "retry": "Ponów",
+    "scrollbarLabel": "Pozycja w galerii"
   },
   "bulk": {
     "orderModal": {

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createLibrary } from "../../../library/createLibrary";
 import { createSelection } from "../createSelection";
 import { GalleryGrid } from "../GalleryGrid";
+import { MAX_GRID_HEIGHT } from "../gridGeometry";
 import { LanguageProvider } from "../../../i18n/solid";
 import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
@@ -335,8 +336,11 @@ it("demands the final million-result page and passes the required total to the i
   api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset, 1_000_000));
   const { library, view, scroller, click } = await mount();
   expect(screen.queryByTestId("gallery-end-state")).toBeNull();
-  scroller.scrollTop = 4_000_000 - 600 + 80;
-  fireEvent.scroll(scroller);
+  // A million results exceed the physical window; End moves it to the final rows.
+  expect(view.container.querySelector('[data-testid="gallery-grid-content"]')).toHaveStyle({
+    height: `${MAX_GRID_HEIGHT}px`
+  });
+  fireEvent.keyDown(scroller, { key: "End" });
   flush();
   await waitFor(() => expect(view.container.querySelector('button[data-asset-index="999999"]')).toBeInTheDocument());
   expect(api.getAssetQueryPage).toHaveBeenCalledWith(1, 999936, 128);
@@ -382,4 +386,92 @@ it("renders static slots without subscriptions or passing-page requests and resu
   view.unmount(); flush();
   expect(subscriptions()).toBe(0);
   expect(api.demand).toHaveBeenLastCalledWith([], []);
+});
+
+const rowOrder = (container: HTMLElement) =>
+  [...container.querySelectorAll<HTMLElement>("[data-gallery-row]:not([hidden])")].map((row) =>
+    Number(row.dataset.galleryRow)
+  );
+
+it("keeps loaded tiles mounted through a fast jump and suspends only page and thumbnail demand", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const { view, scroll } = await mount();
+    const before = new Set(view.container.querySelectorAll("button[data-asset-index]"));
+    expect(before.size).toBe(60);
+    api.getAssetQueryPage.mockClear();
+    api.demand.mockClear();
+    // Twelve rows down stays inside the first cached page (indices 0-127).
+    scroll(60);
+    // Same reading as the E2E specs: present and not "false".
+    const paused = view.container
+      .querySelector("[data-testid=gallery-grid]")
+      ?.getAttribute("data-scroll-paused");
+    expect(paused === null || paused === "false").toBe(false);
+    const during = view.container.querySelectorAll("button[data-asset-index]");
+    expect(new Set(during)).toEqual(before);
+    expect(view.container.querySelector('button[data-asset-index="60"]')).toBeInTheDocument();
+    expect(view.container.querySelectorAll("img")).toHaveLength(60);
+    expect(view.container.querySelectorAll(".animate-pulse")).toHaveLength(0);
+    expect(api.getAssetQueryPage).not.toHaveBeenCalled();
+    expect(api.demand).toHaveBeenLastCalledWith([], []);
+    vi.advanceTimersByTime(150);
+    flush();
+    expect(api.demand.mock.lastCall?.[0]).toContain(61);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("recycles one row slot per crossed row with a constant DOM and visual row order", async () => {
+  const { view, scroll } = await mount();
+  scroll(50);
+  const content = view.container.querySelector<HTMLElement>('[data-testid="gallery-grid-content"]');
+  if (!content) throw new Error("Missing grid content");
+  const nodes = content.querySelectorAll("*").length;
+  const rows = [...content.querySelectorAll<HTMLElement>("[data-gallery-row]")];
+  const tiles = new Set(content.querySelectorAll("button[data-asset-index]"));
+  expect(rowOrder(content)).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+  scroll(55);
+  expect(rowOrder(content)).toEqual([7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+  expect(content.querySelectorAll("*").length).toBe(nodes);
+  expect(new Set(content.querySelectorAll("[data-gallery-row]"))).toEqual(new Set(rows));
+  // The recycled row moved to the end and kept its tile elements.
+  expect(new Set(content.querySelectorAll("button[data-asset-index]"))).toEqual(tiles);
+  expect(content.querySelector('button[data-asset-index="94"]')?.closest("[data-gallery-row]")).toBe(
+    rows[0]
+  );
+  expect(content.lastElementChild).toBe(rows[0]);
+});
+
+it("draws media-group backplates per row behind adjacent grouped tiles", async () => {
+  const { view } = await mount();
+  const row = view.container.querySelector('[data-gallery-row="0"]');
+  const plates = row?.querySelectorAll<HTMLElement>("[data-gallery-group-plate]") ?? [];
+  expect(plates).toHaveLength(1);
+  expect(plates[0].style.width).toBe(`${2 * 188 + 12 + 8}px`);
+  expect(plates[0].style.left).toBe("2px");
+  expect(view.container.querySelectorAll("[data-gallery-group-plate]")).toHaveLength(1);
+});
+
+it("adds a keyboard scrollbar only for results taller than the physical window", async () => {
+  const small = await mount();
+  expect(screen.queryByRole("scrollbar")).toBeNull();
+  small.view.unmount();
+  api.startAssetQuery.mockResolvedValue(page(0, 1_000_000));
+  api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset, 1_000_000));
+  const { view } = await mount();
+  const bar = screen.getByRole("scrollbar", { name: "Gallery position" });
+  expect(bar).toHaveAttribute("aria-valuemax", "1000000");
+  expect(bar).toHaveAttribute("aria-valuenow", "1");
+  expect(bar).toHaveAttribute("aria-controls", "gallery-grid-content");
+  fireEvent.keyDown(bar, { key: "End" });
+  flush();
+  await waitFor(() =>
+    expect(view.container.querySelector('button[data-asset-index="999999"]')).toBeInTheDocument()
+  );
+  expect(Number(bar.getAttribute("aria-valuenow"))).toBeGreaterThan(999_900);
+  fireEvent.keyDown(bar, { key: "Home" });
+  flush();
+  expect(bar).toHaveAttribute("aria-valuenow", "1");
 });

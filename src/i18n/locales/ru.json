@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} элементов",
     "resultCount_other": "{{formattedCount}} элемента",
     "loadError": "Не удалось загрузить библиотеку.",
-    "retry": "Повторить"
+    "retry": "Повторить",
+    "scrollbarLabel": "Позиция в галерее"
   },
   "bulk": {
     "orderModal": {

@@ -71,7 +71,7 @@ Install frontend and tooling dependencies from the repository root:
 bun install
 ```
 
-`bun.lock` records the resolved JavaScript dependency graph and should remain committed. `bunfig.toml` sets `[install].exact = false`, so newly added dependencies are normally written as compatible ranges rather than exact versions. Most `package.json` dependencies use ranges. The Solid toolchain and virtual-core are exact pins; the lockfile supplies reproducible transitive resolutions. For a verification or CI install that must not update the lockfile, use:
+`bun.lock` records the resolved JavaScript dependency graph and should remain committed. `bunfig.toml` sets `[install].exact = false`, so newly added dependencies are normally written as compatible ranges rather than exact versions. Most `package.json` dependencies use ranges. The Solid toolchain packages are exact pins; the lockfile supplies reproducible transitive resolutions. For a verification or CI install that must not update the lockfile, use:
 
 ```bash
 bun install --frozen-lockfile
@@ -128,19 +128,17 @@ The installed family is pinned in `package.json` and `bun.lock`:
 | `solid-js`, `@solidjs/web`, `@solidjs/compiler` | `2.0.0-rc.13` |
 | `@solidjs/vite-plugin` | `3.0.0-next.47` |
 | `@solidjs/testing-library` | `1.0.0-beta.3` |
-| `@tanstack/virtual-core` | `3.17.8` |
 
 These are repository pins, not a claim about the latest public releases. Vite and Vitest
 both use `@solidjs/vite-plugin`; JSX stays preserved for the compiler with
 `jsxImportSource: @solidjs/web`. Vitest uses browser/development export conditions and
 inlines the Solid dependencies. No separate renderer projects or compiler contexts remain.
 
-The gallery uses `features/gallery/createVirtualGrid.ts` over virtual-core. The migration
-selected this adapter because the then-reviewed Solid virtualizer adapter declared Solid 1
-compatibility. The local adapter owns geometry, observers and range publication explicitly;
-its real-core tests verify measurements, bounded slots and resize anchors. Bulk order and
-duplicate dialogs also use virtual-core. Replacing it or upgrading the Solid RC family
-requires its own compatibility and behavior checks.
+Virtualization has no third-party dependency
+([ADR 0003](../adr/0003-custom-gallery-virtualizer.md)). The gallery uses
+`features/gallery/createVirtualGrid.ts` over the pure geometry in `gridGeometry.ts`; bulk order
+and duplicate dialogs use `ui/dom/createVirtualList.ts`. Upgrading the Solid RC family requires
+its own compatibility and behavior checks, including the row-pool order of `For`.
 
 ### Canonical Tauri development
 

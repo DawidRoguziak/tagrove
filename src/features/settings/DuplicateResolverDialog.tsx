@@ -1,11 +1,6 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onSettled } from "solid-js";
-import {
-  Virtualizer,
-  elementScroll,
-  observeElementOffset,
-  observeElementRect
-} from "@tanstack/virtual-core";
+import { createEffect, createMemo, createSignal, For, onSettled } from "solid-js";
 import { useLanguage } from "../../i18n/solid";
+import { createVirtualList } from "../../ui/dom/createVirtualList";
 import { UiButton } from "../../ui/controls/UiButton";
 import { UiModal } from "../../ui/overlays/UiModal";
 import { DuplicateGroupCard } from "./DuplicateGroupCard";
@@ -37,38 +32,20 @@ export function DuplicateResolverDialog(props: Props) {
   const { t } = useLanguage();
   const state = createDuplicateResolver(props);
   const [scroller, setScroller] = createSignal<HTMLDivElement>();
-  const [version, setVersion] = createSignal(0);
-  const virtualizer = new Virtualizer<HTMLDivElement, HTMLDivElement>({
-    count: 0,
-    getScrollElement: () => null,
+  const list = createVirtualList({
+    scroller,
+    count: () => props.groups.length,
     estimateSize: () => 360,
     overscan: 2,
-    initialRect: { width: 0, height: 720 },
-    scrollToFn: elementScroll,
-    observeElementOffset,
-    observeElementRect,
-    onChange: () => setVersion((value) => value + 1)
+    initialViewport: 720,
+    enabled: () => props.open
   });
-  onCleanup(virtualizer._didMount());
-  createEffect(
-    () => ({ count: props.groups.length, element: scroller(), open: props.open }),
-    ({ count, element, open }) => {
-      virtualizer.setOptions({
-        ...virtualizer.options,
-        count,
-        getScrollElement: () => (open ? (element ?? null) : null)
-      });
-      virtualizer._willUpdate();
-      setVersion((value) => value + 1);
-    }
-  );
   const snapshot = createMemo(() => {
-    version();
-    const items = virtualizer.getVirtualItems();
+    const items = list.items();
     return {
       items,
       starts: new Map(items.map((item) => [item.index, item.start])),
-      height: virtualizer.getTotalSize()
+      height: list.totalSize()
     };
   });
   // Keep row identities for the scan snapshot; virtualizer updates only change geometry.
@@ -163,7 +140,7 @@ export function DuplicateResolverDialog(props: Props) {
               <div
                 ref={(element) =>
                   onSettled(() => {
-                    if (element.isConnected) virtualizer.measureElement(element);
+                    if (element.isConnected) list.measure(element, item.index);
                   })
                 }
                 data-index={item.index}

@@ -19,3 +19,8 @@ Format: `YYYY-MM-DD | etap NN | rola | status | jedno zdanie | link do etapu`
 2026-11-07 | etap 02 | agent etapu 02 | done | Priorytet zapisów użytkownika, pula 8 z rezerwą, ≤ 1 bump/s w skanie, `thumb_lock` per sekcja ([ADR 0002](../../adr/0002-backend-write-priority-and-scan-revisions.md)); E2E: like/tag 0/20, tag max 33 ms, 0 rebuildów pod skanem | [02](02-backend-contention.md)
 2026-11-07 | etap 06 | agent etapu 02 | todo | Z etapu 02: guard miniatur per sekcja, `commit_thumbnail_results`, istniejąca miniatura bez zapisu | [06](06-thumb-protocol.md)
 2026-11-07 | etap 07 | agent etapu 02 | in progress | Z etapu 02: pomiary pośrednie Rust i E2E; do sprawdzenia `.claude/rules` (thumbnails, database, backend-core) | [07](07-verification-and-docs.md)
+2026-11-07 | etap 05 | agent etapu 05 | done | Własny virtualizer z pulą wierszy i natywnym oknem scrolla (`MAX_GRID_HEIGHT` 16M z bramki 2^24 px), virtual-core usunięty ([ADR 0003](../../adr/0003-custom-gallery-virtualizer.md)); E2E: stop → komplet 16 ms we flingach, DOM stałe 211 węzłów | [05](05-custom-virtual-grid.md)
+2026-11-07 | etap 07 | agent etapu 05 | in progress | Z etapu 05: pomiar pośredni `grid-baseline`, bramka wysokości do powtórki po aktualizacji WebKitGTK | [07](07-verification-and-docs.md)
+2026-11-07 | etap 04 | agent etapu 05 | todo | Z etapu 05: interfejs `hasMore`/`onReachEnd` zostawiony do usunięcia; `getAssetAt` w memo komórek | [04](04-query-cache.md)
+2026-11-07 | etap 06 | agent etapu 05 | todo | Z etapu 05: `ThumbnailImage` z jednym `<img>`, recykling kafli przy flingu | [06](06-thumb-protocol.md)
+2026-11-07 | etap 08 | agent etapu 05 | todo | Z etapu 05: API modelu scrolla i pasek trybu okna dla scrubbera | [08](08-timeline-scrubber.md)

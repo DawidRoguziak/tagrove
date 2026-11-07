@@ -80,3 +80,8 @@ todo — 2026-11-04
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-07 — agent etapu 05
+- Z etapu 05: etap 05 zostawił interfejs `hasMore`/`isLoading`/`onReachEnd` w `createVirtualGrid` bez zmian (efekt reach-end na końcu pliku) i `GalleryStatusFooter` nietknięty. Można je usuwać zgodnie z krokiem 5.
+  - Wywołania w harnessie: `e2e/gallery-scale/fixture.tsx` (licznik `reachEndCalls`) i `performance.tsx` (`onReachEnd={model.handleGalleryReachEnd}`).
+- Z etapu 05: `getAssetAt(index)` jest wołane z memo każdej komórki puli wierszy (`GalleryGrid.tsx`, `assetAt`). Mutowalny cache z sygnałem `version` musi więc dalej powiadamiać te memo. Pokrywa to test „keeps loaded tiles mounted through a fast jump…” w `GalleryGrid.test.tsx`.

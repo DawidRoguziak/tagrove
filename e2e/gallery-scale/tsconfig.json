@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": { "target": "ES2022", "lib": ["ES2022", "DOM", "DOM.Iterable"] },
-  "include": ["fixture.tsx", "performance.tsx", "vite.config.ts"]
+  "include": ["fixture.tsx", "performance.tsx", "height-probe.tsx", "vite.config.ts"]
 }

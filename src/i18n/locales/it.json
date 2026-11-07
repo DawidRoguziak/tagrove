@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} elementi",
     "resultCount_other": "{{formattedCount}} elementi",
     "loadError": "Caricamento della libreria non riuscito.",
-    "retry": "Riprova"
+    "retry": "Riprova",
+    "scrollbarLabel": "Posizione nella galleria"
   },
   "bulk": {
     "orderModal": {

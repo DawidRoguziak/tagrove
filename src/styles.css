@@ -219,6 +219,9 @@
   background: var(--border-strong); border: 2px solid var(--surface-muted); border-radius: 4px;
 }
 @supports not (scrollbar-gutter: stable) { .gallery-scroll { overflow-y: scroll; } }
+/* Above MAX_GRID_HEIGHT the native bar would span only the physical window, so the gallery
+   draws its own (GalleryScrollbar). createVirtualGrid pads the removed gutter back. */
+.gallery-scroll[data-gallery-windowed] { scrollbar-width: none; }
 
 /* The header keeps its natural height; only the remaining workspace scrolls. */
 .workspace-header { position: relative; flex-shrink: 0; z-index: 40; background: var(--window-chrome-bg); border-bottom: 1px solid var(--border-strong); }

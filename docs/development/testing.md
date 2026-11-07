@@ -809,8 +809,8 @@ Migration-only shell/reference specs and renderer switches have been removed.
 absence of React, its adapters and the removed source trees.
 
 `src/test/renderSolid.tsx` updates props under one component owner; `settle.ts` supplies
-explicit batch boundaries. Real virtual-core tests retain 10,000/26,000-slot limits,
-measurement identity, null-ref startup, resize anchoring and cleanup. Query/cache tests
+explicit batch boundaries. Virtual grid tests retain 10,000/26,000/1,000,000-slot limits,
+row-pool identity, null-ref startup, resize anchoring and cleanup. Query/cache tests
 exercise page eviction and per-asset thumbnail updates. Model tests use deferred IPC for
 canonical publication, contention, partial responses and disposal.
 
@@ -890,7 +890,7 @@ live gesture cancellation, new input, mode/query changes, identity reset and dis
 ## Million-result gallery layout
 
 Run `sh e2e/gallery-scale/run.sh` from the repository root. It builds the actual
-`GalleryGrid`, virtual-core, selection model and production CSS into a standalone
+`GalleryGrid`, its row-pool virtualizer, selection model and production CSS into a standalone
 fixture, then opens an ephemeral WebKitGTK 4.1 view on a private Xvfb display.
 Python needs PyGObject and GTK 3/WebKit2 4.1 typelibs. Native input uses libX11 and
 libXtst; screenshots require ImageMagick `import`. The runner uses temporary XDG
@@ -900,11 +900,13 @@ or read the user's library. Do not run `webkit.py` against a normal desktop.
 Lazy synthetic summaries exercise one million results at one, five, six and eight
 columns, narrow width, tile-size changes, viewport-height changes and resize anchors.
 Assertions require final index 999999 to be visible, demanded and selected by native
-clicks, with a spacer no taller than 4,000,000 pixels and fewer than 120 mounted tiles.
-XTest drives the actual scrollbar thumb, wheel, Shift-click and rectangle selection.
-The fixture checks global selection IDs and range reads, then disposes the gallery
-and checks that further scroll/resize events publish no ranges. It also includes
-an uncompressed 100-result control. Screenshots, JSON results and profile/server
+clicks, with a spacer no taller than `MAX_GRID_HEIGHT` (16,000,000 pixels), the windowed
+mode with the gallery scrollbar, unchanged columns when the native gutter is removed, and
+fewer than 120 mounted tiles. XTest drags the gallery scrollbar thumb, presses its track,
+sends End/Home from a focused tile, wheels after an idle window recentre (which must keep
+the visible tiles), and drives Shift-click and rectangle selection. The fixture checks
+global selection IDs and range reads, then disposes the gallery and checks that further
+scroll/resize events publish no ranges. It also includes a native 100-result control. Screenshots, JSON results and profile/server
 cleanup evidence remain ignored under `artifacts/gallery-scale/`.
 
 This establishes native layout and input behavior with synthetic data. Range callbacks
@@ -923,13 +925,30 @@ bun run test -- src/features/gallery src/app/__tests__/gallery.test.tsx src/libr
 sh e2e/gallery-scale/run.sh
 ```
 
+### Scroll height probe
+
+`GALLERY_HEIGHT_PROBE=1 sh e2e/gallery-scale/run.sh` opens `height-probe.html`, a plain-DOM
+page with the production `.gallery-scroll` CSS, in the same private WebKitGTK setup. For
+spacers from 4M to 33.5M pixels it records `scrollHeight`, `scrollTop` write/read-back
+(odd and fractional), the layout offset and `elementFromPoint` hit of a 2D-translated
+`contain: strict` marker near the end, one native wheel step, and a screenshot per height.
+It then compares the native gutter with `scrollbar-color: transparent` and
+`scrollbar-width: none`. Check painting afterwards with ImageMagick, for example
+`convert artifacts/gallery-scale/height-probe-paint-16000k.png -format '%[pixel:p{150,290}]' info:`
+(the marker is `srgb(204,51,51)`). For device scale 2, run `webkit.py` through the same
+environment with `GDK_SCALE=2` and a larger Xvfb screen, and double the pixel coordinates.
+WebKitGTK 2.54.2 was exact up to 16,777,000 pixels and from 16,800,000 pixels rounded odd
+offsets and stopped painting the marker at both scales; `MAX_GRID_HEIGHT` derives from this
+(see [gallery behavior](../subsystems/library-query-and-gallery.md#virtual-range-loading-and-thumbnail-prefetch)).
+
 ## Fast gallery scrolling
 
 `createVirtualGrid.test.tsx` covers the half-viewport threshold, cumulative logical
 distance across reversals, slow motion, the 150 ms idle deadline, unchanged final
 ranges, geometry anchors, disposal and the near-end loading guard. The integrated
-`GalleryGrid.test.tsx` checks that paused slots contain no images or animations,
-have no thumbnail subscriptions, skip passing pages and resume the final range.
+`GalleryGrid.test.tsx` checks that a fast jump keeps loaded tiles, images and
+subscriptions while page and thumbnail demand stop, that paused placeholders do not
+pulse, and that uncached slots skip passing pages and resume the final range.
 Library tests retain late pages and independent selection/lightbox reads through
 pause and filter changes. Thumbnail queue tests preserve dispatched results,
 cached paths and additive previews when gallery demand is cleared.
@@ -952,14 +971,14 @@ query/cache reset. Both variants must reach index 25999. The script records rAF
 intervals during motion and the first 150 ms after the last position change,
 page/thumbnail invocation counts, requested thumbnail IDs, and time from the last
 scroll event to a loaded visible image and to image opacity above 0.95. It also
-checks that every paused frame has no images, pulsing placeholders or spinners.
+checks that no paused frame has pulsing placeholders or spinners, and records paused
+frames that still show loaded images and the tile elements created per drag.
 
-For before/after comparison, `GALLERY_BASELINE_DIR` can point to saved earlier
-copies of `createVirtualGrid.ts`, `GalleryGrid.tsx` and `createLibrary.ts`. The Vite
-fixture substitutes those three files while using the same remaining source,
-CSS and synthetic transport. Save these files before editing them, and preserve
-`artifacts/gallery-scale/result.json` after each run because the next run replaces
-it. Run both variants without concurrent builds or test suites. This is a frontend
+For a before/after comparison, run the fixture on the earlier commit and on the change,
+copying `artifacts/gallery-scale/result.json` after each run because the next run
+replaces it. (The former `GALLERY_BASELINE_DIR` source substitution was removed with
+`@tanstack/virtual-core`, which the old sources need.) Run both variants without
+concurrent builds or test suites. This is a frontend
 comparison on software-rendered Xvfb, not a SQLite, native IPC or real-media decode
 benchmark. Results include the pause's deliberate delay. Gallery images now appear at full opacity
 as soon as they load; the historical comparison below was recorded with the fade enabled.

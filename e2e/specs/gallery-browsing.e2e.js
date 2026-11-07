@@ -40,7 +40,7 @@ async function scroll(index) {
   await browser.execute((index) => {
     const scroller = document.querySelector(".gallery-scroll"),
       tile = document.querySelector("button[data-asset-index]"),
-      grid = tile.parentElement;
+      grid = document.querySelector('[data-testid="gallery-grid-content"]');
     const stride = tile.getBoundingClientRect().width + 12,
       columns = Math.max(1, Math.floor((grid.clientWidth + 12) / stride));
     const margin =

@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} 项",
     "resultCount_other": "{{formattedCount}} 项",
     "loadError": "加载媒体库失败。",
-    "retry": "重试"
+    "retry": "重试",
+    "scrollbarLabel": "图库中的位置"
   },
   "bulk": {
     "orderModal": {

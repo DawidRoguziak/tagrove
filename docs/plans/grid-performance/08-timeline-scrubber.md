@@ -61,3 +61,12 @@ todo — 2026-11-04
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-07 — agent etapu 05
+- Z etapu 05: model scrolla jest w `src/features/gallery/createVirtualGrid.ts`, a czysta geometria w `gridGeometry.ts` ([ADR 0003](../../adr/0003-custom-gallery-virtualizer.md)).
+  - Dla scrubbera: `scrollToIndex(index)` (wiersz indeksu na górę), `scrollTo(logical, userMotion)` (`userMotion` włącza pauzę popytu jak przy przeciąganiu), `maxOffset`, `windowed`, `range.visibleStartIndex`.
+  - Offset jest logiczny, w px względem góry gridu.
+- Z etapu 05: `offset` aktualizuje się co klatkę tylko w trybie okna, czyli przy treści powyżej `MAX_GRID_HEIGHT` = 16 000 000 px. Scrubber potrzebny też w trybie natywnym musi włączyć publikację `offset` zawsze, np. warunkiem w `publish`.
+- Z etapu 05: powyżej limitu natywny pasek jest ukryty (`data-gallery-windowed`, `scrollbar-width: none` i oddany gutter jako `padding-right`). Własny `GalleryScrollbar.tsx` (`role="scrollbar"`, sticky przy prawej krawędzi kolumny galerii) pokazuje pozycję globalną.
+  - Scrubber może go zastąpić. Wtedy zachowaj obsługę klawiatury (strzałki, PageUp/PageDown, Home/End) i `aria-valuenow`.
+- Z etapu 05: limit 2^24 px (pomiar w `e2e/gallery-scale/height-probe.tsx`) dotyczy też pozycji, które scrubber wylicza dla sekcji. Pozycje fizyczne liczy tylko model okna (`rowTop - base`).

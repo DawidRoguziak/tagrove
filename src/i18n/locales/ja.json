@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}}件",
     "resultCount_other": "{{formattedCount}}件",
     "loadError": "ライブラリの読み込みに失敗しました。",
-    "retry": "再試行"
+    "retry": "再試行",
+    "scrollbarLabel": "ギャラリー内の位置"
   },
   "bulk": {
     "orderModal": {

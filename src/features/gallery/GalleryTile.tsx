@@ -7,13 +7,10 @@ import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../../ui/controls/Thu
 import { UiIcon } from "../../ui/controls/UiIcon";
 import { UiChip } from "../../ui/controls/UiChip";
 import { useLanguage } from "../../i18n/solid";
+/** One grid cell; the row's CSS grid places and sizes it. */
 export function GalleryTile(props: {
   asset: AssetSummary;
   index: number;
-  lane: number;
-  start: number;
-  size: number;
-  gap: number;
   selected: boolean;
   thumbnailStore: ThumbnailStore;
   onClick: (event: MouseEvent & { currentTarget: HTMLButtonElement }) => void;
@@ -29,12 +26,7 @@ export function GalleryTile(props: {
   };
   return (
     <button
-      class={`absolute z-[1] overflow-hidden rounded-[var(--radius-tile)] border border-[var(--border-soft)] bg-base-300/95 p-0 ${props.selected ? "shadow-[0_0_0_2px_var(--color-primary),var(--shadow-tile-hover)]" : "shadow-[var(--shadow-tile)] hover:shadow-[var(--shadow-tile-hover)]"}`}
-      style={{
-        width: `${props.size}px`,
-        height: `${props.size}px`,
-        transform: `translate3d(${props.lane * (props.size + props.gap)}px, ${props.start}px, 0)`
-      }}
+      class={`relative z-[1] h-full w-full overflow-hidden rounded-[var(--radius-tile)] border border-[var(--border-soft)] bg-base-300/95 p-0 ${props.selected ? "shadow-[0_0_0_2px_var(--color-primary),var(--shadow-tile-hover)]" : "shadow-[var(--shadow-tile)] hover:shadow-[var(--shadow-tile-hover)]"}`}
       data-asset-id={props.asset.id}
       data-asset-index={props.index}
       draggable={false}
@@ -58,13 +50,14 @@ export function GalleryTile(props: {
       {props.asset.media_group_key?.trim() ? (
         <span class="sr-only">{t("gallery.groupedChip")}</span>
       ) : null}
-      <span
-        class="gallery-selection-mark pointer-events-none absolute left-2 top-2 grid h-5 w-5 place-items-center rounded-[var(--radius-tile)] bg-primary text-primary-content"
-        style={{ opacity: props.selected ? 1 : 0 }}
-        aria-hidden="true"
-      >
-        <UiIcon name="check-square" className="h-4 w-4" />
-      </span>
+      {props.selected ? (
+        <span
+          class="gallery-selection-mark pointer-events-none absolute left-2 top-2 grid h-5 w-5 place-items-center rounded-[var(--radius-tile)] bg-primary text-primary-content"
+          aria-hidden="true"
+        >
+          <UiIcon name="check-square" className="h-4 w-4" />
+        </span>
+      ) : null}
       {props.asset.kind === "video" ? (
         <UiChip
           className="pointer-events-none absolute right-1 bottom-1 shadow-[var(--shadow-chip)]"

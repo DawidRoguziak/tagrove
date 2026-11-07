@@ -100,7 +100,7 @@ Wszystko O(1). Testy jednostkowe dla 10k, 26k i 1M (granice, ostatni niepełny w
 - Własny model scrolla powyżej limitu: inercja touchpada w WebKitGTK przychodzi jako seria eventów wheel. Sprawdź na prawdziwym sprzęcie przez `verify-mediatagger`.
 
 ## Status
-todo — 2026-11-04
+done — 2026-11-07 (commit czeka na akceptację użytkownika)
 
 ## Notatki agentów
 <!-- dopisuj wpisy według protokołu z README -->
@@ -112,3 +112,60 @@ todo — 2026-11-04
   - najdłuższa klatka w sekundzie po zatrzymaniu: 17–25 ms (rAF; `longtask` niedostępny);
   - DOM gridu: 379 węzłów i 63 kafle w spoczynku, 547–589 węzłów i 91–98 kafli po flingu.
 - Uwaga do kryterium „< 16 ms”: pomiar idzie przez odstępy rAF na programowym renderowaniu Xvfb, gdzie jedna klatka to ~16,7 ms. Porównuj z bazą (17–25 ms), nie z wartością bezwzględną.
+
+### 2026-11-07 — agent etapu 05 (krok 1: bramka wysokości)
+- Zrobione: strona `e2e/gallery-scale/height-probe.{html,tsx}` (`GALLERY_HEIGHT_PROBE=1 sh e2e/gallery-scale/run.sh`). To czysty DOM w prawdziwym WebKitGTK 2.54.2 (ta sama biblioteka co w Tauri) na prywatnym Xvfb, z produkcyjnym CSS `.gallery-scroll`.
+  - Dla wysokości 4M–64M sprawdzałem: `scrollHeight`, zapis i odczyt `scrollTop` (także nieparzyste i ułamkowe), pozycję markera z 2D `translate` + `contain: strict`, `elementFromPoint`, krok natywnego wheel (XTest) i malowanie (piksel ze screenshotu).
+  - Bieg przy `GDK_SCALE=2` (`devicePixelRatio = 2`) na ekranie 3800×1800.
+- Odkryte:
+  - Do **16 777 000 px** (poniżej 2^24) wszystko jest dokładne i marker się maluje.
+  - Od **16 800 000 px** marker przy końcu jest przesunięty o 1 px (float32) i **w ogóle się nie maluje**, choć layout i hit-testing działają.
+  - Ta sama granica w px CSS przy skali 1 i 2, więc nie zależy od skali urządzenia.
+  - Treść saturuje na 33 554 428 px (limit LayoutUnit).
+  - Krok wheel: 88–89 px.
+  - Zapis `scrollTop = Number.MAX_SAFE_INTEGER` daje 0: offsety trzeba przycinać w JS.
+  - Natywny suwak: `.gallery-scroll` ma standardowe `scrollbar-width`/`scrollbar-color`, więc reguły `::-webkit-scrollbar-*` nie działają.
+    - `scrollbar-color: transparent` zostawia gutter 21 px, a klik w gutter nadal skacze.
+    - `scrollbar-width: none` usuwa gutter (+21 px szerokości) i jego obsługę.
+- Decyzja: `MAX_GRID_HEIGHT = 16 000 000`, czyli ~0,78M px zapasu do 2^24 na margines, stopkę i panel bulk pod galerią.
+  - Tryb okna ukrywa natywny pasek przez `scrollbar-width: none` i oddaje gutter jako `padding-right`, żeby liczba kolumn się nie zmieniała.
+- Pomiary „before” na starym gridzie (ignorowane `artifacts/gallery-scale/`):
+  - `performance-before-05.json`: p95 klatki 17 ms, max 17–18 ms, obraz po 224–240 ms od zatrzymania, 80–81 klatek pauzy na przeciągnięcie, 2 strony i 1 batch miniatur na przeciągnięcie;
+  - `scale-before-05.json`: wszystkie scenariusze 1M przechodzą przy spacerze 4M.
+  - Pierwszy bieg „before” szedł równolegle z `cargo test` drugiej sesji, więc odrzuciłem go (`performance-before-05-under-cargo-load.json`).
+  - Powtórka i wszystkie pomiary bramki szły bez cargo/rustc/vitest/wdio. W drzewie były wtedy niezacommitowane zmiany Rust etapu 02, które nie dotyczą tego harnessu (bez Tauri).
+- Testy: `GALLERY_HEIGHT_PROBE=1 sh e2e/gallery-scale/run.sh` → ok (skala 1 i 2); `bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json` → pass.
+
+### 2026-11-07 — agent etapu 05 (kroki 2–8)
+- Zrobione:
+  - `gridGeometry.ts`: czysta geometria O(1), `MAX_GRID_HEIGHT = 16 000 000` z bramki.
+  - Nowy `createVirtualGrid.ts`: wiersze publikowane razem z layoutem i tylko przy zmianie wierszy; scroll czyta wyłącznie `scrollTop`; pauza wstrzymuje tylko popyt.
+  - `GalleryGrid.tsx`: pula slotów wierszy w kolejności DOM = kolejność wizualna, 2D `translate` + `contain: strict`, CSS grid, backplates per wiersz.
+  - `GalleryTile` bez pozycjonowania, znacznik zaznaczenia tylko przy `selected`; `ThumbnailImage` z jednym `<img>` i `decoding="async"`.
+  - Powyżej limitu tryb okna (decyzja użytkownika zamiast `overflow: hidden`): natywny scroll w oknie od `base`, rebase w bezruchu albo awaryjnie przy krawędzi, Home/End na `window`, `GalleryScrollbar.tsx` (`role="scrollbar"`). Natywny pasek ukryty przez `data-gallery-windowed` + `scrollbar-width: none` + oddany gutter.
+  - Dialogi przeniesione na `src/ui/dom/createVirtualList.ts`. `bun remove @tanstack/virtual-core`: diff `bun.lock` dotyczy tylko tego pakietu.
+  - [ADR 0003](../../adr/0003-custom-gallery-virtualizer.md), dokumentacja (galeria, frontend, settings, bulk, setup, testing), reguła `gallery-query`, `CLAUDE.md`, recepta `verify-mediatagger`, specy E2E (`tile.parentElement` → `[data-testid="gallery-grid-content"]`), fixture `e2e/gallery-scale`.
+  - Nowy klucz `gallery.scrollbarLabel` w 11 locale.
+- Odkryte:
+  - Solid 2 `For` przy rotacji puli o jeden wiersz przesuwa dwa węzły, oba poza ekranem. Przeniesienie węzła zdejmuje fokus, stąd obsługa Home/End także dla `body`.
+  - Gettery czytające `view()` budziły efekt w `createGridHandlers.ts` przy każdej zmianie wierszy, a jego cleanup (`cancelForLayout`) przerywał przeciąganie prostokąta, gdy edge-scroll przesunął grid. Teraz to memo, z testem regresji.
+  - Pierwszy pomiar szerokości po montażu przewijał o margines. Poprawione: kotwica tylko gdy offset > 0, test regresji.
+  - Ostrzeżenia WebDrivera „element click intercepted” w `group-order` i `review-fixes` są też w starym pełnym biegu z 2026-10-03, więc nie są regresją.
+- Wyniki `grid-baseline.e2e.js` (Xvfb 1440×1100, okno 1440×1000, debug, `TMPDIR` na dysku), przed → po:
+  - stop → komplet kafli: 16 ms dla wszystkich flingów (fling w górę był 181–193 ms); skoki paskiem 180–181 ms (181–193), bo dane spoza cache czekają na koniec pauzy i stronę;
+  - najdłuższa klatka po zatrzymaniu: 17–20 ms (17–27);
+  - DOM gridu: stałe 211 węzłów i 98 kafli (379 i 63 w spoczynku, 547–589 i 91–98 po flingu);
+  - zimny cache bez zmian: kafle z danymi 173 ms, komplet miniatur p50 482 ms;
+  - like i tag 0/20 nieudanych.
+- Wyniki `GALLERY_PERFORMANCE=1` (26k, natywny drag), przed → po: p95 klatki 17 ms → 17 ms, max 17–18 ms → 17–18 ms, obraz po zatrzymaniu 224–240 → 224–236 ms, 2 strony i 1 batch miniatur bez zmian. W drzewie podczas pomiarów był już zacommitowany etap 02 (`acb6054`), bez niezacommitowanego Rusta. Maszyna wolna (bez cargo, rustc, vitest, wdio).
+- Zostało:
+  - etap 04 usuwa `hasMore`/`onReachEnd` (interfejs zostawiony);
+  - etap 06 (`thumb://`) korzysta z nowego `ThumbnailImage`;
+  - etap 08 podpina scrubber pod `scrollToIndex`/`offset`.
+  - Bramki nie powtarzałem na prawdziwym touchpadzie (ryzyko z pliku etapu): tryb okna zostawia inercję natywną, a rebase nie pisze `scrollTop` w trakcie ruchu, chyba że do krawędzi okna zostały 2 viewporty.
+- Testy:
+  - `bun run test -- src/features src/ui src/app src/library src/i18n src/utils src/platform` → 821/821 pass;
+  - `bun run typecheck`, `bun run lint`, `bun run format:check`, `bun run locale:check`, `bun run test:build`, `bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json`, `git diff --check` → pass;
+  - `sh e2e/gallery-scale/run.sh` (1M: tryb okna, pasek, End/Home, recenter, wheel, zaznaczanie) → pass; `GALLERY_PERFORMANCE=1 …` → pass;
+  - desktop E2E na ostatecznym kodzie: `gallery-selection`, `selection-recovery`, `gallery-browsing`, `settings-maintenance` → 4/4 pass; `gallery.performance`, `group-order`, `review-fixes`, `lightbox-recovery`, `thumbnail-fade` → 5/5 pass; `grid-baseline` (`MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1`) → 3/3 pass.
+  - Wcześniejsze biegi pośrednie wykryły dwa opisane wyżej błędy; po poprawkach przechodzą.

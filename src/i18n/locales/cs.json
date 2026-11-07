@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} položky",
     "resultCount_other": "{{formattedCount}} položek",
     "loadError": "Načtení knihovny se nezdařilo.",
-    "retry": "Znovu"
+    "retry": "Znovu",
+    "scrollbarLabel": "Pozice v galerii"
   },
   "bulk": {
     "orderModal": {

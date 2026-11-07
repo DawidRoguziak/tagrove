@@ -33,3 +33,9 @@ tiles. If results are still loading, inspect again; do not infer completion from
 
 Search uses tag/query grammar, not arbitrary filename matching. Fixture IDs and tile ordering
 are not fixed. Obtain current IDs from `inspect` before opening a specific media kind.
+
+Tiles (`button[data-asset-index]`) and placeholders (`div[data-asset-index]`) sit in recycled row
+elements (`[data-gallery-row]`) inside `[data-testid="gallery-grid-content"]`. Take grid width
+and margin from that content element, not from `tile.parentElement`. Results taller than the
+16,000,000 px physical window scroll inside that window: `scrollTop = 0` is only the window start.
+Use End/Home or the `role="scrollbar"` named "Gallery position" to reach the ends.

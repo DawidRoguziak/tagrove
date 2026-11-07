@@ -36,8 +36,9 @@ Single replacements require a complete canonical base; multi-selection merges us
 backend's complete lists. Synchronous operation locks reject repeated same-turn commands.
 Obsolete selections cannot publish editor feedback or restore focus to a new draft.
 
-`features/bulk/GroupOrderModal.tsx` keeps an isolated order draft, virtualizes rows through
-virtual-core, and supports pointer and keyboard ordering. Failure or partial success retains
+`features/bulk/GroupOrderModal.tsx` keeps an isolated order draft, virtualizes fixed-height rows
+through `ui/dom/createVirtualList.ts`, and supports pointer and keyboard ordering; a keyboard move
+scrolls the target row into view. Failure or partial success retains
 the draft. Logical close releases interaction ownership while the closing frame retains its
 rows and metadata. The runtime loads the startup popular-tag snapshot once.
 

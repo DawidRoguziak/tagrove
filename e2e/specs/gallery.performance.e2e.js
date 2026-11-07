@@ -75,7 +75,7 @@ async function scrollToAsset(index) {
   await browser.execute((target) => {
     const scroller = document.querySelector(".gallery-scroll");
     const tile = document.querySelector("button[data-asset-index]");
-    const grid = tile.parentElement;
+    const grid = document.querySelector('[data-testid="gallery-grid-content"]');
     const stride = tile.getBoundingClientRect().width + 12;
     const columns = Math.max(1, Math.floor((grid.clientWidth + 12) / stride));
     const margin =
@@ -87,11 +87,12 @@ async function scrollToAsset(index) {
 async function visibleThumbnailsReady() {
   return browser.execute(() => {
     const viewport = document.querySelector(".gallery-scroll").getBoundingClientRect();
+    // Loaded tiles and placeholders both carry the slot's global index.
     const slots = [
-      ...document.querySelectorAll('[data-testid="gallery-grid"] div[style] > [style]')
+      ...document.querySelectorAll('[data-testid="gallery-grid-content"] [data-asset-index]')
     ].filter((tile) => {
       const rect = tile.getBoundingClientRect();
-      return rect.bottom > viewport.top && rect.top < viewport.bottom && tile.tagName !== "SPAN";
+      return rect.bottom > viewport.top && rect.top < viewport.bottom;
     });
     return (
       slots.length > 0 &&

@@ -368,8 +368,9 @@ Bulk ordering lives only in the group-order modal. The sidebar retains its headi
   language/theme persistence, lazy loading/failure and lightbox error recovery.
 - `src/library/**/__tests__` covers query/cache bounds, races, metadata admission,
   canonical publication, maintenance, vocabulary and per-asset thumbnail isolation.
-- `src/features/**/__tests__` covers feature models and DOM behavior. Virtual grid/order
-  tests run the installed virtual-core with controlled geometry.
+- `src/features/**/__tests__` covers feature models and DOM behavior. Virtual grid, order and
+  duplicate-list tests drive `features/gallery/gridGeometry.ts`, `createVirtualGrid` and
+  `ui/dom/createVirtualList.ts` with controlled DOM geometry.
 - `src/ui/**/__tests__` covers modal presence, nested dismissal, focus, inertness,
   controls and thumbnail images. Mount `UiLayerProvider` when asserting layer behavior.
 

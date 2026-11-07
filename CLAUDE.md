@@ -29,7 +29,7 @@ The product name everywhere a user sees it is **Tagrove**. The internal names st
 
 - Tauri 2 with a Rust backend (Rust 1.98, `rust-toolchain.toml`).
 - SQLite through `rusqlite` (WAL, connection pool).
-- Frontend: Solid 2 RC (exact pins), TypeScript, Vite 8, Tailwind CSS 4, DaisyUI 5, TanStack virtual-core, Fuse.js (in a worker), i18next, and Zod.
+- Frontend: Solid 2 RC (exact pins), TypeScript, Vite 8, Tailwind CSS 4, DaisyUI 5, Fuse.js (in a worker), i18next, and Zod. Virtualization is our own (gallery `gridGeometry`/`createVirtualGrid`, dialogs `ui/dom/createVirtualList`; ADR 0003).
 - Bun 1.4 is the package manager; Node 22 runs Vitest and the scripts.
 - Biome for lint/format.
 - Video playback uses libmpv drawn on a GTK/OpenGL surface above the WebView. ffmpeg and ffprobe handle thumbnails and probing.

@@ -18,7 +18,7 @@ without dispatching its action. Closing only the settings view does not dispose 
 Thumbnail cancellation has its own synchronous lock. Confirmed root removal, restore and
 mixed duplicate batches consume synchronous pending values before dispatch.
 
-The duplicate resolver uses `virtual-core`, the library's per-asset thumbnail subscriptions,
+The duplicate resolver uses `ui/dom/createVirtualList.ts` with measured row heights, the library's per-asset thumbnail subscriptions,
 and one form model. Visible rows carry their group from the same scan snapshot, so an old
 virtual index cannot read a removed group during a rescan. Confirmation dialogs retain their
 path, counts and disabled state through exit with `createModalSnapshot`.
@@ -26,9 +26,10 @@ path, counts and disabled state through exit with `createModalSnapshot`.
 Rows keep stable identities within a scan snapshot while virtual positions update
 reactively, preserving visible editors, focus and thumbnail subscriptions during scrolling.
 Measurement registration runs in `onSettled`, after attachment and `data-index`
-initialization; rows removed before that callback are skipped. The duplicate dialog
-component tests exercise measured spacing and focus/subscription retention with real
-`virtual-core` and synthetic DOM dimensions.
+initialization; rows removed before that callback are skipped. A row that grows above the
+viewport shifts `scrollTop` by its growth, so visible content stays in place. The duplicate
+dialog component tests exercise measured spacing and focus/subscription retention with
+synthetic DOM dimensions; `createVirtualList.test.ts` covers the list primitive itself.
 
 The operation ordering below uses `platform/tauri`
 wrappers and `library.tags.runWithMutationBarrier` for CSV import, restore and clear.

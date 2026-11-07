@@ -48,7 +48,6 @@
   },
   "dependencies": {
     "@solidjs/web": "2.0.0-rc.13",
-    "@tanstack/virtual-core": "3.17.8",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-opener": "^2.5.5",

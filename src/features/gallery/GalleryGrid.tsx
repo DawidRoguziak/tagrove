@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Repeat, Show } from "solid-js";
 import { Portal } from "@solidjs/web";
 import type { AssetSummary } from "../../platform/tauri/contracts/assets";
 import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
@@ -6,6 +6,7 @@ import type { BulkSelectionHandler } from "./selection";
 import type { LibraryViewport } from "../../library/createLibrary";
 import { useLanguage } from "../../i18n/solid";
 import { GalleryEmptyState } from "./GalleryEmptyState";
+import { GalleryScrollbar } from "./GalleryScrollbar";
 import { GalleryStatusFooter } from "./GalleryStatusFooter";
 import { GalleryTile } from "./GalleryTile";
 import { createVirtualGrid } from "./createVirtualGrid";
@@ -35,6 +36,10 @@ export interface GalleryGridProps {
   queryEpoch: number;
   pageFailureEpoch: number;
 }
+interface Slot {
+  id: number;
+}
+const CONTENT_ID = "gallery-grid-content";
 export function GalleryGrid(props: GalleryGridProps) {
   const { t } = useLanguage();
   const [gallery, setGallery] = createSignal<HTMLElement>();
@@ -101,45 +106,26 @@ export function GalleryGrid(props: GalleryGridProps) {
     element?.addEventListener("click", handlers.handleClickCapture, true);
     return () => element?.removeEventListener("click", handlers.handleClickCapture, true);
   });
-  const entries = createMemo(() => {
-    if (virtual.paused) return [];
+  // A fixed pool of row slots. Slot `id` shows the row congruent to it modulo the pool,
+  // so crossing a row re-indexes one slot instead of creating components. Slots are
+  // ordered by row, keeping DOM order equal to visual order for focus and screen readers.
+  const slots = createMemo((previous: Slot[] | undefined) => {
+    const size = virtual.poolSize;
+    if (previous?.length === size) return previous;
+    const next = (previous ?? []).slice(0, size);
+    for (let id = next.length; id < size; id++) next.push({ id });
+    return next;
+  });
+  const orderedSlots = createMemo(() => {
+    const all = slots();
+    if (!all.length) return all;
+    const start = virtual.firstRow % all.length;
+    return start ? [...all.slice(start), ...all.slice(0, start)] : all;
+  });
+  const assetAt = (index: number) => {
     props.assets;
-    return virtual.virtualItems.map((item) => ({ ...item, asset: props.getAssetAt(item.index) }));
-  });
-  const backplates = createMemo(() => {
-    const result: {
-      key: string;
-      first: number;
-      last: number;
-      lane: number;
-      endLane: number;
-      start: number;
-    }[] = [];
-    for (const entry of entries()) {
-      const key = entry.asset?.media_group_key?.trim();
-      if (!key) continue;
-      const last = result[result.length - 1];
-      if (
-        last &&
-        last.key === key &&
-        last.last + 1 === entry.index &&
-        last.endLane + 1 === entry.lane &&
-        last.start === entry.start
-      ) {
-        last.last = entry.index;
-        last.endLane = entry.lane;
-      } else
-        result.push({
-          key,
-          first: entry.index,
-          last: entry.index,
-          lane: entry.lane,
-          endLane: entry.lane,
-          start: entry.start
-        });
-    }
-    return result;
-  });
+    return index < props.assetCount ? props.getAssetAt(index) : undefined;
+  };
   const rectangleStyle = () => {
     const rect = handlers.preview?.rectangle;
     return rect
@@ -151,8 +137,120 @@ export function GalleryGrid(props: GalleryGridProps) {
         }
       : {};
   };
+  function Row(rowProps: { slot: Slot }) {
+    const row = createMemo(() => {
+      const size = slots().length;
+      const first = virtual.firstRow;
+      return first + ((((rowProps.slot.id - first) % size) + size) % size);
+    });
+    const active = () => row() < virtual.rowCount;
+    const gap = () => virtual.tileGap;
+    // Media-group backplates for runs of adjacent tiles in this row.
+    const plates = createMemo(() => {
+      const result: { first: number; last: number }[] = [];
+      if (!active()) return result;
+      const columns = virtual.columnCount;
+      let previousKey: string | undefined;
+      for (let lane = 0; lane < columns; lane++) {
+        const key = assetAt(row() * columns + lane)?.media_group_key?.trim() || undefined;
+        const last = result[result.length - 1];
+        if (key && key === previousKey && last && last.last === lane - 1) last.last = lane;
+        else if (key) result.push({ first: lane, last: lane });
+        previousKey = key;
+      }
+      return result;
+    });
+    return (
+      <div
+        class="gallery-row absolute"
+        data-gallery-row={row()}
+        hidden={!active()}
+        style={{
+          // The box includes half a gap on every side so strict containment does not
+          // clip group backplates (4px) or the selection ring (2px).
+          left: `${-gap() / 2}px`,
+          right: `${-gap() / 2}px`,
+          top: "0",
+          height: `${virtual.tilePixelSize + gap()}px`,
+          padding: `${gap() / 2}px`,
+          transform: `translate(0, ${row() * (virtual.tilePixelSize + gap()) - virtual.scrollShift - gap() / 2}px)`,
+          contain: "strict",
+          display: "grid",
+          "grid-template-columns": `repeat(${virtual.columnCount}, ${virtual.tilePixelSize}px)`,
+          "grid-auto-rows": `${virtual.tilePixelSize}px`,
+          "column-gap": `${gap()}px`
+        }}
+      >
+        <For each={plates()} keyed={false}>
+          {(plate) => (
+            <div
+              class="pointer-events-none absolute z-0 rounded-[calc(var(--radius-surface)+4px)] bg-[var(--gallery-group-bg)] shadow-[inset_0_0_0_1px_var(--gallery-group-edge)]"
+              aria-hidden="true"
+              data-gallery-group-plate
+              style={{
+                top: `${gap() / 2 - 4}px`,
+                left: `${gap() / 2 + plate().first * (virtual.tilePixelSize + gap()) - 4}px`,
+                width: `${(plate().last - plate().first + 1) * virtual.tilePixelSize + (plate().last - plate().first) * gap() + 8}px`,
+                height: `${virtual.tilePixelSize + 8}px`
+              }}
+            />
+          )}
+        </For>
+        <Repeat count={virtual.columnCount}>
+          {(lane) => {
+            const index = createMemo(() => row() * virtual.columnCount + lane);
+            const asset = createMemo(() => (active() ? assetAt(index()) : undefined));
+            const selected = () => {
+              const current = asset();
+              return (
+                props.selectionModeEnabled &&
+                handlers.isPreviewSelected(index(), !!current && props.selectedAssetIds.has(current.id))
+              );
+            };
+            return (
+              <Show when={active() && index() < props.assetCount}>
+                <Show
+                  when={asset()}
+                  fallback={
+                    <div
+                      data-asset-index={index()}
+                      aria-hidden="true"
+                      class={`relative z-[1] ${virtual.paused ? "" : "animate-pulse"} rounded-[var(--radius-surface)] bg-base-300/70 ${selected() ? "ring-2 ring-primary" : ""}`}
+                    />
+                  }
+                >
+                  {(current) => (
+                    <GalleryTile
+                      asset={current()}
+                      index={index()}
+                      selected={selected()}
+                      thumbnailStore={props.thumbnailStore}
+                      onClick={handlers.handleTileClick}
+                    />
+                  )}
+                </Show>
+              </Show>
+            );
+          }}
+        </Repeat>
+      </div>
+    );
+  }
   return (
     <div class="relative flex min-w-0 flex-col">
+      <Show when={virtual.windowed && props.assetCount > 0}>
+        <GalleryScrollbar
+          controls={CONTENT_ID}
+          label={t("gallery.scrollbarLabel")}
+          viewport={virtual.viewport}
+          offset={virtual.offset}
+          maxOffset={virtual.maxOffset}
+          stride={virtual.tilePixelSize + virtual.tileGap}
+          firstVisible={virtual.range.visibleStartIndex}
+          count={props.assetCount}
+          onScrollTo={(offset) => virtual.scrollTo(offset, true)}
+        />
+      </Show>
       <section
         class={`min-h-0 flex-1 min-w-0 w-full px-3 pt-3 sm:px-5 sm:pt-5 ${props.selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""}`}
         ref={setGallery}
@@ -205,75 +303,12 @@ export function GalleryGrid(props: GalleryGridProps) {
         >
           <div
             ref={setGrid}
-            style={{
-              height: `${virtual.totalSize}px`,
-              position: "relative",
-              "overflow-anchor": "none"
-            }}
+            id={CONTENT_ID}
+            data-testid="gallery-grid-content"
+            class="relative"
+            style={{ height: `${virtual.physicalHeight}px`, "overflow-anchor": "none" }}
           >
-            <For each={backplates()} keyed={false}>
-              {(plate) => (
-                <div
-                  class="pointer-events-none absolute z-0 rounded-[calc(var(--radius-surface)+4px)] bg-[var(--gallery-group-bg)] shadow-[inset_0_0_0_1px_var(--gallery-group-edge)]"
-                  aria-hidden="true"
-                  style={{
-                    width: `${(plate().endLane - plate().lane + 1) * virtual.tilePixelSize + (plate().endLane - plate().lane) * virtual.tileGap + 8}px`,
-                    height: `${virtual.tilePixelSize + 8}px`,
-                    transform: `translate3d(${plate().lane * (virtual.tilePixelSize + virtual.tileGap) - 4}px, ${plate().start - 4}px, 0)`
-                  }}
-                />
-              )}
-            </For>
-            <For each={virtual.virtualItems.map((item) => item.index)}>
-              {(index) => {
-                const assetAtSlot = createMemo(() => {
-                  props.assets;
-                  return props.getAssetAt(index);
-                });
-                const selectedAtSlot = () => {
-                  const asset = assetAtSlot();
-                  return props.selectionModeEnabled && handlers.isPreviewSelected(
-                    index, !!asset && props.selectedAssetIds.has(asset.id)
-                  );
-                };
-                const lane = () => index % virtual.columnCount;
-                const start = () =>
-                  Math.floor(index / virtual.columnCount) *
-                    (virtual.tilePixelSize + virtual.tileGap) -
-                  virtual.scrollShift;
-                return (
-                  <Show
-                    when={!virtual.paused && assetAtSlot()}
-                    fallback={
-                      <div
-                        data-asset-index={index}
-                        aria-hidden="true"
-                        class={`absolute z-[1] ${virtual.paused ? "" : "animate-pulse"} rounded-[var(--radius-surface)] bg-base-300/70 ${selectedAtSlot() ? "ring-2 ring-primary" : ""}`}
-                        style={{
-                          width: `${virtual.tilePixelSize}px`,
-                          height: `${virtual.tilePixelSize}px`,
-                          transform: `translate3d(${lane() * (virtual.tilePixelSize + virtual.tileGap)}px, ${start()}px, 0)`
-                        }}
-                      />
-                    }
-                  >
-                    {(asset) => (
-                      <GalleryTile
-                        asset={asset()}
-                        index={index}
-                        lane={lane()}
-                        start={start()}
-                        size={virtual.tilePixelSize}
-                        gap={virtual.tileGap}
-                        selected={selectedAtSlot()}
-                        thumbnailStore={props.thumbnailStore}
-                        onClick={handlers.handleTileClick}
-                      />
-                    )}
-                  </Show>
-                );
-              }}
-            </For>
+            <For each={orderedSlots()}>{(slot) => <Row slot={slot} />}</For>
           </div>
         </Show>
       </section>

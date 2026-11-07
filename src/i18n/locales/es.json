@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} elementos",
     "resultCount_other": "{{formattedCount}} elementos",
     "loadError": "No se pudo cargar la biblioteca.",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "scrollbarLabel": "Posición en la galería"
   },
   "bulk": {
     "orderModal": {

@@ -44,7 +44,6 @@ let library: ReturnType<typeof createLibrary> | undefined;
 let scroller: HTMLElement | undefined;
 const dispose = render(() => {
   const model = createLibrary();
-  // Saved pre-pause sources expose only the sequential query callback.
   library = model;
   const [ref, setRef] = createSignal<HTMLElement>();
   return <LanguageProvider><UiLayerProvider>
@@ -54,7 +53,7 @@ const dispose = render(() => {
         getAssetAt={model.query.getAssetAt} tileSize={188} hasMore={model.query.offset < model.query.total}
         isLoading={model.query.loading} isGeneratingThumbnails={model.thumbnails.isGeneratingPage}
         pendingThumbnailCount={model.thumbnails.pendingPageSize} thumbnailStore={model.thumbnails.thumbnailStore}
-        scroller={ref} onReachEnd={model.handleGalleryReachEnd ?? model.query.handleReachEnd} onVirtualRangeChange={model.handleVirtualRangeChange}
+        scroller={ref} onReachEnd={model.handleGalleryReachEnd} onVirtualRangeChange={model.handleVirtualRangeChange}
         onSelect={() => {}} hasScanRoots onAddFirstFolder={() => {}} selectionModeEnabled={false}
         selectedAssetIds={new Set()} onBulkSelectionInteraction={() => {}} loadError={null}
         onLoadRetry={() => {}} queryEpoch={model.query.queryEpoch} pageFailureEpoch={model.query.pageFailureEpoch}/>
@@ -95,7 +94,15 @@ try {
     requests.length = 0;
     const frames: number[] = [];
     let lastFrame = performance.now(), lastScroll = 0, scrolls = 0, pausedFrames = 0;
-    let invalidPausedFrames = 0, loadedAt = 0, visibleAt = 0;
+    let invalidPausedFrames = 0, pausedFramesWithImages = 0, loadedAt = 0, visibleAt = 0;
+    // Row recycling should keep tiles with data; count tile elements created per drag.
+    let tilesCreated = 0;
+    const creations = new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes)
+        if (node instanceof HTMLElement)
+          tilesCreated += (node.matches("button[data-asset-index]") ? 1 : 0) + node.querySelectorAll("button[data-asset-index]").length;
+    });
+    creations.observe(element, { childList: true, subtree: true });
     const scroll = () => { lastScroll = performance.now(); scrolls++; loadedAt = 0; visibleAt = 0; };
     element.addEventListener("scroll", scroll);
     let running = true;
@@ -107,7 +114,9 @@ try {
       const imgs = Array.from(element.querySelectorAll("img"));
       if (gallery?.hasAttribute("data-scroll-paused") && gallery.getAttribute("data-scroll-paused") !== "false") {
         pausedFrames++;
-        if (imgs.length || element.querySelector(".animate-pulse, .animate-spin")) invalidPausedFrames++;
+        // A pause suspends demand only: loaded tiles stay, placeholders stop pulsing.
+        if (element.querySelector(".animate-pulse, .animate-spin")) invalidPausedFrames++;
+        if (imgs.some(img => img.src.startsWith("data:image/svg+xml"))) pausedFramesWithImages++;
       }
       if (lastScroll && !loadedAt) {
         const ready = imgs.filter(img => img.src.startsWith("data:image/svg+xml") && img.complete && img.naturalWidth && img.getBoundingClientRect().bottom > 0 && img.getBoundingClientRect().top < 600);
@@ -125,6 +134,7 @@ try {
     for (let i = 0; i < 500 && window.nativeDone !== id; i++) await pause(10);
     await pause(900);
     running = false;
+    creations.disconnect();
     element.removeEventListener("scroll", scroll);
     if (!element.querySelector('button[data-asset-index="25999"]')) throw new Error("Drag did not reach final tile");
     if (window.nativeDone !== id || !scrolls || !loadedAt || !visibleAt || invalidPausedFrames) throw new Error("Incomplete drag or invalid paused DOM");
@@ -134,7 +144,7 @@ try {
       pageRequests: requests.filter(r => r.command === "get_asset_query_page").length,
       thumbnailRequests: requests.filter(r => r.command === "ensure_thumbnails").length,
       thumbnailIds: requests.flatMap(r => r.ids ?? []).length, loadedAfterStopMs: loadedAt - lastScroll,
-      visibleAfterStopMs: visibleAt - lastScroll, pausedFrames, invalidPausedFrames,
+      visibleAfterStopMs: visibleAt - lastScroll, pausedFrames, invalidPausedFrames, pausedFramesWithImages, tilesCreated,
       finalScrollTop: element.scrollTop, requests, frames });
     // Keep each pass's request array independent.
     results[results.length - 1].requests = [...requests];

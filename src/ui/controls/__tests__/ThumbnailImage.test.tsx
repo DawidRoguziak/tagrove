@@ -90,24 +90,58 @@ describe("ThumbnailImage", () => {
     expect(retryImage).toHaveClass("thumbnail-fade-in-ready");
   });
 
-  it("resets a loaded source but preserves the image and readiness on unchanged-source rerenders", () => {
+  it("resets readiness per source while keeping one image element", () => {
     const { getByRole, rerender } = renderSolid(ThumbnailImage, {
       src: "a.jpg",
       alt: "preview",
       fadeIn: true
     });
-    const firstImage = getByRole("img");
-    load(firstImage);
+    const image = getByRole("img");
+    load(image);
     rerender({ src: "a.jpg", alt: "updated label", className: "object-cover", fadeIn: true });
-    expect(getByRole("img")).toBe(firstImage);
-    expect(firstImage).toHaveClass("thumbnail-fade-in-ready", "object-cover");
+    expect(getByRole("img")).toBe(image);
+    expect(image).toHaveClass("thumbnail-fade-in-ready", "object-cover");
     rerender({ src: "b.jpg", alt: "preview", fadeIn: true });
-    expect(getByRole("img")).not.toBe(firstImage);
-    expect(getByRole("img")).not.toHaveClass("thumbnail-fade-in-ready");
-    load(getByRole("img"));
-    expect(getByRole("img")).toHaveClass("thumbnail-fade-in-ready");
+    // Recycled gallery cells replace the attribute instead of creating an element.
+    expect(getByRole("img")).toBe(image);
+    expect(image).toHaveAttribute("src", "b.jpg");
+    expect(image).not.toHaveClass("thumbnail-fade-in-ready");
+    load(image);
+    expect(image).toHaveClass("thumbnail-fade-in-ready");
     rerender({ src: "a.jpg", alt: "preview", fadeIn: true });
-    expect(getByRole("img")).not.toHaveClass("thumbnail-fade-in-ready");
+    expect(getByRole("img")).toBe(image);
+    expect(image).not.toHaveClass("thumbnail-fade-in-ready");
+  });
+
+  it("decodes asynchronously and hides the previous picture until the new source loads", () => {
+    const { getByRole, rerender } = renderSolid(ThumbnailImage, { src: "a.jpg", alt: "preview" });
+    const image = getByRole("img");
+    expect(image).toHaveAttribute("decoding", "async");
+    expect(image).toHaveAttribute("crossorigin", "anonymous");
+    expect(image).toHaveClass("invisible");
+    load(image);
+    expect(image).not.toHaveClass("invisible");
+    rerender({ src: "b.jpg", alt: "preview" });
+    expect(image).toHaveClass("invisible");
+    // A late load event for an earlier source does not reveal the new one.
+    image.setAttribute("src", "a.jpg");
+    load(image);
+    image.setAttribute("src", "b.jpg");
+    expect(image).toHaveClass("invisible");
+    load(image);
+    expect(image).not.toHaveClass("invisible");
+    rerender({ src: TRANSPARENT_THUMBNAIL_SRC, alt: "preview" });
+    expect(image).not.toHaveClass("invisible");
+  });
+
+  it("reveals a cached replacement without waiting for a load event", () => {
+    const { getByRole, rerender } = renderSolid(ThumbnailImage, { src: "a.jpg", alt: "preview" });
+    const image = getByRole("img");
+    load(image);
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    rerender({ src: "cached.jpg", alt: "preview" });
+    expect(image).toHaveAttribute("src", "cached.jpg");
+    expect(image).not.toHaveClass("invisible");
   });
 
   it("does not animate the transparent placeholder", () => {

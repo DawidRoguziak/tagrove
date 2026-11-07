@@ -1,10 +1,4 @@
 import { createEffect, createMemo, createSignal, onCleanup, untrack, For } from "solid-js";
-import {
-  Virtualizer,
-  elementScroll,
-  observeElementOffset,
-  observeElementRect
-} from "@tanstack/virtual-core";
 import { useLanguage } from "../../i18n/solid";
 import type { BulkController, BulkGroupSaveResult } from "./createBulk";
 import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
@@ -16,6 +10,7 @@ import { UiButton } from "../../ui/controls/UiButton";
 import { UiIcon } from "../../ui/controls/UiIcon";
 import { createModalSnapshot } from "../../ui/overlays/createModalPresence";
 import { UiModal } from "../../ui/overlays/UiModal";
+import { createVirtualList } from "../../ui/dom/createVirtualList";
 import { reorderAssetIdsByDrop } from "./bulkGroupOrderService";
 function OrderThumbnail(props: { id: number; store: ThumbnailStore }) {
   const current = createAssetThumbnail(
@@ -95,19 +90,14 @@ export function GroupOrderModal(props: {
   const previewHeight = () => Math.round(tileWidth() * 0.66);
   const rowHeight = () => previewHeight() + 56;
   const locked = () => saving() || props.controller.groupApplying;
-  const [version, setVersion] = createSignal(0);
-  const virtualizer = new Virtualizer<HTMLDivElement, Element>({
-    count: 0,
-    getScrollElement: () => scroller() ?? null,
+  const list = createVirtualList({
+    scroller,
+    count: () => Math.ceil(order().length / columns()),
     estimateSize: rowHeight,
-    scrollToFn: elementScroll,
-    observeElementOffset,
-    observeElementRect,
-    initialRect: { width: 960, height: 560 },
     overscan: 2,
-    onChange: () => setVersion((v) => v + 1)
+    initialViewport: 560,
+    enabled: open
   });
-  onCleanup(virtualizer._didMount());
   createEffect(
     () => ({ open: open(), element: scroller() }),
     ({ open, element }) => {
@@ -119,34 +109,7 @@ export function GroupOrderModal(props: {
       return () => observer.disconnect();
     }
   );
-  let previousHeight = 0;
-  createEffect(
-    () => ({
-      open: open(),
-      element: scroller(),
-      count: Math.ceil(order().length / columns()),
-      height: rowHeight()
-    }),
-    (value) => {
-      virtualizer.setOptions({
-        ...virtualizer.options,
-        enabled: value.open,
-        count: value.count,
-        getScrollElement: () => value.element ?? null,
-        estimateSize: () => value.height
-      });
-      virtualizer._willUpdate();
-      if (value.height !== previousHeight) {
-        previousHeight = value.height;
-        virtualizer.measure();
-      }
-      setVersion((v) => v + 1);
-    }
-  );
-  const layout = createModalSnapshot(open, () => {
-    version();
-    return { rows: virtualizer.getVirtualItems(), total: virtualizer.getTotalSize() };
-  });
+  const layout = createModalSnapshot(open, () => ({ rows: list.items(), total: list.totalSize() }));
   const rows = () => layout().rows;
   const total = () => layout().total;
   createEffect(
@@ -426,9 +389,7 @@ export function GroupOrderModal(props: {
                               if (target === undefined) return;
                               focusId = id;
                               setOrder((previous) => reorderAssetIdsByDrop(previous, id, target));
-                              virtualizer.scrollToIndex(Math.floor(nextIndex / columns()), {
-                                align: "auto"
-                              });
+                              list.scrollToIndex(Math.floor(nextIndex / columns()));
                             }}
                           >
                             <UiIcon name="grip-vertical" className="h-5 w-5" />

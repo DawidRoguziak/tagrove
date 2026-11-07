@@ -29,7 +29,7 @@ async function scrollTo(index) {
   await browser.waitUntil(() => browser.execute(index => {
     const scroller = document.querySelector(".gallery-scroll");
     const tile = document.querySelector("button[data-asset-index]");
-    const grid = tile.parentElement;
+    const grid = document.querySelector('[data-testid="gallery-grid-content"]');
     const stride = tile.getBoundingClientRect().width + 12;
     const columns = Math.max(1, Math.floor((grid.clientWidth + 12) / stride));
     const margin = grid.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
@@ -90,7 +90,7 @@ suite("selection recovery after banner layout", function () {
       await count(2);
       const endpoint = await browser.execute(() => {
         const tile = document.querySelector('button[data-asset-index="0"]');
-        const grid = tile.parentElement;
+        const grid = document.querySelector('[data-testid="gallery-grid-content"]');
         const columns = Math.max(1, Math.floor((grid.clientWidth + 12) / (tile.getBoundingClientRect().width + 12)));
         return (Math.floor(1792 / columns) + 1) * columns - 1;
       });
@@ -115,7 +115,7 @@ suite("selection recovery after banner layout", function () {
         window.selectionGeometry = [];
         window.failSelectionPage = true;
         const gallery = document.querySelector('[data-testid="gallery-grid"]');
-        const grid = document.querySelector('button[data-asset-index]').parentElement;
+        const grid = document.querySelector('[data-testid="gallery-grid-content"]');
         const scroller = document.querySelector('.gallery-scroll');
         const measure = () => window.selectionGeometry.push({
           banner: Boolean(document.querySelector('[data-testid="gallery-load-error"]')),

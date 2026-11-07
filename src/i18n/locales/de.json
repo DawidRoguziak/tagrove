@@ -98,7 +98,8 @@
     "resultCount_many": "{{formattedCount}} Elemente",
     "resultCount_other": "{{formattedCount}} Elemente",
     "loadError": "Laden der Bibliothek ist fehlgeschlagen.",
-    "retry": "Wiederholen"
+    "retry": "Wiederholen",
+    "scrollbarLabel": "Position in der Galerie"
   },
   "bulk": {
     "orderModal": {

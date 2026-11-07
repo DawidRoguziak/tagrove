@@ -18,7 +18,7 @@ async function invoke(command, payload = {}) {
 async function geometry() {
   return browser.execute(() => {
     const tile = document.querySelector("button[data-asset-index]");
-    const grid = tile.parentElement.getBoundingClientRect();
+    const grid = document.querySelector('[data-testid="gallery-grid-content"]').getBoundingClientRect();
     const rect = tile.getBoundingClientRect();
     const viewport = document.querySelector(".gallery-scroll").getBoundingClientRect();
     return { left: Math.round(grid.left), top: Math.round(grid.top), right: Math.floor(grid.right),

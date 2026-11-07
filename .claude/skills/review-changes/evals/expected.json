@@ -1,5 +1,5 @@
 {
-  "base_commit": "55e98f4",
+  "base_commit": "76ff5b1",
   "cases": [
     {
       "patch": "patches/01-ipc-unregistered.patch",
@@ -50,7 +50,7 @@
       "expect": [
         {
           "path": "src/features/gallery/GalleryGrid.tsx",
-          "about": "isSelectedId copies the whole selection Set into an array per tile evaluation: O(selection) per visible tile instead of O(1) Set.has",
+          "about": "selectedIndices scans the whole rendered range (isSelected per index plus a new array) for every tile evaluation, and re-runs on every range change: O(range) per tile, O(range^2) per update, instead of one O(log r) isSelected(index, id)",
           "min_priority": "P2",
           "lenses": ["review-performance", "review-frontend"]
         }

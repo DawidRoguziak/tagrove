@@ -165,6 +165,7 @@ Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`,
 | `animations` | `MEDIATAGGER_ANIMATIONS` |
 | `gallery-browsing` | `MEDIATAGGER_GALLERY_BROWSING` |
 | `gallery.performance` | `MEDIATAGGER_GALLERY_PERF` |
+| `gallery-100k` | `MEDIATAGGER_GALLERY_100K` |
 | `gallery-selection` | `MEDIATAGGER_GALLERY_SELECTION` |
 | `gallery-timeline` | `MEDIATAGGER_GALLERY_TIMELINE` |
 | `grid-baseline` | `MEDIATAGGER_GRID_BASELINE` |
@@ -412,6 +413,20 @@ MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri --spec e2e/specs/gallery-
 
 ```sh
 MEDIATAGGER_GALLERY_TIMELINE=1 bun run test:e2e:tauri --spec e2e/specs/gallery-timeline.e2e.js
+```
+
+### 100k collection: Shift-click and anchored refresh
+
+`e2e/specs/gallery-100k.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_100K=1` (grid-performance stage 10, replacing the temporary spec behind the stage 04 measurements). It copies 100,000 synthetic PNGs (about 450 MB) into a fresh temporary root, scans it through `rescan_all_roots` (polled in the page, because it outlives the WebDriver script timeout) and runs three cases in order:
+
+- In bulk mode, a click near index 50,000 and a native Shift-click 9,999 positions further: exactly 10,000 positions, the largest range that `createSelection` resolves to IDs, so the app must send exactly one `get_asset_query_id_range` and no page reads.
+- A click on index 0 and a Shift-click on index 99,999: the counter shows 100,000 and no ID is read (the range stays a selection spec, ADR 0008).
+- At index ~50,000, Search without filter changes: exactly one `start_asset_query` whose `anchorOffset` is the first visible index, the anchor's page never requested again (the reply carries it), at most two page reads and only for neighbouring pages that the visible and overscan rows reach, and 240 sampled frames with the same first visible tile and no placeholder in view.
+
+The spec counts commands by wrapping the page's `fetch` for `ipc:` URLs (Tauri's IPC bridge), as `grid-baseline` does. Shift-click times run from the tile's `click` event to the bulk counter text (in-page `performance.now()`) and must stay below 200 ms. Copy, scan and click timings and the refresh evidence go to `artifacts/gallery-100k/timings.json`. Copying takes tens of seconds and the debug scan about as long, so a run takes a few minutes; check the host is idle before reading the timings. Use the isolated recipe with a fresh `/tmp/mediatagger-*` profile:
+
+```sh
+MEDIATAGGER_GALLERY_100K=1 bun run test:e2e:tauri --spec e2e/specs/gallery-100k.e2e.js
 ```
 
 ### Native speed menu and repeated playback
@@ -951,6 +966,19 @@ use the separate gallery browsing and performance suites above.
 bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json
 bun run test -- src/features/gallery src/app/__tests__/gallery.test.tsx src/library/__tests__/createLibrary.test.ts src/library/query/__tests__/createAssetQuery.test.ts
 sh e2e/gallery-scale/run.sh
+```
+
+### Million-result timeline jump and select-all
+
+`GALLERY_MILLION=1 sh e2e/gallery-scale/run.sh` opens `million.html` (`million.tsx`) in the same private WebKitGTK setup. It mounts the production `createLibrary` page cache, `GalleryGrid` with `GalleryTimelineScrubber`, and `createSelection` wired as in `createAppRuntime`. Only the transport is synthetic: one million results, 120 months (January 2016 to December 2025) split into backend-sized sections of at most 5,000, and pages and the sections read answered after 12 ms. A stand-in `<output>` shows `selection.count`, as the bulk sidebar does.
+
+- **Timeline:** three samples, each from a fresh session (empty page cache). XTest presses End on the focused rail; the time runs from the first capturing `keydown` listener to the first animation frame in which the first tiles of the oldest month are in view with data. Each End sample must request exactly one page and stay below 300 ms; Home returns to the anchor page. The rail's `aria-valuetext` must read the oldest month.
+- **Select-all:** in bulk mode, XTest Ctrl+A from a focused tile; the time runs from the `keydown` listener to the counter text `1000000` (MutationObserver) and must stay below 50 ms, with no `get_asset_query_id_range` call (the mock rejects it), no materialized IDs (`ids.size === 0`, `ranged`), and visible tiles marked selected. Three samples.
+
+WebKitGTK's `event.timeStamp` for XTest keys is not on the `performance.now()` clock, so the fixture timestamps in its own listener; the native input latency before that is not part of the number. Results go to `artifacts/gallery-scale/result.json`, with screenshots `million-oldest-month.png` and `million-select-all.png`. Like the other fixtures this measures frontend work on software-rendered Xvfb, not SQLite, real thumbnails or native IPC; the backend side of both operations is in `grid_baseline.rs` and `backend_integration` (`one_million_select_all_tag_and_favorite`).
+
+```sh
+GALLERY_MILLION=1 sh e2e/gallery-scale/run.sh
 ```
 
 ### Scroll height probe

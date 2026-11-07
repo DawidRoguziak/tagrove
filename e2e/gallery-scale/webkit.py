@@ -105,7 +105,8 @@ def execute_steps(steps, action_id):
     elif kind == 'pause':
         delay = step['ms']
     elif kind == 'screenshot':
-        assert step['name'] in ['last-result', 'rectangle-selection', 'performance-thumbnails', 'moderate-scroll'] or (
+        assert step['name'] in ['last-result', 'rectangle-selection', 'performance-thumbnails', 'moderate-scroll',
+                                'million-oldest-month', 'million-select-all'] or (
             step['name'].startswith('height-probe-') and step['name'].replace('-', '').isalnum())
         subprocess.run(['import', '-window', 'root', str(output / f"{step['name']}.png")], check=True)
     else:
@@ -146,6 +147,7 @@ def timeout():
 
 window.show_all()
 page = ('performance.html' if os.environ.get('GALLERY_PERFORMANCE') == '1'
+        else 'million.html' if os.environ.get('GALLERY_MILLION') == '1'
         else 'height-probe.html' if os.environ.get('GALLERY_HEIGHT_PROBE') == '1' else 'index.html')
 view.load_uri(f'http://127.0.0.1:{server.server_port}/{page}')
 GLib.timeout_add(50, poll)

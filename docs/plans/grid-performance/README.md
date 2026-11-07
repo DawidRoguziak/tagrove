@@ -71,6 +71,7 @@ Status: **w realizacji**. Bieżący stan każdego etapu jest w jego sekcji `## S
 | 07 | [07-verification-and-docs.md](07-verification-and-docs.md) | orkiestrator: pomiary, E2E, dokumentacja | D |
 | 08 | [08-timeline-scrubber.md](08-timeline-scrubber.md) | Rust sesja + TS gallery | E |
 | 09 | [09-selection-spec.md](09-selection-spec.md) | Rust bulk + TS selection/bulk | E |
+| 10 | [10-open-topics.md](10-open-topics.md) | orkiestrator: otwarte tematy po fali E (część A bez decyzji, część B za zgodą) | F |
 
 ### Fale i równoległość
 
@@ -81,6 +82,7 @@ Worktree są zabronione (`CLAUDE.md`). Równolegle pracują tylko agenci na **ro
 - **Fala C:** 06, po 05, bo dotyka `GalleryTile` i `ThumbnailImage`.
 - **Fala D:** 07, pomiary po falach A–C.
 - **Fala E:** 08 ∥ 09. Oba zmieniają `asset_query_service.rs`, więc część Rust robi jeden agent albo robią ją sekwencyjnie.
+- **Fala F:** 10, po weryfikacji fali E. Każdy temat części B to osobny commit po decyzji użytkownika.
 
 Etap 07 ma też krok 0 (pomiary bazowe), który orkiestrator wykonuje **przed** falą A.
 

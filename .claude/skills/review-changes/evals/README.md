@@ -2,7 +2,9 @@
 
 These are development aids for tuning the skill and the `review-*` agents, and nothing loads
 them during a review. The patches were generated against `base_commit` in `expected.json`
-and apply to later commits as long as the touched files have not changed. Five patches
+and apply to later commits as long as the touched files have not changed. Check with
+`git apply --check` for every patch before a run; regenerate a patch that no longer applies
+(see [Adding a case](#adding-a-case)) and move `base_commit` with it. Five patches
 contain one seeded defect apiece. Patch `06` is a correct change used to measure false
 positives.
 
@@ -12,7 +14,7 @@ positives.
 | `02-lock-order` | `thumb_lock` taken before `scan_lock` | rust |
 | `03-locale-missing` | key added to 10 of 11 locales | conventions, frontend |
 | `04-stale-details` | lightbox drops its request-ID check after `await` | frontend |
-| `05-selection-scan` | `Set.has` replaced by a per-tile array copy | performance |
+| `05-selection-scan` | `isSelected(index, id)` (O(log r)) replaced by a per-tile scan of the rendered range | performance |
 | `06-clean-control` | none | must report 0 confirmed findings |
 
 ## Run one case

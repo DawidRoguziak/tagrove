@@ -58,7 +58,9 @@ export function GalleryTile(props: {
         onFailed={() => {
           if (cachedOnly()) setMissed(shownAs().key);
         }}
-        alt={props.asset.preview_path ?? props.asset.file_name}
+        // `preview_path` is the full source path for videos and GIFs; screen readers get
+        // the file name only.
+        alt={props.asset.file_name}
       />
       {/* Shown by CSS only while the image above is still `invisible`, after a short
           delay, so cached thumbnails never flash a spinner. */}

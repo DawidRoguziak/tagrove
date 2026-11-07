@@ -1,17 +1,17 @@
 diff --git a/src/features/gallery/GalleryStatusFooter.tsx b/src/features/gallery/GalleryStatusFooter.tsx
-index 1cba4e2..265eb3f 100644
+index db538d1..ff6c2f9 100644
 --- a/src/features/gallery/GalleryStatusFooter.tsx
 +++ b/src/features/gallery/GalleryStatusFooter.tsx
-@@ -33,6 +33,7 @@ export function GalleryStatusFooter(props: GalleryStatusFooterProps) {
-           <h2 class="max-w-full text-xl font-semibold text-base-content">
-             {t("gallery.endOfResults")}
-           </h2>
-+          <p class="text-sm text-[var(--text-muted)]">{t("gallery.endOfResultsHint")}</p>
-           <p class="flex max-w-full items-center justify-center gap-2 font-mono text-[14px] text-[var(--text-muted)]">
-             <span class="size-1.5 shrink-0 rounded-full bg-success" aria-hidden="true" />
-             <span class="min-w-0 [overflow-wrap:anywhere]">
+@@ -20,6 +20,7 @@ export function GalleryStatusFooter(props: GalleryStatusFooterProps) {
+       <h2 class="max-w-full text-xl font-semibold text-base-content">
+         {t("gallery.endOfResults")}
+       </h2>
++      <p class="text-sm text-[var(--text-muted)]">{t("gallery.endOfResultsHint")}</p>
+       <p class="flex max-w-full items-center justify-center gap-2 font-mono text-[14px] text-[var(--text-muted)]">
+         <span class="size-1.5 shrink-0 rounded-full bg-success" aria-hidden="true" />
+         <span class="min-w-0 [overflow-wrap:anywhere]">
 diff --git a/src/i18n/locales/cs.json b/src/i18n/locales/cs.json
-index dfa742d..36f3655 100644
+index 2c03ca3..b7a602e 100644
 --- a/src/i18n/locales/cs.json
 +++ b/src/i18n/locales/cs.json
 @@ -83,6 +83,7 @@
@@ -23,7 +23,7 @@ index dfa742d..36f3655 100644
      "noFoldersDescription": "Přidejte první složku, abyste mohli začít procházet a označovat média.",
      "addFirstFolder": "Přidat první složku",
 diff --git a/src/i18n/locales/de.json b/src/i18n/locales/de.json
-index e2f7873..25f5e18 100644
+index 34858c5..b741465 100644
 --- a/src/i18n/locales/de.json
 +++ b/src/i18n/locales/de.json
 @@ -83,6 +83,7 @@
@@ -35,7 +35,7 @@ index e2f7873..25f5e18 100644
      "noFoldersDescription": "Fügen Sie Ihren ersten Ordner hinzu, um Medien zu durchsuchen und zu taggen.",
      "addFirstFolder": "Ersten Ordner hinzufügen",
 diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
-index 34396f5..b108e95 100644
+index 2a8e949..af9d633 100644
 --- a/src/i18n/locales/en.json
 +++ b/src/i18n/locales/en.json
 @@ -83,6 +83,7 @@
@@ -47,7 +47,7 @@ index 34396f5..b108e95 100644
      "noFoldersDescription": "Add your first folder to start browsing and tagging media.",
      "addFirstFolder": "Add first folder",
 diff --git a/src/i18n/locales/es.json b/src/i18n/locales/es.json
-index 4618842..4335d8f 100644
+index e6ea374..5024840 100644
 --- a/src/i18n/locales/es.json
 +++ b/src/i18n/locales/es.json
 @@ -83,6 +83,7 @@
@@ -59,7 +59,7 @@ index 4618842..4335d8f 100644
      "noFoldersDescription": "Añade tu primera carpeta para empezar a explorar y etiquetar contenido multimedia.",
      "addFirstFolder": "Añadir primera carpeta",
 diff --git a/src/i18n/locales/fr.json b/src/i18n/locales/fr.json
-index 0347193..b6489bc 100644
+index 16a0357..74b041a 100644
 --- a/src/i18n/locales/fr.json
 +++ b/src/i18n/locales/fr.json
 @@ -83,6 +83,7 @@
@@ -71,7 +71,7 @@ index 0347193..b6489bc 100644
      "noFoldersDescription": "Ajoutez votre premier dossier pour commencer à parcourir et taguer les médias.",
      "addFirstFolder": "Ajouter le premier dossier",
 diff --git a/src/i18n/locales/it.json b/src/i18n/locales/it.json
-index 42776d1..a6b5ea8 100644
+index 7bc662a..cb50f44 100644
 --- a/src/i18n/locales/it.json
 +++ b/src/i18n/locales/it.json
 @@ -83,6 +83,7 @@
@@ -83,7 +83,7 @@ index 42776d1..a6b5ea8 100644
      "noFoldersDescription": "Aggiungi la prima cartella per iniziare a sfogliare e taggare i media.",
      "addFirstFolder": "Aggiungi prima cartella",
 diff --git a/src/i18n/locales/ja.json b/src/i18n/locales/ja.json
-index d6cdf59..3cc6b1f 100644
+index 5444a67..4fc808d 100644
 --- a/src/i18n/locales/ja.json
 +++ b/src/i18n/locales/ja.json
 @@ -83,6 +83,7 @@
@@ -95,7 +95,7 @@ index d6cdf59..3cc6b1f 100644
      "noFoldersDescription": "最初のフォルダーを追加して、メディアの閲覧とタグ付けを開始しましょう。",
      "addFirstFolder": "最初のフォルダーを追加",
 diff --git a/src/i18n/locales/ko.json b/src/i18n/locales/ko.json
-index a3dc7ee..798d816 100644
+index 5dd135a..80ad05b 100644
 --- a/src/i18n/locales/ko.json
 +++ b/src/i18n/locales/ko.json
 @@ -83,6 +83,7 @@
@@ -107,7 +107,7 @@ index a3dc7ee..798d816 100644
      "noFoldersDescription": "첫 번째 폴더를 추가하여 미디어를 둘러보고 태그를 지정하세요.",
      "addFirstFolder": "첫 번째 폴더 추가",
 diff --git a/src/i18n/locales/ru.json b/src/i18n/locales/ru.json
-index 7844dc8..f66b693 100644
+index 33e7c88..70e58d1 100644
 --- a/src/i18n/locales/ru.json
 +++ b/src/i18n/locales/ru.json
 @@ -83,6 +83,7 @@
@@ -119,7 +119,7 @@ index 7844dc8..f66b693 100644
      "noFoldersDescription": "Добавьте первую папку, чтобы начать просмотр и добавление тегов к медиа.",
      "addFirstFolder": "Добавить первую папку",
 diff --git a/src/i18n/locales/zh.json b/src/i18n/locales/zh.json
-index 52bf764..b3288ea 100644
+index da79868..000e7ca 100644
 --- a/src/i18n/locales/zh.json
 +++ b/src/i18n/locales/zh.json
 @@ -83,6 +83,7 @@

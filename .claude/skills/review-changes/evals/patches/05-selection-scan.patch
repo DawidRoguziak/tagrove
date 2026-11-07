@@ -1,25 +1,50 @@
 diff --git a/src/features/gallery/GalleryGrid.tsx b/src/features/gallery/GalleryGrid.tsx
-index f8cf865..8281961 100644
+index 766cab3..854bd8d 100644
 --- a/src/features/gallery/GalleryGrid.tsx
 +++ b/src/features/gallery/GalleryGrid.tsx
-@@ -35,6 +35,11 @@ export interface GalleryGridProps {
-   queryEpoch: number;
-   pageFailureEpoch: number;
- }
-+/** Selection lookup that also tolerates array-backed selections from older callers. */
-+function isSelectedId(ids: ReadonlySet<number> | readonly number[], id: number): boolean {
-+  return Array.from(ids).some((candidate) => candidate === id);
+@@ -40,6 +40,21 @@ interface Slot {
+ const CONTENT_ID = "gallery-grid-content";
+ /** Right offset of the timeline rail, clear of the position bar in both scroll modes. */
+ const TIMELINE_RIGHT = 16;
++/**
++ * Selected global indices of the rendered range, so a tile and a placeholder that later
++ * shows the same index agree on their selected state.
++ */
++function selectedIndices(
++  isSelected: GalleryGridProps["isSelected"],
++  assetAt: (index: number) => AssetSummary | undefined,
++  first: number,
++  last: number
++): number[] {
++  const result: number[] = [];
++  for (let index = first; index <= last; index++)
++    if (isSelected(index, assetAt(index)?.id)) result.push(index);
++  return result;
 +}
-+
  export function GalleryGrid(props: GalleryGridProps) {
-   const { t } = useLanguage();
+   const { t, language } = useLanguage();
    const [gallery, setGallery] = createSignal<HTMLElement>();
-@@ -233,7 +238,7 @@ export function GalleryGrid(props: GalleryGridProps) {
-                 const selectedAtSlot = () => {
-                   const asset = assetAtSlot();
-                   return props.selectionModeEnabled && handlers.isPreviewSelected(
--                    index, !!asset && props.selectedAssetIds.has(asset.id)
-+                    index, !!asset && isSelectedId(props.selectedAssetIds, asset.id)
-                   );
-                 };
-                 const lane = () => index % virtual.columnCount;
+@@ -194,13 +209,17 @@ export function GalleryGrid(props: GalleryGridProps) {
+           {(lane) => {
+             const index = createMemo(() => row() * virtual.columnCount + lane);
+             const asset = createMemo(() => (active() ? assetAt(index()) : undefined));
+-            const selected = () => {
+-              const current = asset();
+-              return (
+-                props.selectionModeEnabled &&
+-                handlers.isPreviewSelected(index(), props.isSelected(index(), current?.id))
++            const selected = () =>
++              props.selectionModeEnabled &&
++              handlers.isPreviewSelected(
++                index(),
++                selectedIndices(
++                  props.isSelected,
++                  assetAt,
++                  virtual.range.startIndex,
++                  virtual.range.endIndex
++                ).includes(index())
+               );
+-            };
+             return (
+               <Show when={active() && index() < props.assetCount}>
+                 <Show

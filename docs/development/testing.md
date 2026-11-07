@@ -103,6 +103,22 @@ for ordering async responses. Forced flushes belong in tests, not production orc
 Cleanup from `src/test/setup.ts` disposes mounted owners; assert listener/observer/timer
 cleanup directly when that lifetime is the behavior under test.
 
+Binary IPC responses (`tauri::ipc::Response`, currently only
+[`get_asset_query_id_range`](../architecture/ipc-contract.md#binary-id-ranges)) reach
+JavaScript as an `ArrayBuffer`, not JSON. Mock them at the layer under test with
+`src/test/idRange.ts`:
+
+- when a test mocks `@tauri-apps/api/core` `invoke` (wrapper tests in
+  `src/platform/tauri/__tests__/api.test.ts`), resolve `idRangeBuffer(ids)`, the real
+  f64 little-endian `[count, ...ids]` body; resolve an empty `ArrayBuffer` for `stale`;
+- when a test mocks the `platform/tauri/assets` module (model and component tests),
+  mock `getAssetQueryIdRange` and resolve `idRangeResult(ids)` (a decoded
+  `{ status: "ready", ids: Float64Array }`) or `{ status: "stale" }`;
+  `sequentialIds(start, end)` builds the usual index + 1 fixture IDs.
+
+A decoded mock does not exercise `decodeAssetIdRange`; keep its edge cases (unaligned
+views, malformed lengths, count mismatch) in the wrapper tests.
+
 The setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely on persisted language must restore their state; the setup is not rerun before every individual test.
 
 ## Rust unit and integration tests
@@ -873,12 +889,14 @@ Run with a private Xvfb display and disposable XDG profile as described above:
 MEDIATAGGER_SELECTION_RECOVERY=1 bun run test:e2e:tauri --spec e2e/specs/selection-recovery.e2e.js
 ```
 
-The spec indexes 2,052 copied PNG fixtures and traverses more than twelve query pages.
-It rejects an evicted offscreen page by sending a negative unsigned offset at the fetch
-boundary. Native Shift-click and rectangle selection must retain their previous IDs,
-render the gallery error banner, survive its actual ResizeObserver geometry change, and
-complete the original additive range through the visible Retry button. It records page
-requests and measured grid margins under ignored `artifacts/selection-recovery/`.
+The spec indexes 2,052 copied PNG fixtures and scrolls across many query pages, so the
+selected range spans unloaded and evicted pages. Selections read IDs through the binary
+`get_asset_query_id_range` command, not pages: the spec fails that read by sending a
+negative unsigned `start` at the fetch boundary. Native Shift-click and rectangle
+selection must retain their previous IDs, render the gallery error banner, survive its
+actual ResizeObserver geometry change, and complete the original additive range through
+the visible Retry button with exactly one successful range read for `0..=endpoint`. It
+records range requests and measured grid margins under ignored `artifacts/selection-recovery/`.
 The scroll helper allows one pixel at viewport edges because WebKit rounds `scrollTop`
 while active rectangle scrolling preserves fractional offsets. A failure records the
 last forty scroll attempts, including requested index, actual offsets and tile bounds.

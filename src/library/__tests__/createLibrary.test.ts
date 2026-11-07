@@ -4,6 +4,7 @@ import { renderHook, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetSummary } from "../../platform/tauri/contracts/assets";
 import { createLibrary } from "../createLibrary";
+import { idRangeResult, sequentialIds } from "../../test/idRange";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -38,6 +39,7 @@ const apiMocks = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
   getAssetQueryPosition: vi.fn(),
+  getAssetQueryIdRange: vi.fn(),
   setAssetFavorite: vi.fn(),
   listTags: vi.fn()
 }));
@@ -106,6 +108,7 @@ describe("createLibrary", () => {
     apiMocks.startAssetQuery.mockReset();
     apiMocks.getAssetQueryPage.mockReset();
     apiMocks.getAssetQueryPosition.mockReset();
+    apiMocks.getAssetQueryIdRange.mockReset();
     apiMocks.setAssetFavorite.mockReset().mockResolvedValue(undefined);
     apiMocks.listTags.mockReset();
     queueMocks.queueThumbnailsByIds.mockReset();
@@ -256,7 +259,8 @@ describe("createLibrary", () => {
       metaFilter: null,
       ownerId: expect.any(String),
       generation: 1,
-      pageSize: 2
+      pageSize: 2,
+      anchorOffset: null
     });
     expect(result.query.assets.map((asset) => asset.id)).toEqual([1, 2]);
     expect(result.query.total).toBe(5);
@@ -330,7 +334,8 @@ describe("createLibrary", () => {
       },
       ownerId: expect.any(String),
       generation: 1,
-      pageSize: 10
+      pageSize: 10,
+      anchorOffset: null
     });
   });
 
@@ -499,6 +504,9 @@ describe("createLibrary", () => {
   });
   it("holds only the latest paused range through late pages and filter refresh, then resumes it", async () => {
     apiMocks.startAssetQuery.mockResolvedValue(ready([createAsset(1), createAsset(2)], 100));
+    apiMocks.getAssetQueryIdRange.mockImplementation(async (_session, start, end) =>
+      idRangeResult(sequentialIds(start, end))
+    );
     const pending = deferred<ReturnType<typeof ready>>();
     apiMocks.getAssetQueryPage.mockReturnValueOnce(pending.promise)
       .mockImplementation(async (_session, offset) => ready([createAsset(offset + 1), createAsset(offset + 2)], 100, offset));
@@ -519,17 +527,23 @@ describe("createLibrary", () => {
     expect(queueMocks.resetThumbnailQueue).not.toHaveBeenCalled();
     await settle(async () => result.applyFilters({ filterInclude: ["new"], filterExclude: [],
       appliedMediaKind: "all", appliedFavoritesOnly: false }));
+    // The refresh asks for the page of the latest (paused) viewport first.
+    expect(apiMocks.startAssetQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ anchorOffset: 40 })
+    );
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
     expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
     // Explicit reads for lightbox and selection still work during the gallery pause.
     await settle(async () => {
       expect((await result.query.getAssetAtAsync(60))?.id).toBe(61);
-      expect(await result.query.getIdsRangeAsync(62, 63)).toEqual([63, 64]);
+      expect(Array.from(await result.query.getIdsRangeAsync(62, 63))).toEqual([63, 64]);
     });
-    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(3);
+    // The ID range reads the session vector, not pages.
+    expect(apiMocks.getAssetQueryIdRange).toHaveBeenCalledExactlyOnceWith(1, 62, 63);
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(2);
     settle(() => result.handleVirtualRangeChange(viewport(40, false)));
     await waitFor(() => expect(result.query.getAssetAt(40)?.id).toBe(41));
-    expect(apiMocks.getAssetQueryPage.mock.calls.map(([, offset]) => offset)).toEqual([2, 60, 62, 40]);
+    expect(apiMocks.getAssetQueryPage.mock.calls.map(([, offset]) => offset)).toEqual([2, 60, 40]);
     expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([41, 42], []);
     settle(() => result.handleVirtualRangeChange(null));
     expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);

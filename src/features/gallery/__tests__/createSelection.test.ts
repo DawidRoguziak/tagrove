@@ -3,8 +3,9 @@ import { createSignal, flush } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { createSelection } from "../createSelection";
 function mount(
-  load = vi.fn(async (from: number, to: number) =>
-    Array.from({ length: to - from + 1 }, (_, i) => from + i + 1)
+  load = vi.fn(
+    async (from: number, to: number): Promise<ArrayLike<number>> =>
+      Array.from({ length: to - from + 1 }, (_, i) => from + i + 1)
   )
 ) {
   const view = renderHook(() => {
@@ -40,13 +41,13 @@ describe("shared gallery selection", () => {
     flush();
     expect(model.ids.size).toBe(0);
   });
-  it("resolves global shift ranges and rectangle gaps in 128-index windows", async () => {
+  it("resolves global shift ranges and rectangle gaps with one envelope read", async () => {
     const { model, load } = mount();
     model.interact(click(1, 0));
     await model.interact(click(2051, 2050, true));
     flush();
     expect(model.ids.size).toBe(2051);
-    expect(load).toHaveBeenCalledTimes(17);
+    expect(load).toHaveBeenCalledExactlyOnceWith(0, 2050);
     load.mockClear();
     await model.interact({
       type: "rectangle-commit",
@@ -59,7 +60,32 @@ describe("shared gallery selection", () => {
     });
     flush();
     expect([...model.ids]).toEqual([1, 2, 5, 6, 257, 258]);
-    expect(load).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenCalledExactlyOnceWith(0, 257);
+  });
+  it("selects a 100k shift range with one read and keeps the old selection when it fails", async () => {
+    const ids = Float64Array.from({ length: 100_000 }, (_, i) => i + 1);
+    const load = vi.fn(
+      async (from: number, to: number): Promise<ArrayLike<number>> => ids.subarray(from, to + 1)
+    );
+    const { model } = mount(load);
+    model.interact(click(1, 0));
+    const started = performance.now();
+    await model.interact(click(100_000, 99_999, true));
+    const elapsed = performance.now() - started;
+    flush();
+    expect(model.ids.size).toBe(100_000);
+    expect(load).toHaveBeenCalledExactlyOnceWith(0, 99_999);
+    // Frontend share of the < 200 ms budget (jsdom, no IPC); recorded in the stage notes.
+    expect(elapsed).toBeLessThan(200);
+    load.mockRejectedValueOnce(new Error("Asset ID range was cancelled"));
+    await model.interact({
+      type: "rectangle-commit",
+      additive: false,
+      ranges: [{ startIndex: 0, endIndex: 9 }]
+    });
+    flush();
+    expect(model.ids.size).toBe(100_000);
+    expect(model.error).toMatch(/cancelled/);
   });
   it("preserves selection and offers explicit retry for incomplete reads", async () => {
     const { model, load } = mount();

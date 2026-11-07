@@ -283,6 +283,34 @@ fn query_rebuild_and_page_baseline() {
             "[baseline] metric=get_asset_query_page rows={rows} limit={PAGE_SIZE} {}",
             summary(&page_samples)
         );
+
+        // Stage 04 (ADR 0005): the binary ID range behind Shift-click and
+        // rectangle selection, for 100k IDs and the whole snapshot.
+        let spans = if total > 100_000 {
+            vec![100_000, total]
+        } else {
+            vec![total]
+        };
+        for span in spans {
+            let samples: Vec<f64> = (0..10)
+                .map(|_| {
+                    let started = Instant::now();
+                    let permit = runtime.admit().unwrap();
+                    let bytes = runtime
+                        .queries
+                        .id_range(&permit, all_session, 0, span - 1)
+                        .unwrap()
+                        .expect("range session must stay current without writes");
+                    assert_eq!(bytes.len(), (span + 1) * 8);
+                    ms(started)
+                })
+                .collect();
+            println!(
+                "[baseline] metric=get_asset_query_id_range rows={rows} span={span} bytes={} {}",
+                (span + 1) * 8,
+                summary(&samples)
+            );
+        }
     }
 }
 

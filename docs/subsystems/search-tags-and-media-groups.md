@@ -21,7 +21,8 @@ When a failed page has no new fallback entries, automatic pagination stops. A la
 can explicitly retry instead of immediately repeating the failed request.
 
 `features/gallery/createSelection.ts` retains selected IDs across cache eviction and query
-changes, resolves ranges in 128-index windows and preserves the prior selection on failure.
+changes, resolves each selection's range envelope with one binary ID-range read (no page
+loads; [ADR 0005](../adr/0005-binary-id-ranges-and-anchored-refresh.md)) and preserves the prior selection on failure.
 Query changes cancel pending ranges and clear the index anchor; identity resets clear IDs.
 `features/bulk/createBulk.ts` owns bulk metadata and group drafts under the application
 runtime. `createSelectedSummaries` retains only selected records, hydrates missing summaries

@@ -3,8 +3,10 @@ import { renderHook, waitFor } from "@solidjs/testing-library";
 import { createEffect, flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
+import { idRangeResult } from "../../../test/idRange";
 import {
   createAssetQuery,
+  ID_RANGE_CHUNK,
   MAX_CACHED_PAGES,
   STALE_REFRESH_DELAY_MS,
   STALE_REFRESH_MIN_INTERVAL_MS
@@ -12,7 +14,8 @@ import {
 
 const apiMocks = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
-  getAssetQueryPage: vi.fn()
+  getAssetQueryPage: vi.fn(),
+  getAssetQueryIdRange: vi.fn()
 }));
 
 vi.mock("../../../platform/tauri/assets", () => apiMocks);
@@ -66,6 +69,7 @@ describe("createAssetQuery", () => {
   beforeEach(() => {
     apiMocks.startAssetQuery.mockReset();
     apiMocks.getAssetQueryPage.mockReset();
+    apiMocks.getAssetQueryIdRange.mockReset();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -264,7 +268,39 @@ describe("createAssetQuery", () => {
     expect(result.getAssetIndex(1)).toBeNull();
   });
 
-  it("resolves ordered snapshot IDs across unloaded pages via getIdsRangeAsync", async () => {
+  it("reads an ID range from the session vector in one call without touching pages", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(
+      readyStart([createSummary(1), createSummary(2)], 4, 5)
+    );
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    apiMocks.getAssetQueryIdRange.mockResolvedValueOnce(idRangeResult([2, 3, 4]));
+
+    let ids: ArrayLike<number> = [];
+    await settle(async () => {
+      // Reversed and over-long bounds are normalized to the snapshot.
+      ids = await result.getIdsRangeAsync(9, 1);
+    });
+    expect(Array.from(ids)).toEqual([2, 3, 4]);
+    expect(apiMocks.getAssetQueryIdRange).toHaveBeenCalledExactlyOnceWith(5, 1, 3);
+    expect(apiMocks.getAssetQueryPage).not.toHaveBeenCalled();
+    expect(result.getAssetAt(2)).toBeUndefined();
+    expect(result.assets.map((asset) => asset.id)).toEqual([1, 2]);
+  });
+
+  it("returns an empty range without IPC when the bounds miss the snapshot", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], 1, 5));
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    expect(Array.from(await result.getIdsRangeAsync(3, 8))).toEqual([]);
+    expect(apiMocks.getAssetQueryIdRange).not.toHaveBeenCalled();
+  });
+
+  it("rejects the whole ID range when the range read fails or is incomplete", async () => {
     apiMocks.startAssetQuery.mockResolvedValue(
       readyStart([createSummary(1), createSummary(2)], 4, 5)
     );
@@ -273,40 +309,19 @@ describe("createAssetQuery", () => {
       await result.refresh();
     });
 
-    apiMocks.getAssetQueryPage.mockResolvedValueOnce({
-      status: "ready",
-      session_id: 5,
-      revision: 3,
-      total: 4,
-      offset: PAGE_SIZE,
-      items: [createSummary(3), createSummary(4)]
-    });
-
-    let ids: number[] = [];
+    apiMocks.getAssetQueryIdRange
+      .mockRejectedValueOnce(new Error("range worker failed"))
+      .mockResolvedValueOnce(idRangeResult([2]));
     await settle(async () => {
-      ids = await result.getIdsRangeAsync(1, 2);
+      await expect(result.getIdsRangeAsync(1, 2)).rejects.toThrow("range worker failed");
+      await expect(result.getIdsRangeAsync(1, 2)).rejects.toThrow("incomplete");
     });
-    expect(ids).toEqual([2, 3]);
-    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledWith(5, PAGE_SIZE, PAGE_SIZE);
+    // A range failure belongs to its caller, not to the gallery page state.
+    expect(result.loadError).toBeNull();
   });
 
-  it("rejects the whole ID range when a required page fails", async () => {
-    apiMocks.startAssetQuery.mockResolvedValue(
-      readyStart([createSummary(1), createSummary(2)], 4, 5)
-    );
-    const { result } = await renderAssets();
-    await settle(async () => {
-      await result.refresh();
-    });
-
-    apiMocks.getAssetQueryPage.mockRejectedValueOnce(new Error("page worker failed"));
-    await settle(async () => {
-      // Index 1 is cached, index 2 needs the failing second page.
-      await expect(result.getIdsRangeAsync(1, 2)).rejects.toThrow("page worker failed");
-    });
-  });
-
-  it("rejects an ID range cancelled by a stale session", async () => {
+  it("rejects an ID range of a stale session and schedules a refresh", async () => {
+    vi.useFakeTimers();
     apiMocks.startAssetQuery
       .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)], 4, 5))
       .mockResolvedValueOnce(readyStart([createSummary(9)], 1, 6));
@@ -314,11 +329,35 @@ describe("createAssetQuery", () => {
     await settle(async () => {
       await result.refresh();
     });
-    apiMocks.getAssetQueryPage.mockResolvedValueOnce({ status: "stale" });
+    apiMocks.getAssetQueryIdRange.mockResolvedValueOnce({ status: "stale" });
 
     await settle(async () => {
       await expect(result.getIdsRangeAsync(1, 2)).rejects.toThrow("cancelled");
     });
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("splits huge ranges into chunks and assembles them in order", async () => {
+    const total = ID_RANGE_CHUNK + 5;
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], total, 5));
+    apiMocks.getAssetQueryIdRange.mockImplementation(async (_session, start: number, end: number) =>
+      idRangeResult(Float64Array.from({ length: end - start + 1 }, (_, i) => start + i + 1))
+    );
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    let ids: ArrayLike<number> = [];
+    await settle(async () => {
+      ids = await result.getIdsRangeAsync(0, total - 1);
+    });
+    expect(apiMocks.getAssetQueryIdRange.mock.calls.map(([, start, end]) => [start, end])).toEqual([
+      [0, ID_RANGE_CHUNK - 1],
+      [ID_RANGE_CHUNK, total - 1]
+    ]);
+    expect(ids.length).toBe(total);
+    expect([ids[0], ids[ID_RANGE_CHUNK], ids[total - 1]]).toEqual([1, ID_RANGE_CHUNK + 1, total]);
   });
 
   it("drops an obsolete page response captured before a refresh", async () => {
@@ -419,27 +458,6 @@ describe("createAssetQuery", () => {
     expect(apiMocks.startAssetQuery).toHaveBeenCalledOnce();
   });
 
-  it("Retry unblocks failed offscreen selection pages without fetching undemanded pages", async () => {
-    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
-    apiMocks.getAssetQueryPage.mockRejectedValueOnce(new Error("offline"));
-    const { result } = await renderAssets();
-    await settle(() => result.refresh());
-    settle(() => result.ensureRange(0, 1));
-    await settle(async () => {
-      await expect(result.getIdsRangeAsync(4, 5)).rejects.toThrow("offline");
-    });
-    apiMocks.getAssetQueryPage.mockResolvedValue({
-      ...readyStart([createSummary(5), createSummary(6)], 6),
-      offset: 4
-    });
-    await settle(() => result.retryLoad());
-    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledOnce();
-    await settle(async () => {
-      expect(await result.getIdsRangeAsync(4, 5)).toEqual([5, 6]);
-    });
-    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(2);
-  });
-
   it("retries only the requested asset page and keeps other failed pages blocked", async () => {
     apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
     apiMocks.getAssetQueryPage.mockRejectedValue(new Error("offline"));
@@ -468,15 +486,15 @@ describe("createAssetQuery", () => {
     "unmount"
   ] as const)("rejects an entire range interrupted by %s", async (action) => {
     apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
-    let resolve!: (page: object) => void;
-    apiMocks.getAssetQueryPage.mockReturnValue(
+    let resolve!: (range: object) => void;
+    apiMocks.getAssetQueryIdRange.mockReturnValue(
       new Promise((done) => {
         resolve = done;
       })
     );
     const { result, cleanup: unmount } = await renderAssets();
     await settle(() => result.refresh());
-    let range!: Promise<number[]>;
+    let range!: Promise<ArrayLike<number>>;
     await settle(async () => {
       range = result.getIdsRangeAsync(0, 5);
       await Promise.resolve();
@@ -485,10 +503,49 @@ describe("createAssetQuery", () => {
     await settle(async () => {
       if (action === "unmount") unmount();
       else await result[action]();
-      resolve({ ...readyStart([createSummary(3), createSummary(4)], 6), offset: 2 });
+      resolve(idRangeResult([1, 2, 3, 4, 5, 6]));
       await rejection;
     });
-    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledOnce();
+    expect(apiMocks.getAssetQueryIdRange).toHaveBeenCalledOnce();
+  });
+
+  it("anchors a refresh at the first visible index and merges that page in one IPC", async () => {
+    let visible: number | null = null;
+    apiMocks.startAssetQuery
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)], 40, 5))
+      .mockResolvedValueOnce({
+        ...readyStart([createSummary(31), createSummary(32)], 40, 6),
+        offset: 30
+      });
+    const { result } = renderHook(() =>
+      createAssetQuery({
+        pageSize: PAGE_SIZE,
+        anchorIndex: () => visible,
+        filters: () => ({
+          filterInclude: [],
+          filterExclude: [],
+          appliedMediaKind: "all",
+          appliedFavoritesOnly: false
+        })
+      })
+    );
+    await settle(async () => {
+      await result.refresh();
+    });
+    expect(apiMocks.startAssetQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ anchorOffset: null })
+    );
+    visible = 31;
+    await settle(async () => {
+      await result.refresh();
+    });
+    expect(apiMocks.startAssetQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ anchorOffset: 31 })
+    );
+    expect(result.getAssetAt(30)?.id).toBe(31);
+    expect(result.getAssetAt(0)).toBeUndefined();
+    expect(result.getAssetIndex(32)).toBe(31);
+    expect(apiMocks.getAssetQueryPage).not.toHaveBeenCalled();
   });
 
   it("notifies render-time readers through version when a page merges in place", async () => {

@@ -77,7 +77,7 @@ suite("selection recovery after banner layout", function () {
     if (root) await fs.rm(root, { recursive: true, force: true });
   });
   for (const kind of ["shift", "rectangle"]) {
-    it(`recovers the original additive ${kind} range after an evicted offscreen page fails`, async () => {
+    it(`recovers the original additive ${kind} range after its ID range read fails`, async () => {
       await releaseInput();
       await browser.refresh();
       await $('button[data-asset-index="0"]').waitForDisplayed();
@@ -106,7 +106,8 @@ suite("selection recovery after banner layout", function () {
           { type: "pause", duration: 200 }, { type: "pointerMove", duration: 100, x: start.x + 10, y: start.y + 120 }]);
         await $('[data-testid="gallery-selection-rectangle"]').waitForDisplayed();
       }
-      // Traverse more than twelve pages so the range must reload an evicted page.
+      // Traverse many pages: the range spans unloaded and evicted pages, which the
+      // binary ID range read covers without loading them.
       for (let index = 128; index <= 1792; index += 128) await scrollTo(index);
       await scrollTo(endpoint);
       await browser.execute(() => {
@@ -126,11 +127,12 @@ suite("selection recovery after banner layout", function () {
         measure();
         window.restoreSelectionProbe = () => { window.fetch = original; observer.disconnect(); };
         window.fetch = async (resource, options) => {
-          if (decodeURIComponent(String(resource)).includes("get_asset_query_page")) {
+          if (decodeURIComponent(String(resource)).includes("get_asset_query_id_range")) {
             const payload = JSON.parse(options.body);
-            const failed = window.failSelectionPage && payload.offset === 128;
-            window.selectionReads.push({ offset: payload.offset, failed });
-            if (failed) return original(resource, { ...options, body: JSON.stringify({ ...payload, offset: -1 }) });
+            const failed = window.failSelectionPage;
+            window.selectionReads.push({ start: payload.start, end: payload.end, failed });
+            // A negative unsigned start fails argument deserialization in the real command.
+            if (failed) return original(resource, { ...options, body: JSON.stringify({ ...payload, start: -1 }) });
           }
           return original(resource, options);
         };
@@ -158,7 +160,7 @@ suite("selection recovery after banner layout", function () {
         return window.selectionGeometry.some(sample => sample.banner && sample.margin > first.margin);
       }));
       await count(2);
-      // Bring the banner into view. Failed page 128 remains outside this viewport.
+      // Bring the banner into view.
       await scrollTo(0);
       const retry = await $('[data-testid="gallery-load-error"] button');
       await retry.waitForDisplayed();
@@ -170,7 +172,10 @@ suite("selection recovery after banner layout", function () {
       assert.equal(await $('[data-testid="gallery-load-error"]').isExisting(), false);
       assert.equal(await $('button[data-asset-index="0"]').getAttribute("aria-pressed"), "true");
       const evidence = await browser.execute(() => ({ reads: window.selectionReads, geometry: window.selectionGeometry }));
-      assert.equal(evidence.reads.slice(before).filter(read => read.offset === 128 && !read.failed).length, 1);
+      // Retry repeats the original range in one successful binary read.
+      const retried = evidence.reads.slice(before);
+      assert.equal(retried.length, 1);
+      assert.deepEqual(retried[0], { start: 0, end: endpoint, failed: false });
       await scrollTo(2051);
       assert.equal(await $('button[data-asset-index="2051"]').getAttribute("aria-pressed"), "true");
       await fs.writeFile(path.join(output, `${kind}.json`), JSON.stringify({ endpoint, before, ...evidence }, null, 2));

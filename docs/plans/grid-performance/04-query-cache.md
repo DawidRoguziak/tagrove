@@ -75,7 +75,7 @@ Dokumentacja do przeczytania:
 
 ## Status
 
-in progress — 2026-11-07 (faza A, kroki 1-TS, 2, 3, 5: zacommitowana; faza B, kroki 1-IPC i 4: w toku)
+done — 2026-11-07 (faza A w commicie bf0afd9; faza B, kroki 1-IPC i 4: [ADR 0005](../../adr/0005-binary-id-ranges-and-anchored-refresh.md))
 
 ## Notatki agentów
 
@@ -101,3 +101,22 @@ in progress — 2026-11-07 (faza A, kroki 1-TS, 2, 3, 5: zacommitowana; faza B, 
   - `gallery.performance.e2e.js` dalej przechodzi, ale też już nie wymusza ewikcji.
 - Zostało (faza B): `anchorOffset` w `start_asset_query`, binarna komenda zakresu ID (f64 LE, decyzja użytkownika) w `createSelection`, ADR 0005, desktop E2E, pomiar Shift-click 100k.
 - Testy: `bun run test -- src/library src/features/gallery src/app src/features/lightbox/__tests__/createLightbox.test.ts src/features/bulk/__tests__/createBulk.test.ts` → pass (372); `bun run typecheck`, `bun run lint`, `tsc -p e2e/gallery-scale/tsconfig.json` → pass. Desktop E2E jeszcze nie.
+
+### 2026-11-07 — agent etapu 04 (faza B)
+- Zrobione:
+  - `start_asset_query` ma opcjonalny `anchorOffset`. `AssetQueryManager::start_at` zwraca wyrównaną stronę z kotwicą (obciętą do ostatniego wiersza) i jej `offset`, zarówno przy nowej sesji, jak i przy trafieniu w cache. `start` bez zmian sygnatury deleguje do `start_at(None)`, więc wywołania w `backup_service.rs` zostały nietknięte. `createLibrary` podaje `visibleStartIndex`.
+  - Nowa komenda `get_asset_query_id_range(sessionId, start, end)` zwraca `tauri::ipc::Response`: f64 LE `[count, ...ids]`, pusty bufor = `stale`, id spoza `0..=2^53` → błąd. Frontend dekoduje ją przez `decodeAssetIdRange` (`Float64Array`).
+  - `getIdsRangeAsync` czyta zakresy tylko tą komendą, w chunkach ≤ 1M, bez stron i bez LRU. `createSelection` robi jedno wywołanie na kopertę zakresów.
+  - Rozważony i odrzucony argument `revision`: o nieaktualności decyduje `dependency_revision` sesji, tak jak w `page`/`position` (ADR 0005).
+  - `e2e/specs/selection-recovery.e2e.js` wstrzykuje błąd w `get_asset_query_id_range` (`start: -1`) i sprawdza dokładnie jeden udany odczyt `0..=endpoint` po Retry.
+  - Helpery testowe w `src/test/idRange.ts`; mockowanie opisane w `docs/development/testing.md`.
+- Pomiary (maszyna bez obciążenia drugiej sesji: brak `cargo`/`vitest`/`wdio`, load ~1; w drzewie tylko zmiany fazy B etapu 04 na `bf0afd9`):
+  - Rust release (`grid_baseline query_rebuild_and_page_baseline`, nowa metryka `get_asset_query_id_range`): zakres 100k 0,05 ms (800 KB), 1M 0,45 ms (8 MB).
+  - Desktop (build E2E debug, Xvfb, 100k kopii PNG, tymczasowy spec poza repo): surowe IPC zakresu 100k 3–4 ms (`ArrayBuffer`); **Shift-click 0 → 99 999 od kliknięcia do „Selected: 100000”: 15–17 ms** (5 prób, dwa biegi). Przed zmianą ~780 sekwencyjnych IPC stron.
+  - Desktop, refresh na indeksie 50 000 (Search bez zmian filtrów): jedno IPC `start_asset_query` z `anchorOffset: 50000` → `offset: 49920`, zero `get_asset_query_page`, 0 placeholderów w widoku przez 240 klatek.
+  - Vitest/jsdom: rozwiązanie selekcji 100k z dekodowaniem bufora 3–6 ms.
+- Testy:
+  - `cargo test --manifest-path src-tauri/Cargo.toml --locked` → pass (lib 219, backend_integration 11, pozostałe cele); `bun run rust:fmt`, `bun run rust:clippy` → pass;
+  - `bun run test -- src/library src/features/gallery src/features/bulk src/features/lightbox/__tests__/createLightbox.test.ts src/app src/platform` → pass (438); `bun run typecheck`, `bun run lint` → pass;
+  - desktop E2E (XDG pod `/tmp/mediatagger-stage04-*`, `TMPDIR=/var/tmp`, profil usuwany po biegu): `gallery-browsing` 2/2, `gallery-selection` 7/7, `selection-recovery` 2/2, `app.smoke` 4/4;
+  - `grid-baseline` (`MEDIATAGGER_GRID_BASELINE=1 MEDIATAGGER_PERF=1`) 3/3: skan 20k p50 691 ms, like/tag 0/20 nieudanych, 1 start i 1 strona `stale` podczas skanów, settle p50 17 ms, 211 węzłów; bez regresji względem biegu etapu 03.

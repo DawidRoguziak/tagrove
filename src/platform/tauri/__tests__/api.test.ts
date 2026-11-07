@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
-import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
+import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, getAssetQueryIdRange, decodeAssetIdRange, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
+import { idRangeBuffer } from "../../../test/idRange";
 import { listScanRoots, setScanRootAutoScan, scanStartupRoots } from "../scanning";
 import { beginVideoOpen, cancelVideoOpen, setVideoControlLabels, closeVideo, controlVideo, openVideo, setVideoBounds } from "../video";
 
@@ -232,7 +233,55 @@ describe("api contract", () => {
     await expect(startAssetQuery({ tagsAnd: ["small"], tagsNot: [], mediaKind: "all", favoritesOnly: false, ownerId: "owner-test", generation: 2 })).rejects.toContain("Narrow your search");
     expect(coreMocks.invoke).toHaveBeenLastCalledWith("start_asset_query", {
       tagsAnd: ["small"], tagsNot: [], kind: null, favoritesOnly: false, metaFilter: null,
-      ownerId: "owner-test", generation: 2, pageSize: 128
+      ownerId: "owner-test", generation: 2, pageSize: 128, anchorOffset: null
     });
+  });
+
+  it("sends the refresh anchor offset", async () => {
+    coreMocks.invoke.mockResolvedValueOnce({ status: "superseded" });
+    await startAssetQuery({ tagsAnd: [], tagsNot: [], mediaKind: "image", favoritesOnly: true, ownerId: "owner-test", generation: 3, pageSize: 64, anchorOffset: 5000 });
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("start_asset_query", {
+      tagsAnd: [], tagsNot: [], kind: "image", favoritesOnly: true, metaFilter: null,
+      ownerId: "owner-test", generation: 3, pageSize: 64, anchorOffset: 5000
+    });
+  });
+
+  it("decodes a binary ID range from little-endian f64 values", async () => {
+    const body = new ArrayBuffer(32);
+    const view = new DataView(body);
+    [3, 7, 2 ** 53, 1].forEach((value, index) => view.setFloat64(index * 8, value, true));
+    coreMocks.invoke.mockResolvedValueOnce(body);
+    const result = await getAssetQueryIdRange(4, 10, 12);
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("get_asset_query_id_range", {
+      sessionId: 4,
+      start: 10,
+      end: 12
+    });
+    if (result.status !== "ready") throw new Error("expected ready");
+    expect(Array.from(result.ids)).toEqual([7, 2 ** 53, 1]);
+  });
+
+  it("round-trips the shared binary test body through invoke", async () => {
+    coreMocks.invoke.mockResolvedValueOnce(idRangeBuffer([4, 5, 6]));
+    const result = await getAssetQueryIdRange(1, 3, 5);
+    expect(result.status === "ready" && Array.from(result.ids)).toEqual([4, 5, 6]);
+    coreMocks.invoke.mockResolvedValueOnce(new ArrayBuffer(0));
+    await expect(getAssetQueryIdRange(1, 3, 5)).resolves.toEqual({ status: "stale" });
+  });
+
+  it("decodes stale, empty, unaligned and byte-array ID ranges and rejects malformed ones", () => {
+    expect(decodeAssetIdRange(new ArrayBuffer(0))).toEqual({ status: "stale" });
+    expect(decodeAssetIdRange([])).toEqual({ status: "stale" });
+    const empty = decodeAssetIdRange(new Float64Array([0]).buffer);
+    expect(empty.status === "ready" && empty.ids.length).toBe(0);
+    const padded = new Uint8Array(25);
+    padded.set(new Uint8Array(new Float64Array([2, 9, 11]).buffer), 1);
+    const unaligned = decodeAssetIdRange(padded.subarray(1));
+    expect(unaligned.status === "ready" && Array.from(unaligned.ids)).toEqual([9, 11]);
+    const plain = decodeAssetIdRange(Array.from(new Uint8Array(new Float64Array([1, 5]).buffer)));
+    expect(plain.status === "ready" && Array.from(plain.ids)).toEqual([5]);
+    expect(() => decodeAssetIdRange(new ArrayBuffer(12))).toThrow("malformed");
+    expect(() => decodeAssetIdRange(new Float64Array([3, 1]).buffer)).toThrow("incomplete");
+    expect(() => decodeAssetIdRange({})).toThrow("not binary");
   });
 });

@@ -4,9 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLibrary } from "../../createLibrary";
 import { createAssetQuery, MAX_CACHED_PAGES } from "../createAssetQuery";
 import { settle } from "../../../test/settle";
+import { idRangeResult } from "../../../test/idRange";
 import type { AssetQueryReady, AssetSummary } from "../../../platform/tauri/contracts/assets";
 
-const api = vi.hoisted(() => ({ startAssetQuery: vi.fn(), getAssetQueryPage: vi.fn() }));
+const api = vi.hoisted(() => ({
+  startAssetQuery: vi.fn(),
+  getAssetQueryPage: vi.fn(),
+  getAssetQueryIdRange: vi.fn()
+}));
 vi.mock("../../../platform/tauri/assets", () => api);
 vi.mock("../../../platform/tauri/tags", () => ({
   listTags: vi.fn(async () => ({ items: [], total: 0 }))
@@ -59,7 +64,9 @@ describe("query lifetime and synchronous coordination", () => {
     const { result: query } = renderHook(model);
     await settle(() => query.refresh());
     query.ensureRange(0, 29);
-    await settle(() => query.getIdsRangeAsync(0, 29));
+    await settle(async () => {
+      for (let index = 0; index < 30; index++) await query.getAssetAtAsync(index);
+    });
     expect(query.assets).toHaveLength(MAX_CACHED_PAGES);
     const missing = Array.from({ length: 30 }, (_, i) => i).find((i) => !query.getAssetAt(i))!;
     expect((await query.getAssetAtAsync(missing))?.id).toBe(missing + 1);
@@ -133,21 +140,26 @@ describe("query lifetime and synchronous coordination", () => {
 
   it("disposal discards pending pages, prevents new IPC and cancels complete range reads", async () => {
     const pending = deferred<AssetQueryReady>();
+    const pendingRange = deferred<ReturnType<typeof idRangeResult>>();
     api.getAssetQueryPage.mockReturnValueOnce(pending.promise);
+    api.getAssetQueryIdRange.mockReturnValueOnce(pendingRange.promise);
     const { result: query, cleanup } = renderHook(model);
     await query.refresh();
+    const page = query.getAssetAtAsync(1);
     const range = query.getIdsRangeAsync(0, 1);
     const rejection = expect(range).rejects.toThrow("cancelled");
     await Promise.resolve();
     cleanup();
     pending.resolve(ready(1));
+    pendingRange.resolve(idRangeResult([1, 2]));
     await rejection;
+    expect(await page).toBeUndefined();
     await query.refresh();
     expect(api.startAssetQuery).toHaveBeenCalledOnce();
     expect(query.getAssetAt(1)).toBeUndefined();
   });
 
-  it("does not shift global positions after deletion and rejects incomplete cached ranges", async () => {
+  it("does not shift global positions after deletion and rejects a range of the stale session", async () => {
     const { result: query } = renderHook(model);
     await query.refresh();
     await query.getAssetAtAsync(1);
@@ -155,6 +167,8 @@ describe("query lifetime and synchronous coordination", () => {
     expect(query.getAssetAt(0)).toBeUndefined();
     expect(query.getAssetIndex(1)).toBeNull();
     expect(query.getAssetAt(1)?.id).toBe(2);
+    // Ranges come from the backend session; the deletion made it stale.
+    api.getAssetQueryIdRange.mockResolvedValueOnce({ status: "stale" });
     await expect(query.getIdsRangeAsync(0, 1)).rejects.toThrow("cancelled");
   });
 

@@ -1,11 +1,11 @@
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { BulkSelectionInteraction, SelectionRange } from "./selection";
-import { containsIndex } from "./selectionGeometry";
 
 export function createSelection(options: {
   queryEpoch: () => number;
   identityEpoch: () => number;
-  getIdsRange: (start: number, end: number) => Promise<number[]>;
+  /** Ordered IDs for an inclusive global range; rejects instead of truncating. */
+  getIdsRange: (start: number, end: number) => Promise<ArrayLike<number>>;
 }) {
   let enabled = false;
   let resolving = false;
@@ -50,20 +50,17 @@ export function createSelection(options: {
     setBusy(true);
     try {
       const resolved = new Set<number>();
-      let rangeIndex = 0;
-      let start = ranges[0]?.startIndex ?? 0;
+      // Ranges are ordered; one read covers their envelope (the query model
+      // reads the backend session vector in a single binary IPC per 1M IDs).
+      const first = ranges[0]?.startIndex ?? 0;
       const last = ranges[ranges.length - 1]?.endIndex ?? -1;
-      while (start <= last) {
+      if (first <= last) {
+        const ids = await options.getIdsRange(first, last);
         if (!current()) return;
-        const end = Math.min(last, (Math.floor(start / 128) + 1) * 128 - 1);
-        const page = await options.getIdsRange(start, end);
-        if (!current()) return;
-        if (page.length !== end - start + 1) throw new Error("Selection range is incomplete");
-        page.forEach((id, offset) => {
-          if (containsIndex(ranges, start + offset)) resolved.add(id);
-        });
-        while (rangeIndex < ranges.length && ranges[rangeIndex].endIndex <= end) rangeIndex++;
-        start = Math.max(end + 1, ranges[rangeIndex]?.startIndex ?? last + 1);
+        if (ids.length !== last - first + 1) throw new Error("Selection range is incomplete");
+        for (const range of ranges)
+          for (let index = range.startIndex; index <= range.endIndex; index++)
+            resolved.add(ids[index - first]);
       }
       if (!current()) return;
       publish(new Set(additive ? [...ids, ...resolved] : resolved));

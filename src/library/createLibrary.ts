@@ -32,6 +32,7 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
   const query = createAssetQuery({
     ...options,
     filters: () => filters,
+    anchorIndex: () => range()?.visibleStartIndex,
     onQueryChanged: details.clear,
     onAssetsChanged(assets) {
       thumbnails.thumbnailStore.retain(assets.map((asset) => asset.id));

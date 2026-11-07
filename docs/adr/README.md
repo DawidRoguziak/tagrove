@@ -42,3 +42,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0002](0002-backend-write-priority-and-scan-revisions.md) | Prioritize user metadata writes and throttle scan revision bumps | Accepted | 2026-11-07 |
 | [0003](0003-custom-gallery-virtualizer.md) | Own row-pool virtualizer with a windowed native scroll, without TanStack virtual-core | Accepted | 2026-11-07 |
 | [0004](0004-trigger-maintained-gallery-sort-keys.md) | Trigger-maintained gallery sort keys with an exact filtered order | Accepted | 2026-11-07 |
+| [0005](0005-binary-id-ranges-and-anchored-refresh.md) | Binary ID ranges and anchored query refresh | Accepted | 2026-11-07 |

@@ -1,5 +1,6 @@
 import { createMemo, createSignal, onCleanup } from "solid-js";
 import {
+  getAssetQueryIdRange,
   getAssetQueryPage,
   getAssetQueryPosition,
   startAssetQuery
@@ -16,6 +17,8 @@ export const MAX_CACHED_PAGES = 24;
 export const STALE_REFRESH_DELAY_MS = 250;
 /** Minimum spacing between two stale-driven refreshes. */
 export const STALE_REFRESH_MIN_INTERVAL_MS = 1000;
+/** Largest ID range requested in one binary IPC call (8 MB of f64 values). */
+export const ID_RANGE_CHUNK = 1_000_000;
 
 export interface LibraryFilters {
   filterInclude: string[];
@@ -27,6 +30,8 @@ export interface LibraryFilters {
 interface Options {
   filters: () => LibraryFilters;
   pageSize?: number;
+  /** First visible global index; a refresh asks the backend for that page first. */
+  anchorIndex?: () => number | null | undefined;
   onQueryChanged?: () => void;
   /** Cached summaries plus refresh fallback rows, i.e. everything a tile may still show. */
   onAssetsChanged?: (assets: AssetSummary[]) => void;
@@ -35,6 +40,7 @@ interface Options {
 export function createAssetQuery({
   pageSize = 128,
   filters,
+  anchorIndex,
   onQueryChanged,
   onAssetsChanged
 }: Options) {
@@ -233,7 +239,8 @@ export function createAssetQuery({
         metaFilter: metaFilter ? { ...metaFilter } : null,
         ownerId,
         generation,
-        pageSize
+        pageSize,
+        anchorOffset: anchorIndex?.() ?? null
       });
       while (
         generation === currentGeneration &&
@@ -348,8 +355,8 @@ export function createAssetQuery({
       return;
     }
     const offsets = [...failedPages.keys()].filter((offset) => activePages.has(offset));
-    // Explicit Retry also unblocks offscreen pages needed by a selection read.
-    // Only viewport demand is fetched here; the selection retries its own ranges.
+    // Explicit Retry also unblocks failed offscreen pages (lightbox reads).
+    // Only viewport demand is fetched here; selections retry their own ID ranges.
     failedPages.clear();
     publish({ loadError: null });
     await Promise.all(offsets.map((offset) => loadPage(offset)));
@@ -417,32 +424,31 @@ export function createAssetQuery({
     return getAssetAtAsync(index);
   };
 
-  /** Ordered snapshot IDs for a global index range; loads only the pages that
-   * intersect it. Rejects when any required page fails to load, so callers can
-   * leave their state untouched instead of applying a partial range. */
+  /** Ordered snapshot IDs for an inclusive global index range, read from the
+   * backend session vector through the binary range command. It never touches
+   * the page cache. Rejects the whole request when the session is stale or
+   * replaced, or when any position is missing, so callers can leave their
+   * state untouched instead of applying a partial range. */
   const getIdsRangeAsync = async (startIndex: number, endIndex: number) => {
     const generation = currentGeneration;
     const sessionId = currentSessionId;
     const from = Math.max(0, Math.min(startIndex, endIndex));
     const to = Math.min(state.total - 1, Math.max(startIndex, endIndex));
-    if (from > to) return [];
-    const ids: number[] = [];
-    for (
-      let pageOffset = Math.floor(from / pageSize) * pageSize;
-      pageOffset <= to;
-      pageOffset += pageSize
-    ) {
-      const page = await loadPage(pageOffset);
+    if (from > to) return new Float64Array(0);
+    if (sessionId === null) throw new Error("Asset ID range was cancelled");
+    const ids = new Float64Array(to - from + 1);
+    for (let chunkStart = from; chunkStart <= to; chunkStart += ID_RANGE_CHUNK) {
+      const chunkEnd = Math.min(to, chunkStart + ID_RANGE_CHUNK - 1);
+      const result = await getAssetQueryIdRange(sessionId, chunkStart, chunkEnd);
       if (generation !== currentGeneration || sessionId !== currentSessionId)
         throw new Error("Asset ID range was cancelled");
-      if (!page) throw new Error("Asset ID range was cancelled");
-      const firstLocal = Math.max(0, from - pageOffset);
-      const lastLocal = Math.min(pageSize - 1, to - pageOffset);
-      for (let local = firstLocal; local <= lastLocal; local += 1) {
-        const summary = page[local];
-        if (!summary) throw new Error("Asset ID range is incomplete");
-        ids.push(summary.id);
+      if (result.status === "stale") {
+        scheduleStaleRefresh();
+        throw new Error("Asset ID range was cancelled");
       }
+      if (result.ids.length !== chunkEnd - chunkStart + 1)
+        throw new Error("Asset ID range is incomplete");
+      ids.set(result.ids, chunkStart - from);
     }
     return ids;
   };

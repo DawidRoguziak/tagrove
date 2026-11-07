@@ -11,7 +11,7 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 - Frontend code calls typed functions in `src/platform/tauri`, split into assets, tags, scanning, thumbnails, maintenance, video, and window modules. The functions call the snake-case command names registered by `tauri::generate_handler!`. Dialogs, events, the system opener, and native window access also enter through this directory.
 - Invoke argument keys are camelCase (`assetId`, `tagsAnd`, `pageSize`, `onEvent`), while the corresponding Rust parameters are snake_case (`asset_id`, `tags_and`, `page_size`, `on_event`). Nested inputs opt into or explicitly define camelCase where needed: `BulkMediaGroupUpdateInput` uses `rename_all = "camelCase"`, and `AssetMetaFilterInput` uses `type`, `hasNoTags`/`groupName`, `tagCount`, and `groupName`.
 - Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/platform/tauri/contracts`, including `session_id`, `thumb_path`, `removed_assets`, and similar fields.
-- Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; thumbnail channel messages use `{ event: "ready" | "failed" | "done", data: ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case.
+- Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; thumbnail channel messages use `{ event: "ready" | "failed" | "done", data: ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case. The one binary response, `get_asset_query_id_range`, has no JSON body; see [binary ID ranges](#binary-id-ranges).
 - Native video events use a `type` discriminant and include `session_id`. Video controls use camelCase discriminants and fields because their Rust enum has both `rename_all = "camelCase"` and `rename_all_fields = "camelCase"`.
 - Rust `Option<T>` becomes `T | null` over IPC. The wrappers explicitly send `null` for media kind `"all"`, an absent search meta-filter, and nullable media-group values. `get_asset_details` also uses `null` for a missing row. Rust `()` is exposed as `Promise<void>`.
 - Rust `i64`, `u64`, and `usize` values are represented as JavaScript `number`. Current IDs, counts, revisions, offsets, and session IDs are expected to remain within JavaScript's safe-integer range; the type layer does not enforce that bound.
@@ -83,8 +83,9 @@ The session API is the primary gallery query path. `listAssets`/`list_assets` re
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `ownerId: string`, `generation: number`, `pageSize: number` (default 128) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, admits only increasing generations within each owner before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes the first page in a `ready` result. Backend page size is clamped to 1–256. The owner ID is nonempty and at most 128 UTF-8 bytes. Each frontend query model uses a new UUID, including after remount. Accepted requests receive process-wide registration tokens; frontend `generation` also rejects late results locally. |
+| `startAssetQuery` / `start_asset_query` | `tagsAnd: string[]`, `tagsNot: string[]`, `kind: MediaKind \| null`, `favoritesOnly: boolean`, `metaFilter: SearchMetaFilter \| null`, `ownerId: string`, `generation: number`, `pageSize: number` (default 128), `anchorOffset: number \| null` (optional, default `null`) | `StartAssetQueryResult` (`ready` or `superseded`) | Normalizes filters, admits only increasing generations within each owner before blocking work, builds or reuses a revision-bound ID session inside one SQLite snapshot, and includes one page in a `ready` result: the aligned page containing `anchorOffset` (clamped to the last row), or the first page without an anchor. `offset` reports that page's start. The frontend passes its first visible index so a refresh deep in the list gets its viewport page in one IPC. Backend page size is clamped to 1–256. The owner ID is nonempty and at most 128 UTF-8 bytes. Each frontend query model uses a new UUID, including after remount. Accepted requests receive process-wide registration tokens; frontend `generation` also rejects late results locally. |
 | `getAssetQueryPage` / `get_asset_query_page` | `sessionId: number`, `offset: number`, `limit: number` (default 128) | `AssetQueryPageResult` (`ready` or `stale`) | Returns summaries from the frozen session order. Limit is clamped to 1–256 and offset past the end is clamped to the total. |
+| `getAssetQueryIdRange` / `get_asset_query_id_range` | `sessionId: number`, `start: number`, `end: number` (inclusive) | Binary body, decoded to `AssetQueryIdRangeResult` (`{ status: "ready", ids: Float64Array }` or `{ status: "stale" }`) | Copies the ordered IDs `start..=end` from the session vector without SQL; `end` is clamped to the last row and `start > end` or `start` past the end yields a ready empty range. Same staleness check as page reads. Format under [binary ID ranges](#binary-id-ranges). Selections call it once per ≤ 1,000,000 IDs. |
 | `getAssetQueryPosition` / `get_asset_query_position` | `sessionId: number`, `assetId: number` | `AssetQueryPositionResult` | Returns `{ status: "resolved", index }`, `{ status: "missing" }`, or `{ status: "stale" }`. The index is zero-based in the full ordered snapshot; missing differs from expired, evicted, cleared, or dependency-stale sessions. No page or ID vector is transferred. |
 | `getAssetSummariesByIds` / `get_asset_summaries_by_ids` | `assetIds: number[]` | `AssetSummary[]` | At most 256 IDs; larger requests reject. Reuses the database summary lookup, preserves requested ID order, and omits missing records. Selection hydration runs at most four batches concurrently. |
 | `getAssetDetails` / `get_asset_details` | `assetId: number` | `AssetDetails \| null` | Returns the full path, size, and tags in addition to summary fields; unknown IDs return `null`. |
@@ -210,7 +211,7 @@ A successful `start_asset_query` returns:
   session_id: number;
   revision: number;
   total: number;
-  offset: 0;
+  offset: number; // page containing `anchorOffset`, 0 without an anchor
   items: AssetSummary[];
 }
 ```
@@ -218,8 +219,17 @@ A successful `start_asset_query` returns:
 Sessions bind an ordered asset-ID snapshot to normalized filters and their dependency revision. The public `revision` remains the global revision of the read snapshot. See [the query manager lifecycle](../subsystems/library-query-and-gallery.md#backend-session-and-page-contract) for snapshot construction, cancellation, reuse, and cache limits.
 
 - `superseded` is a successful start result, not an invoke error. An equal or lower owner generation, or a request whose backend registration token is no longer latest, returns it, including on the cache-hit path. `createAssetQuery` ignores responses from obsolete local generations. If its current start is superseded, it publishes a query error with explicit Retry and retains the old rows without an active session. It does not retry automatically.
-- `stale` is a successful page or position result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older dependency revision. A dependency revision mismatch also removes that session. `createAssetQuery` responds by starting a fresh query.
+- `stale` is a successful page, position, or ID-range result, not an invoke error. It means the session ID is missing, expired, evicted, or bound to an older dependency revision. A dependency revision mismatch also removes that session. `createAssetQuery` responds by scheduling a debounced fresh query.
 - `ready` pages preserve the session order and report the effective (possibly end-clamped) offset. Relevant dependency changes and full invalidations make later pages stale. Unrelated metadata edits keep the session usable and appear in newly materialized summaries.
+
+### Binary ID ranges
+
+`get_asset_query_id_range` is the only query command with a binary body (`tauri::ipc::Response`); the frontend receives an `ArrayBuffer` instead of JSON ([ADR 0005](../adr/0005-binary-id-ranges-and-anchored-refresh.md)):
+
+- `ready`: little-endian IEEE-754 f64 values `[count, id_0, …, id_{count-1}]`, so a ready empty range is eight bytes. `count` equals the clamped range length.
+- `stale`: an empty body (zero bytes).
+
+IDs are sent as f64 because every SQLite asset ID the application creates is far below 2^53, where f64 is exact; the frontend reads them through a `Float64Array` view without BigInt conversion. The backend rejects the whole range with a text error if any ID is negative or above 2^53. `decodeAssetIdRange` in `src/platform/tauri/assets.ts` rejects bodies whose length is not a multiple of eight or whose count header disagrees with the length, copies unaligned views, and falls back to `DataView` on a big-endian host.
 
 An authoritative query exceeding the 64 MiB retained-ID budget rejects with a text error asking the user to narrow the search. It is not a superseded result; a fitting query can subsequently succeed. Frontend code uses ordinary query error handling and does not branch on the error wording.
 
@@ -313,7 +323,8 @@ When changing IPC:
 
 ### Relevant tests
 
-- `src/platform/tauri/__tests__/api.test.ts` checks selected invoke payloads, native video channel delivery, and media-path conversion.
+- `src/platform/tauri/__tests__/api.test.ts` checks selected invoke payloads (including `anchorOffset`), binary ID-range decoding (stale, empty, unaligned, byte-array and malformed bodies), native video channel delivery, and media-path conversion.
+- `asset_query_service.rs` unit tests cover anchored starts on fresh and cached sessions and ID-range bounds, staleness and f64 encoding limits.
 - `src/library/__tests__/createLibrary.test.ts` exercises the session-query contract through the library model, including filters and pagination.
 - `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` exercises streamed ready/failed handling, batching, and ignoring messages after the frontend generation changes.
 - `src/features/settings/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings model tests cover subscription lifetimes and command workflows.

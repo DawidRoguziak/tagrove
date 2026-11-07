@@ -9,9 +9,11 @@ import { MAX_GRID_HEIGHT } from "../gridGeometry";
 import { LanguageProvider } from "../../../i18n/solid";
 import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
+import { idRangeResult, sequentialIds } from "../../../test/idRange";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
+  getAssetQueryIdRange: vi.fn(),
   demand: vi.fn()
 }));
 vi.mock("../../../platform/tauri/assets", async () => ({
@@ -286,10 +288,7 @@ it.each([
   }
   expect(library.query.getAssetAt(0)).toBeUndefined();
   expect([...selection.ids]).toEqual([9001, 1]);
-  api.getAssetQueryPage.mockImplementation(async (_session, offset) => {
-    if (offset === 0) throw new Error("synthetic offscreen page failure");
-    return page(offset);
-  });
+  api.getAssetQueryIdRange.mockRejectedValue(new Error("synthetic offscreen range failure"));
   const grid = view.container.querySelector('button[data-asset-index="4096"]')?.parentElement;
   if (!grid) throw new Error("Missing measured grid");
   const originalTop = grid.getBoundingClientRect().top;
@@ -307,23 +306,25 @@ it.each([
   }
   await screen.findByTestId("gallery-load-error");
   await waitFor(() => expect(selection.busy).toBe(false));
-  const before = api.getAssetQueryPage.mock.calls.length;
+  const before = api.getAssetQueryIdRange.mock.calls.length;
+  expect(before).toBe(1);
   expect(grid.getBoundingClientRect().top).toBe(originalTop + 48);
   // Deliver the production virtualizer's measurement observer after the real banner renders.
   deliverResize();
-  expect(selection.error).toContain("synthetic offscreen page failure");
+  expect(selection.error).toContain("synthetic offscreen range failure");
   expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   expect(grid.getBoundingClientRect().top).toBe(originalTop + 48);
-  expect(api.getAssetQueryPage).toHaveBeenCalledTimes(before);
+  expect(api.getAssetQueryIdRange).toHaveBeenCalledTimes(before);
   expect([...selection.ids]).toEqual([9001, 1]);
-  api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset));
+  api.getAssetQueryIdRange.mockImplementation(async (_session, start: number, end: number) =>
+    idRangeResult(sequentialIds(start, end))
+  );
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   const expectedIds = Array.from({ length: 4097 }, (_, i) => i + 1);
   if (kind !== "rectangle-replace") expectedIds.unshift(9001);
   await waitFor(() => expect([...selection.ids]).toEqual(expectedIds));
-  expect(api.getAssetQueryPage.mock.calls.slice(before).some(([, offset]) => offset === 0)).toBe(
-    true
-  );
+  // Retry repeats the original whole range in one binary read.
+  expect(api.getAssetQueryIdRange.mock.calls.slice(before)).toEqual([[1, 0, 4096]]);
   expect(screen.queryByTestId("gallery-load-error")).not.toBeInTheDocument();
   deliverResize();
   expect([...selection.ids]).toEqual(expectedIds);

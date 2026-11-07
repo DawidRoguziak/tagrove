@@ -17,6 +17,8 @@ use crate::{
 const MAX_SESSIONS: usize = 4;
 const MAX_RETAINED_ID_BYTES: usize = 64 * 1024 * 1024;
 const SESSION_TTL: Duration = Duration::from_secs(5 * 60);
+/// Largest asset ID that a binary ID range can carry exactly as an f64.
+const MAX_EXACT_F64_ID: i64 = 1 << 53;
 
 #[derive(Debug, Clone)]
 pub struct AssetQueryFilters {
@@ -117,7 +119,28 @@ impl AssetQueryManager {
         request_id: u64,
         generation: u64,
     ) -> AppResult<StartAssetQueryResult> {
-        let result = self.start_inner(permit, filters, page_size, request_id, generation);
+        self.start_at(permit, filters, page_size, request_id, generation, None)
+    }
+
+    /// Starts a query whose `ready` result carries the page that contains
+    /// `anchor_offset` (clamped to the last row) instead of the first page.
+    pub fn start_at(
+        &self,
+        permit: &OperationPermit,
+        filters: AssetQueryFilters,
+        page_size: usize,
+        request_id: u64,
+        generation: u64,
+        anchor_offset: Option<usize>,
+    ) -> AppResult<StartAssetQueryResult> {
+        let result = self.start_inner(
+            permit,
+            filters,
+            page_size,
+            request_id,
+            generation,
+            anchor_offset,
+        );
         if self.is_superseded(request_id, generation) {
             Ok(StartAssetQueryResult::Superseded)
         } else {
@@ -132,6 +155,7 @@ impl AssetQueryManager {
         page_size: usize,
         request_id: u64,
         generation: u64,
+        anchor_offset: Option<usize>,
     ) -> AppResult<StartAssetQueryResult> {
         let epoch = self.cache.lock().unwrap_or_else(|e| e.into_inner()).epoch;
         let conn = permit.connection()?;
@@ -157,15 +181,13 @@ impl AssetQueryManager {
         }
 
         if let Some(session) = self.cached_session(&key) {
-            let items = db::list_asset_summaries_by_ids(
-                &tx,
-                &session.asset_ids[..session.asset_ids.len().min(page_size)],
-            )?;
+            let (offset, ids) = anchor_page(&session.asset_ids, page_size, anchor_offset);
+            let items = db::list_asset_summaries_by_ids(&tx, ids)?;
             return Ok(StartAssetQueryResult::Ready {
                 session_id: session.id,
                 revision,
                 total: session.asset_ids.len(),
-                offset: 0,
+                offset,
                 items,
             });
         }
@@ -202,10 +224,8 @@ impl AssetQueryManager {
             asset_ids: Arc::new(asset_ids),
             last_accessed: Instant::now(),
         };
-        let items = db::list_asset_summaries_by_ids(
-            &tx,
-            &session.asset_ids[..session.asset_ids.len().min(page_size)],
-        )?;
+        let (offset, ids) = anchor_page(&session.asset_ids, page_size, anchor_offset);
+        let items = db::list_asset_summaries_by_ids(&tx, ids)?;
         let total = session.asset_ids.len();
         let session_id = session.id;
         drop(tx);
@@ -217,9 +237,42 @@ impl AssetQueryManager {
             session_id,
             revision,
             total,
-            offset: 0,
+            offset,
             items,
         })
+    }
+
+    /// Ordered session IDs for the inclusive range `start..=end`, clamped to
+    /// the snapshot, encoded for a binary IPC response (see
+    /// `encode_id_range`). `None` means the session is stale. No SQL reads
+    /// the IDs; only the dependency revision is checked.
+    pub fn id_range(
+        &self,
+        permit: &OperationPermit,
+        session_id: u64,
+        start: usize,
+        end: usize,
+    ) -> AppResult<Option<Vec<u8>>> {
+        let conn = permit.connection()?;
+        let tx = conn.unchecked_transaction()?;
+        #[cfg(test)]
+        self.after_revision_read();
+        let Some(session) = self.session_by_id(session_id) else {
+            return Ok(None);
+        };
+        if session.dependency_revision != db::query_dependency_revision(&tx, &session.dependencies)?
+        {
+            self.remove_session(session_id);
+            return Ok(None);
+        }
+        drop(tx);
+        let total = session.asset_ids.len();
+        let ids = if start > end || start >= total {
+            &session.asset_ids[..0]
+        } else {
+            &session.asset_ids[start..=end.min(total - 1)]
+        };
+        encode_id_range(ids).map(Some)
     }
 
     pub fn page(
@@ -368,6 +421,30 @@ fn prune(cache: &mut QueryCache) {
     cache
         .sessions
         .retain(|session| now.duration_since(session.last_accessed) <= SESSION_TTL);
+}
+
+/// The aligned page containing `anchor` (clamped to the last row), as its
+/// offset and ID slice. Without an anchor this is the first page.
+fn anchor_page(ids: &[i64], page_size: usize, anchor: Option<usize>) -> (usize, &[i64]) {
+    let anchor = anchor.unwrap_or(0).min(ids.len().saturating_sub(1));
+    let offset = anchor / page_size * page_size;
+    let end = offset.saturating_add(page_size).min(ids.len());
+    (offset, &ids[offset.min(end)..end])
+}
+
+/// Binary ID range: little-endian f64 values `[count, id_0, .., id_{count-1}]`.
+/// A zero-length buffer is reserved for `stale`, so a ready empty range is
+/// eight bytes. IDs above 2^53 cannot round-trip through f64 and are rejected.
+fn encode_id_range(ids: &[i64]) -> AppResult<Vec<u8>> {
+    let mut bytes = Vec::with_capacity((ids.len() + 1) * 8);
+    bytes.extend_from_slice(&(ids.len() as f64).to_le_bytes());
+    for &id in ids {
+        if !(0..=MAX_EXACT_F64_ID).contains(&id) {
+            return Err(format!("Asset ID {id} cannot be sent as an exact range value").into());
+        }
+        bytes.extend_from_slice(&(id as f64).to_le_bytes());
+    }
+    Ok(bytes)
 }
 
 fn filter_key(filters: &AssetQueryFilters, revision: i64) -> String {
@@ -542,6 +619,139 @@ mod tests {
         ] {
             assert_eq!(serde_json::to_value(result).unwrap(), json);
         }
+    }
+
+    fn decode_id_range(bytes: &[u8]) -> Vec<i64> {
+        let (chunks, rest) = bytes.as_chunks::<8>();
+        assert!(rest.is_empty());
+        let values: Vec<f64> = chunks
+            .iter()
+            .map(|chunk| f64::from_le_bytes(*chunk))
+            .collect();
+        assert_eq!(values[0] as usize, values.len() - 1, "count header");
+        values[1..].iter().map(|value| *value as i64).collect()
+    }
+
+    #[test]
+    fn id_range_returns_clamped_inclusive_order_and_empty_buffer_when_stale() {
+        let target = test_db(400);
+        let manager = AssetQueryManager::new();
+        let request = manager.begin_request("test", 1);
+        let StartAssetQueryResult::Ready { session_id, .. } =
+            start(&manager, &target.path, &filters(&[]), request, 1)
+        else {
+            panic!("ready");
+        };
+        let permit = target.runtime.admit().unwrap();
+        let range = |start, end| {
+            manager
+                .id_range(&permit, session_id, start, end)
+                .unwrap()
+                .map(|bytes| decode_id_range(&bytes))
+        };
+        // Newest first: index i holds asset ID i + 1 in this fixture.
+        assert_eq!(range(0, 2), Some(vec![1, 2, 3]));
+        assert_eq!(range(398, 399), Some(vec![399, 400]));
+        assert_eq!(range(0, 399).unwrap().len(), 400);
+        assert_eq!(range(395, 10_000), Some(vec![396, 397, 398, 399, 400]));
+        assert_eq!(range(5, 5), Some(vec![6]));
+        // Empty but ready ranges still carry the eight-byte count header.
+        assert_eq!(range(6, 5), Some(vec![]));
+        assert_eq!(range(400, 410), Some(vec![]));
+        assert_eq!(
+            manager
+                .id_range(&permit, session_id, 6, 5)
+                .unwrap()
+                .unwrap()
+                .len(),
+            8
+        );
+        assert_eq!(manager.id_range(&permit, u64::MAX, 0, 1).unwrap(), None);
+        let conn = permit.connection().unwrap();
+        db::bump_library_revision(&conn).unwrap();
+        assert_eq!(manager.id_range(&permit, session_id, 0, 1).unwrap(), None);
+        assert!(manager.session_by_id(session_id).is_none());
+    }
+
+    #[test]
+    fn id_range_encoding_rejects_ids_that_f64_cannot_represent() {
+        assert_eq!(
+            decode_id_range(&encode_id_range(&[]).unwrap()),
+            Vec::<i64>::new()
+        );
+        assert_eq!(
+            decode_id_range(&encode_id_range(&[1, MAX_EXACT_F64_ID]).unwrap()),
+            vec![1, MAX_EXACT_F64_ID]
+        );
+        assert!(encode_id_range(&[MAX_EXACT_F64_ID + 1]).is_err());
+        assert!(encode_id_range(&[-1]).is_err());
+    }
+
+    #[test]
+    fn start_at_returns_the_page_containing_the_anchor_on_fresh_and_cached_sessions() {
+        let target = test_db(45);
+        let manager = AssetQueryManager::new();
+        let permit = target.runtime.admit().unwrap();
+        let mut generation = 0;
+        let mut start_at = |anchor| {
+            generation += 1;
+            let request = manager.begin_request("test", generation);
+            let StartAssetQueryResult::Ready {
+                session_id,
+                total,
+                offset,
+                items,
+                ..
+            } = manager
+                .start_at(&permit, filters(&[]), 10, request, generation, anchor)
+                .unwrap()
+            else {
+                panic!("ready");
+            };
+            assert_eq!(total, 45);
+            (
+                session_id,
+                offset,
+                items.iter().map(|item| item.id).collect::<Vec<_>>(),
+            )
+        };
+        let (fresh, offset, ids) = start_at(Some(23));
+        assert_eq!((offset, ids), (20, (21..=30).collect::<Vec<_>>()));
+        // Cache hit with the same key: same session, anchored page.
+        let (cached, offset, ids) = start_at(Some(40));
+        assert_eq!(cached, fresh);
+        assert_eq!((offset, ids), (40, (41..=45).collect::<Vec<_>>()));
+        // Past the end clamps to the last row's page; no anchor is page zero.
+        assert_eq!(start_at(Some(10_000)).1, 40);
+        assert_eq!(start_at(None).1, 0);
+        assert_eq!(start_at(Some(0)).2, (1..=10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn start_at_on_an_empty_result_returns_offset_zero() {
+        let target = test_db(0);
+        let manager = AssetQueryManager::new();
+        let request = manager.begin_request("test", 1);
+        let result = manager
+            .start_at(
+                &target.runtime.admit().unwrap(),
+                filters(&[]),
+                10,
+                request,
+                1,
+                Some(500),
+            )
+            .unwrap();
+        let StartAssetQueryResult::Ready {
+            offset,
+            items,
+            total,
+            ..
+        } = result
+        else {
+            panic!("ready");
+        };
+        assert_eq!((offset, items.len(), total), (0, 0, 0));
     }
 
     #[test]

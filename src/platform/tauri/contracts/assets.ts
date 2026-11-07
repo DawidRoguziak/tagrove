@@ -76,6 +76,12 @@ export type StartAssetQueryResult = AssetQueryReady | AssetQuerySuperseded;
 
 export type AssetQueryPageResult = AssetQueryReady | AssetQueryStale;
 
+/**
+ * Decoded `get_asset_query_id_range` body. The wire format is binary, not JSON:
+ * little-endian f64 `[count, ...ids]`, or zero bytes for `stale`.
+ */
+export type AssetQueryIdRangeResult = { status: "ready"; ids: Float64Array } | AssetQueryStale;
+
 export interface DeleteAssetSummary {
   removed_assets: number;
   removed_thumbnails: number;

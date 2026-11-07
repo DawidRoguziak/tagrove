@@ -161,3 +161,5 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
 ### 2026-11-07 — agent etapu 04
 - Z etapu 04: frontend trzyma teraz 24 strony (`MAX_CACHED_PAGES`). `gallery.performance.e2e.js` (2048 plików, 16 stron) przechodzi, ale jego „evicted page” już nie wymusza ewikcji; przy weryfikacji końcowej trzeba albo powiększyć fixture (> 24 stron), albo opisać to jako ograniczenie.
 - Z etapu 04: pomiary etapu 04 (refresh głęboko w liście, Shift-click 100k) dopiszę po fazie B.
+- Z etapu 04 (faza B): `grid_baseline.rs` (`query_rebuild_and_page_baseline`) ma nową metrykę `get_asset_query_id_range` (release: 100k 0,05 ms, 1M 0,45 ms). Desktopowe pomiary Shift-click 100k (15–17 ms) i refreshu na indeksie 50 000 (1 IPC, 0 placeholderów) pochodzą z tymczasowego speca spoza repo; wyniki i metoda są w notatkach etapu 04. Do rozważenia przy weryfikacji końcowej: stały spec z kolekcją 100k.
+- Z etapu 04 (faza B): `grid-baseline` po etapie 04: skan 20k p50 691 ms, like/tag 0/20 nieudanych, settle p50 17 ms, 211 węzłów; bez regresji względem biegu etapu 03.

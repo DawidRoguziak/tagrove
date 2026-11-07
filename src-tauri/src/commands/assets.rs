@@ -52,6 +52,7 @@ pub async fn start_asset_query(
     owner_id: String,
     generation: u64,
     page_size: usize,
+    anchor_offset: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<StartAssetQueryResult, String> {
     let database = state.database.clone();
@@ -63,12 +64,13 @@ pub async fn start_asset_query(
     // the frontend owner before assigning the process-wide request token.
     let request_id = database.queries.begin_request(&owner_id, generation);
     tauri::async_runtime::spawn_blocking(move || {
-        database.queries.start(
+        database.queries.start_at(
             &database.admit()?,
             filters,
             page_size,
             request_id,
             generation,
+            anchor_offset,
         )
     })
     .await
@@ -109,6 +111,28 @@ pub async fn get_asset_query_position(
     .await
     .map_err(|e| format!("asset position worker failed: {e}"))?
     .map_err(|e| e.to_string())
+}
+
+/// Ordered session IDs for `start..=end` as raw bytes (see
+/// `asset_query_service::id_range`): little-endian f64 `[count, ids..]`, or an
+/// empty body when the session is stale.
+#[tauri::command]
+pub async fn get_asset_query_id_range(
+    session_id: u64,
+    start: usize,
+    end: usize,
+    state: State<'_, AppState>,
+) -> Result<tauri::ipc::Response, String> {
+    let database = state.database.clone();
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        database
+            .queries
+            .id_range(&database.admit()?, session_id, start, end)
+    })
+    .await
+    .map_err(|e| format!("asset ID range worker failed: {e}"))?
+    .map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(bytes.unwrap_or_default()))
 }
 
 fn validate_summary_batch(asset_ids: &[i64]) -> Result<(), String> {

@@ -113,6 +113,7 @@ For both session and legacy queries, tags are trimmed, lowercased, de-duplicated
 | --- | --- | --- | --- |
 | `setAssetTags` / `set_asset_tags` | `assetId`, `tags: string[]` | `SetAssetTagsSummary` | Atomically replaces normalized tags and conditionally bumps revision. Missing IDs reject. A canonical no-op returns `changed: false`; repairing legacy tag spelling, duplicate normalized tag rows, or a stale `tag_count` returns `changed: true` and bumps revision. |
 | `mergeAssetTagsBulk` / `merge_asset_tags_bulk` | `assetIds: number[]`, `tags: string[]` | `BulkTagMergeSummary` | Atomically merges normalized tags and revision, skips missing IDs, and returns canonical tags/results for processed IDs. |
+| `applySelectionMutation` / `apply_selection_mutation` | `selection: { sessionId, ranges: [start, end][], excluded: number[], included: number[] }`, `mutation: { type: "mergeTags", tags } \| { type: "toggleFavorite" } \| { type: "setMediaGroup", mediaGroupKey: string \| null }` | `SelectionMutationResult` | Bulk write on a [selection spec](#selection-specs) ([ADR 0008](../adr/0008-selection-spec-resolved-in-rust.md)). Ranges are inclusive session positions, ascending and non-overlapping, else the command rejects. Resolved on the session vector, then written in one IMMEDIATE transaction that first checks the session's dependency revision; a missing or changed session returns `{ status: "stale" }` and writes nothing. Tags are normalized and must not be empty. |
 | `setAssetFavorite` / `set_asset_favorite` | `assetId`, `isFavorite: boolean` | `void` | Sets the favorite flag and bumps the library revision. |
 | `toggleAssetsFavoriteBulk` / `toggle_assets_favorite_bulk` | `assetIds: number[]` | `BulkFavoriteSummary` | Deduplicates positive IDs and skips missing rows. Reads and updates in one IMMEDIATE transaction on a blocking worker: removes favorites if all existing selected rows are favorites, otherwise favorites them all. Returns processed IDs and the common resulting value; bumps revision once for a nonempty processed set. |
 | `setAssetMediaGroup` / `set_asset_media_group` | `assetId`, `mediaGroupKey: string \| null`, `mediaGroupOrder: number \| null` | `void` | Trims the key and maps blank to `null`; non-finite order is discarded as `null`; bumps the revision. |
@@ -187,6 +188,27 @@ These operations' locking, transaction, archive, rollback, and filesystem guaran
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
 | `syncNativeWindowTheme` / `sync_window_theme` | `theme: "light" \| "dark"` | `void` | Rejects any other string and sets the native theme and background. |
+
+### Selection specs
+
+`apply_selection_mutation` returns:
+
+```ts
+type SelectionMutationResult =
+  | {
+      status: "ready";
+      processed_assets: number; // existing selected assets
+      updated_assets: number;   // assets whose stored value changed
+      revision: number;         // global revision after the write
+      query_impact: TagQueryImpact; // tag merge only; `none` otherwise
+      vocabulary_changed: boolean;
+      is_favorite: boolean | null;     // toggleFavorite only
+      media_group_key: string | null;  // setMediaGroup only (normalized)
+    }
+  | { status: "stale" };
+```
+
+The resolved asset list is the range positions minus `excluded`, in session order, followed by the `included` IDs that the ranges did not already cover. `included` IDs may come from an earlier query; missing assets are skipped, as in the ID-based commands. `setMediaGroup` assigns orders `1..N` in that list order. The spec has no revision argument: like pages, a session is valid while its dependency revision is unchanged, so a write that does not affect the session's dependencies (for example the selection's own tag merge in an unfiltered view) does not invalidate it. A `stale` result is a successful response, not an invoke error.
 
 ## Query session states
 
@@ -312,7 +334,7 @@ When changing IPC:
 
 - `src/platform/tauri/__tests__/api.test.ts` checks selected invoke payloads (including `anchorOffset`), binary ID-range decoding (stale, empty, unaligned, byte-array and malformed bodies), native video channel delivery, and media-path conversion.
 - `asset_query_service.rs` unit tests cover anchored starts on fresh and cached sessions, ID-range bounds, staleness and f64 encoding limits, and timeline sections (months, groups, no date, filters, staleness, JSON shape).
-- `api.test.ts` checks the `get_asset_query_sections` invoke payload.
+- `selection_service.rs` pins the `apply_selection_mutation` payloads (camelCase spec and mutation, snake_case result); `backend_integration.rs` (`selection_spec`) covers resolution, exclusions, inclusions, all three mutations, stale and missing sessions writing nothing, and rejected ranges. `api.test.ts` checks the sections and selection-mutation invoke payloads.
 - `src/library/__tests__/createLibrary.test.ts` exercises the session-query contract through the library model, including filters and pagination.
 - `src/platform/tauri/__tests__/api.test.ts` checks the `thumb://` URL shape, including the cached-only and retry flags.
 - `src/features/settings/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings model tests cover subscription lifetimes and command workflows.

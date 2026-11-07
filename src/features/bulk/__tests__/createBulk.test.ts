@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   mergeAssetTagsBulk: vi.fn(),
   toggleAssetsFavoriteBulk: vi.fn(),
   setAssetsMediaGroupBulk: vi.fn(),
+  applySelectionMutation: vi.fn(),
   listTags: vi.fn()
 }));
 vi.mock("../../../platform/tauri/assets", () => api);
@@ -100,7 +101,9 @@ async function setup(ids = [1]) {
     const selection = createSelection({
       queryEpoch: () => library.query.queryEpoch,
       identityEpoch: () => library.tags.epoch,
-      getIdsRange: library.query.getIdsRangeAsync
+      getIdsRange: library.query.getIdsRangeAsync,
+      sessionId: library.query.sessionId,
+      total: () => library.query.total
     });
     const [settings, setSettings] = createSignal(false);
     const bulk = createBulk(library, selection, settings);
@@ -617,6 +620,15 @@ describe("bulk partial publication and query changes", () => {
     const { bulk, library } = await setup([1, 2000]);
     settle(() => bulk.onGroupKeyDraftChange("kept"));
     await settle(() => bulk.onAddTag("dog"));
+    // The filtered query is a new backend session.
+    api.startAssetQuery.mockResolvedValueOnce({
+      status: "ready",
+      session_id: 2,
+      revision: 2,
+      offset: 0,
+      total: 1,
+      items: [asset(1)]
+    });
     await settle(() =>
       library.applyFilters({
         filterInclude: ["dog"],
@@ -759,4 +771,106 @@ it("ignores deletion notifications outside the selected IDs", () => {
   expect(result.ready).toBe(true);
   expect(result.failed).toBe(false);
   expect(result.selected[0]?.id).toBe(1);
+});
+
+describe("ranged (spec) selections", () => {
+  const TOTAL = 50_000;
+  async function setupRanged() {
+    api.startAssetQuery.mockResolvedValue({
+      status: "ready",
+      session_id: 4,
+      revision: 1,
+      offset: 0,
+      total: TOTAL,
+      items: [asset(1), asset(2)]
+    });
+    const view = renderHook(() => {
+      const library = createLibrary();
+      const selection = createSelection({
+        queryEpoch: () => library.query.queryEpoch,
+        identityEpoch: () => library.tags.epoch,
+        getIdsRange: library.query.getIdsRangeAsync,
+        sessionId: library.query.sessionId,
+        total: () => library.query.total
+      });
+      const bulk = createBulk(library, selection, () => false);
+      return { library, selection, bulk };
+    });
+    const { library, selection } = view.result;
+    await settle(() => library.refreshLibrary());
+    settle(() => selection.toggle());
+    await settle(() => selection.interact({ type: "select-all" }));
+    settle(() =>
+      selection.interact({ type: "click", assetId: 2, assetIndex: 1, ctrlLike: true, shift: false })
+    );
+    return view.result;
+  }
+  const ready = (overrides: Record<string, unknown> = {}) => ({
+    status: "ready",
+    processed_assets: TOTAL - 1,
+    updated_assets: TOTAL - 1,
+    revision: 5,
+    query_impact: { type: "tags", changed_tags: ["sunset"], tag_count_changed: true },
+    vocabulary_changed: true,
+    is_favorite: null,
+    media_group_key: null,
+    ...overrides
+  });
+
+  it("adds a tag and toggles favorites through one spec write each, without loading summaries", async () => {
+    const { bulk } = await setupRanged();
+    expect(bulk.selectedCount).toBe(TOTAL - 1);
+    expect(bulk.selectionRanged).toBe(true);
+    expect(bulk.tagMode).toBe("multiple");
+    expect(bulk.metadataLoading).toBe(false);
+    expect(bulk.allSelectedFavorites).toBe(false);
+    expect(api.getAssetSummariesByIds).not.toHaveBeenCalled();
+    const spec = { sessionId: 4, ranges: [[0, TOTAL - 1]], excluded: [2], included: [] };
+    api.applySelectionMutation.mockResolvedValueOnce(ready());
+    await expect(settle(() => bulk.onAddTag("Sunset"))).resolves.toBe(true);
+    expect(api.applySelectionMutation).toHaveBeenCalledExactlyOnceWith(spec, {
+      type: "mergeTags",
+      tags: ["sunset"]
+    });
+    expect(api.mergeAssetTagsBulk).not.toHaveBeenCalled();
+    expect(bulk.appliedBulkTags).toEqual(["sunset"]);
+    expect(bulk.tagSaveFailed).toBe(false);
+
+    api.applySelectionMutation.mockResolvedValueOnce(
+      ready({ query_impact: { type: "none" }, vocabulary_changed: false, is_favorite: true })
+    );
+    await settle(() => bulk.onToggleFavorite());
+    expect(api.applySelectionMutation).toHaveBeenLastCalledWith(spec, { type: "toggleFavorite" });
+    expect(api.toggleAssetsFavoriteBulk).not.toHaveBeenCalled();
+    expect(bulk.favoriteFailed).toBe(false);
+  });
+
+  it("reports a stale spec as failed, writes nothing locally and refreshes the query", async () => {
+    const { bulk, library } = await setupRanged();
+    const starts = api.startAssetQuery.mock.calls.length;
+    api.applySelectionMutation.mockResolvedValue({ status: "stale" });
+    await expect(settle(() => bulk.onAddTag("late"))).resolves.toBe(false);
+    expect(bulk.tagSaveFailed).toBe(true);
+    expect(bulk.appliedBulkTags).toEqual([]);
+    await settle(() => bulk.onToggleFavorite());
+    expect(bulk.favoriteFailed).toBe(true);
+    await waitFor(() => expect(api.startAssetQuery.mock.calls.length).toBeGreaterThan(starts));
+    expect(library.query.total).toBe(TOTAL);
+  });
+
+  it("groups a ranged selection in gallery order through the spec", async () => {
+    const { bulk } = await setupRanged();
+    api.applySelectionMutation.mockResolvedValueOnce(
+      ready({ query_impact: { type: "none" }, media_group_key: "trip" })
+    );
+    bulk.onGroupKeyDraftChange(" trip ");
+    await expect(settle(() => bulk.onApplyGroup())).resolves.toEqual({ status: "saved" });
+    expect(api.applySelectionMutation).toHaveBeenCalledWith(
+      { sessionId: 4, ranges: [[0, TOTAL - 1]], excluded: [2], included: [] },
+      { type: "setMediaGroup", mediaGroupKey: "trip" }
+    );
+    expect(api.setAssetsMediaGroupBulk).not.toHaveBeenCalled();
+    // An explicit order needs materialized IDs, which a range does not have.
+    await expect(bulk.onApplyGroup([1, 3])).resolves.toEqual({ status: "ignored" });
+  });
 });

@@ -147,7 +147,9 @@
       "tagLoadFailed": "La liste complète des tags n’a pas pu être chargée. La modification reste désactivée.",
       "retryTagDetails": "Réessayer le chargement",
       "metadataFailed": "Impossible de charger les éléments sélectionnés. Certains peuvent ne plus exister.",
-      "partialResult": "{{processed}} éléments sélectionnés mis à jour sur {{requested}}."
+      "partialResult": "{{processed}} éléments sélectionnés mis à jour sur {{requested}}.",
+      "selectionClearedTitle": "Sélection effacée",
+      "selectionClearedDescription": "Les résultats ont changé : la plage sélectionnée ne correspondait plus à ce qui était affiché. Sélectionnez à nouveau les éléments."
     },
     "tagModal": {
       "ariaLabel": "Ajout de tags en masse",

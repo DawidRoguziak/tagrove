@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex, OnceLock,
@@ -22,6 +22,40 @@ const MAX_RETAINED_ID_BYTES: usize = 64 * 1024 * 1024;
 const SESSION_TTL: Duration = Duration::from_secs(5 * 60);
 /// Largest asset ID that a binary ID range can carry exactly as an f64.
 const MAX_EXACT_F64_ID: i64 = 1 << 53;
+
+/// A bulk selection expressed against one query session (stage 09). `ranges`
+/// are inclusive `[start, end]` positions in the session vector, ascending and
+/// non-overlapping; `excluded` are IDs inside those ranges that are not
+/// selected, and `included` are selected IDs outside them (possibly from an
+/// earlier query).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionSpec {
+    pub session_id: u64,
+    pub ranges: Vec<[usize; 2]>,
+    #[serde(default)]
+    pub excluded: Vec<i64>,
+    #[serde(default)]
+    pub included: Vec<i64>,
+}
+
+/// The asset IDs a `SelectionSpec` denotes, in session order followed by the
+/// remaining `included` IDs, plus what is needed to prove inside a write
+/// transaction that the session snapshot is still current.
+#[derive(Debug)]
+pub struct ResolvedSelection {
+    pub asset_ids: Vec<i64>,
+    dependencies: Vec<String>,
+    dependency_revision: i64,
+}
+
+impl ResolvedSelection {
+    /// Whether no write has changed the session's query result since it was
+    /// built. Call it inside the write transaction that applies the selection.
+    pub fn is_current(&self, conn: &rusqlite::Connection) -> anyhow::Result<bool> {
+        Ok(db::query_dependency_revision(conn, &self.dependencies)? == self.dependency_revision)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct AssetQueryFilters {
@@ -321,6 +355,57 @@ impl AssetQueryManager {
             total,
             sections: session.sections.get().cloned().unwrap_or_default(),
         })
+    }
+
+    /// Resolves a selection spec on its session vector without SQL. `None`
+    /// means the session is gone (evicted, expired, or removed as stale); a
+    /// malformed spec is an error. The caller must still check
+    /// `ResolvedSelection::is_current` in its write transaction.
+    pub fn resolve_selection(&self, spec: &SelectionSpec) -> AppResult<Option<ResolvedSelection>> {
+        let Some(session) = self.session_by_id(spec.session_id) else {
+            return Ok(None);
+        };
+        let ids = &session.asset_ids;
+        let mut previous_end = None;
+        let mut covered = 0usize;
+        for &[start, end] in &spec.ranges {
+            if start > end || end >= ids.len() || previous_end.is_some_and(|last| start <= last) {
+                return Err("Selection ranges are invalid. Select the items again.".into());
+            }
+            previous_end = Some(end);
+            covered += end - start + 1;
+        }
+        let excluded: HashSet<i64> = spec.excluded.iter().copied().collect();
+        let mut included: HashSet<i64> = spec.included.iter().copied().collect();
+        let mut asset_ids =
+            Vec::with_capacity(covered.saturating_sub(excluded.len()) + included.len());
+        for &[start, end] in &spec.ranges {
+            let slice = &ids[start..=end];
+            if excluded.is_empty() && included.is_empty() {
+                asset_ids.extend_from_slice(slice);
+                continue;
+            }
+            for &id in slice {
+                // An ID listed as included that is also covered is selected once.
+                included.remove(&id);
+                if !excluded.contains(&id) {
+                    asset_ids.push(id);
+                }
+            }
+        }
+        // Spec order for the IDs outside the ranges, without duplicates.
+        let mut seen = HashSet::new();
+        asset_ids.extend(
+            spec.included
+                .iter()
+                .copied()
+                .filter(|id| included.contains(id) && seen.insert(*id)),
+        );
+        Ok(Some(ResolvedSelection {
+            asset_ids,
+            dependencies: session.dependencies.clone(),
+            dependency_revision: session.dependency_revision,
+        }))
     }
 
     pub fn page(

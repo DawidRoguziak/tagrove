@@ -11,7 +11,10 @@ import type {
   AssetPage,
   AssetQueryIdRangeResult,
   AssetQueryPositionResult,
-  AssetQuerySectionsResult
+  AssetQuerySectionsResult,
+  SelectionMutation,
+  SelectionMutationResult,
+  SelectionSpec
 } from "./contracts/assets";
 
 export async function startAssetQuery(params: {
@@ -126,6 +129,22 @@ export async function listAssets(params: {
 
 export async function toggleAssetsFavoriteBulk(assetIds: number[]): Promise<BulkFavoriteSummary> {
   return await invoke<BulkFavoriteSummary>("toggle_assets_favorite_bulk", { assetIds });
+}
+
+/** Bulk tag, favorite or media-group write resolved on the spec's query session. */
+export async function applySelectionMutation(
+  selection: SelectionSpec,
+  mutation: SelectionMutation
+): Promise<SelectionMutationResult> {
+  return await invoke<SelectionMutationResult>("apply_selection_mutation", {
+    selection: {
+      sessionId: selection.sessionId,
+      ranges: selection.ranges.map(([start, end]) => [start, end]),
+      excluded: [...selection.excluded],
+      included: [...selection.included]
+    },
+    mutation
+  });
 }
 
 export async function setAssetFavorite(assetId: number, isFavorite: boolean): Promise<void> {

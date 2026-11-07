@@ -1,3 +1,5 @@
+import type { TagQueryImpact } from "./tags";
+
 export type MediaKind = "image" | "gif" | "video";
 
 export type SearchMetaFilter =
@@ -112,6 +114,37 @@ export interface BulkFavoriteSummary {
   is_favorite: boolean;
   revision: number;
 }
+
+/**
+ * A bulk selection against one query session (stage 09). `ranges` are inclusive
+ * `[start, end]` session positions, ascending and non-overlapping; `excluded` are IDs
+ * inside them that are not selected, `included` selected IDs outside them.
+ */
+export interface SelectionSpec {
+  sessionId: number;
+  ranges: Array<[number, number]>;
+  excluded: number[];
+  included: number[];
+}
+
+export type SelectionMutation =
+  | { type: "mergeTags"; tags: string[] }
+  | { type: "toggleFavorite" }
+  | { type: "setMediaGroup"; mediaGroupKey: string | null };
+
+/** `stale`: the session changed or is gone, and nothing was written. */
+export type SelectionMutationResult =
+  | {
+      status: "ready";
+      processed_assets: number;
+      updated_assets: number;
+      revision: number;
+      query_impact: TagQueryImpact;
+      vocabulary_changed: boolean;
+      is_favorite: boolean | null;
+      media_group_key: string | null;
+    }
+  | AssetQueryStale;
 
 export interface BulkMediaGroupSummary {
   processed_asset_ids: number[];

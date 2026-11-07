@@ -37,13 +37,13 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
   onCleanup(() => {
     disposed = true;
   });
-  const [pendingTagFocus, setPendingTagFocus] = createSignal<ReadonlySet<number> | null>(null);
+  const [pendingTagFocus, setPendingTagFocus] = createSignal<object | null>(null);
   const displayedTags = () =>
     props.controller.tagMode === "single"
       ? props.controller.singleAssetTags
       : props.controller.appliedBulkTags;
   const controlsDisabled = () =>
-    props.controller.selectedAssetIds.size === 0 || props.controller.selectionBusy;
+    props.controller.selectedCount === 0 || props.controller.selectionBusy;
   const tagControlsDisabled = () =>
     controlsDisabled() ||
     props.controller.tagDetailsLoading ||
@@ -61,12 +61,12 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
   createEffect(orderContext, (context) => {
     if (orderModalContext() !== context) setOrderModalContext(null);
   });
-  let lastSelection: ReadonlySet<number> | undefined;
+  let lastSelection: object | undefined;
   createEffect(
-    () => props.controller.selectedAssetIds,
-    (ids) => {
-      if (ids === lastSelection) return;
-      lastSelection = ids;
+    () => props.controller.selectionKey,
+    (key) => {
+      if (key === lastSelection) return;
+      lastSelection = key;
       setTagDraft("");
       setTagInvalid(false);
       setPendingTagFocus(null);
@@ -75,13 +75,13 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
   createEffect(
     () => ({
       pending: pendingTagFocus(),
-      ids: props.controller.selectedAssetIds,
+      key: props.controller.selectionKey,
       disabled: tagControlsDisabled()
     }),
-    ({ pending, ids, disabled }) => {
-      if (!pending || pending !== ids || disabled) return;
+    ({ pending, key, disabled }) => {
+      if (!pending || pending !== key || disabled) return;
       const frame = requestAnimationFrame(() => {
-        if (pending !== props.controller.selectedAssetIds || tagControlsDisabled()) return;
+        if (pending !== props.controller.selectionKey || tagControlsDisabled()) return;
         tagInput?.focus({ preventScroll: true });
         setPendingTagFocus(null);
       });
@@ -97,11 +97,11 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
     }
     setTagInvalid(false);
     setTagDraft(attempted);
-    const selection = props.controller.selectedAssetIds;
+    const selection = props.controller.selectionKey;
     void props.controller
       .onAddTag(attempted)
       .then((saved) => {
-        if (disposed || props.controller.selectedAssetIds !== selection) return;
+        if (disposed || props.controller.selectionKey !== selection) return;
         if (saved) setTagDraft("");
         setPendingTagFocus(selection);
       })
@@ -120,7 +120,7 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
         <div class="grid gap-0.5" aria-live="polite">
           <h2 class="m-0 text-lg">{t("bulk.panel.heading")}</h2>
           <span class="font-mono text-xs text-primary-text">
-            {t("bulk.panel.selectedItems", { count: props.controller.selectedAssetIds.size })}
+            {t("bulk.panel.selectedItems", { count: props.controller.selectedCount })}
           </span>
         </div>
         <UiIconButton
@@ -139,7 +139,17 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
           disabled={controlsDisabled() || props.controller.favoriteApplying}
           onClick={() => void props.controller.onToggleFavorite()}
         />
-        {props.controller.selectedAssetIds.size > 0 ? (
+        {props.controller.selectionNotice === "rangeCleared" ? (
+          <UiAlert
+            className="w-full"
+            tone="warning"
+            title={t("bulk.panel.selectionClearedTitle")}
+            data-testid="bulk-selection-cleared"
+          >
+            {t("bulk.panel.selectionClearedDescription")}
+          </UiAlert>
+        ) : null}
+        {props.controller.selectedCount > 0 ? (
           <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-1">
             <UiButton
               className="h-8! min-h-8! text-xs"

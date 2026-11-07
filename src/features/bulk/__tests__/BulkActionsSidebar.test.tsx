@@ -4,7 +4,24 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
 import type { BulkController } from "../createBulk";
-type BulkSelectionController = BulkController & { startupPopularTags: string[] };
+type SelectionFields = "selectedCount" | "selectionKey" | "selectionRanged" | "selectionNotice";
+/** Fakes derive the selection count and identity from `selectedAssetIds` unless given. */
+type BulkSelectionController = Omit<BulkController, SelectionFields> &
+  Partial<Pick<BulkController, SelectionFields>> & { startupPopularTags: string[] };
+const derived: Record<SelectionFields, (target: BulkSelectionController) => unknown> = {
+  selectedCount: (target) => target.selectedAssetIds.size,
+  selectionKey: (target) => target.selectedAssetIds,
+  selectionRanged: () => false,
+  selectionNotice: () => null
+};
+const withSelection = (controller: BulkSelectionController) =>
+  new Proxy(controller, {
+    get(target, property, receiver) {
+      if (property in derived && !Object.getOwnPropertyDescriptor(target, property))
+        return derived[property as SelectionFields](target);
+      return Reflect.get(target, property, receiver);
+    }
+  }) as BulkController;
 import { settle as act } from "../../../test/settle";
 import { renderSolid } from "../../../test/renderSolid";
 import { SuggestionClient } from "../../search/suggestions/SuggestionClient";
@@ -30,7 +47,7 @@ function Sidebar(props: { controller: BulkSelectionController }) {
   return (
     <UiLayerProvider>
       <BulkActionsSidebar
-        controller={props.controller}
+        controller={withSelection(props.controller)}
         client={client}
         popularTags={props.controller.startupPopularTags}
       />

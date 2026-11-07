@@ -417,6 +417,25 @@ pub async fn toggle_assets_favorite_bulk(
     .map_err(|e| e.to_string())
 }
 
+/// Bulk tag, favorite or media-group write on a selection spec (stage 09).
+/// Resolved against the spec's query session; `stale` writes nothing.
+#[tauri::command]
+pub async fn apply_selection_mutation(
+    selection: crate::services::asset_query_service::SelectionSpec,
+    mutation: crate::services::selection_service::SelectionMutation,
+    state: State<'_, AppState>,
+) -> Result<crate::models::SelectionMutationResult, String> {
+    let database = state.database.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::services::selection_service::apply_selection_mutation(
+            &database, &selection, mutation,
+        )
+    })
+    .await
+    .map_err(|e| format!("selection mutation worker failed: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
 /// `MEDIATAGGER_PERF=1` timing of one user metadata write: the wait for a
 /// pooled connection and the write transaction. No paths or values.
 fn log_user_write_perf(name: &str, started: Instant, pool_wait: Duration) {

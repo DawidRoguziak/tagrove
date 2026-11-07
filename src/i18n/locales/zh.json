@@ -147,7 +147,9 @@
       "tagLoadFailed": "无法加载完整标签列表。编辑功能仍处于禁用状态。",
       "retryTagDetails": "重试加载标签",
       "metadataFailed": "无法加载所选项目。部分项目可能已不存在。",
-      "partialResult": "已更新 {{requested}} 个所选项目中的 {{processed}} 个。"
+      "partialResult": "已更新 {{requested}} 个所选项目中的 {{processed}} 个。",
+      "selectionClearedTitle": "选择已清除",
+      "selectionClearedDescription": "结果已更改，所选范围不再与显示内容一致。请重新选择项目。"
     },
     "tagModal": {
       "ariaLabel": "批量添加标签",

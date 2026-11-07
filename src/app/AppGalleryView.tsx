@@ -99,7 +99,7 @@ export function AppGalleryView() {
               hasScanRoots={runtime.hasScanRoots()}
               onAddFirstFolder={runtime.openFirstFolderSettings}
               selectionModeEnabled={selection.enabled}
-              selectedAssetIds={selection.ids}
+              isSelected={selection.isSelected}
               onBulkSelectionInteraction={selection.interact}
               loadError={selection.error ?? library.query.loadError}
               onLoadRetry={retry}

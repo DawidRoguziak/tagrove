@@ -324,6 +324,26 @@ pub struct BulkTagMergeSummary {
     pub revision: i64,
 }
 
+/// Result of `apply_selection_mutation` (stage 09). `stale` means the
+/// selection's query session changed or is gone and nothing was written.
+/// `query_impact` is the tag impact of a tag merge (`none` for the other
+/// mutations); `is_favorite` and `media_group_key` are set only by their
+/// mutation.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum SelectionMutationResult {
+    Ready {
+        processed_assets: usize,
+        updated_assets: usize,
+        revision: i64,
+        query_impact: TagQueryImpact,
+        vocabulary_changed: bool,
+        is_favorite: Option<bool>,
+        media_group_key: Option<String>,
+    },
+    Stale,
+}
+
 #[derive(Debug, Serialize)]
 pub struct BulkFavoriteSummary {
     pub processed_asset_ids: Vec<i64>,

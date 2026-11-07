@@ -73,8 +73,28 @@ Bulk liczy też `missing` przez kolejny `Set` (`src/features/bulk/createBulk.ts:
 
 ## Status
 
-todo — 2026-11-04
+done — 2026-11-07 (czeka na akceptację i commit)
 
 ## Notatki agentów
 
 <!-- dopisuj wpisy według protokołu z README -->
+
+### 2026-11-07 — agent etapu 09
+- Zrobione:
+  - `createSelection` trzyma spec: posortowane i scalone zakresy sesji plus małe mapy `excluded` (ID w zakresach, niezaznaczone) i `included` (ID poza zakresami). `isSelected(index, id)` to wyszukiwanie binarne po zakresach i lookup w mapie, licznik = pokrycie − excluded + included. Ctrl+A w trybie bulk zaznacza cały wynik jednym zakresem (`select-all` w `createGridHandlers.ts`, poza polami tekstowymi i nad modalami).
+  - Backend: `SelectionSpec` i `resolve_selection` w `asset_query_service.rs` (bez SQL, walidacja zakresów), `selection_service.rs` z komendą `apply_selection_mutation(selection, mutation)` dla `mergeTags`, `toggleFavorite`, `setMediaGroup`. Zapis w jednej transakcji IMMEDIATE (`db::guarded_user_write`): najpierw sprawdzenie rewizji zależności sesji, potem zapis i bump. Niezgodność albo brak sesji → `{ status: "stale" }`, nic nie jest zapisane. Pełna zmiana IPC, [ADR 0008](../../adr/0008-selection-spec-resolved-in-rust.md).
+  - Funkcje bulk w `db/mutations.rs` rozdzielone na wersje `_in_tx` (favorite, grupa, merge tagów) używane przez komendy ID i przez spec.
+  - Frontend: `createMutations.mergeTagsInSelection/toggleFavoritesInSelection/setMediaGroupInSelection`, `createBulk` wybiera spec, gdy zaznaczenie ma zakresy; sidebar pokazuje licznik bez materializacji i alert „Selection cleared” (`bulk.panel.selectionCleared*` w 11 językach); `GalleryGrid` czyta `isSelected(index, id)`.
+- Decyzje:
+  - **Zmiana zapytania:** zakresy ≤ 10 000 pozycji (`MATERIALIZE_LIMIT`) są od razu rozwiązywane jednym binarnym odczytem do `included`, więc małe zaznaczenia zachowują się jak dotąd i przeżywają zmianę filtra. Większe zostają zakresami; gdy sesja się zmieni (filtr, skan, zmiana kolejności, każdy nowy `session_id`), całe zaznaczenie jest czyszczone z komunikatem. Ta sama sesja z cache (to samo ID) zachowuje zakresy. Opisane w `search-tags-and-media-groups.md` i przetestowane (`createSelection.test.ts`).
+  - **Rewizja w specu:** spec niesie `sessionId`, nie publiczną rewizję. Sesja jest ważna, dopóki jej rewizja zależności się nie zmieni (ta sama reguła co dla stron). Publiczna rewizja unieważniałaby spec po każdym niezwiązanym zapisie, także po własnym poprzednim zapisie tagu.
+  - **Kolejka per asset (etap 01):** zapis ze specem bierze ogon „całej biblioteki” (`enqueueLibraryMutation` w `createAssetTagState.ts`): czeka na wszystkie wcześniejsze zapisy, a każdy późniejszy czeka na niego. Graf zależności dalej idzie w kolejności admisji, więc zakleszczenie z pojedynczymi zapisami jest niemożliwe. Rozwiązanych ID frontend nie zna, dlatego tura unieważnia wszystkie pełne listy tagów i szczegóły (na początku i na końcu, by odrzucić odczyty z czasu zapisu).
+  - **Partie:** bez commitów pośrednich (naruszyłyby „wszystko albo nic”). Zamiast tego merge tagów dla specu jest zbiorowy (tabela tymczasowa ID, jeden `INSERT … SELECT` na tag, dokładne przeliczenie `tag_count` dla assetów, które dostały tag).
+  - Grupa na specu nadaje kolejność `1..N` w kolejności galerii; edytor kolejności wymaga ID i nie jest oferowany dla zakresów. Grupowanie zmienia kolejność, więc następny zapis na tym samym specu jest `stale`, a zaznaczenie znika z komunikatem.
+- Odkryte:
+  - Merge tagów per asset na 1M w jednej transakcji: 35 s (≈10 poleceń na asset). Blokada zapisu na tyle przekracza 5 s busy timeout zapisów w tle. Zbiorowy merge: 2,8 s; toggle favorite 1,9 s; rozwiązanie specu 15 ms (release, `one_million_select_all_tag_and_favorite`). Zbiorowy merge nie kanonizuje starej pisowni tagów każdego assetu (naprawa zostaje na ścieżkach per asset).
+- Zostało: przy 1M zapis trzyma blokadę zapisu ~2–3 s; zapisy w tle czekają w swoim busy timeout. Desktopowy pomiar select-all przy 1M nie istnieje (fixture E2E ma 12 005 plików).
+- Testy:
+  - `cargo test --locked --test backend_integration selection_spec` → 2 pass (+1 ignored); `--release … one_million_select_all -- --ignored` → resolve 15 ms, merge 2769 ms, favorite 1945 ms; `--lib selection_service` (kształt payloadu) → pass.
+  - Vitest: `createSelection.test.ts` (scalanie, Ctrl-klik w/poza zakresem, licznik, 1M bez materializacji < 50 ms, zmiana zapytania, nieznane pozycje ID z poprzedniego zapytania), `createBulk.test.ts` (tag/favorite/grupa na specu, stale bez zapisu), `createAssetTagState.test.ts` (tura biblioteki w obie strony, utrzymanie, reset), `createGridHandlers.test.tsx` (Ctrl+A), `BulkActionsSidebar.test.tsx`, `api.test.ts` → pass.
+  - E2E `gallery-timeline.e2e.js`, przypadek select-all: Ctrl+A → „Selected: 12005”, Ctrl-klik → 12004, tag jednym zapisem 388–550 ms, filtr po tagu zwraca 12004, wykluczony asset bez tagu, alert po zmianie sesji → pass.

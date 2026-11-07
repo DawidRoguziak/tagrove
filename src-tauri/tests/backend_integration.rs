@@ -1125,3 +1125,335 @@ mod sort_key_maintenance {
         }
     }
 }
+
+mod selection_spec {
+    use std::{path::Path, sync::Arc, time::Instant};
+
+    use media_tagger::{
+        db,
+        models::{NewAsset, SelectionMutationResult, StartAssetQueryResult},
+        services::{
+            asset_query_service::{AssetQueryFilters, SelectionSpec},
+            db_pool::DatabaseRuntime,
+            selection_service::{apply_selection_mutation, SelectionMutation},
+        },
+    };
+    use tempfile::tempdir;
+
+    fn no_filters() -> AssetQueryFilters {
+        AssetQueryFilters {
+            tags_and: vec![],
+            tags_not: vec![],
+            kind: None,
+            favorites_only: false,
+            meta_filter: None,
+        }
+    }
+
+    /// `count` assets; asset `id` is at session index `id - 1` (newest first).
+    fn library(dir: &Path, count: i64) -> Arc<DatabaseRuntime> {
+        let path = dir.join("media.db");
+        let conn = db::open_connection(&path).expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        for id in 1..=count {
+            let asset = NewAsset {
+                path: format!("/library/item-{id:03}.jpg"),
+                kind: "image".into(),
+                size_bytes: 10,
+                modified_at: 1_000 - id,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_path: None,
+            };
+            db::upsert_asset(&conn, &asset).expect("insert");
+        }
+        DatabaseRuntime::new(path)
+    }
+
+    fn session(runtime: &Arc<DatabaseRuntime>, generation: u64) -> u64 {
+        let request = runtime.queries.begin_request("selection-test", generation);
+        match runtime
+            .queries
+            .start(
+                &runtime.admit().unwrap(),
+                no_filters(),
+                16,
+                request,
+                generation,
+            )
+            .unwrap()
+        {
+            StartAssetQueryResult::Ready { session_id, .. } => session_id,
+            StartAssetQueryResult::Superseded => panic!("superseded"),
+        }
+    }
+
+    fn tagged(runtime: &Arc<DatabaseRuntime>, tag: &str) -> Vec<i64> {
+        let conn = runtime.admit().unwrap().connection().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT at.asset_id FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+                 WHERE t.name = ?1 ORDER BY at.asset_id",
+            )
+            .unwrap();
+        stmt.query_map([tag], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    fn merge(tag: &str) -> SelectionMutation {
+        SelectionMutation::MergeTags {
+            tags: vec![tag.into()],
+        }
+    }
+
+    fn processed(result: SelectionMutationResult) -> usize {
+        match result {
+            SelectionMutationResult::Ready {
+                processed_assets, ..
+            } => processed_assets,
+            SelectionMutationResult::Stale => panic!("unexpected stale"),
+        }
+    }
+
+    #[test]
+    fn spec_resolves_ranges_exclusions_and_inclusions_for_every_mutation() {
+        let dir = tempdir().unwrap();
+        let runtime = library(dir.path(), 10);
+        let session_id = session(&runtime, 1);
+        // Indexes 0..=3 and 6..=7 minus asset 3, plus asset 10 (index 9) and a
+        // covered asset 1 listed again as included.
+        let spec = SelectionSpec {
+            session_id,
+            ranges: vec![[0, 3], [6, 7]],
+            excluded: vec![3],
+            included: vec![10, 1],
+        };
+        {
+            // Asset 2 already has the tag: processed, but not updated.
+            let conn = runtime.admit().unwrap().connection().unwrap();
+            db::set_asset_tags(&conn, 2, &["picked".into(), "other".into()]).unwrap();
+        }
+        let result = apply_selection_mutation(&runtime, &spec, merge("picked")).unwrap();
+        let SelectionMutationResult::Ready {
+            processed_assets,
+            updated_assets,
+            vocabulary_changed,
+            is_favorite,
+            query_impact,
+            ..
+        } = result
+        else {
+            panic!("expected ready");
+        };
+        assert_eq!((processed_assets, updated_assets), (6, 5));
+        assert!(!vocabulary_changed, "the tag already existed");
+        assert_eq!(is_favorite, None);
+        assert_eq!(
+            serde_json::to_value(&query_impact).unwrap(),
+            serde_json::json!({"type": "tags", "changed_tags": ["picked"], "tag_count_changed": true})
+        );
+        assert_eq!(tagged(&runtime, "picked"), vec![1, 2, 4, 7, 8, 10]);
+        {
+            let conn = runtime.admit().unwrap().connection().unwrap();
+            let counts: Vec<(i64, i64)> = conn
+                .prepare("SELECT id, tag_count FROM assets WHERE id IN (1, 2, 3) ORDER BY id")
+                .unwrap()
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert_eq!(counts, vec![(1, 1), (2, 2), (3, 0)]);
+        }
+        // Adding the same tag again changes nothing and bumps no tag revision.
+        let again = apply_selection_mutation(&runtime, &spec, merge("picked")).unwrap();
+        assert!(matches!(
+            again,
+            SelectionMutationResult::Ready {
+                processed_assets: 6,
+                updated_assets: 0,
+                ..
+            }
+        ));
+
+        // A tag write does not change an unfiltered session: the spec stays valid.
+        let favorite =
+            apply_selection_mutation(&runtime, &spec, SelectionMutation::ToggleFavorite).unwrap();
+        assert!(matches!(
+            favorite,
+            SelectionMutationResult::Ready {
+                processed_assets: 6,
+                is_favorite: Some(true),
+                ..
+            }
+        ));
+        let conn = runtime.admit().unwrap().connection().unwrap();
+        let favorites: Vec<i64> = conn
+            .prepare("SELECT id FROM assets WHERE is_favorite = 1 ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(favorites, vec![1, 2, 4, 7, 8, 10]);
+
+        let group = apply_selection_mutation(
+            &runtime,
+            &spec,
+            SelectionMutation::SetMediaGroup {
+                media_group_key: Some("  Trip ".into()),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            &group,
+            SelectionMutationResult::Ready { processed_assets: 6, updated_assets: 6, media_group_key: Some(key), .. } if key == "Trip"
+        ));
+        // Orders follow the selection: session order, then included IDs.
+        let groups: Vec<(i64, f64)> = conn
+            .prepare("SELECT id, media_group_order FROM assets WHERE media_group_key = 'Trip' ORDER BY media_group_order")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            groups,
+            vec![(1, 1.0), (2, 2.0), (4, 3.0), (7, 4.0), (8, 5.0), (10, 6.0)]
+        );
+        // Grouping reorders the gallery, so the same spec is now stale.
+        assert_eq!(
+            apply_selection_mutation(&runtime, &spec, merge("late")).unwrap(),
+            SelectionMutationResult::Stale
+        );
+        assert!(tagged(&runtime, "late").is_empty());
+    }
+
+    #[test]
+    fn a_changed_or_missing_session_writes_nothing_and_bad_ranges_are_rejected() {
+        let dir = tempdir().unwrap();
+        let runtime = library(dir.path(), 5);
+        let session_id = session(&runtime, 1);
+        let all = SelectionSpec {
+            session_id,
+            ranges: vec![[0, 4]],
+            ..SelectionSpec::default()
+        };
+        {
+            let conn = runtime.admit().unwrap().connection().unwrap();
+            db::bump_library_revision(&conn).unwrap();
+        }
+        for mutation in [
+            merge("never"),
+            SelectionMutation::ToggleFavorite,
+            SelectionMutation::SetMediaGroup {
+                media_group_key: Some("never".into()),
+            },
+        ] {
+            assert_eq!(
+                apply_selection_mutation(&runtime, &all, mutation).unwrap(),
+                SelectionMutationResult::Stale
+            );
+        }
+        let conn = runtime.admit().unwrap().connection().unwrap();
+        let untouched: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM assets WHERE is_favorite = 1 OR media_group_key IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(untouched, 0);
+        assert!(tagged(&runtime, "never").is_empty());
+        let missing = SelectionSpec {
+            session_id: u64::MAX,
+            ..all.clone()
+        };
+        assert_eq!(
+            apply_selection_mutation(&runtime, &missing, merge("never")).unwrap(),
+            SelectionMutationResult::Stale
+        );
+
+        let fresh = session(&runtime, 2);
+        for ranges in [
+            vec![[0, 5]],
+            vec![[3, 2]],
+            vec![[2, 3], [3, 4]],
+            vec![[3, 4], [0, 1]],
+        ] {
+            let spec = SelectionSpec {
+                session_id: fresh,
+                ranges,
+                ..SelectionSpec::default()
+            };
+            assert!(apply_selection_mutation(&runtime, &spec, merge("never")).is_err());
+        }
+        let empty_tags = SelectionSpec {
+            session_id: fresh,
+            ranges: vec![[0, 4]],
+            ..SelectionSpec::default()
+        };
+        assert!(apply_selection_mutation(
+            &runtime,
+            &empty_tags,
+            SelectionMutation::MergeTags { tags: vec![] }
+        )
+        .is_err());
+        assert!(tagged(&runtime, "never").is_empty());
+        assert_eq!(
+            processed(apply_selection_mutation(&runtime, &empty_tags, merge("now")).unwrap()),
+            5
+        );
+    }
+
+    /// Select-all on 1M synthetic rows: tag merge and favorite toggle through a
+    /// spec, each in one transaction. Run in release mode with `--nocapture`.
+    #[test]
+    #[ignore = "timing diagnostic: run explicitly in release mode"]
+    fn one_million_select_all_tag_and_favorite() {
+        const ROWS: i64 = 1_000_000;
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("media.db");
+        let conn = db::open_connection(&path).unwrap();
+        db::init_schema(&conn).unwrap();
+        conn.execute(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+             INSERT INTO assets(path, file_name, file_name_key, kind, size_bytes, modified_at,
+               fingerprint_mtime_ns)
+             SELECT '/synthetic/' || i || '.jpg', i || '.jpg', i || '.jpg', 'image', 10,
+               1420070400 + i, (1420070400 + i) * 1000000000 FROM n",
+            [ROWS],
+        )
+        .unwrap();
+        db::bump_library_revision(&conn).unwrap();
+        drop(conn);
+        let runtime = DatabaseRuntime::new(path);
+        let session_id = session(&runtime, 1);
+        let all = SelectionSpec {
+            session_id,
+            ranges: vec![[0, ROWS as usize - 1]],
+            excluded: vec![5, 6, 7],
+            ..SelectionSpec::default()
+        };
+        let started = Instant::now();
+        let resolved = runtime.queries.resolve_selection(&all).unwrap().unwrap();
+        let resolve_ms = started.elapsed().as_secs_f64() * 1_000.0;
+        assert_eq!(resolved.asset_ids.len(), ROWS as usize - 3);
+        let started = Instant::now();
+        let tagged_count =
+            processed(apply_selection_mutation(&runtime, &all, merge("all")).unwrap());
+        let tag_ms = started.elapsed().as_secs_f64() * 1_000.0;
+        assert_eq!(tagged_count, ROWS as usize - 3);
+        let started = Instant::now();
+        let favorite_count = processed(
+            apply_selection_mutation(&runtime, &all, SelectionMutation::ToggleFavorite).unwrap(),
+        );
+        let favorite_ms = started.elapsed().as_secs_f64() * 1_000.0;
+        assert_eq!(favorite_count, ROWS as usize - 3);
+        println!(
+            "[selection] rows={ROWS} resolve_ms={resolve_ms:.1} merge_tag_ms={tag_ms:.0} toggle_favorite_ms={favorite_ms:.0}"
+        );
+    }
+}

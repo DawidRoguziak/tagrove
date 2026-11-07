@@ -106,7 +106,9 @@ async function mount(selectionEnabled = false) {
     createSelection({
       queryEpoch: () => library.query.queryEpoch,
       identityEpoch: () => library.tags.epoch,
-      getIdsRange: library.query.getIdsRangeAsync
+      getIdsRange: library.query.getIdsRangeAsync,
+      sessionId: library.query.sessionId,
+      total: () => library.query.total
     })
   );
   await library.query.refresh();
@@ -129,7 +131,7 @@ async function mount(selectionEnabled = false) {
             onSelect={click}
             hasScanRoots
             selectionModeEnabled={selection.enabled}
-            selectedAssetIds={selection.ids}
+            isSelected={selection.isSelected}
             onBulkSelectionInteraction={selection.interact}
             onAddFirstFolder={vi.fn()}
             loadError={selection.error ?? library.query.loadError}

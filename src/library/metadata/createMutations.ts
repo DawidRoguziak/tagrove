@@ -1,7 +1,13 @@
 import { onCleanup } from "solid-js";
 import * as assets from "../../platform/tauri/assets";
 import * as tagApi from "../../platform/tauri/tags";
-import type { AssetDetails, AssetSummary } from "../../platform/tauri/contracts/assets";
+import type {
+  AssetDetails,
+  AssetSummary,
+  SelectionMutation,
+  SelectionMutationResult,
+  SelectionSpec
+} from "../../platform/tauri/contracts/assets";
 import type { TagQueryImpact } from "../../platform/tauri/contracts/tags";
 import type { createAssetQuery, LibraryFilters } from "../query/createAssetQuery";
 import type { createDetailsCache } from "./createDetailsCache";
@@ -100,6 +106,35 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
     if (accepted.length) await after(result, accepted);
     return result;
   }
+  type SelectionReady = Extract<SelectionMutationResult, { status: "ready" }>;
+  /**
+   * A write on a selection spec, resolved by the backend (stage 09). It takes the
+   * library-wide queue turn: every earlier write finishes first and later writes wait.
+   * The affected IDs are unknown here, so every cached tag list and detail is dropped and
+   * visible rows are re-read. `stale` wrote nothing; the query is refreshed so the
+   * selection learns that its session is gone.
+   */
+  async function writeSelection(
+    selection: SelectionSpec,
+    mutation: SelectionMutation,
+    after: (result: SelectionReady) => void
+  ): Promise<SelectionMutationResult> {
+    const admission = tags.enqueueLibraryMutation();
+    const turn = admission instanceof Promise ? await admission : admission;
+    let result: SelectionMutationResult;
+    try {
+      turn.begin();
+      details.clear();
+      result = await assets.applySelectionMutation(selection, mutation);
+    } finally {
+      // Detail reads that ran during the write saw old metadata.
+      details.clear();
+      turn.release();
+    }
+    if (result.status === "stale") refresh();
+    else after(result);
+    return result;
+  }
   function canonicalTags(id: number) {
     const known = tags.get(id);
     if (!known) throw new Error("The complete tag list is not loaded.");
@@ -139,6 +174,25 @@ export function createMutations({ tags, details, query, vocabulary, filters }: O
             result.vocabulary_changed,
             result.processed_assets < captured.length
           )
+      );
+    },
+    /** Adds tags to every asset of a selection spec. */
+    mergeTagsInSelection(selection: SelectionSpec, next: string[]) {
+      return writeSelection(selection, { type: "mergeTags", tags: [...next] }, (result) =>
+        tagRefresh(result.query_impact, result.vocabulary_changed, false)
+      );
+    },
+    /** Favorites a selection spec unless all of it already is, then clears it. */
+    toggleFavoritesInSelection(selection: SelectionSpec) {
+      // Summaries carry `is_favorite`, so visible rows are re-read.
+      return writeSelection(selection, { type: "toggleFavorite" }, refresh);
+    },
+    /** Groups a selection spec in selection order, or clears its groups with `null`. */
+    setMediaGroupInSelection(selection: SelectionSpec, key: string | null) {
+      return writeSelection(
+        selection,
+        { type: "setMediaGroup", mediaGroupKey: key?.trim() || null },
+        refresh
       );
     },
     setFavorite(id: number, favorite: boolean) {

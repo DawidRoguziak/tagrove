@@ -45,3 +45,8 @@ It appears only when the result spans at least two months, so the seven fixtures
 one file time, normally do not show it. Its `aria-valuetext` is the month of the first visible
 item; ArrowDown/ArrowUp step a month, PageDown/PageUp a year, Home/End the ends. It sits beside
 the position bar and never replaces "Gallery position".
+
+In bulk mode (`button[aria-label="Enable bulk actions"]`), `keys Control a` selects every result
+as one range; the bulk header shows `Selected: <total>`. Selections larger than 10,000 items are
+cleared with a "Selection cleared" alert (`[data-testid="bulk-selection-cleared"]`) when the
+result changes (a new search, a scan, a regroup).

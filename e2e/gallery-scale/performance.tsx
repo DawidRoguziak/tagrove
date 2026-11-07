@@ -62,7 +62,7 @@ const dispose = render(() => {
         getAssetAt={model.query.getAssetAt} tileSize={188}
         scroller={ref} onVirtualRangeChange={model.handleVirtualRangeChange}
         onSelect={() => {}} hasScanRoots onAddFirstFolder={() => {}} selectionModeEnabled={false}
-        selectedAssetIds={new Set()} onBulkSelectionInteraction={() => {}} loadError={null}
+        isSelected={() => false} onBulkSelectionInteraction={() => {}} loadError={null}
         onLoadRetry={() => {}} queryEpoch={model.query.queryEpoch} pageFailureEpoch={model.query.pageFailureEpoch}/>
     </section>
   </UiLayerProvider></LanguageProvider>;

@@ -45,3 +45,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0005](0005-binary-id-ranges-and-anchored-refresh.md) | Binary ID ranges and anchored query refresh | Accepted | 2026-11-07 |
 | [0006](0006-thumb-uri-scheme.md) | Gallery thumbnails through a `thumb://` URI scheme | Accepted | 2026-11-07 |
 | [0007](0007-session-timeline-sections.md) | Timeline sections of query sessions | Accepted | 2026-11-07 |
+| [0008](0008-selection-spec-resolved-in-rust.md) | Bulk selection as a spec resolved by the backend | Accepted | 2026-11-07 |

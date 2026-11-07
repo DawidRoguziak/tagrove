@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
-import { getAssetQuerySections } from "../assets";
+import { applySelectionMutation, getAssetQuerySections } from "../assets";
 import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, getAssetQueryIdRange, decodeAssetIdRange, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
 import { idRangeBuffer } from "../../../test/idRange";
 import { thumbnailUrl } from "../thumbnails";
@@ -58,6 +58,32 @@ describe("api contract", () => {
     coreMocks.invoke.mockResolvedValueOnce(response);
     await expect(getAssetQuerySections(7)).resolves.toEqual(response);
     expect(coreMocks.invoke).toHaveBeenCalledWith("get_asset_query_sections", { sessionId: 7 });
+  });
+  it("sends a selection spec and mutation with camelCase keys", async () => {
+    const ready = {
+      status: "ready",
+      processed_assets: 3,
+      updated_assets: 2,
+      revision: 9,
+      query_impact: { type: "tags", changed_tags: ["a"], tag_count_changed: true },
+      vocabulary_changed: true,
+      is_favorite: null,
+      media_group_key: null
+    };
+    coreMocks.invoke.mockResolvedValueOnce(ready).mockResolvedValueOnce({ status: "stale" });
+    const selection = { sessionId: 4, ranges: [[0, 9]] as Array<[number, number]>, excluded: [2], included: [50] };
+    await expect(applySelectionMutation(selection, { type: "mergeTags", tags: ["a"] })).resolves.toEqual(ready);
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("apply_selection_mutation", {
+      selection: { sessionId: 4, ranges: [[0, 9]], excluded: [2], included: [50] },
+      mutation: { type: "mergeTags", tags: ["a"] }
+    });
+    await expect(
+      applySelectionMutation(selection, { type: "setMediaGroup", mediaGroupKey: null })
+    ).resolves.toEqual({ status: "stale" });
+    expect(coreMocks.invoke).toHaveBeenLastCalledWith("apply_selection_mutation", {
+      selection: { sessionId: 4, ranges: [[0, 9]], excluded: [2], included: [50] },
+      mutation: { type: "setMediaGroup", mediaGroupKey: null }
+    });
   });
   it("uses the scan root preference and startup command contracts", async () => {
     const roots = [{ path: "/media", auto_scan_on_startup: true }];

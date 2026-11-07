@@ -166,6 +166,7 @@ Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`,
 | `gallery-browsing` | `MEDIATAGGER_GALLERY_BROWSING` |
 | `gallery.performance` | `MEDIATAGGER_GALLERY_PERF` |
 | `gallery-selection` | `MEDIATAGGER_GALLERY_SELECTION` |
+| `gallery-timeline` | `MEDIATAGGER_GALLERY_TIMELINE` |
 | `grid-baseline` | `MEDIATAGGER_GRID_BASELINE` |
 | `lightbox-activity` | `MEDIATAGGER_LIGHTBOX_ACTIVITY` |
 | `lightbox-images` | `MEDIATAGGER_LIGHTBOX_IMAGES` |
@@ -397,12 +398,20 @@ source replacement, unchanged-source rerenders, and the default without fading.
 
 ### Gallery selection gestures
 
-`e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages (about 17 pages, below the 24-page cache, so it does not force eviction; range selection resolves IDs in the backend); normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.
+`e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages (about 17 pages, below the 24-page cache, so it does not force eviction; its 2,051-item range is below the 10,000-position limit, so it is resolved to IDs with one binary read); normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.
 
 Run through the existing isolated harness on a private X11 display with temporary XDG directories:
 
 ```sh
 MEDIATAGGER_GALLERY_SELECTION=1 bun run test:e2e:tauri --spec e2e/specs/gallery-selection.e2e.js
+```
+
+### Timeline and select-all selection spec
+
+`e2e/specs/gallery-timeline.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_TIMELINE=1` (plan stages 08 and 09). It copies 12,005 synthetic PNGs into a temporary root and sets their file times over twelve months of 2023 plus five files in June 2012, then checks the month timeline: labels and `aria-valuemax`, End to the oldest month with its tiles visible and their UTC months read through `get_asset_details`, ArrowUp/Home/PageDown, and a native pointer drag that holds demand (`data-scroll-paused`) and settles on the month under the pointer without placeholders. It then selects all results with Ctrl+A in bulk mode (one range, above the 10,000-position limit), excludes one tile with a native Ctrl-click, adds a tag through one `apply_selection_mutation`, checks that the excluded asset is untagged and that the tag filter returns exactly the selected count, and that the new session clears the range selection with its notice. Key-to-data and tag timings go to `artifacts/gallery-timeline/timings.json`. Use a fresh `/tmp/mediatagger-*` profile as in the other native-input specs:
+
+```sh
+MEDIATAGGER_GALLERY_TIMELINE=1 bun run test:e2e:tauri --spec e2e/specs/gallery-timeline.e2e.js
 ```
 
 ### Native speed menu and repeated playback

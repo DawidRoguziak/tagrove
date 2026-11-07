@@ -287,3 +287,70 @@ describe("createAssetTagState", () => {
     expect(result.get(1200)?.tags).toEqual(["bulk"]);
   });
 });
+
+it("orders a selection-wide write after earlier writes and before later ones, then drops cached tags", async () => {
+  const { result } = renderHook(() => createAssetTagState());
+  const read = result.captureGeneration(4);
+  settle(() => {
+    expect(result.publishDetails(4, ["cat"], read)).toBe(true);
+  });
+  const order: string[] = [];
+  const first = await begin(result, [4]);
+  const library = Promise.resolve(result.enqueueLibraryMutation()).then((turn) => {
+    order.push("library");
+    return turn;
+  });
+  // A later single-asset write on an unrelated asset still waits for the library turn.
+  const later = Promise.resolve(result.enqueueMutation([9])).then((turn) => {
+    order.push("later");
+    return turn;
+  });
+  await flush();
+  expect(order).toEqual([]);
+  settle(() => {
+    result.settleMutation(first.tokens[0], ["cat", "dog"]);
+  });
+  first.turn.release();
+  const turn = await library;
+  await flush();
+  expect(order).toEqual(["library"]);
+  // A read started before the write cannot publish; one started during it is dropped
+  // when the write ends.
+  const before = result.captureGeneration(4);
+  settle(() => turn.begin());
+  expect(result.get(4)).toBeNull();
+  const during = result.captureGeneration(4);
+  settle(() => {
+    expect(result.publishDetails(4, ["stale"], before)).toBe(false);
+    expect(result.publishDetails(4, ["stale"], during)).toBe(true);
+  });
+  settle(() => turn.release());
+  expect(result.get(4)).toBeNull();
+  const next = await later;
+  expect(order).toEqual(["library", "later"]);
+  expect(next.begin()).toHaveLength(1);
+  next.release();
+  // With everything settled, new writes start in the same tick again.
+  expect(result.enqueueMutation([9])).not.toBeInstanceOf(Promise);
+});
+
+it("rejects selection-wide writes during maintenance and after an identity reset", async () => {
+  const { result } = renderHook(() => createAssetTagState());
+  let rejected: unknown;
+  await result.runWithMutationBarrier(async () => {
+    try {
+      result.enqueueLibraryMutation();
+    } catch (error) {
+      rejected = error;
+    }
+  });
+  expect(String(rejected)).toMatch(/paused during maintenance/);
+  const blocker = await begin(result, [1]);
+  const queued = Promise.resolve(result.enqueueLibraryMutation());
+  settle(() => result.reset());
+  blocker.turn.release();
+  const turn = await queued;
+  expect(() => turn.begin()).toThrow(/library changed/);
+  turn.release();
+  await result.waitForIdle();
+});

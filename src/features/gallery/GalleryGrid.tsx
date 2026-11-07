@@ -24,7 +24,8 @@ export interface GalleryGridProps {
   hasScanRoots: boolean;
   onAddFirstFolder: () => void;
   selectionModeEnabled: boolean;
-  selectedAssetIds: ReadonlySet<number>;
+  /** Selection lookup by global index and asset ID (no ID for a placeholder tile). */
+  isSelected: (index: number, id?: number) => boolean;
   onBulkSelectionInteraction: BulkSelectionHandler;
   loadError: string | null;
   onLoadRetry: () => void;
@@ -197,7 +198,7 @@ export function GalleryGrid(props: GalleryGridProps) {
               const current = asset();
               return (
                 props.selectionModeEnabled &&
-                handlers.isPreviewSelected(index(), !!current && props.selectedAssetIds.has(current.id))
+                handlers.isPreviewSelected(index(), props.isSelected(index(), current?.id))
               );
             };
             return (

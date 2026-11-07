@@ -17,6 +17,14 @@ export interface AssetTagMutationTurn {
   release: () => void;
 }
 
+/** One admitted selection-wide write (stage 09); its asset IDs are resolved by the backend. */
+export interface LibraryMutationTurn {
+  /** Starts the write; throws when the identity changed while it was queued. */
+  begin: () => void;
+  /** Ends the write, drops every cached tag list and frees the queue. Idempotent. */
+  release: () => void;
+}
+
 export interface AuthoritativeAssetTags {
   known: true;
   tags: string[];
@@ -51,6 +59,12 @@ export interface AssetTagStateController {
   enqueueMutation: (
     assetIds: readonly number[]
   ) => AssetTagMutationTurn | Promise<AssetTagMutationTurn>;
+  /**
+   * Admits a write whose asset IDs are unknown here (a selection spec). It waits for every
+   * earlier write and every later write waits for it, so admission order still orders the
+   * whole queue and nothing can deadlock.
+   */
+  enqueueLibraryMutation: () => LibraryMutationTurn | Promise<LibraryMutationTurn>;
   settleMutation: (token: AssetTagMutationToken, tags?: string[]) => boolean;
   runWithMutationBarrier: <T>(operation: () => Promise<T>) => Promise<T>;
   remove: (assetId: number, identityToken?: AssetTagGenerationToken) => boolean;
@@ -73,6 +87,8 @@ export function createAssetTagState(): AssetTagStateController {
   // Per-ID tail of the write queue. Admission links every target ID at once, so the
   // dependency graph follows admission order and overlapping bulk writes cannot deadlock.
   const tails = new Map<number, Promise<void>>();
+  // Tail of the latest selection-wide write; every later admission waits for it.
+  let libraryTail: Promise<void> | null = null;
   // Queued and running writes; maintenance and detail re-reads wait for both.
   let admitted = 0;
   const drainWaiters = new Set<() => void>();
@@ -193,6 +209,7 @@ export function createAssetTagState(): AssetTagStateController {
       finish = resolve;
     });
     const previous = new Set<Promise<void>>();
+    if (libraryTail) previous.add(libraryTail);
     for (const id of ids) {
       const tail = tails.get(id);
       if (tail) previous.add(tail);
@@ -225,6 +242,50 @@ export function createAssetTagState(): AssetTagStateController {
         if (released) return;
         released = true;
         for (const id of ids) if (tails.get(id) === finished) tails.delete(id);
+        finish();
+        admitted -= 1;
+        if (admitted === 0) notifyDrained();
+      }
+    };
+    return previous.size ? Promise.all(previous).then(() => turn) : turn;
+  };
+
+  /** Every cached complete tag list may be outdated; detail reads in flight are rejected. */
+  const invalidateAll = () => {
+    for (const clock of clocks.values()) clock.generation = ++nextGeneration;
+    entries.clear();
+    setRevision((value) => value + 1);
+  };
+
+  const enqueueLibraryMutation = (): LibraryMutationTurn | Promise<LibraryMutationTurn> => {
+    if (disposed) throw new Error("Tag mutation coordinator is unavailable");
+    if (barrierRequestCount > 0) throw new Error("Metadata changes are paused during maintenance.");
+    const epoch = currentEpoch;
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const previous = new Set<Promise<void>>(tails.values());
+    if (libraryTail) previous.add(libraryTail);
+    libraryTail = finished;
+    admitted += 1;
+    let used = false;
+    let released = false;
+    const turn: LibraryMutationTurn = {
+      begin() {
+        if (used || released) throw new Error("Metadata write turn was already used");
+        used = true;
+        if (disposed) throw new Error("Tag mutation coordinator is unavailable");
+        if (epoch !== currentEpoch)
+          throw new Error("The library changed before this metadata change started.");
+        invalidateAll();
+      },
+      release() {
+        if (released) return;
+        released = true;
+        if (libraryTail === finished) libraryTail = null;
+        // Reads that started while the write ran saw the old tags.
+        if (used && epoch === currentEpoch && !disposed) invalidateAll();
         finish();
         admitted -= 1;
         if (admitted === 0) notifyDrained();
@@ -301,6 +362,7 @@ export function createAssetTagState(): AssetTagStateController {
     // A new identity starts with empty queues. Older admitted writes still count for
     // maintenance and are rejected by `begin` once they reach the head.
     tails.clear();
+    libraryTail = null;
     entries.clear();
     clocks.clear();
     inactive.clear();
@@ -327,6 +389,7 @@ export function createAssetTagState(): AssetTagStateController {
     captureGeneration,
     publishDetails,
     enqueueMutation,
+    enqueueLibraryMutation,
     settleMutation,
     runWithMutationBarrier,
     remove,

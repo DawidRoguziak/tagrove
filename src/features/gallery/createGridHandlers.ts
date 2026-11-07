@@ -42,6 +42,7 @@ interface Gesture {
   lastFrame: number;
 }
 const dragHoldDelayMs = 150;
+const editableSelector = 'input, textarea, select, [contenteditable="true"]';
 const interactiveSelector =
   'button:not([data-asset-id]), input, select, textarea, a, [role="button"]:not([data-asset-id]), [contenteditable="true"]';
 function isControl(target: EventTarget | null): boolean {
@@ -84,12 +85,32 @@ export function createGridHandlers(options: Options) {
     cancel();
     void options.onBulkSelectionInteraction?.({ type: "clear" });
   };
-  createUiLayer({
+  const layer = createUiLayer({
     active: () => options.selectionModeEnabled,
     modal: false,
     container: options.gridRef,
     onEscape: clearSelection
   });
+  // Ctrl+A selects every result of the query without reading a single ID. Text fields
+  // and any overlay above the gallery keep their own Ctrl+A.
+  createEffect(
+    () => options.selectionModeEnabled,
+    (enabled) => {
+      if (!enabled) return;
+      const keydown = (event: KeyboardEvent) => {
+        if (event.defaultPrevented || event.altKey || event.shiftKey) return;
+        if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "a") return;
+        const target = event.target;
+        if (target instanceof Element && target.closest(editableSelector)) return;
+        if (!layer.isTopLayer()) return;
+        event.preventDefault();
+        cancel();
+        void options.onBulkSelectionInteraction?.({ type: "select-all" });
+      };
+      window.addEventListener("keydown", keydown);
+      return () => window.removeEventListener("keydown", keydown);
+    }
+  );
   const updatePreview = (active: Gesture): Preview | null => {
     const grid = options.gridRef();
     const scroller = options.scrollContainerRef?.() ?? active.element;

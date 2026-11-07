@@ -261,40 +261,47 @@ pub fn toggle_assets_favorite_bulk(
     conn: &mut Connection,
     asset_ids: &[i64],
 ) -> anyhow::Result<crate::models::BulkFavoriteSummary> {
-    retry_immediate_transaction(conn, |tx| {
-        let mut processed_asset_ids = Vec::new();
-        let mut all_favorites = true;
-        let mut seen = std::collections::HashSet::new();
-        let mut query = tx.prepare_cached("SELECT is_favorite FROM assets WHERE id = ?1")?;
-        for &asset_id in asset_ids {
-            if asset_id <= 0 || !seen.insert(asset_id) {
-                continue;
-            }
-            if let Some(favorite) = query
-                .query_row([asset_id], |row| row.get::<_, bool>(0))
-                .optional()?
-            {
-                processed_asset_ids.push(asset_id);
-                all_favorites &= favorite;
-            }
+    retry_immediate_transaction(conn, |tx| toggle_assets_favorite_bulk_in_tx(tx, asset_ids))
+}
+
+/// Sets every existing asset of `asset_ids` to favorite unless all already
+/// are, in which case all are cleared. Bumps the `favorites` revision.
+pub(crate) fn toggle_assets_favorite_bulk_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    asset_ids: &[i64],
+) -> anyhow::Result<crate::models::BulkFavoriteSummary> {
+    let mut processed_asset_ids = Vec::new();
+    let mut all_favorites = true;
+    let mut seen = std::collections::HashSet::new();
+    let mut query = tx.prepare_cached("SELECT is_favorite FROM assets WHERE id = ?1")?;
+    for &asset_id in asset_ids {
+        if asset_id <= 0 || !seen.insert(asset_id) {
+            continue;
         }
-        let is_favorite = !all_favorites;
-        let revision = if processed_asset_ids.is_empty() {
-            current_library_revision(tx)?
-        } else {
-            let mut update = tx.prepare_cached(
-                "UPDATE assets SET is_favorite = ?1 WHERE id = ?2 AND is_favorite != ?1",
-            )?;
-            for &asset_id in &processed_asset_ids {
-                update.execute(params![is_favorite, asset_id])?;
-            }
-            bump_scoped_revision(tx, &["favorites".into()])?
-        };
-        Ok(crate::models::BulkFavoriteSummary {
-            processed_asset_ids,
-            is_favorite,
-            revision,
-        })
+        if let Some(favorite) = query
+            .query_row([asset_id], |row| row.get::<_, bool>(0))
+            .optional()?
+        {
+            processed_asset_ids.push(asset_id);
+            all_favorites &= favorite;
+        }
+    }
+    let is_favorite = !all_favorites;
+    let revision = if processed_asset_ids.is_empty() {
+        current_library_revision(tx)?
+    } else {
+        let mut update = tx.prepare_cached(
+            "UPDATE assets SET is_favorite = ?1 WHERE id = ?2 AND is_favorite != ?1",
+        )?;
+        for &asset_id in &processed_asset_ids {
+            update.execute(params![is_favorite, asset_id])?;
+        }
+        bump_scoped_revision(tx, &["favorites".into()])?
+    };
+    Ok(crate::models::BulkFavoriteSummary {
+        processed_asset_ids,
+        is_favorite,
+        revision,
     })
 }
 
@@ -346,55 +353,65 @@ pub fn set_assets_media_group_bulk(
     }
 
     retry_immediate_transaction(conn, |tx| {
-        let mut processed_assets = Vec::new();
-        let mut updated_assets = 0usize;
-        let mut sort_keys = DeferredSortKeys::begin(tx)?;
-
-        let mut get_current_stmt =
-            tx.prepare("SELECT media_group_key, media_group_order FROM assets WHERE id = ?1")?;
-        let mut update_stmt = tx.prepare(
-            "UPDATE assets SET media_group_key = ?1, media_group_order = ?2,
-               media_group_key_normalized = CASE
-                 WHEN ?1 IS NULL OR trim(?1) = '' THEN NULL
-                 ELSE lower(trim(?1))
-               END
-             WHERE id = ?3",
-        )?;
-
-        for (asset_id, media_group_order) in updates {
-            let current = get_current_stmt
-                .query_row(params![asset_id], |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<f64>>(1)?,
-                    ))
-                })
-                .optional()?;
-
-            let Some((current_key, current_order)) = current else {
-                continue;
-            };
-
-            processed_assets.push(*asset_id);
-            if current_key.as_deref() == media_group_key && current_order == *media_group_order {
-                continue;
-            }
-
-            update_stmt.execute(params![media_group_key, media_group_order, asset_id])?;
-            sort_keys.touch(current_key.as_deref());
-            sort_keys.touch(media_group_key);
-            updated_assets += 1;
-        }
-
-        drop(update_stmt);
-        drop(get_current_stmt);
-        sort_keys.finish(tx)?;
-
-        if updated_assets > 0 {
-            bump_library_revision_in_tx(tx)?;
-        }
-        Ok((processed_assets, updated_assets))
+        set_assets_media_group_bulk_in_tx(tx, updates, media_group_key)
     })
+}
+
+/// Assigns `media_group_key` and each update's order to the existing assets,
+/// keeping sort keys consistent; bumps the library revision when a row changed.
+pub(crate) fn set_assets_media_group_bulk_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    updates: &[(i64, Option<f64>)],
+    media_group_key: Option<&str>,
+) -> anyhow::Result<(Vec<i64>, usize)> {
+    let mut processed_assets = Vec::new();
+    let mut updated_assets = 0usize;
+    let mut sort_keys = DeferredSortKeys::begin(tx)?;
+
+    let mut get_current_stmt =
+        tx.prepare("SELECT media_group_key, media_group_order FROM assets WHERE id = ?1")?;
+    let mut update_stmt = tx.prepare(
+        "UPDATE assets SET media_group_key = ?1, media_group_order = ?2,
+           media_group_key_normalized = CASE
+             WHEN ?1 IS NULL OR trim(?1) = '' THEN NULL
+             ELSE lower(trim(?1))
+           END
+         WHERE id = ?3",
+    )?;
+
+    for (asset_id, media_group_order) in updates {
+        let current = get_current_stmt
+            .query_row(params![asset_id], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<f64>>(1)?,
+                ))
+            })
+            .optional()?;
+
+        let Some((current_key, current_order)) = current else {
+            continue;
+        };
+
+        processed_assets.push(*asset_id);
+        if current_key.as_deref() == media_group_key && current_order == *media_group_order {
+            continue;
+        }
+
+        update_stmt.execute(params![media_group_key, media_group_order, asset_id])?;
+        sort_keys.touch(current_key.as_deref());
+        sort_keys.touch(media_group_key);
+        updated_assets += 1;
+    }
+
+    drop(update_stmt);
+    drop(get_current_stmt);
+    sort_keys.finish(tx)?;
+
+    if updated_assets > 0 {
+        bump_library_revision_in_tx(tx)?;
+    }
+    Ok((processed_assets, updated_assets))
 }
 
 pub(super) fn list_asset_tags_in_tx(
@@ -835,25 +852,173 @@ pub fn merge_asset_tags_bulk_with_revision(
         ));
     }
     retry_immediate_transaction(conn, |tx| {
-        let mut results = Vec::new();
-        let mut query_impact = TagQueryImpact::None;
-        let mut vocabulary_changed = false;
-        for asset_id in asset_ids {
-            let Some(existing) = list_asset_tags_in_tx(tx, *asset_id)? else {
-                continue;
-            };
-            let merged = merge_tags(&existing, &normalized_incoming);
-            let outcome = set_asset_tags_in_tx(tx, *asset_id, &merged)?;
-            query_impact.union(outcome.query_impact);
-            vocabulary_changed |= outcome.vocabulary_changed;
+        let merged = merge_asset_tags_bulk_in_tx(tx, asset_ids, &normalized_incoming, true)?;
+        Ok((
+            merged.results,
+            merged.revision,
+            merged.query_impact,
+            merged.vocabulary_changed,
+        ))
+    })
+}
+
+/// Outcome of `merge_asset_tags_bulk_in_tx`.
+pub(crate) struct TagMergeOutcome {
+    /// Per-asset canonical tags; empty unless requested (a selection-wide
+    /// merge would otherwise hold every asset's tag list in memory).
+    pub results: Vec<AssetTagResult>,
+    pub processed: usize,
+    pub updated: usize,
+    pub revision: i64,
+    pub query_impact: TagQueryImpact,
+    pub vocabulary_changed: bool,
+}
+
+/// Adds already normalized tags to every existing asset of `asset_ids` and
+/// bumps the tag revisions the change affects.
+pub(crate) fn merge_asset_tags_bulk_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    asset_ids: &[i64],
+    normalized_incoming: &[String],
+    keep_results: bool,
+) -> anyhow::Result<TagMergeOutcome> {
+    let mut results = Vec::new();
+    let mut processed = 0;
+    let mut updated = 0;
+    let mut query_impact = TagQueryImpact::None;
+    let mut vocabulary_changed = false;
+    for asset_id in asset_ids {
+        let Some(existing) = list_asset_tags_in_tx(tx, *asset_id)? else {
+            continue;
+        };
+        let merged = merge_tags(&existing, normalized_incoming);
+        let outcome = set_asset_tags_in_tx(tx, *asset_id, &merged)?;
+        query_impact.union(outcome.query_impact);
+        vocabulary_changed |= outcome.vocabulary_changed;
+        processed += 1;
+        updated += usize::from(outcome.changed);
+        if keep_results {
             results.push(AssetTagResult {
                 asset_id: *asset_id,
                 changed: outcome.changed,
                 tags: outcome.tags,
             });
         }
-        let revision = bump_tag_revision(tx, &query_impact)?;
-        Ok((results, revision, query_impact, vocabulary_changed))
+    }
+    let revision = bump_tag_revision(tx, &query_impact)?;
+    Ok(TagMergeOutcome {
+        results,
+        processed,
+        updated,
+        revision,
+        query_impact,
+        vocabulary_changed,
+    })
+}
+
+/// Set-based add-only tag merge for a resolved selection (stage 09). The
+/// per-asset merge costs about ten statements per asset (35 s for 1M rows in
+/// one transaction); this one stages the IDs in a temporary table and runs one
+/// insert per tag, so the write lock is held for seconds instead of a minute.
+/// Unlike `merge_asset_tags_bulk_in_tx` it does not canonicalize legacy tag
+/// rows of each asset (that repair stays on the per-asset paths), but
+/// `tag_count` is recounted exactly for every asset that gained a tag.
+/// `normalized_incoming` must already be normalized and validated.
+pub(crate) fn merge_tags_into_selection_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    asset_ids: &[i64],
+    normalized_incoming: &[String],
+) -> anyhow::Result<TagMergeOutcome> {
+    tx.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS selection_merge_ids(
+           id INTEGER PRIMARY KEY, added INTEGER NOT NULL DEFAULT 0
+         );
+         DELETE FROM temp.selection_merge_ids;",
+    )?;
+    {
+        let mut insert = tx.prepare_cached(
+            "INSERT OR IGNORE INTO temp.selection_merge_ids(id)
+             SELECT id FROM assets WHERE id = ?1",
+        )?;
+        for id in asset_ids {
+            insert.execute([id])?;
+        }
+    }
+    let processed: i64 =
+        tx.query_row("SELECT COUNT(*) FROM temp.selection_merge_ids", [], |row| {
+            row.get(0)
+        })?;
+    let mut vocabulary_changed = false;
+    let mut changed_tags = Vec::new();
+    for tag in normalized_incoming {
+        vocabulary_changed |= tx.execute(
+            "INSERT INTO tags(name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
+            params![tag],
+        )? > 0;
+        let tag_id: i64 = tx.query_row(
+            "SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE",
+            params![tag],
+            |row| row.get(0),
+        )?;
+        tx.execute(
+            "UPDATE temp.selection_merge_ids SET added = 1
+             WHERE NOT EXISTS (
+               SELECT 1 FROM asset_tags WHERE asset_id = selection_merge_ids.id AND tag_id = ?1
+             )",
+            params![tag_id],
+        )?;
+        let inserted = tx.execute(
+            "INSERT OR IGNORE INTO asset_tags(asset_id, tag_id)
+             SELECT id, ?1 FROM temp.selection_merge_ids",
+            params![tag_id],
+        )?;
+        if inserted > 0 {
+            changed_tags.push(tag.clone());
+        }
+    }
+    let updated = tx.execute(
+        "UPDATE assets SET tag_count = (
+           SELECT COUNT(*) FROM asset_tags WHERE asset_id = assets.id
+         )
+         WHERE id IN (SELECT id FROM temp.selection_merge_ids WHERE added = 1)",
+        [],
+    )?;
+    tx.execute("DELETE FROM temp.selection_merge_ids", [])?;
+    let query_impact = if changed_tags.is_empty() {
+        TagQueryImpact::None
+    } else {
+        changed_tags.sort();
+        changed_tags.dedup();
+        TagQueryImpact::Tags {
+            changed_tags,
+            tag_count_changed: true,
+        }
+    };
+    let revision = bump_tag_revision(tx, &query_impact)?;
+    Ok(TagMergeOutcome {
+        results: Vec::new(),
+        processed: processed as usize,
+        updated,
+        revision,
+        query_impact,
+        vocabulary_changed,
+    })
+}
+
+/// Runs `operation` in one IMMEDIATE transaction on a user-write connection,
+/// but only when `is_current` still holds inside that transaction. The write
+/// lock is held from the check to the commit, so nothing can change the
+/// checked state in between; `Ok(None)` means nothing was written.
+pub fn guarded_user_write<T>(
+    conn: &mut Connection,
+    is_current: impl Fn(&rusqlite::Transaction<'_>) -> anyhow::Result<bool>,
+    mut operation: impl FnMut(&rusqlite::Transaction<'_>) -> anyhow::Result<T>,
+) -> anyhow::Result<Option<T>> {
+    retry_immediate_transaction(conn, |tx| {
+        if !is_current(tx)? {
+            return Ok(None);
+        }
+        operation(tx).map(Some)
     })
 }
 

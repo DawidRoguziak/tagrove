@@ -5,6 +5,7 @@ pub mod csv_service;
 pub mod db_pool;
 pub mod progress;
 pub mod scan_service;
+pub mod selection_service;
 pub mod thumb_protocol;
 pub mod thumb_scheduler;
 pub mod thumb_service;

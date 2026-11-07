@@ -147,7 +147,9 @@
       "tagLoadFailed": "Úplný seznam tagů se nepodařilo načíst. Úpravy zůstávají zakázané.",
       "retryTagDetails": "Znovu načíst tagy",
       "metadataFailed": "Vybrané položky nelze načíst. Některé již nemusí existovat.",
-      "partialResult": "Aktualizováno {{processed}} z {{requested}} vybraných položek."
+      "partialResult": "Aktualizováno {{processed}} z {{requested}} vybraných položek.",
+      "selectionClearedTitle": "Výběr zrušen",
+      "selectionClearedDescription": "Výsledky se změnily, takže vybraný rozsah už neodpovídal zobrazení. Vyberte položky znovu."
     },
     "tagModal": {
       "ariaLabel": "Hromadné přidání tagů",

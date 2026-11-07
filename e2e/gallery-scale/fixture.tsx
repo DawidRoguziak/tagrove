@@ -55,6 +55,7 @@ const dispose = render(() => {
   const [tile, setTile] = createSignal(188);
   const [ref, setRef] = createSignal<HTMLElement>();
   const selection = createSelection({ queryEpoch: () => 1, identityEpoch: () => 1,
+    sessionId: () => 1, total: () => count(),
     getIdsRange: async (start, end) => {
       selectionReads.push([start, end]);
       return Array.from({length: end - start + 1}, (_, i) => start + i + 1);
@@ -70,7 +71,7 @@ const dispose = render(() => {
           scroller={ref}
           onVirtualRangeChange={range => { if (range) ranges.push({...range}); }}
           onSelect={value => { selected = value.id; }} hasScanRoots={true} onAddFirstFolder={() => {}}
-          selectionModeEnabled={selection.enabled} selectedAssetIds={selection.ids} onBulkSelectionInteraction={selection.interact}
+          selectionModeEnabled={selection.enabled} isSelected={selection.isSelected} onBulkSelectionInteraction={selection.interact}
           loadError={null} onLoadRetry={() => {}} queryEpoch={1} pageFailureEpoch={0}/>
       </div>
     </section>

@@ -23,7 +23,9 @@ export function createAppRuntime() {
   const selection = createSelection({
     queryEpoch: () => library.query.queryEpoch,
     identityEpoch: () => library.tags.epoch,
-    getIdsRange: library.query.getIdsRangeAsync
+    getIdsRange: library.query.getIdsRangeAsync,
+    sessionId: library.query.sessionId,
+    total: () => library.query.navigationSnapshot().total
   });
   const bulk = createBulk(library, selection, () => view() === "settings");
   const [popularTags, setPopularTags] = createSignal<string[]>([]);

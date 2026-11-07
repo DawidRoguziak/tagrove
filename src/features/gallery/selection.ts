@@ -6,6 +6,8 @@ export interface SelectionRange {
 export type BulkSelectionInteraction =
   | { type: "click"; assetId: number; assetIndex: number; ctrlLike: boolean; shift: boolean }
   | { type: "clear" }
+  /** Every result of the current query, as one range (Ctrl+A in selection mode). */
+  | { type: "select-all" }
   | { type: "rectangle-start" }
   | { type: "rectangle-cancel" }
   | { type: "rectangle-commit"; ranges: SelectionRange[]; additive: boolean };

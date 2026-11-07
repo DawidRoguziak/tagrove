@@ -158,6 +158,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("selects all results with Ctrl+A in selection mode, but not from text fields or when disabled", () => {
+  const interaction = vi.fn();
+  const input = document.createElement("input");
+  document.body.append(input);
+  const view = renderSolid(Harness, { interaction });
+  domEvent.keyDown(document.body, { key: "a", ctrlKey: true });
+  expect(interaction).toHaveBeenLastCalledWith({ type: "select-all" });
+  interaction.mockClear();
+  domEvent.keyDown(document.body, { key: "A", metaKey: true });
+  expect(interaction).toHaveBeenCalledWith({ type: "select-all" });
+  interaction.mockClear();
+  domEvent.keyDown(input, { key: "a", ctrlKey: true });
+  domEvent.keyDown(document.body, { key: "a", ctrlKey: true, shiftKey: true });
+  domEvent.keyDown(document.body, { key: "a" });
+  expect(interaction).not.toHaveBeenCalledWith({ type: "select-all" });
+  view.unmount();
+  renderSolid(Harness, { interaction, enabled: false });
+  domEvent.keyDown(document.body, { key: "a", ctrlKey: true });
+  expect(interaction).not.toHaveBeenCalledWith({ type: "select-all" });
+  input.remove();
+});
+
 describe("gallery pointer gestures", () => {
   it("maps a rectangle through the current logical shift without treating scroll as layout cancellation", () => {
     const interaction = vi.fn(), scrollBy = vi.fn();
@@ -521,6 +543,7 @@ it.each([
     createSelection({
       queryEpoch: () => 0,
       identityEpoch: () => 0,
+      sessionId: () => 1,
       getIdsRange: load
     })
   );
@@ -552,6 +575,7 @@ it("keeps a released rectangle read through layout changes while removing its ol
     createSelection({
       queryEpoch: () => 0,
       identityEpoch: () => 0,
+      sessionId: () => 1,
       getIdsRange: () =>
         new Promise((resolve) => {
           finish = resolve;

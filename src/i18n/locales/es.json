@@ -147,7 +147,9 @@
       "tagLoadFailed": "No se pudo cargar la lista completa de etiquetas. La edición permanece desactivada.",
       "retryTagDetails": "Reintentar la carga",
       "metadataFailed": "No se pudieron cargar los elementos seleccionados. Puede que algunos ya no existan.",
-      "partialResult": "Se actualizaron {{processed}} de {{requested}} elementos seleccionados."
+      "partialResult": "Se actualizaron {{processed}} de {{requested}} elementos seleccionados.",
+      "selectionClearedTitle": "Selección borrada",
+      "selectionClearedDescription": "Los resultados cambiaron, así que el rango seleccionado ya no coincidía con lo que se veía. Vuelve a seleccionar los elementos."
     },
     "tagModal": {
       "ariaLabel": "Añadir etiquetas en lote",

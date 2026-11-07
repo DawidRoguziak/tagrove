@@ -15,13 +15,16 @@ export type BulkGroupSaveResult =
   | { status: "saved" | "failed" | "ignored" }
   | { status: "partial"; processed: number; requested: number };
 type ReadState = "idle" | "loading" | "failed";
+const NO_IDS: ReadonlySet<number> = new Set();
 export function createBulk(
   library: ReturnType<typeof createLibrary>,
   selection: ReturnType<typeof createSelection>,
   settingsOpen: () => boolean
 ) {
+  // A ranged selection (stage 09) is never materialized here: its summaries stay unloaded
+  // and its writes go to the backend as a spec.
   const metadata = createSelectedSummaries({
-    ids: () => selection.ids,
+    ids: () => (selection.ranged ? NO_IDS : selection.ids),
     cached: () => library.query.assets,
     epoch: () => library.tags.epoch,
     subscribe: library.mutations.subscribe
@@ -46,11 +49,12 @@ export function createBulk(
   let favoriteWrites = 0;
   let draft = "";
   let dirty = false;
-  let initialized: ReadonlySet<number> | null = null;
-  let observed = selection.capture().ids;
+  let initialized: object | null = null;
+  let observed = selection.capture().key;
   let epoch = library.tags.epoch;
   function synchronize() {
-    const current = selection.capture().ids;
+    const snapshot = selection.capture();
+    const current = snapshot.key;
     if (observed === current && epoch === library.tags.epoch) return;
     observed = current;
     epoch = library.tags.epoch;
@@ -58,7 +62,7 @@ export function createBulk(
     dirty = false;
     draft = "";
     setGroupDraft("");
-    setOrder([...current]);
+    setOrder(snapshot.spec ? [] : [...snapshot.ids]);
     setConflicting(false);
     setAppliedTags([]);
     setPartial(null);
@@ -66,13 +70,18 @@ export function createBulk(
     setGroupFailed(false);
     setFavoriteFailed(false);
   }
-  createEffect(() => [selection.ids, library.tags.epoch], synchronize);
+  createEffect(() => [selection.key, library.tags.epoch], synchronize);
   createEffect(
-    () => ({ ready: metadata.ready, assets: metadata.selected, ids: selection.ids }),
-    ({ ready, assets, ids }) => {
+    () => ({
+      ready: metadata.ready,
+      assets: metadata.selected,
+      key: selection.key,
+      ranged: selection.ranged
+    }),
+    ({ ready, assets, key, ranged }) => {
       synchronize();
-      if (!ready || initialized === ids) return;
-      initialized = ids;
+      if (ranged || !ready || initialized === key) return;
+      initialized = key;
       const derived = deriveBulkGroupSelectionState(assets);
       if (!dirty) {
         draft = derived.groupKey;
@@ -82,7 +91,9 @@ export function createBulk(
       setConflicting(derived.hasConflictingGroups);
     }
   );
-  const singleId = createMemo(() => (selection.ids.size === 1 ? [...selection.ids][0] : undefined));
+  const singleId = createMemo(() =>
+    !selection.ranged && selection.ids.size === 1 ? [...selection.ids][0] : undefined
+  );
   createEffect(singleId, (id) => (id === undefined ? undefined : library.tags.pin(id)));
   createEffect(
     () => ({
@@ -141,16 +152,20 @@ export function createBulk(
     return {
       ...snapshot,
       current: () =>
-        !disposed && snapshot.ids === selection.capture().ids && identity === library.tags.epoch,
+        !disposed && snapshot.key === selection.capture().key && identity === library.tags.epoch,
       valid: () => !disposed && identity === library.tags.epoch
     };
   }
   async function saveTag(raw: string, remove = false): Promise<boolean> {
     const tag = remove ? raw : normalizeBulkTag(raw);
     const context = capture();
+    if (!context.enabled || context.busy || !context.count || !tag) return false;
+    if (context.spec) {
+      if (remove) return false;
+      return saveSelectionTag(context, context.spec, tag);
+    }
     const ids = [...context.ids];
-    if (!context.enabled || context.busy || !ids.length || !tag || (remove && ids.length !== 1))
-      return false;
+    if (!ids.length || (remove && ids.length !== 1)) return false;
     const base = ids.length === 1 ? library.tags.get(ids[0])?.tags : undefined;
     if (ids.length === 1 && !base) return false;
     // Applied to the canonical tags when the write leaves the asset's queue.
@@ -181,12 +196,55 @@ export function createBulk(
       if (!disposed && tagWrites === 0) setTagApplying(false);
     }
   }
+  /** Bulk add on a ranged selection: all or nothing, decided by the backend. */
+  async function saveSelectionTag(
+    context: ReturnType<typeof capture>,
+    spec: NonNullable<ReturnType<typeof capture>["spec"]>,
+    tag: string
+  ) {
+    tagWrites += 1;
+    setTagApplying(true);
+    setTagFailed(false);
+    try {
+      const result = await library.mutations.mergeTagsInSelection(spec, [tag]);
+      if (result.status === "stale") {
+        if (context.current()) setTagFailed(true);
+        return false;
+      }
+      if (context.current()) {
+        setPartial({ processed: result.processed_assets, requested: context.count });
+        setAppliedTags((previous) => mergeTagLists(previous, [tag]));
+      }
+      return context.valid();
+    } catch {
+      if (context.current()) setTagFailed(true);
+      return false;
+    } finally {
+      tagWrites -= 1;
+      if (!disposed && tagWrites === 0) setTagApplying(false);
+    }
+  }
   async function toggleFavorite() {
     const context = capture();
-    if (!context.enabled || context.busy || !context.ids.size) return;
+    if (!context.enabled || context.busy || !context.count) return;
     favoriteWrites += 1;
     setFavoriteApplying(true);
     setFavoriteFailed(false);
+    if (context.spec) {
+      try {
+        const result = await library.mutations.toggleFavoritesInSelection(context.spec);
+        if (result.status === "stale") {
+          if (context.current()) setFavoriteFailed(true);
+        } else if (context.current())
+          setPartial({ processed: result.processed_assets, requested: context.count });
+      } catch {
+        if (context.current()) setFavoriteFailed(true);
+      } finally {
+        favoriteWrites -= 1;
+        if (!disposed && favoriteWrites === 0) setFavoriteApplying(false);
+      }
+      return;
+    }
     try {
       const result = await library.mutations.toggleFavorites([...context.ids]);
       if (!context.valid()) return;
@@ -202,8 +260,42 @@ export function createBulk(
       if (!disposed && favoriteWrites === 0) setFavoriteApplying(false);
     }
   }
+  /** Groups a ranged selection in gallery order (no order editor for ranges). */
+  async function applySelectionGroup(
+    context: ReturnType<typeof capture>,
+    spec: NonNullable<ReturnType<typeof capture>["spec"]>
+  ): Promise<BulkGroupSaveResult> {
+    const key = normalizeGroupKey(draft) || null;
+    groupWrites += 1;
+    setGroupApplying(true);
+    setGroupFailed(false);
+    try {
+      const result = await library.mutations.setMediaGroupInSelection(spec, key);
+      if (result.status === "stale") {
+        if (context.current()) setGroupFailed(true);
+        return { status: "failed" };
+      }
+      if (!context.current()) return { status: "ignored" };
+      setPartial({ processed: result.processed_assets, requested: context.count });
+      draft = key ?? "";
+      setGroupDraft(draft);
+      return result.processed_assets === context.count
+        ? { status: "saved" }
+        : { status: "partial", processed: result.processed_assets, requested: context.count };
+    } catch {
+      if (context.current()) setGroupFailed(true);
+      return { status: "failed" };
+    } finally {
+      groupWrites -= 1;
+      if (!disposed && groupWrites === 0) setGroupApplying(false);
+    }
+  }
   async function applyGroup(explicitOrder?: number[]): Promise<BulkGroupSaveResult> {
     const context = capture();
+    if (context.spec) {
+      if (!context.enabled || context.busy || explicitOrder) return { status: "ignored" };
+      return applySelectionGroup(context, context.spec);
+    }
     const ids = [...(explicitOrder ?? order())];
     if (
       !context.enabled ||
@@ -253,6 +345,20 @@ export function createBulk(
     get selectedAssetIds() {
       return selection.ids;
     },
+    get selectedCount() {
+      return selection.count;
+    },
+    /** Changes identity whenever the selection changes. */
+    get selectionKey() {
+      return selection.key;
+    },
+    /** True when the selection holds ranges that are written as a spec. */
+    get selectionRanged() {
+      return selection.ranged;
+    },
+    get selectionNotice() {
+      return selection.notice;
+    },
     get selectionBusy() {
       return selection.busy;
     },
@@ -260,7 +366,7 @@ export function createBulk(
       return metadata.selected;
     },
     get metadataLoading() {
-      return !metadata.ready && !metadata.failed;
+      return !selection.ranged && !metadata.ready && !metadata.failed;
     },
     get metadataFailed() {
       return metadata.failed;
@@ -289,6 +395,7 @@ export function createBulk(
     },
     get allSelectedFavorites() {
       return (
+        !selection.ranged &&
         selection.ids.size > 0 &&
         metadata.ready &&
         metadata.selected.every((asset) => asset.is_favorite)
@@ -298,7 +405,8 @@ export function createBulk(
       return partial();
     },
     get tagMode() {
-      return selection.ids.size === 0 ? "none" : selection.ids.size === 1 ? "single" : "multiple";
+      const count = selection.count;
+      return count === 0 ? "none" : count === 1 && !selection.ranged ? "single" : "multiple";
     },
     get singleAssetTags() {
       const id = singleId();

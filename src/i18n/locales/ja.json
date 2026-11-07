@@ -147,7 +147,9 @@
       "tagLoadFailed": "完全なタグ一覧を読み込めませんでした。編集は無効のままです。",
       "retryTagDetails": "タグの読み込みを再試行",
       "metadataFailed": "選択した項目を読み込めませんでした。一部の項目は既に削除されている可能性があります。",
-      "partialResult": "選択した {{requested}} 件のうち {{processed}} 件を更新しました。"
+      "partialResult": "選択した {{requested}} 件のうち {{processed}} 件を更新しました。",
+      "selectionClearedTitle": "選択を解除しました",
+      "selectionClearedDescription": "結果が変わったため、選択した範囲が表示内容と一致しなくなりました。もう一度選択してください。"
     },
     "tagModal": {
       "ariaLabel": "一括タグ追加",

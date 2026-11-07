@@ -37,7 +37,6 @@ export function createAppRuntime() {
   const settings = createSettings({
     setLoading: setMaintenanceLoading,
     refreshLibrary: library.refreshLibrary,
-    onRootRemoved: library.handleRootRemoved,
     onImportDbRestored: library.handleImportDbRestored,
     onLibraryCleared: library.handleLibraryCleared,
     onTagCacheInvalidated: library.resetIdentity,

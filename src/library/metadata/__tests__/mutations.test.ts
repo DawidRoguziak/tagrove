@@ -44,6 +44,7 @@ function detail(id: number): AssetDetails {
     width: 10,
     height: 10,
     duration_ms: null,
+    thumb_version: "0123456789abcdef",
     thumb_path: null,
     is_favorite: false,
     media_group_key: null,
@@ -457,13 +458,11 @@ describe("details cache identity and bounds", () => {
 
 it("keeps vocabulary until restore refresh but clears it immediately on library clear", async () => {
   const { result: library } = await setup();
-  settle(() => library.thumbnails.thumbnailStore.complete({ 1: "/synthetic/thumb.jpg" }, []));
   expect(library.vocabulary.knownTags).toEqual(["cat", "dog"]);
   settle(library.handleImportDbRestored);
   expect(library.tags.get(1)).toBeNull();
   expect(library.details.get(1)).toBeNull();
   expect(library.query.total).toBe(0);
-  expect(library.thumbnails.thumbnailStore.getPath(1)).toBeUndefined();
   expect(library.vocabulary.knownTags).toEqual(["cat", "dog"]);
   settle(library.handleLibraryCleared);
   expect(library.vocabulary.knownTags).toEqual([]);

@@ -110,7 +110,7 @@ Wynik spike'u wpisz do notatek z decyzją **GO** albo **plan B**.
 - Nowe kafle na ekranie dostają miniatury przed przewiniętymi (LIFO). Żadne wideo nie blokuje innych miniatur.
 - Po `refresh` i po remount kafla brak pustych miniatur.
 - Usunięte moduły kolejki i `thumb_path` (GO) albo zrealizowany plan B.
-- Generowanie miniatury JPEG 24 MP przynajmniej ~2× szybsze.
+- Generowanie miniatury JPEG 24 MP przynajmniej ~2× szybsze. *(2026-11-07: nieosiągalne w czystym Ruście, przyjęte −20%; ADR 0006.)*
 
 ## Ryzyka
 
@@ -120,7 +120,7 @@ Wynik spike'u wpisz do notatek z decyzją **GO** albo **plan B**.
 
 ## Status
 
-todo — 2026-11-04
+done — 2026-11-07 (GO; zacommitowane za akceptacją użytkownika). Decyzja: [ADR 0006](../../adr/0006-thumb-uri-scheme.md). Kryterium „JPEG 24 MP ~2× szybciej” zmienione decyzją użytkownika na zmierzone −20% (patrz notatki).
 
 ## Notatki agentów
 
@@ -155,3 +155,43 @@ todo — 2026-11-04
 ### 2026-11-07 — agent etapu 04
 - Z etapu 04: `createAssetQuery.refresh()` nie woła już `resetThumbnailQueue()` (opcja usunięta). Kolejkę i store resetują tylko `reset()`/clear-library, restore i usunięcie roota.
 - Z etapu 04: po refreshu stare wiersze bieżącego widoku są fallbackiem tylko dla `getAssetAt`; `onAssetsChanged` przekazuje je razem z cache, żeby `thumbnailStore.retain` nie zgubił ich ścieżek. Po usunięciu store w tym etapie fallback dalej musi dostawać miniatury (np. przez `thumb://<id>`).
+
+### 2026-11-07 — agent etapu 06
+- Zrobione (GO):
+  - schemat `thumb://localhost/<id>?v=<thumb_version>[&c=1][&p=1][&r=<n>]` w `src-tauri/src/services/thumb_protocol.rs`;
+  - `AssetSummary.thumb_path` → `thumb_version` (16 hex, prefiks nazwy pliku); `DuplicateAsset.thumb_version`; `AssetDetails.thumb_path` zostaje;
+  - priorytet `Interactive` (LIFO) i callback waiter w schedulerze; overscan (`p=1`) idzie jako `High`;
+  - grupowa publikacja wyników (≤ 64 na transakcję);
+  - pamięć porażek w procesie;
+  - tryb `c=1` w pauzie szybkiego scrolla;
+  - usunięte: `ensure_thumbnails`, `ThumbnailStreamEvent`, `createThumbnailQueue`/`thumbnailStore`/`createAssetThumbnail`, licznik w stopce (klucz i18n w 11 locale), `$APPDATA/thumbs/**` ze scope;
+  - `jpeg-decoder` (bez `unsafe`, decyzja użytkownika);
+  - wideo: najpierw `-skip_frame nokey -noaccurate_seek`, potem dokładny seek, potem seek 0.
+- Spike:
+  1. wry 0.55 nie daje sygnału anulowania (responder `FnOnce`), więc zamiast demote jest LIFO, `p=1` i `c=1`;
+  2. origin to `tauri://localhost` / `http://localhost:1420`, CORS ustawiony echem; `gallery-browsing` E2E potwierdza `naturalWidth` przez prawdziwy schemat;
+  3. 60 żądań dociera w 1,8 ms, przekazanie do puli ok. 16 µs, główny wątek nie blokuje;
+  4. powrót scrollem nie wysyła ponownych żądań (cache WebKit w obrębie strony); po przeładowaniu strony żądania wracają, ale bez renderu;
+  5. ciepły komplet widocznych 110 ms po przeładowaniu. Resource Timing nie rejestruje schematów własnych, więc pomiar szedł przez tymczasowy trace w handlerze (usunięty).
+- Odkryte:
+  - pierwsza wersja (wszystkie zamontowane kafle w LIFO) była wolniejsza od bazy: per kafel p50 459 ms; 182 rendery na ~35 widocznych kafli, bo overscan konkurował z widocznymi. `p=1` → `High` naprawił to;
+  - grupowanie commitów nie zmieniło wyniku, więc fsync nie był wąskim gardłem; grupowanie zostaje jako tańsze.
+- Pomiary:
+
+  | Pomiar | Przed | Po |
+  | --- | --- | --- |
+  | `grid-baseline` cold (debug), miniatura per kafel p50 / p95 | 354 / 444 ms | 286 / 389 ms |
+  | `grid-baseline` cold (debug), komplet widocznych p50 | 449 ms | 403 ms |
+  | `grid-baseline` warm settle p50 | 16 ms | 16 ms |
+  | JPEG 24 MP (release) | 98 ms | 78 ms |
+  | Wideo 1080p, GOP 250 | 202 ms | 48 ms |
+
+  Warm: DOM stały 407 węzłów. Pełny decode zune 72 ms ≈ skalowany jpeg-decoder 74 ms: Huffman dominuje.
+- Nie zrobione:
+  - HiDPI (decyzja użytkownika: pominąć);
+  - `THUMB_CACHE_VERSION` nie podbity, uzasadnienie w ADR 0006;
+  - zawężenie scope `**` asset protocol to osobny temat bezpieczeństwa.
+- Testy:
+  - `bun run test:backend` → pass (261);
+  - `bun run test` → pass;
+  - E2E: `app.smoke`, `gallery-browsing`, `thumbnail-fade`, `review-fixes`, `grid-baseline` → pass.

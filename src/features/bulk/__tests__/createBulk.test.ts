@@ -41,6 +41,7 @@ function asset(id: number, overrides: Partial<AssetDetails> = {}): AssetDetails 
     width: 10,
     height: 10,
     duration_ms: null,
+    thumb_version: "0123456789abcdef",
     thumb_path: null,
     is_favorite: false,
     media_group_key: null,

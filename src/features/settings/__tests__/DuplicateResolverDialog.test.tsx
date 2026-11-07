@@ -1,7 +1,6 @@
 import { createSignal } from "solid-js";
 import { settle } from "../../../test/settle";
 import { renderSettings as render } from "./renderSettings";
-import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import { cleanup, fireEvent, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,13 +16,15 @@ function makeGroups(): DuplicateGroup[] {
           id: 1,
           path: "C:/media/a/same.jpg",
           record_version: 1,
-          size_bytes: 10
+          size_bytes: 10,
+          thumb_version: "0123456789abcdef"
         },
         {
           id: 2,
           path: "C:/media/b/same.jpg",
           record_version: 1,
-          size_bytes: 20
+          size_bytes: 20,
+          thumb_version: "fedcba9876543210"
         }
       ]
     }
@@ -38,25 +39,21 @@ function mountVirtualResolver() {
       id: index * 2 + n + 1,
       path: `/synthetic/${n}/same-${index}.png`,
       record_version: 1,
-      size_bytes: 10
+      size_bytes: 10,
+      thumb_version: "0123456789abcdef"
     }))
   }));
-  const store = new ThumbnailStore();
-  const subscribe = vi.spyOn(store, "subscribe");
   render(() => (
     <DuplicateResolverDialog
       open
       isOperationLocked={false}
       operationState={createSectionOperationState("duplicates")}
       groups={groups}
-      thumbnailStore={store}
-      onQueueThumbnailsByIds={() => {}}
       onClose={() => {}}
       onRescan={() => {}}
       onSaveAll={async () => {}}
     />
   ));
-  return { subscribe };
 }
 describe("DuplicateResolverDialog", () => {
   afterEach(() => {
@@ -77,21 +74,14 @@ describe("DuplicateResolverDialog", () => {
     for (const row of rows) expect(observedRows).toContain(row);
     expect(rows[1].style.transform).toBe("translateY(720px)");
   });
-  it("preserves a visible rename input, focus and thumbnail subscriptions across a small scroll", () => {
-    const { subscribe } = mountVirtualResolver();
+  it("preserves a visible rename input, focus and thumbnail images across a small scroll", () => {
+    mountVirtualResolver();
     const input = screen.getAllByRole("textbox")[0];
     input.focus();
     fireEvent.input(input, { target: { value: "draft.png" } });
     const scroller = input.closest("[data-index]")?.parentElement?.parentElement;
     if (!scroller) throw new Error("Missing duplicate list scroller");
-    const subscriptions = subscribe.mock.calls.length;
-    // Each synthetic group N owns asset IDs 2N+1 and 2N+2.
-    const mountedIds = new Set(
-      [...document.querySelectorAll<HTMLElement>("[data-index]")].flatMap((row) => {
-        const index = Number(row.dataset.index);
-        return [index * 2 + 1, index * 2 + 2];
-      })
-    );
+    const firstImage = screen.getAllByRole("img")[0];
     settle(() => {
       scroller.scrollTop = 1;
       fireEvent.scroll(scroller);
@@ -99,16 +89,13 @@ describe("DuplicateResolverDialog", () => {
     expect(screen.getAllByRole("textbox")[0]).toBe(input);
     expect(input).toHaveFocus();
     expect(input).toHaveValue("draft.png");
-    // Rows that stay mounted keep their subscriptions; only newly windowed rows subscribe.
-    expect(
-      subscribe.mock.calls.slice(subscriptions).filter(([id]) => mountedIds.has(id))
-    ).toEqual([]);
+    // Rows that stay mounted keep their image element and its request.
+    expect(screen.getAllByRole("img")[0]).toBe(firstImage);
+    expect(firstImage).toHaveAttribute("src", "thumb://localhost/1?v=0123456789abcdef");
   });
   it("does not render when closed", () => {
     render(() => (
       <DuplicateResolverDialog
-        thumbnailStore={new ThumbnailStore()}
-        onQueueThumbnailsByIds={() => {}}
         open={false}
         isOperationLocked={false}
         operationState={createSectionOperationState("duplicates")}
@@ -124,8 +111,6 @@ describe("DuplicateResolverDialog", () => {
     const onSaveAll = vi.fn(async () => {});
     render(() => (
       <DuplicateResolverDialog
-        thumbnailStore={new ThumbnailStore()}
-        onQueueThumbnailsByIds={() => {}}
         open
         isOperationLocked={false}
         operationState={createSectionOperationState("duplicates")}
@@ -155,8 +140,6 @@ describe("DuplicateResolverDialog", () => {
   it("blocks save when queued changes still keep duplicate names", async () => {
     render(() => (
       <DuplicateResolverDialog
-        thumbnailStore={new ThumbnailStore()}
-        onQueueThumbnailsByIds={() => {}}
         open
         isOperationLocked={false}
         operationState={createSectionOperationState("duplicates")}
@@ -174,8 +157,6 @@ describe("DuplicateResolverDialog", () => {
     const onClose = vi.fn();
     const { rerender } = render(() => (
       <DuplicateResolverDialog
-        thumbnailStore={new ThumbnailStore()}
-        onQueueThumbnailsByIds={() => {}}
         open
         isOperationLocked={false}
         operationState={createSectionOperationState("duplicates")}
@@ -189,8 +170,6 @@ describe("DuplicateResolverDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     rerender(() => (
       <DuplicateResolverDialog
-        thumbnailStore={new ThumbnailStore()}
-        onQueueThumbnailsByIds={() => {}}
         open
         isOperationLocked
         operationState={createSectionOperationState("duplicates")}
@@ -206,8 +185,6 @@ describe("DuplicateResolverDialog", () => {
   it("queues delete action and allows clearing it", async () => {
     render(() => (
       <DuplicateResolverDialog
-        thumbnailStore={new ThumbnailStore()}
-        onQueueThumbnailsByIds={() => {}}
         open
         isOperationLocked={false}
         operationState={createSectionOperationState("duplicates")}
@@ -228,24 +205,24 @@ describe("DuplicateResolverDialog", () => {
 it("updates the mounted virtual list when a rescan removes every group", () => {
   const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(720);
   const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
-  const queued = vi.fn();
   const [groups, setGroups] = createSignal(makeGroups());
-  const store = new ThumbnailStore();
   render(() => (
     <DuplicateResolverDialog
       open
       isOperationLocked={false}
       operationState={createSectionOperationState("duplicates")}
       groups={groups()}
-      thumbnailStore={store}
-      onQueueThumbnailsByIds={queued}
       onClose={() => {}}
       onRescan={() => {}}
       onSaveAll={vi.fn(async () => {})}
     />
   ));
   expect(screen.getAllByRole("textbox")).toHaveLength(2);
-  expect(queued).toHaveBeenCalledWith([1, 2]);
+  // Thumbnails are requested by asset ID and version through `thumb://`.
+  expect(screen.getAllByRole("img").map((image) => image.getAttribute("src"))).toEqual([
+    "thumb://localhost/1?v=0123456789abcdef",
+    "thumb://localhost/2?v=fedcba9876543210"
+  ]);
   settle(() => setGroups([]));
   expect(screen.queryAllByRole("textbox")).toHaveLength(0);
   expect(screen.getByText("No duplicate groups found.")).toBeInTheDocument();

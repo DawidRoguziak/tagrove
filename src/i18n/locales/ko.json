@@ -91,7 +91,6 @@
     "videoChip": "비디오",
     "gifChip": "GIF",
     "groupedChip": "미디어 그룹의 일부",
-    "generatingThumbnails": "대기열에 있는 {{count}}개 항목의 썸네일을 생성하는 중입니다.",
     "endOfResults": "결과 끝",
     "resultCount_one": "{{formattedCount}}개 항목",
     "resultCount_few": "{{formattedCount}}개 항목",

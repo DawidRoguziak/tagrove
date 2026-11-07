@@ -10,8 +10,8 @@ For bootstrap, managed state, lock ordering, and module ownership, see the [syst
 
 - Frontend code calls typed functions in `src/platform/tauri`, split into assets, tags, scanning, thumbnails, maintenance, video, and window modules. The functions call the snake-case command names registered by `tauri::generate_handler!`. Dialogs, events, the system opener, and native window access also enter through this directory.
 - Invoke argument keys are camelCase (`assetId`, `tagsAnd`, `pageSize`, `onEvent`), while the corresponding Rust parameters are snake_case (`asset_id`, `tags_and`, `page_size`, `on_event`). Nested inputs opt into or explicitly define camelCase where needed: `BulkMediaGroupUpdateInput` uses `rename_all = "camelCase"`, and `AssetMetaFilterInput` uses `type`, `hasNoTags`/`groupName`, `tagCount`, and `groupName`.
-- Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/platform/tauri/contracts`, including `session_id`, `thumb_path`, `removed_assets`, and similar fields.
-- Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; thumbnail channel messages use `{ event: "ready" | "failed" | "done", data: ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case. The one binary response, `get_asset_query_id_range`, has no JSON body; see [binary ID ranges](#binary-id-ranges).
+- Ordinary Rust response structs serialize their fields exactly as declared, so response object fields are snake_case. This matches the interfaces in `src/platform/tauri/contracts`, including `session_id`, `thumb_version`, `removed_assets`, and similar fields.
+- Tagged enums are the exceptions for discriminants. Query results use `{ status: "ready" | "stale" | "superseded", ... }`; scan completion values are `"complete"` and `"partial"`. The data fields inside those variants remain snake_case. The one binary response, `get_asset_query_id_range`, has no JSON body; see [binary ID ranges](#binary-id-ranges).
 - Native video events use a `type` discriminant and include `session_id`. Video controls use camelCase discriminants and fields because their Rust enum has both `rename_all = "camelCase"` and `rename_all_fields = "camelCase"`.
 - Rust `Option<T>` becomes `T | null` over IPC. The wrappers explicitly send `null` for media kind `"all"`, an absent search meta-filter, and nullable media-group values. `get_asset_details` also uses `null` for a missing row. Rust `()` is exposed as `Promise<void>`.
 - Rust `i64`, `u64`, and `usize` values are represented as JavaScript `number`. Current IDs, counts, revisions, offsets, and session IDs are expected to remain within JavaScript's safe-integer range; the type layer does not enforce that bound.
@@ -28,7 +28,7 @@ Consumers import payloads from their owning contract module directly. `SelectedA
 | `assets.ts` / `contracts/assets.ts` | Query sessions, summaries/details, favorite/group writes, deletion and media URLs. |
 | `tags.ts` / `contracts/tags.ts` | Tag listing, startup snapshot, replacements/merges and query-impact results. |
 | `scanning.ts` / `contracts/scanning.ts` | Roots, scans, startup preferences and progress shape. |
-| `thumbnails.ts` / `contracts/thumbnails.ts` | Channel-based demand, bulk render/retry/cancel and cleanup. |
+| `thumbnails.ts` / `contracts/thumbnails.ts` | `thumb://` URL builder, bulk render/retry/cancel and cleanup. |
 | `maintenance.ts` / `contracts/maintenance.ts` | CSV/bundles, duplicates, video-tool checks and library clearing. |
 | `video.ts` / `contracts/video.ts` | Open reservations, session controls, labels, bounds and event channel. |
 | `events.ts`, `dialogs.ts`, `window.ts` | Tauri event binding, native pickers and window access/theme. |
@@ -44,8 +44,8 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | Rust / TypeScript model | Serialized fields |
 | --- | --- |
 | `Asset` / `LegacyAsset` | `id`, `path`, `kind`, `size_bytes`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_path?`, `is_favorite`, `media_group_key?`, `media_group_order?`, `tags` |
-| `AssetSummary` / `AssetSummary` | `id`, `file_name`, `preview_path?`, `kind`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_path?`, `is_favorite`, `media_group_key?`, `media_group_order?` |
-| `AssetDetails` / `AssetDetails` | All `AssetSummary` fields flattened into the object, plus `path`, `size_bytes`, `tags` |
+| `AssetSummary` / `AssetSummary` | `id`, `file_name`, `preview_path?`, `kind`, `modified_at`, `width?`, `height?`, `duration_ms?`, `thumb_version`, `is_favorite`, `media_group_key?`, `media_group_order?` |
+| `AssetDetails` / `AssetDetails` | All `AssetSummary` fields flattened into the object, plus `path`, `size_bytes`, `thumb_path?`, `tags` |
 | `AssetPage` / `AssetPage` | `items: LegacyAsset[]`, `total` |
 | `TagListPage` / `TagListPage` | `items: string[]`, `total` |
 | `StartAssetQueryResult` / `StartAssetQueryResult` | `ready` has `session_id`, `revision`, `total`, `offset`, `items: AssetSummary[]`; `superseded` has only `status` |
@@ -54,14 +54,13 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `ScanSummary` / `ScanSummary` | `completion: "complete" \| "partial"`, `indexed`, `removed`, `failed` |
 | `RemoveRootSummary` / `RemoveRootSummary` | `removed_assets`, `removed_thumbnails` |
 | `DeleteAssetSummary` / `DeleteAssetSummary` | `removed_assets`, `removed_thumbnails`, `source_status: "deleted" \| "missing" \| "cleanup_pending"`, `revision`, `recovery_path?` |
-| `DuplicateAsset`, `DuplicateGroup`, `DuplicateScanSummary` / same | Asset: `id`, `path`, `record_version`, `size_bytes`; group: `file_name`, `assets`; summary: `groups`, `duplicate_groups`, `duplicate_assets`, `revision` |
+| `DuplicateAsset`, `DuplicateGroup`, `DuplicateScanSummary` / same | Asset: `id`, `path`, `record_version`, `size_bytes`, `thumb_version`; group: `file_name`, `assets`; summary: `groups`, `duplicate_groups`, `duplicate_assets`, `revision` |
 | `DuplicateResolutionBatchSummary` / same | `status: "committed" \| "rolled_back" \| "recovery_required"`, `revision`, `results`, `removed_thumbnails`; each result has `asset_id`, item `status`, `old_path`, `new_path?`, and `recovery_path?` |
 | `SetAssetTagsSummary` / `SetAssetTagsSummary` | `asset_id`, `changed`, `tags`, `query_impact`, `vocabulary_changed`, `revision` |
 | `BulkTagMergeSummary` / `BulkTagMergeSummary` | `processed_assets`, `updated_assets`, `processed_asset_ids`, `updated_asset_ids`, `results`, `query_impact`, `vocabulary_changed`, `revision` |
 | `BulkFavoriteSummary` / `BulkFavoriteSummary` | `processed_asset_ids`, `is_favorite`, `revision`; an empty result reports `is_favorite: false` and leaves the revision unchanged |
 | `BulkMediaGroupSummary` / `BulkMediaGroupSummary` | `processed_asset_ids`, `processed_assets`, `updated_assets`, `media_group_key?` |
 | `ThumbnailRenderSummary` / `ThumbnailRenderSummary` | `generated`, `failed`, `skipped_failed`, `processed`, `total`, `cancelled` |
-| `ThumbnailBatchItem` / `ThumbnailBatchItem` | `asset_id`, `thumb_path`; carried by the `ready` thumbnail channel variant |
 | `ClearLibrarySummary` / `ClearLibrarySummary` | `removed_assets`, `removed_roots`, `removed_thumbnails` |
 | `CsvExportSummary`, `CsvImportSummary` / same | Export: `rows`; import: `rows_read`, `rows_applied`, `assets_matched`, `assets_updated` |
 | `DbBundleExportSummary`, `DbBundleImportSummary` / same | Export: `copied_files`, `copied_thumbnails`; import: `restored_files`, `restored_thumbnails` |
@@ -159,28 +158,15 @@ Root normalization trims whitespace and removes trailing `/` except for the file
 
 ## Thumbnails
 
-`ensureThumbnailsStream`/`ensure_thumbnails` is the only registered on-demand gallery API. The old single-asset and page commands still have internal Rust helpers but are not registered and have no frontend wrappers.
+On-demand thumbnails are not a command. Tiles load `thumb://localhost/<id>?v=<thumb_version>[&c=1][&p=1][&r=<n>]`, a custom URI scheme registered on the builder (`register_asynchronous_uri_scheme_protocol`) and built only by `thumbnailUrl` in `src/platform/tauri/thumbnails.ts`. The scheme accepts only a positive numeric ID, the 16-hex `thumb_version` token from `AssetSummary` or `DuplicateAsset`, `c=1` (serve a cached file only, never render), `p=1` (prefetch: render behind visible requests) and a retry counter `r`; anything else is `400` and paths are never accepted. Responses are `200 image/jpeg` (`immutable` when the served version matches `v`, otherwise `no-store`), `404` (no asset, missing source, failed render, or nothing cached for `c=1`) or `503` with `Retry-After` (state not ready, admission error, full queue). Each carries `Access-Control-Allow-Origin` for the page origin. Behaviour, caching and failure policy: [thumbnails](../subsystems/thumbnails.md#the-thumb-protocol), [ADR 0006](../adr/0006-thumb-uri-scheme.md). The former `ensure_thumbnails` channel command, its `ThumbnailStreamEvent` messages and the unregistered single-asset/page helpers were removed.
 
 | Frontend wrapper / command | Arguments sent by the wrapper | Return type | Important semantics |
 | --- | --- | --- | --- |
-| `ensureThumbnailsStream` / `ensure_thumbnails` | `requestId`, `visibleIds`, `prefetchIds`, `onEvent: Channel<ThumbnailStreamEvent>` | `void` after processing | Filters IDs to positive unique values, takes at most 64 visible and then 64 additional prefetch IDs, prioritizes visible work, streams results, and persists paths/failures. `requestId` is a hook-local generation echoed through frontend closure ownership, not a global backend admission value. A frontend reload can restart its sequence. |
 | `getVideoToolStatus` / `get_video_tool_status` | none | `VideoToolStatus` | Runs bounded executable availability checks on the blocking pool, without a workflow lock. Reports separate ffmpeg/ffprobe booleans; it does not test libmpv playback or decoding a particular file. |
 | `renderAllThumbnails` / `render_all_thumbnails` | none | `ThumbnailRenderSummary` | Starts one process-wide bulk run; a concurrent bulk run rejects. Previously recorded failures are counted as `skipped_failed`. |
 | `renderFailedThumbnails` / `render_failed_thumbnails` | none | `ThumbnailRenderSummary` | Same bulk-run guard, but retries only recorded failures and does not skip them. |
 | `cancelRenderAllThumbnails` / `cancel_render_all_thumbnails` | none | `boolean` | Returns `true` and sets the cancellation flag only while either bulk mode is running; already completed ready results are retained. |
 | `clearAllThumbnails` / `clear_all_thumbnails` | none | `number` | Clears database thumbnail paths and failure markers, exclusively blocks thumbnail readers, best-effort deletes referenced and obsolete files below the owned thumbnail directory, emits progress, and returns the number of files actually removed. |
-
-The channel is created in `src/platform/tauri/thumbnails.ts`; `onEvent` is not JSON data. Its serialized messages are:
-
-```ts
-type ThumbnailStreamEvent =
-  | { event: "ready"; data: { asset_id: number; thumb_path: string } }
-  | { event: "failed"; data: { asset_id: number } }
-  | { event: "stale"; data: { asset_id: number } }
-  | { event: "done"; data: { ready: number; failed: number; stale: number } };
-```
-
-`ready` is sent only after the database confirms the thumbnail for its source version: a version-checked update committed it, or an existing stored path was read together with that version in one snapshot. Rejected versions produce `stale`, remain retryable, and are excluded from ready/failure counts. Batch results include stale IDs and render summaries include a stale count. After processing, failures/stale IDs and one `done` summary are sent. Channel-send failures are deliberately ignored, so successful command completion does not prove that the receiver observed every message. The frontend queue uses its own generation counter as the `requestId` and to ignore late messages after reset.
 
 ## Import, export, and destructive data operations
 
@@ -252,7 +238,7 @@ Current phase families are:
 
 - scanning: `counting`, `scanning`, `cleanup`, `scan-empty`, `scan-skip`;
 - bulk thumbnails: `thumbs-start`, `thumbs`, `thumbs-warn`, `thumbs-done`, `thumbs-failed-start`, `thumbs-failed`, `thumbs-failed-done`;
-- on-demand/clear thumbnails: `thumbs-page-start`, `thumbs-page`, `thumbs-page-done`, `thumbs-clear`;
+- thumbnail clear: `thumbs-clear`;
 - library clear: `library-clear`, `library-clear-done`; and
 - duplicates: `duplicates-scan`, `duplicates-scan-done`.
 
@@ -283,7 +269,7 @@ while a higher registered layer is active.
 | Query/tag arrays | Trim, Unicode-lowercase, remove empty strings, de-duplicate preserving first occurrence, and reject whitespace, comma, semicolon, or control characters inside a tag. |
 | Query media kind | Trim/lowercase; unsupported values become no filter. |
 | Meta-filter | Reject negative `tagCount` and blank `groupName`; require the tagged camelCase shape. |
-| Bulk asset IDs | Tag/group mutation APIs drop non-positive and duplicate IDs. Streamed thumbnails do the same and cap visible/prefetch groups at 64 each. |
+| Bulk asset IDs | Tag/group mutation APIs drop non-positive and duplicate IDs. `thumb://` accepts one positive ID per request. |
 | Media group | Blank key becomes `null`; non-finite order becomes `null`. |
 | Root path | Trim and remove trailing `/` except for filesystem root; add/scan requires an existing directory. |
 | CSV/bundle paths | Trim; exports reject empty paths and create parents. CSV export also rejects the active profile, indexed roots, and indexed source files. Imports require an existing file. Bundle inspection/import reject unsafe or duplicate recognized ZIP paths, symbolic-link entries, resource-limit violations, missing `media.db`, incompatible manifests/databases, and unsafe persisted media/thumbnail paths. |
@@ -296,11 +282,11 @@ Deserialization itself rejects missing required arguments, wrong JSON types, inv
 ## Known limitations
 
 - Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check.
-- `requestId` on `ensure_thumbnails` is queue-local and does not cancel scheduler jobs. Jobs can finish after a frontend reset or receiver disconnect; local generation checks discard late messages.
+- `thumb://` requests cannot be cancelled: WebKitGTK gives the handler no signal when an `<img>` goes away, so a queued render still runs and answers a request nobody reads.
 - `list_assets` remains registered because desktop E2E uses it for direct workflow assertions; production gallery code uses query sessions.
 - IPC errors are text only. Consumers cannot reliably distinguish validation, not-found, busy, filesystem, database, worker, or platform failures except by message text.
 - Numeric Rust IDs/counters are exposed as JavaScript `number` without an explicit safe-integer guard.
-- Event delivery is best effort. `process-progress` and thumbnail channel sends commonly ignore delivery errors; events can be missed and must not be used as a commit signal.
+- Event delivery is best effort. `process-progress` sends commonly ignore delivery errors; events can be missed and must not be used as a commit signal.
 - `process-progress` is a shared broadcast with free-form `phase` and human-readable `message`; it has no request ID, sequence number, or version.
 - Favorite and media-group setters resolve even if an unknown asset ID changed zero rows. Tag replacement, delete, and rename reject unknown IDs; bulk tag/group operations skip missing IDs and report processed counts or IDs.
 - Runtime validation is uneven: unsupported query kinds degrade to no filter and non-finite group order degrades to `null`.
@@ -314,7 +300,7 @@ When changing IPC:
 2. If adding or removing a command, update the `tauri::generate_handler!` registration in `src-tauri/src/lib.rs`. Search for direct `invoke` calls so the wrapper remains the single frontend seam.
 3. Preserve existing command names and payload fields when compatibility is required. For a migration, add the replacement first, move consumers and tests, then explicitly remove the legacy command/event in a later breaking change. Do not silently repurpose ignored compatibility fields.
 4. For query-visible writes, decide when to bump the library revision and test the resulting `ready`/`stale` behavior. Test cache reuse, expiry/eviction assumptions, limit/offset clamps, concurrent starts, and frontend generation rejection if those semantics change.
-5. For thumbnail streaming, test the exact tagged event shapes, positive-ID de-duplication, 64/64 caps, visible priority, one terminal `done`, failures, abandoned channels, and frontend reset behavior. Keep the channel distinct from broadcasts.
+5. For `thumb://`, test the parser (no paths, numeric IDs, hex versions, known flags only), status codes, cache and CORS headers in `thumb_protocol.rs`, and the URL shape in `api.test.ts`; exercise real loading in desktop E2E.
 6. For progress, treat the event name, payload fields, and phase strings as contract. Update phase matchers and translations together, and never make successful event delivery a prerequisite unless the API is intentionally redesigned.
 7. Keep command errors text-only unless Rust and every consumer migrate together to a versioned structured error payload. Do not branch new code on current message wording.
 8. Re-evaluate boundary validation, workflow locks, revision/cache invalidation, filesystem rollback, and destructive-operation safety. Follow the [system overview](system-overview.md) and the relevant subsystem document rather than duplicating those policies here.
@@ -326,7 +312,7 @@ When changing IPC:
 - `src/platform/tauri/__tests__/api.test.ts` checks selected invoke payloads (including `anchorOffset`), binary ID-range decoding (stale, empty, unaligned, byte-array and malformed bodies), native video channel delivery, and media-path conversion.
 - `asset_query_service.rs` unit tests cover anchored starts on fresh and cached sessions and ID-range bounds, staleness and f64 encoding limits.
 - `src/library/__tests__/createLibrary.test.ts` exercises the session-query contract through the library model, including filters and pagination.
-- `src/library/thumbnails/__tests__/createThumbnailQueue.test.ts` exercises streamed ready/failed handling, batching, and ignoring messages after the frontend generation changes.
+- `src/platform/tauri/__tests__/api.test.ts` checks the `thumb://` URL shape, including the cached-only and retry flags.
 - `src/features/settings/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings model tests cover subscription lifetimes and command workflows.
 - Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, `video.rs`, and `import_export.rs` cover filename/root/CSV/video validation and cancellation behavior.
 - Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, `asset_query_service.rs`, `video_source_service.rs`, and `video_player_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive and video-source safety, query/session semantics, and persistence behavior.

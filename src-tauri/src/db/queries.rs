@@ -489,7 +489,7 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
           HAVING COUNT(*) > 1
         )
         SELECT d.file_name_key, d.file_name_display, a.id, a.path,
-               a.record_version, a.size_bytes
+               a.record_version, a.size_bytes, a.fingerprint_mtime_ns
         FROM duplicate_names d
         JOIN assets a ON a.file_name_key = d.file_name_key
         ORDER BY d.asset_count DESC, d.file_name_key ASC, a.modified_at DESC, a.id DESC
@@ -503,11 +503,12 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
             row.get::<_, String>(3)?,
             row.get::<_, i64>(4)?,
             row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
         ))
     })?;
     let mut current_key = String::new();
     for row in rows {
-        let (key, display, id, path, record_version, size_bytes) = row?;
+        let (key, display, id, path, record_version, size_bytes, mtime_ns) = row?;
         if current_key != key {
             current_key = key;
             groups.push(DuplicateGroup {
@@ -518,6 +519,7 @@ pub fn list_duplicate_groups(conn: &Connection) -> anyhow::Result<Vec<DuplicateG
         if let Some(group) = groups.last_mut() {
             group.assets.push(DuplicateAsset {
                 id,
+                thumb_version: crate::thumbs::thumb_version_token(&path, size_bytes, mtime_ns),
                 path,
                 record_version,
                 size_bytes,
@@ -980,7 +982,7 @@ pub fn list_asset_summaries_by_ids(
         let placeholders = vec!["?"; size].join(",");
         let sql = format!(
             "SELECT id, file_name, CASE WHEN kind IN ('gif', 'video') THEN path ELSE NULL END, kind,
-                    modified_at, width, height, duration_ms, thumb_path,
+                    modified_at, width, height, duration_ms, path, size_bytes, fingerprint_mtime_ns,
                     is_favorite, media_group_key, media_group_order
              FROM assets WHERE id IN ({placeholders})"
         );
@@ -1006,21 +1008,22 @@ pub fn get_asset_details(conn: &Connection, asset_id: i64) -> anyhow::Result<Opt
     let row = conn
         .query_row(
             "SELECT id, file_name, CASE WHEN kind = 'gif' THEN path ELSE NULL END, kind,
-                    modified_at, width, height, duration_ms, thumb_path,
-                    is_favorite, media_group_key, media_group_order, path, size_bytes
+                    modified_at, width, height, duration_ms, path, size_bytes, fingerprint_mtime_ns,
+                    is_favorite, media_group_key, media_group_order, thumb_path
              FROM assets WHERE id = ?1",
             params![asset_id],
             |row| {
                 Ok((
                     parse_asset_summary_row(row)?,
-                    row.get::<_, String>(12)?,
-                    row.get::<_, i64>(13)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, Option<String>>(14)?,
                 ))
             },
         )
         .optional()?;
 
-    let Some((summary, path, size_bytes)) = row else {
+    let Some((summary, path, size_bytes, thumb_path)) = row else {
         return Ok(None);
     };
     let tags = list_asset_tags(conn, asset_id)?;
@@ -1028,6 +1031,7 @@ pub fn get_asset_details(conn: &Connection, asset_id: i64) -> anyhow::Result<Opt
         summary,
         path,
         size_bytes,
+        thumb_path,
         tags,
     }))
 }
@@ -1042,9 +1046,13 @@ pub(super) fn parse_asset_summary_row(row: &rusqlite::Row<'_>) -> rusqlite::Resu
         width: row.get(5)?,
         height: row.get(6)?,
         duration_ms: row.get(7)?,
-        thumb_path: row.get(8)?,
-        is_favorite: row.get::<_, i64>(9)? != 0,
-        media_group_key: row.get(10)?,
-        media_group_order: row.get(11)?,
+        thumb_version: crate::thumbs::thumb_version_token(
+            &row.get::<_, String>(8)?,
+            row.get(9)?,
+            row.get(10)?,
+        ),
+        is_favorite: row.get::<_, i64>(11)? != 0,
+        media_group_key: row.get(12)?,
+        media_group_order: row.get(13)?,
     })
 }

@@ -1,9 +1,7 @@
-import { createEffect, createMemo, createSignal, onCleanup, untrack, For } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, For } from "solid-js";
 import { useLanguage } from "../../i18n/solid";
 import type { BulkController, BulkGroupSaveResult } from "./createBulk";
-import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
-import { createAssetThumbnail } from "../../library/thumbnails/createAssetThumbnail";
-import { toMediaSrc } from "../../platform/tauri/assets";
+import { thumbnailUrl } from "../../platform/tauri/thumbnails";
 import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../../ui/controls/ThumbnailImage";
 import { UiAlert } from "../../ui/controls/UiAlert";
 import { UiButton } from "../../ui/controls/UiButton";
@@ -12,24 +10,26 @@ import { createModalSnapshot } from "../../ui/overlays/createModalPresence";
 import { UiModal } from "../../ui/overlays/UiModal";
 import { createVirtualList } from "../../ui/dom/createVirtualList";
 import { reorderAssetIdsByDrop } from "./bulkGroupOrderService";
-function OrderThumbnail(props: { id: number; store: ThumbnailStore }) {
-  const current = createAssetThumbnail(
-    untrack(() => props.store),
-    () => props.id
-  );
+function OrderThumbnail(props: { id: number; version: string | undefined }) {
   return (
     <>
       <ThumbnailImage
-        src={current().path ? toMediaSrc(current().path!) : TRANSPARENT_THUMBNAIL_SRC}
+        src={
+          props.version === undefined
+            ? TRANSPARENT_THUMBNAIL_SRC
+            : thumbnailUrl(props.id, props.version)
+        }
+        retrySrc={(retry) => thumbnailUrl(props.id, props.version ?? "", { retry })}
         alt=""
         className="h-full w-full object-contain"
         draggable={false}
       />
-      {current().rendering && !current().path ? (
-        <span class="absolute inset-0 grid place-items-center bg-base-100/55" aria-hidden="true">
-          <span class="h-4 w-4 animate-spin rounded-full border-2 border-base-content/25 border-t-primary" />
-        </span>
-      ) : null}
+      <span
+        class="thumbnail-loader absolute inset-0 grid place-items-center bg-base-100/55"
+        aria-hidden="true"
+      >
+        <span class="h-4 w-4 animate-spin rounded-full border-2 border-base-content/25 border-t-primary" />
+      </span>
     </>
   );
 }
@@ -47,11 +47,14 @@ interface PointerDrag {
 export function GroupOrderModal(props: {
   open: boolean;
   controller: BulkController;
-  thumbnailStore: ThumbnailStore;
   onClose: () => void;
 }) {
   const { t } = useLanguage();
   const open = createMemo(() => props.open);
+  // Thumbnail URLs need each asset's source-version token.
+  const thumbVersions = createMemo(
+    () => new Map(props.controller.selectedAssets.map((asset) => [asset.id, asset.thumb_version]))
+  );
   const [order, setOrder] = createSignal<number[]>([]);
   const [saving, setSaving] = createSignal(false);
   const [result, setResult] = createSignal<BulkGroupSaveResult | null>(null);
@@ -112,18 +115,6 @@ export function GroupOrderModal(props: {
   const layout = createModalSnapshot(open, () => ({ rows: list.items(), total: list.totalSize() }));
   const rows = () => layout().rows;
   const total = () => layout().total;
-  createEffect(
-    () => ({
-      open: open(),
-      ids: order().slice(
-        (rows()[0]?.index ?? 0) * columns(),
-        Math.min(order().length, ((rows()[rows().length - 1]?.index ?? -1) + 1) * columns())
-      )
-    }),
-    (value) => {
-      if (value.open) props.controller.queueThumbnailsByIds(value.ids);
-    }
-  );
   createEffect(
     () => ({ order: order(), rows: rows() }),
     () => {
@@ -354,7 +345,7 @@ export function GroupOrderModal(props: {
                         class={`touch-none select-none overflow-hidden rounded-[var(--radius-control)] border border-base-content/15 bg-base-200 ${locked() ? "cursor-not-allowed" : "cursor-grab active:cursor-grabbing"} ${draggedId() === id ? "opacity-50" : ""}`}
                       >
                         <div class="relative" style={{ height: `${previewHeight()}px` }}>
-                          <OrderThumbnail store={props.thumbnailStore} id={id} />
+                          <OrderThumbnail id={id} version={thumbVersions().get(id)} />
                         </div>
                         <div class="flex h-11 items-center gap-2 border-t border-[var(--border-soft)] px-3 font-mono">
                           <span class="text-xs font-semibold tabular-nums text-primary-text">
@@ -431,7 +422,10 @@ export function GroupOrderModal(props: {
           aria-hidden="true"
           class="pointer-events-none fixed left-0 top-0 z-[70] h-28 w-28 overflow-hidden rounded-[var(--radius-control)] border-2 border-primary bg-base-200 opacity-90 shadow-lg"
         >
-          <OrderThumbnail store={props.thumbnailStore} id={draggedAsset()!.id} />
+          <OrderThumbnail
+            id={draggedAsset()!.id}
+            version={thumbVersions().get(draggedAsset()!.id)}
+          />
         </div>
       ) : null}
       <span class="sr-only" aria-live="polite">

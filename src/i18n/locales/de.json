@@ -91,7 +91,6 @@
     "videoChip": "Video",
     "gifChip": "GIF",
     "groupedChip": "Teil einer Mediengruppe",
-    "generatingThumbnails": "Erstelle Vorschaubilder für {{count}} Elemente in der Warteschlange.",
     "endOfResults": "Ende der Ergebnisse",
     "resultCount_one": "{{formattedCount}} Element",
     "resultCount_few": "{{formattedCount}} Elemente",

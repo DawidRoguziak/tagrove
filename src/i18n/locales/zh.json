@@ -91,7 +91,6 @@
     "videoChip": "视频",
     "gifChip": "GIF",
     "groupedChip": "属于媒体分组的一部分",
-    "generatingThumbnails": "正在为 {{count}} 个排队项目生成缩略图。",
     "endOfResults": "已显示全部结果",
     "resultCount_one": "{{formattedCount}} 项",
     "resultCount_few": "{{formattedCount}} 项",

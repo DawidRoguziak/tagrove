@@ -5,7 +5,6 @@ import { MAX_GRID_HEIGHT } from "../../src/features/gallery/gridGeometry";
 import { createSelection } from "../../src/features/gallery/createSelection";
 import { LanguageProvider } from "../../src/i18n/solid";
 import { i18nReady } from "../../src/i18n/core";
-import { ThumbnailStore } from "../../src/library/thumbnails/thumbnailStore";
 import { UiLayerProvider } from "../../src/ui/overlays/UiLayerProvider";
 import type { AssetSummary } from "../../src/platform/tauri/contracts/assets";
 import type { LibraryRange } from "../../src/library/createLibrary";
@@ -49,7 +48,7 @@ function configure(count: number, tile: number) { assert(controls, "mounted cont
 let selected: number | null = null;
 const asset = (index: number): AssetSummary => ({ id: index + 1, file_name: `synthetic-${index}.png`,
   preview_path: null, kind: "image", modified_at: 0, width: 100, height: 100,
-  duration_ms: null, thumb_path: null, is_favorite: false, media_group_key: null, media_group_order: null });
+  duration_ms: null, thumb_version: "0123456789abcdef", is_favorite: false, media_group_key: null, media_group_order: null });
 await i18nReady;
 const dispose = render(() => {
   const [count, setCount] = createSignal(1_000_000);
@@ -68,8 +67,7 @@ const dispose = render(() => {
       <div class="workspace-body">
         <GalleryGrid assets={[]} assetCount={count()} tileSize={tile()}
           getAssetAt={index => index < count() ? asset(index) : undefined}
-          isGeneratingThumbnails={false} pendingThumbnailCount={0}
-          thumbnailStore={new ThumbnailStore()} scroller={ref}
+          scroller={ref}
           onVirtualRangeChange={range => { if (range) ranges.push({...range}); }}
           onSelect={value => { selected = value.id; }} hasScanRoots={true} onAddFirstFolder={() => {}}
           selectionModeEnabled={selection.enabled} selectedAssetIds={selection.ids} onBulkSelectionInteraction={selection.interact}

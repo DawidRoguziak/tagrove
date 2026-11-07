@@ -13,9 +13,7 @@ use crate::{
     app::{locks::thumb_read_section, state::AppState},
     db::{self, ThumbnailWrite, ThumbnailWriteOutcome},
     error::AppResult,
-    models::{
-        ThumbnailBatchItem, ThumbnailBatchResult, ThumbnailRenderSummary, ThumbnailStreamEvent,
-    },
+    models::ThumbnailRenderSummary,
     services::{
         db_pool::OperationPermit,
         progress::emit_progress,
@@ -25,20 +23,9 @@ use crate::{
 };
 
 const RESULT_WAIT_TIMEOUT_MS: u64 = 50;
-/// Wall-clock budget for a single demand call waiting on its scheduler job.
-/// Covers a 45 s video render plus one zero-seek fallback and queueing delay;
-/// after it, the command fails in a controlled way instead of hanging.
-const DEMAND_JOB_TIMEOUT: Duration = Duration::from_secs(180);
 /// Maximum time a batch coordinator may see no completed result at all before
 /// declaring the pipeline stalled (worker loss, poisoned queues) and failing.
 const RESULT_STALL_TIMEOUT: Duration = Duration::from_secs(180);
-/// Backend cap for the legacy page endpoint. The production frontend sends at
-/// most 64 IDs per invoke; this bound stops other IPC callers from enqueueing
-/// unbounded work through `ensure_page_thumbnails`.
-pub const MAX_PAGE_BATCH: usize = 256;
-/// Most demand results published in one transaction. A batch holds whatever
-/// is already finished when the first result arrives, so it adds no delay.
-const DEMAND_PUBLISH_BATCH: usize = 64;
 /// Rows per bulk publication transaction; background bulk work yields to
 /// user metadata writes between these transactions.
 const BULK_PUBLISH_CHUNK: usize = 256;
@@ -53,11 +40,6 @@ enum BulkRenderMode {
 
 struct PendingRenderTask {
     asset_path: String,
-    record_version: i64,
-    version: crate::thumbs::SourceVersion,
-}
-
-struct PendingPageTask {
     record_version: i64,
     version: crate::thumbs::SourceVersion,
 }
@@ -557,439 +539,230 @@ fn publish_one(
     Ok(if stale.is_empty() { path } else { None })
 }
 
-pub fn ensure_asset_thumbnail(
+/// A thumbnail file read for one `thumb://` response.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServedThumbnail {
+    pub bytes: Vec<u8>,
+    /// Token of the source version the bytes belong to.
+    pub version: String,
+}
+
+/// Immediate outcome of a `thumb://` request.
+pub enum ThumbnailRequestOutcome {
+    Ready(ServedThumbnail),
+    /// No asset, missing source, or a failure marker for this record version.
+    NotFound,
+    /// A render was enqueued; its result reaches the callback.
+    Pending,
+}
+
+/// How a `thumb://` request may render.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ThumbnailRequestMode {
+    /// Serve an existing file only (fast-scroll pause).
+    pub cached_only: bool,
+    /// Overscan tile: render at High (FIFO) behind every Interactive request.
+    pub prefetch: bool,
+}
+
+/// A finished render waiting to be published and served.
+pub struct PendingThumbnail {
     asset_id: i64,
+    version: crate::thumbs::SourceVersion,
+    record_version: i64,
+    generation: u64,
+    result: ThumbnailTaskResult,
+}
+
+fn version_token(version: &crate::thumbs::SourceVersion) -> String {
+    thumbs::thumb_version_token(&version.path, version.size_bytes, version.mtime_ns)
+}
+
+/// Reads a published thumbnail. Runs inside a thumbnail read section so clear,
+/// delete and rename cannot remove the file between the check and the read.
+fn read_served(path: &Path, version: &crate::thumbs::SourceVersion) -> Option<ServedThumbnail> {
+    fs::read(path).ok().map(|bytes| ServedThumbnail {
+        bytes,
+        version: version_token(version),
+    })
+}
+
+/// First phase of a `thumb://` request: serves an existing thumbnail from one
+/// short read section, or enqueues an Interactive (LIFO) render whose result
+/// is passed to `on_rendered` on a worker thread. Never waits for a render.
+/// With `mode.cached_only` (fast-scroll pause) a missing thumbnail is
+/// `NotFound` and nothing is written or enqueued.
+pub fn request_thumbnail(
+    asset_id: i64,
+    mode: ThumbnailRequestMode,
     state: &AppState,
     permit: &OperationPermit,
-) -> AppResult<Option<String>> {
-    let (receiver, version, record_version, generation) = {
-        let _thumbs = thumb_read_section(state);
-        let generation = state.thumbnail_generation.load(Ordering::SeqCst);
-        let conn = permit.connection()?;
-        let Some((asset, has_failure)) =
-            db::get_assets_for_thumbnails_by_ids(&conn, &[asset_id])?.pop()
-        else {
-            return Ok(None);
-        };
-        let version = source_version_for(&asset);
-
-        if let Some(existing) = asset.thumb_path.clone() {
-            if Path::new(&existing).exists() {
-                // Path and version come from one snapshot: nothing to write
-                // unless a stale failure marker must be cleared.
-                if !has_failure {
-                    return Ok(Some(existing));
-                }
-                let write = ready_write(asset.id, existing, version, asset.record_version);
-                return publish_one(state, &conn, write, generation);
-            }
-        }
-
-        let source_path = PathBuf::from(&asset.path);
-        if !source_path.exists() {
-            let write = failed_write(asset.id, version, asset.record_version, SOURCE_MISSING);
-            publish_one(state, &conn, write, generation)?;
-            if let Some(existing) = asset.thumb_path {
-                let _ = remove_thumbnail_file(&state.thumbs_dir, Path::new(&existing));
-            }
-            return Ok(None);
-        }
-
-        let target = thumbs::thumb_target(&state.thumbs_dir, &version);
-        if target.exists() {
-            let write = ready_write(
-                asset.id,
-                target.to_string_lossy().to_string(),
-                version,
-                asset.record_version,
-            );
-            return publish_one(state, &conn, write, generation);
-        }
-
-        let receiver = state.thumb_scheduler.enqueue(
-            ThumbnailTask {
-                operation: Some(permit.clone()),
-                asset_id: asset.id,
-                source_path,
-                target_path: target,
-                kind: asset.kind,
-                duration_ms: asset.duration_ms,
-                source_version: version.clone(),
-            },
-            ThumbnailPriority::High,
-        )?;
-        (receiver, version, asset.record_version, generation)
-    };
-
-    // Bounded wait without the thumbnail guard: a lost worker or wedged
-    // scheduler must surface as an error instead of hanging the command.
-    let deadline = Instant::now() + DEMAND_JOB_TIMEOUT;
-    let result = loop {
-        match receiver.recv_timeout(Duration::from_millis(250)) {
-            Ok(result) => break result,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                if Instant::now() >= deadline {
-                    return Err(format!(
-                        "thumbnail job for asset {asset_id} timed out after {}s",
-                        DEMAND_JOB_TIMEOUT.as_secs()
-                    )
-                    .into());
-                }
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err("thumbnail worker disconnected".into())
-            }
-        }
-    };
-
-    // A result for a superseded version (re-index, rename, delete) loses its
-    // compare-and-set; its produced file is removed and a later demand redoes it.
-    let write = match result.thumb_path {
-        Some(path) => ready_write(asset_id, path, version, record_version),
-        None => failed_write(asset_id, version, record_version, RENDER_FAILED),
-    };
+    on_rendered: impl FnOnce(PendingThumbnail) + Send + 'static,
+) -> AppResult<ThumbnailRequestOutcome> {
     let _thumbs = thumb_read_section(state);
-    publish_one(state, &*permit.connection()?, write, generation)
-}
-
-pub fn ensure_page_thumbnails(
-    asset_ids: Vec<i64>,
-    state: &AppState,
-    permit: &OperationPermit,
-    app: &impl crate::services::progress::ProgressSink,
-) -> AppResult<ThumbnailBatchResult> {
-    let high_priority = asset_ids.iter().copied().collect::<HashSet<_>>();
-    ensure_page_thumbnails_with_sink(asset_ids, &high_priority, state, permit, app, |item| {
-        let _ = app.thumbnail_ready(item);
-    })
-}
-
-pub fn ensure_thumbnails_stream(
-    _request_id: u64,
-    visible_ids: Vec<i64>,
-    prefetch_ids: Vec<i64>,
-    state: &AppState,
-    permit: &OperationPermit,
-    app: &impl crate::services::progress::ProgressSink,
-    mut send: impl FnMut(ThumbnailStreamEvent),
-) -> AppResult<()> {
-    let mut seen = HashSet::new();
-    let visible = visible_ids
-        .into_iter()
-        .filter(|id| *id > 0 && seen.insert(*id))
-        .take(64)
-        .collect::<Vec<_>>();
-    let high_priority = visible.iter().copied().collect::<HashSet<_>>();
-    let mut ids = visible;
-    ids.extend(
-        prefetch_ids
-            .into_iter()
-            .filter(|id| *id > 0 && seen.insert(*id))
-            .take(64),
-    );
-    let result =
-        ensure_page_thumbnails_with_sink(ids, &high_priority, state, permit, app, |item| {
-            send(ThumbnailStreamEvent::Ready(item.clone()));
-        })?;
-    for asset_id in &result.failed {
-        send(ThumbnailStreamEvent::Failed {
-            asset_id: *asset_id,
-        });
-    }
-    for asset_id in &result.stale {
-        send(ThumbnailStreamEvent::Stale {
-            asset_id: *asset_id,
-        });
-    }
-    send(ThumbnailStreamEvent::Done {
-        stale: result.stale.len(),
-        ready: result.ready.len(),
-        failed: result.failed.len(),
-    });
-    Ok(())
-}
-
-/// Collected outcomes of one demand call, in publication order.
-#[derive(Default)]
-struct DemandOutcomes {
-    ready: Vec<ThumbnailBatchItem>,
-    failed: Vec<i64>,
-    stale: Vec<i64>,
-}
-
-impl DemandOutcomes {
-    /// Sorts committed writes into ready/failed/stale; `ready` is announced
-    /// only after its version-checked commit.
-    fn record(
-        &mut self,
-        writes: Vec<ThumbnailWrite>,
-        stale_ids: &[i64],
-        on_ready: &mut impl FnMut(&ThumbnailBatchItem),
-    ) {
-        for write in writes {
-            if stale_ids.contains(&write.asset_id) {
-                self.stale.push(write.asset_id);
-                continue;
-            }
-            match write.outcome {
-                ThumbnailWriteOutcome::Ready(thumb_path) => {
-                    self.ready_now(
-                        ThumbnailBatchItem {
-                            asset_id: write.asset_id,
-                            thumb_path,
-                        },
-                        on_ready,
-                    );
-                }
-                ThumbnailWriteOutcome::Failed(_) => self.failed.push(write.asset_id),
-            }
-        }
-    }
-
-    fn ready_now(
-        &mut self,
-        item: ThumbnailBatchItem,
-        on_ready: &mut impl FnMut(&ThumbnailBatchItem),
-    ) {
-        on_ready(&item);
-        self.ready.push(item);
-    }
-}
-
-fn ensure_page_thumbnails_with_sink(
-    asset_ids: Vec<i64>,
-    high_priority: &HashSet<i64>,
-    state: &AppState,
-    permit: &OperationPermit,
-    app: &impl crate::services::progress::ProgressSink,
-    mut on_ready: impl FnMut(&ThumbnailBatchItem),
-) -> AppResult<ThumbnailBatchResult> {
-    let started = std::time::Instant::now();
-    let mut seen = HashSet::new();
-    let ids = asset_ids
-        .into_iter()
-        .filter(|asset_id| seen.insert(*asset_id))
-        .take(MAX_PAGE_BATCH)
-        .collect::<Vec<_>>();
-    let total = ids.len();
-
-    let _ = emit_progress(
-        app,
-        "thumbs-page-start",
-        0,
-        total,
-        format!("Thumbnail page render started for {total} assets"),
-    );
-
-    let mut processed = 0usize;
-    let mut outcomes = DemandOutcomes::default();
-    let mut pending = HashMap::<i64, PendingPageTask>::new();
-    let (completion_tx, completion_rx) = mpsc::channel::<ThumbnailTaskResult>();
-
-    // One guarded section reads the snapshot, publishes everything that is
-    // already decided, and enqueues the rest. Rendering is awaited unguarded.
-    let mut existing_ready = Vec::new();
-    let mut writes = Vec::new();
-    let generation = {
-        let _thumbs = thumb_read_section(state);
-        let generation = state.thumbnail_generation.load(Ordering::SeqCst);
-        let conn = permit.connection()?;
-        let mut assets_by_id = db::get_assets_for_thumbnails_by_ids(&conn, &ids)?
-            .into_iter()
-            .map(|entry| (entry.0.id, entry))
-            .collect::<HashMap<_, _>>();
-
-        for asset_id in &ids {
-            let Some((asset, has_failure)) = assets_by_id.remove(asset_id) else {
-                outcomes.failed.push(*asset_id);
-                processed += 1;
-                emit_page_progress(app, processed, total);
-                continue;
-            };
-            let version = source_version_for(&asset);
-
-            if let Some(existing) = asset.thumb_path.clone() {
-                if Path::new(&existing).exists() {
-                    // The stored path was read with its source version in one
-                    // snapshot, so it is ready without a write unless a stale
-                    // failure marker must be cleared.
-                    if has_failure {
-                        writes.push(ready_write(
-                            asset.id,
-                            existing,
-                            version,
-                            asset.record_version,
-                        ));
-                    } else {
-                        existing_ready.push(ThumbnailBatchItem {
-                            asset_id: asset.id,
-                            thumb_path: existing,
-                        });
-                    }
-                    processed += 1;
-                    emit_page_progress(app, processed, total);
-                    continue;
-                }
-            }
-
-            let source_path = PathBuf::from(&asset.path);
-            if !source_path.exists() {
-                writes.push(failed_write(
-                    asset.id,
-                    version,
-                    asset.record_version,
-                    SOURCE_MISSING,
-                ));
-                processed += 1;
-                emit_page_progress(app, processed, total);
-                continue;
-            }
-
-            let target = thumbs::thumb_target(&state.thumbs_dir, &version);
-            if target.exists() {
-                writes.push(ready_write(
-                    asset.id,
-                    target.to_string_lossy().to_string(),
-                    version,
-                    asset.record_version,
-                ));
-                processed += 1;
-                emit_page_progress(app, processed, total);
-                continue;
-            }
-
-            state.thumb_scheduler.enqueue_with_sender(
-                ThumbnailTask {
-                    operation: Some(permit.clone()),
-                    asset_id: asset.id,
-                    source_path,
-                    target_path: target,
-                    kind: asset.kind,
-                    duration_ms: asset.duration_ms,
-                    source_version: version.clone(),
-                },
-                if high_priority.contains(&asset.id) {
-                    ThumbnailPriority::High
-                } else {
-                    ThumbnailPriority::Low
-                },
-                completion_tx.clone(),
-            )?;
-
-            pending.insert(
-                asset.id,
-                PendingPageTask {
-                    record_version: asset.record_version,
-                    version,
-                },
-            );
-        }
-
-        let stale_ids = publish_thumbnail_results(
-            &conn,
-            &writes,
-            state.thumbnail_generation.load(Ordering::SeqCst),
-            generation,
-        )?;
-        drop(conn);
-        drop(_thumbs);
-        for item in existing_ready {
-            outcomes.ready_now(item, &mut on_ready);
-        }
-        outcomes.record(std::mem::take(&mut writes), &stale_ids, &mut on_ready);
-        generation
+    let generation = state.thumbnail_generation.load(Ordering::SeqCst);
+    let conn = permit.connection()?;
+    let Some((asset, has_failure)) =
+        db::get_assets_for_thumbnails_by_ids(&conn, &[asset_id])?.pop()
+    else {
+        return Ok(ThumbnailRequestOutcome::NotFound);
     };
+    let version = source_version_for(&asset);
 
-    // Bounded stall wait mirrors the bulk coordinator: every accepted job
-    // ends with a result or a controlled error, never an infinite block.
-    let mut last_progress = Instant::now();
-    while !pending.is_empty() {
-        match completion_rx.recv_timeout(Duration::from_millis(RESULT_WAIT_TIMEOUT_MS)) {
-            Ok(first) => {
-                last_progress = Instant::now();
-                // Publish this result together with every result that is
-                // already waiting, in one transaction.
-                let mut next = Some(first);
-                while let Some(result) = next.take() {
-                    if let Some(task) = pending.remove(&result.asset_id) {
-                        processed += 1;
-                        writes.push(match result.thumb_path {
-                            Some(path) => ready_write(
-                                result.asset_id,
-                                path,
-                                task.version,
-                                task.record_version,
-                            ),
-                            None => failed_write(
-                                result.asset_id,
-                                task.version,
-                                task.record_version,
-                                RENDER_FAILED,
-                            ),
-                        });
-                        emit_page_progress(app, processed, total);
-                    }
-                    if writes.len() < DEMAND_PUBLISH_BATCH {
-                        next = completion_rx.try_recv().ok();
-                    }
-                }
-                let stale_ids = {
-                    let _thumbs = thumb_read_section(state);
-                    publish_thumbnail_results(
-                        &*permit.connection()?,
-                        &writes,
-                        state.thumbnail_generation.load(Ordering::SeqCst),
-                        generation,
-                    )?
-                };
-                outcomes.record(std::mem::take(&mut writes), &stale_ids, &mut on_ready);
+    if let Some(existing) = asset.thumb_path.clone() {
+        if let Some(served) = read_served(Path::new(&existing), &version) {
+            // Path and version come from one snapshot; a stale failure
+            // marker is cleared so the bulk "failed" count stays honest.
+            if has_failure && !mode.cached_only {
+                let write = ready_write(asset.id, existing, version, asset.record_version);
+                publish_one(state, &conn, write, generation)?;
             }
-            Err(RecvTimeoutError::Timeout) => {
-                if last_progress.elapsed() > RESULT_STALL_TIMEOUT {
-                    return Err(format!(
-                        "thumbnail job timed out after {}s without any completed result",
-                        RESULT_STALL_TIMEOUT.as_secs()
-                    )
-                    .into());
-                }
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                return Err("thumbnail worker disconnected".into())
-            }
+            return Ok(ThumbnailRequestOutcome::Ready(served));
         }
     }
 
-    let DemandOutcomes {
-        ready,
-        failed,
-        stale,
-    } = outcomes;
-
-    let _ = emit_progress(
-        app,
-        "thumbs-page-done",
-        total,
-        total,
-        format!(
-            "Thumbnail page render complete. Ready: {}, failed: {}",
-            ready.len(),
-            failed.len()
-        ),
-    );
-
-    if std::env::var_os("MEDIATAGGER_PERF").is_some() {
-        eprintln!(
-            "[perf] name=thumbnail-page elapsed_ms={} ready={} failed={}",
-            started.elapsed().as_millis(),
-            ready.len(),
-            failed.len()
+    let target = thumbs::thumb_target(&state.thumbs_dir, &version);
+    if let Some(served) = read_served(&target, &version) {
+        if mode.cached_only {
+            return Ok(ThumbnailRequestOutcome::Ready(served));
+        }
+        let write = ready_write(
+            asset.id,
+            target.to_string_lossy().to_string(),
+            version,
+            asset.record_version,
         );
+        // A lost compare-and-set means the record changed; the bytes still
+        // match the version the response is labelled with.
+        publish_one(state, &conn, write, generation)?;
+        return Ok(ThumbnailRequestOutcome::Ready(served));
     }
-    Ok(ThumbnailBatchResult {
-        ready,
-        failed,
-        stale,
-    })
+
+    if mode.cached_only {
+        return Ok(ThumbnailRequestOutcome::NotFound);
+    }
+
+    // A render that already failed in this process is not repeated on every
+    // tile mount; the "render failed thumbnails" action retries explicitly.
+    // A marker left by an earlier run gets one on-demand retry.
+    if has_failure
+        && state
+            .thumb_scheduler
+            .failed_interactively(asset.id, asset.record_version)
+    {
+        return Ok(ThumbnailRequestOutcome::NotFound);
+    }
+
+    let source_path = PathBuf::from(&asset.path);
+    if !source_path.exists() {
+        let write = failed_write(asset.id, version, asset.record_version, SOURCE_MISSING);
+        publish_one(state, &conn, write, generation)?;
+        return Ok(ThumbnailRequestOutcome::NotFound);
+    }
+
+    let record_version = asset.record_version;
+    let pending_version = version.clone();
+    state.thumb_scheduler.enqueue_with_callback(
+        ThumbnailTask {
+            operation: Some(permit.clone()),
+            asset_id: asset.id,
+            source_path,
+            target_path: target,
+            kind: asset.kind,
+            duration_ms: asset.duration_ms,
+            source_version: version,
+        },
+        if mode.prefetch {
+            ThumbnailPriority::High
+        } else {
+            ThumbnailPriority::Interactive
+        },
+        Box::new(move |result| {
+            on_rendered(PendingThumbnail {
+                asset_id,
+                version: pending_version,
+                record_version,
+                generation,
+                result,
+            })
+        }),
+    )?;
+    Ok(ThumbnailRequestOutcome::Pending)
+}
+
+/// Second phase: publishes a finished render through the usual
+/// compare-and-set and reads the file for the response.
+pub fn finish_thumbnail_request(
+    pending: PendingThumbnail,
+    state: &AppState,
+    permit: &OperationPermit,
+) -> AppResult<Option<ServedThumbnail>> {
+    Ok(finish_thumbnail_requests(vec![pending], state, permit)?
+        .pop()
+        .flatten())
+}
+
+/// Publishes finished renders together: one transaction per captured clear
+/// generation, under one read section, like the former page stream. With
+/// `synchronous=FULL` a commit per thumbnail would cost one fsync each.
+/// Returns the served bytes per input, in order; `None` when stale or failed.
+pub fn finish_thumbnail_requests(
+    pending: Vec<PendingThumbnail>,
+    state: &AppState,
+    permit: &OperationPermit,
+) -> AppResult<Vec<Option<ServedThumbnail>>> {
+    let mut by_generation: Vec<(u64, Vec<ThumbnailWrite>)> = Vec::new();
+    for item in &pending {
+        let write = match &item.result.thumb_path {
+            Some(path) => ready_write(
+                item.asset_id,
+                path.clone(),
+                item.version.clone(),
+                item.record_version,
+            ),
+            None => {
+                state
+                    .thumb_scheduler
+                    .remember_interactive_failure(item.asset_id, item.record_version);
+                failed_write(
+                    item.asset_id,
+                    item.version.clone(),
+                    item.record_version,
+                    RENDER_FAILED,
+                )
+            }
+        };
+        match by_generation
+            .iter_mut()
+            .find(|(generation, _)| *generation == item.generation)
+        {
+            Some((_, writes)) => writes.push(write),
+            None => by_generation.push((item.generation, vec![write])),
+        }
+    }
+
+    let _thumbs = thumb_read_section(state);
+    let conn = permit.connection()?;
+    let current = state.thumbnail_generation.load(Ordering::SeqCst);
+    let mut stale = HashSet::new();
+    for (generation, writes) in &by_generation {
+        stale.extend(publish_thumbnail_results(
+            &conn,
+            writes,
+            current,
+            *generation,
+        )?);
+    }
+    Ok(pending
+        .iter()
+        .map(|item| {
+            let path = item.result.thumb_path.as_deref()?;
+            if stale.contains(&item.asset_id) {
+                return None;
+            }
+            read_served(Path::new(path), &item.version)
+        })
+        .collect())
 }
 
 /// Publishes collected thumbnail results: paths and failure markers in one
@@ -1034,25 +807,6 @@ fn emit_render_progress(
             processed,
             total,
             format!("Rendering thumbnails {processed}/{total}"),
-        );
-    }
-}
-
-fn emit_page_progress(
-    app: &impl crate::services::progress::ProgressSink,
-    processed: usize,
-    total: usize,
-) {
-    if processed < total && !processed.is_multiple_of(16) {
-        return;
-    }
-    if processed.is_multiple_of(25) || processed == total {
-        let _ = emit_progress(
-            app,
-            "thumbs-page",
-            processed,
-            total,
-            format!("Rendering page thumbnails {processed}/{total}"),
         );
     }
 }
@@ -1223,8 +977,7 @@ mod tests {
 
     use super::{
         cancel_render_all_thumbnails, delete_thumbnail_files, delete_thumbnail_files_in_root,
-        ensure_asset_thumbnail, publish_thumbnail_results, wait_next_render_result_with_stall,
-        ThumbnailTaskResult,
+        publish_thumbnail_results, wait_next_render_result_with_stall, ThumbnailTaskResult,
     };
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
@@ -1312,7 +1065,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_asset_thumbnail_returns_existing_thumbnail_path() {
+    fn request_thumbnail_serves_existing_thumbnail_bytes() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("media.db");
         let thumbs_dir = tmp.path().join("thumbs");
@@ -1330,13 +1083,13 @@ mod tests {
 
         let state = create_test_state(&db_path, &thumbs_dir);
         let state_ref = &state;
-        let result = ensure_asset_thumbnail(1, state_ref, &state.database.admit().unwrap())
-            .expect("ensure thumb");
-
-        assert_eq!(
-            result.as_deref(),
-            Some(existing_thumb.to_string_lossy().as_ref())
-        );
+        let served = request_now(state_ref, 1)
+            .expect("request thumb")
+            .expect("served");
+        assert_eq!(served.bytes, b"thumb");
+        let version =
+            super::source_version_for(&db::get_asset_for_thumbnail(&conn, 1).unwrap().unwrap());
+        assert_eq!(served.version, super::version_token(&version));
     }
 
     #[test]
@@ -1785,7 +1538,7 @@ mod tests {
 
         let handle = std::thread::spawn(move || {
             let state_ref = &state;
-            ensure_asset_thumbnail(1, state_ref, &state.database.admit().unwrap())
+            request_now(state_ref, 1)
         });
 
         while !*started.lock().expect("started lock") {
@@ -1868,7 +1621,7 @@ mod tests {
         assert_eq!(stale, vec![1]);
     }
     #[test]
-    fn stale_stream_result_is_never_ready_and_frontend_reload_can_retry() {
+    fn stale_render_is_never_served_and_a_retry_renders_again() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("media.db");
         let thumbs = dir.path().join("thumbs");
@@ -1895,47 +1648,15 @@ mod tests {
             }),
         );
         let permit = state.database.admit().unwrap();
-        let mut events = Vec::new();
-        super::ensure_thumbnails_stream(
-            77,
-            vec![1],
-            vec![],
-            &state,
-            &permit,
-            &|_| Ok(()),
-            |event| events.push(event),
-        )
-        .unwrap();
-        assert!(!events
-            .iter()
-            .any(|event| matches!(event, crate::models::ThumbnailStreamEvent::Ready(_))));
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::models::ThumbnailStreamEvent::Done {
-                ready: 0,
-                failed: 0,
-                stale: 1
-            }
-        )));
-        events.clear();
-        super::ensure_thumbnails_stream(
-            1,
-            vec![1],
-            vec![],
-            &state,
-            &permit,
-            &|_| Ok(()),
-            |event| events.push(event),
-        )
-        .unwrap();
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::models::ThumbnailStreamEvent::Done {
-                ready: 1,
-                failed: 0,
-                stale: 0
-            }
-        )));
+        assert_eq!(
+            request_now(&state, 1).unwrap(),
+            None,
+            "a render for a superseded version is never served"
+        );
+        let served = request_now(&state, 1)
+            .unwrap()
+            .expect("retry renders again");
+        assert_eq!(served.bytes, b"thumbnail");
         assert!(
             db::get_asset_for_thumbnail(&permit.connection().unwrap(), 1)
                 .unwrap()
@@ -1971,35 +1692,31 @@ mod tests {
         worker.join().unwrap();
     }
 
-    fn stream_events(
+    /// Runs both phases of a `thumb://` request, waiting for a render.
+    fn request_now(
         state: &AppState,
-        visible: Vec<i64>,
-    ) -> crate::error::AppResult<Vec<crate::models::ThumbnailStreamEvent>> {
-        let mut events = Vec::new();
+        asset_id: i64,
+    ) -> crate::error::AppResult<Option<super::ServedThumbnail>> {
         crate::app::locks::with_thumb_operation(state, |permit| {
-            super::ensure_thumbnails_stream(
-                1,
-                visible,
-                vec![],
+            let (tx, rx) = mpsc::channel();
+            match super::request_thumbnail(
+                asset_id,
+                Default::default(),
                 state,
                 permit,
-                &|_| Ok(()),
-                |event| events.push(event),
-            )
-        })?;
-        Ok(events)
-    }
-
-    fn done_counts(
-        events: &[crate::models::ThumbnailStreamEvent],
-    ) -> Option<(usize, usize, usize)> {
-        events.iter().find_map(|event| match event {
-            crate::models::ThumbnailStreamEvent::Done {
-                ready,
-                failed,
-                stale,
-            } => Some((*ready, *failed, *stale)),
-            _ => None,
+                move |pending| {
+                    let _ = tx.send(pending);
+                },
+            )? {
+                super::ThumbnailRequestOutcome::Ready(served) => Ok(Some(served)),
+                super::ThumbnailRequestOutcome::NotFound => Ok(None),
+                super::ThumbnailRequestOutcome::Pending => {
+                    let pending = rx
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .expect("render result");
+                    super::finish_thumbnail_request(pending, state, permit)
+                }
+            }
         })
     }
 
@@ -2022,7 +1739,7 @@ mod tests {
         let state = Arc::new(state);
 
         let slow_state = state.clone();
-        let slow = std::thread::spawn(move || stream_events(&slow_state, vec![1]));
+        let slow = std::thread::spawn(move || request_now(&slow_state, 1));
         let slow_job = started.recv_timeout(WAIT).unwrap();
         assert_eq!(slow_job.asset_id, 1);
 
@@ -2042,17 +1759,15 @@ mod tests {
         writer.join().unwrap();
 
         let next_state = state.clone();
-        let next = std::thread::spawn(move || stream_events(&next_state, vec![2]));
+        let next = std::thread::spawn(move || request_now(&next_state, 2));
         let next_job = started.recv_timeout(WAIT).unwrap();
         assert_eq!(next_job.asset_id, 2);
         next_job.release.send(()).unwrap();
-        let next_events = next.join().unwrap().unwrap();
-        assert_eq!(done_counts(&next_events), Some((1, 0, 0)));
+        assert!(next.join().unwrap().unwrap().is_some());
         assert!(!slow.is_finished(), "the first render is still running");
 
         slow_job.release.send(()).unwrap();
-        let slow_events = slow.join().unwrap().unwrap();
-        assert_eq!(done_counts(&slow_events), Some((1, 0, 0)));
+        assert!(slow.join().unwrap().unwrap().is_some());
     }
 
     #[test]
@@ -2075,10 +1790,10 @@ mod tests {
         // Another writer holds the write lock (as a scan batch would).
         conn.execute_batch("BEGIN IMMEDIATE").unwrap();
         let started = std::time::Instant::now();
-        let events = stream_events(&state, vec![1]).unwrap();
+        let served = request_now(&state, 1).unwrap();
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         conn.execute_batch("ROLLBACK").unwrap();
-        assert_eq!(done_counts(&events), Some((1, 0, 0)));
+        assert_eq!(served.expect("served").bytes, b"thumb");
     }
 
     #[test]
@@ -2103,8 +1818,8 @@ mod tests {
             }),
         );
 
-        let events = stream_events(&state, vec![1]).unwrap();
-        assert_eq!(done_counts(&events), Some((1, 0, 0)));
+        // A marker from an earlier run gets one on-demand retry.
+        assert!(request_now(&state, 1).unwrap().is_some());
         assert!(db::get_asset_for_thumbnail(&conn, 1)
             .unwrap()
             .unwrap()
@@ -2113,5 +1828,143 @@ mod tests {
         assert!(db::list_failed_thumbnail_asset_ids(&conn)
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn render_failed_in_this_run_is_not_repeated_on_every_request() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let source = dir.path().join("broken.png");
+        fs::write(&source, b"not an image").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &new_asset(&source, 3, None)).unwrap();
+        let mut state = create_test_state(&db_path, &thumbs);
+        let renders = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = renders.clone();
+        state.thumb_scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, _| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                None
+            }),
+        );
+
+        assert_eq!(request_now(&state, 1).unwrap(), None);
+        assert_eq!(request_now(&state, 1).unwrap(), None);
+        assert_eq!(renders.load(Ordering::SeqCst), 1);
+        assert_eq!(db::list_failed_thumbnail_asset_ids(&conn).unwrap(), vec![1]);
+    }
+
+    #[test]
+    fn missing_asset_and_missing_source_are_not_found() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &new_asset(&dir.path().join("gone.png"), 3, None)).unwrap();
+        let state = create_test_state(&db_path, &thumbs);
+
+        assert_eq!(request_now(&state, 99).unwrap(), None);
+        assert_eq!(request_now(&state, 1).unwrap(), None);
+        assert_eq!(db::list_failed_thumbnail_asset_ids(&conn).unwrap(), vec![1]);
+    }
+
+    fn cached_only() -> super::ThumbnailRequestMode {
+        super::ThumbnailRequestMode {
+            cached_only: true,
+            prefetch: false,
+        }
+    }
+
+    #[test]
+    fn cached_only_request_never_renders_or_writes() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let source = dir.path().join("source.png");
+        fs::write(&source, b"source").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &new_asset(&source, 3, None)).unwrap();
+        let mut state = create_test_state(&db_path, &thumbs);
+        state.thumb_scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(|_, _| panic!("cached-only requests must not render")),
+        );
+        let permit = state.database.admit().unwrap();
+        let outcome = super::request_thumbnail(1, cached_only(), &state, &permit, |_| {
+            panic!("no render callback")
+        })
+        .unwrap();
+        assert!(matches!(outcome, super::ThumbnailRequestOutcome::NotFound));
+        assert!(db::list_failed_thumbnail_asset_ids(&conn)
+            .unwrap()
+            .is_empty());
+
+        // An existing file is served from cache as usual.
+        let version =
+            super::source_version_for(&db::get_asset_for_thumbnail(&conn, 1).unwrap().unwrap());
+        fs::write(crate::thumbs::thumb_target(&thumbs, &version), b"cached").unwrap();
+        let outcome = super::request_thumbnail(1, cached_only(), &state, &permit, |_| {}).unwrap();
+        assert!(
+            matches!(outcome, super::ThumbnailRequestOutcome::Ready(ref served) if served.bytes == b"cached")
+        );
+    }
+
+    #[test]
+    fn finished_renders_are_published_together_and_each_served() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        for name in ["a.png", "b.png"] {
+            let source = dir.path().join(name);
+            fs::write(&source, b"source").unwrap();
+            db::upsert_asset(&conn, &new_asset(&source, 1, None)).unwrap();
+        }
+        let mut state = create_test_state(&db_path, &thumbs);
+        state.thumb_scheduler = ThumbnailScheduler::with_processor(
+            2,
+            "ffmpeg".into(),
+            Arc::new(|_, task| {
+                fs::write(&task.target_path, format!("thumb-{}", task.asset_id)).unwrap();
+                Some(task.target_path.to_string_lossy().into())
+            }),
+        );
+        let permit = state.database.admit().unwrap();
+        let (tx, rx) = mpsc::channel();
+        for id in [1, 2] {
+            let tx = tx.clone();
+            let outcome =
+                super::request_thumbnail(id, Default::default(), &state, &permit, move |pending| {
+                    let _ = tx.send(pending);
+                })
+                .unwrap();
+            assert!(matches!(outcome, super::ThumbnailRequestOutcome::Pending));
+        }
+        let mut pending: Vec<_> = (0..2)
+            .map(|_| rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap())
+            .collect();
+        pending.sort_by_key(|item| item.asset_id);
+        let served = super::finish_thumbnail_requests(pending, &state, &permit).unwrap();
+        let bytes: Vec<_> = served.into_iter().map(|item| item.unwrap().bytes).collect();
+        assert_eq!(bytes, vec![b"thumb-1".to_vec(), b"thumb-2".to_vec()]);
+        for id in [1, 2] {
+            assert!(db::get_asset_for_thumbnail(&conn, id)
+                .unwrap()
+                .unwrap()
+                .thumb_path
+                .is_some());
+        }
     }
 }

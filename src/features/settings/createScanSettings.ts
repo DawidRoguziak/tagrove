@@ -79,7 +79,7 @@ function formatScanSummary(t: ReturnType<typeof useLanguage>["t"], summary: Scan
 interface Options {
   runner: ReturnType<typeof createSettingsOperationRunner>;
   refreshLibrary: () => Promise<void>;
-  onRootRemoved: () => void;
+  onRootRemoved?: () => void;
 }
 export function createScanSettings({
   runner,
@@ -235,7 +235,7 @@ export function createScanSettings({
       },
       async () => {
         const summary = await removeScanRoot(path);
-        onRootRemoved();
+        onRootRemoved?.();
         await refreshScanRoots();
         await refreshLibrary();
         runner.setSectionMessage(

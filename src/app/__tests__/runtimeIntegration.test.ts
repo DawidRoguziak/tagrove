@@ -56,14 +56,35 @@ it.each(["rename", "rescan"])("does not restore pre-%s details when a delayed ta
   let changed = false;
   api.invoke.mockImplementation((command: string, args: unknown) => {
     if (command === "set_asset_tags") return pending.promise;
-    if (command === "get_asset_details") return Promise.resolve(asset(1, {
-      tags: [...persisted], file_name: fileName,
-      path: `/synthetic/${fileName}`, size_bytes: changed ? 99 : 10
-    }));
-    if (command === "find_duplicate_assets") return Promise.resolve({
-      groups: [{ file_name: "1.png", assets: [{ id: 1, path: "/synthetic/1.png", size_bytes: 10, record_version: 1 }] }],
-      duplicate_assets: 1, duplicate_groups: 1, revision: 1
-    } satisfies DuplicateScanSummary);
+    if (command === "get_asset_details")
+      return Promise.resolve(
+        asset(1, {
+          tags: [...persisted],
+          file_name: fileName,
+          path: `/synthetic/${fileName}`,
+          size_bytes: changed ? 99 : 10
+        })
+      );
+    if (command === "find_duplicate_assets")
+      return Promise.resolve({
+        groups: [
+          {
+            file_name: "1.png",
+            assets: [
+              {
+                id: 1,
+                path: "/synthetic/1.png",
+                size_bytes: 10,
+                record_version: 1,
+                thumb_version: "0123456789abcdef"
+              }
+            ]
+          }
+        ],
+        duplicate_assets: 1,
+        duplicate_groups: 1,
+        revision: 1
+      } satisfies DuplicateScanSummary);
     if (command === "apply_duplicate_resolution_batch") {
       changed = true;
       fileName = "renamed.png";

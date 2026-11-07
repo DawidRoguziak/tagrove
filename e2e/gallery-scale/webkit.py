@@ -14,7 +14,8 @@ import gi
 
 gi.require_version('Gtk', '3.0')
 gi.require_version('WebKit2', '4.1')
-from gi.repository import Gtk, WebKit2, GLib
+gi.require_version('Soup', '3.0')
+from gi.repository import Gio, Gtk, WebKit2, GLib, Soup
 
 assert os.environ.get('MEDIATAGGER_SCALE_DISPLAY') == os.environ.get('DISPLAY')
 assert os.environ.get('DISPLAY'), 'Run through run.sh on a private display'
@@ -50,7 +51,29 @@ class QuietHandler(SimpleHTTPRequestHandler):
 server = ThreadingHTTPServer(('127.0.0.1', 0), partial(QuietHandler, directory=str(output / 'dist')))
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
-view = WebKit2.WebView.new_with_context(WebKit2.WebContext.new_ephemeral())
+context = WebKit2.WebContext.new_ephemeral()
+
+def serve_thumbnail(request):
+    """Synthetic `thumb://localhost/<id>?v=...`: an SVG after 20 ms, like a cached file."""
+    asset_id = int(request.get_path().strip('/') or 0)
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="188" height="188">'
+           f'<rect width="188" height="188" fill="hsl({asset_id % 360},60%,35%)"/>'
+           f'<circle cx="94" cy="78" r="48" fill="hsl({(asset_id + 80) % 360},60%,65%)"/>'
+           f'<text x="12" y="172" fill="white" font-size="22">{asset_id}</text></svg>').encode()
+    def respond():
+        stream = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(svg))
+        response = WebKit2.URISchemeResponse.new(stream, len(svg))
+        response.set_content_type('image/svg+xml')
+        headers = Soup.MessageHeaders.new(Soup.MessageHeadersType.RESPONSE)
+        headers.append('Access-Control-Allow-Origin', '*')
+        response.set_http_headers(headers)
+        request.finish_with_response(response)
+        return False
+    GLib.timeout_add(20, respond)
+
+context.register_uri_scheme('thumb', serve_thumbnail)
+context.get_security_manager().register_uri_scheme_as_secure('thumb')
+view = WebKit2.WebView.new_with_context(context)
 window = Gtk.Window()
 window.set_decorated(False)
 window.move(0, 0)

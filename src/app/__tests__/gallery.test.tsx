@@ -54,9 +54,18 @@ it("starts queries after mount, submits current controls once and retains drafts
 it.each([0, 7])("shows capacity failure with %s previous rows and recovers by narrowing the query", async (initialTotal) => {
   let starts = 0;
   const assets: AssetSummary[] = Array.from({ length: initialTotal }, (_, index) => ({
-    id: index + 1, file_name: `synthetic-${index}.png`, preview_path: null, kind: "image",
-    modified_at: 1, width: 10, height: 10, duration_ms: null, thumb_path: null,
-    is_favorite: false, media_group_key: null, media_group_order: null
+    id: index + 1,
+    file_name: `synthetic-${index}.png`,
+    preview_path: null,
+    kind: "image",
+    modified_at: 1,
+    width: 10,
+    height: 10,
+    duration_ms: null,
+    thumb_version: "0123456789abcdef",
+    is_favorite: false,
+    media_group_key: null,
+    media_group_order: null
   }));
   native.invoke.mockImplementation(async (command: string) => {
     if (command === "start_asset_query") {

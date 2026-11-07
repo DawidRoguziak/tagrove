@@ -8,7 +8,6 @@ type BulkSelectionController = BulkController & { startupPopularTags: string[] }
 import { settle as act } from "../../../test/settle";
 import { renderSolid } from "../../../test/renderSolid";
 import { SuggestionClient } from "../../search/suggestions/SuggestionClient";
-import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import { onCleanup } from "solid-js";
 import { BulkActionsSidebar } from "../BulkActionsSidebar";
 
@@ -18,17 +17,22 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+/** Asset IDs of `thumb://` image requests currently in the DOM. */
+const thumbnailRequests = () =>
+  [...document.querySelectorAll("img")]
+    .map((image) => /^thumb:\/\/localhost\/(\d+)\?/.exec(image.getAttribute("src") ?? "")?.[1])
+    .filter((id): id is string => id !== undefined)
+    .map(Number);
+
 function Sidebar(props: { controller: BulkSelectionController }) {
   const client = new SuggestionClient();
   onCleanup(() => client.dispose());
-  const store = new ThumbnailStore();
   return (
     <UiLayerProvider>
       <BulkActionsSidebar
         controller={props.controller}
         client={client}
         popularTags={props.controller.startupPopularTags}
-        thumbnailStore={store}
       />
     </UiLayerProvider>
   );
@@ -44,7 +48,7 @@ function createAsset(id: number, override: Partial<AssetSummary> = {}): AssetSum
     width: 100,
     height: 100,
     duration_ms: null,
-    thumb_path: null,
+    thumb_version: "0123456789abcdef",
     is_favorite: false,
     media_group_key: null,
     media_group_order: null,
@@ -65,7 +69,6 @@ function createController(
     metadataFailed: false,
     onRetryMetadata: vi.fn(),
     partialResult: null,
-    queueThumbnailsByIds: vi.fn(),
     selectedAssetIds: new Set(),
     selectedAssets: [],
     startupPopularTags: [],
@@ -348,18 +351,17 @@ describe("BulkActionsSidebar", () => {
   });
 
   it("shows conflicts and offers sorting only in the modal without requesting inline thumbnails", async () => {
-    const queueThumbnailsByIds = vi.fn();
-    const controller = sortingController({ hasConflictingGroups: true, queueThumbnailsByIds });
+    const controller = sortingController({ hasConflictingGroups: true });
     renderSolid(Sidebar, { controller: controller });
     expect(screen.getByRole("alert")).toHaveTextContent("Multiple group assignments");
     expect(screen.getByTestId("bulk-group-order-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("bulk-group-order-list")).not.toBeInTheDocument();
     expect(screen.queryByText("1.jpg")).not.toBeInTheDocument();
     expect(screen.queryByTestId("bulk-group-drag-handle-1")).not.toBeInTheDocument();
-    expect(queueThumbnailsByIds).not.toHaveBeenCalled();
+    expect(thumbnailRequests()).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: "Sort in larger view" }));
     expect(screen.getByRole("dialog", { name: "Sort group order" })).toBeVisible();
-    expect(queueThumbnailsByIds).toHaveBeenCalled();
+    expect(thumbnailRequests().length).toBeGreaterThan(0);
   });
 
   it("does not expose group ordering until a group key is set", () => {
@@ -671,18 +673,17 @@ describe("bulk group sorting modal", () => {
 
   it("bounds mounted tiles and thumbnail requests for a thousand selected items", async () => {
     const assets = Array.from({ length: 1000 }, (_, index) => createAsset(index + 1));
-    const queueThumbnailsByIds = vi.fn();
     await openSorter(
       sortingController({
         selectedAssetIds: new Set(assets.map((asset) => asset.id)),
         selectedAssets: assets,
-        orderedAssetIds: assets.map((asset) => asset.id),
-        queueThumbnailsByIds
+        orderedAssetIds: assets.map((asset) => asset.id)
       })
     );
     expect(modalOrder().length).toBeLessThan(40);
-    expect(queueThumbnailsByIds).toHaveBeenCalled();
-    expect(queueThumbnailsByIds.mock.calls.every(([ids]) => ids.length < 40)).toBe(true);
+    // Only mounted tiles request a `thumb://` URL.
+    expect(thumbnailRequests().length).toBeGreaterThan(0);
+    expect(thumbnailRequests().length).toBeLessThan(40);
   });
 });
 

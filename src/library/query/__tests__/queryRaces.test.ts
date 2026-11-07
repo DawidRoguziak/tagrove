@@ -26,7 +26,7 @@ function row(id: number): AssetSummary {
     width: 10,
     height: 10,
     duration_ms: null,
-    thumb_path: null,
+    thumb_version: "0123456789abcdef",
     is_favorite: false,
     media_group_key: null,
     media_group_order: null
@@ -77,7 +77,7 @@ describe("query lifetime and synchronous coordination", () => {
   it("does not reload evicted pages repeatedly when the library range exceeds its cache", async () => {
     api.getAssetQueryPage.mockImplementation(async (id, offset) => ({
       ...ready(offset, id),
-      items: [{ ...row(offset + 1), thumb_path: "synthetic.jpg" }]
+      items: [row(offset + 1)]
     }));
     const { result: library } = renderHook(() => createLibrary({ pageSize: 1 }));
     await library.query.refresh();
@@ -98,11 +98,10 @@ describe("query lifetime and synchronous coordination", () => {
     expect(api.getAssetQueryPage).toHaveBeenCalledTimes(29);
   });
 
-  it("updates thumbnail demand when an unchanged viewport's missing page arrives", async () => {
+  it("publishes an unchanged viewport's missing page when it arrives", async () => {
     const pending = deferred<AssetQueryReady>();
     api.getAssetQueryPage.mockReturnValueOnce(pending.promise);
     const { result: library } = renderHook(() => createLibrary({ pageSize: 1 }));
-    const demand = vi.spyOn(library.thumbnails, "setGalleryThumbnailDemand");
     await library.query.refresh();
     settle(() =>
       library.handleVirtualRangeChange({
@@ -113,9 +112,9 @@ describe("query lifetime and synchronous coordination", () => {
         visibleEndIndex: 1
       })
     );
-    expect(demand).toHaveBeenLastCalledWith([], []);
+    expect(library.query.getAssetAt(1)).toBeUndefined();
     pending.resolve(ready(1));
-    await waitFor(() => expect(demand).toHaveBeenLastCalledWith([2], []));
+    await waitFor(() => expect(library.query.getAssetAt(1)?.id).toBe(2));
     expect(api.getAssetQueryPage).toHaveBeenCalledOnce();
   });
 

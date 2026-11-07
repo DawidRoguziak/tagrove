@@ -202,12 +202,12 @@ Settings and its dialogs use [the shared UI layer manager](../frontend/architect
 
 ## Exact success refresh and reset matrix
 
-In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-tags refresh])`; `refreshScanRoots` means reload and replace the root list. `reset queue` means reset the frontend thumbnail queue/store bookkeeping. Each runner-backed operation also ends its own section loading state, releases the global settings lock, and, unless opted out, clears global library loading in `finally`.
+In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-tags refresh])`; `refreshScanRoots` means reload and replace the root list. There is no frontend thumbnail state to reset: tiles address `thumb://` by asset ID and version. Each runner-backed operation also ends its own section loading state, releases the global settings lock, and, unless opted out, clears global library loading in `finally`.
 
 | Operation after API success | Ordered frontend follow-up |
 | --- | --- |
 | Add selected scan roots | Reload and replace `scanRoots`; derive the added/skipped summary from the pre-add and post-add lists. No asset/tag refresh or thumbnail reset. |
-| Remove confirmed scan root | Reset thumbnail queue; reload `scanRoots`; refresh assets/query pages and known tags. The pending root was already cleared before the API call. Queue reset clears the shared thumbnail store. |
+| Remove confirmed scan root | Reload `scanRoots`; refresh assets/query pages and known tags. The pending root was already cleared before the API call. |
 | Save startup-scan preference | Update the saved root flag locally. No library refresh or scan. |
 | Startup scan | For a scan result, refresh assets/tags, then roots. On rejection, attempt both refreshes; null requires neither. |
 | Rescan one root | Refresh assets/query pages and known tags; then reload `scanRoots`. No explicit thumbnail reset. |
@@ -218,8 +218,8 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Export CSV | Publish row summary only. No refresh/reset. |
 | Import CSV | Invalidate authoritative tags and the shared details cache inside the metadata barrier on success or rejection; after release, refresh assets and known tags, best-effort on rejection. Publish the success summary only after a successful refresh. |
 | Export database bundle | Publish copied-file/thumbnail summary only. No refresh/reset. |
-| Import confirmed database bundle | Reset metadata identity, query and thumbnail queue/store; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
-| Clear library | Reset metadata identity and thumbnail queue/store; replace assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
+| Import confirmed database bundle | Reset metadata identity and query; reload `scanRoots`; refresh assets/query pages and known tags; publish restore summary. The pending source was already cleared before the API call. |
+| Clear library | Reset metadata identity; replace assets with `[]`, total with `0`, offset with `0`, and known tags with `[]`; reload `scanRoots`; publish clear summary. It does not call `refreshLibrary`. |
 | Find/rescan duplicates | Replace duplicate groups and count; publish scan summary. No library/root refresh or thumbnail reset, although visible duplicate IDs may be queued for previews. |
 | Apply duplicate changes | After the backend batch returns, refresh assets/query pages and known tags; scan duplicates; replace groups/count/revision; publish committed, rolled-back, or recovery-required summary. No root refresh or explicit thumbnail reset. |
 
@@ -242,7 +242,7 @@ pending ownership, so reusing an asset ID does not inherit an old disabled contr
 - Duplicate rename targets cannot be another source in the same batch, so swaps/cycles require independent temporary names in separate rescanned batches.
 - The DB transaction does not make post-commit staged-delete or thumbnail cleanup transactional; those cases are surfaced as recovery-required results.
 - Root addition is sequential. A failure after one addition can leave earlier roots added while preventing the final root-list refresh.
-- Local lifecycle resets intentionally differ by operation. Root removal explicitly resets the thumbnail queue/store; duplicate mutations refresh the query, which keeps the store (paths are per asset ID and the new pages confirm them).
+- Local lifecycle resets intentionally differ by operation. Duplicate mutations refresh the query; changed rows carry a new `thumb_version`, so their tiles request new URLs.
 - Layer-manager focus restoration requires a connected trigger. Native GTK video controls are outside its DOM focus model; see [frontend layer limits](../frontend/architecture-and-ui-conventions.md#keyboard-and-accessibility).
 
 ## Change checklist
@@ -255,7 +255,7 @@ When changing settings behavior:
 4. If the backend emits progress, add a non-overlapping matcher, translated known phases, raw-message fallback coverage, and guaranteed listener cleanup.
 5. Define native-picker cancellation, in-app confirmation, locked close behavior, and the point at which pending confirmation state is cleared.
 6. For destructive/import work, keep frontend orchestration here and update [data safety and portability](data-safety-and-portability.md) for backend atomicity, rollback, archive, and filesystem guarantees.
-7. Update every affected cache deliberately: assets/query pages, known tags, scan roots, thumbnail queue/store/map, duplicate results, and selection state. Amend the refresh/reset matrix when behavior changes.
+7. Update every affected cache deliberately: assets/query pages, known tags, scan roots, duplicate results, and selection state. Amend the refresh/reset matrix when behavior changes.
 8. For duplicate actions, preserve staged-action validation, delete confirmation for mixed batches, deterministic execution order, and post-success duplicate rescan; add failure coverage if transactional behavior changes.
 9. Preserve localized visible messages, dialog names, disabled states, and progress accessibility. Test Escape/backdrop behavior when adding another nested layer.
 10. Run focused helper/model/component tests, the relevant `src/app/__tests__/runtimeIntegration.test.ts` cases, and a build for contract or composition changes.

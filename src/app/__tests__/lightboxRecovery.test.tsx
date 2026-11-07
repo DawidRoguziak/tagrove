@@ -25,9 +25,18 @@ vi.mock("../../features/lightbox/LightboxModal", () => ({ default: (props: {
 } }));
 function asset(id: number): AssetSummary {
   return {
-    id, file_name: `${id}.png`, preview_path: null, kind: "image", modified_at: 1,
-    width: 10, height: 10, duration_ms: null, thumb_path: null, is_favorite: false,
-    media_group_key: null, media_group_order: null
+    id,
+    file_name: `${id}.png`,
+    preview_path: null,
+    kind: "image",
+    modified_at: 1,
+    width: 10,
+    height: 10,
+    duration_ms: null,
+    thumb_version: "0123456789abcdef",
+    is_favorite: false,
+    media_group_key: null,
+    media_group_order: null
   };
 }
 beforeEach(() => {

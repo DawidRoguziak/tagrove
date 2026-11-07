@@ -980,13 +980,14 @@ For a separate native timing run:
 GALLERY_PERFORMANCE=1 sh e2e/gallery-scale/run.sh
 ```
 
-`performance.tsx` uses the actual gallery, sparse page cache and thumbnail queue,
-with 26,000 synthetic summaries and generated SVG thumbnails. The Tauri transport
-is mocked, with 12 ms page replies and 20 ms thumbnail batches. XTest drags the real
+`performance.tsx` uses the actual gallery and sparse page cache with `thumb://` tiles,
+26,000 synthetic summaries and generated SVG thumbnails. The Tauri transport is mocked
+with 12 ms page replies; `webkit.py` registers a synthetic `thumb` scheme that answers
+each thumbnail after 20 ms. XTest drags the real
 scrollbar thumb in sixty steps spaced 20 ms apart, repeating three times after
 query/cache reset. Both variants must reach index 25999. The script records rAF
 intervals during motion and the first 150 ms after the last position change,
-page/thumbnail invocation counts, requested thumbnail IDs, and time from the last
+page invocation counts, `thumb://` and cached-only (`c=1`) image requests, and time from the last
 scroll event to a loaded visible image and to image opacity above 0.95. It also
 checks that no paused frame has pulsing placeholders or spinners, and records paused
 frames that still show loaded images and the tile elements created per drag.

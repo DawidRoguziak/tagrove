@@ -107,7 +107,11 @@ suite("gallery browsing parity", function () {
     await $('#gallery-media-kind input[value="gif"]').click();
     await ready();
     const source = await $("button[data-asset-id] img").getAttribute("src");
-    assert.ok(source.endsWith(".jpg"), "GIF tiles use generated static thumbnails");
+    assert.match(
+      source,
+      /^thumb:\/\/localhost\/\d+\?v=[0-9a-f]{16}/,
+      "GIF tiles use generated static thumbnails"
+    );
     await fs.writeFile(path.join(output, "browsing.json"), JSON.stringify(samples, null, 2));
   });
   it("preserves gallery and search geometry in both languages and themes at three widths", async () => {

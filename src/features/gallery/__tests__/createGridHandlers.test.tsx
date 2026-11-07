@@ -27,7 +27,7 @@ const asset = {
   width: 100,
   height: 100,
   duration_ms: null,
-  thumb_path: null,
+  thumb_version: "0123456789abcdef",
   is_favorite: false,
   media_group_key: null,
   media_group_order: null

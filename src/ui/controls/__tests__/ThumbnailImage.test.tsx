@@ -2,11 +2,16 @@ import { renderSolid } from "../../../test/renderSolid";
 import { flush } from "solid-js";
 import { cleanup, fireEvent } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ThumbnailImage, TRANSPARENT_THUMBNAIL_SRC } from "../ThumbnailImage";
+import {
+  ThumbnailImage,
+  THUMBNAIL_RETRY_DELAYS_MS,
+  TRANSPARENT_THUMBNAIL_SRC
+} from "../ThumbnailImage";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function load(image: HTMLElement) {
@@ -152,5 +157,58 @@ describe("ThumbnailImage", () => {
     });
     load(getByRole("img"));
     expect(getByRole("img")).not.toHaveClass("thumbnail-fade-in-ready");
+  });
+
+  it("retries a failed load with backoff on the same element, then reports failure", () => {
+    vi.useFakeTimers();
+    const onFailed = vi.fn();
+    const { getByRole } = renderSolid(ThumbnailImage, {
+      src: "thumb://localhost/1?v=a",
+      retrySrc: (attempt: number) => `thumb://localhost/1?v=a&r=${attempt}`,
+      alt: "preview",
+      onFailed
+    });
+    const image = getByRole("img");
+    for (const [index, delay] of THUMBNAIL_RETRY_DELAYS_MS.entries()) {
+      fireEvent.error(image);
+      flush();
+      vi.advanceTimersByTime(delay - 1);
+      flush();
+      expect(image).toHaveAttribute(
+        "src",
+        index === 0 ? "thumb://localhost/1?v=a" : `thumb://localhost/1?v=a&r=${index}`
+      );
+      vi.advanceTimersByTime(1);
+      flush();
+      expect(getByRole("img")).toBe(image);
+      expect(image).toHaveAttribute("src", `thumb://localhost/1?v=a&r=${index + 1}`);
+    }
+    expect(onFailed).not.toHaveBeenCalled();
+    fireEvent.error(image);
+    flush();
+    expect(image).toHaveAttribute("src", TRANSPARENT_THUMBNAIL_SRC);
+    expect(onFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it("reveals a retried load and drops a pending retry when the source changes", () => {
+    vi.useFakeTimers();
+    const { getByRole, rerender } = renderSolid(ThumbnailImage, {
+      src: "a",
+      retrySrc: (attempt: number) => `a&r=${attempt}`,
+      alt: "preview"
+    });
+    const image = getByRole("img");
+    fireEvent.error(image);
+    vi.advanceTimersByTime(THUMBNAIL_RETRY_DELAYS_MS[0]);
+    flush();
+    expect(image).toHaveAttribute("src", "a&r=1");
+    load(image);
+    expect(image).not.toHaveClass("invisible");
+
+    fireEvent.error(image);
+    rerender({ src: "b", retrySrc: (attempt: number) => `b&r=${attempt}`, alt: "preview" });
+    vi.advanceTimersByTime(THUMBNAIL_RETRY_DELAYS_MS[1]);
+    flush();
+    expect(image).toHaveAttribute("src", "b");
   });
 });

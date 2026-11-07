@@ -17,8 +17,8 @@ memos prevent loading-only changes from republishing the cached asset array. Lig
 use `navigationSnapshot()` for the synchronous epoch, pending state and total, so a key press
 in the same batch as refresh cannot use the previous session.
 
-Viewport or query-epoch changes request pages. Page arrivals update thumbnail demand for
-the current viewport without requesting evicted pages again. This keeps oversized ranges
+Viewport or query-epoch changes request pages. Page arrivals publish the viewport's rows,
+whose tiles then request their `thumb://` thumbnails, without requesting evicted pages again. This keeps oversized ranges
 from continuously reloading pages beyond the cache bound. Metadata patches preserve page
 positions, including holes after deletion, until a new query replaces the snapshot.
 
@@ -55,7 +55,7 @@ Production uses a page size of 128. `createAssetQuery.refresh`:
 
 1. cancels any pending stale-driven refresh, increments its local generation and query epoch, marks the query pending, and invalidates navigation positions;
 2. clears the active session reference and in-flight offset set;
-3. enters loading state without touching the thumbnail queue or store (paths are kept per asset ID; the new pages' `thumb_path` confirms them);
+3. enters loading state; thumbnails are unaffected, because every summary carries its own `thumb_version`;
 4. calls `startAssetQuery` with the applied filters, owner ID, generation, page size, and `anchorOffset` = the latest gallery range's first visible index (`createLibrary` supplies it), so the `ready` result already carries the viewport's page;
 5. accepts only a `ready` response for the still-current local generation; and
 6. advances the query epoch again and replaces the frontend page cache with the returned page at its returned offset. Rows of the previous viewport's other pages stay visible as [render-only fallback](#frontend-sparse-page-cache) until those pages reload.
@@ -87,7 +87,7 @@ Query start, page reads, position lookups, and detail reads run as blocking work
 
 `createMutations` uses `queryImpact.ts` to evaluate accepted tag results against the latest applied filter and refresh function. `none` preserves the query; `all` refreshes; `tags` refreshes for an include/exclude intersection or an actual count change under an exact-count filter. Lightbox and both bulk editing modes share this predicate. Missing-ID recovery and Favorites rules also use current query state.
 
-`query.patchAssets` increments a local patch counter synchronously. Start/page calls capture it before IPC. If a ready response crosses a patch, the model rereads that page from the returned session before merging or returning rows to asynchronous callers. It repeats when another patch overlaps, retaining generation checks and request deduplication. These rereads preserve the query and thumbnail queue; unavailable sessions keep ordinary stale recovery. Query reads do not wait for metadata ownership. Favorite saves publish backend success and start any required refresh independently; refresh failure belongs to query recovery and does not reject the saved mutation.
+`query.patchAssets` increments a local patch counter synchronously. Start/page calls capture it before IPC. If a ready response crosses a patch, the model rereads that page from the returned session before merging or returning rows to asynchronous callers. It repeats when another patch overlaps, retaining generation checks and request deduplication. These rereads preserve the query; unavailable sessions keep ordinary stale recovery. Query reads do not wait for metadata ownership. Favorite saves publish backend success and start any required refresh independently; refresh failure belongs to query recovery and does not reject the saved mutation.
 
 ## Frontend sparse page cache
 
@@ -97,7 +97,7 @@ The cache in `createAssetQuery` has three coordinated structures, mutated in pla
 - `assetsById: Map<assetId, AssetSummary>` stores the summaries verbatim; and
 - `lru: pageOffset[]` records the eviction order from the last merge; a bounded access-order array records subsequent explicit reads.
 
-A merge replaces or adds the page in place, upserts its assets, and evicts the least recently accessed unprotected page until no more than `MAX_CACHED_PAGES` (24) pages remain. It never copies the maps. Every cache change bumps one `version` signal; render-time readers (`getAssetAt`, the `assets` memo, and through them the `assetAt` memo of each pooled grid cell) read `version` so they rerun after an in-place change. Range access and async page/asset reads promote pages through a bounded local array without publishing reactive state. Render-time `getAssetAt` stays read-only. The latest gallery range protects up to 24 intersecting pages; if an oversized range needs more, the exact cache bound still wins. Eviction deletes the page and its asset objects and thumbnail retention removes inactive paths outside cached pages, refresh fallback rows, or active preview subscriptions.
+A merge replaces or adds the page in place, upserts its assets, and evicts the least recently accessed unprotected page until no more than `MAX_CACHED_PAGES` (24) pages remain. It never copies the maps. Every cache change bumps one `version` signal; render-time readers (`getAssetAt`, the `assets` memo, and through them the `assetAt` memo of each pooled grid cell) read `version` so they rerun after an in-place change. Range access and async page/asset reads promote pages through a bounded local array without publishing reactive state. Render-time `getAssetAt` stays read-only. The latest gallery range protects up to 24 intersecting pages; if an oversized range needs more, the exact cache bound still wins. Eviction deletes the page and its asset objects; thumbnails need no retention because tiles address them by ID and version.
 
 When a refresh replaces the cache, the rows of the latest gallery range's other cached pages move into a render-only fallback map. Only `getAssetAt` reads it: `getAssetIndex`, `getAssetAtAsync`, `getIdsRangeAsync`, `loadPage`, and `assets` see only the current query. A fallback page disappears when the new query loads that offset, when the gallery range no longer includes it, on the next refresh or reset, or when it starts at or beyond the new `total`. A refresh deep in the list therefore never blanks its viewport. A fallback tile can briefly show an old row at an index whose new row differs; clicking it resolves the asset through `getAssetPosition`, because `getAssetIndex` does not know it.
 
@@ -175,7 +175,7 @@ windowed attribute are removed with the gallery.
 
 The gallery requires a scroll-container accessor. The virtualizer uses only that element and waits while the ref is null. An owned compute/apply effect starts observation after all required elements exist. A second effect sets the spacer height, restores the global-index anchor when columns or tile size change, and moves the window when the result shrinks below its base. This also applies when Back from Settings remounts the gallery. Using the gallery as a temporary fallback would mistake its full content height for the viewport, mount every slot, and demand pages across the entire library.
 
-The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex, paused }`, with inclusive indices, or `null` when the gallery unmounts. Pixel movement within unchanged row ranges updates tile placement without republishing page demand, unless the pause state changes. `createLibrary` loads pages intersecting the overscan range and replaces gallery thumbnail demand with visible and prefetch IDs from currently loaded summaries. Range/query-epoch changes request pages. Page arrivals update thumbnail demand separately without requesting evicted pages again. The grid also reports its range when its failure/reset key changes. Failed offsets remain blocked in that generation until explicit Retry. Empty ranges clear gallery thumbnail demand. Bulk and duplicate preview requests remain additive and independent of this replaceable demand.
+The range callback reports `{ startIndex, endIndex, visibleStartIndex, visibleEndIndex, paused }`, with inclusive indices, or `null` when the gallery unmounts. Pixel movement within unchanged row ranges updates tile placement without republishing page demand, unless the pause state changes. `createLibrary` loads pages intersecting the overscan range. Thumbnail demand is not tracked there: each mounted tile requests its own `thumb://` URL, and the backend renders newest requests first ([thumbnails](thumbnails.md#the-thumb-protocol)). Range/query-epoch changes request pages. The grid also reports its range when its failure/reset key changes. Failed offsets remain blocked in that generation until explicit Retry.
 
 Fast scrolling pauses automatic gallery loading, not rendering. The model measures absolute
 distance in logical gallery pixels, including direction reversals, rectangle edge scrolling
@@ -186,24 +186,25 @@ even if its indices have not changed. Geometry changes and tile-size anchor writ
 the motion history without starting a pause. Unmount cancels the timer.
 
 During the pause, `createLibrary` remembers the latest range but skips automatic page
-reads, including on query-epoch changes. It replaces gallery thumbnail demand with empty
-lists. Page arrivals can populate the cache but cannot restart that demand while paused.
-Resume loads only the latest range, retaining the four-row overscan. Already dispatched
-reads and thumbnail batches can finish; caches and the thumbnail generation remain intact.
-Explicit lightbox/selection reads and additive preview demand continue. Unmount publishes
+reads, including on query-epoch changes. Page arrivals can populate the cache but cannot
+restart page demand while paused. Tiles that receive a new asset during the pause request a
+cached thumbnail only (`c=1`): an existing file shows at once, a missing one is rendered only
+after the pause ends. Resume loads only the latest range, retaining the four-row overscan.
+Already dispatched reads can finish; caches remain intact. Explicit lightbox/selection reads
+continue. Unmount publishes
 `null` to release gallery demand while the application-owned library stays alive.
 
 Sparse viewport demand is the only production loader: there is no sequential
 "load more" or near-end callback, so jumping anywhere, including the end, loads only the
-pages that intersect the range. Thumbnail progress renders outside the virtual-row
-computation, so progress-counter changes alone do not invalidate its layout.
+pages that intersect the range. The footer below the rows shows only the end-of-results
+state; there is no thumbnail progress counter.
 
 ## Gallery presentation states
 
 - If `assetCount` is zero, the grid shows an empty state. It distinguishes “no folders” from “no results” using the scan-root list and offers the add-folder action only for the former.
-- During fast scrolling, tiles whose summaries are cached stay mounted with their thumbnails, backplates and subscriptions; only page and thumbnail demand pause. Placeholders for uncached slots stop pulsing while paused.
+- During fast scrolling, tiles whose summaries are cached stay mounted with their thumbnails and backplates; page demand pauses and newly shown assets ask for cached thumbnails only. Placeholders for uncached slots stop pulsing while paused.
 - If a virtual slot's page is not cached, the grid renders a square placeholder (`div[data-asset-index]`, pulsing outside the pause). Once the summary arrives, the slot becomes an interactive tile.
-- Images and videos use a thumbnail when available; otherwise they use a transparent one-pixel placeholder. A preview load error also falls back to that placeholder. The per-tile spinner appears only while the thumbnail store reports that the asset is rendering and no thumbnail path is ready.
+- Images and videos load their `thumb://` thumbnail. A load error is retried twice with backoff and then falls back to a transparent one-pixel placeholder. The per-tile spinner is CSS only: it appears 300 ms after a tile starts waiting for its image and disappears when the image loads or fails.
 - Mounted virtual tiles load their previews eagerly with `decoding="async"`. The row pool already bounds the mounted range, and native image lazy loading is avoided because WebKitGTK can fail to schedule translated virtual items.
 - Gallery thumbnails display at full opacity as soon as the browser loads them, including cached images and tiles remounted after scrolling. There is no entrance fade. A 300 ms fade previously left newly arriving rows dim during moderately fast scrolling and delayed visibility after the fast-scroll pause. A source change keeps the image element, resets load and failure handling, and hides the previous picture until the new source has loaded (or is already complete), so a recycled tile never shows another asset's thumbnail. The shared `ThumbnailImage` retains its opt-in fade for other consumers; the gallery does not request it.
 - GIFs always use a static JPEG thumbnail or the placeholder, including while idle, scrolling, and after a preview error. Gallery tiles never request original GIF sources. Opening a GIF in the lightbox retains animation. Neutral, opaque corner chips identify videos and GIFs with readable text in both themes. Photos have no media-kind chip; tile borders use the shared theme border color.
@@ -228,17 +229,17 @@ The dependency revision is authoritative for session invalidation. General chang
 | Trigger | Frontend behavior |
 | --- | --- |
 | Applied filters change | The search command calls `applyFilters`, which refreshes even for an identical descriptor. A ready first page replaces the old cache. |
-| Scan/rescan, scan-root removal, CSV import, duplicate rename/delete | The settings workflow calls `refreshLibrary`, which refreshes assets and known tags together. Root removal first resets the thumbnail queue. |
-| Database restore | The backend closes admission, drains admitted operations, closes idle pooled connections, and clears query sessions before replacement. The frontend invalidates tag/details identity state inside its mutation barrier, resets the thumbnail queue and map, refreshes roots, then refreshes assets and known tags. |
-| Clear library | After backend success, the frontend immediately resets the thumbnail queue, thumbnails, cached assets and refresh fallback, total, and known tags. It does not need to query the now-empty library. |
+| Scan/rescan, scan-root removal, CSV import, duplicate rename/delete | The settings workflow calls `refreshLibrary`, which refreshes assets and known tags together. |
+| Database restore | The backend closes admission, drains admitted operations, closes idle pooled connections, and clears query sessions before replacement. The frontend invalidates tag/details identity state inside its mutation barrier, refreshes roots, then refreshes assets and known tags. Restored rows carry their own `thumb_version`. |
+| Clear library | After backend success, the frontend immediately resets cached assets and refresh fallback, total, and known tags. It does not need to query the now-empty library. |
 | Lightbox delete | Removes the loaded object and selection locally, refreshes known tags, then starts a fresh asset query. |
 | Bulk favorite toggle | Uses all selected IDs, patches loaded summaries and the shared details cache, and refreshes after either toggle direction in a favorites-only query or after missing IDs. Existing selected IDs survive the refresh. |
 | Favorite toggle | Patches loaded state. Removing an item while favorites-only is applied also refreshes; other favorite changes do not. |
 | Single/bulk tag edit | Patches loaded objects locally. Tag operations also refresh known tags. The returned impact restarts the query for repairs, changed names in the current include/exclude filter, or actual count changes under an exact-count filter. Unrelated edits preserve the session even when pages have been evicted. |
 | Single/bulk media-group edit | Patches loaded objects locally and then always restarts the asset query, because group changes alter ordering and adjacency of the active view. |
-| Thumbnail generation or cleanup | Updates thumbnail state without changing query membership/order and does not bump the library revision. The thumbnail store is authoritative for production tiles. |
+| Thumbnail generation or cleanup | Updates thumbnail files and paths without changing query membership/order and does not bump the library revision. Tiles do not need a refresh: their URLs are stable per source version. |
 
-Starting a refresh keeps the thumbnail queue and store, and keeps the old asset cache and `total` visible until a current `ready` page replaces them. Replacement clears both page IDs and `assetsById`, so rows retained only by an older session cannot leak into the new compact cache; the old viewport's other pages survive only as render-only fallback. Old start and page responses cannot merge after the local generation changes. Root removal, restore, and clear-library still reset the thumbnail queue explicitly.
+Starting a refresh keeps the old asset cache and `total` visible until a current `ready` page replaces them. Replacement clears both page IDs and `assetsById`, so rows retained only by an older session cannot leak into the new compact cache; the old viewport's other pages survive only as render-only fallback. Old start and page responses cannot merge after the local generation changes.
 
 A `stale` page, position, or reread response does not refresh immediately. It schedules one refresh `STALE_REFRESH_DELAY_MS` (250 ms) later; further stale responses join that pending refresh, and two stale-driven refreshes are at least `STALE_REFRESH_MIN_INTERVAL_MS` (1 s) apart. Any explicit refresh (filters, settings workflows, mutations, lightbox delete) runs at once and cancels the pending one. The backend already limits scan revision bumps to about one per second ([ADR 0002](../adr/0002-backend-write-priority-and-scan-revisions.md)); the debounce protects the frontend against bursts from any source.
 

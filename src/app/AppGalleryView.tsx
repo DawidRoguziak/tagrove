@@ -92,9 +92,6 @@ export function AppGalleryView() {
               assetCount={library.query.total}
               getAssetAt={library.query.getAssetAt}
               tileSize={runtime.tileSize()}
-              isGeneratingThumbnails={library.thumbnails.isGeneratingPage}
-              pendingThumbnailCount={library.thumbnails.pendingPageSize}
-              thumbnailStore={library.thumbnails.thumbnailStore}
               scroller={scroller}
               onVirtualRangeChange={library.handleVirtualRangeChange}
               onCtrlWheelZoom={runtime.zoom}
@@ -114,7 +111,6 @@ export function AppGalleryView() {
                 controller={runtime.bulk}
                 client={runtime.suggestions}
                 popularTags={runtime.popularTags()}
-                thumbnailStore={library.thumbnails.thumbnailStore}
               />
             ) : null}
           </div>

@@ -63,8 +63,6 @@ export default function AppSettingsView() {
           importExport={runtime.settings.importExport}
           dangerZone={runtime.settings.dangerZone}
           duplicates={runtime.settings.duplicates}
-          thumbnailStore={runtime.library.thumbnails.thumbnailStore}
-          onQueueThumbnailsByIds={runtime.library.thumbnails.queueThumbnailsByIds}
         />
       </div>
     </div>

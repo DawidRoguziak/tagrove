@@ -1,7 +1,6 @@
 import { GroupOrderModal } from "./GroupOrderModal";
 import { createEffect, createMemo, createSignal, onCleanup, For } from "solid-js";
 import type { SuggestionClient } from "../search/suggestions/SuggestionClient";
-import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 import { useLanguage } from "../../i18n/solid";
 import type { BulkController } from "./createBulk";
 import { TagEditor } from "../tagging/TagEditor";
@@ -15,7 +14,6 @@ interface BulkActionsSidebarProps {
   controller: BulkController;
   client: SuggestionClient;
   popularTags: string[];
-  thumbnailStore: ThumbnailStore;
 }
 
 function generateUuid(): string {
@@ -342,7 +340,6 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
         <GroupOrderModal
           open={hasOrderPanel() && orderModalContext() === orderContext()}
           controller={props.controller}
-          thumbnailStore={props.thumbnailStore}
           onClose={() => setOrderModalContext(null)}
         />
       )}

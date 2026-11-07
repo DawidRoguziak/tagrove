@@ -1,22 +1,12 @@
-use crate::{
-    error::AppResult,
-    models::{ScanProgress, ThumbnailBatchItem},
-};
+use crate::{error::AppResult, models::ScanProgress};
 use tauri::Emitter;
 
 pub trait ProgressSink {
     fn progress(&self, progress: ScanProgress) -> AppResult<()>;
-    fn thumbnail_ready(&self, _item: &ThumbnailBatchItem) -> AppResult<()> {
-        Ok(())
-    }
 }
 impl<R: tauri::Runtime> ProgressSink for tauri::AppHandle<R> {
     fn progress(&self, progress: ScanProgress) -> AppResult<()> {
         self.emit("process-progress", progress)
-            .map_err(|e| e.to_string().into())
-    }
-    fn thumbnail_ready(&self, item: &ThumbnailBatchItem) -> AppResult<()> {
-        self.emit("thumbnail-ready", item)
             .map_err(|e| e.to_string().into())
     }
 }

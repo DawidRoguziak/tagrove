@@ -341,6 +341,9 @@
 .gallery-selection-mark {
   transition: opacity var(--motion-feedback) var(--motion-ease);
 }
+/* Gallery tile spinner: only while its thumbnail is still loading, after a delay. */
+.thumbnail-loader { opacity: 0; pointer-events: none; animation: motion-fade-in 150ms ease-out 300ms forwards; }
+img:not(.invisible) + .thumbnail-loader { display: none; }
 .thumbnail-fade-in { opacity: 0; }
 .thumbnail-fade-in-ready {
   opacity: 1;

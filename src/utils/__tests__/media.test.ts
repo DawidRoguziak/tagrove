@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   formatBytes,
   formatDuration,
-  mapThumbs,
   normalizeTags,
   parseFilterTags,
   parseSearchFilter
@@ -66,41 +65,6 @@ describe("media utils", () => {
     expect(parseSearchFilter("cat tags").validationError).toBe("metaTagRequiresSolo");
     expect(parseSearchFilter("dog gN:trip-2026").validationError).toBe("metaTagRequiresSolo");
     expect(parseSearchFilter("cat,dog").validationError).toBe("tagInvalidCharacters");
-  });
-
-  it("maps only available thumbnail paths", () => {
-    expect(
-      mapThumbs([
-        {
-          id: 1,
-          file_name: "a.jpg",
-          preview_path: null,
-          kind: "image",
-          modified_at: 1,
-          width: null,
-          height: null,
-          duration_ms: null,
-          thumb_path: "thumb-a",
-          is_favorite: false,
-          media_group_key: null,
-          media_group_order: null
-        },
-        {
-          id: 2,
-          file_name: "b.mp4",
-          preview_path: "b.mp4",
-          kind: "video",
-          modified_at: 1,
-          width: null,
-          height: null,
-          duration_ms: null,
-          thumb_path: null,
-          is_favorite: false,
-          media_group_key: null,
-          media_group_order: null
-        }
-      ])
-    ).toEqual({ 1: "thumb-a" });
   });
 
   it("formats bytes and duration", () => {

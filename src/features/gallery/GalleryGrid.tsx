@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Repeat, Show } from "solid-js";
 import { Portal } from "@solidjs/web";
 import type { AssetSummary } from "../../platform/tauri/contracts/assets";
-import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 import type { BulkSelectionHandler } from "./selection";
 import type { LibraryViewport } from "../../library/createLibrary";
 import { useLanguage } from "../../i18n/solid";
@@ -16,9 +15,6 @@ export interface GalleryGridProps {
   assetCount: number;
   getAssetAt: (index: number) => AssetSummary | undefined;
   tileSize: number;
-  isGeneratingThumbnails: boolean;
-  pendingThumbnailCount: number;
-  thumbnailStore: ThumbnailStore;
   scroller: () => HTMLElement | undefined;
   onVirtualRangeChange?: (viewport: LibraryViewport | null) => void;
   onCtrlWheelZoom?: (delta: number) => void;
@@ -214,7 +210,11 @@ export function GalleryGrid(props: GalleryGridProps) {
                       asset={current()}
                       index={index()}
                       selected={selected()}
-                      thumbnailStore={props.thumbnailStore}
+                      thumbnailsPaused={virtual.paused}
+                      prefetch={
+                        index() < virtual.range.visibleStartIndex ||
+                        index() > virtual.range.visibleEndIndex
+                      }
                       onClick={handlers.handleTileClick}
                     />
                   )}
@@ -304,13 +304,7 @@ export function GalleryGrid(props: GalleryGridProps) {
       </section>
       {props.assetCount > 0 ? (
         <div class="pointer-events-none">
-          <GalleryStatusFooter
-            isGeneratingThumbnails={props.isGeneratingThumbnails}
-            generatingLabel={t("gallery.generatingThumbnails", {
-              count: props.pendingThumbnailCount
-            })}
-            resultCount={props.assetCount}
-          />
+          <GalleryStatusFooter resultCount={props.assetCount} />
         </div>
       ) : null}
     </div>

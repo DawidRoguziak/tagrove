@@ -9,8 +9,20 @@ const groups: DuplicateGroup[] = [
   {
     file_name: "same.jpg",
     assets: [
-      { id: 1, path: "/synthetic/a/same.jpg", record_version: 1, size_bytes: 10 },
-      { id: 7, path: "/synthetic/b/same.jpg", record_version: 1, size_bytes: 10 }
+      {
+        id: 1,
+        path: "/synthetic/a/same.jpg",
+        record_version: 1,
+        size_bytes: 10,
+        thumb_version: "0123456789abcdef"
+      },
+      {
+        id: 7,
+        path: "/synthetic/b/same.jpg",
+        record_version: 1,
+        size_bytes: 10,
+        thumb_version: "0123456789abcdef"
+      }
     ]
   }
 ];

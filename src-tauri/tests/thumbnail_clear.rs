@@ -120,11 +120,38 @@ fn rescan_then_clear_all_removes_obsolete_and_current_files_and_regenerates() {
             .unwrap(),
         0
     );
+    // A `thumb://` request after the clear renders and serves a fresh file.
     let regenerated = media_tagger::app::locks::with_thumb_operation(&state, |permit| {
-        thumb_service::ensure_asset_thumbnail(1, &state, permit)
+        let (tx, rx) = std::sync::mpsc::channel();
+        match thumb_service::request_thumbnail(
+            1,
+            Default::default(),
+            &state,
+            permit,
+            move |pending| {
+                let _ = tx.send(pending);
+            },
+        )? {
+            thumb_service::ThumbnailRequestOutcome::Pending => {
+                let pending = rx
+                    .recv_timeout(std::time::Duration::from_secs(10))
+                    .expect("render result");
+                thumb_service::finish_thumbnail_request(pending, &state, permit)
+            }
+            _ => panic!("cleared thumbnail must be rendered again"),
+        }
     })
     .unwrap()
-    .unwrap();
-    assert!(std::path::Path::new(&regenerated).is_file());
+    .expect("served thumbnail");
+    assert!(!regenerated.bytes.is_empty());
+    let conn = state.database.admit().unwrap();
+    let stored: String = conn
+        .connection()
+        .unwrap()
+        .query_row("SELECT thumb_path FROM assets WHERE id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(std::path::Path::new(&stored).is_file());
     assert!(source.exists());
 }

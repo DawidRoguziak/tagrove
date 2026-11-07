@@ -15,6 +15,7 @@ function makeGroup(fileName: string, ids: number[]): DuplicateGroup {
       path: `C:/media/folder-${index + 1}/${fileName}`,
       record_version: 1,
       size_bytes: 10,
+      thumb_version: "0123456789abcdef"
     }))
   };
 }

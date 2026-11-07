@@ -35,7 +35,8 @@ async function visibleTiles() {
     }).map(tile => ({
       index: Number(tile.dataset.assetIndex),
       id: Number(tile.dataset.assetId),
-      thumbnail: decodeURIComponent(new URL(tile.querySelector("img").src).pathname).split("/").at(-1)
+      // `thumb://localhost/<id>?v=<token>`: the token prefixes the thumbnail file name.
+      thumbnail: new URL(tile.querySelector("img").src).searchParams.get("v")
     }));
   });
 }
@@ -207,7 +208,9 @@ gallerySuite("gallery scrolling performance", function () {
           });
         }
         const visible = await visibleTiles();
-        const reused = visible.filter(tile => filesBefore.includes(tile.thumbnail));
+        const reused = visible.filter(tile =>
+          filesBefore.some(name => tile.thumbnail && name.startsWith(tile.thumbnail))
+        );
         const provenance = reused.length === visible.length ? "existingPreviews"
           : reused.length === 0 ? "firstUsePreviews" : "mixedPreviews";
         samples.push({ index, thumbnailMs, frames, visible, filesBefore, provenance });

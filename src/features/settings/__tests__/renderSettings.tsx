@@ -17,7 +17,6 @@ export function renderSettings(element: () => JSX.Element) {
 
 import { createSettings } from "../createSettings";
 import { SettingsPanel } from "../SettingsPanel";
-import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 export function TestSettingsPanel() {
   const settings = createSettings({
     setLoading: () => {},
@@ -38,8 +37,6 @@ export function TestSettingsPanel() {
         language: "en",
         onLanguageChange: () => {}
       }}
-      thumbnailStore={new ThumbnailStore()}
-      onQueueThumbnailsByIds={() => {}}
     />
   );
 }

@@ -1,4 +1,3 @@
-import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 import { AboutSection } from "./sections/AboutSection";
 import { SettingsNavigation } from "./SettingsNavigation";
 import { ClearLibraryConfirmDialog } from "./ClearLibraryConfirmDialog";
@@ -27,8 +26,6 @@ interface Props {
   importExport: ImportExportSettingsController;
   dangerZone: DangerZoneSettingsController;
   duplicates: DuplicatesSettingsController;
-  thumbnailStore: ThumbnailStore;
-  onQueueThumbnailsByIds: (ids: number[]) => void;
 }
 export function SettingsPanel(props: Props) {
   return (
@@ -120,8 +117,6 @@ export function SettingsPanel(props: Props) {
         isOperationLocked={props.duplicates.isOperationLocked}
         operationState={props.duplicates.operationState}
         groups={props.duplicates.groups}
-        thumbnailStore={props.thumbnailStore}
-        onQueueThumbnailsByIds={props.onQueueThumbnailsByIds}
         onClose={props.duplicates.onCloseDuplicateDialog}
         onRescan={props.duplicates.onRescan}
         onSaveAll={props.duplicates.onSaveAll}

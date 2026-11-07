@@ -40,8 +40,8 @@ use commands::{
         scan_startup_roots, set_scan_root_auto_scan,
     },
     thumbs::{
-        cancel_render_all_thumbnails, clear_all_thumbnails, ensure_thumbnails,
-        get_video_tool_status, render_all_thumbnails, render_failed_thumbnails,
+        cancel_render_all_thumbnails, clear_all_thumbnails, get_video_tool_status,
+        render_all_thumbnails, render_failed_thumbnails,
     },
     window::sync_window_theme,
 };
@@ -51,6 +51,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
+        // `thumb://localhost/<id>?v=<version>`: numeric IDs only, see
+        // services/thumb_protocol.rs. Requests before setup finishes get 503.
+        .register_asynchronous_uri_scheme_protocol(
+            services::thumb_protocol::SCHEME,
+            |ctx, request, responder| {
+                services::thumb_protocol::handle(ctx.app_handle(), request, responder)
+            },
+        )
         .setup(|app| {
             #[cfg(debug_assertions)]
             if !app::profile::is_debug_profile(&app.config().identifier) {
@@ -139,7 +147,6 @@ pub fn run() {
             add_scan_root,
             remove_scan_root,
             rescan_all_roots,
-            ensure_thumbnails,
             get_video_tool_status,
             render_all_thumbnails,
             render_failed_thumbnails,

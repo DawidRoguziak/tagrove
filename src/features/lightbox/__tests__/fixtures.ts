@@ -11,6 +11,7 @@ export function asset(id: number, changes: Partial<AssetDetails> = {}): AssetDet
     height: 80,
     modified_at: 1,
     duration_ms: null,
+    thumb_version: "0123456789abcdef",
     thumb_path: null,
     is_favorite: false,
     media_group_key: null,
@@ -20,7 +21,7 @@ export function asset(id: number, changes: Partial<AssetDetails> = {}): AssetDet
   };
 }
 export function summary(id: number, changes: Partial<AssetSummary> = {}): AssetSummary {
-  const { path: _path, size_bytes: _size, tags: _tags, ...value } = asset(id);
+  const { path: _path, size_bytes: _size, thumb_path: _thumb, tags: _tags, ...value } = asset(id);
   return { ...value, ...changes };
 }
 export function deferred<T>() {

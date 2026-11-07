@@ -91,7 +91,6 @@
     "videoChip": "Vidéo",
     "gifChip": "GIF",
     "groupedChip": "Fait partie d'un groupe de médias",
-    "generatingThumbnails": "Génération des miniatures pour {{count}} éléments en attente.",
     "endOfResults": "Fin des résultats",
     "resultCount_one": "{{formattedCount}} élément",
     "resultCount_few": "{{formattedCount}} éléments",

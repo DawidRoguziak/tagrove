@@ -49,9 +49,9 @@ Concrete examples:
 
 - Gallery refresh calls `startAssetQuery`, which invokes `start_asset_query`. The query manager reads the library revision through a small connection pool, caches at most four ID-list sessions for five minutes, and materializes requested summaries from SQLite. Later pages call `get_asset_query_page`; a revision mismatch returns `stale`, causing the frontend to refresh.
 - A scan invokes `scan_folder` or `rescan_all_roots`, takes the scan lock, walks supported files, fingerprints them, extracts metadata (including video duration through ffprobe/ffmpeg), commits batched SQLite updates, and removes stale database rows. Scanning reads source media; it does not copy it into app data.
-- Visible gallery items are queued by asset ID. `ensure_thumbnails` takes the shared thumbnail lock for short read and publication sections and submits deduplicated high-priority jobs to the process-wide scheduler. Images are decoded in Rust; video frames use ffmpeg. Successful paths and failures are persisted in SQLite, and the generated files live under the profile's `thumbs/` directory.
+- Gallery tiles load `thumb://` URLs by asset ID and version token. The scheme handler takes the shared thumbnail lock for short read and publication sections and submits deduplicated Interactive (LIFO) jobs to the process-wide scheduler. Images are decoded in Rust; video frames use ffmpeg. Successful paths and failures are persisted in SQLite, and the generated files live under the profile's `thumbs/` directory.
 - Delete, rename, root removal, library clear, and bundle restore cross both SQLite and the filesystem. These operations take both workflow locks, always in the order described below.
-- Image, GIF, and thumbnail paths use Tauri's asset protocol. Video opens by asset ID after backend path authorization. libmpv renders into a GTK `GLArea` above the WebView, with native controls above the video. DOM controls must stay outside those native bounds. See [lightbox media presentation](../subsystems/lightbox.md#media-presentation) for authorization, layout, and session behavior.
+- Original image and GIF paths use Tauri's asset protocol. Thumbnails use the app's own `thumb://` scheme, addressed by asset ID and version token. Video opens by asset ID after backend path authorization. libmpv renders into a GTK `GLArea` above the WebView, with native controls above the video. DOM controls must stay outside those native bounds. See [lightbox media presentation](../subsystems/lightbox.md#media-presentation) for authorization, layout, and session behavior.
 
 ## Frontend owner lifetimes
 
@@ -81,7 +81,7 @@ contracts and [testing](../development/testing.md) for their observed coverage.
 
 `src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`, which:
 
-1. creates a `tauri::Builder` and installs the dialog and opener plugins;
+1. creates a `tauri::Builder`, installs the dialog and opener plugins, and registers the `thumb://` scheme (its handler answers `503` until `AppState` is managed at the end of setup);
 2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
@@ -187,11 +187,12 @@ libmpv performs interactive playback; ffmpeg and ffprobe perform indexing and th
 Current configuration is permissive and should be treated as current state, not a recommended end state:
 
 - `capabilities/default.json` applies to the `main` window and grants `core:default`, `dialog:default` (open, save, and message dialogs), and the window permissions for minimize, toggle-maximize, close, drag and resize-drag. It also grants `opener:allow-open-url` scoped to the Tagrove GitHub repository and its subpages, with automatic HTML-link handling disabled. Application commands are those explicitly registered in `lib.rs`.
-- The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `["**", "$APPDATA/thumbs/**"]` (the second entry is already covered by the first), allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Images, GIFs, and thumbnails use this path. Video sources are authorized by asset ID and opened only by libmpv.
+- The Tauri `protocol-asset` feature is compiled in. The asset protocol is enabled with scope `["**"]`, allowing the WebView's asset URLs to address arbitrary filesystem paths accepted by that protocol. Original images and GIFs in the lightbox use this path; narrowing `**` is a separate, open security topic. Video sources are authorized by asset ID and opened only by libmpv.
+- The `thumb://` scheme (`services/thumb_protocol.rs`, [ADR 0006](../adr/0006-thumb-uri-scheme.md)) accepts only `GET /<positive id>` with a 16-hex version token and the `c`/`p`/`r` flags; it never takes a path, lists no directory and serves only JPEGs the database resolves for that asset inside the active profile's `thumbs/`. `Access-Control-Allow-Origin` is echoed only for `tauri://localhost` and the Vite dev origin `http://localhost:1420`. A request can enqueue a render, bounded by the scheduler's `MAX_PENDING_JOBS`; beyond it the scheme answers `503`.
 - `app.security.csp` is `null`, so the configuration does not install a Content Security Policy.
 - Docker produces x86_64 Flatpak and AppImage packages. Flatpak uses GNOME 50 and installs under `/app`; AppImage builds on Debian 12. The Arch-native executable is an explicit option. Other platforms and ARM are not configured. See [packaging](../development/linux-packaging.md).
 
-Security-sensitive changes should review capabilities, CSP, asset scope, dialog permissions, WebView arguments, and the direct `convertFileSrc` flow together. See [setup and build](../development/setup-and-build.md) for build prerequisites and commands.
+Security-sensitive changes should review capabilities, CSP, asset scope, the `thumb://` parser, dialog permissions, WebView arguments, and the direct `convertFileSrc` flow together. See [setup and build](../development/setup-and-build.md) for build prerequisites and commands.
 
 ## Naming state
 
@@ -233,7 +234,7 @@ Before merging an architectural change:
 Use [testing](../development/testing.md) for the full test workflow. The most relevant existing checks are:
 
 - `src/platform/tauri/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
-- Frontend model/component tests under `src/library/**/__tests__` and `src/features/**/__tests__`: query lifecycle, thumbnail queues, settings progress, mutation refreshes, and UI behavior.
+- Frontend model/component tests under `src/library/**/__tests__` and `src/features/**/__tests__`: query lifecycle, settings progress, mutation refreshes, and UI behavior.
 - Rust unit tests in `db.rs`, `commands/*`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.

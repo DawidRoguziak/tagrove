@@ -1,5 +1,5 @@
 import { readTagToken } from "./searchTokens";
-import type { AssetSummary, SearchMetaFilter } from "../platform/tauri/contracts/assets";
+import type { SearchMetaFilter } from "../platform/tauri/contracts/assets";
 
 export interface ParsedFilterTags {
   include: string[];
@@ -148,16 +148,6 @@ export function parseFilterTags(input: string): ParsedFilterTags {
     include: parsed.include,
     exclude: parsed.exclude
   };
-}
-
-export function mapThumbs(items: AssetSummary[]): Record<number, string> {
-  const output: Record<number, string> = {};
-  for (const item of items) {
-    if (item.thumb_path) {
-      output[item.id] = item.thumb_path;
-    }
-  }
-  return output;
 }
 
 export function formatBytes(bytes: number): string {

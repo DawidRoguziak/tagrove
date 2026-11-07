@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
 import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, getAssetQueryIdRange, decodeAssetIdRange, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
 import { idRangeBuffer } from "../../../test/idRange";
+import { thumbnailUrl } from "../thumbnails";
 import { listScanRoots, setScanRootAutoScan, scanStartupRoots } from "../scanning";
 import { beginVideoOpen, cancelVideoOpen, setVideoControlLabels, closeVideo, controlVideo, openVideo, setVideoBounds } from "../video";
 
@@ -283,5 +284,17 @@ describe("api contract", () => {
     expect(() => decodeAssetIdRange(new ArrayBuffer(12))).toThrow("malformed");
     expect(() => decodeAssetIdRange(new Float64Array([3, 1]).buffer)).toThrow("incomplete");
     expect(() => decodeAssetIdRange({})).toThrow("not binary");
+  });
+  it("builds thumb:// URLs from the asset ID and version token only", () => {
+    expect(thumbnailUrl(42, "0123456789abcdef")).toBe("thumb://localhost/42?v=0123456789abcdef");
+    expect(thumbnailUrl(42, "0123456789abcdef", { cachedOnly: true })).toBe(
+      "thumb://localhost/42?v=0123456789abcdef&c=1"
+    );
+    expect(thumbnailUrl(42, "0123456789abcdef", { retry: 2 })).toBe(
+      "thumb://localhost/42?v=0123456789abcdef&r=2"
+    );
+    expect(thumbnailUrl(42, "0123456789abcdef", { prefetch: true, retry: 1 })).toBe(
+      "thumb://localhost/42?v=0123456789abcdef&p=1&r=1"
+    );
   });
 });

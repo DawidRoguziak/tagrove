@@ -33,7 +33,8 @@ pub struct AssetSummary {
     pub width: Option<i64>,
     pub height: Option<i64>,
     pub duration_ms: Option<i64>,
-    pub thumb_path: Option<String>,
+    /// Short token of the source version; the `v` parameter of `thumb://` URLs.
+    pub thumb_version: String,
     pub is_favorite: bool,
     pub media_group_key: Option<String>,
     pub media_group_order: Option<f64>,
@@ -45,6 +46,7 @@ pub struct AssetDetails {
     pub summary: AssetSummary,
     pub path: String,
     pub size_bytes: i64,
+    pub thumb_path: Option<String>,
     pub tags: Vec<String>,
 }
 
@@ -80,23 +82,6 @@ pub enum AssetQueryPositionResult {
     Resolved { index: usize },
     Missing,
     Stale,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "event", content = "data", rename_all = "camelCase")]
-pub enum ThumbnailStreamEvent {
-    Ready(ThumbnailBatchItem),
-    Failed {
-        asset_id: i64,
-    },
-    Stale {
-        asset_id: i64,
-    },
-    Done {
-        ready: usize,
-        failed: usize,
-        stale: usize,
-    },
 }
 
 #[derive(Debug, Serialize)]
@@ -155,6 +140,7 @@ pub struct DuplicateAsset {
     pub path: String,
     pub record_version: i64,
     pub size_bytes: i64,
+    pub thumb_version: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -341,19 +327,6 @@ pub struct ThumbnailRenderSummary {
     pub processed: usize,
     pub total: usize,
     pub cancelled: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ThumbnailBatchItem {
-    pub asset_id: i64,
-    pub thumb_path: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ThumbnailBatchResult {
-    pub stale: Vec<i64>,
-    pub ready: Vec<ThumbnailBatchItem>,
-    pub failed: Vec<i64>,
 }
 
 #[derive(Debug, Serialize)]

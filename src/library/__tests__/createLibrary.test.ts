@@ -1,5 +1,4 @@
 import { settle } from "../../test/settle";
-import { ThumbnailStore } from "../thumbnails/thumbnailStore";
 import { renderHook, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetSummary } from "../../platform/tauri/contracts/assets";
@@ -14,7 +13,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function createAsset(id: number, thumbPath: string | null = null): AssetSummary {
+function createAsset(id: number): AssetSummary {
   return {
     id,
     file_name: `${id}.jpg`,
@@ -24,7 +23,7 @@ function createAsset(id: number, thumbPath: string | null = null): AssetSummary 
     width: 100,
     height: 100,
     duration_ms: null,
-    thumb_path: thumbPath,
+    thumb_version: "0123456789abcdef",
     is_favorite: false,
     media_group_key: null,
     media_group_order: null
@@ -55,12 +54,6 @@ function ready(items: AssetSummary[], total: number, offset = 0) {
   };
 }
 
-const queueMocks = vi.hoisted(() => ({
-  queueThumbnailsByIds: vi.fn(),
-  setGalleryThumbnailDemand: vi.fn(),
-  resetThumbnailQueue: vi.fn()
-}));
-
 vi.mock("../../platform/tauri/assets", async () => ({
   ...(await vi.importActual<typeof import("../../platform/tauri/assets")>(
     "../../platform/tauri/assets"
@@ -68,18 +61,6 @@ vi.mock("../../platform/tauri/assets", async () => ({
   ...apiMocks
 }));
 vi.mock("../../platform/tauri/tags", () => ({ listTags: apiMocks.listTags }));
-
-vi.mock("../thumbnails/createThumbnailQueue", () => ({
-  createThumbnailQueue: vi.fn(() => ({
-    queueThumbnailsByIds: queueMocks.queueThumbnailsByIds,
-    setGalleryThumbnailDemand: queueMocks.setGalleryThumbnailDemand,
-    resetThumbnailQueue: queueMocks.resetThumbnailQueue,
-    isGeneratingPage: false,
-    pendingPageSize: 0,
-    thumbnailStore: new ThumbnailStore(),
-    renderingAssetIds: {}
-  }))
-}));
 
 describe("createLibrary", () => {
   it("does not automatically retry a failed query when resolving selection", async () => {
@@ -111,9 +92,6 @@ describe("createLibrary", () => {
     apiMocks.getAssetQueryIdRange.mockReset();
     apiMocks.setAssetFavorite.mockReset().mockResolvedValue(undefined);
     apiMocks.listTags.mockReset();
-    queueMocks.queueThumbnailsByIds.mockReset();
-    queueMocks.setGalleryThumbnailDemand.mockReset();
-    queueMocks.resetThumbnailQueue.mockReset();
   });
 
   it("looks up uncached positions and refreshes stale sessions without loading every page", async () => {
@@ -226,14 +204,11 @@ describe("createLibrary", () => {
     });
     expect(result.query.assets).toContainEqual(final);
     expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(1);
-    expect(queueMocks.resetThumbnailQueue).not.toHaveBeenCalled();
     expect(apiMocks.getAssetQueryPage).toHaveBeenLastCalledWith(1, kind === "initial" ? 0 : 1, 1);
   });
 
-  it("loads first page with replace mode and keeps the thumbnail queue", async () => {
-    apiMocks.startAssetQuery.mockResolvedValueOnce(
-      ready([createAsset(1, "thumb-1.jpg"), createAsset(2, null)], 5)
-    );
+  it("loads first page with replace mode", async () => {
+    apiMocks.startAssetQuery.mockResolvedValueOnce(ready([createAsset(1), createAsset(2)], 5));
 
     const { result } = renderHook(() =>
       createLibrary({
@@ -264,10 +239,7 @@ describe("createLibrary", () => {
     });
     expect(result.query.assets.map((asset) => asset.id)).toEqual([1, 2]);
     expect(result.query.total).toBe(5);
-    expect(result.thumbnails.thumbnailStore.getPath(1)).toBe("thumb-1.jpg");
     expect(result.query.loading).toBe(false);
-    // A refresh keeps thumbnail paths; the new page's `thumb_path` confirms them.
-    expect(queueMocks.resetThumbnailQueue).not.toHaveBeenCalled();
   });
 
   it("uses the full preview path for a provisional video asset", async () => {
@@ -416,54 +388,8 @@ describe("createLibrary", () => {
     expect(resolved.map((asset) => asset?.id)).toEqual([3, 3]);
   });
 
-  it("queues visible ids from clamped virtual range", async () => {
-    apiMocks.startAssetQuery.mockResolvedValueOnce(
-      ready([createAsset(11), createAsset(12), createAsset(13)], 3)
-    );
-
-    const { result } = renderHook(() =>
-      createLibrary({
-        pageSize: 5,
-        filters: {
-          filterInclude: [],
-          filterExclude: [],
-          appliedMediaKind: "all",
-          appliedFavoritesOnly: false
-        }
-      })
-    );
-
-    await settle(async () => {
-      await result.query.refresh();
-    });
-
-    settle(() => {
-      result.handleVirtualRangeChange({
-        paused: false,
-        startIndex: -5,
-        endIndex: 50,
-        visibleStartIndex: 1,
-        visibleEndIndex: 1
-      });
-    });
-
-    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenCalledWith([12], [11, 13]);
-
-    settle(() => {
-      result.handleVirtualRangeChange({
-        paused: false,
-        startIndex: 3,
-        endIndex: 1,
-        visibleStartIndex: 3,
-        visibleEndIndex: 1
-      });
-    });
-
-    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
-  });
-
-  it("clears assets, tags and thumbs on library reset", async () => {
-    apiMocks.startAssetQuery.mockResolvedValueOnce(ready([createAsset(1, "thumb-1.jpg")], 1));
+  it("clears assets and tags on library reset", async () => {
+    apiMocks.startAssetQuery.mockResolvedValueOnce(ready([createAsset(1)], 1));
     apiMocks.listTags.mockResolvedValueOnce(createTagListPage(["cat", "travel"]));
 
     const { result } = renderHook(() =>
@@ -490,7 +416,6 @@ describe("createLibrary", () => {
     });
     expect(result.query.assets).toHaveLength(1);
     expect(result.vocabulary.knownTags).toEqual(["cat", "travel"]);
-    expect(result.thumbnails.thumbnailStore.getPath(1)).toBe("thumb-1.jpg");
 
     settle(() => {
       result.handleLibraryCleared();
@@ -499,8 +424,6 @@ describe("createLibrary", () => {
     expect(result.query.assets).toEqual([]);
     expect(result.query.total).toBe(0);
     expect(result.vocabulary.knownTags).toEqual([]);
-    expect(result.thumbnails.thumbnailStore.getPath(1)).toBeUndefined();
-    expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
   });
   it("holds only the latest paused range through late pages and filter refresh, then resumes it", async () => {
     apiMocks.startAssetQuery.mockResolvedValue(ready([createAsset(1), createAsset(2)], 100));
@@ -523,16 +446,19 @@ describe("createLibrary", () => {
     await settle(async () => pending.resolve(ready([createAsset(3), createAsset(4)], 100, 2)));
     expect(result.query.getAssetAt(2)?.id).toBe(3);
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
-    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
-    expect(queueMocks.resetThumbnailQueue).not.toHaveBeenCalled();
-    await settle(async () => result.applyFilters({ filterInclude: ["new"], filterExclude: [],
-      appliedMediaKind: "all", appliedFavoritesOnly: false }));
+    await settle(async () =>
+      result.applyFilters({
+        filterInclude: ["new"],
+        filterExclude: [],
+        appliedMediaKind: "all",
+        appliedFavoritesOnly: false
+      })
+    );
     // The refresh asks for the page of the latest (paused) viewport first.
     expect(apiMocks.startAssetQuery).toHaveBeenLastCalledWith(
       expect.objectContaining({ anchorOffset: 40 })
     );
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
-    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
     // Explicit reads for lightbox and selection still work during the gallery pause.
     await settle(async () => {
       expect((await result.query.getAssetAtAsync(60))?.id).toBe(61);
@@ -544,9 +470,7 @@ describe("createLibrary", () => {
     settle(() => result.handleVirtualRangeChange(viewport(40, false)));
     await waitFor(() => expect(result.query.getAssetAt(40)?.id).toBe(41));
     expect(apiMocks.getAssetQueryPage.mock.calls.map(([, offset]) => offset)).toEqual([2, 60, 40]);
-    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([41, 42], []);
     settle(() => result.handleVirtualRangeChange(null));
-    expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
     expect(result.query.getAssetAt(40)?.id).toBe(41);
   });
 

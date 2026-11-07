@@ -33,16 +33,13 @@ interface Options {
   /** First visible global index; a refresh asks the backend for that page first. */
   anchorIndex?: () => number | null | undefined;
   onQueryChanged?: () => void;
-  /** Cached summaries plus refresh fallback rows, i.e. everything a tile may still show. */
-  onAssetsChanged?: (assets: AssetSummary[]) => void;
 }
 
 export function createAssetQuery({
   pageSize = 128,
   filters,
   anchorIndex,
-  onQueryChanged,
-  onAssetsChanged
+  onQueryChanged
 }: Options) {
   const ownerId = crypto.randomUUID();
   let state = {
@@ -81,10 +78,6 @@ export function createAssetQuery({
   }
   function cacheChanged() {
     setVersion((value) => value + 1);
-    if (!onAssetsChanged) return;
-    const shown = Array.from(assetsById.values());
-    for (const rows of fallback.values()) shown.push(...rows);
-    onAssetsChanged(shown);
   }
   let staleTimer: ReturnType<typeof setTimeout> | null = null;
   let lastStaleRefreshAt = Number.NEGATIVE_INFINITY;
@@ -223,7 +216,6 @@ export function createAssetQuery({
     inFlightPages.clear();
     activePages.clear();
     accessOrder = [];
-    // The thumbnail store keeps paths per asset ID; the new pages' `thumb_path` confirms them.
     beginLoading();
     const perfMark = `asset-query-${generation}`;
     if (import.meta.env.VITE_MEDIATAGGER_PERF === "1") performance.mark(`${perfMark}-start`);

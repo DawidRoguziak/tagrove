@@ -4,7 +4,6 @@ import { createAssetTagState } from "./metadata/createAssetTagState";
 import { createDetailsCache } from "./metadata/createDetailsCache";
 import { createMutations } from "./metadata/createMutations";
 import { createKnownTags } from "./vocabulary/createKnownTags";
-import { createThumbnailQueue } from "./thumbnails/createThumbnailQueue";
 
 export interface LibraryRange {
   startIndex: number;
@@ -27,48 +26,18 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
   const tags = createAssetTagState();
   const details = createDetailsCache(tags);
   const vocabulary = createKnownTags();
-  const thumbnails = createThumbnailQueue();
   const [range, setRange] = createSignal<LibraryViewport | null>(null);
   const query = createAssetQuery({
     ...options,
     filters: () => filters,
     anchorIndex: () => range()?.visibleStartIndex,
-    onQueryChanged: details.clear,
-    onAssetsChanged(assets) {
-      thumbnails.thumbnailStore.retain(assets.map((asset) => asset.id));
-      const paths: Record<number, string> = {};
-      for (const asset of assets) if (asset.thumb_path) paths[asset.id] = asset.thumb_path;
-      thumbnails.thumbnailStore.complete(paths, []);
-    }
+    onQueryChanged: details.clear
   });
   createEffect(
     () => ({ range: range(), epoch: query.queryEpoch }),
     ({ range }) => {
       if (range && !range.paused) query.ensureRange(range.startIndex, range.endIndex);
     }
-  );
-  createEffect(
-    () => {
-      const viewport = range();
-      query.assets;
-      const visible: number[] = [];
-      const prefetch: number[] = [];
-      if (!viewport || viewport.paused) return { visible, prefetch };
-      for (
-        let index = Math.max(0, viewport.startIndex);
-        index <= Math.min(query.total - 1, viewport.endIndex);
-        index++
-      ) {
-        const asset = query.getAssetAt(index);
-        if (asset)
-          (index >= viewport.visibleStartIndex && index <= viewport.visibleEndIndex
-            ? visible
-            : prefetch
-          ).push(asset.id);
-      }
-      return { visible, prefetch };
-    },
-    (demand) => thumbnails.setGalleryThumbnailDemand(demand.visible, demand.prefetch)
   );
   const mutations = createMutations({ tags, details, query, vocabulary, filters: () => filters });
   const refreshLibrary = () =>
@@ -80,7 +49,6 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
   function resetLibrary() {
     resetIdentity();
     query.reset();
-    thumbnails.resetThumbnailQueue();
     vocabulary.reset();
     setRange(null);
   }
@@ -93,7 +61,6 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
     tags,
     details,
     vocabulary,
-    thumbnails,
     mutations,
     refreshLibrary,
     applyFilters(next: LibraryFilters) {
@@ -108,12 +75,10 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
     handleVirtualRangeChange: (next: LibraryViewport | null) => {
       setRange(next);
     },
-    handleRootRemoved: thumbnails.resetThumbnailQueue,
     resetIdentity,
     handleImportDbRestored() {
       resetIdentity();
       query.reset();
-      thumbnails.resetThumbnailQueue();
     },
     handleLibraryCleared: resetLibrary,
     async runMaintenance<T>(kind: "metadata" | "identity", operation: () => Promise<T>) {

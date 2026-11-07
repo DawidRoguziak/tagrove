@@ -91,7 +91,6 @@
     "videoChip": "動画",
     "gifChip": "GIF",
     "groupedChip": "メディアグループの一部",
-    "generatingThumbnails": "{{count}} 件のキュー項目のサムネイルを生成中です。",
     "endOfResults": "結果は以上です",
     "resultCount_one": "{{formattedCount}}件",
     "resultCount_few": "{{formattedCount}}件",

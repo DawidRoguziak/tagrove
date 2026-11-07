@@ -7,7 +7,8 @@ import { createDangerZoneSettings } from "./createDangerZoneSettings";
 interface Options {
   setLoading: (value: boolean) => void;
   refreshLibrary: () => Promise<void>;
-  onRootRemoved: () => void;
+  /** Called after a scan root and its assets were removed. */
+  onRootRemoved?: () => void;
   onImportDbRestored: () => void;
   onLibraryCleared: () => void;
   onTagCacheInvalidated: () => void;

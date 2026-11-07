@@ -335,8 +335,7 @@ export function createBulk(
     onAddTag: (tag: string) => saveTag(tag),
     onRemoveTag: (tag: string) => saveTag(tag, true),
     onRetryTagDetails: () => setRetry((v) => v + 1),
-    onBulkSelectionInteraction: selection.interact,
-    queueThumbnailsByIds: library.thumbnails.queueThumbnailsByIds
+    onBulkSelectionInteraction: selection.interact
   };
 }
 export type BulkController = ReturnType<typeof createBulk>;

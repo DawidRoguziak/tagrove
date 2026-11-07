@@ -12,22 +12,15 @@ afterEach(async () => {
 });
 
 describe("GalleryStatusFooter localization", () => {
-  it.each([
-    [true, true, false],
-    [false, false, true]
-  ])("generation=%s selects the matching footer branch", (generating, status, end) => {
-    const view = renderSolid(GalleryStatusFooter, {
-      isGeneratingThumbnails: generating,
-      generatingLabel: "Rendering 12 previews",
-      resultCount: 1_000_000
-    });
-    expect(Boolean(view.queryByRole("status"))).toBe(status);
-    expect(Boolean(view.queryByTestId("gallery-end-state"))).toBe(end);
-    if (end) expect(view.getByText("1,000,000 items")).toBeInTheDocument();
+  it("shows the end state with the formatted result count", () => {
+    const view = renderSolid(GalleryStatusFooter, { resultCount: 1_000_000 });
+    expect(view.queryByRole("status")).toBeNull();
+    expect(view.getByTestId("gallery-end-state")).toBeInTheDocument();
+    expect(view.getByText("1,000,000 items")).toBeInTheDocument();
   });
   it.each(APP_LANGUAGES)("formats counts in %s using its plural rules", async (language) => {
     await changeAppLanguage(language);
-    const props = { isGeneratingThumbnails: false, generatingLabel: "" };
+    const props = {};
     const { getByTestId, rerender } = renderSolid(GalleryStatusFooter, {
       ...props,
       resultCount: 1
@@ -49,7 +42,7 @@ describe("GalleryStatusFooter localization", () => {
   });
 
   it("updates an already mounted footer when language changes", async () => {
-    const props = { isGeneratingThumbnails: false, generatingLabel: "" };
+    const props = {};
     const { getByRole, getByText, rerender } = renderSolid(GalleryStatusFooter, {
       ...props,
       resultCount: 30187

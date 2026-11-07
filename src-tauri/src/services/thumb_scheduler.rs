@@ -56,6 +56,9 @@ impl Drop for BulkModeGuard {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThumbnailPriority {
+    /// `thumb://` requests: served newest first (LIFO), ahead of High and Low,
+    /// so tiles that just came into view render before ones scrolled past.
+    Interactive,
     High,
     Low,
 }
@@ -93,6 +96,11 @@ struct SchedulerShared {
     ffmpeg_path: PathBuf,
     processor: TaskProcessor,
     worker_spawn_failures: AtomicUsize,
+    /// `(asset_id, record_version)` pairs whose on-demand render failed in
+    /// this process. `thumb://` answers them with 404 instead of re-rendering
+    /// on every tile mount; a failure marker from an earlier run gets one
+    /// retry. The bulk "render failed" action does not consult this set.
+    interactive_failures: Mutex<std::collections::HashSet<(i64, i64)>>,
 }
 
 struct SchedulerState {
@@ -100,6 +108,8 @@ struct SchedulerState {
     bulk_scopes: usize,
     active_jobs: usize,
     jobs: HashMap<String, ScheduledJob>,
+    /// LIFO: new and repeated requests go to the front.
+    interactive_queue: VecDeque<String>,
     high_queue: VecDeque<String>,
     low_queue: VecDeque<String>,
     active_videos: usize,
@@ -113,7 +123,26 @@ struct ScheduledJob {
 
 struct JobWaiter {
     asset_id: i64,
-    sender: Sender<ThumbnailTaskResult>,
+    sink: WaiterSink,
+}
+
+/// Callback invoked once with the job result, on the worker thread.
+pub type ThumbnailResultCallback = Box<dyn FnOnce(ThumbnailTaskResult) + Send + 'static>;
+
+enum WaiterSink {
+    Channel(Sender<ThumbnailTaskResult>),
+    Callback(ThumbnailResultCallback),
+}
+
+impl WaiterSink {
+    fn deliver(self, result: ThumbnailTaskResult) {
+        match self {
+            Self::Channel(sender) => {
+                let _ = sender.send(result);
+            }
+            Self::Callback(callback) => callback(result),
+        }
+    }
 }
 
 type TaskProcessor = Arc<dyn Fn(&Path, &ThumbnailTask) -> Option<String> + Send + Sync + 'static>;
@@ -140,9 +169,39 @@ impl ThumbnailScheduler {
         let key = task.target_path.to_string_lossy().to_string();
         let (sender, receiver) = mpsc::channel();
 
-        self.enqueue_waiter(key, task, priority, JobWaiter { asset_id, sender })?;
+        self.enqueue_waiter(
+            key,
+            task,
+            priority,
+            JobWaiter {
+                asset_id,
+                sink: WaiterSink::Channel(sender),
+            },
+        )?;
 
         Ok(receiver)
+    }
+
+    /// Enqueues a job whose result is handed to `callback` on the worker
+    /// thread, so the caller never parks a thread while the render runs.
+    /// On error the callback is dropped without being called.
+    pub fn enqueue_with_callback(
+        &self,
+        task: ThumbnailTask,
+        priority: ThumbnailPriority,
+        callback: ThumbnailResultCallback,
+    ) -> Result<(), String> {
+        let asset_id = task.asset_id;
+        let key = task.target_path.to_string_lossy().to_string();
+        self.enqueue_waiter(
+            key,
+            task,
+            priority,
+            JobWaiter {
+                asset_id,
+                sink: WaiterSink::Callback(callback),
+            },
+        )
     }
 
     /// Number of worker threads that failed to start. A scheduler that could
@@ -171,6 +230,22 @@ impl ThumbnailScheduler {
         state.concurrency.bulk_in_flight_limit()
     }
 
+    pub fn remember_interactive_failure(&self, asset_id: i64, record_version: i64) {
+        self.shared
+            .interactive_failures
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert((asset_id, record_version));
+    }
+
+    pub fn failed_interactively(&self, asset_id: i64, record_version: i64) -> bool {
+        self.shared
+            .interactive_failures
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&(asset_id, record_version))
+    }
+
     pub fn is_healthy(&self) -> bool {
         self.worker_spawn_failures() == 0
     }
@@ -184,7 +259,15 @@ impl ThumbnailScheduler {
         let asset_id = task.asset_id;
         let key = task.target_path.to_string_lossy().to_string();
 
-        self.enqueue_waiter(key, task, priority, JobWaiter { asset_id, sender })
+        self.enqueue_waiter(
+            key,
+            task,
+            priority,
+            JobWaiter {
+                asset_id,
+                sink: WaiterSink::Channel(sender),
+            },
+        )
     }
 
     fn enqueue_waiter(
@@ -216,21 +299,20 @@ impl ThumbnailScheduler {
                     "thumbnail job waiter limit reached ({MAX_WAITERS_PER_JOB} waiters)"
                 ));
             }
-            let should_promote = matches!(priority, ThumbnailPriority::High)
-                && state
-                    .jobs
-                    .get(&key)
-                    .map(|job| matches!(job.priority, ThumbnailPriority::Low))
-                    .unwrap_or(false);
-
-            if should_promote {
-                if let Some(idx) = state
-                    .low_queue
-                    .iter()
-                    .position(|queued_key| queued_key == &key)
-                {
-                    let _ = state.low_queue.remove(idx);
-                    state.high_queue.push_back(key.clone());
+            let current = state
+                .jobs
+                .get(&key)
+                .map(|job| job.priority)
+                .expect("existing thumbnail job to be present");
+            let target = stronger_priority(current, priority);
+            // A queued job moves to the target queue; an Interactive repeat
+            // also moves to the front (LIFO). Running jobs are in no queue.
+            if target != current || target == ThumbnailPriority::Interactive {
+                if let Some(queued) = remove_from_queue(&mut state, current, &key) {
+                    push_to_queue(&mut state, target, queued);
+                    if let Some(job) = state.jobs.get_mut(&key) {
+                        job.priority = target;
+                    }
                 }
             }
 
@@ -238,10 +320,11 @@ impl ThumbnailScheduler {
                 .jobs
                 .get_mut(&key)
                 .expect("existing thumbnail job to be present");
-            if should_promote {
-                existing.priority = ThumbnailPriority::High;
-            }
             existing.waiters.push(waiter);
+            if target == ThumbnailPriority::Interactive {
+                drop(state);
+                self.shared.condvar.notify_one();
+            }
             return Ok(());
         }
 
@@ -254,10 +337,7 @@ impl ThumbnailScheduler {
             },
         );
 
-        match priority {
-            ThumbnailPriority::High => state.high_queue.push_back(key),
-            ThumbnailPriority::Low => state.low_queue.push_back(key),
-        }
+        push_to_queue(&mut state, priority, key);
 
         drop(state);
         self.shared.condvar.notify_one();
@@ -290,6 +370,7 @@ impl ThumbnailScheduler {
                 bulk_scopes: 0,
                 active_jobs: 0,
                 jobs: HashMap::new(),
+                interactive_queue: VecDeque::new(),
                 high_queue: VecDeque::new(),
                 low_queue: VecDeque::new(),
                 active_videos: 0,
@@ -298,6 +379,7 @@ impl ThumbnailScheduler {
             ffmpeg_path,
             processor,
             worker_spawn_failures: AtomicUsize::new(0),
+            interactive_failures: Mutex::new(std::collections::HashSet::new()),
         });
 
         let threads = concurrency.browsing.max(concurrency.bulk);
@@ -378,11 +460,13 @@ fn worker_loop(shared: Arc<SchedulerShared>) {
         };
 
         for waiter in waiters {
-            let _ = waiter.sender.send(ThumbnailTaskResult {
+            let result = ThumbnailTaskResult {
                 asset_id: waiter.asset_id,
                 thumb_path: thumb_path.clone(),
                 source_version: task.source_version.clone(),
-            });
+            };
+            // A panicking callback must not take the worker thread down.
+            let _ = catch_unwind(AssertUnwindSafe(|| waiter.sink.deliver(result)));
         }
     }
 }
@@ -396,30 +480,74 @@ fn pop_runnable_key(state: &mut SchedulerState) -> Option<String> {
     if state.active_jobs >= total_limit {
         return None;
     }
-    for high_priority in [true, false] {
-        let position = {
-            let queue = if high_priority {
-                &state.high_queue
-            } else {
-                &state.low_queue
-            };
-            queue.iter().position(|key| {
-                state
-                    .jobs
-                    .get(key)
-                    .map(|job| job.task.kind != "video" || state.active_videos < video_limit)
-                    .unwrap_or(true)
-            })
-        };
+    for priority in [
+        ThumbnailPriority::Interactive,
+        ThumbnailPriority::High,
+        ThumbnailPriority::Low,
+    ] {
+        let position = queue_for(state, priority).iter().position(|key| {
+            state
+                .jobs
+                .get(key)
+                .map(|job| job.task.kind != "video" || state.active_videos < video_limit)
+                .unwrap_or(true)
+        });
         if let Some(position) = position {
-            return if high_priority {
-                state.high_queue.remove(position)
-            } else {
-                state.low_queue.remove(position)
-            };
+            return queue_for_mut(state, priority).remove(position);
         }
     }
     None
+}
+
+fn priority_rank(priority: ThumbnailPriority) -> u8 {
+    match priority {
+        ThumbnailPriority::Interactive => 2,
+        ThumbnailPriority::High => 1,
+        ThumbnailPriority::Low => 0,
+    }
+}
+
+fn stronger_priority(a: ThumbnailPriority, b: ThumbnailPriority) -> ThumbnailPriority {
+    if priority_rank(b) > priority_rank(a) {
+        b
+    } else {
+        a
+    }
+}
+
+fn queue_for(state: &SchedulerState, priority: ThumbnailPriority) -> &VecDeque<String> {
+    match priority {
+        ThumbnailPriority::Interactive => &state.interactive_queue,
+        ThumbnailPriority::High => &state.high_queue,
+        ThumbnailPriority::Low => &state.low_queue,
+    }
+}
+
+fn queue_for_mut(state: &mut SchedulerState, priority: ThumbnailPriority) -> &mut VecDeque<String> {
+    match priority {
+        ThumbnailPriority::Interactive => &mut state.interactive_queue,
+        ThumbnailPriority::High => &mut state.high_queue,
+        ThumbnailPriority::Low => &mut state.low_queue,
+    }
+}
+
+fn push_to_queue(state: &mut SchedulerState, priority: ThumbnailPriority, key: String) {
+    match priority {
+        ThumbnailPriority::Interactive => state.interactive_queue.push_front(key),
+        ThumbnailPriority::High => state.high_queue.push_back(key),
+        ThumbnailPriority::Low => state.low_queue.push_back(key),
+    }
+}
+
+/// Removes a queued key; `None` when the job is running (in no queue).
+fn remove_from_queue(
+    state: &mut SchedulerState,
+    priority: ThumbnailPriority,
+    key: &str,
+) -> Option<String> {
+    let queue = queue_for_mut(state, priority);
+    let index = queue.iter().position(|queued| queued == key)?;
+    queue.remove(index)
 }
 
 fn process_thumbnail_task(ffmpeg_path: &Path, task: &ThumbnailTask) -> Option<String> {
@@ -430,20 +558,26 @@ fn process_thumbnail_task(ffmpeg_path: &Path, task: &ThumbnailTask) -> Option<St
     if !task.target_path.exists() {
         if task.kind == "video" {
             let seek_seconds = thumbs::resolve_video_seek_seconds(task.duration_ms);
-            let primary_result = thumbs::create_video_thumb(
-                ffmpeg_path,
-                &task.source_path,
-                &task.target_path,
-                seek_seconds,
-            );
-
-            if (primary_result.is_err() || !task.target_path.exists()) && seek_seconds > 0.0 {
-                let _ = thumbs::create_video_thumb(
+            // Fast keyframe pass first, then the exact frame, then the first frame.
+            let attempts = [
+                (seek_seconds, thumbs::VideoFrameSeek::Keyframe),
+                (seek_seconds, thumbs::VideoFrameSeek::Exact),
+                (0.0, thumbs::VideoFrameSeek::Exact),
+            ];
+            for (index, (seek, frame_seek)) in attempts.into_iter().enumerate() {
+                if index == 2 && seek_seconds <= 0.0 {
+                    break;
+                }
+                let result = thumbs::create_video_thumb(
                     ffmpeg_path,
                     &task.source_path,
                     &task.target_path,
-                    0.0,
+                    seek,
+                    frame_seek,
                 );
+                if result.is_ok() && task.target_path.exists() {
+                    break;
+                }
             }
         } else {
             let _ = thumbs::create_image_thumb(&task.source_path, &task.target_path);
@@ -483,6 +617,15 @@ pub(crate) mod test_support {
                     })
                     .unwrap();
                 wait.recv_timeout(WAIT).expect("test must release the job");
+                // Callers that serve the file need it on disk. Only absolute
+                // (temporary-directory) targets; synthetic relative names must
+                // not create files in the working directory.
+                if task.target_path.is_absolute() {
+                    if let Some(parent) = task.target_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::write(&task.target_path, b"thumbnail");
+                }
                 Some(task.target_path.to_string_lossy().into_owned())
             }),
         );
@@ -516,7 +659,11 @@ mod tests {
         time::Duration,
     };
 
-    use super::{ThumbnailPriority, ThumbnailScheduler, ThumbnailTask};
+    use super::{
+        ThumbnailPriority, ThumbnailResultCallback, ThumbnailScheduler, ThumbnailTask,
+        ThumbnailTaskResult,
+    };
+    use std::sync::mpsc::Sender;
 
     fn task(asset_id: i64, target: &str) -> ThumbnailTask {
         let source = format!("C:/tmp/source-{asset_id}.jpg");
@@ -691,6 +838,140 @@ mod tests {
 
         let processed = order.lock().expect("order lock").clone();
         assert_eq!(processed, vec![10, 30, 20]);
+    }
+
+    #[test]
+    fn interactive_jobs_run_newest_first_and_ahead_of_high() {
+        let release_first = Arc::new(Mutex::new(false));
+        let order = Arc::new(Mutex::new(Vec::<i64>::new()));
+        let first_started = Arc::new(AtomicUsize::new(0));
+        let (release_clone, order_clone, started_clone) = (
+            Arc::clone(&release_first),
+            Arc::clone(&order),
+            Arc::clone(&first_started),
+        );
+        let scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                if task.asset_id == 10 {
+                    started_clone.store(1, Ordering::SeqCst);
+                    while !*release_clone.lock().expect("release lock") {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
+                order_clone.lock().expect("order lock").push(task.asset_id);
+                Some(task.target_path.to_string_lossy().to_string())
+            }),
+        );
+        let (done_tx, done_rx) = mpsc::channel::<ThumbnailTaskResult>();
+        let callback = |tx: &Sender<ThumbnailTaskResult>| -> ThumbnailResultCallback {
+            let tx = tx.clone();
+            Box::new(move |result| {
+                let _ = tx.send(result);
+            })
+        };
+        scheduler
+            .enqueue_with_callback(
+                task(10, "C:/tmp/a.jpg"),
+                ThumbnailPriority::Interactive,
+                callback(&done_tx),
+            )
+            .expect("enqueue first");
+        while first_started.load(Ordering::SeqCst) == 0 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        scheduler
+            .enqueue_with_sender(
+                task(20, "C:/tmp/b.jpg"),
+                ThumbnailPriority::High,
+                done_tx.clone(),
+            )
+            .expect("enqueue high");
+        for (id, target) in [
+            (30, "C:/tmp/c.jpg"),
+            (40, "C:/tmp/d.jpg"),
+            (50, "C:/tmp/e.jpg"),
+        ] {
+            scheduler
+                .enqueue_with_callback(
+                    task(id, target),
+                    ThumbnailPriority::Interactive,
+                    callback(&done_tx),
+                )
+                .expect("enqueue interactive");
+        }
+        // A repeated request moves its job back to the front.
+        scheduler
+            .enqueue_with_callback(
+                task(30, "C:/tmp/c.jpg"),
+                ThumbnailPriority::Interactive,
+                callback(&done_tx),
+            )
+            .expect("repeat interactive");
+        *release_first.lock().expect("release lock") = true;
+
+        for _ in 0..6 {
+            done_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("result");
+        }
+        assert_eq!(*order.lock().expect("order lock"), vec![10, 30, 50, 40, 20]);
+    }
+
+    #[test]
+    fn interactive_request_promotes_queued_low_job() {
+        let release_first = Arc::new(Mutex::new(false));
+        let order = Arc::new(Mutex::new(Vec::<i64>::new()));
+        let first_started = Arc::new(AtomicUsize::new(0));
+        let (release_clone, order_clone, started_clone) = (
+            Arc::clone(&release_first),
+            Arc::clone(&order),
+            Arc::clone(&first_started),
+        );
+        let scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                if task.asset_id == 10 {
+                    started_clone.store(1, Ordering::SeqCst);
+                    while !*release_clone.lock().expect("release lock") {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
+                order_clone.lock().expect("order lock").push(task.asset_id);
+                Some(task.target_path.to_string_lossy().to_string())
+            }),
+        );
+        let (tx, rx) = mpsc::channel::<ThumbnailTaskResult>();
+        scheduler
+            .enqueue_with_sender(task(10, "C:/tmp/a.jpg"), ThumbnailPriority::Low, tx.clone())
+            .expect("first");
+        while first_started.load(Ordering::SeqCst) == 0 {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        scheduler
+            .enqueue_with_sender(
+                task(20, "C:/tmp/b.jpg"),
+                ThumbnailPriority::High,
+                tx.clone(),
+            )
+            .expect("high");
+        scheduler
+            .enqueue_with_sender(task(30, "C:/tmp/c.jpg"), ThumbnailPriority::Low, tx.clone())
+            .expect("low");
+        scheduler
+            .enqueue_with_sender(
+                task(30, "C:/tmp/c.jpg"),
+                ThumbnailPriority::Interactive,
+                tx.clone(),
+            )
+            .expect("promote");
+        *release_first.lock().expect("release lock") = true;
+        for _ in 0..4 {
+            rx.recv_timeout(Duration::from_secs(2)).expect("result");
+        }
+        assert_eq!(*order.lock().expect("order lock"), vec![10, 30, 20]);
     }
 
     #[test]

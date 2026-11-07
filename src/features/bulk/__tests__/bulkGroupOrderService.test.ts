@@ -18,7 +18,7 @@ function createAsset(id: number, groupKey: string | null, groupOrder: number | n
     width: null,
     height: null,
     duration_ms: null,
-    thumb_path: null,
+    thumb_version: "0123456789abcdef",
     is_favorite: false,
     media_group_key: groupKey,
     media_group_order: groupOrder

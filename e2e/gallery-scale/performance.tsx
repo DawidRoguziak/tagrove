@@ -1,7 +1,6 @@
 import { createSignal, flush } from "solid-js";
 import { render } from "@solidjs/web";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { Channel } from "@tauri-apps/api/core";
 import { GalleryGrid } from "../../src/features/gallery/GalleryGrid";
 import { createLibrary } from "../../src/library/createLibrary";
 import { LanguageProvider } from "../../src/i18n/solid";
@@ -16,8 +15,9 @@ const total = 26_000;
 const requests: { command: string; offset?: number; ids?: number[]; time: number }[] = [];
 const asset = (index: number): AssetSummary => ({ id: index + 1, file_name: `synthetic-${index}.png`,
   preview_path: null, kind: "image", modified_at: 0, width: 188, height: 188,
-  duration_ms: null, thumb_path: null, is_favorite: false, media_group_key: null, media_group_order: null });
-const image = (id: number) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="188" height="188"><rect width="188" height="188" fill="hsl(${id % 360},60%,35%)"/><circle cx="94" cy="78" r="48" fill="hsl(${(id + 80) % 360},60%,65%)"/><text x="12" y="172" fill="white" font-size="22">${id}</text></svg>`)}`;
+  duration_ms: null, thumb_version: "0123456789abcdef", is_favorite: false, media_group_key: null, media_group_order: null });
+// Thumbnails come from the synthetic `thumb://` scheme registered by webkit.py (SVG, 20 ms).
+const isThumbnail = (img: HTMLImageElement) => img.src.startsWith("thumb://");
 mockIPC(async (command, payload) => {
   if (!payload || typeof payload !== "object") throw new Error(`Missing payload: ${command}`);
   if (command === "start_asset_query" || command === "get_asset_query_page") {
@@ -27,18 +27,17 @@ mockIPC(async (command, payload) => {
     return { status: "ready", session_id: 1, revision: 1, total, offset,
       items: Array.from({ length: Math.min(128, total - offset) }, (_, i) => asset(offset + i)) };
   }
-  if (command === "ensure_thumbnails") {
-    const ids = [...Reflect.get(payload, "visibleIds"), ...Reflect.get(payload, "prefetchIds")];
-    const channel = Reflect.get(payload, "onEvent");
-    if (!(channel instanceof Channel)) throw new Error("Missing thumbnail channel");
-    requests.push({ command, ids, time: performance.now() });
-    await pause(20);
-    for (const id of ids) channel.onmessage({ event: "ready", data: { asset_id: id, thumb_path: image(id) } });
-    return;
-  }
   throw new Error(`Unexpected synthetic command: ${command}`);
 });
-Reflect.set(Reflect.get(window, "__TAURI_INTERNALS__"), "convertFileSrc", (path: string) => path);
+// Every `src` set to a thumb:// URL is one thumbnail request.
+new MutationObserver(records => {
+  for (const record of records) {
+    const target = record.target;
+    if (!(target instanceof HTMLImageElement) || !target.src.startsWith("thumb://")) continue;
+    const id = Number(/^thumb:\/\/localhost\/(\d+)/.exec(target.src)?.[1]);
+    requests.push({ command: target.src.includes("&c=1") ? "thumb-cached-only" : "thumb", ids: [id], time: performance.now() });
+  }
+}).observe(document, { subtree: true, attributes: true, attributeFilter: ["src"] });
 await i18nReady;
 let library: ReturnType<typeof createLibrary> | undefined;
 let scroller: HTMLElement | undefined;
@@ -50,8 +49,7 @@ const dispose = render(() => {
     <section ref={el => { scroller = el; setRef(el); }} class="gallery-scroll overflow-y-scroll"
       style={{width: "1044px", height: "600px"}}>
       <GalleryGrid assets={model.query.assets} assetCount={model.query.total}
-        getAssetAt={model.query.getAssetAt} tileSize={188} isGeneratingThumbnails={model.thumbnails.isGeneratingPage}
-        pendingThumbnailCount={model.thumbnails.pendingPageSize} thumbnailStore={model.thumbnails.thumbnailStore}
+        getAssetAt={model.query.getAssetAt} tileSize={188}
         scroller={ref} onVirtualRangeChange={model.handleVirtualRangeChange}
         onSelect={() => {}} hasScanRoots onAddFirstFolder={() => {}} selectionModeEnabled={false}
         selectedAssetIds={new Set()} onBulkSelectionInteraction={() => {}} loadError={null}
@@ -71,7 +69,7 @@ try {
   const sampleModerate = () => {
     if (!samplingModerate) return;
     const loaded = Array.from(element.querySelectorAll("img")).filter(img =>
-      img.src.startsWith("data:image/svg+xml") && img.complete && img.naturalWidth &&
+      isThumbnail(img) && img.complete && img.naturalWidth &&
       img.getBoundingClientRect().bottom > 0 && img.getBoundingClientRect().top < 600);
     const opacities = loaded.map(img => Number(getComputedStyle(img).opacity));
     moderateFrames.push({ loaded: loaded.length, dimmed: opacities.filter(value => value < 0.95).length,
@@ -115,13 +113,13 @@ try {
         pausedFrames++;
         // A pause suspends demand only: loaded tiles stay, placeholders stop pulsing.
         if (element.querySelector(".animate-pulse, .animate-spin")) invalidPausedFrames++;
-        if (imgs.some(img => img.src.startsWith("data:image/svg+xml"))) pausedFramesWithImages++;
+        if (imgs.some(img => isThumbnail(img))) pausedFramesWithImages++;
       }
       if (lastScroll && !loadedAt) {
-        const ready = imgs.filter(img => img.src.startsWith("data:image/svg+xml") && img.complete && img.naturalWidth && img.getBoundingClientRect().bottom > 0 && img.getBoundingClientRect().top < 600);
+        const ready = imgs.filter(img => isThumbnail(img) && img.complete && img.naturalWidth && img.getBoundingClientRect().bottom > 0 && img.getBoundingClientRect().top < 600);
         if (ready.length) loadedAt = performance.now();
       }
-      if (loadedAt && !visibleAt && imgs.some(img => img.src.startsWith("data:image/svg+xml") && img.complete && img.naturalWidth && Number(getComputedStyle(img).opacity) > 0.95 && img.getBoundingClientRect().bottom > 0 && img.getBoundingClientRect().top < 600)) visibleAt = performance.now();
+      if (loadedAt && !visibleAt && imgs.some(img => isThumbnail(img) && img.complete && img.naturalWidth && Number(getComputedStyle(img).opacity) > 0.95 && img.getBoundingClientRect().bottom > 0 && img.getBoundingClientRect().top < 600)) visibleAt = performance.now();
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -141,8 +139,8 @@ try {
     results.push({ pass, scrolls, frameCount: frames.length, frameP50: sorted[Math.floor(sorted.length * .5)],
       frameP95: sorted[Math.floor(sorted.length * .95)], frameMax: Math.max(...frames), over25ms: frames.filter(ms => ms > 25).length,
       pageRequests: requests.filter(r => r.command === "get_asset_query_page").length,
-      thumbnailRequests: requests.filter(r => r.command === "ensure_thumbnails").length,
-      thumbnailIds: requests.flatMap(r => r.ids ?? []).length, loadedAfterStopMs: loadedAt - lastScroll,
+      thumbnailRequests: requests.filter(r => r.command === "thumb").length,
+      cachedOnlyThumbnailRequests: requests.filter(r => r.command === "thumb-cached-only").length, loadedAfterStopMs: loadedAt - lastScroll,
       visibleAfterStopMs: visibleAt - lastScroll, pausedFrames, invalidPausedFrames, pausedFramesWithImages, tilesCreated,
       finalScrollTop: element.scrollTop, requests, frames });
     // Keep each pass's request array independent.
@@ -153,7 +151,7 @@ try {
   for (let i = 0; i < 100 && window.nativeDone !== screenshotId; i++) await pause(10);
   if (window.nativeDone !== screenshotId) throw new Error("Missing screenshot completion");
   dispose();
-  window.scaleResult = { ok: true, results, moderateFrames, scope: "Native WebKitGTK scrollbar drag; production gallery, page cache and thumbnail queue; 26000 synthetic summaries and SVG thumbnails; mocked transport delays 12ms/page, 20ms/batch. Synthetic SVG decoding only; no SQLite, real media or native IPC benchmark." };
+  window.scaleResult = { ok: true, results, moderateFrames, scope: "Native WebKitGTK scrollbar drag; production gallery, page cache and thumb:// tiles; 26000 synthetic summaries and SVG thumbnails from a synthetic thumb:// scheme; mocked transport delays 12ms/page, 20ms/thumbnail. Synthetic SVG decoding only; no SQLite, real media or native IPC benchmark." };
 } catch (error) {
   window.scaleResult = { ok: false, error: String(error), results, moderateFrames };
 }

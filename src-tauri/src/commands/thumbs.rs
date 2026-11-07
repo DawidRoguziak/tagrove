@@ -1,8 +1,8 @@
-use tauri::{ipc::Channel, Manager};
+use tauri::Manager;
 
 use crate::{
     app::{locks::with_thumb_lock, locks::with_thumb_operation, state::AppState},
-    models::{ThumbnailBatchResult, ThumbnailRenderSummary, ThumbnailStreamEvent, VideoToolStatus},
+    models::{ThumbnailRenderSummary, VideoToolStatus},
     services::thumb_service,
     thumbs,
 };
@@ -10,8 +10,10 @@ use crate::{
 // Every thumbnail command performs blocking work (SQLite, filesystem scans,
 // scheduler waits). Each body runs on the blocking thread pool via
 // `spawn_blocking`, and the thumb lock is acquired inside that blocking task
-// so no lock is ever held across an await. Render/ensure services take the
-// shared guard per short section (`thumb_read_section`), not while waiting.
+// so no lock is ever held across an await. Render services take the shared
+// guard per short section (`thumb_read_section`), not while waiting.
+// On-demand gallery thumbnails are served by the `thumb://` scheme
+// (services/thumb_protocol.rs), not by a command.
 
 #[tauri::command]
 pub async fn get_video_tool_status(app: tauri::AppHandle) -> Result<VideoToolStatus, String> {
@@ -74,67 +76,6 @@ pub async fn clear_all_thumbnails(app: tauri::AppHandle) -> Result<usize, String
     })
     .await
     .map_err(|e| format!("thumbnail clear worker failed: {e}"))?
-}
-
-#[tauri::command]
-pub async fn ensure_asset_thumbnail(
-    asset_id: i64,
-    app: tauri::AppHandle,
-) -> Result<Option<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        with_thumb_operation(&state, |permit| {
-            thumb_service::ensure_asset_thumbnail(asset_id, &state, permit)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("thumbnail demand worker failed: {e}"))?
-}
-
-#[tauri::command]
-pub async fn ensure_page_thumbnails(
-    asset_ids: Vec<i64>,
-    app: tauri::AppHandle,
-) -> Result<ThumbnailBatchResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        with_thumb_operation(&state, |permit| {
-            thumb_service::ensure_page_thumbnails(asset_ids, &state, permit, &app)
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("thumbnail page worker failed: {e}"))?
-}
-
-#[tauri::command]
-pub async fn ensure_thumbnails(
-    request_id: u64,
-    visible_ids: Vec<i64>,
-    prefetch_ids: Vec<i64>,
-    on_event: Channel<ThumbnailStreamEvent>,
-    app: tauri::AppHandle,
-) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        with_thumb_operation(&state, |permit| {
-            thumb_service::ensure_thumbnails_stream(
-                request_id,
-                visible_ids,
-                prefetch_ids,
-                &state,
-                permit,
-                &app,
-                |event| {
-                    let _ = on_event.send(event);
-                },
-            )
-        })
-        .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| format!("thumbnail stream worker failed: {e}"))?
 }
 
 #[cfg(test)]

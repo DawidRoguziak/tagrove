@@ -91,7 +91,6 @@
     "videoChip": "Video",
     "gifChip": "GIF",
     "groupedChip": "Součást skupiny médií",
-    "generatingThumbnails": "Generování náhledů pro {{count}} položek ve frontě.",
     "endOfResults": "Konec výsledků",
     "resultCount_one": "{{formattedCount}} položka",
     "resultCount_few": "{{formattedCount}} položky",

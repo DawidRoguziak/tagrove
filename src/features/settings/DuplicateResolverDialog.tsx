@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onSettled } from "solid-js";
+import { createMemo, createSignal, For, onSettled } from "solid-js";
 import { useLanguage } from "../../i18n/solid";
 import { createVirtualList } from "../../ui/dom/createVirtualList";
 import { UiButton } from "../../ui/controls/UiButton";
@@ -7,19 +7,13 @@ import { DuplicateGroupCard } from "./DuplicateGroupCard";
 import { createDuplicateResolver } from "./createDuplicateResolver";
 import { SectionOperationStatus } from "./SectionOperationStatus";
 import type { DuplicateGroup } from "../../platform/tauri/contracts/maintenance";
-import type {
-  DuplicateResolutionChange,
-  SectionOperationState
-} from "./types";
-import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
+import type { DuplicateResolutionChange, SectionOperationState } from "./types";
 
 interface Props {
   open: boolean;
   isOperationLocked: boolean;
   operationState: SectionOperationState;
   groups: DuplicateGroup[];
-  thumbnailStore: ThumbnailStore;
-  onQueueThumbnailsByIds: (ids: number[]) => void;
   onClose: () => void;
   onRescan: () => void;
   onSaveAll: (changes: DuplicateResolutionChange[]) => Promise<void>;
@@ -61,21 +55,6 @@ export function DuplicateResolverDialog(props: Props) {
       return group ? [group] : [];
     });
   });
-  createEffect(
-    () =>
-      props.open
-        ? [
-            ...new Set(
-              snapshot().items.flatMap((item) =>
-                (props.groups[item.index]?.assets ?? []).map((asset) => asset.id)
-              )
-            )
-          ]
-        : [],
-    (ids) => {
-      if (ids.length) props.onQueueThumbnailsByIds(ids);
-    }
-  );
   const hasChanges = () => state.stagedChanges.length > 0;
   const canSave = () => !props.isOperationLocked && hasChanges() && state.validationResult.valid;
   return (
@@ -153,7 +132,6 @@ export function DuplicateResolverDialog(props: Props) {
                   group={item.group}
                   renameValues={state.renameValues}
                   stagedChangesByAssetId={state.stagedChangesByAssetId}
-                  thumbnailStore={props.thumbnailStore}
                   isOperationLocked={props.isOperationLocked}
                   t={t}
                   onRenameValueChange={(event) => {

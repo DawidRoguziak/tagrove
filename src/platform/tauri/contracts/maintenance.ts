@@ -3,6 +3,7 @@ export interface DuplicateAsset {
   path: string;
   record_version: number;
   size_bytes: number;
+  thumb_version: string;
 }
 
 export interface DuplicateGroup {

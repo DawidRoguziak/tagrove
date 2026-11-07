@@ -92,7 +92,7 @@ async function installTrace() {
     if (window.gridTrace) return;
     const traced = new Set([
       "start_asset_query", "get_asset_query_page", "set_asset_favorite", "set_asset_tags",
-      "get_asset_details", "scan_folder", "ensure_thumbnails"
+      "get_asset_details", "scan_folder"
     ]);
     const original = window.fetch;
     window.gridTrace = { calls: [], counts: {} };
@@ -108,7 +108,6 @@ async function installTrace() {
         if (command === "set_asset_favorite") entry.args = { assetId: args.assetId, isFavorite: args.isFavorite };
         if (command === "set_asset_tags") entry.args = { assetId: args.assetId, tags: args.tags };
         if (command === "get_asset_query_page") entry.args = { offset: args.offset };
-        if (command === "ensure_thumbnails") entry.args = { count: args.assetIds?.length ?? null };
       } catch {
         entry.args = null;
       }

@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::{BufReader, Read},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Output, Stdio},
     thread,
@@ -49,21 +50,33 @@ impl SourceVersion {
     }
 }
 
-pub fn thumb_target(thumbs_dir: &Path, version: &SourceVersion) -> PathBuf {
+/// Hex characters of the cache key exposed to the frontend as `thumb_version`.
+pub const THUMB_VERSION_LEN: usize = 16;
+
+/// Full hex cache key of a source version; also the thumbnail file stem.
+pub fn thumb_cache_key(path: &str, size_bytes: i64, mtime_ns: i64) -> String {
     let mut hasher = Sha256::new();
     hasher.update(THUMB_CACHE_VERSION.to_le_bytes());
     hasher.update([0u8]);
-    hasher.update(version.path.as_bytes());
+    hasher.update(path.as_bytes());
     hasher.update([0u8]);
-    hasher.update(version.size_bytes.to_le_bytes());
-    hasher.update(version.mtime_ns.to_le_bytes());
-    let key = format!("{:x}", hasher.finalize());
-    thumbs_dir.join(format!("{}.jpg", key))
+    hasher.update(size_bytes.to_le_bytes());
+    hasher.update(mtime_ns.to_le_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
-fn probe_image_dimensions(source_path: &Path) -> anyhow::Result<(u32, u32)> {
-    let reader = image::ImageReader::open(source_path)?;
-    Ok(reader.with_guessed_format()?.into_dimensions()?)
+/// Short public token of a source version, used as the `v` query parameter of
+/// `thumb://` URLs. It is a prefix of the file stem, so a URL changes exactly
+/// when the thumbnail file would change.
+pub fn thumb_version_token(path: &str, size_bytes: i64, mtime_ns: i64) -> String {
+    let mut key = thumb_cache_key(path, size_bytes, mtime_ns);
+    key.truncate(THUMB_VERSION_LEN);
+    key
+}
+
+pub fn thumb_target(thumbs_dir: &Path, version: &SourceVersion) -> PathBuf {
+    let key = thumb_cache_key(&version.path, version.size_bytes, version.mtime_ns);
+    thumbs_dir.join(format!("{}.jpg", key))
 }
 
 /// Pure budget rule: whether a source image must be rejected before decode.
@@ -71,24 +84,100 @@ pub fn exceeds_decode_budget(width: u32, height: u32) -> bool {
     u64::from(width) * u64::from(height) > MAX_DECODE_PIXELS
 }
 
+fn budget_error(width: u32, height: u32) -> anyhow::Error {
+    anyhow::anyhow!("image {width}x{height} exceeds decode budget of {MAX_DECODE_PIXELS} pixels")
+}
+
+/// Smallest decoded size that still covers the thumbnail without upscaling:
+/// the crop width for tall images, the longer side otherwise.
+fn scaled_decode_request(width: u32, height: u32) -> (u16, u16) {
+    let size = IMAGE_THUMB_SIZE;
+    if top_biased_square_crop_rect(width, height).is_some() {
+        // Both axes requested, so the decoded width (the crop) is at least `size`.
+        let tall = (u64::from(size) * u64::from(height)).div_ceil(u64::from(width.max(1)));
+        (size as u16, tall.min(u64::from(u16::MAX)) as u16)
+    } else {
+        (size as u16, size as u16)
+    }
+}
+
+/// Decodes a baseline or progressive JPEG directly at the smallest IDCT scale
+/// (1/8, 1/4, 1/2 or 1) that still covers the thumbnail. `None` means the
+/// caller must use the general decoder (CMYK, 16-bit, or a decoder error).
+fn decode_scaled_jpeg(source_path: &Path) -> anyhow::Result<Option<image::DynamicImage>> {
+    let mut decoder = jpeg_decoder::Decoder::new(BufReader::new(fs::File::open(source_path)?));
+    if decoder.read_info().is_err() {
+        return Ok(None);
+    }
+    let Some(info) = decoder.info() else {
+        return Ok(None);
+    };
+    let (width, height) = (u32::from(info.width), u32::from(info.height));
+    if exceeds_decode_budget(width, height) {
+        return Err(budget_error(width, height));
+    }
+    let (request_width, request_height) = scaled_decode_request(width, height);
+    if decoder.scale(request_width, request_height).is_err() {
+        return Ok(None);
+    }
+    let Ok(pixels) = decoder.decode() else {
+        return Ok(None);
+    };
+    let Some(info) = decoder.info() else {
+        return Ok(None);
+    };
+    let (width, height) = (u32::from(info.width), u32::from(info.height));
+    Ok(match info.pixel_format {
+        jpeg_decoder::PixelFormat::RGB24 => {
+            image::RgbImage::from_raw(width, height, pixels).map(image::DynamicImage::ImageRgb8)
+        }
+        jpeg_decoder::PixelFormat::L8 => {
+            image::GrayImage::from_raw(width, height, pixels).map(image::DynamicImage::ImageLuma8)
+        }
+        jpeg_decoder::PixelFormat::L16 | jpeg_decoder::PixelFormat::CMYK32 => None,
+    })
+}
+
+fn is_jpeg(source_path: &Path) -> std::io::Result<bool> {
+    let mut magic = [0u8; 3];
+    let read = fs::File::open(source_path)?.read(&mut magic)?;
+    Ok(read == 3 && magic == [0xFF, 0xD8, 0xFF])
+}
+
+/// Full decode through `image`, checking the budget from the header of the
+/// same open file instead of probing it separately.
+fn decode_full(source_path: &Path) -> anyhow::Result<image::DynamicImage> {
+    let decoder = image::ImageReader::new(BufReader::new(fs::File::open(source_path)?))
+        .with_guessed_format()?
+        .into_decoder()?;
+    let (width, height) = image::ImageDecoder::dimensions(&decoder);
+    if exceeds_decode_budget(width, height) {
+        return Err(budget_error(width, height));
+    }
+    Ok(image::DynamicImage::from_decoder(decoder)?)
+}
+
 pub fn create_image_thumb(source_path: &Path, target_path: &Path) -> anyhow::Result<()> {
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let (source_width, source_height) = probe_image_dimensions(source_path)?;
-    if exceeds_decode_budget(source_width, source_height) {
-        return Err(anyhow::anyhow!(
-            "image {source_width}x{source_height} exceeds decode budget of {MAX_DECODE_PIXELS} pixels"
-        ));
-    }
-
-    let image = image::open(source_path)?;
+    let scaled = if is_jpeg(source_path)? {
+        decode_scaled_jpeg(source_path)?
+    } else {
+        None
+    };
+    let image = match scaled {
+        Some(image) => image,
+        None => decode_full(source_path)?,
+    };
+    // The source is already near the target size after a scaled decode, so a
+    // cheap filter is enough; `thumbnail` uses its own fast area sampling.
     let thumb =
         if let Some((x, y, size)) = top_biased_square_crop_rect(image.width(), image.height()) {
             image
                 .crop_imm(x, y, size, size)
-                .resize_exact(IMAGE_THUMB_SIZE, IMAGE_THUMB_SIZE, FilterType::Lanczos3)
+                .resize_exact(IMAGE_THUMB_SIZE, IMAGE_THUMB_SIZE, FilterType::Triangle)
                 .to_rgb8()
         } else {
             image
@@ -118,11 +207,23 @@ fn top_biased_square_crop_rect(width: u32, height: u32) -> Option<(u32, u32, u32
     Some((0, top_offset, square_size))
 }
 
+/// How ffmpeg picks the thumbnail frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoFrameSeek {
+    /// Decode keyframes only and take the keyframe the input seek lands on.
+    /// About 4x faster, but some files yield no frame; callers then retry
+    /// with `Exact`.
+    Keyframe,
+    /// Decode up to the exact seek time.
+    Exact,
+}
+
 pub fn create_video_thumb(
     ffmpeg_path: &Path,
     source_path: &Path,
     target_path: &Path,
     seek_seconds: f64,
+    frame_seek: VideoFrameSeek,
 ) -> anyhow::Result<()> {
     if !is_launchable_tool_path(ffmpeg_path) {
         return Ok(());
@@ -143,7 +244,11 @@ pub fn create_video_thumb(
         .arg("-nostdin")
         .arg("-y")
         .arg("-threads")
-        .arg("1")
+        .arg("1");
+    if frame_seek == VideoFrameSeek::Keyframe {
+        command.args(["-skip_frame", "nokey", "-noaccurate_seek"]);
+    }
+    command
         .arg("-ss")
         .arg(format!("{seek_seconds:.3}"))
         .arg("-i")
@@ -612,7 +717,8 @@ mod tests {
             .expect("generate video fixture");
         assert!(status.success());
         assert!(probe_video_duration_ms(ffmpeg, &video).is_some());
-        create_video_thumb(ffmpeg, &video, &thumb, 0.1).expect("render video thumbnail");
+        create_video_thumb(ffmpeg, &video, &thumb, 0.1, super::VideoFrameSeek::Exact)
+            .expect("render video thumbnail");
         assert!(thumb.is_file());
     }
     #[cfg(unix)]
@@ -644,5 +750,94 @@ mod tests {
         )
         .is_err());
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn version_token_is_a_prefix_of_the_thumbnail_file_stem() {
+        let version = super::SourceVersion::new("/library/a.jpg", 1234, 5_000_000_001);
+        let target = super::thumb_target(std::path::Path::new("/thumbs"), &version);
+        let stem = target.file_stem().unwrap().to_string_lossy().to_string();
+        let token = super::thumb_version_token("/library/a.jpg", 1234, 5_000_000_001);
+        assert_eq!(token.len(), super::THUMB_VERSION_LEN);
+        assert!(stem.starts_with(&token));
+        assert_ne!(
+            token,
+            super::thumb_version_token("/library/a.jpg", 1234, 5_000_000_002),
+            "a new mtime changes the URL"
+        );
+    }
+    fn thumb_dimensions(source: image::DynamicImage, format: image::ImageFormat) -> (u32, u32) {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("source.img");
+        source.save_with_format(&source_path, format).unwrap();
+        let target = dir.path().join("thumbs/out.jpg");
+        super::create_image_thumb(&source_path, &target).unwrap();
+        image::image_dimensions(&target).unwrap()
+    }
+
+    #[test]
+    fn scaled_jpeg_decode_keeps_thumbnail_geometry() {
+        let wide =
+            image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(2_000, 1_000, |x, y| {
+                image::Rgb([(x % 256) as u8, (y % 256) as u8, 90])
+            }));
+        assert_eq!(thumb_dimensions(wide, image::ImageFormat::Jpeg), (390, 195));
+        // Tall images keep the top-biased square crop at full thumbnail size.
+        let tall = image::DynamicImage::ImageRgb8(image::RgbImage::new(800, 2_000));
+        assert_eq!(thumb_dimensions(tall, image::ImageFormat::Jpeg), (390, 390));
+        let gray = image::DynamicImage::ImageLuma8(image::GrayImage::new(1_600, 1_200));
+        assert_eq!(thumb_dimensions(gray, image::ImageFormat::Jpeg), (390, 293));
+        // Non-JPEG sources take the general decoder.
+        let png = image::DynamicImage::ImageRgb8(image::RgbImage::new(1_200, 600));
+        assert_eq!(thumb_dimensions(png, image::ImageFormat::Png), (390, 195));
+    }
+
+    #[test]
+    fn scaled_decode_request_covers_the_crop_width_of_tall_images() {
+        assert_eq!(super::scaled_decode_request(6_000, 4_000), (390, 390));
+        assert_eq!(super::scaled_decode_request(1_000, 3_000), (390, 1_170));
+        assert_eq!(super::scaled_decode_request(1, 65_535), (390, u16::MAX));
+    }
+
+    #[test]
+    fn broken_jpeg_reports_an_error_instead_of_panicking() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("broken.jpg");
+        std::fs::write(&source, [0xFF, 0xD8, 0xFF, 0xE0, 0, 16, b'J']).unwrap();
+        assert!(super::create_image_thumb(&source, &dir.path().join("out.jpg")).is_err());
+    }
+    #[test]
+    fn keyframe_mode_renders_a_long_gop_video_with_system_tools() {
+        let ffmpeg = std::path::Path::new("/usr/bin/ffmpeg");
+        if !ffmpeg.is_file() {
+            return;
+        }
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let video = tmp.path().join("gop.mp4");
+        let status = std::process::Command::new(ffmpeg)
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x240:rate=25",
+                "-t",
+                "6",
+                "-g",
+                "50",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
+            .arg(&video)
+            .status()
+            .expect("generate video fixture");
+        assert!(status.success());
+        let thumb = tmp.path().join("gop.jpg");
+        super::create_video_thumb(ffmpeg, &video, &thumb, 3.0, super::VideoFrameSeek::Keyframe)
+            .expect("render keyframe thumbnail");
+        assert_eq!(image::image_dimensions(&thumb).unwrap().0, 390);
     }
 }

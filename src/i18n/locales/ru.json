@@ -91,7 +91,6 @@
     "videoChip": "Видео",
     "gifChip": "GIF",
     "groupedChip": "Часть медиагруппы",
-    "generatingThumbnails": "Создание миниатюр для {{count}} элементов в очереди.",
     "endOfResults": "Конец результатов",
     "resultCount_one": "{{formattedCount}} элемент",
     "resultCount_few": "{{formattedCount}} элемента",

@@ -1,5 +1,4 @@
 import { For } from "solid-js";
-import type { ThumbnailStore } from "../../library/thumbnails/thumbnailStore";
 type ChangeEvent<T> = Event & {
   currentTarget: T;
 };
@@ -14,7 +13,6 @@ interface DuplicateGroupCardProps {
   group: DuplicateGroup;
   renameValues: Record<number, string>;
   stagedChangesByAssetId: Record<number, DuplicateResolutionChange>;
-  thumbnailStore: ThumbnailStore;
   isOperationLocked: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
   onRenameValueChange: (event: ChangeEvent<HTMLInputElement>) => void;
@@ -44,7 +42,6 @@ export function DuplicateGroupCard(props: DuplicateGroupCardProps) {
             asset={asset}
             renameValue={props.renameValues[asset.id] ?? getCurrentName(asset)}
             staged={props.stagedChangesByAssetId[asset.id] ?? null}
-            thumbnailStore={props.thumbnailStore}
             isOperationLocked={props.isOperationLocked}
             t={props.t}
             onRenameValueChange={props.onRenameValueChange}

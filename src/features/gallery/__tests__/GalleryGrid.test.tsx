@@ -7,14 +7,12 @@ import { createSelection } from "../createSelection";
 import { GalleryGrid } from "../GalleryGrid";
 import { MAX_GRID_HEIGHT } from "../gridGeometry";
 import { LanguageProvider } from "../../../i18n/solid";
-import { ThumbnailStore } from "../../../library/thumbnails/thumbnailStore";
 import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
 import { idRangeResult, sequentialIds } from "../../../test/idRange";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
-  getAssetQueryIdRange: vi.fn(),
-  demand: vi.fn()
+  getAssetQueryIdRange: vi.fn()
 }));
 vi.mock("../../../platform/tauri/assets", async () => ({
   ...(await vi.importActual("../../../platform/tauri/assets")),
@@ -24,16 +22,10 @@ vi.mock("../../../platform/tauri/assets", async () => ({
 vi.mock("../../../platform/tauri/tags", () => ({
   listTags: vi.fn().mockResolvedValue({ items: [], total: 0 })
 }));
-vi.mock("../../../library/thumbnails/createThumbnailQueue", () => ({
-  createThumbnailQueue: () => ({
-    thumbnailStore: new ThumbnailStore(),
-    resetThumbnailQueue: vi.fn(),
-    setGalleryThumbnailDemand: api.demand,
-    queueThumbnailsByIds: vi.fn(),
-    isGeneratingPage: false,
-    pendingPageSize: 0
-  })
-}));
+const V = "0123456789abcdef";
+/** `src` of the tile image at a global index. */
+const tileSrc = (container: HTMLElement, index: number) =>
+  container.querySelector(`button[data-asset-index="${index}"] img`)?.getAttribute("src");
 const asset = (index: number): AssetSummary => ({
   id: index + 1,
   file_name: `synthetic-${index}.png`,
@@ -43,7 +35,7 @@ const asset = (index: number): AssetSummary => ({
   width: 100,
   height: 100,
   duration_ms: null,
-  thumb_path: null,
+  thumb_version: "0123456789abcdef",
   is_favorite: false,
   media_group_key: index < 2 ? "group" : null,
   media_group_order: null
@@ -107,7 +99,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-async function mount(selectionEnabled = false, generating = false) {
+async function mount(selectionEnabled = false) {
   const { result: library } = renderHook(() => createLibrary());
   const { result: selection } = renderHook(() =>
     createSelection({
@@ -119,14 +111,6 @@ async function mount(selectionEnabled = false, generating = false) {
   await library.query.refresh();
   flush();
   if (selectionEnabled) selection.toggle();
-  let subscriptions = 0;
-  const store = library.thumbnails.thumbnailStore;
-  const subscribe = store.subscribe;
-  vi.spyOn(store, "subscribe").mockImplementation((id, listener) => {
-    subscriptions++;
-    const unsubscribe = subscribe(id, listener);
-    return () => { subscriptions--; unsubscribe(); };
-  });
   const click = vi.fn(),
     range = vi.fn(library.handleVirtualRangeChange);
   const view = render(() => {
@@ -139,9 +123,6 @@ async function mount(selectionEnabled = false, generating = false) {
             assetCount={library.query.total}
             getAssetAt={library.query.getAssetAt}
             tileSize={188}
-            isGeneratingThumbnails={generating}
-            pendingThumbnailCount={3}
-            thumbnailStore={library.thumbnails.thumbnailStore}
             scroller={scroller}
             onVirtualRangeChange={range}
             onSelect={click}
@@ -170,7 +151,7 @@ async function mount(selectionEnabled = false, generating = false) {
     fireEvent.scroll(scroller);
     flush();
   };
-  return { library, selection, view, scroll, click, range, scroller, subscriptions: () => subscriptions };
+  return { library, selection, view, scroll, click, range, scroller };
 }
 it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and reloads beyond 12 cached pages", async () => {
   const { library, view, scroll, range } = await mount();
@@ -191,7 +172,7 @@ it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and r
   await waitFor(() =>
     expect(view.container.querySelector('button[data-asset-index="1000"]')).toBeInTheDocument()
   );
-  expect(api.demand.mock.calls.some(([visible]) => visible.includes(1001))).toBe(true);
+  expect(tileSrc(view.container, 1000)).toBe(`thumb://localhost/1001?v=${V}`);
   // Visit more pages than the cache keeps so page 0 must be evicted.
   for (let index = 1536; index < 1536 + (MAX_CACHED_PAGES + 4) * 256; index += 256) {
     scroll(index);
@@ -211,20 +192,15 @@ it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and r
   expect(api.getAssetQueryPage).toHaveBeenCalledWith(1, 0, 128);
 });
 it("keeps GIFs static, updates only their thumbnail DOM and selects the current slot identity", async () => {
-  const { library, view, scroll, click, range, scroller } = await mount();
+  const { view, scroll, click, scroller } = await mount();
   const first = view.container.querySelector<HTMLButtonElement>('button[data-asset-index="0"]');
   if (!first) throw new Error("Missing first tile");
   expect(first.querySelector("img")?.src).not.toContain("animated.gif");
   expect(first).toHaveTextContent("GIF");
   expect(first).toHaveTextContent("Part of a media group");
-  const unchanged = view.container.querySelector('button[data-asset-index="1"] img');
-  range.mockClear();
-  library.thumbnails.thumbnailStore.complete({ 1: "/synthetic/still.jpg" }, [1]);
-  flush();
-  expect(first.querySelector("img")).toHaveAttribute("src", "/synthetic/still.jpg");
+  // GIF tiles load the static thumbnail by ID, never the original file.
+  expect(first.querySelector("img")).toHaveAttribute("src", `thumb://localhost/1?v=${V}`);
   expect(first.querySelector("img")).not.toHaveClass("thumbnail-fade-in");
-  expect(view.container.querySelector('button[data-asset-index="1"] img')).toBe(unchanged);
-  expect(range).not.toHaveBeenCalled();
   fireEvent.click(first);
   expect(click).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1 }));
   const retained = view.container.querySelector('button[data-asset-index="25"]');
@@ -242,6 +218,20 @@ it("keeps GIFs static, updates only their thumbnail DOM and selects the current 
   expect(current.querySelector("img")).not.toHaveClass("thumbnail-fade-in");
   fireEvent.click(current);
   expect(click).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1001 }));
+});
+it("requests overscan thumbnails at prefetch priority and visible ones without it", async () => {
+  const { view, range } = await mount();
+  const viewport = range.mock.lastCall?.[0];
+  if (!viewport) throw new Error("Missing published range");
+  const tiles = [...view.container.querySelectorAll<HTMLElement>("button[data-asset-index]")];
+  expect(tiles.some((tile) => Number(tile.dataset.assetIndex) > viewport.visibleEndIndex)).toBe(true);
+  for (const tile of tiles) {
+    const index = Number(tile.dataset.assetIndex);
+    const visible = index >= viewport.visibleStartIndex && index <= viewport.visibleEndIndex;
+    expect(tile.querySelector("img")?.getAttribute("src")).toBe(
+      `thumb://localhost/${index + 1}?v=${V}${visible ? "" : "&p=1"}`
+    );
+  }
 });
 it("holds failed pages until explicit retry and replaces error placeholders on success", async () => {
   const { view, scroll } = await mount();
@@ -354,37 +344,22 @@ it("demands the final million-result page and passes the required total to the i
   expect(click).toHaveBeenCalledWith(expect.objectContaining({id: 1_000_000}));
 });
 
-it("shows thumbnail progress instead of the end state while thumbnails generate", async () => {
-  const { scroll } = await mount(false, true);
-  expect(screen.getByRole("status")).toHaveTextContent("Generating thumbnails for 3 queued items.");
-  scroll(25999);
-  await waitFor(() => expect(document.querySelector('button[data-asset-index="25999"]')).toBeInTheDocument());
-  expect(screen.getByRole("status")).toBeInTheDocument();
-  expect(screen.queryByTestId("gallery-end-state")).toBeNull();
-});
-
-
-it("renders static slots without subscriptions or passing-page requests and resumes the unchanged final range", async () => {
-  const { view, scroll, library, subscriptions } = await mount();
-  expect(subscriptions()).toBeGreaterThan(0);
+it("renders static slots without thumbnail or passing-page requests and resumes the unchanged final range", async () => {
+  const { view, scroll } = await mount();
+  expect(tileSrc(view.container, 0)).toBe(`thumb://localhost/1?v=${V}`);
   scroll(1000);
   scroll(2000);
   scroll(3000);
   expect(view.container.querySelectorAll("[data-asset-index]").length).toBeGreaterThan(0);
-  expect(view.container.querySelectorAll("img, .animate-pulse, .animate-spin")).toHaveLength(0);
-  expect(subscriptions()).toBe(0);
+  // Unloaded slots are static placeholders: no image request, no pulse.
+  expect(view.container.querySelectorAll("img, .animate-pulse")).toHaveLength(0);
   expect(api.getAssetQueryPage).not.toHaveBeenCalled();
-  expect(api.demand).toHaveBeenLastCalledWith([], []);
-  library.thumbnails.thumbnailStore.complete({ 1: "/synthetic/late.jpg" }, [1]);
-  flush();
-  expect(subscriptions()).toBe(0);
-  await waitFor(() => expect(view.container.querySelector('button[data-asset-index="3000"]')).toBeInTheDocument());
+  await waitFor(() =>
+    expect(view.container.querySelector('button[data-asset-index="3000"]')).toBeInTheDocument()
+  );
   expect(api.getAssetQueryPage.mock.calls.map(([, offset]) => offset)).toEqual([2944]);
-  expect(subscriptions()).toBeGreaterThan(0);
-  expect(api.demand.mock.lastCall?.[0]).toContain(3001);
-  view.unmount(); flush();
-  expect(subscriptions()).toBe(0);
-  expect(api.demand).toHaveBeenLastCalledWith([], []);
+  // Loaded after the pause: the rendering URL, not the cached-only one.
+  expect(tileSrc(view.container, 3000)).toBe(`thumb://localhost/3001?v=${V}`);
 });
 
 const rowOrder = (container: HTMLElement) =>
@@ -399,7 +374,6 @@ it("keeps loaded tiles mounted through a fast jump and suspends only page and th
     const before = new Set(view.container.querySelectorAll("button[data-asset-index]"));
     expect(before.size).toBe(60);
     api.getAssetQueryPage.mockClear();
-    api.demand.mockClear();
     // Twelve rows down stays inside the first cached page (indices 0-127).
     scroll(60);
     // Same reading as the E2E specs: present and not "false".
@@ -413,10 +387,19 @@ it("keeps loaded tiles mounted through a fast jump and suspends only page and th
     expect(view.container.querySelectorAll("img")).toHaveLength(60);
     expect(view.container.querySelectorAll(".animate-pulse")).toHaveLength(0);
     expect(api.getAssetQueryPage).not.toHaveBeenCalled();
-    expect(api.demand).toHaveBeenLastCalledWith([], []);
+    // Assets first shown during the pause ask for cached thumbnails only.
+    expect(tileSrc(view.container, 60)).toBe(`thumb://localhost/61?v=${V}&c=1`);
+    expect(tileSrc(view.container, 0)).toBeUndefined();
     vi.advanceTimersByTime(150);
     flush();
-    expect(api.demand.mock.lastCall?.[0]).toContain(61);
+    // A cached-only request that hit keeps its URL after the pause (no reload).
+    expect(tileSrc(view.container, 60)).toBe(`thumb://localhost/61?v=${V}&c=1`);
+    // A miss switches to the rendering URL once the pause is over.
+    const missed = view.container.querySelector('button[data-asset-index="60"] img');
+    if (!missed) throw new Error("Missing tile image");
+    fireEvent.error(missed);
+    flush();
+    expect(tileSrc(view.container, 60)).toBe(`thumb://localhost/61?v=${V}`);
   } finally {
     vi.useRealTimers();
   }

@@ -19,7 +19,8 @@ export interface AssetSummary {
   width: number | null;
   height: number | null;
   duration_ms: number | null;
-  thumb_path: string | null;
+  /** Source-version token; the `v` parameter of the `thumb://` URL. */
+  thumb_version: string;
   is_favorite: boolean;
   media_group_key: string | null;
   media_group_order: number | null;
@@ -28,6 +29,7 @@ export interface AssetSummary {
 export interface AssetDetails extends AssetSummary {
   path: string;
   size_bytes: number;
+  thumb_path: string | null;
   tags: string[];
 }
 

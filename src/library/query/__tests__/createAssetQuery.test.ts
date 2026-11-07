@@ -30,7 +30,7 @@ function createSummary(id: number): AssetSummary {
     width: 10,
     height: 10,
     duration_ms: null,
-    thumb_path: null,
+    thumb_version: "0123456789abcdef",
     is_favorite: false,
     media_group_key: null,
     media_group_order: null
@@ -591,7 +591,6 @@ describe("createAssetQuery", () => {
       ...readyStart([createSummary(3), createSummary(4)], 6, 5),
       offset: PAGE_SIZE
     });
-    const shown = vi.fn();
     const { result } = renderHook(() =>
       createAssetQuery({
         pageSize: PAGE_SIZE,
@@ -600,8 +599,7 @@ describe("createAssetQuery", () => {
           filterExclude: [],
           appliedMediaKind: "all",
           appliedFavoritesOnly: false
-        }),
-        onAssetsChanged: shown
+        })
       })
     );
     await settle(async () => {
@@ -627,16 +625,12 @@ describe("createAssetQuery", () => {
     expect(result.getAssetAt(PAGE_SIZE)?.id).toBe(3);
     expect(result.getAssetIndex(3)).toBeNull();
     expect(result.assets.map((asset) => asset.id)).toEqual([11, 12]);
-    expect(shown.mock.lastCall?.[0].map((asset: AssetSummary) => asset.id)).toEqual([11, 12, 3, 4]);
 
     await settle(async () => {
       result.ensureRange(PAGE_SIZE, PAGE_SIZE + 1);
       reload({ ...readyStart([createSummary(13), createSummary(14)], 6, 6), offset: PAGE_SIZE });
     });
     await waitFor(() => expect(result.getAssetAt(PAGE_SIZE)?.id).toBe(13));
-    expect(shown.mock.lastCall?.[0].map((asset: AssetSummary) => asset.id)).toEqual([
-      11, 12, 13, 14
-    ]);
   });
 
   it("drops fallback rows that leave the viewport", async () => {

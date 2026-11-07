@@ -163,3 +163,8 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
 - Z etapu 04: pomiary etapu 04 (refresh głęboko w liście, Shift-click 100k) dopiszę po fazie B.
 - Z etapu 04 (faza B): `grid_baseline.rs` (`query_rebuild_and_page_baseline`) ma nową metrykę `get_asset_query_id_range` (release: 100k 0,05 ms, 1M 0,45 ms). Desktopowe pomiary Shift-click 100k (15–17 ms) i refreshu na indeksie 50 000 (1 IPC, 0 placeholderów) pochodzą z tymczasowego speca spoza repo; wyniki i metoda są w notatkach etapu 04. Do rozważenia przy weryfikacji końcowej: stały spec z kolekcją 100k.
 - Z etapu 04 (faza B): `grid-baseline` po etapie 04: skan 20k p50 691 ms, like/tag 0/20 nieudanych, settle p50 17 ms, 211 węzłów; bez regresji względem biegu etapu 03.
+
+### 2026-11-07 — agent etapu 06
+- Z etapu 06: kolumna „Po 01–06”, `grid-baseline` cold (debug): per kafel p50 286 / p95 389 ms (przed 354 / 444), komplet widocznych p50 403 ms (przed 449); warm bez zmian (settle p50 16 ms).
+- Z etapu 06: miniatura JPEG 24 MP 78 ms (przed 98), wideo 1080p GOP 250 48 ms (przed 202).
+- Z etapu 06: harness `e2e/gallery-scale` rejestruje syntetyczny schemat `thumb` w `webkit.py`, a liczba żądań miniatur to teraz zmiany `src` na `thumb://`; liczby z poprzednich biegów („ensure_thumbnails batches”) nie są porównywalne.

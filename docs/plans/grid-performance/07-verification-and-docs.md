@@ -59,16 +59,16 @@ Wszystko na **syntetycznych** danych w katalogach tymczasowych. Nigdy nie używa
 
 | Metryka | Przed | Po 01–06 | Po 08–09 |
 | --- | --- | --- | --- |
-| Rebuild wektora 100k / 1M (ms) | 30 / 377–383 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 56 / 657–665 | 3,8 / 32 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 30 / 415–425 | |
-| Strona galerii (ms) | 0,09 / 0,14 w Rust (128 elementów); IPC w E2E (debug, 20k): p50 3, max 6 | 0,10–0,11 / 0,13 w Rust; IPC w E2E: p50 6–7, max 7–8. Binarny zakres ID 1M: 0,44 (bez „Przed”) | |
-| Favorite bez skanu / podczas skanu (ms) | 0,02 / p50 4–53, p95 130–429, max 329–529 (Rust, release, trzy biegi); E2E (debug) od kliknięcia do UI: p50 29, p95 196 | 0,02 / p50 1,6–3,2, p95 10–24, max 11–88 (Rust, release, trzy biegi); E2E od kliknięcia do UI: p50 13–20, p95 170–171, max 182–192 | |
-| Nieudane operacje like/tag w scenariuszu (n/20) | like 9/20 (w dwóch wcześniejszych biegach 12/20 i 15/20), zawsze bez wywołania IPC; tag 0/20 | like 0/20, tag 0/20 (dwa biegi E2E); Rust 0 z 292 zapisów pod skanem | |
-| Rebuildy podczas skanu 20k | 43–49 bumpów rewizji na skan. Przy przewijaniu (strona co 100 ms) prawie każda strona jest `stale`: 4–5 rebuildów na skan trwający 0,8–1 s. E2E z otwartym podglądem, bez przewijania: 1 na 66 skanów | Rust: 1 rebuild na skan (30/30 rund); bumpy skanu ≤ 1/s. E2E: 2 bumpy skanu na skan 20k (`[perf] name=scan`), 1 `start_asset_query` i 1 strona `stale` na 19–20 skanów | |
-| Stop flingu → komplet kafli (ms) | wygasający fling w dół: 16 (jedna klatka); fling w górę: 181; skok paskiem: 192–193 | 16 we wszystkich flingach (także w górę); skok paskiem: 183–194 | |
-| Najdłuższa klatka po flingu (ms) | 17–25 (odstępy `requestAnimationFrame`; `longtask` niedostępny w WebKitGTK 2.54) | 17 po flingach, 24–25 po skoku paskiem | |
-| Węzły DOM w gridzie | w spoczynku 379 (63 kafle, 35 widocznych); po flingu 547–589 (91–98 kafli) | stałe 407 węzłów i 98 kafli, w spoczynku i po każdym flingu | |
-| Viewport → miniatura, pusty cache (ms) | kafel p50 354, p95 444, max 485; komplet widocznych p50 449; kafle z danymi po 180 | kafel p50 287–304, p95 387–396, max 398–430; komplet widocznych p50 405–410; kafle z danymi po 178–184 | |
-| Miniatura JPEG 24 MP (ms) | 99 (release, `thumbs::create_image_thumb`) | 85 (release, trzy biegi; etap 06 zmierzył 78 w innej sesji) | |
+| Rebuild wektora 100k / 1M (ms) | 30 / 377–383 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 56 / 657–665 | 3,8 / 32 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 30 / 415–425 | 3,9 / 33–34 bez filtrów (p50, release, trzy biegi); wykluczenie tagu: 30 / 434–438. Sekcje osi czasu bez filtrów, pierwszy odczyt (poza rebuildem): 2,7 / 28,5–28,8; kolejne 0,01–0,02 |
+| Strona galerii (ms) | 0,09 / 0,14 w Rust (128 elementów); IPC w E2E (debug, 20k): p50 3, max 6 | 0,10–0,11 / 0,13 w Rust; IPC w E2E: p50 6–7, max 7–8. Binarny zakres ID 1M: 0,44 (bez „Przed”) | 0,10–0,11 / 0,14 w Rust; IPC w E2E: p50 10–13, max 16–26 (\*). Binarny zakres ID 1M: 0,46–0,47 |
+| Favorite bez skanu / podczas skanu (ms) | 0,02 / p50 4–53, p95 130–429, max 329–529 (Rust, release, trzy biegi); E2E (debug) od kliknięcia do UI: p50 29, p95 196 | 0,02 / p50 1,6–3,2, p95 10–24, max 11–88 (Rust, release, trzy biegi); E2E od kliknięcia do UI: p50 13–20, p95 170–171, max 182–192 | 0,01–0,02 / p50 2,9–4,3, p95 15–21, max 38–59 (Rust, release, trzy biegi); E2E od kliknięcia do UI: p50 29–30, p95 169–177, max 203–233 (\*) |
+| Nieudane operacje like/tag w scenariuszu (n/20) | like 9/20 (w dwóch wcześniejszych biegach 12/20 i 15/20), zawsze bez wywołania IPC; tag 0/20 | like 0/20, tag 0/20 (dwa biegi E2E); Rust 0 z 292 zapisów pod skanem | like 0/20, tag 0/20 (dwa biegi E2E); Rust 0 z 301 zapisów pod skanem |
+| Rebuildy podczas skanu 20k | 43–49 bumpów rewizji na skan. Przy przewijaniu (strona co 100 ms) prawie każda strona jest `stale`: 4–5 rebuildów na skan trwający 0,8–1 s. E2E z otwartym podglądem, bez przewijania: 1 na 66 skanów | Rust: 1 rebuild na skan (30/30 rund); bumpy skanu ≤ 1/s. E2E: 2 bumpy skanu na skan 20k (`[perf] name=scan`), 1 `start_asset_query` i 1 strona `stale` na 19–20 skanów | Rust: 1 rebuild na skan (30/30 rund). E2E: 3 bumpy skanu na skan 20k, 1 `start_asset_query` na 22–34 skany, 0–1 stron `stale` |
+| Stop flingu → komplet kafli (ms) | wygasający fling w dół: 16 (jedna klatka); fling w górę: 181; skok paskiem: 192–193 | 16 we wszystkich flingach (także w górę); skok paskiem: 183–194 | 16–17 we flingach (p50); skok paskiem p95 209–231 (\*) |
+| Najdłuższa klatka po flingu (ms) | 17–25 (odstępy `requestAnimationFrame`; `longtask` niedostępny w WebKitGTK 2.54) | 17 po flingach, 24–25 po skoku paskiem | p50 17–18, max 31–34 (\*) |
+| Węzły DOM w gridzie | w spoczynku 379 (63 kafle, 35 widocznych); po flingu 547–589 (91–98 kafli) | stałe 407 węzłów i 98 kafli, w spoczynku i po każdym flingu | stałe 407 węzłów i 98 kafli |
+| Viewport → miniatura, pusty cache (ms) | kafel p50 354, p95 444, max 485; komplet widocznych p50 449; kafle z danymi po 180 | kafel p50 287–304, p95 387–396, max 398–430; komplet widocznych p50 405–410; kafle z danymi po 178–184 | kafel p50 394–409, p95 557–585 (\*); komplet widocznych p50 593–596 (\*); kafle z danymi po 185–195 |
+| Miniatura JPEG 24 MP (ms) | 99 (release, `thumbs::create_image_thumb`) | 85 (release, trzy biegi; etap 06 zmierzył 78 w innej sesji) | 62 (release, trzy biegi) |
 
 ### Warunki pomiaru „Przed” (2026-11-06)
 
@@ -93,6 +93,19 @@ Wszystko na **syntetycznych** danych w katalogach tymczasowych. Nigdy nie używa
 - E2E: ten sam spec i flagi, dwa biegi na prywatnym Xvfb 1440×1100. XDG i `TMPDIR` są tymczasowe, na dysku (`/var/tmp`), tak jak w „Przed”.
 - Wartości pośrednie z etapów 01–06 są w ich notatkach. Tu jest tylko powtórka na jednym HEAD.
 
+### Warunki pomiaru „Po 08–09” (2026-11-07)
+
+- Ten sam host i wersje co w „Po 01–06”. Kod z commitów `6e10d9a` (etap 08) i `523a8a3` (etap 09), już z poprawkami leniwych sekcji i tożsamości zaznaczenia.
+- Backend: ta sama komenda, trzy biegi, `TMPDIR` na dysku. E2E: ten sam spec i flagi, dwa biegi, XDG i `TMPDIR` tymczasowe na dysku (`/var/tmp`).
+- **(\*) Pomiary pod obciążeniem.** Przez cały bieg E2E (i biegi release) na hoście działała inna aplikacja (gra pod Wine, ~6,5 rdzenia, load average 11–15 na 16 wątkach). Wiersze oznaczone (\*) nie są porównywalne z „Przed” i „Po 01–06”: wszystko, co liczy backend w debug, było 1,4–1,6× wolniejsze, także `render_all_thumbnails` (128–130 s zamiast ~79 s), którego etapy 08–09 nie dotykają; skan 20k w E2E p50 1161–1329 ms (w fali D 900–913). Wiersze niezależne od CPU (DOM, liczba żądań, nieudane operacje, rebuildy) i wyniki release są wiarygodne; release ma 16 wątków i zadania jednowątkowe, ale też szły pod obciążeniem. Do powtórzenia na bezczynnej maszynie: oba biegi `grid-baseline.e2e.js`.
+
+### Wnioski po fali E
+
+- Etap 08 w pierwszej wersji czytał kolumny bucketów dla każdego wiersza rebuildu bez filtrów i podwoił rebuild 1M (32 → 67–69 ms). Wykryte w tej weryfikacji, poprawione: sekcje bez filtrów są leniwe (pierwszy odczyt 28,5–28,8 ms po `ready`, poza ścieżką pierwszej strony), rebuild 1M wrócił do 33–34 ms. Wykluczenie tagu 434–438 ms wobec 415–425 ms w fali D: builder sekcji w tej ścieżce kosztuje ~1,5 ms, reszta mieści się w rozrzucie biegu pod obciążeniem.
+- Etap 09: select-all, Shift-click i prostokąt powyżej 10 000 pozycji nie czytają ID; zapis tagu na 1M przez spec 2,8 s, favorite 1,9 s (release, `backend_integration`), wszystko albo nic przy zmianie rewizji. W E2E (12 005 plików) zapis tagu przez spec 388–550 ms, filtr po tagu zgadza się z licznikiem.
+- `gallery.performance` znalazł regresję etapu 09: przy zmianie sesji zaznaczenie z samymi ID zmieniało swój klucz tożsamości, przez co panel bulk czyścił szkic grupy po zmianie filtra. Poprawione (bez publikacji przy unieważnieniu samych pozycji) i pokryte testami `createSelection` i `createBulk` (oba padały na starym kodzie).
+- Grid bez zmian: 407 węzłów, 98 kafli, harness `gallery-scale` klatki p95 17–18 ms, 0 > 25 ms, 2 strony i 24 żądania `thumb://` na przeciągnięcie, widoczne po 165–200 ms.
+
 ### Wnioski po falach A–C
 
 - Like i tag nie zawodzą: 0/20 w obu biegach E2E i 0 z 292 zapisów pod skanem w Rust.
@@ -111,10 +124,15 @@ Wszystko na **syntetycznych** danych w katalogach tymczasowych. Nigdy nie używa
 6. **Audyty zależności.** `bun run quality` kończy się na `audit:js`: zod 4.4.3, GHSA-mrhx-c7xc-m3w5 (high, poprawka w 4.6.6). `audit:rust` zgłasza `zip` 2.4.2 (RUSTSEC-2026-0367/0368/0369/0429) i `zstd`/`zstd-safe`/`zstd-sys` (RUSTSEC-2026-0391/0398/0403/0410). To nowe advisory, niezwiązane z etapami 01–06; na czystym HEAD wynik jest taki sam. Advisory `zip` dotyczą `extract`, którego aplikacja nie woła (`backup_service.rs` czyta wpisy przez `by_index` z własną walidacją). Aktualizacja wymaga zmiany lockfile'ów, więc tylko za zgodą użytkownika.
 7. **`alt` kafla wideo to pełna ścieżka.** `GalleryTile` używa `preview_path ?? file_name`, a dla wideo `preview_path` jest ścieżką pliku. Czytniki ekranu czytają więc całą ścieżkę. Zachowanie istnieje od migracji na Solid, nie jest regresją.
 8. **Pojedyncza wolna próbka w `gallery.performance`.** Rewizyta z gotowymi miniaturami trwa ~90 ms na cel, ale jedna próbka miała 1,6 s (indeks 384). W logu nie ma 503. Do obserwacji przy kolejnych biegach.
+9. **Powtórka E2E „Po 08–09” na bezczynnej maszynie.** Oba biegi `grid-baseline.e2e.js` szły pod obciążeniem innej aplikacji (warunki wyżej).
+10. **Miesiące osi czasu w UTC** ([ADR 0007](../../adr/0007-session-timeline-sections.md)). Lokalna strefa wymagałaby offsetu w kluczu sesji.
+11. **Blokada zapisu przy zapisie specu na 1M** ([ADR 0008](../../adr/0008-selection-spec-resolved-in-rust.md)): ~2–3 s jednej transakcji; zapisy w tle czekają w swoim busy timeout. Zbiorowy merge tagów nie kanonizuje starej pisowni tagów każdego assetu.
+12. **Brak desktopowego pomiaru przy 1M** dla skoku osi czasu (< 300 ms do danych) i select-all (< 50 ms). Fixture E2E ma 12 005 plików; przy 1M są tylko pomiary Rust (release) i jsdom.
+13. **Eval `05-selection-scan` w `.claude/skills/review-changes/evals`** nie nakłada się na `GalleryGrid.tsx` już na HEAD `9428fae` (zmiany etapu 05), więc nie jest to skutek etapów 08–09; wymaga nowej łatki na aktualnym kodzie.
 
 ## Status
 
-in progress — 2026-11-07 (krok 0 i fala D zrobione; weryfikacja po fali E czeka)
+done — 2026-11-07 (krok 0, fala D i weryfikacja po fali E; wiersze E2E „Po 08–09” do powtórzenia na bezczynnej maszynie)
 
 ## Notatki agentów
 
@@ -250,3 +268,17 @@ in progress — 2026-11-07 (krok 0 i fala D zrobione; weryfikacja po fali E czek
   - `bun run test` → 817/817; `bun run test:backend` → 261 pass, 6 ignored.
   - `bun run quality` → locale, typecheck, lint, format, rustfmt i clippy pass. `audit:js` i `audit:rust` fail na nowych advisory (temat 6), tak samo na czystym HEAD.
   - `bun run privacy:check`: test etapu 06 w `thumb_protocol.rs` miał syntetyczną ścieżkę w katalogu domowym. Skaner nie widział jej, póki plik był nieśledzony, a po pierwszym commicie etapu 06 zgłosił ją jako prywatną ścieżkę. Ścieżkę zmieniłem na `/srv/media/a.jpg` i poprawiłem commit etapu 06 (amend, przed wypchnięciem). `cargo test thumb_protocol` → 5/5; `privacy:check` → pass.
+
+### 2026-11-07 — orkiestrator (weryfikacja po fali E)
+- Zrobione: kolumna „Po 08–09”, warunki pomiaru i wnioski po fali E, otwarte tematy 9–13; status etapów 08 i 09.
+- Odkryte i poprawione w kodzie etapów 08–09 (przed commitem):
+  - rebuild 1M bez filtrów 32 → 67–69 ms przez odczyt kolumn bucketów w etapie 08; teraz sekcje bez filtrów są leniwe (szczegóły w etapie 08);
+  - regresja etapu 09 w `gallery.performance`: zmiana sesji zmieniała tożsamość zaznaczenia z samymi ID i czyściła szkic grupy (szczegóły wyżej);
+  - harness `e2e/gallery-scale` używał usuniętego propsa `selectedAssetIds` (`fixture.tsx`, `performance.tsx`); przeniesiony na `isSelected`.
+- Testy:
+  - `grid_baseline` (release, `--ignored`, trzy biegi) → pass 4/4 w każdym;
+  - `grid-baseline.e2e.js` → pass 3/3 w dwóch biegach (pod obciążeniem hosta);
+  - E2E pass: `gallery.performance` 4/4 (drugi bieg, po poprawce; pierwszy 3/4 na regresji wyżej), `gallery-selection` 7/7, `selection-recovery` 2/2, `gallery-browsing` 2/2, `gallery-timeline` 3/3; `gallery-selection`, `selection-recovery` i `gallery-browsing` szły przed poprawką tożsamości zaznaczenia (zmiana dotyczy tylko zmiany sesji przy zaznaczeniu z samymi ID);
+  - `sh e2e/gallery-scale/run.sh` → ok (12 scenariuszy, 16M px); `GALLERY_PERFORMANCE=1 …` → ok, klatki p95 17–18, 0 > 25 ms, widoczne po 165–200 ms; `bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json` → pass;
+  - `bun run test` → 843/843; `bun run test:backend` → pass; typecheck, lint, format:check, locale:check, `cargo fmt -- --check`, clippy → pass; `git diff --check` czysto, `--numstat` identyczny z `--ignore-cr-at-eol`.
+- Niezweryfikowane: porównywalne czasy E2E „Po 08–09” (temat 9); desktop przy 1M (temat 12); `/verify-mediatagger` dla osi czasu i Ctrl+A (siedem fixture'ów ma jedną datę, więc oś się nie pokazuje; Ctrl+A pokrywa `gallery-timeline`).

@@ -39,15 +39,14 @@ async function native(...steps: unknown[]) {
 const ranges: LibraryRange[] = [];
 const selectionReads: number[][] = [];
 let controls: {
-  configure: (count: number, tile: number, more?: boolean) => void;
+  configure: (count: number, tile: number) => void;
   selection: ReturnType<typeof createSelection>;
 } | undefined;
 let scrollElement: HTMLElement | undefined;
 function scroller() { assert(scrollElement, "mounted scroller"); return scrollElement; }
 function selection() { assert(controls, "mounted selection"); return controls.selection; }
-function configure(count: number, tile: number, more = false) { assert(controls, "mounted controls"); controls.configure(count, tile, more); }
+function configure(count: number, tile: number) { assert(controls, "mounted controls"); controls.configure(count, tile); }
 let selected: number | null = null;
-let reachEndCalls = 0;
 const asset = (index: number): AssetSummary => ({ id: index + 1, file_name: `synthetic-${index}.png`,
   preview_path: null, kind: "image", modified_at: 0, width: 100, height: 100,
   duration_ms: null, thumb_path: null, is_favorite: false, media_group_key: null, media_group_order: null });
@@ -55,7 +54,6 @@ await i18nReady;
 const dispose = render(() => {
   const [count, setCount] = createSignal(1_000_000);
   const [tile, setTile] = createSignal(188);
-  const [more, setMore] = createSignal(false);
   const [ref, setRef] = createSignal<HTMLElement>();
   const selection = createSelection({ queryEpoch: () => 1, identityEpoch: () => 1,
     getIdsRange: async (start, end) => {
@@ -63,15 +61,15 @@ const dispose = render(() => {
       return Array.from({length: end - start + 1}, (_, i) => start + i + 1);
     }
   });
-  controls = { selection, configure: (nextCount, nextTile, nextMore = false) => { setCount(nextCount); setTile(nextTile); setMore(nextMore); } };
+  controls = { selection, configure: (nextCount, nextTile) => { setCount(nextCount); setTile(nextTile); } };
   return <LanguageProvider><UiLayerProvider>
     <section ref={element => { scrollElement = element; setRef(element); }} class="gallery-scroll h-full overflow-x-hidden overflow-y-auto"
       style={{ width: "1044px", height: "600px", "overflow-y": "scroll", "overflow-x": "hidden" }}>
       <div class="workspace-body">
         <GalleryGrid assets={[]} assetCount={count()} tileSize={tile()}
           getAssetAt={index => index < count() ? asset(index) : undefined}
-          hasMore={more()} isLoading={false} isGeneratingThumbnails={false} pendingThumbnailCount={0}
-          thumbnailStore={new ThumbnailStore()} scroller={ref} onReachEnd={() => { reachEndCalls++; }}
+          isGeneratingThumbnails={false} pendingThumbnailCount={0}
+          thumbnailStore={new ThumbnailStore()} scroller={ref}
           onVirtualRangeChange={range => { if (range) ranges.push({...range}); }}
           onSelect={value => { selected = value.id; }} hasScanRoots={true} onAddFirstFolder={() => {}}
           selectionModeEnabled={selection.enabled} selectedAssetIds={selection.ids} onBulkSelectionInteraction={selection.interact}
@@ -123,15 +121,15 @@ async function click(index: number, shift = false) {
 const results: unknown[] = [];
 try {
   await settle();
-  for (const [name, count, size, w, more] of [
-    ["million-five-columns", 1_000_000, 188, 988, false],
-    ["million-narrow", 1_000_000, 188, 228, false],
-    ["million-single-column", 1_000_000, 340, 588, false],
-    ["million-smaller-tiles", 1_000_000, 140, 988, true],
-    ["million-wide", 1_000_000, 188, 1588, false],
-    ["small-control", 100, 188, 988, false]
+  for (const [name, count, size, w] of [
+    ["million-five-columns", 1_000_000, 188, 988],
+    ["million-narrow", 1_000_000, 188, 228],
+    ["million-single-column", 1_000_000, 340, 588],
+    ["million-smaller-tiles", 1_000_000, 140, 988],
+    ["million-wide", 1_000_000, 188, 1588],
+    ["small-control", 100, 188, 988]
   ] as const) {
-    configure(count, size, more); await settle(); await width(w);
+    configure(count, size); await settle(); await width(w);
     for (let n = 0; n < 3; n++) await toEnd();
     const state = snapshot();
     assert(state.visible.includes(count - 1), `${name}: last visible`);
@@ -141,7 +139,7 @@ try {
     assert(state.range?.endIndex === count - 1, `${name}: final page demand`);
     await click(count - 1);
     assert(selected === count, `${name}: native last click`);
-    results.push({name, ...state, selected, reachEndCalls});
+    results.push({name, ...state, selected});
   }
   configure(1_000_000, 188); await settle(); await width(988);
   scroller().scrollTop = 2_000_000; await settle();

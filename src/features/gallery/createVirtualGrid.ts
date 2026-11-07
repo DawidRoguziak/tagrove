@@ -40,12 +40,9 @@ const editable = 'input, textarea, select, [contenteditable="true"]';
 export function createVirtualGrid(options: {
   assetCount: number;
   tileSize: number;
-  hasMore: boolean;
-  isLoading: boolean;
   gallery: () => HTMLElement | undefined;
   grid: () => HTMLDivElement | undefined;
   scroller: () => HTMLElement | undefined;
-  onReachEnd: () => void;
   onRange?: (viewport: LibraryViewport | null) => void;
   rangeResetKey: number;
 }) {
@@ -303,26 +300,6 @@ export function createVirtualGrid(options: {
   createEffect(
     () => ({ ...range(), paused: paused(), reset: options.rangeResetKey }),
     ({ reset: _reset, ...viewport }) => options.onRange?.(viewport)
-  );
-  createEffect(
-    () => ({
-      paused: paused(),
-      more: options.hasMore,
-      loading: options.isLoading,
-      count: options.assetCount,
-      end: range().endIndex,
-      columns: columns()
-    }),
-    (value) => {
-      if (
-        !value.paused &&
-        value.more &&
-        !value.loading &&
-        value.count > 0 &&
-        value.end >= value.count - value.columns * 2
-      )
-        options.onReachEnd();
-    }
   );
   // Consumers such as the selection handlers key effects on these values; memos keep them
   // from rerunning (and cancelling a drag) on every published row change.

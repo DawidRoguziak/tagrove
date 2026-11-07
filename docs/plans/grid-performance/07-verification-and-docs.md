@@ -157,3 +157,7 @@ in progress — 2026-11-06 (krok 0 zrobiony; fala D i weryfikacja po fali E czek
   - 17 speców E2E: startup-scan, search-recovery, lightbox-images, lightbox-recovery, group-order, app.workflows, ui.redesign, settings-maintenance, gallery.performance, native-video-escape, thumbnail-fade, animations, video-speed, lightbox-activity, review-fixes, app.smoke, popular-tags.
 
   Propozycja: helper w `e2e/` (np. `listAssetsForAssertions`), który w przeglądarce woła `start_asset_query` z własnym `ownerId` (np. `e2e-assertions`) i rosnącym `generation`, pobiera strony po 256 przez `get_asset_query_page`, a pola `path`/`tags`/`size_bytes` (których `AssetSummary` nie ma dla obrazów) przez `get_asset_details`. Zwraca `{ items, total }` w kształcie `Asset`. Uwaga: start z innego ownera przerywa niedokończony start aplikacji (globalny token żądania), więc helper wołać, gdy galeria jest spokojna.
+
+### 2026-11-07 — agent etapu 04
+- Z etapu 04: frontend trzyma teraz 24 strony (`MAX_CACHED_PAGES`). `gallery.performance.e2e.js` (2048 plików, 16 stron) przechodzi, ale jego „evicted page” już nie wymusza ewikcji; przy weryfikacji końcowej trzeba albo powiększyć fixture (> 24 stron), albo opisać to jako ograniczenie.
+- Z etapu 04: pomiary etapu 04 (refresh głęboko w liście, Shift-click 100k) dopiszę po fazie B.

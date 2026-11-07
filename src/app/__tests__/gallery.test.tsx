@@ -21,7 +21,8 @@ it("starts queries after mount, submits current controls once and retains drafts
     if (command === "list_scan_roots") return [];
   });
   render(() => <App />);
-  await screen.findByText("7 items");
+  // The count appears in the top bar and in the end-of-results footer.
+  await screen.findAllByText("7 items");
   expect(
     native.invoke.mock.calls.filter(([command]) => command === "start_asset_query")
   ).toHaveLength(1);

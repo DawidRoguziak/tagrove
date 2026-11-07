@@ -50,10 +50,9 @@ const dispose = render(() => {
     <section ref={el => { scroller = el; setRef(el); }} class="gallery-scroll overflow-y-scroll"
       style={{width: "1044px", height: "600px"}}>
       <GalleryGrid assets={model.query.assets} assetCount={model.query.total}
-        getAssetAt={model.query.getAssetAt} tileSize={188} hasMore={model.query.offset < model.query.total}
-        isLoading={model.query.loading} isGeneratingThumbnails={model.thumbnails.isGeneratingPage}
+        getAssetAt={model.query.getAssetAt} tileSize={188} isGeneratingThumbnails={model.thumbnails.isGeneratingPage}
         pendingThumbnailCount={model.thumbnails.pendingPageSize} thumbnailStore={model.thumbnails.thumbnailStore}
-        scroller={ref} onReachEnd={model.handleGalleryReachEnd} onVirtualRangeChange={model.handleVirtualRangeChange}
+        scroller={ref} onVirtualRangeChange={model.handleVirtualRangeChange}
         onSelect={() => {}} hasScanRoots onAddFirstFolder={() => {}} selectionModeEnabled={false}
         selectedAssetIds={new Set()} onBulkSelectionInteraction={() => {}} loadError={null}
         onLoadRetry={() => {}} queryEpoch={model.query.queryEpoch} pageFailureEpoch={model.query.pageFailureEpoch}/>

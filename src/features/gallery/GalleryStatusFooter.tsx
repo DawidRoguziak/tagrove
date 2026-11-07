@@ -2,7 +2,6 @@ import { useLanguage } from "../../i18n/solid";
 import { UiIcon } from "../../ui/controls/UiIcon";
 interface GalleryStatusFooterProps {
   isGeneratingThumbnails: boolean;
-  hasMore: boolean;
   generatingLabel: string;
   resultCount: number;
 }
@@ -10,7 +9,7 @@ export function GalleryStatusFooter(props: GalleryStatusFooterProps) {
   const { t, language } = useLanguage();
   return (
     <>
-      {props.isGeneratingThumbnails && props.hasMore ? (
+      {props.isGeneratingThumbnails ? (
         <div
           class="mt-4 border-t border-[var(--border-soft)] px-5 py-3 text-xs text-primary-text"
           role="status"
@@ -18,7 +17,7 @@ export function GalleryStatusFooter(props: GalleryStatusFooterProps) {
         >
           {props.generatingLabel}
         </div>
-      ) : !props.isGeneratingThumbnails && !props.hasMore ? (
+      ) : (
         <div
           class="flex min-h-[136px] flex-col items-center justify-center gap-2 px-5 py-4 text-center"
           data-testid="gallery-end-state"
@@ -43,7 +42,7 @@ export function GalleryStatusFooter(props: GalleryStatusFooterProps) {
             </span>
           </p>
         </div>
-      ) : null}
+      )}
     </>
   );
 }

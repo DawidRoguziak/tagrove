@@ -32,7 +32,6 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
   const query = createAssetQuery({
     ...options,
     filters: () => filters,
-    resetThumbnailQueue: thumbnails.resetThumbnailQueue,
     onQueryChanged: details.clear,
     onAssetsChanged(assets) {
       thumbnails.thumbnailStore.retain(assets.map((asset) => asset.id));
@@ -107,10 +106,6 @@ export function createLibrary(options: { pageSize?: number; filters?: LibraryFil
     },
     handleVirtualRangeChange: (next: LibraryViewport | null) => {
       setRange(next);
-    },
-    handleGalleryReachEnd() {
-      const viewport = range();
-      if (viewport && !viewport.paused) query.ensureRange(viewport.startIndex, viewport.endIndex);
     },
     handleRootRemoved: thumbnails.resetThumbnailQueue,
     resetIdentity,

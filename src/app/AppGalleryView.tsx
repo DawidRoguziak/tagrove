@@ -92,13 +92,10 @@ export function AppGalleryView() {
               assetCount={library.query.total}
               getAssetAt={library.query.getAssetAt}
               tileSize={runtime.tileSize()}
-              hasMore={library.query.offset < library.query.total}
-              isLoading={library.query.loading || runtime.maintenanceLoading()}
               isGeneratingThumbnails={library.thumbnails.isGeneratingPage}
               pendingThumbnailCount={library.thumbnails.pendingPageSize}
               thumbnailStore={library.thumbnails.thumbnailStore}
               scroller={scroller}
-              onReachEnd={library.handleGalleryReachEnd}
               onVirtualRangeChange={library.handleVirtualRangeChange}
               onCtrlWheelZoom={runtime.zoom}
               onSelect={runtime.lightbox.select}

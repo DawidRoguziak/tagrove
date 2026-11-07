@@ -1,8 +1,14 @@
 import { settle } from "../../../test/settle";
 import { renderHook, waitFor } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createEffect, flush } from "solid-js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetSummary } from "../../../platform/tauri/contracts/assets";
-import { createAssetQuery } from "../createAssetQuery";
+import {
+  createAssetQuery,
+  MAX_CACHED_PAGES,
+  STALE_REFRESH_DELAY_MS,
+  STALE_REFRESH_MIN_INTERVAL_MS
+} from "../createAssetQuery";
 
 const apiMocks = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
@@ -51,8 +57,7 @@ async function renderAssets() {
         metaFilter: null,
         appliedMediaKind: "all",
         appliedFavoritesOnly: false
-      }),
-      resetThumbnailQueue: vi.fn()
+      })
     })
   );
 }
@@ -61,6 +66,9 @@ describe("createAssetQuery", () => {
   beforeEach(() => {
     apiMocks.startAssetQuery.mockReset();
     apiMocks.getAssetQueryPage.mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("replaces the cache with the ready first page of the current generation", async () => {
@@ -74,7 +82,6 @@ describe("createAssetQuery", () => {
     });
 
     expect(result.total).toBe(2);
-    expect(result.offset).toBe(PAGE_SIZE);
     expect(result.loadError).toBeNull();
     expect(result.getAssetAt(0)?.id).toBe(1);
     expect(apiMocks.startAssetQuery).toHaveBeenCalledWith(
@@ -118,8 +125,7 @@ describe("createAssetQuery", () => {
     let included = ["old"];
     const { result } = renderHook(() => createAssetQuery({
       pageSize: PAGE_SIZE,
-      filters: () => ({ filterInclude: included, filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: false }),
-      resetThumbnailQueue: vi.fn()
+      filters: () => ({ filterInclude: included, filterExclude: [], appliedMediaKind: "all", appliedFavoritesOnly: false })
     }));
     const old = result.refresh();
     included = ["new"];
@@ -205,7 +211,7 @@ describe("createAssetQuery", () => {
     expect(apiMocks.getAssetQueryPage).toHaveBeenNthCalledWith(2, 5, PAGE_SIZE, PAGE_SIZE);
   });
 
-  it("restarts the query automatically when a page reports stale", async () => {
+  it("restarts the query after the stale debounce when a page reports stale", async () => {
     apiMocks.startAssetQuery
       .mockResolvedValueOnce(readyStart([createSummary(1)], 4, 5))
       .mockResolvedValueOnce(readyStart([createSummary(9)], 1, 6));
@@ -352,46 +358,48 @@ describe("createAssetQuery", () => {
     // The late response belongs to the previous generation and must not merge.
     expect(result.getAssetAt(PAGE_SIZE)?.id).not.toBe(8);
   });
-  it("retains recently accessed and active pages while evicting beyond twelve pages", async () => {
+  it("retains recently accessed and active pages while evicting beyond the page bound", async () => {
+    const cachedRows = MAX_CACHED_PAGES * PAGE_SIZE;
+    const total = cachedRows + 8 * PAGE_SIZE;
     apiMocks.startAssetQuery.mockResolvedValue(
-      readyStart([createSummary(1), createSummary(2)], 40)
+      readyStart([createSummary(1), createSummary(2)], total)
     );
     apiMocks.getAssetQueryPage.mockImplementation(async (_session, offset) => ({
-      ...readyStart([createSummary(offset + 1), createSummary(offset + 2)], 40),
+      ...readyStart([createSummary(offset + 1), createSummary(offset + 2)], total),
       offset
     }));
     const { result } = await renderAssets();
     await settle(async () => {
       await result.refresh();
     });
-    for (let offset = 2; offset < 24; offset += 2) {
+    for (let offset = 2; offset < cachedRows; offset += 2) {
       await settle(async () => {
         await result.getAssetAtAsync(offset);
       });
     }
-    expect(result.assets).toHaveLength(24);
+    expect(result.assets).toHaveLength(cachedRows);
     // Explicit access promotes the first page; render-time lookup does not.
     await settle(async () => {
       await result.getAssetAtAsync(0);
     });
     await settle(async () => {
-      await result.getAssetAtAsync(24);
+      await result.getAssetAtAsync(cachedRows);
     });
     expect(result.getAssetAt(0)?.id).toBe(1);
     expect(result.getAssetAt(2)).toBeUndefined();
     settle(() => result.ensureRange(0, 1));
-    for (let offset = 4; offset < 40; offset += 2) {
+    for (let offset = 4; offset < total; offset += 2) {
       await settle(async () => {
         await result.getAssetAtAsync(offset);
       });
-      expect(result.assets.length).toBeLessThanOrEqual(24);
+      expect(result.assets.length).toBeLessThanOrEqual(cachedRows);
     }
     expect(result.getAssetAt(0)?.id).toBe(1);
     await settle(async () => {
       await result.getAssetAtAsync(2);
     });
     expect(result.getAssetAt(2)?.id).toBe(3);
-    expect(result.assets).toHaveLength(24);
+    expect(result.assets).toHaveLength(cachedRows);
   });
 
   it("does not retry failed demanded pages until Retry, even across repeated reactive flushes", async () => {
@@ -481,5 +489,159 @@ describe("createAssetQuery", () => {
       await rejection;
     });
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledOnce();
+  });
+
+  it("notifies render-time readers through version when a page merges in place", async () => {
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1), createSummary(2)], 6));
+    apiMocks.getAssetQueryPage.mockImplementation(async (_session, offset) => ({
+      ...readyStart([createSummary(offset + 1), createSummary(offset + 2)], 6),
+      offset
+    }));
+    const seen: Array<number | undefined> = [];
+    const { result } = renderHook(() => {
+      const query = createAssetQuery({
+        pageSize: PAGE_SIZE,
+        filters: () => ({
+          filterInclude: [],
+          filterExclude: [],
+          appliedMediaKind: "all",
+          appliedFavoritesOnly: false
+        })
+      });
+      createEffect(
+        () => query.getAssetAt(PAGE_SIZE)?.id,
+        (id) => {
+          seen.push(id);
+        }
+      );
+      return query;
+    });
+    await settle(async () => {
+      await result.refresh();
+    });
+    expect(seen[seen.length - 1]).toBeUndefined();
+    await settle(async () => {
+      await result.getAssetAtAsync(PAGE_SIZE);
+    });
+    expect(seen[seen.length - 1]).toBe(PAGE_SIZE + 1);
+  });
+
+  it("keeps old viewport rows as render-only fallback until their page reloads", async () => {
+    apiMocks.startAssetQuery
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)], 6, 5))
+      .mockResolvedValueOnce(readyStart([createSummary(11), createSummary(12)], 6, 6));
+    apiMocks.getAssetQueryPage.mockResolvedValueOnce({
+      ...readyStart([createSummary(3), createSummary(4)], 6, 5),
+      offset: PAGE_SIZE
+    });
+    const shown = vi.fn();
+    const { result } = renderHook(() =>
+      createAssetQuery({
+        pageSize: PAGE_SIZE,
+        filters: () => ({
+          filterInclude: [],
+          filterExclude: [],
+          appliedMediaKind: "all",
+          appliedFavoritesOnly: false
+        }),
+        onAssetsChanged: shown
+      })
+    );
+    await settle(async () => {
+      await result.refresh();
+    });
+    await settle(async () => {
+      result.ensureRange(PAGE_SIZE, PAGE_SIZE + 1);
+      await result.getAssetAtAsync(PAGE_SIZE);
+    });
+    expect(result.getAssetAt(PAGE_SIZE)?.id).toBe(3);
+
+    let reload!: (value: unknown) => void;
+    apiMocks.getAssetQueryPage.mockReturnValueOnce(
+      new Promise((resolve) => {
+        reload = resolve;
+      })
+    );
+    await settle(async () => {
+      await result.refresh();
+    });
+    // The new query's page replaced page 0; the deep viewport page stays on screen.
+    expect(result.getAssetAt(0)?.id).toBe(11);
+    expect(result.getAssetAt(PAGE_SIZE)?.id).toBe(3);
+    expect(result.getAssetIndex(3)).toBeNull();
+    expect(result.assets.map((asset) => asset.id)).toEqual([11, 12]);
+    expect(shown.mock.lastCall?.[0].map((asset: AssetSummary) => asset.id)).toEqual([11, 12, 3, 4]);
+
+    await settle(async () => {
+      result.ensureRange(PAGE_SIZE, PAGE_SIZE + 1);
+      reload({ ...readyStart([createSummary(13), createSummary(14)], 6, 6), offset: PAGE_SIZE });
+    });
+    await waitFor(() => expect(result.getAssetAt(PAGE_SIZE)?.id).toBe(13));
+    expect(shown.mock.lastCall?.[0].map((asset: AssetSummary) => asset.id)).toEqual([
+      11, 12, 13, 14
+    ]);
+  });
+
+  it("drops fallback rows that leave the viewport", async () => {
+    apiMocks.startAssetQuery
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)], 6, 5))
+      .mockResolvedValueOnce(readyStart([createSummary(11), createSummary(12)], 6, 6));
+    apiMocks.getAssetQueryPage
+      .mockResolvedValueOnce({ ...readyStart([createSummary(3), createSummary(4)], 6, 5), offset: 2 })
+      .mockReturnValue(new Promise(() => {}));
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    await settle(async () => {
+      result.ensureRange(2, 3);
+      await result.getAssetAtAsync(2);
+    });
+    await settle(async () => {
+      await result.refresh();
+    });
+    expect(result.getAssetAt(2)?.id).toBe(3);
+    settle(() => result.ensureRange(0, 1));
+    expect(result.getAssetAt(2)).toBeUndefined();
+  });
+
+  it("debounces stale-driven refreshes and lets an explicit refresh cancel the pending one", async () => {
+    vi.useFakeTimers();
+    apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], 8, 5));
+    apiMocks.getAssetQueryPage.mockResolvedValue({ status: "stale" });
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    for (const offset of [2, 4, 6]) {
+      await settle(async () => {
+        expect(await result.getAssetAtAsync(offset)).toBeUndefined();
+      });
+    }
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS);
+    flush();
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
+
+    // A second burst right after a stale refresh waits for the minimum interval.
+    await settle(async () => {
+      await result.getAssetAtAsync(2);
+    });
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_MIN_INTERVAL_MS);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(3);
+
+    // An explicit refresh runs at once and cancels a scheduled stale refresh.
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_MIN_INTERVAL_MS);
+    await settle(async () => {
+      await result.getAssetAtAsync(2);
+    });
+    await settle(async () => {
+      await result.refresh();
+    });
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_MIN_INTERVAL_MS * 2);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(4);
   });
 });

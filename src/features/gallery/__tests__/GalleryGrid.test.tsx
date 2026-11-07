@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@solidj
 import { createSignal, flush } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createLibrary } from "../../../library/createLibrary";
+import { MAX_CACHED_PAGES } from "../../../library/query/createAssetQuery";
 import { createSelection } from "../createSelection";
 import { GalleryGrid } from "../GalleryGrid";
 import { MAX_GRID_HEIGHT } from "../gridGeometry";
@@ -136,13 +137,10 @@ async function mount(selectionEnabled = false, generating = false) {
             assetCount={library.query.total}
             getAssetAt={library.query.getAssetAt}
             tileSize={188}
-            hasMore={library.query.offset < library.query.total}
-            isLoading={library.query.loading}
             isGeneratingThumbnails={generating}
             pendingThumbnailCount={3}
             thumbnailStore={library.thumbnails.thumbnailStore}
             scroller={scroller}
-            onReachEnd={library.handleGalleryReachEnd}
             onVirtualRangeChange={range}
             onSelect={click}
             hasScanRoots
@@ -192,14 +190,15 @@ it("bounds initial DOM, replaces sparse slots, loads late thumbnail demand and r
     expect(view.container.querySelector('button[data-asset-index="1000"]')).toBeInTheDocument()
   );
   expect(api.demand.mock.calls.some(([visible]) => visible.includes(1001))).toBe(true);
-  for (let index = 1536; index < 4096; index += 256) {
+  // Visit more pages than the cache keeps so page 0 must be evicted.
+  for (let index = 1536; index < 1536 + (MAX_CACHED_PAGES + 4) * 256; index += 256) {
     scroll(index);
     await waitFor(() =>
       expect(
         view.container.querySelector(`button[data-asset-index="${index}"]`)
       ).toBeInTheDocument()
     );
-    expect(library.query.assets.length).toBeLessThanOrEqual(1536);
+    expect(library.query.assets.length).toBeLessThanOrEqual(MAX_CACHED_PAGES * 128);
     expect(view.container.querySelectorAll("button[data-asset-id]").length).toBeLessThan(70);
   }
   expect(library.query.getAssetAt(0)).toBeUndefined();
@@ -335,7 +334,6 @@ it("demands the final million-result page and passes the required total to the i
   api.startAssetQuery.mockResolvedValue(page(0, 1_000_000));
   api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset, 1_000_000));
   const { library, view, scroller, click } = await mount();
-  expect(screen.queryByTestId("gallery-end-state")).toBeNull();
   // A million results exceed the physical window; End moves it to the final rows.
   expect(view.container.querySelector('[data-testid="gallery-grid-content"]')).toHaveStyle({
     height: `${MAX_GRID_HEIGHT}px`
@@ -346,7 +344,7 @@ it("demands the final million-result page and passes the required total to the i
   expect(api.getAssetQueryPage).toHaveBeenCalledWith(1, 999936, 128);
   // Near-end notification must never fetch the old sequential offset after resume.
   expect(api.getAssetQueryPage.mock.calls.every(([, offset]) => offset >= 999808)).toBe(true);
-  expect(library.query.assets.length).toBeLessThanOrEqual(1536);
+  expect(library.query.assets.length).toBeLessThanOrEqual(MAX_CACHED_PAGES * 128);
   expect(view.container.querySelectorAll("[data-asset-index]").length).toBeLessThan(70);
   expect(screen.getByTestId("gallery-end-state")).toHaveTextContent("1,000,000 items");
   const last = view.container.querySelector('button[data-asset-index="999999"]');
@@ -355,12 +353,12 @@ it("demands the final million-result page and passes the required total to the i
   expect(click).toHaveBeenCalledWith(expect.objectContaining({id: 1_000_000}));
 });
 
-it("shows thumbnail progress only while the query still has more rows", async () => {
-  const { library, scroll } = await mount(false, true);
+it("shows thumbnail progress instead of the end state while thumbnails generate", async () => {
+  const { scroll } = await mount(false, true);
   expect(screen.getByRole("status")).toHaveTextContent("Generating thumbnails for 3 queued items.");
   scroll(25999);
-  await waitFor(() => expect(library.query.offset).toBe(26000));
-  expect(screen.queryByRole("status")).toBeNull();
+  await waitFor(() => expect(document.querySelector('button[data-asset-index="25999"]')).toBeInTheDocument());
+  expect(screen.getByRole("status")).toBeInTheDocument();
   expect(screen.queryByTestId("gallery-end-state")).toBeNull();
 });
 
@@ -474,4 +472,28 @@ it("adds a keyboard scrollbar only for results taller than the physical window",
   fireEvent.keyDown(bar, { key: "Home" });
   flush();
   expect(bar).toHaveAttribute("aria-valuenow", "1");
+});
+
+it("keeps a deep viewport's tiles mounted while a refresh reloads its pages", async () => {
+  api.startAssetQuery.mockResolvedValue(page(0));
+  api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset));
+  const { library, view, scroll } = await mount();
+  scroll(5000);
+  await waitFor(() =>
+    expect(view.container.querySelector('button[data-asset-index="5000"]')).toBeInTheDocument()
+  );
+  const reloads: Array<{ offset: number; resolve: (value: ReturnType<typeof page>) => void }> = [];
+  api.getAssetQueryPage.mockImplementation(
+    (_session, offset) => new Promise((resolve) => reloads.push({ offset, resolve }))
+  );
+  await library.query.refresh();
+  flush();
+  // The first page of the new query does not cover the viewport; old rows stay as fallback.
+  expect(view.container.querySelector('button[data-asset-index="5000"]')).toBeInTheDocument();
+  await waitFor(() => expect(reloads.length).toBeGreaterThan(0));
+  for (const reload of reloads) reload.resolve(page(reload.offset));
+  await waitFor(() =>
+    expect(library.query.getAssetIndex(5001)).toBe(5000)
+  );
+  expect(view.container.querySelector('button[data-asset-index="5000"]')).toBeInTheDocument();
 });

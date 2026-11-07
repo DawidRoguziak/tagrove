@@ -68,7 +68,7 @@ boundary changes.
 | --- | --- | --- |
 | View, scan highlight, theme and tile size | `createAppRuntime` | Application lifetime. Tile size starts at 188; only theme is persisted. Closing settings clears the highlight. |
 | Search draft/applied descriptor | `features/search/createSearch` | Application lifetime. Commands keep synchronous drafts and publish reactive state; every valid submission invokes the library once. |
-| Sparse query pages and navigation snapshot | `library/query/createAssetQuery` | Application lifetime; 128-item pages and at most 12 pages. Generations discard obsolete responses. |
+| Sparse query pages and navigation snapshot | `library/query/createAssetQuery` | Application lifetime; 128-item pages and at most 24 pages, mutated in place behind a `version` signal. Generations discard obsolete responses. |
 | Complete details | `library/metadata/createDetailsCache` | One shared 256-entry LRU for lightbox and bulk. Query changes clear it; identity/generation checks reject stale metadata. Concurrent reads for one ID share a promise. |
 | Canonical tags and metadata write ownership | `library/metadata/createAssetTagState` | Application lifetime; per-ID FIFO write queue with exclusive tokens ([ADR 0001](../adr/0001-per-asset-metadata-write-queue.md)), identity epoch, deletion invalidation and maintenance barrier. Active users pin records; inactive records have a 512-entry retention bound. |
 | Known tags and suggestion worker | `createKnownTags` and runtime `SuggestionClient` | Application lifetime. The worker starts lazily, coalesces requests per editor and terminates on disposal. |

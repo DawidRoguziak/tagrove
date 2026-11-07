@@ -11,13 +11,11 @@ import type {
   MediaKind
 } from "../../platform/tauri/contracts/assets";
 
-const MAX_CACHED_PAGES = 12;
-
-interface PageCache {
-  pages: Map<number, number[]>;
-  assetsById: Map<number, AssetSummary>;
-  lru: number[];
-}
+export const MAX_CACHED_PAGES = 24;
+/** A `stale` read schedules one refresh after this delay; later stale reads join it. */
+export const STALE_REFRESH_DELAY_MS = 250;
+/** Minimum spacing between two stale-driven refreshes. */
+export const STALE_REFRESH_MIN_INTERVAL_MS = 1000;
 
 export interface LibraryFilters {
   filterInclude: string[];
@@ -29,29 +27,20 @@ export interface LibraryFilters {
 interface Options {
   filters: () => LibraryFilters;
   pageSize?: number;
-  resetThumbnailQueue: () => void;
   onQueryChanged?: () => void;
+  /** Cached summaries plus refresh fallback rows, i.e. everything a tile may still show. */
   onAssetsChanged?: (assets: AssetSummary[]) => void;
 }
-
-const EMPTY_CACHE: PageCache = {
-  pages: new Map(),
-  assetsById: new Map(),
-  lru: []
-};
 
 export function createAssetQuery({
   pageSize = 128,
   filters,
-  resetThumbnailQueue,
   onQueryChanged,
   onAssetsChanged
 }: Options) {
   const ownerId = crypto.randomUUID();
   let state = {
-    cache: EMPTY_CACHE,
     total: 0,
-    offset: 0,
     loading: false,
     loadError: null as string | null,
     pageFailureEpoch: 0,
@@ -59,10 +48,20 @@ export function createAssetQuery({
     queryEpoch: 0
   };
   const [snapshot, setSnapshot] = createSignal(state);
-  const visibleCache = createMemo(() => snapshot().cache);
-  const assets = createMemo(() => Array.from(visibleCache().assetsById.values()));
+  // The page cache is mutated in place; `version` is the only reactive notification.
+  // Every render-time read (`getAssetAt`, `assets`) must read it to stay subscribed.
+  const pages = new Map<number, number[]>();
+  const assetsById = new Map<number, AssetSummary>();
+  let lru: number[] = [];
+  // Rows of the previous query's viewport pages, shown until their offset reloads.
+  // Render-only: indexes, async reads, ranges and `assets` never see them.
+  const fallback = new Map<number, AssetSummary[]>();
+  const [version, setVersion] = createSignal(0);
+  const assets = createMemo(() => {
+    version();
+    return Array.from(assetsById.values());
+  });
   const readTotal = createMemo(() => snapshot().total);
-  const readOffset = createMemo(() => snapshot().offset);
   const readLoading = createMemo(() => snapshot().loading);
   const readLoadError = createMemo(() => snapshot().loadError);
   const readPageFailureEpoch = createMemo(() => snapshot().pageFailureEpoch);
@@ -72,9 +71,21 @@ export function createAssetQuery({
   function publish(patch: Partial<typeof state>) {
     state = { ...state, ...patch };
     setSnapshot(state);
-    if (patch.cache) onAssetsChanged?.(Array.from(patch.cache.assetsById.values()));
     if (patch.queryEpoch !== undefined) onQueryChanged?.();
   }
+  function cacheChanged() {
+    setVersion((value) => value + 1);
+    if (!onAssetsChanged) return;
+    const shown = Array.from(assetsById.values());
+    for (const rows of fallback.values()) shown.push(...rows);
+    onAssetsChanged(shown);
+  }
+  let staleTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastStaleRefreshAt = Number.NEGATIVE_INFINITY;
+  const cancelStaleRefresh = () => {
+    if (staleTimer !== null) clearTimeout(staleTimer);
+    staleTimer = null;
+  };
   let currentSessionId: number | null = null;
   let currentGeneration = 0;
   let currentPatchCounter = 0;
@@ -82,6 +93,9 @@ export function createAssetQuery({
   const failedPages = new Map<number, Error>();
   let inFlightCount = 0;
   let activePages = new Set<number>();
+  // Pages of the latest gallery range; unlike `activePages` it survives a refresh so
+  // the new query knows which old rows may stay on screen as fallback.
+  let viewportPages = new Set<number>();
   let accessOrder: number[] = [];
   const touchPage = (pageOffset: number) => {
     accessOrder = [pageOffset, ...accessOrder.filter((offset) => offset !== pageOffset)].slice(
@@ -99,16 +113,25 @@ export function createAssetQuery({
   };
   onCleanup(() => {
     disposed = true;
+    cancelStaleRefresh();
     invalidateReads();
   });
+  const clearCache = () => {
+    pages.clear();
+    assetsById.clear();
+    lru = [];
+  };
   const reset = () => {
+    cancelStaleRefresh();
     invalidateReads();
     activePages.clear();
+    viewportPages.clear();
     accessOrder = [];
+    clearCache();
+    fallback.clear();
+    cacheChanged();
     publish({
-      cache: EMPTY_CACHE,
       total: 0,
-      offset: 0,
       loading: false,
       queryPending: false,
       loadError: null,
@@ -126,19 +149,30 @@ export function createAssetQuery({
   };
 
   // Summaries are stored verbatim: no path/size/tags fabrication happens here.
+  // The cache is mutated in place; one `version` bump publishes the change.
   const mergePage = (pageOffset: number, summaries: AssetSummary[], replace: boolean) => {
     touchPage(pageOffset);
-    const previous = state.cache;
-    const pages = replace ? new Map<number, number[]>() : new Map(previous.pages);
-    const assetsById = replace ? new Map<number, AssetSummary>() : new Map(previous.assetsById);
+    if (replace) {
+      fallback.clear();
+      // Keep the old viewport visible until each of its pages reloads under the new query.
+      for (const offset of viewportPages) {
+        const ids = pages.get(offset);
+        if (offset === pageOffset || offset >= state.total || !ids) continue;
+        const rows = ids.map((id) => assetsById.get(id));
+        if (rows.every(Boolean)) fallback.set(offset, rows as AssetSummary[]);
+      }
+      clearCache();
+    } else {
+      fallback.delete(pageOffset);
+      const previous = pages.get(pageOffset);
+      if (previous) for (const id of previous) assetsById.delete(id);
+    }
     pages.set(
       pageOffset,
       summaries.map((summary) => summary.id)
     );
     for (const summary of summaries) assetsById.set(summary.id, summary);
-    const lru = [...new Set([...accessOrder, pageOffset, ...(replace ? [] : previous.lru)])].filter(
-      (offset) => pages.has(offset)
-    );
+    lru = [...new Set([...accessOrder, pageOffset, ...lru])].filter((offset) => pages.has(offset));
     while (lru.length > MAX_CACHED_PAGES) {
       let candidate = lru.length - 1;
       while (candidate >= 0 && activePages.has(lru[candidate])) candidate--;
@@ -148,10 +182,21 @@ export function createAssetQuery({
       pages.delete(evictedOffset);
       for (const id of evictedIds) assetsById.delete(id);
     }
-    publish({
-      cache: { pages, assetsById, lru },
-      offset: Math.max(state.offset, pageOffset + summaries.length)
-    });
+    cacheChanged();
+  };
+
+  const scheduleStaleRefresh = () => {
+    // Stale reads join one pending refresh: at most one per STALE_REFRESH_MIN_INTERVAL_MS.
+    if (disposed || staleTimer !== null) return;
+    const wait = Math.max(
+      STALE_REFRESH_DELAY_MS,
+      lastStaleRefreshAt + STALE_REFRESH_MIN_INTERVAL_MS - Date.now()
+    );
+    staleTimer = setTimeout(() => {
+      staleTimer = null;
+      lastStaleRefreshAt = Date.now();
+      void refresh().catch(() => {});
+    }, wait);
   };
 
   const refresh = async () => {
@@ -163,6 +208,7 @@ export function createAssetQuery({
       appliedMediaKind,
       appliedFavoritesOnly
     } = filters();
+    cancelStaleRefresh();
     invalidateReads();
     publish({ queryPending: true });
     publish({ queryEpoch: state.queryEpoch + 1 });
@@ -171,7 +217,7 @@ export function createAssetQuery({
     inFlightPages.clear();
     activePages.clear();
     accessOrder = [];
-    resetThumbnailQueue();
+    // The thumbnail store keeps paths per asset ID; the new pages' `thumb_path` confirms them.
     beginLoading();
     const perfMark = `asset-query-${generation}`;
     if (import.meta.env.VITE_MEDIATAGGER_PERF === "1") performance.mark(`${perfMark}-start`);
@@ -202,15 +248,14 @@ export function createAssetQuery({
         throw new Error("Query was superseded. Retry your search.");
       }
       if (result.status === "stale") {
-        await refresh();
+        scheduleStaleRefresh();
         return;
       }
       currentSessionId = result.session_id;
       publish({ queryEpoch: state.queryEpoch + 1 });
       publish({ total: result.total });
-      publish({ offset: result.items.length });
       publish({ loadError: null });
-      mergePage(0, result.items, true);
+      mergePage(result.offset, result.items, true);
     } catch (error) {
       if (generation === currentGeneration) {
         publish({ loadError: error instanceof Error ? error.message : String(error) });
@@ -233,11 +278,11 @@ export function createAssetQuery({
     const sessionId = currentSessionId;
     if (sessionId === null || pageOffset < 0 || pageOffset >= state.total) return undefined;
     touchPage(pageOffset);
-    if (state.cache.pages.has(pageOffset)) {
-      if (state.cache.pages.get(pageOffset)?.some((id) => !state.cache.assetsById.has(id)))
-        return undefined;
-      return (state.cache.pages.get(pageOffset) ?? [])
-        .map((assetId) => state.cache.assetsById.get(assetId))
+    const cached = pages.get(pageOffset);
+    if (cached) {
+      if (cached.some((id) => !assetsById.has(id))) return undefined;
+      return cached
+        .map((assetId) => assetsById.get(assetId))
         .filter((summary): summary is AssetSummary => Boolean(summary));
     }
     const failure = failedPages.get(pageOffset);
@@ -262,7 +307,7 @@ export function createAssetQuery({
         }
         if (generation !== currentGeneration) return undefined;
         if (result.status === "stale") {
-          await refresh();
+          scheduleStaleRefresh();
           return undefined;
         }
         if (failedPages.size === 0) publish({ loadError: null });
@@ -293,7 +338,7 @@ export function createAssetQuery({
     if (sessionId === null) throw new Error("Asset query is unavailable");
     const result = await getAssetQueryPosition(sessionId, assetId);
     if (generation !== currentGeneration) return { status: "stale" };
-    if (result.status === "stale") await refresh();
+    if (result.status === "stale") scheduleStaleRefresh();
     return result;
   };
 
@@ -312,33 +357,51 @@ export function createAssetQuery({
 
   const ensureRange = (startIndex: number, endIndex: number) => {
     activePages = new Set();
-    if (state.total === 0 || endIndex < startIndex) return;
+    viewportPages = new Set();
+    if (state.total === 0 || endIndex < startIndex) {
+      if (fallback.size) {
+        fallback.clear();
+        cacheChanged();
+      }
+      return;
+    }
     const firstOffset = Math.floor(Math.max(0, startIndex) / pageSize) * pageSize;
     const lastOffset =
       Math.floor(Math.min(state.total - 1, Math.max(startIndex, endIndex)) / pageSize) * pageSize;
     for (let pageOffset = firstOffset; pageOffset <= lastOffset; pageOffset += pageSize) {
+      viewportPages.add(pageOffset);
       if (activePages.size < MAX_CACHED_PAGES) activePages.add(pageOffset);
     }
+    let droppedFallback = false;
+    for (const offset of fallback.keys()) {
+      if (viewportPages.has(offset)) continue;
+      fallback.delete(offset);
+      droppedFallback = true;
+    }
+    if (droppedFallback) cacheChanged();
     for (let pageOffset = firstOffset; pageOffset <= lastOffset; pageOffset += pageSize) {
       void loadPage(pageOffset).catch(() => {});
     }
   };
 
-  const handleReachEnd = () => {
-    if (state.loading || state.offset >= state.total) return;
-    void loadPage(Math.floor(state.offset / pageSize) * pageSize).catch(() => {});
+  /** Current-query rows only: never returns refresh fallback rows. */
+  const readCached = (index: number) => {
+    const pageOffset = Math.floor(index / pageSize) * pageSize;
+    const assetId = pages.get(pageOffset)?.[index - pageOffset];
+    return assetId === undefined ? undefined : assetsById.get(assetId);
   };
 
+  /** Render-time read: tracks `version` and may return a previous-query fallback row. */
   const getAssetAt = (index: number) => {
-    visibleCache();
+    version();
     const pageOffset = Math.floor(index / pageSize) * pageSize;
-    const assetId = state.cache.pages.get(pageOffset)?.[index - pageOffset];
-    return assetId === undefined ? undefined : state.cache.assetsById.get(assetId);
+    if (pages.has(pageOffset)) return readCached(index);
+    return fallback.get(pageOffset)?.[index - pageOffset];
   };
 
   const getAssetAtAsync = async (index: number) => {
     const pageOffset = Math.floor(index / pageSize) * pageSize;
-    const existing = getAssetAt(index);
+    const existing = readCached(index);
     if (existing) {
       touchPage(pageOffset);
       return existing;
@@ -385,8 +448,8 @@ export function createAssetQuery({
   };
 
   const getAssetIndex = (assetId: number) => {
-    if (currentSessionId === null || !state.cache.assetsById.has(assetId)) return null;
-    for (const [pageOffset, ids] of state.cache.pages) {
+    if (currentSessionId === null || !assetsById.has(assetId)) return null;
+    for (const [pageOffset, ids] of pages) {
       const localIndex = ids.indexOf(assetId);
       if (localIndex >= 0) return pageOffset + localIndex;
     }
@@ -395,11 +458,11 @@ export function createAssetQuery({
 
   const patchAssets = (action: (assets: AssetSummary[]) => AssetSummary[]) => {
     currentPatchCounter += 1;
-    const next = action(Array.from(state.cache.assetsById.values()));
+    const next = action(Array.from(assetsById.values()));
     // Preserve snapshot positions until the next query replaces them.
-    publish({
-      cache: { ...state.cache, assetsById: new Map(next.map((asset) => [asset.id, asset])) }
-    });
+    assetsById.clear();
+    for (const asset of next) assetsById.set(asset.id, asset);
+    cacheChanged();
   };
 
   return {
@@ -414,9 +477,6 @@ export function createAssetQuery({
     },
     get total() {
       return readTotal();
-    },
-    get offset() {
-      return readOffset();
     },
     get loading() {
       return readLoading();
@@ -438,7 +498,6 @@ export function createAssetQuery({
     getAssetPosition,
     refresh,
     reset,
-    handleReachEnd,
     ensureRange,
     getAssetAt,
     getAssetAtAsync,

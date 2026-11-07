@@ -75,7 +75,7 @@ Dokumentacja do przeczytania:
 
 ## Status
 
-todo — 2026-11-04
+in progress — 2026-11-07 (faza A, kroki 1-TS, 2, 3, 5: zacommitowana; faza B, kroki 1-IPC i 4: w toku)
 
 ## Notatki agentów
 
@@ -89,3 +89,15 @@ todo — 2026-11-04
 ### 2026-11-07 — agent etapu 03
 - Z etapu 03: etap 03 nie zmienia `src-tauri/src/lib.rs`, `commands/assets.rs`, `src/platform/tauri/*` ani `docs/architecture/ipc-contract.md`. `list_assets` zostaje (usunięcie odłożone, patrz etap 07), więc te pliki są wolne dla etapu 04.
 - Z etapu 03: rebuild wektora ID przy 1M trwa teraz ~32 ms bez filtrów i 36–420 ms z filtrami (release). Wektor z filtrami jest budowany w Rust (`try_list_ordered_asset_ids_with_meta`, `db/queries.rs`), z kontrolą anulowania przed sortowaniem i po nim. Pojemność wektora sesji jest dokładna (nowa alokacja), co jest ważne dla limitu pamięci sesji.
+
+### 2026-11-07 — agent etapu 04 (faza A)
+- Zrobione (tylko TS, bez IPC):
+  - cache stron mutowany w miejscu, jeden sygnał `version` (czytają go `getAssetAt` i memo `assets`), `MAX_CACHED_PAGES` 12 → 24 (`src/library/query/createAssetQuery.ts`);
+  - `refresh()` nie woła już `resetThumbnailQueue()`; opcja zniknęła z `createAssetQuery`. Stare strony bieżącego zakresu zostają jako fallback tylko dla `getAssetAt` (decyzja użytkownika); `onAssetsChanged` dostaje też wiersze fallbacku, więc `thumbnailStore.retain` nie gubi ich ścieżek;
+  - debounce `stale`: jeden refresh po 250 ms, kolejne `stale` dołączają, min. 1 s odstępu; jawny refresh kasuje timer;
+  - usunięte `hasMore`, `isLoading` (virtualizer), `onReachEnd`, `handleReachEnd`, `handleGalleryReachEnd` i getter `offset`; stopka pokazuje koniec wyników zawsze, gdy miniatury się nie generują.
+- Odkryte:
+  - przy 24 stronach `selection-recovery.e2e.js` (2052 pliki, ~16 stron) przestaje wymuszać ewikcję strony 128; spec przepinam w fazie B na komendę zakresu ID (zgoda użytkownika);
+  - `gallery.performance.e2e.js` dalej przechodzi, ale też już nie wymusza ewikcji.
+- Zostało (faza B): `anchorOffset` w `start_asset_query`, binarna komenda zakresu ID (f64 LE, decyzja użytkownika) w `createSelection`, ADR 0005, desktop E2E, pomiar Shift-click 100k.
+- Testy: `bun run test -- src/library src/features/gallery src/app src/features/lightbox/__tests__/createLightbox.test.ts src/features/bulk/__tests__/createBulk.test.ts` → pass (372); `bun run typecheck`, `bun run lint`, `tsc -p e2e/gallery-scale/tsconfig.json` → pass. Desktop E2E jeszcze nie.

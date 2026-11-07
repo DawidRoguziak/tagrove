@@ -242,7 +242,7 @@ pending ownership, so reusing an asset ID does not inherit an old disabled contr
 - Duplicate rename targets cannot be another source in the same batch, so swaps/cycles require independent temporary names in separate rescanned batches.
 - The DB transaction does not make post-commit staged-delete or thumbnail cleanup transactional; those cases are surfaced as recovery-required results.
 - Root addition is sequential. A failure after one addition can leave earlier roots added while preventing the final root-list refresh.
-- Local lifecycle resets intentionally differ by operation. Root removal explicitly resets the thumbnail queue/store; duplicate mutations refresh the query, whose refresh also resets the store.
+- Local lifecycle resets intentionally differ by operation. Root removal explicitly resets the thumbnail queue/store; duplicate mutations refresh the query, which keeps the store (paths are per asset ID and the new pages confirm them).
 - Layer-manager focus restoration requires a connected trigger. Native GTK video controls are outside its DOM focus model; see [frontend layer limits](../frontend/architecture-and-ui-conventions.md#keyboard-and-accessibility).
 
 ## Change checklist

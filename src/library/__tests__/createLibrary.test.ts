@@ -140,7 +140,8 @@ describe("createLibrary", () => {
     await settle(async () => {
       expect(await result.query.getAssetPosition(201)).toEqual({ status: "stale" });
     });
-    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
+    // The stale reply schedules one debounced refresh.
+    await waitFor(() => expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2));
     expect(apiMocks.getAssetQueryPage).not.toHaveBeenCalled();
     expect(result.query.assets).toHaveLength(1);
   });
@@ -222,11 +223,11 @@ describe("createLibrary", () => {
     });
     expect(result.query.assets).toContainEqual(final);
     expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(1);
-    expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
+    expect(queueMocks.resetThumbnailQueue).not.toHaveBeenCalled();
     expect(apiMocks.getAssetQueryPage).toHaveBeenLastCalledWith(1, kind === "initial" ? 0 : 1, 1);
   });
 
-  it("loads first page with replace mode and resets thumbnail queue", async () => {
+  it("loads first page with replace mode and keeps the thumbnail queue", async () => {
     apiMocks.startAssetQuery.mockResolvedValueOnce(
       ready([createAsset(1, "thumb-1.jpg"), createAsset(2, null)], 5)
     );
@@ -261,7 +262,8 @@ describe("createLibrary", () => {
     expect(result.query.total).toBe(5);
     expect(result.thumbnails.thumbnailStore.getPath(1)).toBe("thumb-1.jpg");
     expect(result.query.loading).toBe(false);
-    expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
+    // A refresh keeps thumbnail paths; the new page's `thumb_path` confirms them.
+    expect(queueMocks.resetThumbnailQueue).not.toHaveBeenCalled();
   });
 
   it("uses the full preview path for a provisional video asset", async () => {
@@ -332,7 +334,7 @@ describe("createLibrary", () => {
     });
   });
 
-  it("guards against duplicate page loads during rapid reach-end events", async () => {
+  it("guards against duplicate page loads during rapid range demand", async () => {
     const nextPage = deferred<ReturnType<typeof ready>>();
     apiMocks.startAssetQuery.mockResolvedValueOnce(ready([createAsset(1), createAsset(2)], 4));
     apiMocks.getAssetQueryPage.mockReturnValueOnce(nextPage.promise);
@@ -354,8 +356,8 @@ describe("createLibrary", () => {
     });
 
     settle(() => {
-      result.query.handleReachEnd();
-      result.query.handleReachEnd();
+      result.query.ensureRange(2, 3);
+      result.query.ensureRange(2, 3);
     });
 
     expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(1);
@@ -368,7 +370,7 @@ describe("createLibrary", () => {
     });
 
     settle(() => {
-      result.query.handleReachEnd();
+      result.query.ensureRange(2, 3);
     });
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
   });
@@ -493,7 +495,7 @@ describe("createLibrary", () => {
     expect(result.query.total).toBe(0);
     expect(result.vocabulary.knownTags).toEqual([]);
     expect(result.thumbnails.thumbnailStore.getPath(1)).toBeUndefined();
-    expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(2);
+    expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
   });
   it("holds only the latest paused range through late pages and filter refresh, then resumes it", async () => {
     apiMocks.startAssetQuery.mockResolvedValue(ready([createAsset(1), createAsset(2)], 100));
@@ -512,13 +514,11 @@ describe("createLibrary", () => {
     settle(() => result.handleVirtualRangeChange(viewport(40, true)));
     await settle(async () => pending.resolve(ready([createAsset(3), createAsset(4)], 100, 2)));
     expect(result.query.getAssetAt(2)?.id).toBe(3);
-    settle(() => result.handleGalleryReachEnd());
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
     expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
-    expect(queueMocks.resetThumbnailQueue).toHaveBeenCalledTimes(1);
+    expect(queueMocks.resetThumbnailQueue).not.toHaveBeenCalled();
     await settle(async () => result.applyFilters({ filterInclude: ["new"], filterExclude: [],
       appliedMediaKind: "all", appliedFavoritesOnly: false }));
-    settle(() => result.handleGalleryReachEnd());
     expect(apiMocks.getAssetQueryPage).toHaveBeenCalledTimes(1);
     expect(queueMocks.setGalleryThumbnailDemand).toHaveBeenLastCalledWith([], []);
     // Explicit reads for lightbox and selection still work during the gallery pause.

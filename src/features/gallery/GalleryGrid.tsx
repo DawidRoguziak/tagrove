@@ -16,13 +16,10 @@ export interface GalleryGridProps {
   assetCount: number;
   getAssetAt: (index: number) => AssetSummary | undefined;
   tileSize: number;
-  hasMore: boolean;
-  isLoading: boolean;
   isGeneratingThumbnails: boolean;
   pendingThumbnailCount: number;
   thumbnailStore: ThumbnailStore;
   scroller: () => HTMLElement | undefined;
-  onReachEnd: () => void;
   onVirtualRangeChange?: (viewport: LibraryViewport | null) => void;
   onCtrlWheelZoom?: (delta: number) => void;
   onSelect: (asset: AssetSummary) => void;
@@ -51,16 +48,9 @@ export function GalleryGrid(props: GalleryGridProps) {
     get tileSize() {
       return props.tileSize;
     },
-    get hasMore() {
-      return props.hasMore;
-    },
-    get isLoading() {
-      return props.isLoading;
-    },
     gallery,
     grid,
     scroller: () => props.scroller(),
-    onReachEnd: () => props.onReachEnd(),
     onRange: (range) => props.onVirtualRangeChange?.(range),
     get rangeResetKey() {
       return props.pageFailureEpoch;
@@ -316,7 +306,6 @@ export function GalleryGrid(props: GalleryGridProps) {
         <div class="pointer-events-none">
           <GalleryStatusFooter
             isGeneratingThumbnails={props.isGeneratingThumbnails}
-            hasMore={props.hasMore}
             generatingLabel={t("gallery.generatingThumbnails", {
               count: props.pendingThumbnailCount
             })}

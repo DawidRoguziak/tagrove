@@ -25,7 +25,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 const FOOTER = 136;
-function mount(count = 10000, delayed = false, hasMore = false) {
+function mount(count = 10000, delayed = false) {
   const scroller = document.createElement("div"),
     gallery = document.createElement("section"),
     grid = document.createElement("div"),
@@ -59,11 +59,9 @@ function mount(count = 10000, delayed = false, hasMore = false) {
     () => new DOMRect(0, margin - scroller.scrollTop, width, 2000000)
   );
   const range = vi.fn();
-  const reachEnd = vi.fn();
   const view = renderHook(() => {
     const [ready, setReady] = createSignal(!delayed);
     const [tile, setTile] = createSignal(188);
-    const [loading, setLoading] = createSignal(false);
     const [total, setTotal] = createSignal(count);
     const [reset, setReset] = createSignal(0);
     const model = createVirtualGrid({
@@ -73,20 +71,15 @@ function mount(count = 10000, delayed = false, hasMore = false) {
       get tileSize() {
         return tile();
       },
-      hasMore,
-      get isLoading() {
-        return loading();
-      },
       gallery: () => (ready() ? gallery : undefined),
       grid: () => (ready() ? grid : undefined),
       scroller: () => (ready() ? scroller : undefined),
-      onReachEnd: reachEnd,
       onRange: range,
       get rangeResetKey() {
         return reset();
       }
     });
-    return { model, setReady, setLoading, setTotal, setReset, setTile };
+    return { model, setReady, setTotal, setReset, setTile };
   });
   flush();
   const observe = () => {
@@ -100,7 +93,6 @@ function mount(count = 10000, delayed = false, hasMore = false) {
     grid,
     input,
     range,
-    reachEnd,
     resizeHeight(next: number) {
       height = next;
       observe();
@@ -419,29 +411,9 @@ it("excludes geometry anchors from motion and clears paused demand and timers on
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("does not reach-end load during a paused jump, including after loading finishes", () => {
-  vi.useFakeTimers();
-  const view = mount(10000, false, true);
-  view.scroll(Number.MAX_SAFE_INTEGER);
-  expect(view.result.model.paused).toBe(true);
-  view.result.setLoading(true);
-  flush();
-  view.result.setLoading(false);
-  flush();
-  expect(view.reachEnd).not.toHaveBeenCalled();
-  vi.advanceTimersByTime(150);
-  flush();
-  expect(view.reachEnd).toHaveBeenCalledOnce();
-  view.cleanup();
-});
-
-it("keeps retried ranges and the published range object stable across loading updates", () => {
+it("republishes the unchanged range when the reset key changes", () => {
   const view = mount();
   view.scroll(20080);
-  const published = view.result.model.range;
-  view.result.setLoading(true);
-  flush();
-  expect(view.result.model.range).toBe(published);
   view.range.mockClear();
   view.result.setReset(1);
   flush();

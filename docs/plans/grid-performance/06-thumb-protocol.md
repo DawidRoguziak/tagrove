@@ -151,3 +151,7 @@ todo — 2026-11-04
   - Komórki są recyklowane: przy przejściu wiersza ten sam kafel dostaje inny `asset`, a `createAssetThumbnail` przełącza subskrypcję.
   - Pauza szybkiego scrolla wstrzymuje tylko popyt (zakres w `createLibrary`). Zamontowane kafle zostają, więc `thumb://` musi znieść zmianę `src` w trakcie flingu bez dodatkowego IPC.
 - Z etapu 05: harness `e2e/gallery-scale` nie ma już `GALLERY_BASELINE_DIR` (stare źródła wymagały virtual-core). Porównanie przed/po robi się dwoma biegami na dwóch commitach.
+
+### 2026-11-07 — agent etapu 04
+- Z etapu 04: `createAssetQuery.refresh()` nie woła już `resetThumbnailQueue()` (opcja usunięta). Kolejkę i store resetują tylko `reset()`/clear-library, restore i usunięcie roota.
+- Z etapu 04: po refreshu stare wiersze bieżącego widoku są fallbackiem tylko dla `getAssetAt`; `onAssetsChanged` przekazuje je razem z cache, żeby `thumbnailStore.retain` nie zgubił ich ścieżek. Po usunięciu store w tym etapie fallback dalej musi dostawać miniatury (np. przez `thumb://<id>`).

@@ -13,14 +13,11 @@ afterEach(async () => {
 
 describe("GalleryStatusFooter localization", () => {
   it.each([
-    [true, true, true, false],
-    [true, false, false, false],
-    [false, true, false, false],
-    [false, false, false, true]
-  ])("generation=%s more=%s selects the matching footer branch", (generating, more, status, end) => {
+    [true, true, false],
+    [false, false, true]
+  ])("generation=%s selects the matching footer branch", (generating, status, end) => {
     const view = renderSolid(GalleryStatusFooter, {
       isGeneratingThumbnails: generating,
-      hasMore: more,
       generatingLabel: "Rendering 12 previews",
       resultCount: 1_000_000
     });
@@ -30,7 +27,7 @@ describe("GalleryStatusFooter localization", () => {
   });
   it.each(APP_LANGUAGES)("formats counts in %s using its plural rules", async (language) => {
     await changeAppLanguage(language);
-    const props = { isGeneratingThumbnails: false, hasMore: false, generatingLabel: "" };
+    const props = { isGeneratingThumbnails: false, generatingLabel: "" };
     const { getByTestId, rerender } = renderSolid(GalleryStatusFooter, {
       ...props,
       resultCount: 1
@@ -52,7 +49,7 @@ describe("GalleryStatusFooter localization", () => {
   });
 
   it("updates an already mounted footer when language changes", async () => {
-    const props = { isGeneratingThumbnails: false, hasMore: false, generatingLabel: "" };
+    const props = { isGeneratingThumbnails: false, generatingLabel: "" };
     const { getByRole, getByText, rerender } = renderSolid(GalleryStatusFooter, {
       ...props,
       resultCount: 30187

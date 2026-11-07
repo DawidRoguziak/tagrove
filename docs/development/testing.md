@@ -913,11 +913,10 @@ This establishes native layout and input behavior with synthetic data. Range cal
 represent page demand; there is no million-row SQLite query, thumbnail rendering or
 performance comparison. The integrated `GalleryGrid.test.tsx` regression separately
 runs the real sparse page cache with a mocked transport, demands offset 999936 and
-checks the final tile, bounded cache and footer total. Footer tests exercise all four
-thumbnail-generation/`hasMore` combinations. The production caller passes
-`query.offset < query.total`; sparse viewport loading remains active after `hasMore`
-becomes false. For live media/IPC and timing provenance use the separate gallery
-browsing and performance suites above.
+checks the final tile, bounded cache and footer total. Footer tests exercise both
+thumbnail-generation states; there is no sequential `hasMore`/reach-end loader, so
+sparse viewport demand is the only page loader. For live media/IPC and timing provenance
+use the separate gallery browsing and performance suites above.
 
 ```sh
 bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json
@@ -1005,10 +1004,10 @@ scroll offset, 1,611,408 pixels, with the final result visible.
 
 The final two page reads were offsets 25856 and 25984, both in the current overscan
 range. An intermediate run exposed an unrelated offset-128 read through the old
-sequential near-end callback. The production caller now uses
-`library.handleGalleryReachEnd`, which ensures only the current range; the integrated
-million-result regression rejects earlier offsets. The timing fixture uses that
-callback when available and retains the old callback only for saved baseline sources.
+sequential near-end callback. That callback has since been removed entirely (grid
+performance stage 04): only viewport demand loads pages, and the integrated
+million-result regression rejects earlier offsets. The timing fixture no longer passes a
+near-end callback.
 All 242 sampled paused frames across the final three passes had no images or animations.
 The longer image delay is the cost of the 150 ms pause plus queueing, loading and fade.
 These samples show reduced frontend work and more regular frames in this fixture;

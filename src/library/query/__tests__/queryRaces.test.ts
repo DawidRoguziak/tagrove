@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@solidjs/testing-library";
 import { createEffect } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLibrary } from "../../createLibrary";
-import { createAssetQuery } from "../createAssetQuery";
+import { createAssetQuery, MAX_CACHED_PAGES } from "../createAssetQuery";
 import { settle } from "../../../test/settle";
 import type { AssetQueryReady, AssetSummary } from "../../../platform/tauri/contracts/assets";
 
@@ -40,7 +40,6 @@ function deferred<T>() {
 function model() {
   return createAssetQuery({
     pageSize: 1,
-    resetThumbnailQueue: vi.fn(),
     filters: () => ({
       filterInclude: [],
       filterExclude: [],
@@ -56,16 +55,16 @@ beforeEach(() => {
 });
 
 describe("query lifetime and synchronous coordination", () => {
-  it("keeps the exact twelve-page bound even when demand protects more pages", async () => {
+  it("keeps the exact page bound even when demand protects more pages", async () => {
     const { result: query } = renderHook(model);
     await settle(() => query.refresh());
     query.ensureRange(0, 29);
     await settle(() => query.getIdsRangeAsync(0, 29));
-    expect(query.assets).toHaveLength(12);
+    expect(query.assets).toHaveLength(MAX_CACHED_PAGES);
     const missing = Array.from({ length: 30 }, (_, i) => i).find((i) => !query.getAssetAt(i))!;
     expect((await query.getAssetAtAsync(missing))?.id).toBe(missing + 1);
     settle(() => {});
-    expect(query.assets).toHaveLength(12);
+    expect(query.assets).toHaveLength(MAX_CACHED_PAGES);
   });
 
   it("does not reload evicted pages repeatedly when the library range exceeds its cache", async () => {
@@ -85,7 +84,7 @@ describe("query lifetime and synchronous coordination", () => {
       })
     );
     await waitFor(() => expect(library.query.loading).toBe(false));
-    expect(library.query.assets).toHaveLength(12);
+    expect(library.query.assets).toHaveLength(MAX_CACHED_PAGES);
     expect(api.getAssetQueryPage).toHaveBeenCalledTimes(29);
     settle(() => {});
     await Promise.resolve();

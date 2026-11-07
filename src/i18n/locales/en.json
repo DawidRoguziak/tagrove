@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} items",
     "loadError": "Loading the library failed.",
     "retry": "Retry",
-    "scrollbarLabel": "Gallery position"
+    "scrollbarLabel": "Gallery position",
+    "timelineLabel": "Timeline",
+    "timelineNoDate": "No date"
   },
   "bulk": {
     "orderModal": {

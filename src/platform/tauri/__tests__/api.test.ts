@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
+import { getAssetQuerySections } from "../assets";
 import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, getAssetQueryIdRange, decodeAssetIdRange, setAssetsMediaGroupBulk, listAssets, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
 import { idRangeBuffer } from "../../../test/idRange";
 import { thumbnailUrl } from "../thumbnails";
@@ -41,6 +42,22 @@ describe("api contract", () => {
       sessionId: 7,
       assetId: 202
     });
+  });
+  it.each([
+    {
+      status: "ready",
+      session_id: 7,
+      total: 3,
+      sections: [
+        { t: 202403, start: 0, count: 2 },
+        { t: 0, start: 2, count: 1 }
+      ]
+    },
+    { status: "stale" }
+  ])("reads timeline sections of a session: %j", async (response) => {
+    coreMocks.invoke.mockResolvedValueOnce(response);
+    await expect(getAssetQuerySections(7)).resolves.toEqual(response);
+    expect(coreMocks.invoke).toHaveBeenCalledWith("get_asset_query_sections", { sessionId: 7 });
   });
   it("uses the scan root preference and startup command contracts", async () => {
     const roots = [{ path: "/media", auto_scan_on_startup: true }];

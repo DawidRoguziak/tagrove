@@ -1,12 +1,14 @@
 import { createEffect, createMemo, createSignal, For, Repeat, Show } from "solid-js";
 import { Portal } from "@solidjs/web";
-import type { AssetSummary } from "../../platform/tauri/contracts/assets";
+import type { AssetQuerySection, AssetSummary } from "../../platform/tauri/contracts/assets";
 import type { BulkSelectionHandler } from "./selection";
 import type { LibraryViewport } from "../../library/createLibrary";
 import { useLanguage } from "../../i18n/solid";
 import { GalleryEmptyState } from "./GalleryEmptyState";
 import { GalleryScrollbar } from "./GalleryScrollbar";
 import { GalleryStatusFooter } from "./GalleryStatusFooter";
+import { GalleryTimelineScrubber } from "./GalleryTimelineScrubber";
+import { formatTimelineMonth, timelineMonths } from "./timeline";
 import { GalleryTile } from "./GalleryTile";
 import { createVirtualGrid } from "./createVirtualGrid";
 import { createGridHandlers } from "./createGridHandlers";
@@ -28,13 +30,17 @@ export interface GalleryGridProps {
   onLoadRetry: () => void;
   queryEpoch: number;
   pageFailureEpoch: number;
+  /** Timeline sections of the current query session (stage 08). */
+  sections?: readonly AssetQuerySection[];
 }
 interface Slot {
   id: number;
 }
 const CONTENT_ID = "gallery-grid-content";
+/** Right offset of the timeline rail, clear of the position bar in both scroll modes. */
+const TIMELINE_RIGHT = 16;
 export function GalleryGrid(props: GalleryGridProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [gallery, setGallery] = createSignal<HTMLElement>();
   const [grid, setGrid] = createSignal<HTMLDivElement>();
   const virtual = createVirtualGrid({
@@ -108,6 +114,7 @@ export function GalleryGrid(props: GalleryGridProps) {
     const start = virtual.firstRow % all.length;
     return start ? [...all.slice(start), ...all.slice(0, start)] : all;
   });
+  const months = createMemo(() => timelineMonths(props.sections ?? []));
   const assetAt = (index: number) => {
     props.assets;
     return index < props.assetCount ? props.getAssetAt(index) : undefined;
@@ -239,6 +246,23 @@ export function GalleryGrid(props: GalleryGridProps) {
           firstVisible={virtual.range.visibleStartIndex}
           count={props.assetCount}
           onScrollTo={(offset) => virtual.scrollTo(offset, true)}
+        />
+      </Show>
+      {/* Month navigation beside the position bar. GTK's overlay scrollbar (native mode) and
+          `GalleryScrollbar` (windowed) both occupy the right 14px, which would take its hits. */}
+      <Show when={props.assetCount > 0 && months().length > 1}>
+        <GalleryTimelineScrubber
+          controls={CONTENT_ID}
+          label={t("gallery.timelineLabel")}
+          months={months()}
+          total={props.assetCount}
+          viewport={virtual.viewport}
+          firstVisible={virtual.range.visibleStartIndex}
+          right={TIMELINE_RIGHT}
+          formatMonth={(month) => formatTimelineMonth(month, language(), t("gallery.timelineNoDate"))}
+          onJump={(index) => virtual.scrollToIndex(index)}
+          onHold={virtual.holdDemand}
+          onRelease={virtual.resumeDemand}
         />
       </Show>
       <section

@@ -764,7 +764,38 @@ pub fn list_ordered_asset_ids_with_meta(
         meta_filter,
         || false,
     )?
+    .map(|ordered| ordered.ids)
     .unwrap_or_default())
+}
+
+/// The ordered session vector and, for filtered queries, its timeline
+/// sections built in the same pass. Unfiltered sections are `None`: reading the
+/// bucket columns for every row would double the 1M rebuild (29 → 58 ms), so
+/// they are read on demand by `list_unfiltered_query_sections`.
+#[derive(Debug, Default, PartialEq)]
+pub struct OrderedAssetIds {
+    pub ids: Vec<i64>,
+    pub sections: Option<Vec<crate::models::AssetQuerySection>>,
+}
+
+/// Timeline sections of the unfiltered order, read from the sort-key index in
+/// the same order as the session vector. Only `sort_bucket_time` is read:
+/// members of a bucket share it, so splitting only where it changes never
+/// splits a media group. The caller checks the session's revision in the same
+/// read transaction and that the sections cover exactly its `total`.
+pub fn list_unfiltered_query_sections(
+    conn: &Connection,
+) -> anyhow::Result<Vec<crate::models::AssetQuerySection>> {
+    let mut stmt = conn.prepare_cached(&format!(
+        "SELECT sort_bucket_time FROM assets ORDER BY {SORT_KEY_ORDER_SQL}"
+    ))?;
+    let mut rows = stmt.query([])?;
+    let mut sections = super::query_sections::SectionBuilder::default();
+    while let Some(row) = rows.next()? {
+        let time = row.get::<_, Option<i64>>(0)?.unwrap_or(0);
+        sections.push(time, time);
+    }
+    Ok(sections.finish())
 }
 
 /// Column order of `idx_assets_sort_key`; an unfiltered query streams it.
@@ -795,9 +826,10 @@ struct FilteredOrderRow {
     group_order: Option<f64>,
 }
 
-/// Builds the ordered matching-ID list, cooperatively aborting through
-/// `cancel_check` (checked periodically while streaming rows). `Ok(None)`
-/// means the build was cancelled; the partial list is discarded.
+/// Builds the ordered matching-ID list (and, with filters, its timeline
+/// sections, see `query_sections`), cooperatively aborting through `cancel_check` (checked
+/// periodically while streaming rows). `Ok(None)` means the build was
+/// cancelled; the partial list is discarded.
 ///
 /// Ordering (ADR 0004): every nonblank media-group key forms one bucket, every
 /// other asset its own bucket. Buckets sort by their newest *matching* member's
@@ -815,8 +847,10 @@ pub fn try_list_ordered_asset_ids_with_meta(
     favorites_only: bool,
     meta_filter: Option<&AssetMetaFilter>,
     cancel_check: impl Fn() -> bool,
-) -> anyhow::Result<Option<Vec<i64>>> {
+) -> anyhow::Result<Option<OrderedAssetIds>> {
     use rusqlite::types::Value;
+
+    use super::query_sections::SectionBuilder;
 
     let mut where_clauses = Vec::<String>::new();
     let mut values = Vec::<Value>::new();
@@ -833,7 +867,10 @@ pub fn try_list_ordered_asset_ids_with_meta(
         // The former `HAVING COUNT(DISTINCT t.id) = <names>` matched nothing
         // when a name was missing or two names denoted the same tag.
         if tag_ids.len() != tags_and.len() {
-            return Ok(Some(Vec::new()));
+            return Ok(Some(OrderedAssetIds {
+                ids: Vec::new(),
+                sections: Some(Vec::new()),
+            }));
         }
         let placeholders = vec!["?"; tag_ids.len()].join(",");
         where_clauses.push(format!(
@@ -887,7 +924,10 @@ pub fn try_list_ordered_asset_ids_with_meta(
             }
             ids.push(row?);
         }
-        return Ok(Some(ids));
+        return Ok(Some(OrderedAssetIds {
+            ids,
+            sections: None,
+        }));
     }
 
     let sql = format!(
@@ -955,8 +995,15 @@ pub fn try_list_ordered_asset_ids_with_meta(
     // A fresh allocation: collecting in place would keep the wider row buffer
     // as the retained session vector's capacity.
     let mut ids = Vec::with_capacity(keyed.len());
-    ids.extend(keyed.iter().map(|(_, row)| row.id));
-    Ok(Some(ids))
+    let mut sections = SectionBuilder::default();
+    for ((bucket_time, _), row) in &keyed {
+        sections.push(*bucket_time, row.bucket);
+        ids.push(row.id);
+    }
+    Ok(Some(OrderedAssetIds {
+        ids,
+        sections: Some(sections.finish()),
+    }))
 }
 
 /// Placeholder counts for summary lookups. A page is at most 256 IDs.

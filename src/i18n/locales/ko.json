@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}}개 항목",
     "loadError": "라이브러리를 불러오지 못했습니다.",
     "retry": "다시 시도",
-    "scrollbarLabel": "갤러리 내 위치"
+    "scrollbarLabel": "갤러리 내 위치",
+    "timelineLabel": "타임라인",
+    "timelineNoDate": "날짜 없음"
   },
   "bulk": {
     "orderModal": {

@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}}件",
     "loadError": "ライブラリの読み込みに失敗しました。",
     "retry": "再試行",
-    "scrollbarLabel": "ギャラリー内の位置"
+    "scrollbarLabel": "ギャラリー内の位置",
+    "timelineLabel": "タイムライン",
+    "timelineNoDate": "日付なし"
   },
   "bulk": {
     "orderModal": {

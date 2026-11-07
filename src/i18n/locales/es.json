@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} elementos",
     "loadError": "No se pudo cargar la biblioteca.",
     "retry": "Reintentar",
-    "scrollbarLabel": "Posición en la galería"
+    "scrollbarLabel": "Posición en la galería",
+    "timelineLabel": "Cronología",
+    "timelineNoDate": "Sin fecha"
   },
   "bulk": {
     "orderModal": {

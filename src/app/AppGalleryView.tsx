@@ -105,6 +105,7 @@ export function AppGalleryView() {
               onLoadRetry={retry}
               queryEpoch={library.query.queryEpoch}
               pageFailureEpoch={library.query.pageFailureEpoch}
+              sections={library.query.sections}
             />
             {selection.enabled ? (
               <BulkActionsSidebar

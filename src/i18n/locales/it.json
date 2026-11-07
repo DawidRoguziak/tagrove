@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} elementi",
     "loadError": "Caricamento della libreria non riuscito.",
     "retry": "Riprova",
-    "scrollbarLabel": "Posizione nella galleria"
+    "scrollbarLabel": "Posizione nella galleria",
+    "timelineLabel": "Cronologia",
+    "timelineNoDate": "Senza data"
   },
   "bulk": {
     "orderModal": {

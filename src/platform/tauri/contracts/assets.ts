@@ -79,6 +79,21 @@ export type StartAssetQueryResult = AssetQueryReady | AssetQuerySuperseded;
 export type AssetQueryPageResult = AssetQueryReady | AssetQueryStale;
 
 /**
+ * One timeline section: `count` rows from `start` whose bucket month is `t`
+ * (`yyyymm` in UTC; `0` means no date). Adjacent sections may share a month
+ * when a large month is split.
+ */
+export interface AssetQuerySection {
+  t: number;
+  start: number;
+  count: number;
+}
+
+export type AssetQuerySectionsResult =
+  | { status: "ready"; session_id: number; total: number; sections: AssetQuerySection[] }
+  | AssetQueryStale;
+
+/**
  * Decoded `get_asset_query_id_range` body. The wire format is binary, not JSON:
  * little-endian f64 `[count, ...ids]`, or zero bytes for `stale`.
  */

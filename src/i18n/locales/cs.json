@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} položek",
     "loadError": "Načtení knihovny se nezdařilo.",
     "retry": "Znovu",
-    "scrollbarLabel": "Pozice v galerii"
+    "scrollbarLabel": "Pozice v galerii",
+    "timelineLabel": "Časová osa",
+    "timelineNoDate": "Bez data"
   },
   "bulk": {
     "orderModal": {

@@ -3,10 +3,12 @@ import {
   getAssetQueryIdRange,
   getAssetQueryPage,
   getAssetQueryPosition,
+  getAssetQuerySections,
   startAssetQuery
 } from "../../platform/tauri/assets";
 import type {
   AssetQueryPositionResult,
+  AssetQuerySection,
   AssetSummary,
   SearchMetaFilter,
   MediaKind
@@ -70,6 +72,11 @@ export function createAssetQuery({
   const readPageFailureEpoch = createMemo(() => snapshot().pageFailureEpoch);
   const readQueryEpoch = createMemo(() => snapshot().queryEpoch);
   const readQueryPending = createMemo(() => snapshot().queryPending);
+  // Timeline sections of the current session (stage 08); empty until loaded.
+  const [sections, setSections] = createSignal<{
+    sessionId: number | null;
+    items: readonly AssetQuerySection[];
+  }>({ sessionId: null, items: [] });
   let disposed = false;
   function publish(patch: Partial<typeof state>) {
     state = { ...state, ...patch };
@@ -128,6 +135,7 @@ export function createAssetQuery({
     accessOrder = [];
     clearCache();
     fallback.clear();
+    setSections({ sessionId: null, items: [] });
     cacheChanged();
     publish({
       total: 0,
@@ -251,6 +259,10 @@ export function createAssetQuery({
         return;
       }
       currentSessionId = result.session_id;
+      if (sections().sessionId !== result.session_id) {
+        setSections({ sessionId: null, items: [] });
+        void loadSections(result.session_id, generation);
+      }
       publish({ queryEpoch: state.queryEpoch + 1 });
       publish({ total: result.total });
       publish({ loadError: null });
@@ -270,6 +282,21 @@ export function createAssetQuery({
         publish({ queryPending: false });
         endLoading();
       }
+    }
+  };
+
+  /** Sections are optional UI: a failure leaves the timeline hidden. */
+  const loadSections = async (sessionId: number, generation: number) => {
+    try {
+      const result = await getAssetQuerySections(sessionId);
+      if (generation !== currentGeneration || sessionId !== currentSessionId) return;
+      if (result.status === "stale") {
+        scheduleStaleRefresh();
+        return;
+      }
+      setSections({ sessionId, items: result.total === state.total ? result.sections : [] });
+    } catch {
+      // Keep the timeline hidden; pages and selection do not depend on it.
     }
   };
 
@@ -491,6 +518,12 @@ export function createAssetQuery({
     get queryPending() {
       return readQueryPending();
     },
+    /** Timeline sections of the current session, in session order. */
+    get sections() {
+      return sections().items;
+    },
+    /** Current backend session, or `null` while a query is pending. */
+    sessionId: () => currentSessionId,
     patchAssets,
     retryLoad,
     getAssetPosition,

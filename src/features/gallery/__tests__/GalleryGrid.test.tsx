@@ -12,7 +12,8 @@ import { idRangeResult, sequentialIds } from "../../../test/idRange";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
-  getAssetQueryIdRange: vi.fn()
+  getAssetQueryIdRange: vi.fn(),
+  getAssetQuerySections: vi.fn()
 }));
 vi.mock("../../../platform/tauri/assets", async () => ({
   ...(await vi.importActual("../../../platform/tauri/assets")),
@@ -138,6 +139,7 @@ async function mount(selectionEnabled = false) {
             }}
             queryEpoch={library.query.queryEpoch}
             pageFailureEpoch={library.query.pageFailureEpoch}
+            sections={library.query.sections}
           />
         </div>
       </LanguageProvider>
@@ -456,6 +458,46 @@ it("adds a keyboard scrollbar only for results taller than the physical window",
   fireEvent.keyDown(bar, { key: "Home" });
   flush();
   expect(bar).toHaveAttribute("aria-valuenow", "1");
+});
+
+it("adds the month timeline beside the position bar and jumps to the oldest month", async () => {
+  api.getAssetQuerySections.mockResolvedValue({
+    status: "ready",
+    session_id: 1,
+    total: 26000,
+    sections: [{ t: 202403, start: 0, count: 26000 }]
+  });
+  const single = await mount();
+  await waitFor(() => expect(api.getAssetQuerySections).toHaveBeenCalledWith(1));
+  // One month is no timeline.
+  expect(screen.queryByRole("slider")).toBeNull();
+  single.view.unmount();
+  const total = 1_000_000;
+  api.startAssetQuery.mockResolvedValue(page(0, total));
+  api.getAssetQueryPage.mockImplementation(async (_session, offset) => page(offset, total));
+  api.getAssetQuerySections.mockResolvedValue({
+    status: "ready",
+    session_id: 1,
+    total,
+    sections: [
+      { t: 202403, start: 0, count: 600_000 },
+      { t: 201507, start: 600_000, count: 399_990 },
+      { t: 0, start: 999_990, count: 10 }
+    ]
+  });
+  const { view } = await mount();
+  const slider = await screen.findByRole("slider", { name: "Timeline" });
+  expect(screen.getByRole("scrollbar", { name: "Gallery position" })).toBeInTheDocument();
+  expect(slider).toHaveAttribute("aria-valuetext", "March 2024");
+  fireEvent.keyDown(slider, { key: "ArrowDown" });
+  flush();
+  await waitFor(() =>
+    expect(view.container.querySelector('button[data-asset-index="600000"]')).toBeInTheDocument()
+  );
+  expect(slider).toHaveAttribute("aria-valuetext", "July 2015");
+  fireEvent.keyDown(slider, { key: "End" });
+  flush();
+  expect(slider).toHaveAttribute("aria-valuetext", "No date");
 });
 
 it("keeps a deep viewport's tiles mounted while a refresh reloads its pages", async () => {

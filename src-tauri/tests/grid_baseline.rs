@@ -284,6 +284,44 @@ fn query_rebuild_and_page_baseline() {
             summary(&page_samples)
         );
 
+        // Stage 08 (ADR 0007): unfiltered sections are read on the first
+        // sections request, off the rebuild path. Each sample rebuilds a fresh
+        // session, then times its first (scan) and second (cached) read.
+        let mut first_reads = Vec::new();
+        let mut cached_reads = Vec::new();
+        let mut section_count = 0;
+        for _ in 0..iterations {
+            db::bump_library_revision(&writer).unwrap();
+            let (_, session, _) = start_query(&runtime, filters());
+            for samples in [&mut first_reads, &mut cached_reads] {
+                let started = Instant::now();
+                let permit = runtime.admit().unwrap();
+                let result = runtime.queries.sections(&permit, session).unwrap();
+                samples.push(ms(started));
+                let media_tagger::models::AssetQuerySectionsResult::Ready {
+                    sections, total, ..
+                } = result
+                else {
+                    panic!("sections of a current session are ready");
+                };
+                assert_eq!(
+                    sections.iter().map(|section| section.count).sum::<usize>(),
+                    total
+                );
+                section_count = sections.len();
+            }
+        }
+        println!(
+            "[baseline] metric=get_asset_query_sections_first rows={rows} sections={section_count} {}",
+            summary(&first_reads)
+        );
+        println!(
+            "[baseline] metric=get_asset_query_sections_cached rows={rows} {}",
+            summary(&cached_reads)
+        );
+        // `all_session` was replaced by the rebuilds above; read ranges from a current one.
+        let (_, all_session, _) = start_query(&runtime, filters());
+
         // Stage 04 (ADR 0005): the binary ID range behind Shift-click and
         // rectangle selection, for 100k IDs and the whole snapshot.
         let spans = if total > 100_000 {

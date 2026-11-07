@@ -81,7 +81,9 @@ The [IPC query states](../architecture/ipc-contract.md#query-session-states) def
 
 The initial page size and later page limit are clamped by Rust to 1–256. Page offsets use unsigned transport values; an offset past the snapshot end is clamped to `total`. Summary lookup pads each chunk to a cached 16-, 64-, or 256-ID statement and reconstructs the snapshot order after SQLite returns rows. The registered legacy `list_assets` command is not the production gallery path; it returns full `Asset` rows, clamps its limit to 1–500, and does not provide a stable session.
 
-Query start, page reads, position lookups, and detail reads run as blocking work outside the async runtime. Command failures reject with a string as described in the [IPC contract](../architecture/ipc-contract.md).
+A filtered build also produces the session's [timeline sections](#timeline-sections-and-scrubber) in the same pass; an unfiltered session reads them on the first sections request, so the rebuild stays an ID-only index scan.
+
+Query start, page reads, position lookups, section reads, and detail reads run as blocking work outside the async runtime. Command failures reject with a string as described in the [IPC contract](../architecture/ipc-contract.md).
 
 ## Mutation refresh and overlapping reads
 
@@ -168,6 +170,37 @@ count, tile size, margin, pool size and spacer height are memos, so effects keye
 (such as the rectangle-selection handlers, which cancel a drag on layout changes) do not
 rerun when only the rendered rows change. Writes are
 clamped in JavaScript because WebKitGTK resets `scrollTop = Number.MAX_SAFE_INTEGER` to zero.
+
+### Timeline sections and scrubber
+
+Each session has timeline sections `{ t, start, count }` (`src-tauri/src/db/query_sections.rs`,
+[ADR 0007](../adr/0007-session-timeline-sections.md)). A filtered build produces them with its
+IDs. An unfiltered build reads only IDs (reading the bucket columns per row doubled the 1M
+rebuild); its sections are read once, on the first `get_asset_query_sections` call, from the
+sort-key index inside the read transaction that checks the session's revision (about 29 ms for
+1M rows, release), then kept in the session.
+`t` is the UTC month (`yyyymm`) of the row's **bucket time**, the time the gallery order sorts
+by ([database ordering](database.md#gallery-and-media-group-ordering)): a media group belongs to
+the month of its newest (matching) member, so a group is never split and a month is one
+contiguous run. Times at or before the Unix epoch form a final "no date" section (`t = 0`).
+A month larger than 5,000 rows is split between buckets (unfiltered: where the bucket time
+changes) into further sections with the same `t`. `get_asset_query_sections` returns them for a session, or `stale` like a page read.
+
+`createAssetQuery` loads sections once per session after a `ready` start (a cache hit with the
+same session ID keeps them) and exposes `sections`; a failed or stale read leaves the timeline
+hidden. `GalleryTimelineScrubber` appears when the result spans at least two months. It is a
+sticky `role="slider"` named “Timeline” 16 px from the right edge, beside the position bar: GTK's
+overlay scrollbar (native mode) and `GalleryScrollbar` (windowed mode) both occupy the right
+14 px and would otherwise take its pointer hits. It does not replace `GalleryScrollbar`
+(that bar is the only position control for results with one month or no dates). Its
+`aria-valuetext` is the month of the first visible item, formatted with `Intl.DateTimeFormat`
+in the UI language and UTC. The track position of an index is `index / total`; a jump calls
+`scrollToIndex`, whose row offset is O(1) with fixed row heights. Arrow keys step one month,
+PageUp/PageDown one year (to the start of the current month or year first), Home/End the ends.
+A drag applies at most one jump per animation frame and holds page and thumbnail demand
+(`holdDemand`) until pointer release or 150 ms without movement (`resumeDemand`). Year ticks
+are thinned so labels never overlap; hovering shows the month under the pointer. The grid has
+no section headers, so row heights stay fixed.
 Ctrl-wheel remains tile zoom; the gallery never intercepts plain wheel input. Subpixel
 logical offsets survive WebKit rounding of physical `scrollTop`, and rectangle edge
 scrolling uses the same logical scroll command. Listeners, observers, timers and the
@@ -252,7 +285,8 @@ Inclusive range reads capture one session and generation, checking them after ev
 ## Known limitations
 
 - Backend supersession, TTL, and the four-session LRU are process-wide. Another window or independent caller can supersede an uncached start or evict this window's session.
-- `assets` covers loaded pages only; bulk operations use authoritative selected IDs and a separate selection metadata cache. `getAssetIndex` cannot locate an unloaded asset or a refresh fallback row. The 24-page bound takes precedence if an unusually large requested viewport intersects more than 24 pages.
+- `assets` covers loaded pages only; bulk operations use authoritative selected IDs and a separate selection metadata cache.
+- Timeline months are UTC; an asset modified near midnight at a month boundary can appear under the neighbouring local month. `getAssetIndex` cannot locate an unloaded asset or a refresh fallback row. The 24-page bound takes precedence if an unusually large requested viewport intersects more than 24 pages.
 - Lightbox and bulk use one shared 256-entry details cache, stamped with metadata tokens and cleared whenever the query epoch changes. Reselecting an asset after a restore, identity reset, or session restart re-reads details instead of trusting stale path/size/tags. Lightbox details carry metadata-generation stamps; complete snapshots from before or during a write are rejected, and current details are re-read after mutations drain.
 - Refresh does not cancel in-flight backend page work; the generation guard only discards late responses after they finish. A `superseded` result is not retried automatically.
 - The empty state depends only on `assetCount`, so it can appear during the initial load while `total` is still zero. Conversely, an in-progress refresh keeps the old nonempty grid visible. The footer does not expose asset-page loading or thumbnail generation.
@@ -279,7 +313,7 @@ Inclusive range reads capture one session and generation, checking them after ev
 - `src/library/query/__tests__/createAssetQuery.test.ts` covers first-page replacement, current supersession error/retry and obsolete-response rejection, start/page failure error state with retry recovery, debounced stale-triggered restarts, page-failure epoch signaling, late-generation response rejection, `version` notification of in-place merges, the page bound, and render-only refresh fallback.
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
 - `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate range-demand suppression, shared in-flight indexed page lookup, the paused-range hold, and clear-library reset.
-- `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews, per-asset thumbnail DOM isolation, loaded tiles kept through a fast jump and through a refresh deep in the list, one-slot recycling with constant DOM and row order, per-row backplates and the windowed scrollbar. `gridGeometry.test.ts` covers layout, ranges, anchors and window bases at 10k/26k/1M slots; `createVirtualGrid.test.tsx` covers ranges, anchors, the windowed mode, the pause and disposal; `GalleryScrollbar.test.tsx` covers its accessibility, pointer and keyboard input. `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior.
+- `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews, per-asset thumbnail DOM isolation, loaded tiles kept through a fast jump and through a refresh deep in the list, one-slot recycling with constant DOM and row order, per-row backplates and the windowed scrollbar. `gridGeometry.test.ts` covers layout, ranges, anchors and window bases at 10k/26k/1M slots; `createVirtualGrid.test.tsx` covers ranges, anchors, the windowed mode, the pause and disposal; `GalleryScrollbar.test.tsx` covers its accessibility, pointer and keyboard input. `timeline.test.ts` and `GalleryTimelineScrubber.test.tsx` cover month merging, position mapping, keys, ARIA and the per-frame drag with held demand; `GalleryGrid.test.tsx` covers the timeline beside the windowed bar; `query_sections.rs` and `asset_query_service.rs` tests cover section boundaries, groups, no-date rows, splits, filters and staleness. `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior.
 - `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers one element across source changes, hiding until the current source loads, async decoding, fade readiness for delayed/cached loads, failures, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail checks](../development/testing.md#gallery-thumbnail-fade) require immediate full opacity during filtering and scrolling in both themes and with reduced motion.
 - `src/features/lightbox/__tests__/createLightbox.test.ts` covers detail/mutation races, identity-reset ID reuse, deletion tombstones, query-session cache invalidation, rapid navigation, and query-position recomputation. See [lightbox tests](lightbox.md#tests) for remaining navigation/prefetch scenarios.
 - `src/features/search/__tests__/createSearch.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.
@@ -288,8 +322,8 @@ Inclusive range reads capture one session and generation, checking them after ev
 
 `src/features/gallery/__tests__/createVirtualGrid.test.tsx` mounts 10,000 and 26,000 slots with initially null parent refs, bounds every range callback on cold mount and remount, and checks that demand is republished only when rows change, resize and margin anchoring, partial rows, observer and timer cleanup, and the one-million-slot window (End/Home, edge and idle rebasing, subpixel edge scrolling, return to native mode). These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. `GalleryGrid.test.tsx` checks the `thumb://` URL per slot and `p=1` on overscan tiles, and `ThumbnailImage.test.tsx` covers per-source load state and retry backoff; page-cache tests cross the 24-page bound and reload evicted pages.
 
-The opt-in desktop spec uses 2,048 copied PNGs, 12 GIFs, and two videos in a temporary root. Its first case samples an image-only route before metadata traversal, then revisits the identical route without clearing caches. The starting target at index zero, the initially mounted area, and the final return legs are excluded from timing. Each sample records the final JPEG filenames present before scrolling and the visible thumbnail filenames after decoding. Only samples with no pre-existing visible previews enter the first-use summary; mixed samples stay in the raw record. Every revisit sample must find all visible previews already on disk. These labels describe preview-file reuse, not an OS-cold cache or a fully resident frontend page cache.
+The opt-in desktop spec uses 3,584 copied PNGs (28 pages), 12 GIFs, and two videos in a temporary root. Its first case samples an image-only route before metadata traversal, then revisits the identical route without clearing caches. The starting target at index zero, the initially mounted area, and the final return legs are excluded from timing. Each sample records the final JPEG filenames present before scrolling and the visible thumbnail filenames after decoding. Only samples with no pre-existing visible previews enter the first-use summary; mixed samples stay in the raw record. Every revisit sample must find all visible previews already on disk. These labels describe preview-file reuse, not an OS-cold cache or a fully resident frontend page cache.
 
-The suite crosses the 12-page cache bound that applied when it was written (the cache now keeps 24 pages, so its 16 pages no longer force eviction), returns to evicted ranges, bounds mounted tiles, and compares decoded pixels from native-display captures of lightbox GIF frames. Run the entire suite with `MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js` in the [isolated desktop environment](../development/testing.md#gallery-performance-measurements). The pixel check requires ImageMagick `import` and `magick`. Raw route samples, frame intervals, cache preparation and summaries go to `artifacts/gallery-performance/timings.json`. Timings include WebDriver overhead and exclude the opacity fade; they are observations, not portable frame-rate thresholds. The [native scale fixture](../development/testing.md#million-result-gallery-layout) verifies million-result layout separately with lazy synthetic summaries. Neither suite generates a million-file SQLite dataset.
+The suite crosses the 24-page cache bound (28 pages), asserts that a revisited page is fetched again after eviction, returns to evicted ranges, bounds mounted tiles, and compares decoded pixels from native-display captures of lightbox GIF frames. Run the entire suite with `MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js` in the [isolated desktop environment](../development/testing.md#gallery-performance-measurements). The pixel check requires ImageMagick `import` and `magick`. Raw route samples, frame intervals, cache preparation and summaries go to `artifacts/gallery-performance/timings.json`. Timings include WebDriver overhead and exclude the opacity fade; they are observations, not portable frame-rate thresholds. The [native scale fixture](../development/testing.md#million-result-gallery-layout) verifies million-result layout separately with lazy synthetic summaries. Neither suite generates a million-file SQLite dataset.
 
-The stable-metadata regressions cover unread pages, cached starts, position lookup, dependency changes, and file-backed WAL snapshots. Database tests cover marker-write rollback, initialization without markers, namespace rebuilding, exact batched keys, canonical no-ops, and shared-tag repairs. Backup tests restore both missing and obsolete marker namespaces. Frontend tests use pending saves and reads to check current-filter decisions, ownership rejection, and repeated page rereads after favorite saves. The opt-in `gallery.performance.e2e.js` case uses 2,048 temporary PNGs with a common tag, observes real IPC transport, and checks unchanged session IDs and scroll anchors across 16 pages and eviction. It also verifies reopened/reloaded edits and relevant tag/Favorites refreshes.
+The stable-metadata regressions cover unread pages, cached starts, position lookup, dependency changes, and file-backed WAL snapshots. Database tests cover marker-write rollback, initialization without markers, namespace rebuilding, exact batched keys, canonical no-ops, and shared-tag repairs. Backup tests restore both missing and obsolete marker namespaces. Frontend tests use pending saves and reads to check current-filter decisions, ownership rejection, and repeated page rereads after favorite saves. The opt-in `gallery.performance.e2e.js` case uses 3,584 temporary PNGs with a common tag, observes real IPC transport, and checks unchanged session IDs and scroll anchors across 28 pages and eviction. It also verifies reopened/reloaded edits and relevant tag/Favorites refreshes.

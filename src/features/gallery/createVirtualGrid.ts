@@ -94,6 +94,26 @@ export function createVirtualGrid(options: {
       }, IDLE_MS);
     }
   };
+  /**
+   * Explicit demand pause for a timeline drag: pages and thumbnails wait until
+   * `resumeDemand` (pointer release) or IDLE_MS without another hold (pointer at rest).
+   */
+  const holdDemand = () => {
+    setPaused(true);
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleTimer = undefined;
+      motion = [];
+      setPaused(false);
+    }, IDLE_MS);
+  };
+  const resumeDemand = () => {
+    if (idleTimer === undefined && !untrack(paused)) return;
+    clearTimeout(idleTimer);
+    idleTimer = undefined;
+    motion = [];
+    setPaused(false);
+  };
   const publish = (logical: number) => {
     const current = untrack(layout);
     const rows = rowRange(current, logical, untrack(geometry).viewport, OVERSCAN_ROWS);
@@ -368,6 +388,10 @@ export function createVirtualGrid(options: {
     /** Logical offset write; `userMotion` lets a custom-bar drag pause page demand. */
     scrollTo: (logical: number, userMotion = false) => scrollTo(logical, userMotion),
     scrollToIndex: (index: number) => scrollTo(rowTop(untrack(layout), indexToRow(untrack(layout), index))),
+    /** Logical offset of the row holding `index` (O(1); fixed row height). */
+    offsetOfIndex: (index: number) => rowTop(untrack(layout), indexToRow(untrack(layout), index)),
+    holdDemand,
+    resumeDemand,
     get maxBase() {
       return maxBase(layout().contentHeight);
     }

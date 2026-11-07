@@ -10,7 +10,8 @@ import type {
   BulkMediaGroupSummary,
   AssetPage,
   AssetQueryIdRangeResult,
-  AssetQueryPositionResult
+  AssetQueryPositionResult,
+  AssetQuerySectionsResult
 } from "./contracts/assets";
 
 export async function startAssetQuery(params: {
@@ -80,6 +81,11 @@ export async function getAssetQueryIdRange(
   return decodeAssetIdRange(
     await invoke<ArrayBuffer>("get_asset_query_id_range", { sessionId, start, end })
   );
+}
+
+/** Timeline sections (months) of a query session, or `stale`. */
+export async function getAssetQuerySections(sessionId: number): Promise<AssetQuerySectionsResult> {
+  return await invoke<AssetQuerySectionsResult>("get_asset_query_sections", { sessionId });
 }
 
 export async function getAssetQueryPage(

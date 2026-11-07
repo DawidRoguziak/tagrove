@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} 项",
     "loadError": "加载媒体库失败。",
     "retry": "重试",
-    "scrollbarLabel": "图库中的位置"
+    "scrollbarLabel": "图库中的位置",
+    "timelineLabel": "时间线",
+    "timelineNoDate": "无日期"
   },
   "bulk": {
     "orderModal": {

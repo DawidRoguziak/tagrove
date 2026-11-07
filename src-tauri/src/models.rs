@@ -76,6 +76,27 @@ pub enum AssetQueryPageResult {
     Stale,
 }
 
+/// One timeline section of a query session: `count` rows from `start` whose
+/// bucket month is `t` (`yyyymm` in UTC, `0` for no date). Adjacent sections
+/// may share a month when a large month is split.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct AssetQuerySection {
+    pub t: u32,
+    pub start: usize,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum AssetQuerySectionsResult {
+    Ready {
+        session_id: u64,
+        total: usize,
+        sections: Vec<AssetQuerySection>,
+    },
+    Stale,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum AssetQueryPositionResult {

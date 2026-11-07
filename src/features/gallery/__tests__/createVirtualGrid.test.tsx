@@ -420,3 +420,35 @@ it("republishes the unchanged range when the reset key changes", () => {
   expect(view.range).toHaveBeenCalledOnce();
   expect(view.lastRange()).toMatchObject({ visibleStartIndex: 500 });
 });
+
+it("holds demand for a timeline drag until release or 150ms at rest, and maps indexes to rows", () => {
+  vi.useFakeTimers();
+  const view = mount(1_000_000);
+  const model = view.result.model;
+  expect(model.offsetOfIndex(0)).toBe(0);
+  expect(model.offsetOfIndex(model.columnCount * 7 + 1)).toBe(7 * (model.tilePixelSize + model.tileGap));
+  // Slow, small moves alone would not pause; a held drag does.
+  model.holdDemand();
+  model.scrollToIndex(model.columnCount * 3);
+  flush();
+  expect(model.paused).toBe(true);
+  expect(view.lastRange()).toMatchObject({ paused: true });
+  vi.advanceTimersByTime(100);
+  model.holdDemand();
+  vi.advanceTimersByTime(149);
+  flush();
+  expect(model.paused).toBe(true);
+  // At rest for 150ms the pause ends even while the pointer is still down.
+  vi.advanceTimersByTime(1);
+  flush();
+  expect(model.paused).toBe(false);
+  model.holdDemand();
+  flush();
+  expect(model.paused).toBe(true);
+  model.resumeDemand();
+  flush();
+  expect(model.paused).toBe(false);
+  expect(view.lastRange()).toMatchObject({ paused: false });
+  expect(vi.getTimerCount()).toBe(0);
+  view.cleanup();
+});

@@ -135,6 +135,21 @@ pub async fn get_asset_query_id_range(
     Ok(tauri::ipc::Response::new(bytes.unwrap_or_default()))
 }
 
+/// Timeline sections of a query session (`asset_query_service::sections`).
+#[tauri::command]
+pub async fn get_asset_query_sections(
+    session_id: u64,
+    state: State<'_, AppState>,
+) -> Result<crate::models::AssetQuerySectionsResult, String> {
+    let database = state.database.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        database.queries.sections(&database.admit()?, session_id)
+    })
+    .await
+    .map_err(|e| format!("asset sections worker failed: {e}"))?
+    .map_err(|e| e.to_string())
+}
+
 fn validate_summary_batch(asset_ids: &[i64]) -> Result<(), String> {
     if asset_ids.len() > 256 {
         return Err("At most 256 asset IDs are allowed".to_string());

@@ -15,7 +15,8 @@ import {
 const apiMocks = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
-  getAssetQueryIdRange: vi.fn()
+  getAssetQueryIdRange: vi.fn(),
+  getAssetQuerySections: vi.fn()
 }));
 
 vi.mock("../../../platform/tauri/assets", () => apiMocks);
@@ -70,6 +71,7 @@ describe("createAssetQuery", () => {
     apiMocks.startAssetQuery.mockReset();
     apiMocks.getAssetQueryPage.mockReset();
     apiMocks.getAssetQueryIdRange.mockReset();
+    apiMocks.getAssetQuerySections.mockReset();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -96,6 +98,41 @@ describe("createAssetQuery", () => {
       await result.refresh();
     });
     expect(result.assets.map((asset) => asset.id)).toEqual([9]);
+  });
+
+  it("loads timeline sections once per session and drops them for a new session", async () => {
+    const sections = [
+      { t: 202403, start: 0, count: 1 },
+      { t: 0, start: 1, count: 1 }
+    ];
+    apiMocks.startAssetQuery
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)]))
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)]))
+      .mockResolvedValueOnce(readyStart([createSummary(9)], 1, 8));
+    apiMocks.getAssetQuerySections
+      .mockResolvedValueOnce({ status: "ready", session_id: 7, total: 2, sections })
+      .mockResolvedValueOnce({ status: "stale" });
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    await waitFor(() => expect(result.sections).toEqual(sections));
+    expect(apiMocks.getAssetQuerySections).toHaveBeenCalledWith(7);
+    // The same session (a cache hit) keeps its sections without another read.
+    await settle(async () => {
+      await result.refresh();
+    });
+    expect(apiMocks.getAssetQuerySections).toHaveBeenCalledTimes(1);
+    expect(result.sections).toEqual(sections);
+    expect(result.sessionId()).toBe(7);
+    // A new session clears them; a stale read leaves the timeline empty.
+    await settle(async () => {
+      await result.refresh();
+    });
+    await waitFor(() => expect(apiMocks.getAssetQuerySections).toHaveBeenCalledTimes(2));
+    expect(apiMocks.getAssetQuerySections).toHaveBeenLastCalledWith(8);
+    expect(result.sections).toEqual([]);
+    expect(result.sessionId()).toBe(8);
   });
 
   it("exposes current supersession for retry while keeping the previous cache visible", async () => {

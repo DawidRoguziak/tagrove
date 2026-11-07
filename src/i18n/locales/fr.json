@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} éléments",
     "loadError": "Le chargement de la bibliothèque a échoué.",
     "retry": "Réessayer",
-    "scrollbarLabel": "Position dans la galerie"
+    "scrollbarLabel": "Position dans la galerie",
+    "timelineLabel": "Chronologie",
+    "timelineNoDate": "Sans date"
   },
   "bulk": {
     "orderModal": {

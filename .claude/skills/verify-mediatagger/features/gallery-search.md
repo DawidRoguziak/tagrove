@@ -39,3 +39,9 @@ elements (`[data-gallery-row]`) inside `[data-testid="gallery-grid-content"]`. T
 and margin from that content element, not from `tile.parentElement`. Results taller than the
 16,000,000 px physical window scroll inside that window: `scrollTop = 0` is only the window start.
 Use End/Home or the `role="scrollbar"` named "Gallery position" to reach the ends.
+
+The month timeline is a `role="slider"` named "Timeline" (`[data-testid="gallery-timeline"]`).
+It appears only when the result spans at least two months, so the seven fixtures, which share
+one file time, normally do not show it. Its `aria-valuetext` is the month of the first visible
+item; ArrowDown/ArrowUp step a month, PageDown/PageUp a year, Home/End the ends. It sits beside
+the position bar and never replaces "Gallery position".

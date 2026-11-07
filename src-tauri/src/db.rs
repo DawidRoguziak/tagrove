@@ -12,6 +12,7 @@ mod scan_membership;
 pub use scan_membership::*;
 mod thumbnails;
 pub use thumbnails::*;
+mod query_sections;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -1828,7 +1829,10 @@ mod tests {
         let completed =
             try_list_ordered_asset_ids_with_meta(&conn, &[], &[], None, false, None, || false)
                 .expect("completed build");
-        assert_eq!(completed.as_deref(), Some(&[1_i64, 2_i64, 3_i64][..]));
+        assert_eq!(
+            completed.map(|ordered| ordered.ids).as_deref(),
+            Some(&[1_i64, 2_i64, 3_i64][..])
+        );
     }
 
     #[test]

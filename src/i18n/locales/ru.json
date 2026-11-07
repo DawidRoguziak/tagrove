@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} элемента",
     "loadError": "Не удалось загрузить библиотеку.",
     "retry": "Повторить",
-    "scrollbarLabel": "Позиция в галерее"
+    "scrollbarLabel": "Позиция в галерее",
+    "timelineLabel": "Хронология",
+    "timelineNoDate": "Без даты"
   },
   "bulk": {
     "orderModal": {

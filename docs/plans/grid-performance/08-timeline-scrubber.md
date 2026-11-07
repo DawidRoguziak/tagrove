@@ -56,7 +56,7 @@ Przy 1M elementów nikt nie „scrolluje” do 2015 roku. Pionowy scrubber z ety
 
 ## Status
 
-todo — 2026-11-04
+done — 2026-11-07 (czeka na akceptację i commit)
 
 ## Notatki agentów
 
@@ -70,3 +70,25 @@ todo — 2026-11-04
 - Z etapu 05: powyżej limitu natywny pasek jest ukryty (`data-gallery-windowed`, `scrollbar-width: none` i oddany gutter jako `padding-right`). Własny `GalleryScrollbar.tsx` (`role="scrollbar"`, sticky przy prawej krawędzi kolumny galerii) pokazuje pozycję globalną.
   - Scrubber może go zastąpić. Wtedy zachowaj obsługę klawiatury (strzałki, PageUp/PageDown, Home/End) i `aria-valuenow`.
 - Z etapu 05: limit 2^24 px (pomiar w `e2e/gallery-scale/height-probe.tsx`) dotyczy też pozycji, które scrubber wylicza dla sekcji. Pozycje fizyczne liczy tylko model okna (`rowTop - base`).
+
+### 2026-11-07 — agent etapu 08
+- Zrobione:
+  - `SectionBuilder` w `src-tauri/src/db/query_sections.rs`. Ścieżka z filtrami liczy sekcje w tym samym przejściu co wektor ID, ze statystyk bucketów (`OrderedAssetIds { ids, sections: Some(..) }`). Ścieżka bez filtrów czyta tylko ID; jej sekcje czyta `list_unfiltered_query_sections` (sam `sort_bucket_time`, ten sam indeks i porządek) przy pierwszym `get_asset_query_sections`, w transakcji z kontrolą rewizji, i zapisuje w sesji (`OnceLock`).
+  - Sesja trzyma `sections`; nowa komenda `get_asset_query_sections(sessionId)` → `ready { session_id, total, sections }` / `stale` (JSON). Pełna zmiana IPC: Rust, `models.rs`, `generate_handler!`, wrapper i `contracts/`, `api.test.ts`, `ipc-contract.md`. [ADR 0007](../../adr/0007-session-timeline-sections.md).
+  - Frontend: `createAssetQuery.sections` (jedno wczytanie na sesję; trafienie w cache z tym samym ID nie czyta ponownie), `timeline.ts` (scalanie podzielonych miesięcy, `monthAt`, `index/total`, klawisze, `Intl.DateTimeFormat` w UTC), `GalleryTimelineScrubber.tsx` (`role="slider"` „Timeline”, `aria-valuetext` z miesiącem), `holdDemand`/`resumeDemand` w `createVirtualGrid.ts`, klucze `gallery.timelineLabel`/`timelineNoDate` w 11 językach.
+- Decyzje (szczegóły w ADR 0007):
+  - Etykieta to miesiąc **czasu bucketu**, nie `modified_at` assetu. Porządek jest malejący po czasie bucketu, więc miesiąc nigdy nie rośnie wzdłuż wektora: grupa nigdy nie jest rozcięta, miesiąc nie może wystąpić dwa razy (ryzyko z sekcji „Ryzyka” znika z konstrukcji), a sąsiednie sekcje z tą samą etykietą to tylko celowy podział > 5000.
+  - Miesiące w UTC (brak bazy stref w backendzie, sesje współdzielone po kluczu). „Bez daty” = czas ≤ 0 (indexer zapisuje 0, gdy nie ma czasu pliku), zawsze na końcu.
+  - Scrubber **współistnieje** z paskiem pozycji, nie zastępuje `GalleryScrollbar`: pasek jest jedyną kontrolką pozycji dla wyników z jednym miesiącem albo bez dat i ma inne kroki klawiatury (wiersz/strona). Szyna stoi 16 px od prawej krawędzi w obu trybach.
+  - Skok idzie przez `scrollToIndex` (wiersz indeksu na górę, O(1)). Przy końcu listy scroll się zatrzymuje, więc pierwszy widoczny element może należeć do wcześniejszego miesiąca; scrubber pamięta wtedy własny cel (kursor) do następnego ruchu widoku z innego powodu.
+- Odkryte:
+  - **Regresja znaleziona w weryfikacji po fali E i poprawiona:** pierwsza wersja czytała `sort_bucket_time` i `sort_bucket_id` dla każdego wiersza w rebuildzie bez filtrów. Sam builder kosztuje 1,5 ms na 1M, ale odczyt dwóch kolumn więcej podwoił strumień SQL (29 → 58 ms) i rebuild 1M (32 → 67–69 ms, trzy biegi release), czyli ~+100% zamiast < 10%. Teraz sekcje bez filtrów są leniwe: rebuild 1M 33–34 ms (100k 3,9 ms), pierwszy odczyt sekcji 28,5–28,8 ms (100k 2,7 ms) poza ścieżką pierwszej strony, kolejne 0,02 ms. Kryterium „< 10% rebuildu” jest spełnione dla rebuildu; koszt sekcji przeniósł się na asynchroniczny odczyt po `ready`.
+  - Liczenie miesiąca per wiersz kosztowało 7,75 ms na 1M (~24% rebuildu 32 ms). Po buforowaniu granic bieżącego miesiąca: 1,5 ms (~5%), test `one_million_rows_build_quickly` (`#[ignore]`, release).
+  - Nakładkowy pasek przewijania GTK nie ma guttera i przechwytuje trafienia w prawych ~14 px klienta. Pierwsza wersja szyny (4 px od krawędzi) była nieklikalna także dla prawdziwej myszy. Teraz 16 px od krawędzi.
+  - WebKitWebDriver odrzuca `.click()` na szynie („not interactable”, kontener sticky ma `pointer-events: none`), choć natywne akcje wskaźnika do niej docierają. Spec skupia ją przez `focus()` i używa natywnego przeciągania.
+  - Solid renderuje `data-scroll-paused={true}` jako pusty atrybut, a `false` usuwa atrybut; tak samo czytają go `grid-baseline` i `gallery-scale`.
+- Zostało: nagłówki sekcji w gridzie (osobny temat, sumy prefiksowe); strefa czasowa lokalna wymagałaby offsetu w kluczu sesji.
+- Testy:
+  - `cargo test --locked --lib query_sections sections_follow try_list_ordered` → pass; `--release --lib one_million_rows_build_quickly -- --ignored` → 1,54 ms / 1M, 229 sekcji.
+  - Vitest: `timeline.test.ts`, `GalleryTimelineScrubber.test.tsx`, `createVirtualGrid.test.tsx` (demand hold, `offsetOfIndex`), `GalleryGrid.test.tsx` (scrubber obok paska trybu okna, skok do najstarszego miesiąca przy 1M), `createAssetQuery.test.ts` (sekcje raz na sesję), `api.test.ts` → pass.
+  - E2E `MEDIATAGGER_GALLERY_TIMELINE=1 … gallery-timeline.e2e.js` (12 005 PNG, 13 miesięcy, prywatny Xvfb, XDG pod `/tmp/mediatagger-*`) → 3/3 w piątym biegu. Biegi 1–4 padły na: szynę pod paskiem GTK (błąd aplikacji, poprawiony), `.click()` WebDrivera, odczyt `data-scroll-paused`, kursor przy końcu listy (błąd aplikacji, poprawiony) i usunięte w WDIO 9 `isDisplayedInViewport`. Klawisz → dane kafla celu: End 88 ms, ArrowUp 68, Home 125, PageDown 76 (debug, 12k).

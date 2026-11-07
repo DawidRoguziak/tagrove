@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} elementu",
     "loadError": "Nie udało się wczytać biblioteki.",
     "retry": "Ponów",
-    "scrollbarLabel": "Pozycja w galerii"
+    "scrollbarLabel": "Pozycja w galerii",
+    "timelineLabel": "Oś czasu",
+    "timelineNoDate": "Bez daty"
   },
   "bulk": {
     "orderModal": {

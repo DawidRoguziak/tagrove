@@ -98,7 +98,9 @@
     "resultCount_other": "{{formattedCount}} Elemente",
     "loadError": "Laden der Bibliothek ist fehlgeschlagen.",
     "retry": "Wiederholen",
-    "scrollbarLabel": "Position in der Galerie"
+    "scrollbarLabel": "Position in der Galerie",
+    "timelineLabel": "Zeitleiste",
+    "timelineNoDate": "Ohne Datum"
   },
   "bulk": {
     "orderModal": {

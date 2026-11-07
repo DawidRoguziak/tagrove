@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::{Duration, Instant},
 };
@@ -10,7 +10,10 @@ use std::{
 use crate::{
     db::{self, AssetMetaFilter},
     error::AppResult,
-    models::{AssetQueryPageResult, AssetQueryPositionResult, StartAssetQueryResult},
+    models::{
+        AssetQueryPageResult, AssetQueryPositionResult, AssetQuerySection,
+        AssetQuerySectionsResult, StartAssetQueryResult,
+    },
     services::db_pool::OperationPermit,
 };
 
@@ -57,6 +60,9 @@ struct QuerySession {
     dependencies: Vec<String>,
     key: String,
     asset_ids: Arc<Vec<i64>>,
+    /// Filled by a filtered build, or on the first sections read (shared by
+    /// clones of the session).
+    sections: Arc<OnceLock<Vec<AssetQuerySection>>>,
     last_accessed: Instant,
 }
 
@@ -206,11 +212,11 @@ impl AssetQueryManager {
         if self.is_superseded(request_id, generation) {
             return Ok(StartAssetQueryResult::Superseded);
         }
-        let Some(asset_ids) = ids_result? else {
+        let Some(ordered) = ids_result? else {
             perf_log("asset-query-cancelled", started, 0);
             return Ok(StartAssetQueryResult::Superseded);
         };
-        perf_log("asset-query-build", started, asset_ids.len());
+        perf_log("asset-query-build", started, ordered.ids.len());
 
         if self.is_superseded(request_id, generation) {
             return Ok(StartAssetQueryResult::Superseded);
@@ -221,7 +227,8 @@ impl AssetQueryManager {
             dependency_revision,
             dependencies,
             key,
-            asset_ids: Arc::new(asset_ids),
+            asset_ids: Arc::new(ordered.ids),
+            sections: Arc::new(ordered.sections.map(OnceLock::from).unwrap_or_default()),
             last_accessed: Instant::now(),
         };
         let (offset, ids) = anchor_page(&session.asset_ids, page_size, anchor_offset);
@@ -273,6 +280,47 @@ impl AssetQueryManager {
             &session.asset_ids[start..=end.min(total - 1)]
         };
         encode_id_range(ids).map(Some)
+    }
+
+    /// Timeline sections of a session (stage 08), checked against the
+    /// dependency revision like pages. A filtered session built them with its
+    /// IDs; an unfiltered one reads them once, here, from the sort-key index in
+    /// this read transaction, keeping that scan off the rebuild path.
+    pub fn sections(
+        &self,
+        permit: &OperationPermit,
+        session_id: u64,
+    ) -> AppResult<AssetQuerySectionsResult> {
+        let conn = permit.connection()?;
+        let tx = conn.unchecked_transaction()?;
+        #[cfg(test)]
+        self.after_revision_read();
+        let Some(session) = self.session_by_id(session_id) else {
+            return Ok(AssetQuerySectionsResult::Stale);
+        };
+        if session.dependency_revision != db::query_dependency_revision(&tx, &session.dependencies)?
+        {
+            self.remove_session(session_id);
+            return Ok(AssetQuerySectionsResult::Stale);
+        }
+        let total = session.asset_ids.len();
+        if session.sections.get().is_none() {
+            let started = Instant::now();
+            let sections = db::list_unfiltered_query_sections(&tx)?;
+            perf_log("asset-query-sections", started, sections.len());
+            // The revision check above makes this the session's snapshot; a
+            // different row count would mean a broken invariant, not a race.
+            if sections.iter().map(|section| section.count).sum::<usize>() != total {
+                self.remove_session(session_id);
+                return Ok(AssetQuerySectionsResult::Stale);
+            }
+            let _ = session.sections.set(sections);
+        }
+        Ok(AssetQuerySectionsResult::Ready {
+            session_id,
+            total,
+            sections: session.sections.get().cloned().unwrap_or_default(),
+        })
     }
 
     pub fn page(
@@ -1020,6 +1068,174 @@ mod tests {
         );
     }
 
+    fn dated_asset(conn: &rusqlite::Connection, name: &str, modified_at: i64) -> i64 {
+        let asset = NewAsset {
+            path: format!("/library/{name}.jpg"),
+            kind: "image".to_string(),
+            size_bytes: 10,
+            modified_at,
+            width: Some(10),
+            height: Some(10),
+            duration_ms: None,
+            thumb_path: None,
+        };
+        db::upsert_scanned_asset(conn, &asset, 1, "/library", 1).expect("insert asset");
+        conn.query_row(
+            "SELECT id FROM assets WHERE path = ?1",
+            [asset.path.as_str()],
+            |row| row.get(0),
+        )
+        .expect("asset id")
+    }
+
+    fn ready_sections(
+        manager: &AssetQueryManager,
+        permit: &OperationPermit,
+        session_id: u64,
+    ) -> (usize, Vec<(u32, usize, usize)>) {
+        match manager.sections(permit, session_id).expect("sections") {
+            AssetQuerySectionsResult::Ready {
+                session_id: returned,
+                total,
+                sections,
+            } => {
+                assert_eq!(returned, session_id);
+                (
+                    total,
+                    sections
+                        .into_iter()
+                        .map(|section| (section.t, section.start, section.count))
+                        .collect(),
+                )
+            }
+            AssetQuerySectionsResult::Stale => panic!("expected ready sections"),
+        }
+    }
+
+    #[test]
+    fn sections_follow_bucket_months_filters_and_go_stale_with_the_session() {
+        const MAR_2024: i64 = 1_710_000_000; // 2024-03-09
+        const FEB_2024: i64 = 1_707_000_000; // 2024-02-03
+        const JAN_2024: i64 = 1_705_000_000; // 2024-01-11
+        let target = test_db(0);
+        let manager = AssetQueryManager::new();
+        let permit = target.runtime.admit().unwrap();
+
+        // Empty library: a ready, empty section list.
+        let request = manager.begin_request("test", 1);
+        let StartAssetQueryResult::Ready { session_id, .. } =
+            start(&manager, &target.path, &filters(&[]), request, 1)
+        else {
+            panic!("ready");
+        };
+        assert_eq!(ready_sections(&manager, &permit, session_id), (0, vec![]));
+
+        let conn = permit.connection().unwrap();
+        let march = dated_asset(&conn, "march", MAR_2024);
+        let grouped_feb = dated_asset(&conn, "grouped-feb", FEB_2024);
+        let grouped_jan = dated_asset(&conn, "grouped-jan", JAN_2024);
+        let _january = dated_asset(&conn, "january", JAN_2024 - 10);
+        let undated = dated_asset(&conn, "undated", 0);
+        // The January member sorts with its group in February.
+        db::set_asset_media_group(&conn, grouped_feb, Some("trip"), Some(1.0)).unwrap();
+        db::set_asset_media_group(&conn, grouped_jan, Some("trip"), Some(2.0)).unwrap();
+        db::bump_library_revision(&conn).unwrap();
+        assert_eq!(
+            manager.sections(&permit, session_id).unwrap(),
+            AssetQuerySectionsResult::Stale
+        );
+
+        let request = manager.begin_request("test", 2);
+        let StartAssetQueryResult::Ready {
+            session_id, total, ..
+        } = start(&manager, &target.path, &filters(&[]), request, 2)
+        else {
+            panic!("ready");
+        };
+        assert_eq!(total, 5);
+        assert_eq!(
+            ready_sections(&manager, &permit, session_id),
+            (
+                5,
+                vec![(202_403, 0, 1), (202_402, 1, 2), (202_401, 3, 1), (0, 4, 1)]
+            )
+        );
+        let Some(bytes) = manager.id_range(&permit, session_id, 0, 4).unwrap() else {
+            panic!("ready range");
+        };
+        let ids = decode_id_range(&bytes);
+        assert_eq!(ids[0], march);
+        assert_eq!(&ids[1..3], &[grouped_feb, grouped_jan]);
+        assert_eq!(ids[4], undated);
+
+        // Unfiltered sections are read lazily, but never from a changed table:
+        // a first read after a revision change is stale, not recomputed.
+        let request = manager.begin_request("test", 10);
+        let StartAssetQueryResult::Ready {
+            session_id: lazy, ..
+        } = start(&manager, &target.path, &filters(&[]), request, 10)
+        else {
+            panic!("ready");
+        };
+        assert!(manager
+            .session_by_id(lazy)
+            .unwrap()
+            .sections
+            .get()
+            .is_some());
+        db::bump_library_revision(&conn).unwrap();
+        let request = manager.begin_request("test", 11);
+        let StartAssetQueryResult::Ready {
+            session_id: fresh, ..
+        } = start(&manager, &target.path, &filters(&[]), request, 11)
+        else {
+            panic!("ready");
+        };
+        assert!(manager
+            .session_by_id(fresh)
+            .unwrap()
+            .sections
+            .get()
+            .is_none());
+        dated_asset(&conn, "late", MAR_2024 + 10);
+        db::bump_library_revision(&conn).unwrap();
+        assert_eq!(
+            manager.sections(&permit, fresh).unwrap(),
+            AssetQuerySectionsResult::Stale
+        );
+
+        // With a filter the group's month comes from its matching members only.
+        db::set_asset_favorite(&conn, grouped_jan, true).unwrap();
+        db::set_asset_favorite(&conn, undated, true).unwrap();
+        let request = manager.begin_request("test", 12);
+        let favorites = AssetQueryFilters {
+            favorites_only: true,
+            ..filters(&[])
+        };
+        let StartAssetQueryResult::Ready { session_id, .. } =
+            start(&manager, &target.path, &favorites, request, 12)
+        else {
+            panic!("ready");
+        };
+        assert_eq!(
+            ready_sections(&manager, &permit, session_id),
+            (2, vec![(202_401, 0, 1), (0, 1, 1)])
+        );
+        assert_eq!(
+            manager.sections(&permit, u64::MAX).unwrap(),
+            AssetQuerySectionsResult::Stale
+        );
+        assert_eq!(
+            serde_json::to_value(manager.sections(&permit, session_id).unwrap()).unwrap(),
+            serde_json::json!({
+                "status": "ready",
+                "session_id": session_id,
+                "total": 2,
+                "sections": [{"t": 202401, "start": 0, "count": 1}, {"t": 0, "start": 1, "count": 1}]
+            })
+        );
+    }
+
     #[test]
     fn cache_budget_and_epoch_are_checked_at_insertion() {
         let mut manager = AssetQueryManager::new();
@@ -1031,6 +1247,7 @@ mod tests {
             dependencies: vec!["general".into()],
             key: id.to_string(),
             asset_ids: Arc::new(vec![1, 2]),
+            sections: Arc::default(),
             last_accessed: Instant::now(),
         };
         assert!(manager.insert_session(session(1), request, 0).unwrap());

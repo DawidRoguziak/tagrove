@@ -493,7 +493,8 @@ Component tests cover pending-deletion guards and the first navigation shortcut 
 ### Persistent desktop control
 
 `e2e/control.js` reuses the E2E build configuration and shared media fixtures without running
-the Mocha suite. The [MediaTagger verification skill](../../.claude/skills/verify-mediatagger/SKILL.md) (`/verify-mediatagger` in Claude Code)
+the Mocha suite. The `/audit` QA stages drive it inside a sandbox on a copy of a large dataset;
+see the [audit process](audit/README.md) and its [scenario catalog](audit/qa-scenarios.md). The [MediaTagger verification skill](../../.claude/skills/verify-mediatagger/SKILL.md) (`/verify-mediatagger` in Claude Code)
 contains the complete launch, doctor, interaction, evidence, and cleanup workflow, with
 recipes for gallery/search, settings, and lightbox.
 
@@ -503,9 +504,38 @@ bun run app:control start
 
 Keep `start` running in its terminal or tool exec session. Wait for the `READY` line, then use
 its session ID in separate commands. `bun run app:control help` documents the arguments.
-The available commands are `doctor`, `inspect`, `click`, `fill`, `keys`, `scroll`, `screenshot`,
-`logs`, `refresh`, `diagnose`, and `stop`. Interaction commands check the live E2E title,
-resolved app-data path, scan roots, and owned display/driver processes before acting.
+The commands are grouped into classes (`COMMAND_CLASS` in `e2e/control-support.js`):
+
+- observe: `doctor`, `inspect`, `screenshot`, `logs`, `wait`, and `alert text`;
+- act: `click`, `dblclick`, `modclick`, `fill`, `select`, `keys`, `scroll`, `drag`, `wheel`,
+  `alert accept|dismiss|send`, `resize`, and `native`;
+- control: `refresh`, `diagnose`, and `stop`.
+
+Every command except `stop` and `logs` first runs the doctor, which checks the live E2E title,
+resolved app-data path, scan roots, and owned display/driver processes. `validateRequest`
+enforces arities and ranges (drag hold 150–3000 ms, wheel ±5000, wait ≤ 90 s, resize
+320–1440 × 240–900, native coordinates inside the 1440×900 display, keysyms, printable ASCII).
+Modifier keys are always released, and a drag holds at least 150 ms and first moves 6 px, so
+it satisfies the rectangle-selection threshold.
+
+The doctor reports a session `state`:
+
+- `ok`;
+- `alert-open` when a `window.alert` is showing; WebDriver runs with
+  `unhandledPromptBehavior: "ignore"`, and only `alert`, `screenshot`, `doctor`, `logs`, and
+  `stop` run until it is handled;
+- `busy-maintenance` when the `list_scan_roots` probe outlasts the 30 s script timeout. The
+  maintenance gate (backup export/import) and the scan/thumbnail locks (Clear library, Remove
+  root) wait without a limit, so this lasts as long as the operation. Observe commands still
+  run; actions are refused. The guards themselves are unchanged;
+- `tainted` after a `native` command whose follow-up doctor failed; only `logs`,
+  `screenshot`, and `stop` run.
+
+`native` runs `e2e/control-native.py` (XTest) with an environment built only from the
+session manifest. It refuses before opening any display unless the display is private and
+matches the session, `XAUTHORITY` is `<scratch>/Xauthority`, `XDG_DATA_HOME` is
+`<scratch>/data`, and `<scratch>/owner` holds the session ID. It drives GTK video controls and
+native file dialogs. The older `e2e/native-input.py` serves the Mocha specs only.
 
 In addition to normal desktop prerequisites, this controller needs Xvfb, xauth, and
 ImageMagick's `import`. It creates an authenticated private display with TCP disabled and
@@ -515,7 +545,11 @@ not attach to another instance. A checkout lock refuses a second controller. Do 
 ordinary desktop E2E or another frontend/E2E build concurrently with it, because build
 outputs are shared.
 
-Each session gets fresh XDG data/config/cache directories below a new temporary root. It
+Each session gets fresh XDG data/config/cache directories below a new temporary root
+(`media-tagger-control-*` under `realpath(os.tmpdir())`, so `TMPDIR` chooses the parent).
+`start` refuses a root whose `control.sock` path would exceed the 107-byte Linux socket path
+limit. Cleanup requires the root's parent to equal the controller's `realpath(os.tmpdir())`;
+the long-running controller process performs `stop`, so its `TMPDIR` never changes. It
 builds fresh frontend assets and the existing `.e2e` executable, copies four PNGs, generates
 the shared GIF/two MP4 fixtures, and seeds only that temporary media directory. The MP4s
 have no audio tracks. It sets English in this isolated WebView before reloading. Existing dev/release profiles and the

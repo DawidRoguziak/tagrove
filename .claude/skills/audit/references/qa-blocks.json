@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "note": "QA blocks run strictly one after another. `copy` lists top-level folders of $AUDIT_DATASET to reflink into <scratch>/media/dataset/; `*` means every top-level folder except for-claude-tests, and `pattern:first` picks the first match in sorted order. `edge` allows qa_fs.py write-edge in the copy. Suites marked perf_build need a separate session whose build has VITE_MEDIATAGGER_PERF=1; the next session builds without it.",
+  "blocks": {
+    "S1": {
+      "title": "Scale",
+      "copy": ["*"],
+      "edge": false,
+      "tester_role": "qa_tester",
+      "suites": ["QA-01", "QA-02", "QA-03", "QA-04", "QA-05", "QA-06", "QA-07", "QA-08", "QA-09"],
+      "perf_build": ["QA-09"],
+      "destructive": []
+    },
+    "S2": {
+      "title": "Mutations and data safety",
+      "copy": ["source", "zdjecia_*:first"],
+      "edge": true,
+      "tester_role": "qa_tester_safety",
+      "suites": ["QA-10", "QA-11", "QA-12", "QA-13", "QA-14"],
+      "perf_build": [],
+      "destructive": ["QA-10", "QA-11", "QA-12", "QA-13", "QA-14"]
+    },
+    "S3": {
+      "title": "Media",
+      "copy": ["videos"],
+      "edge": false,
+      "tester_role": "qa_tester",
+      "suites": ["QA-15"],
+      "perf_build": [],
+      "destructive": []
+    },
+    "S4": {
+      "title": "Keyboard, accessibility, window",
+      "copy": ["zdjecia_*:first"],
+      "edge": false,
+      "tester_role": "qa_tester",
+      "suites": ["QA-16"],
+      "perf_build": [],
+      "destructive": []
+    }
+  }
+}

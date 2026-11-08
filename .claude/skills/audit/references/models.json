@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "note": "Role -> model and effort. Override per stage with /audit <stage> --models role=model[:effort],... Workflows never name a model; they read args.models[role].",
+  "models": ["fable", "opus", "sonnet", "haiku"],
+  "efforts": ["low", "medium", "high", "xhigh", "max"],
+  "roles": {
+    "finder_critical": { "model": "fable", "effort": "high", "use": "rust/frontend/perf/stability lenses in critical batches (B3a, B3b, B4a, B4b, B5)" },
+    "finder": { "model": "opus", "effort": "high", "use": "rust/frontend/perf/stability lenses elsewhere" },
+    "finder_rules": { "model": "sonnet", "effort": "high", "use": "conventions and tooling lenses" },
+    "static_refuter_high": { "model": "fable", "effort": "high", "use": "review-verifier for P0/P1 candidates" },
+    "static_refuter_low": { "model": "sonnet", "effort": "high", "use": "review-verifier for P2/P3 candidates" },
+    "judge_high": { "model": "fable", "effort": "high", "use": "audit-judge for P0/P1 or a dispute (static and QA)" },
+    "judge_low": { "model": "opus", "effort": "high", "use": "audit-judge otherwise" },
+    "qa_planner": { "model": "fable", "effort": "high", "use": "QA plan from the catalog plus targeted QA-T suites" },
+    "qa_tester": { "model": "sonnet", "effort": "high", "use": "qa-tester in blocks S1, S3, S4" },
+    "qa_tester_safety": { "model": "fable", "effort": "high", "use": "qa-tester in block S2" },
+    "qa_refuter": { "model": "opus", "effort": "high", "use": "qa-refuter outside S2" },
+    "qa_refuter_safety": { "model": "fable", "effort": "high", "use": "qa-refuter for S2 and data-safety bugs" },
+    "qa_dedup": { "model": "sonnet", "effort": "medium", "use": "narrative QA bug dedup" },
+    "clerk": { "model": "haiku", "effort": "low", "use": "audit-clerk: tool runner, sweep, static dedup, session start/wait/stop, triage, guard" },
+    "report_editor": { "model": "sonnet", "effort": "medium", "use": "final report text" }
+  }
+}

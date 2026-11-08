@@ -48,3 +48,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0008](0008-selection-spec-resolved-in-rust.md) | Bulk selection as a spec resolved by the backend | Accepted | 2026-11-07 |
 | [0009](0009-remove-list-assets-command.md) | Remove the legacy `list_assets` command | Accepted | 2026-11-07 |
 | [0010](0010-zip-9-deflate-only.md) | `zip` 9 with the Deflate backend only | Accepted | 2026-11-07 |
+| [0011](0011-audit-qa-data-safety.md) | Audit QA runs on a reflink copy inside a sandbox | Accepted | 2026-11-08 |

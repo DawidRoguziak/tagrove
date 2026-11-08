@@ -1,0 +1,402 @@
+{
+  "schema": 1,
+  "note": "Static audit batches. Globs are repo-relative (Python glob, ** recursive); tests (__tests__, *.test.*) are excluded unless a batch targets them. Roles resolve through models.json. Critical batches use finder_critical for every lens except conventions.",
+  "lens_agents": {
+    "rust": "review-rust",
+    "frontend": "review-frontend",
+    "perf": "review-performance",
+    "stability": "review-stability",
+    "conventions": "review-conventions",
+    "tooling": "review-tooling"
+  },
+  "batches": [
+    {
+      "id": "B1",
+      "title": "Scanning and indexing",
+      "critical": false,
+      "globs": [
+        "src-tauri/src/indexer.rs",
+        "src-tauri/src/services/scan_service.rs",
+        "src-tauri/src/commands/scan.rs",
+        "src-tauri/src/db/scan_membership.rs",
+        "src-tauri/src/services/progress.rs",
+        "src-tauri/src/utils/paths.rs",
+        "src-tauri/src/utils/text.rs"
+      ],
+      "lenses": ["rust", "stability", "perf"]
+    },
+    {
+      "id": "B2a",
+      "title": "Thumbnails: rendering and database",
+      "critical": false,
+      "globs": [
+        "src-tauri/src/services/thumb_service.rs",
+        "src-tauri/src/thumbs.rs",
+        "src-tauri/src/db/thumbnails.rs",
+        "src-tauri/src/commands/thumbs.rs"
+      ],
+      "lenses": ["rust", "stability", "perf"]
+    },
+    {
+      "id": "B2b",
+      "title": "Thumbnails: serving (thumb:// scheduler and frontend image)",
+      "critical": false,
+      "globs": [
+        "src-tauri/src/services/thumb_scheduler.rs",
+        "src-tauri/src/services/thumb_protocol.rs",
+        "src/ui/controls/ThumbnailImage.tsx",
+        "src/platform/tauri/thumbnails.ts",
+        "src/platform/tauri/contracts/thumbnails.ts"
+      ],
+      "lenses": ["rust", "frontend", "perf", "stability"]
+    },
+    {
+      "id": "B3a",
+      "title": "Database core: connections, schema, revisions, pool",
+      "critical": true,
+      "globs": [
+        "src-tauri/src/db.rs",
+        "src-tauri/src/db/connections.rs",
+        "src-tauri/src/db/schema.rs",
+        "src-tauri/src/db/query_revisions.rs",
+        "src-tauri/src/services/db_pool.rs"
+      ],
+      "lenses": ["rust", "stability", "perf"]
+    },
+    {
+      "id": "B3b",
+      "title": "Query sessions, page cache, timeline sections",
+      "critical": true,
+      "globs": [
+        "src-tauri/src/db/queries.rs",
+        "src-tauri/src/db/query_sections.rs",
+        "src-tauri/src/services/asset_query_service.rs",
+        "src/library/query/createAssetQuery.ts",
+        "src/library/createLibrary.ts"
+      ],
+      "lenses": ["rust", "frontend", "perf", "stability"]
+    },
+    {
+      "id": "B4a",
+      "title": "Mutations and the file-mutation journal",
+      "critical": true,
+      "globs": [
+        "src-tauri/src/db/mutations.rs",
+        "src-tauri/src/services/asset_mutation_service.rs"
+      ],
+      "lenses": ["rust", "stability"]
+    },
+    {
+      "id": "B4b",
+      "title": "Metadata write queue and asset commands",
+      "critical": true,
+      "globs": [
+        "src/library/metadata/*.ts",
+        "src-tauri/src/commands/assets.rs"
+      ],
+      "lenses": ["frontend", "rust", "stability"]
+    },
+    {
+      "id": "B5",
+      "title": "Backup, CSV, danger zone",
+      "critical": true,
+      "globs": [
+        "src-tauri/src/services/backup_service.rs",
+        "src-tauri/src/services/csv_service.rs",
+        "src-tauri/src/commands/import_export.rs",
+        "src/features/settings/createImportExportSettings.ts",
+        "src/features/settings/createDangerZoneSettings.ts",
+        "src/features/settings/ImportDbOverwriteConfirmDialog.tsx",
+        "src/features/settings/ClearLibraryConfirmDialog.tsx",
+        "src/features/settings/sections/ImportExportSection.tsx",
+        "src/features/settings/sections/DangerZoneSection.tsx",
+        "src/platform/tauri/maintenance.ts",
+        "src/platform/tauri/contracts/maintenance.ts"
+      ],
+      "lenses": ["rust", "frontend", "stability", "conventions"]
+    },
+    {
+      "id": "B6a",
+      "title": "Video: native surface and sources",
+      "critical": false,
+      "globs": [
+        "src-tauri/src/video_surface.rs",
+        "src-tauri/src/services/video_events.rs",
+        "src-tauri/src/services/video_source_service.rs"
+      ],
+      "lenses": ["rust", "stability"]
+    },
+    {
+      "id": "B6b",
+      "title": "Video: player service and lightbox video UI",
+      "critical": false,
+      "globs": [
+        "src-tauri/src/services/video_player_service.rs",
+        "src-tauri/src/commands/video.rs",
+        "src/features/lightbox/video/*",
+        "src/platform/tauri/video.ts",
+        "src/platform/tauri/contracts/video.ts"
+      ],
+      "lenses": ["rust", "frontend", "stability"]
+    },
+    {
+      "id": "B7a",
+      "title": "Gallery grid, windowed scroll, timeline",
+      "critical": false,
+      "globs": [
+        "src/features/gallery/createVirtualGrid.ts",
+        "src/features/gallery/gridGeometry.ts",
+        "src/features/gallery/GalleryGrid.tsx",
+        "src/features/gallery/GalleryScrollbar.tsx",
+        "src/features/gallery/GalleryTimelineScrubber.tsx",
+        "src/features/gallery/timeline.ts",
+        "src/features/gallery/GalleryTile.tsx",
+        "src/features/gallery/GalleryStatusFooter.tsx",
+        "src/features/gallery/GalleryEmptyState.tsx",
+        "src/features/gallery/TileSizeSlider.tsx",
+        "src/features/gallery/tileSizeService.ts",
+        "src/ui/dom/createVirtualList.ts",
+        "src/app/AppGalleryView.tsx"
+      ],
+      "lenses": ["frontend", "perf", "stability"]
+    },
+    {
+      "id": "B7b",
+      "title": "Selection and bulk actions",
+      "critical": false,
+      "globs": [
+        "src/features/gallery/createGridHandlers.ts",
+        "src/features/gallery/createSelection.ts",
+        "src/features/gallery/selectionGeometry.ts",
+        "src/features/gallery/selection.ts",
+        "src/features/bulk/*",
+        "src-tauri/src/services/selection_service.rs"
+      ],
+      "lenses": ["frontend", "rust", "perf", "stability"]
+    },
+    {
+      "id": "B8",
+      "title": "Search, tags, vocabulary",
+      "critical": false,
+      "globs": [
+        "src/features/search/**/*",
+        "src/features/tagging/*",
+        "src/library/vocabulary/*",
+        "src/utils/media.ts",
+        "src/utils/searchTokens.ts",
+        "src-tauri/src/utils/tags.rs",
+        "src/platform/tauri/tags.ts",
+        "src/platform/tauri/contracts/tags.ts"
+      ],
+      "lenses": ["frontend", "perf", "stability", "conventions"]
+    },
+    {
+      "id": "B9",
+      "title": "Lightbox (without video)",
+      "critical": false,
+      "globs": [
+        "src/features/lightbox/*",
+        "src/features/lightbox/image/*",
+        "src/app/LightboxBoundary.tsx"
+      ],
+      "lenses": ["frontend", "perf", "stability"]
+    },
+    {
+      "id": "B10",
+      "title": "Settings operations (rest)",
+      "critical": false,
+      "globs": [
+        "src/features/settings/**/*",
+        "src/app/AppSettingsView.tsx"
+      ],
+      "exclude": [
+        "src/features/settings/createImportExportSettings.ts",
+        "src/features/settings/createDangerZoneSettings.ts",
+        "src/features/settings/ImportDbOverwriteConfirmDialog.tsx",
+        "src/features/settings/ClearLibraryConfirmDialog.tsx",
+        "src/features/settings/sections/ImportExportSection.tsx",
+        "src/features/settings/sections/DangerZoneSection.tsx"
+      ],
+      "lenses": ["frontend", "stability", "conventions"]
+    },
+    {
+      "id": "B11",
+      "title": "IPC surface, models, configuration",
+      "critical": false,
+      "globs": [
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/models.rs",
+        "src-tauri/src/error.rs",
+        "src-tauri/src/main.rs",
+        "src-tauri/src/commands/mod.rs",
+        "src-tauri/src/commands/window.rs",
+        "src/platform/tauri/assets.ts",
+        "src/platform/tauri/scanning.ts",
+        "src/platform/tauri/dialogs.ts",
+        "src/platform/tauri/events.ts",
+        "src/platform/tauri/window.ts",
+        "src/platform/tauri/contracts/assets.ts",
+        "src/platform/tauri/contracts/scanning.ts",
+        "src-tauri/capabilities/*.json",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/Cargo.toml",
+        "src-tauri/build.rs"
+      ],
+      "lenses": ["rust", "frontend", "conventions"]
+    },
+    {
+      "id": "B12",
+      "title": "Bootstrap, runtime, UI kit, i18n",
+      "critical": false,
+      "globs": [
+        "src-tauri/src/app/*.rs",
+        "src/app/*",
+        "src/ui/controls/*",
+        "src/ui/dom/*",
+        "src/ui/overlays/*",
+        "src/i18n/*.ts",
+        "src/i18n/*.tsx",
+        "src/i18n/locales/*.json",
+        "src/styles.css"
+      ],
+      "exclude": [
+        "src/ui/controls/ThumbnailImage.tsx",
+        "src/ui/dom/createVirtualList.ts",
+        "src/app/AppGalleryView.tsx",
+        "src/app/AppSettingsView.tsx",
+        "src/app/LightboxBoundary.tsx"
+      ],
+      "lenses": ["frontend", "rust", "stability", "conventions"]
+    },
+    {
+      "id": "B13a",
+      "title": "E2E harness and controller",
+      "critical": false,
+      "globs": [
+        "e2e/*.js",
+        "e2e/*.py",
+        "e2e/gallery-scale/*"
+      ],
+      "lenses": ["stability", "tooling", "conventions"]
+    },
+    {
+      "id": "B13b",
+      "title": "Packaging and distribution configuration",
+      "critical": false,
+      "globs": [
+        "packaging/**/*",
+        "Dockerfile.*",
+        "src-tauri/tauri.*.conf.json",
+        "src-tauri/linux/*"
+      ],
+      "exclude": ["src-tauri/tauri.conf.e2e.json", "src-tauri/tauri.conf.dev.json"],
+      "lenses": ["tooling"]
+    },
+    {
+      "id": "B13c",
+      "title": "Scripts and build tooling",
+      "critical": false,
+      "globs": [
+        "scripts/*",
+        "package.json",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "src-tauri/tauri.conf.e2e.json",
+        "src-tauri/tauri.conf.dev.json"
+      ],
+      "lenses": ["tooling", "conventions"]
+    },
+    {
+      "id": "B14a",
+      "title": "Specs: gallery and performance",
+      "critical": false,
+      "tests": true,
+      "globs": [
+        "e2e/specs/gallery-100k.e2e.js",
+        "e2e/specs/gallery-browsing.e2e.js",
+        "e2e/specs/gallery.performance.e2e.js",
+        "e2e/specs/gallery-selection.e2e.js",
+        "e2e/specs/gallery-timeline.e2e.js",
+        "e2e/specs/grid-baseline.e2e.js",
+        "e2e/specs/thumbnail-fade.e2e.js",
+        "e2e/specs/selection-recovery.e2e.js"
+      ],
+      "lenses": ["tooling"]
+    },
+    {
+      "id": "B14b",
+      "title": "Specs: workflows, startup, maintenance",
+      "critical": false,
+      "tests": true,
+      "globs": [
+        "e2e/specs/app.smoke.e2e.js",
+        "e2e/specs/app.workflows.e2e.js",
+        "e2e/specs/group-order.e2e.js",
+        "e2e/specs/popular-tags.e2e.js",
+        "e2e/specs/review-fixes.e2e.js",
+        "e2e/specs/startup-scan.e2e.js",
+        "e2e/specs/startup-scan-remount.e2e.js",
+        "e2e/specs/settings-maintenance.e2e.js"
+      ],
+      "lenses": ["tooling"]
+    },
+    {
+      "id": "B14c",
+      "title": "Specs: lightbox, video, tags, search",
+      "critical": false,
+      "tests": true,
+      "globs": [
+        "e2e/specs/lightbox-activity.e2e.js",
+        "e2e/specs/lightbox-images.e2e.js",
+        "e2e/specs/lightbox-recovery.e2e.js",
+        "e2e/specs/native-video-escape.e2e.js",
+        "e2e/specs/video-speed.e2e.js",
+        "e2e/specs/tag-editor.e2e.js",
+        "e2e/specs/search-recovery.e2e.js"
+      ],
+      "lenses": ["tooling"]
+    },
+    {
+      "id": "B14d",
+      "title": "Specs: UI, animations, about, language",
+      "critical": false,
+      "tests": true,
+      "globs": [
+        "e2e/specs/ui.redesign.e2e.js",
+        "e2e/specs/animations.e2e.js",
+        "e2e/specs/about.e2e.js",
+        "e2e/specs/settings-language.e2e.js"
+      ],
+      "lenses": ["tooling"]
+    },
+    {
+      "id": "B15a",
+      "title": "Rust integration tests (part 1)",
+      "critical": false,
+      "optional": true,
+      "tests": true,
+      "globs": [
+        "src-tauri/tests/backend_integration.rs",
+        "src-tauri/tests/support/*.rs"
+      ],
+      "lenses": ["tooling"]
+    },
+    {
+      "id": "B15b",
+      "title": "Rust integration tests (part 2)",
+      "critical": false,
+      "optional": true,
+      "tests": true,
+      "globs": [
+        "src-tauri/tests/backend_e2e.rs",
+        "src-tauri/tests/backend_runtime.rs",
+        "src-tauri/tests/grid_baseline.rs",
+        "src-tauri/tests/tag_save_benchmark.rs",
+        "src-tauri/tests/tag_vocabulary.rs",
+        "src-tauri/tests/thumbnail_bulk.rs",
+        "src-tauri/tests/thumbnail_clear.rs"
+      ],
+      "lenses": ["tooling"]
+    }
+  ]
+}

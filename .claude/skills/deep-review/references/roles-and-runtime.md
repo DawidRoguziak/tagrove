@@ -33,6 +33,18 @@ processes by name, and never delete a lock just because a client can't connect.
 3. Before interacting, record the session identity, title, app-data root and display. Never
    attach to an installed app, a production-profile binary or production data.
 
+Controller limits that shape a proof:
+
+- one command at a time through one socket (150 s budget); `wait` polls for at most 90 s;
+- script calls (doctor probes, `invoke`) time out after 30 s; click/fill wait 15 s for the
+  element; a reload waits 20 s for the search input;
+- `inspect` returns at most 20,000 characters of text and 200 elements; `logs` the last
+  24,000 characters per log; the console buffer holds 1,000 entries of up to 16,000 characters;
+- the doctor reports `alert-open`, `busy-maintenance` (an unbounded maintenance gate or
+  library lock is held) or `tainted` (after native input); each state limits the commands
+  that run, as listed in the verification skill;
+- Xvfb has no window manager: maximize, minimize and minimum window size cannot be proven.
+
 If you need to test dev-mode behavior itself, use `bun run tauri:dev` with fresh temporary
 `XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `XDG_RUNTIME_DIR`, synthetic media and
 a private display. Read the profile isolation section of

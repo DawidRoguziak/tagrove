@@ -145,6 +145,7 @@ A mocked `invoke` assertion does not prove that Rust accepts the payload. If you
 
 - `/verify-mediatagger`: launch and drive the real E2E build on a private Xvfb display (clicks, typing, screenshots, console logs) using disposable media. Use it to see a UI change working.
 - `/review-changes [base|A..B|path] [--staged] [--save]`: the default review for ordinary review requests. It is read-only (no edits, builds or tests). By default it reviews the branch against `merge-base(main)` plus uncommitted work. It picks specialist lenses from `.claude/agents/` (`review-rust`, `review-frontend`, `review-performance`, `review-conventions`), and each finding gets an independent `review-verifier`. Results go to the terminal; `--save` also writes them to `raports/`. The shared bar and finding format are in `.claude/skills/review-changes/references/signal-bar.md`, and the seeded-defect evals are in its `evals/`.
+- `/audit --dataset <path>`: the whole-project audit, run end to end without user input (single stages `init`, `static`, `static-verify`, `qa-prep`, `qa-run [S1-S4]`, `qa-verify`, `report`, `status` remain for debugging; it stops only when a dataset guard halts the run). Static finders with exactly one refuter and one judge per finding, then a real-app QA click-through on a sandboxed reflink copy of a large dataset. Each stage runs one saved workflow in `.claude/workflows/audit-*.js`, and a hook smoke gates the QA stages; results go to the ignored `docs/review/<run>/`. Run it only when the user invokes it, and never write the dataset path into tracked files. Process: `docs/development/audit/README.md`.
 - `/deep-review [scope]`: an evidence-based, saved audit using the same specialists. It requires two lenses per area and an independent verifier per finding, may run tests and E2E as proof, and writes validated records (schema 2) to the ignored `raports/`. Run it only when the user explicitly asks for it.
 
 ## Documentation index
@@ -167,5 +168,6 @@ Read only the pages relevant to the task. For work that crosses subsystems, also
 | Destructive FS/DB operations, duplicates, CSV, backup format, restore staging, rollback | `docs/subsystems/data-safety-and-portability.md` |
 | Setup, dependencies, Vite/TS config, profiles, builds, diagnostics | `docs/development/setup-and-build.md` |
 | Test layers, commands, fixtures, E2E isolation, troubleshooting | `docs/development/testing.md` |
+| Staged multi-agent audit: stages, roles and models, QA safety, scenario catalog | `docs/development/audit/README.md` |
 | Languages, locale key/placeholder invariants, adding translations | `docs/development/localization.md` |
 | Flatpak/AppImage/native packaging, licenses | `docs/development/linux-packaging.md` |

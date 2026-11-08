@@ -16,32 +16,74 @@ import {
   validateE2eBuildConfiguration
 } from "./build-e2e.js";
 import {
+  commandClass,
+  dragActions,
   driverPort,
+  gateCommand,
+  isAlertOpenError,
+  isScriptTimeout,
   liveGroupMembers,
+  nativeEnvironment,
   nativePort,
+  parseDragOptions,
+  parseDragTarget,
+  parseInteger,
+  parseModifiers,
+  parseWait,
   removeOwnedScratch,
   requireFreePort,
   stopOwnedGroup,
   validateRequest,
-  validateSessionId
+  validateSessionId,
+  validateSocketPath,
+  withModifiers
 } from "./control-support.js";
 import { copyPngFixtures, createPlayableFixtures } from "./fixtures.js";
 
 const evidenceRoot = path.join(projectRoot, "artifacts", "app-control");
+const nativeHelper = path.join(projectRoot, "e2e", "control-native.py");
+// Client and server socket budget: a 90 s wait plus a 30 s doctor probe must fit.
+const socketTimeoutMs = 150000;
 const help = `Usage: bun run app:control start
 Keep start running in a terminal or an exec session. It prints READY with a session ID.
 In another command: bun run app:control <command> <session> [arguments]
-  doctor                    Check process ownership, profile, roots, and UI
+Observe:
+  doctor                    Check process ownership, profile, roots, UI; report the state
   inspect [selector]        Read visible text, values, and element attributes
-  click <selector>          Click a visible element
-  fill <selector> <text>    Replace an input value
-  keys <key> [key...]       Press keys, e.g. Enter or Escape
-  scroll <selector>         Scroll an element into view
   screenshot                Capture the private display to a PNG
   logs                      Read recent process and frontend logs
+  wait <selector|idle> [displayed|gone|enabled|visible|hidden] [timeoutMs<=90000]
+                            Poll every 250 ms (default displayed, 15000 ms); visible/hidden
+                            use computed visibility and opacity; idle = no visible loaders
+Act:
+  click <selector>          Click a visible element
+  dblclick <selector>       Double-click a visible element
+  modclick <Shift|Control|Control+Shift> <selector>
+                            Click while holding modifiers; they are always released
+  fill <selector> <text>    Replace an input value
+  select <selector> <text|value=...>
+                            Choose a <select> option by visible text or value
+  keys <key> [key...]       Press keys, e.g. Enter or Escape; several keys form a chord
+  scroll <selector>         Scroll an element into view
+  drag <from> <to|dx,dy|selector@dx,dy> [holdMs 150-3000] [ctrl]
+                            Press, hold (default 200 ms), move 6 px, finish over ~300 ms;
+                            ctrl holds Control (additive rectangle selection)
+  wheel <selector> <dy +-5000> [ctrl]
+                            Wheel over the element's center, optionally with Control
+  alert accept|dismiss|text|send <text>
+                            Handle a window.alert/confirm/prompt (text only observes)
+  resize <width 320-1440> <height 240-900>
+                            Resize the WebView window (no window manager on Xvfb)
+  native key <keysym[+keysym]>|type <ascii>|click <x> <y> [button]|move <x> <y>
+         |drag <x1> <y1> <x2> <y2>|wheel <x> <y> <steps> [ctrl]
+                            XTest input on the private display (GTK video controls,
+                            native dialogs); a failed doctor afterwards taints the session
+Control:
   refresh                   Reload, reinstall console capture, record the gap
   diagnose                  Emit known console/error markers to test capture
   stop                      Stop owned processes; preserve evidence
+Doctor states: ok, alert-open (only alert/screenshot/doctor/logs/stop), busy-maintenance
+(an IPC probe timed out, e.g. backup export/import; observe only), tainted (logs/screenshot/stop).
 Selectors use WebdriverIO syntax. Quote selectors and text in your shell.
 Only one control session per checkout; do not build/run E2E concurrently.
 No arbitrary code execution or external media-root command is exposed.`;
@@ -68,8 +110,18 @@ async function main() {
   }
   const result = await new Promise((resolve, reject) => {
     const socket = net.createConnection(manifest.socket);
-    socket.setTimeout(120000, () => socket.destroy(new Error("Control command timed out")));
-    socket.once("error", reject);
+    socket.setTimeout(socketTimeoutMs, () => socket.destroy(new Error("Control command timed out")));
+    socket.once("error", (error) =>
+      reject(
+        ["ENOENT", "ECONNREFUSED"].includes(error.code)
+          ? new Error(
+              `The controller for ${id} is not reachable (${error.code}); it may have exited. ` +
+                `Inspect ${path.join(evidenceRoot, id, "session.json")} and the checkout lock. ` +
+                "Never delete a lock because a client cannot connect."
+            )
+          : error
+      )
+    );
     socket.once("connect", () => socket.write(`${JSON.stringify(request)}\n`));
     let response = "";
     socket.on("data", (chunk) => {
@@ -112,6 +164,9 @@ async function start() {
   let env;
   let driver;
   let display;
+  // Set when a doctor fails after native input; the session then only observes and stops.
+  let tainted = false;
+  let lastAlert = null;
   const saveManifest = () =>
     fs.writeFile(path.join(evidence, "session.json"), JSON.stringify(manifest, null, 2));
   const record = (file, value) =>
@@ -144,9 +199,19 @@ async function start() {
     return child;
   }
 
-  async function run(command, args) {
-    const child = await ownedSpawn(command, args);
-    const { code, signal, error } = await child.completed;
+  async function run(command, args, options = {}) {
+    const { timeoutMs, ...spawnOptions } = options;
+    const child = await ownedSpawn(command, args, spawnOptions);
+    let timer;
+    const limit = timeoutMs
+      ? new Promise((resolve) => {
+          timer = setTimeout(() => resolve({ error: `timed out after ${timeoutMs} ms` }), timeoutMs);
+        })
+      : null;
+    const { code, signal, error } = await (limit
+      ? Promise.race([child.completed, limit])
+      : child.completed);
+    clearTimeout(timer);
     // Retire short-lived commands now, so a long session never retains stale build/tool PIDs.
     await stopOwnedGroup(child);
     children.splice(children.indexOf(child), 1);
@@ -176,6 +241,15 @@ async function start() {
     return result.value;
   }
 
+  // Returns the open alert's text or null. A driver without alert support counts as no alert.
+  async function openAlertText() {
+    try {
+      return String(await browser.getAlertText());
+    } catch {
+      return null;
+    }
+  }
+
   async function doctor() {
     for (const child of [display, driver]) {
       if (
@@ -187,14 +261,38 @@ async function start() {
         throw new Error("An owned display/driver process exited");
       }
     }
-    const title = await invoke("plugin:window|title", { label: "main" });
-    const dataDir = await invoke("plugin:path|resolve_directory", {
-      directory: BaseDirectory.AppData
-    });
-    if (title !== e2eWindowTitle || path.resolve(dataDir) !== manifest.appData) {
-      throw new Error(`Refusing unexpected app identity/profile: ${title}, ${dataDir}`);
+    const base = {
+      id,
+      display: manifest.display,
+      pid: process.pid,
+      driverPid: driver.pid,
+      displayPid: display.pid,
+      evidence
+    };
+    // A window.alert blocks script execution; report it instead of failing every probe.
+    const alert = await openAlertText();
+    if (alert !== null) return { ...base, state: "alert-open", alert: alert.slice(0, 2000) };
+    let title;
+    let dataDir;
+    let roots;
+    try {
+      title = await invoke("plugin:window|title", { label: "main" });
+      dataDir = await invoke("plugin:path|resolve_directory", {
+        directory: BaseDirectory.AppData
+      });
+      if (title !== e2eWindowTitle || path.resolve(dataDir) !== manifest.appData) {
+        throw new Error(`Refusing unexpected app identity/profile: ${title}, ${dataDir}`);
+      }
+      roots = await invoke("list_scan_roots");
+    } catch (error) {
+      // The maintenance gate and the scan/thumbnail locks wait without a limit, so a library
+      // probe can outlast the 30 s script timeout while a backup export/import runs. The
+      // guards stay unchanged: the session may only observe until the probe answers again.
+      if (isScriptTimeout(error))
+        return { ...base, title, dataDir, state: "busy-maintenance", detail: String(error) };
+      if (isAlertOpenError(error)) return { ...base, state: "alert-open" };
+      throw error;
     }
-    const roots = await invoke("list_scan_roots");
     if (
       roots.some(
         (root) => path.resolve(typeof root === "string" ? root : root.path) !== manifest.media
@@ -203,20 +301,74 @@ async function start() {
       throw new Error("Unexpected scan root; refusing further UI commands");
     }
     return {
-      id,
+      ...base,
+      state: tainted ? "tainted" : "ok",
       title,
       dataDir,
       roots,
-      display: manifest.display,
-      pid: process.pid,
-      driverPid: driver.pid,
-      displayPid: display.pid,
-      evidence,
       ui: await browser.execute(() => ({
         ready: document.readyState,
         language: document.documentElement.lang
       }))
     };
+  }
+
+  async function center(element) {
+    return browser.execute((target) => {
+      const rect = target.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }, element);
+  }
+
+  async function displayed(selector) {
+    const element = await browser.$(selector);
+    await element.waitForDisplayed({ timeout: 15000 });
+    return element;
+  }
+
+  async function waitCondition(target, state) {
+    if (state === "idle") {
+      return browser.execute(() => {
+        const shown = (element) => {
+          if (!element.getClientRects().length) return false;
+          for (let node = element; node; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.display === "none" || Number(style.opacity) < 0.01) return false;
+          }
+          return getComputedStyle(element).visibility === "visible";
+        };
+        const flagged = (element, name) =>
+          element.hasAttribute(name) && element.getAttribute(name) !== "false";
+        return (
+          document.readyState === "complete" &&
+          ![
+            ...document.querySelectorAll(
+              '[data-testid="tile-thumb-loader"],[data-testid$="-section-loader"],[aria-busy="true"]'
+            )
+          ].some(shown) &&
+          ![...document.querySelectorAll("[data-scroll-paused],[data-gallery-timeline-dragging]")].some(
+            (element) =>
+              flagged(element, "data-scroll-paused") ||
+              flagged(element, "data-gallery-timeline-dragging")
+          )
+        );
+      });
+    }
+    const element = await browser.$(target);
+    const exists = await element.isExisting();
+    if (state === "displayed") return exists && element.isDisplayed();
+    if (state === "gone") return !exists || !(await element.isDisplayed());
+    if (state === "enabled") return exists && (await element.isDisplayed()) && element.isEnabled();
+    if (!exists) return state === "hidden";
+    const visible = await browser.execute((node) => {
+      if (!node.getClientRects().length) return false;
+      for (let current = node; current; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (style.display === "none" || Number(style.opacity) < 0.01) return false;
+      }
+      return getComputedStyle(node).visibility === "visible";
+    }, element);
+    return state === "visible" ? visible : !visible;
   }
 
   async function installConsole() {
@@ -268,6 +420,15 @@ async function start() {
   }
 
   async function drainConsole() {
+    // While an alert is open every script call fails; record the alert once and wait.
+    const alert = await openAlertText();
+    if (alert !== null) {
+      if (alert !== lastAlert)
+        await record("console.jsonl", { level: "alert", message: alert.slice(0, 16000) });
+      lastAlert = alert;
+      return;
+    }
+    lastAlert = null;
     const captured = await browser.execute(() => {
       const state = window.__mediaTaggerControlConsole;
       if (!state) return null;
@@ -349,8 +510,43 @@ async function start() {
         evidence
       };
     }
-    const health = await doctor();
+    const request = { command, args };
+    if (tainted) {
+      const refusal = gateCommand("tainted", request);
+      if (refusal) throw new Error(refusal);
+    }
+    const health = tainted ? { state: "tainted" } : await doctor();
     if (command === "doctor") return health;
+    const refusal = gateCommand(health.state, request);
+    if (refusal) throw new Error(refusal);
+    if (command === "screenshot") {
+      const file = path.join(evidence, `screen-${String(++sequence).padStart(4, "0")}.png`);
+      await run("import", ["-display", manifest.display, "-window", "root", file]);
+      return { file, state: health.state };
+    }
+    if (command === "alert") {
+      if (args[0] === "text") return { text: await browser.getAlertText() };
+      if (args[0] === "accept") await browser.acceptAlert();
+      else if (args[0] === "dismiss") await browser.dismissAlert();
+      else await browser.sendAlertText(args[1]);
+      lastAlert = null;
+      await drainConsole();
+      return { command, status: "ok" };
+    }
+    if (command === "wait") {
+      const { target, state, timeout } = parseWait(args);
+      const started = Date.now();
+      for (;;) {
+        if (await waitCondition(target, state)) {
+          await drainConsole();
+          return { command, status: "ok", target, state, waitedMs: Date.now() - started };
+        }
+        if (Date.now() - started >= timeout)
+          throw new Error(`wait timed out after ${timeout} ms: ${target} ${state}`);
+        await drainConsole();
+        await delay(250);
+      }
+    }
     if (command === "inspect")
       return browser.execute((selector) => {
         const visible = (element) =>
@@ -374,7 +570,111 @@ async function start() {
             }))
         };
       }, args[0]);
-    if (["click", "fill", "scroll"].includes(command)) {
+    if (command === "modclick") {
+      const element = await displayed(args[1]);
+      await withModifiers(browser, parseModifiers(args[0]), () => element.click());
+    } else if (command === "dblclick") {
+      await (await displayed(args[0])).doubleClick();
+    } else if (command === "select") {
+      const element = await displayed(args[0]);
+      if (args[1].startsWith("value="))
+        await element.selectByAttribute("value", args[1].slice("value=".length));
+      else await element.selectByVisibleText(args[1]);
+    } else if (command === "drag") {
+      const source = await displayed(args[0]);
+      await source.scrollIntoView({ block: "center", inline: "center" });
+      const start = await center(source);
+      const target = parseDragTarget(args[1]);
+      let end = { x: start.x + target.dx, y: start.y + target.dy };
+      if (target.selector) {
+        const destination = await browser.$(target.selector);
+        await destination.waitForExist({ timeout: 15000 });
+        const point = await center(destination);
+        end = { x: point.x + target.dx, y: point.y + target.dy };
+      }
+      const { hold, ctrl } = parseDragOptions(args.slice(2));
+      const press = () =>
+        browser.performActions([
+          {
+            id: "control-pointer",
+            type: "pointer",
+            parameters: { pointerType: "mouse" },
+            actions: dragActions(start, end, hold)
+          }
+        ]);
+      // withModifiers releases keys and actions; the plain path releases actions itself.
+      if (ctrl) await withModifiers(browser, ["Control"], press);
+      else {
+        try {
+          await press();
+        } finally {
+          await browser.releaseActions();
+        }
+      }
+    } else if (command === "wheel") {
+      const element = await displayed(args[0]);
+      const point = await center(element);
+      const x = Math.round(point.x);
+      const y = Math.round(point.y);
+      const scroll = async () => {
+        await browser.performActions([
+          {
+            id: "control-pointer",
+            type: "pointer",
+            parameters: { pointerType: "mouse" },
+            actions: [{ type: "pointerMove", duration: 0, x, y }]
+          }
+        ]);
+        await browser.performActions([
+          {
+            id: "control-wheel",
+            type: "wheel",
+            actions: [
+              {
+                type: "scroll",
+                x,
+                y,
+                deltaX: 0,
+                deltaY: parseInteger(args[1], -5000, 5000, "dy"),
+                duration: 300
+              }
+            ]
+          }
+        ]);
+      };
+      if (args[2] === "ctrl") await withModifiers(browser, ["Control"], scroll);
+      else {
+        try {
+          await scroll();
+        } finally {
+          await browser.releaseActions();
+        }
+      }
+    } else if (command === "resize") {
+      await browser.setWindowSize(
+        parseInteger(args[0], 320, 1440, "width"),
+        parseInteger(args[1], 240, 900, "height")
+      );
+      await drainConsole();
+      return { command, status: "ok", size: await browser.getWindowSize() };
+    } else if (command === "native") {
+      await run("python3", [nativeHelper, ...args], {
+        env: nativeEnvironment(manifest),
+        timeoutMs: 20000
+      });
+      // Native input bypasses WebDriver, so prove identity again before anything else.
+      let after;
+      try {
+        after = await doctor();
+      } catch (error) {
+        tainted = true;
+        manifest.status = "tainted";
+        await saveManifest();
+        throw new Error(`Doctor failed after native input; session tainted: ${error}`);
+      }
+      if (after.state === "ok") await drainConsole();
+      return { command, status: "ok", state: after.state };
+    } else if (["click", "fill", "scroll"].includes(command)) {
       const element = await browser.$(args[0]);
       if (command === "scroll") await element.scrollIntoView();
       else {
@@ -390,10 +690,6 @@ async function start() {
         console.error(`${marker}: console error`);
         window.dispatchEvent(new ErrorEvent("error", { message: `${marker}: window error` }));
       }, `app-control:${id}`);
-    } else if (command === "screenshot") {
-      const file = path.join(evidence, `screen-${String(++sequence).padStart(4, "0")}.png`);
-      await run("import", ["-display", manifest.display, "-window", "root", file]);
-      return { file };
     }
     await drainConsole();
     return { command, status: "ok" };
@@ -421,7 +717,7 @@ async function start() {
       status: "starting",
       evidence,
       scratch,
-      socket: path.join(scratch, "control.sock"),
+      socket: validateSocketPath(path.join(scratch, "control.sock")),
       appData: path.join(scratch, "data", e2eAppIdentifier),
       media: path.join(scratch, "media")
     };
@@ -538,7 +834,11 @@ async function start() {
       logLevel: "error",
       connectionRetryCount: 0,
       connectionRetryTimeout: 30000,
-      capabilities: { "tauri:options": { application: e2eBinaryPath } }
+      capabilities: {
+        "tauri:options": { application: e2eBinaryPath },
+        // Leave window.alert open so doctor reports alert-open and `alert` can handle it.
+        unhandledPromptBehavior: "ignore"
+      }
     });
     await browser.setTimeout({ script: 30000, pageLoad: 30000, implicit: 0 });
     await doctor();
@@ -555,7 +855,7 @@ async function start() {
     manifest.processGroups = [display.pid, driver.pid];
     await saveManifest();
     server = net.createServer((socket) => {
-      socket.setTimeout(120000, () => socket.destroy());
+      socket.setTimeout(socketTimeoutMs, () => socket.destroy());
       socket.on("error", () => {});
       let data = "";
       socket.on("data", (chunk) => {
@@ -571,7 +871,11 @@ async function start() {
             let request;
             try {
               request = validateRequest(JSON.parse(data));
-              await record("actions.jsonl", { phase: "before", ...request });
+              await record("actions.jsonl", {
+                phase: "before",
+                class: commandClass(request),
+                ...request
+              });
               const value = await handle(request);
               await record("actions.jsonl", { phase: "after", ...request, value });
               socket.end(`${JSON.stringify({ ok: true, value })}\n`);

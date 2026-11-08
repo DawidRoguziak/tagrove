@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "note": "Observations from the planning reconnaissance (HEAD 24067f5). The static stage adds them as candidates with origin=recon AFTER the finders ran, so finders stay independent. They go through the same single refuter and judge. Line numbers are hints; refuters re-read the current code. The missing socket-length check in e2e/control.js was fixed while building this infrastructure and is not listed.",
+  "findings": [
+    {
+      "title": "rename_asset_file is a #[tauri::command] that is not registered in generate_handler!",
+      "file": "src-tauri/src/commands/assets.rs",
+      "line": 602,
+      "category": "convention",
+      "priority": "P3",
+      "origin": "recon",
+      "trigger": "Any build; the command cannot be invoked from the frontend.",
+      "mechanism": "The function carries #[tauri::command] but lib.rs generate_handler! does not list it, so it is dead code with a live-looking IPC surface.",
+      "impact": "Dead code that reviewers may assume is reachable; drift between the IPC contract doc and the handler list.",
+      "evidence": ["src-tauri/src/commands/assets.rs:602", "src-tauri/src/lib.rs generate_handler! list"]
+    },
+    {
+      "title": "clear_all_thumbnails is registered but has no UI entry point",
+      "file": "src-tauri/src/commands/thumbs.rs",
+      "line": 69,
+      "category": "convention",
+      "priority": "P3",
+      "origin": "recon",
+      "trigger": "Any session; no frontend wrapper or control calls the command.",
+      "mechanism": "The command is in generate_handler! but no src/platform/tauri wrapper or settings action uses it.",
+      "impact": "An exposed IPC endpoint without a caller widens the surface and is untested from the UI.",
+      "evidence": ["src-tauri/src/commands/thumbs.rs:69", "src-tauri/src/services/thumb_service.rs:814"]
+    },
+    {
+      "title": "ThumbnailImage fadeIn prop has no production users",
+      "file": "src/ui/controls/ThumbnailImage.tsx",
+      "line": 11,
+      "category": "convention",
+      "priority": "P3",
+      "origin": "recon",
+      "trigger": "Any render; no production component passes fadeIn.",
+      "mechanism": "The gallery fade was removed in the grid-performance refactor, but the prop and CSS classes remain.",
+      "impact": "Dead code path and CSS that tests may still exercise as if live.",
+      "evidence": ["src/ui/controls/ThumbnailImage.tsx:11", "src/ui/controls/ThumbnailImage.tsx:68"]
+    },
+    {
+      "title": "CSV export creates the target directory before validating the destination",
+      "file": "src-tauri/src/services/csv_service.rs",
+      "line": 325,
+      "category": "data-safety",
+      "priority": "P2",
+      "origin": "recon",
+      "trigger": "Export CSV to a path whose parent does not exist, including a path that later fails validation.",
+      "mechanism": "fs::create_dir_all(parent) runs before the root checks, then a .tmp file is written next to the target.",
+      "impact": "Directories may be created at a rejected location; an export may leave a .tmp file on failure.",
+      "evidence": ["src-tauri/src/services/csv_service.rs:325"]
+    },
+    {
+      "title": "Backup export creates the target directory before validating the destination",
+      "file": "src-tauri/src/services/backup_service.rs",
+      "line": 169,
+      "category": "data-safety",
+      "priority": "P2",
+      "origin": "recon",
+      "trigger": "Export a backup to a path whose parent does not exist, including a path that later fails validation.",
+      "mechanism": "fs::create_dir_all(parent) runs before the destination checks, then a .tmp file is written next to the target.",
+      "impact": "Directories may be created at a rejected location; a failed export may leave a .tmp file.",
+      "evidence": ["src-tauri/src/services/backup_service.rs:169"]
+    },
+    {
+      "title": "Lightbox delete shows window.alert without checking the dispose guard",
+      "file": "src/features/lightbox/LightboxModal.tsx",
+      "line": 222,
+      "category": "bug",
+      "priority": "P3",
+      "origin": "recon",
+      "trigger": "Delete an asset whose source is missing or whose cleanup is pending, then close the lightbox before the delete resolves.",
+      "mechanism": "window.alert runs for source_status missing/cleanup_pending before the `!disposed && generation === request` check that guards setConfirm.",
+      "impact": "A blocking alert can appear after the lightbox was closed or another asset was selected.",
+      "evidence": ["src/features/lightbox/LightboxModal.tsx:222-227"]
+    },
+    {
+      "title": "Maintenance gate and library-wide locks wait without a timeout",
+      "file": "src-tauri/src/services/db_pool.rs",
+      "line": 63,
+      "category": "stability",
+      "priority": "P2",
+      "origin": "recon",
+      "trigger": "A backup export/import holds the maintenance gate, or Clear library / Remove root waits for with_scan_and_thumb_lock while a long scan or thumbnail render runs.",
+      "mechanism": "admit() and maintenance() loop on Condvar::wait without a deadline; with_scan_and_thumb_lock blocks without a limit as well.",
+      "impact": "Every new DB operation stalls for the whole maintenance window; a stuck holder hangs the app with no error.",
+      "evidence": ["src-tauri/src/services/db_pool.rs:63-81", "src-tauri/src/commands/import_export.rs:73", "src-tauri/src/commands/scan.rs:106", "src-tauri/src/app/locks.rs:69"]
+    },
+    {
+      "title": "app:control doctor accepts an empty scan-root list",
+      "file": "e2e/control.js",
+      "line": 295,
+      "category": "data-safety",
+      "priority": "P3",
+      "origin": "recon",
+      "trigger": "Clear library or remove the only root, then add a root through the native picker.",
+      "mechanism": "doctor only rejects roots different from manifest.media; an empty list passes, so the check proves nothing until a root exists again.",
+      "impact": "The root guard does not fire between Clear library and the next add; a wrong folder chosen in the picker is caught only by the next doctor.",
+      "evidence": ["e2e/control.js:294-300"]
+    },
+    {
+      "title": "testing.md says grid_baseline has three ignored diagnostics; the file has four",
+      "file": "docs/development/testing.md",
+      "line": 602,
+      "category": "convention",
+      "priority": "P3",
+      "origin": "recon",
+      "trigger": "Reading the doc to run the baseline diagnostics.",
+      "mechanism": "src-tauri/tests/grid_baseline.rs has four #[ignore] tests; the doc says three.",
+      "impact": "Doc/code drift; a diagnostic may be missed when results are compared.",
+      "evidence": ["docs/development/testing.md:602", "src-tauri/tests/grid_baseline.rs:230,358,524,674"]
+    }
+  ]
+}

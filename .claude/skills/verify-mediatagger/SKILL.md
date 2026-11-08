@@ -69,10 +69,81 @@ key names; multiple arguments describe a key combination. `scroll <selector>` br
 element into view. Commands serialize through one persistent browser session. Inspect the
 result of an action before assuming the UI finished its asynchronous work.
 
+Richer gestures (all validated in `e2e/control-support.js`; `help` lists the ranges):
+
+```sh
+bun run app:control wait "$control_session" 'button[data-asset-index="0"]'          # displayed, 15 s
+bun run app:control wait "$control_session" '[data-testid="tile-thumb-loader"]' hidden 30000
+bun run app:control wait "$control_session" idle 60000
+bun run app:control modclick "$control_session" Shift 'button[data-asset-index="5"]'
+bun run app:control modclick "$control_session" Control+Shift 'button[data-asset-index="9"]'
+bun run app:control dblclick "$control_session" '[data-testid="tag-list-modal"] li button'
+bun run app:control drag "$control_session" 'button[data-asset-index="0"]' 40,260 200
+bun run app:control drag "$control_session" '[data-testid="gallery-timeline"]' '[data-testid="gallery-timeline"]@0,120'
+bun run app:control wheel "$control_session" .gallery-scroll 1400
+bun run app:control wheel "$control_session" .gallery-scroll -8 ctrl
+bun run app:control select "$control_session" '#settings-language-select' value=pl
+bun run app:control resize "$control_session" 700 800
+bun run app:control alert "$control_session" text
+bun run app:control alert "$control_session" accept
+```
+
+- `wait <selector|idle> [displayed|gone|enabled|visible|hidden] [timeoutMs]` polls every
+  250 ms (up to 90 s) and drains the console meanwhile. `visible`/`hidden` use computed
+  visibility and opacity, which matters for the tile loader: it is always in the DOM and only
+  becomes visible after 300 ms. `idle` waits for no visible tile/section loaders, no
+  `aria-busy="true"`, and no paused gallery or dragged timeline.
+- `modclick` holds `Shift`, `Control`, or `Control+Shift` and always releases them.
+- `drag <from> <to|dx,dy|selector@dx,dy> [holdMs] [ctrl]` centers the source, presses, holds
+  (default 200 ms, at least 150 ms), moves 6 px, then finishes over about 300 ms. That
+  satisfies the rectangle-selection threshold and also drives the timeline scrubber and the
+  windowed position bar. `ctrl` holds Control for an additive rectangle.
+- `wheel <selector> <dy> [ctrl]` scrolls over the element's center. If WebKit does not report
+  `ctrlKey` for the WebDriver wheel, use `native wheel ... ctrl` for the tile-size gesture.
+- `resize` sets the WebView window size. Xvfb has no window manager, so maximize, minimize,
+  and minimum-size behavior cannot be proven here.
+
 Use `refresh` for a controlled reload. It records the console gap and reattaches collection.
-No arbitrary JavaScript or IPC command is exposed. Native GTK video controls and native file
-dialogs have no DOM selectors and cannot be clicked through this controller. Report those
-paths as unsupported rather than substituting internal application setters.
+No arbitrary JavaScript or IPC command is exposed.
+
+### Native input
+
+`native` drives XTest on the session's private display through `e2e/control-native.py`, for
+the GTK video controls (play, mute, volume, speed popover, fullscreen) and the native file
+dialogs:
+
+```sh
+bun run app:control native "$control_session" click 720 860
+bun run app:control native "$control_session" key Control+l
+bun run app:control native "$control_session" type /path/printed/by/doctor/media
+bun run app:control native "$control_session" key Return
+bun run app:control native "$control_session" wheel 600 400 -2 ctrl
+```
+
+Coordinates are screen pixels on the 1440x900 display (take a screenshot first). `key`
+takes X keysyms joined with `+`; `type` takes printable ASCII only. The helper receives an
+environment built only from the session manifest and refuses, before opening any display,
+unless the display is private and matches the session, `XAUTHORITY` and `XDG_DATA_HOME`
+belong to the scratch root, and the scratch `owner` matches the session ID. After every
+native command the controller runs a full doctor; if that fails, the session becomes
+`tainted` and accepts only `logs`, `screenshot`, and `stop`.
+
+In a native file picker, press `Control+l` and type exactly the session media root (`doctor`
+prints it as the scan root). Never navigate to another folder.
+
+### Session states
+
+`doctor` reports `state`:
+
+- `ok`: identity, profile, roots, and processes verified.
+- `alert-open`: a `window.alert` is showing (the lightbox shows one when a deleted file is
+  missing or its cleanup is pending). Only `alert`, `screenshot`, `doctor`, `logs`, and
+  `stop` run; read it with `alert text`, then `alert accept`.
+- `busy-maintenance`: a library probe outlasted the 30 s script timeout. The maintenance gate
+  used by backup export/import, and the scan/thumbnail locks used by Clear library and Remove
+  root, wait without a limit. Observation commands (`inspect`, `wait`, `screenshot`, `logs`)
+  still run; actions are refused. Wait with `logs` and `process.log` until doctor says `ok`.
+- `tainted`: see native input above.
 
 ## Evidence
 
@@ -130,5 +201,14 @@ the recorded processes are gone, the exported `removeOwnedScratch(root, id)` hel
 ## Helpers
 
 The executable helper is `e2e/control.js`, exposed as `bun run app:control`; `help` lists commands.
-Run `bun run test:app-control` for socket, cleanup, process-tree, input, and fixture checks.
+Native input goes through `e2e/control-native.py`; `e2e/native-input.py` belongs to the Mocha
+specs and is not compatible with controller sessions.
+
+The controller creates its scratch root under `realpath(os.tmpdir())`, so `TMPDIR` decides
+where it lives. `start` refuses a scratch root whose `control.sock` path would exceed the
+107-byte Linux limit. Cleanup accepts only a scratch root whose parent equals the stopping
+controller's `realpath(os.tmpdir())`; the controller process itself performs `stop`, so keep
+`TMPDIR` unchanged for its whole life.
+Run `bun run test:app-control` for socket, cleanup, process-tree, input validation, modifier
+release, drag thresholds, native-helper refusals, socket-length, and fixture checks.
 Keep feature recipes current when selectors or behavior change.

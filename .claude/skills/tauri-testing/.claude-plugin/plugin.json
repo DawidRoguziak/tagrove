@@ -1,0 +1,16 @@
+{
+  "name": "tauri-testing",
+  "displayName": "Tagrove testing (Rust + Solid 2)",
+  "version": "1.0.0-tagrove.1",
+  "description": "Tagrove-specific testing skills: layer choice, Rust unit/integration and serde IPC contract tests, Vitest + Solid 2 tests with vi.mock'ed platform wrappers, and the guarded WebdriverIO desktop E2E harness.",
+  "keywords": [
+    "tauri",
+    "rust",
+    "solidjs",
+    "testing",
+    "vitest",
+    "playwright",
+    "webdriverio",
+    "e2e"
+  ]
+}

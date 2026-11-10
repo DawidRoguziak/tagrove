@@ -50,3 +50,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0010](0010-zip-9-deflate-only.md) | `zip` 9 with the Deflate backend only | Accepted | 2026-11-07 |
 | [0011](0011-audit-qa-data-safety.md) | Audit QA runs on a reflink copy inside a sandbox | Accepted | 2026-11-08 |
 | [0012](0012-non-blocking-native-video-render.md) | Native video rendering never waits on the GTK main thread | Accepted | 2026-11-10 |
+| [0013](0013-committed-delete-cleanup-never-blocks-startup.md) | Committed-delete cleanup never blocks startup and keeps its journal row until the file is verifiably gone | Accepted | 2026-11-10 |

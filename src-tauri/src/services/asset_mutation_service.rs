@@ -289,40 +289,19 @@ fn apply_file_mutation_batch(
                     .staging_path
                     .as_ref()
                     .context("delete has no staging path")?;
-                match remove_file_and_sync_parent(staging_path) {
-                    Ok(()) => {
-                        if db::remove_pending_file_operation(conn, &operation_id, item.asset.id)
-                            .is_ok()
-                        {
-                            (DuplicateResolutionItemStatus::Deleted, None)
-                        } else {
-                            recovery_required = true;
-                            (
-                                DuplicateResolutionItemStatus::CleanupPending,
-                                Some(staging_path.to_string_lossy().into_owned()),
-                            )
-                        }
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                        if db::remove_pending_file_operation(conn, &operation_id, item.asset.id)
-                            .is_ok()
-                        {
-                            (DuplicateResolutionItemStatus::Deleted, None)
-                        } else {
-                            recovery_required = true;
-                            (
-                                DuplicateResolutionItemStatus::CleanupPending,
-                                Some(staging_path.to_string_lossy().into_owned()),
-                            )
-                        }
-                    }
-                    Err(_) => {
-                        recovery_required = true;
-                        (
-                            DuplicateResolutionItemStatus::CleanupPending,
-                            Some(staging_path.to_string_lossy().into_owned()),
-                        )
-                    }
+                // The journal row is the only record of the staged file, so it is dropped only
+                // once that file is verifiably gone. A parent folder that vanished after the
+                // commit is not proof.
+                if remove_staged_delete(staging_path).is_ok()
+                    && db::remove_pending_file_operation(conn, &operation_id, item.asset.id).is_ok()
+                {
+                    (DuplicateResolutionItemStatus::Deleted, None)
+                } else {
+                    recovery_required = true;
+                    (
+                        DuplicateResolutionItemStatus::CleanupPending,
+                        Some(staging_path.to_string_lossy().into_owned()),
+                    )
                 }
             }
         };
@@ -689,13 +668,14 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
 
         if db_committed {
             if operation.action == "delete" {
-                if fs::symlink_metadata(staging).is_ok() {
-                    validate_recovery_staging_path(original, staging, &scan_roots)?;
-                }
-                match remove_file_and_sync_parent(staging) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    Err(_) => continue,
+                // Cleanup-only work: the delete is committed and the asset row is gone, so no
+                // failure here may stop startup. The row is kept and retried on a later start.
+                if let Err(error) = finish_committed_delete(original, staging, &scan_roots) {
+                    eprintln!(
+                        "Kept pending delete cleanup {} for asset {} for a later start: {error:#}",
+                        operation.operation_id, operation.asset_id
+                    );
+                    continue;
                 }
             }
         } else {
@@ -723,7 +703,7 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
                     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
                 })
             } else {
-                matches!(fs::symlink_metadata(staging), Err(ref error) if error.kind() == io::ErrorKind::NotFound)
+                staged_file_verifiably_absent(staging)
             }
         } else {
             let original_ok =
@@ -747,6 +727,57 @@ pub fn recover_pending_file_operations(conn: &rusqlite::Connection) -> anyhow::R
         db::remove_pending_file_operation(conn, &operation.operation_id, operation.asset_id)?;
     }
     Ok(())
+}
+
+/// Finishes a committed delete at startup by removing its staging file.
+///
+/// A staging file that still exists is removed only when it canonicalizes below a current scan
+/// root that contains the journaled original path. `Ok` means the file is verifiably gone and
+/// the journal row can be dropped; every error means "keep the row and retry later".
+fn finish_committed_delete(
+    original: &Path,
+    staging: &Path,
+    scan_roots: &[String],
+) -> anyhow::Result<()> {
+    match fs::symlink_metadata(staging) {
+        Ok(_) => validate_recovery_staging_path(original, staging, scan_roots)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("cannot inspect staging file '{}'", staging.display()))
+        }
+    }
+    remove_staged_delete(staging).with_context(|| {
+        format!(
+            "cannot confirm removal of staging file '{}'",
+            staging.display()
+        )
+    })
+}
+
+/// Removes a committed delete's staging file and reports success only when the file is
+/// verifiably gone: removed now or already absent, inside a parent directory that can be
+/// reached and synced. An unreachable parent (renamed folder, unmounted volume whose folder is
+/// gone) is an error, because the file may reappear with the deleted content.
+fn remove_staged_delete(staging: &Path) -> io::Result<()> {
+    remove_file_and_sync_parent(staging)?;
+    if staged_file_verifiably_absent(staging) {
+        Ok(())
+    } else {
+        Err(io::Error::other("the staging file is not verifiably gone"))
+    }
+}
+
+/// `true` only when `lstat` reports the staging file as missing while its parent directory is
+/// reachable. A missing parent also yields `NotFound` for the file, which proves nothing.
+///
+/// Known limit (ADR 0013): the journal records no volume identity, so a mount-point folder left
+/// behind as an empty directory by an unmounted volume passes as a reachable parent.
+fn staged_file_verifiably_absent(staging: &Path) -> bool {
+    matches!(fs::symlink_metadata(staging), Err(ref error) if error.kind() == io::ErrorKind::NotFound)
+        && staging
+            .parent()
+            .is_some_and(|parent| fs::metadata(parent).is_ok_and(|metadata| metadata.is_dir()))
 }
 
 fn validate_recovery_staging_path(
@@ -908,8 +939,451 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{delete_asset, validate_recovery_staging_path};
-    use crate::{db, models::NewAsset};
+    use super::{delete_asset, recover_pending_file_operations, validate_recovery_staging_path};
+    use crate::{
+        db::{self, PendingFileOperation},
+        models::{DeleteSourceStatus, NewAsset},
+    };
+
+    /// A disposable library: a scan root below a temp dir and an in-memory database.
+    struct JournalFixture {
+        _tmp: tempfile::TempDir,
+        root: std::path::PathBuf,
+        conn: rusqlite::Connection,
+    }
+
+    fn journal_fixture() -> JournalFixture {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("library");
+        fs::create_dir_all(&root).expect("create root");
+        let conn = rusqlite::Connection::open_in_memory().expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        db::add_scan_root(&conn, &root.to_string_lossy()).expect("add scan root");
+        JournalFixture {
+            _tmp: tmp,
+            root,
+            conn,
+        }
+    }
+
+    fn index_asset(fixture: &JournalFixture, path: &std::path::Path) -> i64 {
+        db::upsert_scanned_asset(
+            &fixture.conn,
+            &NewAsset {
+                path: path.to_string_lossy().into_owned(),
+                kind: "image".to_string(),
+                size_bytes: 6,
+                modified_at: 1,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_path: None,
+            },
+            1,
+            &fixture.root.to_string_lossy(),
+            1,
+        )
+        .expect("index asset");
+        fixture
+            .conn
+            .query_row(
+                "SELECT id FROM assets WHERE path = ?1",
+                [path.to_string_lossy()],
+                |row| row.get(0),
+            )
+            .expect("asset id")
+    }
+
+    /// Writes one journal row the way an interrupted mutation leaves it. `asset_id` only has to
+    /// be unique per operation; a committed delete has no asset row any more.
+    fn journal_row(
+        conn: &rusqlite::Connection,
+        asset_id: i64,
+        action: &str,
+        original: &std::path::Path,
+        staging: &std::path::Path,
+        final_path: Option<&std::path::Path>,
+        committed: bool,
+    ) {
+        db::insert_pending_file_operations(
+            conn,
+            &[PendingFileOperation {
+                operation_id: format!("operation-{asset_id}"),
+                asset_id,
+                action: action.to_string(),
+                original_path: original.to_string_lossy().into_owned(),
+                staging_path: staging.to_string_lossy().into_owned(),
+                final_path: final_path.map(|path| path.to_string_lossy().into_owned()),
+                committed,
+            }],
+        )
+        .expect("insert journal row");
+    }
+
+    fn journal_len(conn: &rusqlite::Connection) -> usize {
+        db::list_pending_file_operations(conn)
+            .expect("list journal")
+            .len()
+    }
+
+    fn asset_path(conn: &rusqlite::Connection, asset_id: i64) -> Option<String> {
+        db::get_file_mutation_asset(conn, asset_id)
+            .expect("asset query")
+            .map(|asset| asset.path)
+    }
+
+    #[test]
+    fn recovery_restores_an_uncommitted_delete_from_staging() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-delete.pending");
+        fs::write(&original, b"source").expect("write source");
+        let asset_id = index_asset(&fixture, &original);
+        fs::rename(&original, &staging).expect("stage source");
+        journal_row(
+            &fixture.conn,
+            asset_id,
+            "delete",
+            &original,
+            &staging,
+            None,
+            false,
+        );
+
+        recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+        assert_eq!(fs::read(&original).expect("restored source"), b"source");
+        assert!(!staging.exists());
+        assert_eq!(
+            asset_path(&fixture.conn, asset_id).as_deref(),
+            Some(original.to_string_lossy().as_ref())
+        );
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[test]
+    fn recovery_restores_an_uncommitted_rename_from_staging_or_final_path() {
+        for moved_to_final in [false, true] {
+            let fixture = journal_fixture();
+            let original = fixture.root.join("photo.jpg");
+            let staging = fixture.root.join(".mediatagger-rename.pending");
+            let target = fixture.root.join("renamed.jpg");
+            fs::write(&original, b"source").expect("write source");
+            let asset_id = index_asset(&fixture, &original);
+            let interrupted_at = if moved_to_final { &target } else { &staging };
+            fs::rename(&original, interrupted_at).expect("move source");
+            journal_row(
+                &fixture.conn,
+                asset_id,
+                "rename",
+                &original,
+                &staging,
+                Some(&target),
+                false,
+            );
+
+            recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+            assert_eq!(fs::read(&original).expect("restored source"), b"source");
+            assert!(!staging.exists(), "moved_to_final={moved_to_final}");
+            assert!(!target.exists(), "moved_to_final={moved_to_final}");
+            assert_eq!(
+                asset_path(&fixture.conn, asset_id).as_deref(),
+                Some(original.to_string_lossy().as_ref())
+            );
+            assert_eq!(journal_len(&fixture.conn), 0);
+        }
+    }
+
+    #[test]
+    fn recovery_drops_an_uncommitted_row_whose_source_never_moved() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-rename.pending");
+        let target = fixture.root.join("renamed.jpg");
+        fs::write(&original, b"source").expect("write source");
+        let asset_id = index_asset(&fixture, &original);
+        journal_row(
+            &fixture.conn,
+            asset_id,
+            "rename",
+            &original,
+            &staging,
+            Some(&target),
+            false,
+        );
+
+        recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+        assert_eq!(fs::read(&original).expect("source"), b"source");
+        assert!(!target.exists());
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[test]
+    fn recovery_stops_when_an_uncommitted_source_and_its_original_path_both_exist() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-delete.pending");
+        fs::write(&original, b"newer file").expect("write occupant");
+        fs::write(&staging, b"source").expect("write staged source");
+        journal_row(&fixture.conn, 1, "delete", &original, &staging, None, false);
+
+        let error = recover_pending_file_operations(&fixture.conn)
+            .expect_err("an occupied original path must stop recovery");
+
+        assert!(error
+            .to_string()
+            .contains("found both recovery source and occupied original path"));
+        assert_eq!(fs::read(&original).expect("occupant"), b"newer file");
+        assert_eq!(fs::read(&staging).expect("staged source"), b"source");
+        assert_eq!(journal_len(&fixture.conn), 1);
+    }
+
+    #[test]
+    fn recovery_stops_when_an_uncommitted_source_cannot_be_found() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-delete.pending");
+        journal_row(&fixture.conn, 1, "delete", &original, &staging, None, false);
+
+        let error = recover_pending_file_operations(&fixture.conn)
+            .expect_err("a lost source must stop recovery");
+
+        assert!(error.to_string().contains("requires manual recovery"));
+        assert_eq!(journal_len(&fixture.conn), 1);
+    }
+
+    #[test]
+    fn recovery_accepts_a_committed_rename_only_with_its_final_file() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-rename.pending");
+        let target = fixture.root.join("renamed.jpg");
+        journal_row(
+            &fixture.conn,
+            1,
+            "rename",
+            &original,
+            &staging,
+            Some(&target),
+            true,
+        );
+
+        let error = recover_pending_file_operations(&fixture.conn)
+            .expect_err("a committed rename without its final file must stop recovery");
+        assert!(error.to_string().contains("requires manual recovery"));
+        assert_eq!(journal_len(&fixture.conn), 1);
+
+        fs::write(&target, b"source").expect("write final file");
+        recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+        assert_eq!(fs::read(&target).expect("final file"), b"source");
+        assert!(!original.exists());
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[test]
+    fn recovery_finishes_a_committed_delete_inside_its_scan_root() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-delete.pending");
+        let neighbour = fixture.root.join("keep.jpg");
+        fs::write(&staging, b"source").expect("write staged source");
+        fs::write(&neighbour, b"keep").expect("write neighbour");
+        journal_row(&fixture.conn, 1, "delete", &original, &staging, None, true);
+
+        recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+        assert!(!staging.exists());
+        assert!(!original.exists());
+        assert_eq!(fs::read(&neighbour).expect("neighbour"), b"keep");
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[test]
+    fn recovery_drops_a_committed_delete_whose_staging_file_is_already_gone() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-delete.pending");
+        journal_row(&fixture.conn, 1, "delete", &original, &staging, None, true);
+
+        recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[test]
+    fn recovery_keeps_a_committed_delete_without_a_covering_scan_root_and_still_starts() {
+        let fixture = journal_fixture();
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join(".mediatagger-delete.pending");
+        fs::write(&staging, b"source").expect("write staged source");
+        journal_row(&fixture.conn, 1, "delete", &original, &staging, None, true);
+        let root = fixture.root.to_string_lossy().into_owned();
+        db::remove_scan_root(&fixture.conn, &root).expect("remove scan root");
+
+        recover_pending_file_operations(&fixture.conn)
+            .expect("a cleanup-only failure must not stop startup");
+
+        assert_eq!(fs::read(&staging).expect("staged source"), b"source");
+        assert_eq!(journal_len(&fixture.conn), 1);
+
+        db::add_scan_root(&fixture.conn, &root).expect("add scan root again");
+        recover_pending_file_operations(&fixture.conn).expect("recovery with the root back");
+
+        assert!(!staging.exists());
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recovery_keeps_a_committed_delete_that_escapes_through_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = journal_fixture();
+        let outside = fixture.root.parent().expect("temp dir").join("outside");
+        fs::create_dir_all(&outside).expect("create outside");
+        fs::write(outside.join("staged.jpg"), b"outside").expect("write outside file");
+        symlink(&outside, fixture.root.join("escape")).expect("symlink");
+        let original = fixture.root.join("photo.jpg");
+        let staging = fixture.root.join("escape/staged.jpg");
+        journal_row(&fixture.conn, 1, "delete", &original, &staging, None, true);
+
+        recover_pending_file_operations(&fixture.conn)
+            .expect("a confinement failure must not stop startup");
+
+        assert_eq!(
+            fs::read(outside.join("staged.jpg")).expect("outside file"),
+            b"outside"
+        );
+        assert_eq!(journal_len(&fixture.conn), 1);
+    }
+
+    #[test]
+    fn recovery_keeps_a_committed_delete_while_its_staging_folder_is_unreachable() {
+        let fixture = journal_fixture();
+        let folder = fixture.root.join("album");
+        let hidden = fixture.root.parent().expect("temp dir").join("unmounted");
+        fs::create_dir_all(&folder).expect("create folder");
+        let original = folder.join("photo.jpg");
+        let staging = folder.join(".mediatagger-delete.pending");
+        fs::write(&staging, b"source").expect("write staged source");
+        journal_row(&fixture.conn, 1, "delete", &original, &staging, None, true);
+        fs::rename(&folder, &hidden).expect("make the folder unreachable");
+
+        recover_pending_file_operations(&fixture.conn)
+            .expect("an unreachable folder must not stop startup");
+
+        assert_eq!(
+            fs::read(hidden.join(".mediatagger-delete.pending")).expect("staged source"),
+            b"source"
+        );
+        assert_eq!(journal_len(&fixture.conn), 1);
+
+        fs::rename(&hidden, &folder).expect("make the folder reachable again");
+        recover_pending_file_operations(&fixture.conn).expect("recovery with the folder back");
+
+        assert!(!staging.exists());
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[test]
+    fn recovery_continues_past_a_kept_committed_delete() {
+        let fixture = journal_fixture();
+        let outside = fixture.root.parent().expect("temp dir").join("outside");
+        fs::create_dir_all(&outside).expect("create outside");
+        let kept_staging = outside.join(".mediatagger-kept.pending");
+        fs::write(&kept_staging, b"outside").expect("write unconfined staged file");
+        journal_row(
+            &fixture.conn,
+            1,
+            "delete",
+            &outside.join("photo.jpg"),
+            &kept_staging,
+            None,
+            true,
+        );
+        let cleaned_staging = fixture.root.join(".mediatagger-cleaned.pending");
+        fs::write(&cleaned_staging, b"source").expect("write staged source");
+        journal_row(
+            &fixture.conn,
+            2,
+            "delete",
+            &fixture.root.join("second.jpg"),
+            &cleaned_staging,
+            None,
+            true,
+        );
+        let original = fixture.root.join("third.jpg");
+        let restore_staging = fixture.root.join(".mediatagger-restore.pending");
+        fs::write(&restore_staging, b"third").expect("write uncommitted staged source");
+        journal_row(
+            &fixture.conn,
+            3,
+            "delete",
+            &original,
+            &restore_staging,
+            None,
+            false,
+        );
+
+        recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+        assert_eq!(fs::read(&kept_staging).expect("kept file"), b"outside");
+        assert!(!cleaned_staging.exists());
+        assert_eq!(fs::read(&original).expect("restored source"), b"third");
+        let remaining = db::list_pending_file_operations(&fixture.conn).expect("list journal");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].asset_id, 1);
+    }
+
+    #[test]
+    fn staged_delete_is_not_cleaned_while_its_folder_is_unreachable() {
+        let tmp = tempdir().expect("tempdir");
+        let folder = tmp.path().join("album");
+        fs::create_dir_all(&folder).expect("create folder");
+        let staging = folder.join(".mediatagger-delete.pending");
+        fs::write(&staging, b"source").expect("write staged source");
+
+        fs::rename(&folder, tmp.path().join("unmounted")).expect("make the folder unreachable");
+        assert!(super::remove_staged_delete(&staging).is_err());
+
+        fs::rename(tmp.path().join("unmounted"), &folder).expect("make the folder reachable");
+        assert!(staging.exists());
+        super::remove_staged_delete(&staging).expect("cleanup");
+        assert!(!staging.exists());
+        super::remove_staged_delete(&staging).expect("cleanup of an already removed file");
+    }
+
+    #[test]
+    fn delete_cleanup_sync_failure_keeps_the_journal_until_startup_recovery() {
+        let fixture = journal_fixture();
+        let source = fixture.root.join("photo.jpg");
+        fs::write(&source, b"source").expect("write source");
+        let asset_id = index_asset(&fixture, &source);
+        let thumbs = fixture.root.parent().expect("temp dir").join("thumbs");
+
+        // Sync 1 follows staging; sync 2 follows the removal of the staged file after commit.
+        super::SYNC_FAILURE_AFTER.with(|remaining| remaining.set(2));
+        let summary = delete_asset(&fixture.conn, &thumbs, asset_id).expect("delete commits");
+
+        assert!(matches!(
+            summary.source_status,
+            DeleteSourceStatus::CleanupPending
+        ));
+        assert!(summary.recovery_path.is_some());
+        assert_eq!(asset_path(&fixture.conn, asset_id), None);
+        let pending = db::list_pending_file_operations(&fixture.conn).expect("list journal");
+        assert_eq!(pending.len(), 1);
+        assert!(pending[0].committed);
+        assert_eq!(pending[0].action, "delete");
+
+        recover_pending_file_operations(&fixture.conn).expect("recovery");
+
+        assert!(!source.exists());
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
 
     #[cfg(unix)]
     #[test]

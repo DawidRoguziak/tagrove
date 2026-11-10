@@ -2,7 +2,7 @@ use std::path::Path;
 #[path = "support/assets.rs"]
 mod support;
 
-use media_tagger::{db, models::NewAsset};
+use media_tagger::{db, models::NewAsset, services::asset_mutation_service};
 use tempfile::tempdir;
 
 fn new_asset(path: &Path, kind: &str, modified_at: i64, thumb_path: Option<&str>) -> NewAsset {
@@ -1458,4 +1458,244 @@ mod selection_spec {
             "[selection] rows={ROWS} resolve_ms={resolve_ms:.1} merge_tag_ms={tag_ms:.0} toggle_favorite_ms={favorite_ms:.0}"
         );
     }
+}
+
+/// Opens the profile database the way startup does and reconciles the file-mutation journal
+/// (`lib.rs` setup): a fresh connection, `init_schema`, FULL sync, then recovery.
+fn restart_and_recover(db_path: &Path) -> (rusqlite::Connection, anyhow::Result<()>) {
+    let conn = db::open_connection(db_path).expect("reopen db");
+    db::init_schema(&conn).expect("init schema on restart");
+    conn.pragma_update(None, "synchronous", "FULL")
+        .expect("full sync");
+    let recovery = asset_mutation_service::recover_pending_file_operations(&conn);
+    (conn, recovery)
+}
+
+/// A library with one scanned asset whose delete committed but left its staged file behind
+/// (`cleanup_pending`): the asset row is gone, the journal row is committed, and the hidden
+/// staging sibling still holds the bytes.
+fn library_with_a_committed_delete_awaiting_cleanup(
+    db_path: &Path,
+    root: &Path,
+) -> std::path::PathBuf {
+    let folder = root.join("album");
+    std::fs::create_dir_all(&folder).expect("create album");
+    let original = folder.join("photo.jpg");
+    let staging = folder.join(".mediatagger-0123456789abcdefghijklmn.pending");
+    std::fs::write(&original, b"source").expect("write source");
+
+    let conn = db::open_connection(db_path).expect("open db");
+    db::init_schema(&conn).expect("init schema");
+    conn.pragma_update(None, "synchronous", "FULL")
+        .expect("full sync");
+    let root_text = root.to_string_lossy();
+    db::add_scan_root(&conn, &root_text).expect("add root");
+    db::upsert_scanned_asset(
+        &conn,
+        &new_asset(&original, "image", 1, None),
+        1,
+        &root_text,
+        1,
+    )
+    .expect("index asset");
+    let asset = db::get_file_mutation_asset(&conn, 1)
+        .expect("asset query")
+        .expect("indexed asset");
+
+    db::insert_pending_file_operations(
+        &conn,
+        &[db::PendingFileOperation {
+            operation_id: "interrupted-delete".to_string(),
+            asset_id: asset.id,
+            action: "delete".to_string(),
+            original_path: asset.path.clone(),
+            staging_path: staging.to_string_lossy().into_owned(),
+            final_path: None,
+            committed: false,
+        }],
+    )
+    .expect("journal the delete");
+    std::fs::rename(&original, &staging).expect("stage the source");
+    db::apply_file_mutations(
+        &conn,
+        "interrupted-delete",
+        &[db::DbFileMutation::Delete {
+            asset_id: asset.id,
+            expected_path: &asset.path,
+            expected_record_version: asset.record_version,
+        }],
+    )
+    .expect("commit the delete");
+
+    let pending = db::list_pending_file_operations(&conn).expect("list journal");
+    assert_eq!(pending.len(), 1);
+    assert!(pending[0].committed);
+    staging
+}
+
+#[test]
+fn startup_survives_a_committed_delete_whose_scan_root_was_removed() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("media.db");
+    let root = tmp.path().join("library");
+    let staging = library_with_a_committed_delete_awaiting_cleanup(&db_path, &root);
+    let root_text = root.to_string_lossy().into_owned();
+    {
+        let conn = db::open_connection(&db_path).expect("open db");
+        db::remove_scan_root_and_orphan_assets(&conn, &root_text).expect("remove root");
+        assert!(db::list_scan_roots(&conn).expect("roots").is_empty());
+    }
+
+    let (conn, recovery) = restart_and_recover(&db_path);
+
+    recovery.expect("startup must not fail on a cleanup-only journal row");
+    assert_eq!(std::fs::read(&staging).expect("staged bytes"), b"source");
+    assert_eq!(
+        db::list_pending_file_operations(&conn)
+            .expect("list journal")
+            .len(),
+        1
+    );
+    assert!(db::ensure_no_pending_file_operations(&conn).is_err());
+    db::add_scan_root(&conn, &root_text).expect("add the root again");
+    drop(conn);
+
+    let (conn, recovery) = restart_and_recover(&db_path);
+
+    recovery.expect("startup with the root registered again");
+    assert!(!staging.exists());
+    assert!(db::list_pending_file_operations(&conn)
+        .expect("list journal")
+        .is_empty());
+    db::ensure_no_pending_file_operations(&conn).expect("journal is empty");
+}
+
+#[test]
+fn startup_survives_a_committed_delete_after_clear_library() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("media.db");
+    let root = tmp.path().join("library");
+    let staging = library_with_a_committed_delete_awaiting_cleanup(&db_path, &root);
+    {
+        let conn = db::open_connection(&db_path).expect("open db");
+        let (_, removed_roots, _) = db::clear_library_data(&conn).expect("clear library");
+        assert_eq!(removed_roots, 1);
+    }
+
+    let (conn, recovery) = restart_and_recover(&db_path);
+
+    recovery.expect("startup must not fail on a cleanup-only journal row");
+    assert_eq!(std::fs::read(&staging).expect("staged bytes"), b"source");
+    assert_eq!(
+        db::list_pending_file_operations(&conn)
+            .expect("list journal")
+            .len(),
+        1
+    );
+    drop(conn);
+
+    // A later start without the staged file (removed by hand) drops the row.
+    std::fs::remove_file(&staging).expect("remove the staged file by hand");
+    let (conn, recovery) = restart_and_recover(&db_path);
+
+    recovery.expect("startup after manual cleanup");
+    assert!(db::list_pending_file_operations(&conn)
+        .expect("list journal")
+        .is_empty());
+}
+
+#[test]
+fn startup_keeps_a_committed_delete_while_its_scan_root_is_unreachable() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("media.db");
+    let root = tmp.path().join("library");
+    let unmounted = tmp.path().join("library-unmounted");
+    let staging = library_with_a_committed_delete_awaiting_cleanup(&db_path, &root);
+    std::fs::rename(&root, &unmounted).expect("make the root unreachable");
+
+    let (conn, recovery) = restart_and_recover(&db_path);
+
+    recovery.expect("startup must not fail while the root is unreachable");
+    assert_eq!(
+        db::list_pending_file_operations(&conn)
+            .expect("list journal")
+            .len(),
+        1,
+        "the journal row must survive until the staged file can be inspected"
+    );
+    assert_eq!(db::list_scan_roots(&conn).expect("roots").len(), 1);
+    drop(conn);
+
+    std::fs::rename(&unmounted, &root).expect("make the root reachable again");
+    assert_eq!(std::fs::read(&staging).expect("staged bytes"), b"source");
+    let (conn, recovery) = restart_and_recover(&db_path);
+
+    recovery.expect("startup with the root back");
+    assert!(!staging.exists());
+    assert!(db::list_pending_file_operations(&conn)
+        .expect("list journal")
+        .is_empty());
+}
+
+#[test]
+fn startup_restores_an_interrupted_delete_and_keeps_the_asset_indexed() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("media.db");
+    let root = tmp.path().join("library");
+    std::fs::create_dir_all(&root).expect("create root");
+    let original = root.join("photo.jpg");
+    let staging = root.join(".mediatagger-abcdefghijklmn0123456789.pending");
+    std::fs::write(&original, b"source").expect("write source");
+    let baseline_revision;
+    {
+        let conn = db::open_connection(&db_path).expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        let root_text = root.to_string_lossy();
+        db::add_scan_root(&conn, &root_text).expect("add root");
+        db::upsert_scanned_asset(
+            &conn,
+            &new_asset(&original, "image", 1, None),
+            1,
+            &root_text,
+            1,
+        )
+        .expect("index asset");
+        db::set_asset_tags(&conn, 1, &["keep".to_string()]).expect("tag asset");
+        baseline_revision = db::current_library_revision(&conn).expect("revision");
+        db::insert_pending_file_operations(
+            &conn,
+            &[db::PendingFileOperation {
+                operation_id: "interrupted-delete".to_string(),
+                asset_id: 1,
+                action: "delete".to_string(),
+                original_path: original.to_string_lossy().into_owned(),
+                staging_path: staging.to_string_lossy().into_owned(),
+                final_path: None,
+                committed: false,
+            }],
+        )
+        .expect("journal the delete");
+        // The process dies after staging and before the database commit.
+        std::fs::rename(&original, &staging).expect("stage the source");
+    }
+
+    let (conn, recovery) = restart_and_recover(&db_path);
+
+    recovery.expect("startup recovery");
+    assert_eq!(
+        std::fs::read(&original).expect("restored source"),
+        b"source"
+    );
+    assert!(!staging.exists());
+    assert!(db::list_pending_file_operations(&conn)
+        .expect("list journal")
+        .is_empty());
+    let page = support::session_page(&conn, 0, 10, &["keep".to_string()], &[], None, false)
+        .expect("query the restored asset");
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].path, original.to_string_lossy());
+    assert_eq!(
+        db::current_library_revision(&conn).expect("revision"),
+        baseline_revision
+    );
 }

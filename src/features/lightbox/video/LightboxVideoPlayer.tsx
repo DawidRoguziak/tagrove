@@ -39,6 +39,9 @@ export function LightboxVideoPlayer(
     get container() {
       return container();
     },
+    get layoutRoot() {
+      return props.layoutRoot;
+    },
     get controlLabels() {
       return labels();
     },

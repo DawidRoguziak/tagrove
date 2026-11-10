@@ -32,6 +32,7 @@ vi.mock("../../../../platform/tauri/video", () => video);
 vi.mock("../../../../platform/tauri/assets", () => assets);
 let narrow = false;
 let resize: Array<() => void> = [];
+let observed: Array<{ target: Element; fire: () => void }> = [];
 const videoSummary = (id: number) =>
   summary(id, { kind: "video", preview_path: `/synthetic/${id}.mp4`, width: 640, height: 360 });
 async function setup() {
@@ -72,6 +73,7 @@ async function ready() {
 }
 beforeEach(async () => {
   vi.resetAllMocks();
+  observed = [];
   await i18n.changeLanguage("en");
   narrow = false;
   resize = [];
@@ -79,8 +81,10 @@ beforeEach(async () => {
     "ResizeObserver",
     class implements ResizeObserver {
       constructor(private callback: ResizeObserverCallback) {}
-      observe() {
-        resize.push(() => this.callback([], this));
+      observe(target: Element) {
+        const fire = () => this.callback([], this);
+        resize.push(fire);
+        observed.push({ target, fire });
       }
       unobserve() {}
       disconnect() {}
@@ -397,6 +401,67 @@ describe("Solid native video lightbox", () => {
     act(() => vi.advanceTimersByTime(20));
     expect(column).not.toHaveClass("hidden");
     expect(trigger).toHaveFocus();
+    expect(video.openVideo).toHaveBeenCalledOnce();
+  });
+
+  it("republishes bounds when a sidebar toggle only moves a fixed-size player", async () => {
+    await setup();
+    await ready();
+    const panel = document.getElementById("lightbox-sidebar");
+    await waitFor(() => expect(panel).toHaveAttribute("aria-hidden", "false"));
+    const stage = document.querySelector<HTMLElement>("[data-lightbox-media-stage]");
+    const container = player();
+    if (!stage || !container) throw new Error("missing native video stage");
+    const stageRect = vi.spyOn(stage, "getBoundingClientRect");
+    const playerRect = vi.spyOn(container, "getBoundingClientRect");
+    // A height-limited video keeps its 400x300 size; only the centered position changes.
+    const layout = (stageWidth: number) => {
+      stageRect.mockReturnValue(new DOMRect(0, 0, stageWidth, 600));
+      playerRect.mockReturnValue(new DOMRect((stageWidth - 400) / 2, 150, 400, 300));
+    };
+    // Only the stage resizes; the player's own observer never fires for a move.
+    const stageResized = () =>
+      act(() => {
+        for (const entry of observed) if (entry.target === stage) entry.fire();
+      });
+
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Close asset panel" })));
+    await waitFor(() =>
+      expect(document.querySelector(".lightbox-layout")).toHaveClass("grid-cols-[minmax(0,1fr)]")
+    );
+    layout(1000);
+    video.setVideoBounds.mockClear();
+    stageResized();
+    await waitFor(() =>
+      expect(video.setVideoBounds).toHaveBeenLastCalledWith(10, {
+        x: 300,
+        y: 150,
+        width: 400,
+        height: 300
+      })
+    );
+
+    layout(660);
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Open asset panel" })));
+    expect(document.querySelector(".lightbox-layout")).toHaveClass(
+      "grid-cols-[minmax(0,1fr)_340px]"
+    );
+    expect(panel).toHaveAttribute("aria-hidden", "true");
+    stageResized();
+    await waitFor(() =>
+      expect(video.setVideoBounds).toHaveBeenLastCalledWith(10, {
+        x: 130,
+        y: 150,
+        width: 400,
+        height: 300
+      })
+    );
+    await waitFor(() => expect(panel).toHaveAttribute("aria-hidden", "false"));
+    expect(panel).not.toHaveAttribute("inert");
+    act(() => fireEvent.click(screen.getByRole("button", { name: "Delete media" })));
+    await waitFor(() =>
+      expect(document.getElementById("lightbox-delete-confirm-input")).toHaveFocus()
+    );
     expect(video.openVideo).toHaveBeenCalledOnce();
   });
 });

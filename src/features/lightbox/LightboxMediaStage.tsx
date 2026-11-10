@@ -132,6 +132,7 @@ export function LightboxMediaStage(props: {
                               ? `${props.selected.width} / ${props.selected.height}`
                               : "16 / 9"
                         }
+                        layoutRoot={props.controls.viewport() ?? null}
                         playerRef={props.controls.videoPlayerRef}
                         onLoadedMetadata={props.controls.onVideoLoadedMetadata}
                         onFullscreenChange={props.controls.onVideoFullscreenChange}

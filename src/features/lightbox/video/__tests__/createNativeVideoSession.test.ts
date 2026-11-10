@@ -1,7 +1,7 @@
 import { cleanup, renderHook, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { settle as act } from "../../../../test/settle";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, onTestFinished, vi } from "vitest";
 import { createNativeVideoSession, type SessionOptions } from "../createNativeVideoSession";
 import type {
   MpvVideoEvent,
@@ -70,6 +70,9 @@ function mountSession(initial: SessionOptions) {
       },
       get container() {
         return options().container;
+      },
+      get layoutRoot() {
+        return options().layoutRoot;
       },
       get controlLabels() {
         return options().controlLabels;
@@ -212,6 +215,64 @@ describe("createNativeVideoSession", () => {
       width: 400,
       height: 100
     });
+  });
+
+  it("republishes moved bounds when the layout root resizes without restarting playback", async () => {
+    const observers: Array<{
+      target: Element;
+      fire: () => void;
+      disconnect: Mock<() => void>;
+    }> = [];
+    const OriginalObserver = globalThis.ResizeObserver;
+    onTestFinished(() => {
+      globalThis.ResizeObserver = OriginalObserver;
+    });
+    globalThis.ResizeObserver = class {
+      private entries: typeof observers = [];
+      constructor(private callback: () => void) {}
+      observe(target: Element) {
+        const entry = { target, fire: () => this.callback(), disconnect: vi.fn() };
+        this.entries.push(entry);
+        observers.push(entry);
+      }
+      unobserve() {}
+      disconnect() {
+        for (const entry of this.entries) entry.disconnect();
+      }
+    } as unknown as typeof ResizeObserver;
+    const opts = options();
+    const first = document.createElement("div");
+    const rect = vi.spyOn(opts.container, "getBoundingClientRect");
+    rect.mockReturnValue(new DOMRect(300, 150, 400, 300));
+    const { result, rerender, unmount } = mountSession({ ...opts, layoutRoot: first });
+    await waitFor(() => expect(result.sessionId).toBe(10));
+    await waitFor(() => expect(opts.onNativeBounds).toHaveBeenCalled());
+    const fire = (target: Element) =>
+      act(() => {
+        for (const entry of observers) if (entry.target === target) entry.fire();
+      });
+    rect.mockReturnValue(new DOMRect(130, 150, 400, 300));
+    fire(first);
+    await act(async () => new Promise(requestAnimationFrame));
+    const moved = { x: 130, y: 150, width: 400, height: 300 };
+    expect(api.setVideoBounds).toHaveBeenLastCalledWith(10, moved);
+    expect(opts.onNativeBounds).toHaveBeenLastCalledWith(moved);
+
+    const second = document.createElement("div");
+    rerender({ layoutRoot: second });
+    expect(observers.find((entry) => entry.target === first)?.disconnect).toHaveBeenCalledOnce();
+    rect.mockReturnValue(new DOMRect(0, 150, 400, 300));
+    fire(second);
+    await act(async () => new Promise(requestAnimationFrame));
+    expect(api.setVideoBounds).toHaveBeenLastCalledWith(10, { ...moved, x: 0 });
+    expect(api.openVideo).toHaveBeenCalledOnce();
+
+    unmount();
+    expect(observers.find((entry) => entry.target === second)?.disconnect).toHaveBeenCalledOnce();
+    const calls = api.setVideoBounds.mock.calls.length;
+    fire(second);
+    await act(async () => new Promise(requestAnimationFrame));
+    expect(api.setVideoBounds).toHaveBeenCalledTimes(calls);
   });
 
   it("stops and reports fatal placement failures, but preserves playback after control failures", async () => {

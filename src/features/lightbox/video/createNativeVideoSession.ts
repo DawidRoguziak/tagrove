@@ -21,6 +21,12 @@ export interface SessionOptions {
   assetId: number;
   generation: number;
   container: HTMLElement | null;
+  /**
+   * Element whose box decides where the player sits, such as the media stage. The player is
+   * centered in it, so its size can change (a sidebar column appears or goes away) while the
+   * player keeps its own size and only moves; a resize of this element republishes bounds.
+   */
+  layoutRoot?: HTMLElement | null;
   controlLabels: NativeVideoControlLabels;
   onLoadedMetadata: (dimensions: { width: number; height: number }) => void;
   onFullscreenChange: (fullscreen: boolean) => void;
@@ -40,6 +46,7 @@ export function createNativeVideoSession(options: SessionOptions) {
   const [fullscreen, setFullscreen] = createSignal(false);
   const [snapshot, setSnapshot] = createSignal<PlaybackSnapshot | null>(null);
   const [controlError, setControlError] = createSignal<string | null>(null);
+  let requestBounds: (() => void) | null = null;
 
   const identity = createMemo<readonly [number, number, HTMLElement | null]>((previous) => {
     const next = [options.assetId, options.generation, options.container] as const;
@@ -169,8 +176,10 @@ export function createNativeVideoSession(options: SessionOptions) {
     const observer = new ResizeObserver(scheduleBounds);
     observer.observe(container);
     window.addEventListener("resize", scheduleBounds);
+    requestBounds = scheduleBounds;
     return () => {
       cancelled = true;
+      if (requestBounds === scheduleBounds) requestBounds = null;
       if (frame !== null) cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("resize", scheduleBounds);
@@ -179,6 +188,17 @@ export function createNativeVideoSession(options: SessionOptions) {
       if (current) void closeVideo(current.id).catch(reportCleanupError);
     };
   });
+
+  // ResizeObserver on the container misses position-only moves of a fixed-size player.
+  createEffect(
+    () => options.layoutRoot ?? null,
+    (root) => {
+      if (!root) return;
+      const observer = new ResizeObserver(() => requestBounds?.());
+      observer.observe(root);
+      return () => observer.disconnect();
+    }
+  );
 
   createEffect(
     () => ({ id: sessionId(), labels: options.controlLabels }),

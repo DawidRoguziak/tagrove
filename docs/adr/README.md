@@ -52,3 +52,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0012](0012-non-blocking-native-video-render.md) | Native video rendering never waits on the GTK main thread | Accepted | 2026-11-10 |
 | [0013](0013-committed-delete-cleanup-never-blocks-startup.md) | Committed-delete cleanup never blocks startup and keeps its journal row until the file is verifiably gone | Accepted | 2026-11-10 |
 | [0014](0014-single-asset-file-mutations-guarded-by-row-cas.md) | Single-asset file mutations are guarded by the row compare-and-set, not by the library revision | Accepted | 2026-11-10 |
+| [0015](0015-restore-tolerates-unresolved-thumbnails-and-nullable-file-name.md) | Restore drops unresolved thumbnail references and accepts the nullable `file_name` column of an earlier migration | Accepted | 2026-11-10 |

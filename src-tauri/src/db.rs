@@ -917,6 +917,120 @@ mod tests {
         assert!(columns.iter().any(|name| name == "file_name"));
     }
 
+    /// The assets table of a library written before `file_name` existed.
+    const LEGACY_ASSETS_WITHOUT_FILE_NAME: &str = "
+        CREATE TABLE assets (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          path TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL,
+          size_bytes INTEGER NOT NULL,
+          modified_at INTEGER NOT NULL,
+          width INTEGER,
+          height INTEGER,
+          duration_ms INTEGER,
+          thumb_path TEXT,
+          indexed_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+        INSERT INTO assets(path, kind, size_bytes, modified_at)
+        VALUES ('/library/album/photo.jpg', 'image', 10, 20);
+    ";
+
+    fn file_name_column(conn: &Connection) -> (bool, Option<String>) {
+        conn.query_row(
+            "SELECT \"notnull\", dflt_value FROM pragma_table_info('assets') WHERE name = 'file_name'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("file_name column")
+    }
+
+    #[test]
+    fn legacy_file_name_migration_declares_the_fresh_column_and_validates_as_a_backup() {
+        let conn = Connection::open_in_memory().expect("db");
+        conn.execute_batch(LEGACY_ASSETS_WITHOUT_FILE_NAME)
+            .expect("legacy assets schema");
+
+        for _ in 0..2 {
+            init_schema(&conn).expect("schema");
+
+            assert_eq!(file_name_column(&conn), (true, Some("''".to_string())));
+            assert_eq!(
+                conn.query_row("SELECT file_name, file_name_key FROM assets", [], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .expect("migrated names"),
+                ("photo.jpg".to_string(), "photo.jpg".to_string())
+            );
+            assert_eq!(
+                validate_backup_database(&conn, false).expect("migrated library is a backup"),
+                super::BackupSchemaCompatibility::Current
+            );
+        }
+    }
+
+    #[test]
+    fn backup_validation_accepts_the_nullable_file_name_column_of_an_earlier_migration() {
+        let conn = Connection::open_in_memory().expect("db");
+        conn.execute_batch(LEGACY_ASSETS_WITHOUT_FILE_NAME)
+            .expect("legacy assets schema");
+        // What builds before the NOT NULL declaration ran on this shape.
+        conn.execute_batch("ALTER TABLE assets ADD COLUMN file_name TEXT;")
+            .expect("earlier migration");
+        init_schema(&conn).expect("schema");
+
+        assert_eq!(file_name_column(&conn), (false, None));
+        assert_eq!(
+            validate_backup_database(&conn, false).expect("earlier migration is a backup"),
+            super::BackupSchemaCompatibility::Current
+        );
+
+        // The value check is what the relaxed declaration relies on.
+        conn.execute("UPDATE assets SET file_name = NULL", [])
+            .expect("null file name");
+        let error = validate_backup_database(&conn, false).expect_err("null file name");
+        assert!(
+            error
+                .to_string()
+                .contains("invalid current-schema asset values"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn backup_validation_rejects_file_name_as_part_of_the_primary_key() {
+        let conn = Connection::open_in_memory().expect("db");
+        conn.execute_batch(
+            "
+            CREATE TABLE assets (
+              id INTEGER UNIQUE,
+              path TEXT NOT NULL UNIQUE,
+              file_name TEXT NOT NULL DEFAULT '',
+              kind TEXT NOT NULL,
+              size_bytes INTEGER NOT NULL,
+              modified_at INTEGER NOT NULL,
+              width INTEGER,
+              height INTEGER,
+              duration_ms INTEGER,
+              thumb_path TEXT,
+              indexed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+              PRIMARY KEY(id, file_name)
+            );
+            ",
+        )
+        .expect("foreign assets schema");
+        init_schema(&conn).expect("schema");
+
+        let error = super::schema::validate_backup_constraints(
+            &conn,
+            super::BackupSchemaCompatibility::Current,
+        )
+        .expect_err("file_name in the key");
+        assert_eq!(
+            error.to_string(),
+            "backup column assets.file_name has incompatible constraints"
+        );
+    }
+
     #[test]
     fn version_three_migration_splits_legacy_control_character_tags() {
         let conn = Connection::open_in_memory().expect("db");

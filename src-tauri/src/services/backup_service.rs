@@ -942,18 +942,27 @@ fn resolve_imported_thumbnail(
     conn: &rusqlite::Connection,
 ) -> AppResult<Option<String>> {
     use rusqlite::OptionalExtension;
+    // A thumbnail is a derived cache entry. A reference that cannot be matched
+    // to an extracted file is dropped (the asset gets a new thumbnail on
+    // demand) and never rejects the bundle: export archives the files it finds
+    // and does not check the rows against them.
     let candidate: String = if let Some(manifest) =
         manifest.filter(|value| value.format_version >= 2)
     {
-        let relative = stored_relative_path(old_thumb, &manifest.source_thumbs_dir)
-            .ok_or("Format-v2 thumbnail path is outside the declared source thumbnail directory")?;
-        conn.query_row(
-            "SELECT path FROM imported_thumbnails WHERE relative = ?1",
-            [relative],
-            |row| row.get(0),
-        )
-        .optional()?
-        .ok_or("Format-v2 thumbnail reference has no matching archive entry")?
+        let Some(relative) = stored_relative_path(old_thumb, &manifest.source_thumbs_dir) else {
+            return Ok(None);
+        };
+        let Some(path) = conn
+            .query_row(
+                "SELECT path FROM imported_thumbnails WHERE relative = ?1",
+                [relative],
+                |row| row.get(0),
+            )
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        path
     } else {
         let Some(name) = old_thumb.rsplit(['\\', '/']).next() else {
             return Ok(None);
@@ -1331,7 +1340,9 @@ mod tests {
         app::state::AppState, db, models::NewAsset, services::thumb_scheduler::ThumbnailScheduler,
     };
 
-    use super::{export_db_bundle, import_db_bundle, mapped_path, sanitize_zip_entry_path};
+    use super::{
+        export_db_bundle, import_db_bundle, inspect_db_bundle, mapped_path, sanitize_zip_entry_path,
+    };
 
     fn create_test_state(db_path: &Path, thumbs_dir: &Path) -> AppState {
         AppState {
@@ -1791,6 +1802,343 @@ mod tests {
             assert_eq!(total, 1);
             assert_ne!(session_id, old_session);
         }
+    }
+
+    /// A markerless library from before `assets.file_name` existed: the legacy
+    /// core tables only, with one tagged asset below `root`.
+    fn create_legacy_library_without_file_name(db_path: &Path, root: &Path, thumb_path: &str) {
+        let conn = rusqlite::Connection::open(db_path).expect("open legacy db");
+        conn.execute_batch(
+            "
+            CREATE TABLE assets (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              path TEXT NOT NULL UNIQUE,
+              kind TEXT NOT NULL,
+              size_bytes INTEGER NOT NULL,
+              modified_at INTEGER NOT NULL,
+              width INTEGER,
+              height INTEGER,
+              duration_ms INTEGER,
+              thumb_path TEXT,
+              indexed_at INTEGER NOT NULL DEFAULT (unixepoch())
+            );
+            CREATE TABLE tags (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL UNIQUE COLLATE NOCASE
+            );
+            CREATE TABLE asset_tags (
+              asset_id INTEGER NOT NULL,
+              tag_id INTEGER NOT NULL,
+              PRIMARY KEY(asset_id, tag_id),
+              FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+              FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            );
+            CREATE TABLE scan_roots (path TEXT PRIMARY KEY);
+            CREATE TABLE thumbnail_failures (
+              asset_id INTEGER PRIMARY KEY,
+              failure_count INTEGER NOT NULL,
+              last_error TEXT,
+              last_failed_at INTEGER NOT NULL,
+              asset_modified_at INTEGER NOT NULL
+            );
+            CREATE TABLE library_metadata (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+            INSERT INTO library_metadata VALUES ('revision', 1), ('performance_schema_version', 0);
+            INSERT INTO tags(name) VALUES ('travel');
+            ",
+        )
+        .expect("legacy schema");
+        conn.execute(
+            "INSERT INTO scan_roots(path) VALUES (?1)",
+            [root.to_string_lossy()],
+        )
+        .expect("legacy root");
+        conn.execute(
+            "INSERT INTO assets(path, kind, size_bytes, modified_at, thumb_path)
+             VALUES (?1, 'image', 10, 20, ?2)",
+            rusqlite::params![root.join("album/Photo.JPG").to_string_lossy(), thumb_path],
+        )
+        .expect("legacy asset");
+        conn.execute("INSERT INTO asset_tags VALUES (1, 1)", [])
+            .expect("legacy tag mapping");
+    }
+
+    fn empty_profile(dir: &Path) -> (PathBuf, PathBuf) {
+        let db_path = dir.join("media.db");
+        let thumbs_dir = dir.join("thumbs");
+        fs::create_dir_all(&thumbs_dir).expect("create thumbs dir");
+        let conn = db::open_connection(&db_path).expect("open profile db");
+        db::init_schema(&conn).expect("init profile schema");
+        (db_path, thumbs_dir)
+    }
+
+    fn restored_asset(
+        conn: &rusqlite::Connection,
+    ) -> (String, String, Option<String>, Vec<String>) {
+        let (file_name, file_name_key, thumb_path) = conn
+            .query_row(
+                "SELECT file_name, file_name_key, thumb_path FROM assets WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("restored asset");
+        (
+            file_name,
+            file_name_key,
+            thumb_path,
+            db::list_asset_tags(conn, 1).expect("restored tags"),
+        )
+    }
+
+    #[test]
+    fn restores_a_legacy_bundle_without_file_name_and_its_later_backup() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&root).expect("create root");
+        let legacy_db = tmp.path().join("legacy.db");
+        create_legacy_library_without_file_name(&legacy_db, &root, "/old-profile/thumbs/photo.jpg");
+
+        let legacy_archive = tmp.path().join("legacy.zip");
+        {
+            let mut zip = zip::ZipWriter::new(
+                fs::File::create(&legacy_archive).expect("create legacy archive"),
+            );
+            zip.start_file("media.db", zip::write::SimpleFileOptions::default())
+                .expect("start media db");
+            zip.write_all(&fs::read(&legacy_db).expect("read legacy db"))
+                .expect("write media db");
+            zip.start_file("thumbs/photo.jpg", zip::write::SimpleFileOptions::default())
+                .expect("start thumb");
+            zip.write_all(b"thumb").expect("write thumb");
+            zip.finish().expect("finish legacy archive");
+        }
+
+        let (db_path, thumbs_dir) = empty_profile(&tmp.path().join("profile"));
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let inspection = inspect_db_bundle(legacy_archive.to_string_lossy().into_owned(), &state)
+            .expect("inspect legacy bundle");
+        assert_eq!(inspection.format_version, None);
+        assert_eq!(inspection.roots, vec![root.to_string_lossy().into_owned()]);
+
+        let summary = import_db_bundle(
+            legacy_archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .expect("import legacy bundle");
+        assert_eq!(summary.restored_thumbnails, 1);
+
+        let expected = (
+            "Photo.JPG".to_string(),
+            "photo.jpg".to_string(),
+            Some(thumbs_dir.join("photo.jpg").to_string_lossy().into_owned()),
+            vec!["travel".to_string()],
+        );
+        {
+            let conn = db::open_connection(&db_path).expect("open restored db");
+            assert_eq!(restored_asset(&conn), expected);
+            assert!(
+                conn.query_row(
+                    "SELECT \"notnull\" FROM pragma_table_info('assets') WHERE name = 'file_name'",
+                    [],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("file_name column"),
+                "the migrated column must match the created schema"
+            );
+            assert_eq!(
+                db::validate_backup_database(&conn, false).expect("restored library validates"),
+                db::BackupSchemaCompatibility::Current
+            );
+        }
+
+        // The library migrated from the legacy shape must restore its own backup.
+        let later_archive = tmp.path().join("later.zip");
+        export_db_bundle(
+            later_archive.to_string_lossy().into_owned(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .expect("export migrated library");
+        let inspection = inspect_db_bundle(later_archive.to_string_lossy().into_owned(), &state)
+            .expect("inspect later bundle");
+        assert_eq!(
+            inspection.format_version,
+            Some(super::BUNDLE_FORMAT_VERSION)
+        );
+        import_db_bundle(
+            later_archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .expect("import later bundle");
+        let conn = db::open_connection(&db_path).expect("open restored db");
+        assert_eq!(restored_asset(&conn), expected);
+        assert_eq!(
+            fs::read(thumbs_dir.join("photo.jpg")).expect("restored thumb"),
+            b"thumb"
+        );
+    }
+
+    #[test]
+    fn restores_a_backup_of_a_library_whose_file_name_column_an_earlier_build_added() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&root).expect("create root");
+        let profile = tmp.path().join("profile");
+        let db_path = profile.join("media.db");
+        let thumbs_dir = profile.join("thumbs");
+        fs::create_dir_all(&thumbs_dir).expect("create thumbs dir");
+        create_legacy_library_without_file_name(&db_path, &root, "/old-profile/thumbs/photo.jpg");
+        {
+            // Startup of a build that still added the column as nullable TEXT.
+            let conn = db::open_connection(&db_path).expect("open live db");
+            conn.execute_batch("ALTER TABLE assets ADD COLUMN file_name TEXT;")
+                .expect("earlier migration");
+            db::init_schema(&conn).expect("init schema");
+            assert!(
+                !conn
+                    .query_row(
+                        "SELECT \"notnull\" FROM pragma_table_info('assets') WHERE name = 'file_name'",
+                        [],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .expect("file_name column"),
+                "the fixture must keep the nullable column"
+            );
+        }
+
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let archive = tmp.path().join("backup.zip");
+        export_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .expect("export migrated library");
+        inspect_db_bundle(archive.to_string_lossy().into_owned(), &state)
+            .expect("inspect its own backup");
+
+        {
+            // The restore must bring this state back.
+            let conn = db::open_connection(&db_path).expect("open live db");
+            db::set_asset_tags(&conn, 1, &["changed".to_string()]).expect("change tags");
+        }
+        import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .expect("import its own backup");
+
+        let conn = db::open_connection(&db_path).expect("open restored db");
+        assert_eq!(
+            restored_asset(&conn),
+            (
+                "Photo.JPG".to_string(),
+                "photo.jpg".to_string(),
+                // The exported thumbnail directory was empty.
+                None,
+                vec!["travel".to_string()],
+            )
+        );
+    }
+
+    #[test]
+    fn format_two_import_drops_unresolved_thumbnail_references_instead_of_rejecting() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&root).expect("create root");
+        let (source_db, source_thumbs) = empty_profile(&tmp.path().join("source-profile"));
+        fs::create_dir_all(source_thumbs.join("kept")).expect("create kept dir");
+        fs::write(source_thumbs.join("kept/a.jpg"), b"kept").expect("write kept thumb");
+        let references = [
+            // Archived: the only reference that can be resolved.
+            source_thumbs.join("kept/a.jpg"),
+            // Inside the thumbnail directory, but the file is gone.
+            source_thumbs.join("gone/b.jpg"),
+            // Left over from a profile that lived somewhere else.
+            tmp.path().join("moved-profile/thumbs/kept/a.jpg"),
+            // Lexically below the directory, but not a path inside it.
+            source_thumbs.join("../kept/a.jpg"),
+        ];
+        {
+            let conn = db::open_connection(&source_db).expect("open source db");
+            db::add_scan_root(&conn, &root.to_string_lossy()).expect("add root");
+            for (index, reference) in references.iter().enumerate() {
+                let asset = new_asset(&root.join(format!("asset-{index}.jpg")), 10);
+                db::upsert_scanned_asset(&conn, &asset, 10, &root.to_string_lossy(), 1)
+                    .expect("insert asset");
+                conn.execute(
+                    "UPDATE assets SET thumb_path = ?1 WHERE path = ?2",
+                    rusqlite::params![reference.to_string_lossy(), asset.path],
+                )
+                .expect("store thumbnail reference");
+            }
+            db::record_thumbnail_failure(&conn, 2, 10, Some("missing")).expect("failure marker");
+        }
+        let source_state = create_test_state(&source_db, &source_thumbs);
+        let archive = tmp.path().join("backup.zip");
+        let exported = export_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            &source_state,
+            &source_state.database.maintenance().expect("maintenance"),
+        )
+        .expect("export bundle");
+        assert_eq!(exported.copied_thumbnails, 1);
+
+        let (target_db, target_thumbs) = empty_profile(&tmp.path().join("target-profile"));
+        let state = create_test_state(&target_db, &target_thumbs);
+        let inspection = inspect_db_bundle(archive.to_string_lossy().into_owned(), &state)
+            .expect("inspect bundle");
+        assert_eq!(
+            inspection.format_version,
+            Some(super::BUNDLE_FORMAT_VERSION)
+        );
+        let summary = import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .expect("import bundle with unresolved thumbnail references");
+        assert_eq!(summary.restored_thumbnails, 1);
+
+        let conn = db::open_connection(&target_db).expect("open restored db");
+        let restored = conn
+            .prepare("SELECT thumb_path FROM assets ORDER BY id")
+            .expect("prepare")
+            .query_map([], |row| row.get::<_, Option<String>>(0))
+            .expect("query")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("thumbnail references");
+        assert_eq!(
+            restored,
+            vec![
+                Some(
+                    target_thumbs
+                        .join("kept/a.jpg")
+                        .to_string_lossy()
+                        .into_owned()
+                ),
+                None,
+                None,
+                None,
+            ]
+        );
+        assert_eq!(
+            fs::read(target_thumbs.join("kept/a.jpg")).expect("restored thumb"),
+            b"kept"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM thumbnail_failures", [], |row| row
+                .get::<_, i64>(0))
+                .expect("failure markers"),
+            0
+        );
+        assert!(!tmp.path().join("target-profile/restore-staging").exists());
     }
 
     #[test]

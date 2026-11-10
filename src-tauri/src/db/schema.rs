@@ -399,8 +399,17 @@ pub(super) fn validate_backup_constraints(
         );
     }
     if compatibility != BackupSchemaCompatibility::Legacy {
+        // `file_name` is `NOT NULL` in a created schema, but earlier builds
+        // added it to a legacy table as a nullable column and SQLite cannot
+        // change that declaration afterwards. Both shapes are accepted;
+        // `validate_backup_data` rejects a NULL or blank value either way
+        // (ADR 0015).
+        let (_, file_name_key_position) = column_constraints(conn, "assets", "file_name")?;
+        anyhow::ensure!(
+            file_name_key_position == 0,
+            "backup column assets.file_name has incompatible constraints"
+        );
         for (table, column, not_null, primary_key_position) in [
-            ("assets", "file_name", true, 0),
             ("assets", "is_favorite", true, 0),
             ("assets", "fingerprint_mtime_ns", true, 0),
             ("assets", "tag_count", true, 0),
@@ -452,6 +461,21 @@ pub(super) fn validate_column_constraints(
     expected_not_null: bool,
     expected_primary_key_position: i64,
 ) -> anyhow::Result<()> {
+    let (not_null, primary_key_position) = column_constraints(conn, table, expected_column)?;
+    anyhow::ensure!(
+        not_null == expected_not_null && primary_key_position == expected_primary_key_position,
+        "backup column {table}.{expected_column} has incompatible constraints"
+    );
+    Ok(())
+}
+
+/// The declared `NOT NULL` flag and primary-key position (0 when the column is
+/// not part of the key) of one column.
+fn column_constraints(
+    conn: &Connection,
+    table: &str,
+    expected_column: &str,
+) -> anyhow::Result<(bool, i64)> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let rows = stmt.query_map([], |row| {
         Ok((
@@ -463,12 +487,7 @@ pub(super) fn validate_column_constraints(
     for row in rows {
         let (column, not_null, primary_key_position) = row?;
         if column.eq_ignore_ascii_case(expected_column) {
-            anyhow::ensure!(
-                not_null == expected_not_null
-                    && primary_key_position == expected_primary_key_position,
-                "backup column {table}.{expected_column} has incompatible constraints"
-            );
-            return Ok(());
+            return Ok((not_null, primary_key_position));
         }
     }
     anyhow::bail!("backup table {table} is missing required column {expected_column}")
@@ -916,7 +935,12 @@ pub(super) fn ensure_assets_file_name_column(conn: &Connection) -> anyhow::Resul
     }
 
     if !has_column {
-        conn.execute("ALTER TABLE assets ADD COLUMN file_name TEXT", [])?;
+        // Same declaration as the fresh schema. Earlier builds added a plain
+        // nullable `TEXT` here; backup validation still accepts that shape.
+        conn.execute(
+            "ALTER TABLE assets ADD COLUMN file_name TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
     }
 
     let tx = conn.unchecked_transaction()?;

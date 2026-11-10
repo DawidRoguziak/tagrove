@@ -43,15 +43,12 @@ pub fn delete_asset(
 ) -> anyhow::Result<DeleteAssetSummary> {
     let asset = db::get_file_mutation_asset(conn, asset_id)?
         .ok_or_else(|| anyhow::anyhow!("Asset with id {asset_id} not found"))?;
-    let input = DuplicateResolutionBatchInput {
-        scan_revision: db::current_library_revision(conn)?,
-        changes: vec![DuplicateResolutionChangeInput::Delete {
-            asset_id,
-            expected_path: asset.path,
-            expected_record_version: asset.record_version,
-        }],
-    };
-    let summary = apply_file_mutation_batch(conn, thumbs_root, input, false)?;
+    let changes = [DuplicateResolutionChangeInput::Delete {
+        asset_id,
+        expected_path: asset.path,
+        expected_record_version: asset.record_version,
+    }];
+    let summary = apply_file_mutation_batch(conn, thumbs_root, &changes, None)?;
     let result = summary
         .results
         .into_iter()
@@ -92,16 +89,13 @@ pub fn rename_asset(
     let asset = db::get_file_mutation_asset(conn, asset_id)?
         .ok_or_else(|| anyhow::anyhow!("Asset with id {asset_id} not found"))?;
     let old_path = asset.path.clone();
-    let input = DuplicateResolutionBatchInput {
-        scan_revision: db::current_library_revision(conn)?,
-        changes: vec![DuplicateResolutionChangeInput::Rename {
-            asset_id,
-            expected_path: asset.path,
-            expected_record_version: asset.record_version,
-            new_file_name,
-        }],
-    };
-    let summary = apply_file_mutation_batch(conn, thumbs_root, input, false)?;
+    let changes = [DuplicateResolutionChangeInput::Rename {
+        asset_id,
+        expected_path: asset.path,
+        expected_record_version: asset.record_version,
+        new_file_name,
+    }];
+    let summary = apply_file_mutation_batch(conn, thumbs_root, &changes, None)?;
     let result = summary
         .results
         .into_iter()
@@ -140,16 +134,23 @@ pub fn apply_duplicate_resolution_batch(
     thumbs_root: &Path,
     input: DuplicateResolutionBatchInput,
 ) -> anyhow::Result<crate::models::DuplicateResolutionBatchSummary> {
-    apply_file_mutation_batch(conn, thumbs_root, input, true)
+    apply_file_mutation_batch(conn, thumbs_root, &input.changes, Some(input.scan_revision))
 }
 
+/// Applies a journaled batch of source-file mutations.
+///
+/// `duplicate_snapshot_revision` is `Some` only for a duplicate-resolution batch: the batch was
+/// built from a snapshot at that library revision, which must still be current, and it must not
+/// leave a duplicate file name behind. Single-asset deletes and renames pass `None`; their guard
+/// is the per-asset path/record-version compare-and-set, so an unrelated metadata write on
+/// another asset cannot fail them (ADR 0014).
 fn apply_file_mutation_batch(
     conn: &rusqlite::Connection,
     thumbs_root: &Path,
-    input: DuplicateResolutionBatchInput,
-    enforce_duplicate_resolution: bool,
+    changes: &[DuplicateResolutionChangeInput],
+    duplicate_snapshot_revision: Option<i64>,
 ) -> anyhow::Result<crate::models::DuplicateResolutionBatchSummary> {
-    let mut prepared = validate_and_prepare(conn, &input, enforce_duplicate_resolution)?;
+    let mut prepared = validate_and_prepare(conn, changes, duplicate_snapshot_revision)?;
     let operation_id: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(20)
@@ -328,22 +329,22 @@ fn apply_file_mutation_batch(
 
 fn validate_and_prepare(
     conn: &rusqlite::Connection,
-    input: &DuplicateResolutionBatchInput,
-    enforce_duplicate_resolution: bool,
+    changes: &[DuplicateResolutionChangeInput],
+    duplicate_snapshot_revision: Option<i64>,
 ) -> anyhow::Result<Vec<PreparedMutation>> {
-    if input.changes.is_empty() {
+    if changes.is_empty() {
         anyhow::bail!("duplicate resolution batch cannot be empty");
     }
-    let revision = db::current_library_revision(conn)?;
-    if revision != input.scan_revision {
-        anyhow::bail!("duplicate snapshot is stale; rescan before applying changes");
+    if let Some(scan_revision) = duplicate_snapshot_revision {
+        if db::current_library_revision(conn)? != scan_revision {
+            anyhow::bail!("duplicate snapshot is stale; rescan before applying changes");
+        }
     }
 
     let mut ids = HashSet::new();
-    let mut prepared = Vec::with_capacity(input.changes.len());
+    let mut prepared = Vec::with_capacity(changes.len());
     let mut target_paths = HashSet::new();
-    let source_paths = input
-        .changes
+    let source_paths = changes
         .iter()
         .map(|change| match change {
             DuplicateResolutionChangeInput::Rename { expected_path, .. }
@@ -352,8 +353,7 @@ fn validate_and_prepare(
             }
         })
         .collect::<HashSet<_>>();
-    let changed_ids = input
-        .changes
+    let changed_ids = changes
         .iter()
         .map(|change| match change {
             DuplicateResolutionChangeInput::Rename { asset_id, .. }
@@ -361,7 +361,7 @@ fn validate_and_prepare(
         })
         .collect::<HashSet<_>>();
 
-    for change in &input.changes {
+    for change in changes {
         let (asset_id, expected_path, expected_record_version) = match change {
             DuplicateResolutionChangeInput::Rename {
                 asset_id,
@@ -458,17 +458,16 @@ fn validate_and_prepare(
         });
     }
 
-    validate_final_duplicate_names(conn, input, enforce_duplicate_resolution)?;
+    validate_final_duplicate_names(conn, changes, duplicate_snapshot_revision.is_some())?;
     Ok(prepared)
 }
 
 fn validate_final_duplicate_names(
     conn: &rusqlite::Connection,
-    input: &DuplicateResolutionBatchInput,
+    input_changes: &[DuplicateResolutionChangeInput],
     enforce_duplicate_resolution: bool,
 ) -> anyhow::Result<()> {
-    let changes = input
-        .changes
+    let changes = input_changes
         .iter()
         .map(|change| match change {
             DuplicateResolutionChangeInput::Rename {
@@ -485,7 +484,7 @@ fn validate_final_duplicate_names(
         .collect::<HashSet<_>>();
     let mut touched_keys = renamed_keys.clone();
     if enforce_duplicate_resolution {
-        for change in &input.changes {
+        for change in input_changes {
             let path = match change {
                 DuplicateResolutionChangeInput::Rename { expected_path, .. }
                 | DuplicateResolutionChangeInput::Delete { expected_path, .. } => expected_path,
@@ -630,17 +629,17 @@ fn clear_restored_journal(
     failures: &mut HashSet<i64>,
 ) {
     for item in prepared {
+        // A missing-source delete was never journaled or moved, so it has nothing to restore
+        // and no recovery path: its row is untouched stale-record cleanup that did not run.
+        let Some(staging_path) = item.staging_path.as_ref() else {
+            continue;
+        };
         if failures.contains(&item.asset.id) {
             continue;
         }
         let original_restored = fs::symlink_metadata(&item.asset.path)
             .is_ok_and(|metadata| metadata.file_type().is_file());
-        let staging_absent = match item.staging_path.as_ref() {
-            None => true,
-            Some(path) => {
-                matches!(fs::symlink_metadata(path), Err(ref error) if error.kind() == io::ErrorKind::NotFound)
-            }
-        };
+        let staging_absent = matches!(fs::symlink_metadata(staging_path), Err(ref error) if error.kind() == io::ErrorKind::NotFound);
         let final_absent = match &item.action {
             PreparedAction::Rename { new_path, .. } => {
                 matches!(fs::symlink_metadata(new_path), Err(ref error) if error.kind() == io::ErrorKind::NotFound)
@@ -939,16 +938,29 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use super::{delete_asset, recover_pending_file_operations, validate_recovery_staging_path};
+    use std::sync::atomic::Ordering;
+
+    use super::{
+        apply_duplicate_resolution_batch, delete_asset, recover_pending_file_operations,
+        rename_asset, validate_recovery_staging_path,
+    };
     use crate::{
-        db::{self, PendingFileOperation},
-        models::{DeleteSourceStatus, NewAsset},
+        db::{
+            self, test_support::commit_revision_bump_before_every_statement, PendingFileOperation,
+        },
+        models::{
+            DeleteSourceStatus, DuplicateResolutionBatchInput, DuplicateResolutionBatchStatus,
+            DuplicateResolutionChangeInput, DuplicateResolutionItemStatus, NewAsset,
+            RenameAssetStatus,
+        },
     };
 
-    /// A disposable library: a scan root below a temp dir and an in-memory database.
+    /// A disposable library: a scan root and a WAL database file below a temp dir. The file lets
+    /// a test open a second connection as a concurrent writer.
     struct JournalFixture {
         _tmp: tempfile::TempDir,
         root: std::path::PathBuf,
+        db_path: std::path::PathBuf,
         conn: rusqlite::Connection,
     }
 
@@ -956,14 +968,26 @@ mod tests {
         let tmp = tempdir().expect("tempdir");
         let root = tmp.path().join("library");
         fs::create_dir_all(&root).expect("create root");
-        let conn = rusqlite::Connection::open_in_memory().expect("open db");
+        let db_path = tmp.path().join("media.db");
+        let conn = db::open_connection(&db_path).expect("open db");
         db::init_schema(&conn).expect("init schema");
         db::add_scan_root(&conn, &root.to_string_lossy()).expect("add scan root");
         JournalFixture {
             _tmp: tmp,
             root,
+            db_path,
             conn,
         }
+    }
+
+    fn remove_concurrent_writer(conn: &rusqlite::Connection) {
+        conn.authorizer(
+            None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
+        );
+    }
+
+    fn thumbs_dir(fixture: &JournalFixture) -> std::path::PathBuf {
+        fixture.root.parent().expect("temp dir").join("thumbs")
     }
 
     fn index_asset(fixture: &JournalFixture, path: &std::path::Path) -> i64 {
@@ -1498,5 +1522,146 @@ mod tests {
             assert!(db::list_pending_file_operations(&conn).unwrap().is_empty());
             super::recover_pending_file_operations(&conn).unwrap();
         }
+    }
+
+    #[test]
+    fn single_asset_mutations_ignore_metadata_writes_committed_between_their_statements() {
+        for rename in [false, true] {
+            let fixture = journal_fixture();
+            let source = fixture.root.join("photo.jpg");
+            fs::write(&source, b"source").expect("write source");
+            let asset_id = index_asset(&fixture, &source);
+            let thumbs = thumbs_dir(&fixture);
+
+            // A tag or favorite save on another asset takes neither the scan nor the thumbnail
+            // lock, so its revision bump can land between any two statements of the mutation.
+            let bumps =
+                commit_revision_bump_before_every_statement(&fixture.conn, &fixture.db_path);
+            if rename {
+                let summary = rename_asset(&fixture.conn, &thumbs, asset_id, "renamed.jpg".into())
+                    .expect("a concurrent metadata write must not fail a rename");
+                assert!(matches!(summary.status, RenameAssetStatus::Renamed));
+            } else {
+                let summary = delete_asset(&fixture.conn, &thumbs, asset_id)
+                    .expect("a concurrent metadata write must not fail a delete");
+                assert!(matches!(summary.source_status, DeleteSourceStatus::Deleted));
+            }
+            remove_concurrent_writer(&fixture.conn);
+
+            assert!(
+                bumps.committed.load(Ordering::SeqCst) > 1,
+                "rename={rename}"
+            );
+            assert!(!source.exists(), "rename={rename}");
+            assert_eq!(fixture.root.join("renamed.jpg").exists(), rename);
+            assert_eq!(
+                asset_path(&fixture.conn, asset_id),
+                rename.then(|| fixture
+                    .root
+                    .join("renamed.jpg")
+                    .to_string_lossy()
+                    .into_owned())
+            );
+            assert_eq!(journal_len(&fixture.conn), 0, "rename={rename}");
+        }
+    }
+
+    #[test]
+    fn duplicate_batch_still_rejects_a_stale_snapshot_before_touching_files() {
+        let fixture = journal_fixture();
+        let first = fixture.root.join("a/dup.jpg");
+        let second = fixture.root.join("b/DUP.jpg");
+        for path in [&first, &second] {
+            fs::create_dir_all(path.parent().expect("parent")).expect("create folder");
+            fs::write(path, b"source").expect("write source");
+        }
+        let first_id = index_asset(&fixture, &first);
+        index_asset(&fixture, &second);
+        let snapshot = db::current_library_revision(&fixture.conn).expect("revision");
+        db::bump_library_revision(&fixture.conn).expect("concurrent write");
+
+        let error = apply_duplicate_resolution_batch(
+            &fixture.conn,
+            &thumbs_dir(&fixture),
+            DuplicateResolutionBatchInput {
+                scan_revision: snapshot,
+                changes: vec![DuplicateResolutionChangeInput::Delete {
+                    asset_id: first_id,
+                    expected_path: first.to_string_lossy().into_owned(),
+                    expected_record_version: 1,
+                }],
+            },
+        )
+        .expect_err("a stale duplicate snapshot must be rejected");
+
+        assert!(error.to_string().contains("duplicate snapshot is stale"));
+        assert_eq!(fs::read(&first).expect("untouched source"), b"source");
+        assert!(asset_path(&fixture.conn, first_id).is_some());
+        assert_eq!(journal_len(&fixture.conn), 0);
+    }
+
+    #[test]
+    fn rolled_back_batch_reports_a_missing_source_delete_as_rolled_back_without_recovery_path() {
+        let fixture = journal_fixture();
+        let missing = fixture.root.join("a/dup.jpg");
+        let kept = fixture.root.join("b/dup.jpg");
+        for path in [&missing, &kept] {
+            fs::create_dir_all(path.parent().expect("parent")).expect("create folder");
+            fs::write(path, b"source").expect("write source");
+        }
+        let missing_id = index_asset(&fixture, &missing);
+        let kept_id = index_asset(&fixture, &kept);
+        fs::remove_file(&missing).expect("source disappears without a rescan");
+        let revision = db::current_library_revision(&fixture.conn).expect("revision");
+
+        // Sync 1 follows staging the rename source, so the batch fails before its commit.
+        super::SYNC_FAILURE_AFTER.with(|remaining| remaining.set(1));
+        let summary = apply_duplicate_resolution_batch(
+            &fixture.conn,
+            &thumbs_dir(&fixture),
+            DuplicateResolutionBatchInput {
+                scan_revision: revision,
+                changes: vec![
+                    DuplicateResolutionChangeInput::Delete {
+                        asset_id: missing_id,
+                        expected_path: missing.to_string_lossy().into_owned(),
+                        expected_record_version: 1,
+                    },
+                    DuplicateResolutionChangeInput::Rename {
+                        asset_id: kept_id,
+                        expected_path: kept.to_string_lossy().into_owned(),
+                        expected_record_version: 1,
+                        new_file_name: "unique.jpg".into(),
+                    },
+                ],
+            },
+        )
+        .expect("a pre-commit failure returns a summary");
+
+        assert!(matches!(
+            summary.status,
+            DuplicateResolutionBatchStatus::RolledBack
+        ));
+        for item in &summary.results {
+            assert!(
+                matches!(item.status, DuplicateResolutionItemStatus::RolledBack),
+                "asset {}",
+                item.asset_id
+            );
+            assert_eq!(item.recovery_path, None, "asset {}", item.asset_id);
+        }
+        assert_eq!(summary.revision, revision);
+        assert_eq!(fs::read(&kept).expect("restored source"), b"source");
+        assert!(!fixture.root.join("b/unique.jpg").exists());
+        assert!(!missing.exists());
+        assert_eq!(
+            asset_path(&fixture.conn, missing_id).as_deref(),
+            Some(missing.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            asset_path(&fixture.conn, kept_id).as_deref(),
+            Some(kept.to_string_lossy().as_ref())
+        );
+        assert_eq!(journal_len(&fixture.conn), 0);
     }
 }

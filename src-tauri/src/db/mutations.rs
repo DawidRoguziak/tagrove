@@ -66,7 +66,11 @@ pub fn apply_file_mutations(
     operation_id: &str,
     mutations: &[DbFileMutation<'_>],
 ) -> anyhow::Result<i64> {
-    let tx = conn.unchecked_transaction()?;
+    // IMMEDIATE takes the write lock up front. A rename reads before its first write, and in WAL
+    // mode a deferred read snapshot cannot be upgraded once another connection has committed
+    // (SQLITE_BUSY_SNAPSHOT, which the busy timeout does not retry). That would roll back a
+    // batch whose compare-and-set checks all hold.
+    let tx = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let mut pending_renames = Vec::new();
     for mutation in mutations {
         let affected = match mutation {

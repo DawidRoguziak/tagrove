@@ -51,3 +51,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0011](0011-audit-qa-data-safety.md) | Audit QA runs on a reflink copy inside a sandbox | Accepted | 2026-11-08 |
 | [0012](0012-non-blocking-native-video-render.md) | Native video rendering never waits on the GTK main thread | Accepted | 2026-11-10 |
 | [0013](0013-committed-delete-cleanup-never-blocks-startup.md) | Committed-delete cleanup never blocks startup and keeps its journal row until the file is verifiably gone | Accepted | 2026-11-10 |
+| [0014](0014-single-asset-file-mutations-guarded-by-row-cas.md) | Single-asset file mutations are guarded by the row compare-and-set, not by the library revision | Accepted | 2026-11-10 |

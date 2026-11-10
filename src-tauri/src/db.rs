@@ -255,6 +255,45 @@ pub(crate) mod test_support {
             total: ids.len(),
         })
     }
+
+    /// What [`commit_revision_bump_before_every_statement`] observed.
+    #[derive(Default)]
+    pub(crate) struct ConcurrentBumps {
+        /// Bumps that committed between two statements of the observed connection.
+        pub committed: std::sync::atomic::AtomicUsize,
+        /// Bumps refused because the observed connection held the write lock.
+        pub locked_out: std::sync::atomic::AtomicUsize,
+    }
+
+    /// Makes another connection to `db_path` commit a library-revision bump each time `conn`
+    /// prepares a statement, the way a concurrent tag or favorite save can land between any two
+    /// statements of a workflow. A bump that finds the database write-locked is counted and
+    /// skipped (busy timeout zero), so it never waits on `conn`. Remove the hook with
+    /// `conn.authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>)`.
+    pub(crate) fn commit_revision_bump_before_every_statement(
+        conn: &Connection,
+        db_path: &std::path::Path,
+    ) -> std::sync::Arc<ConcurrentBumps> {
+        use std::sync::{atomic::Ordering, Arc};
+
+        let other = super::open_connection(db_path).expect("open concurrent writer");
+        other
+            .busy_timeout(std::time::Duration::ZERO)
+            .expect("concurrent writer busy timeout");
+        let bumps = Arc::new(ConcurrentBumps::default());
+        let observed = Arc::clone(&bumps);
+        conn.authorizer(Some(move |_: rusqlite::hooks::AuthContext<'_>| {
+            match other.execute(
+                "UPDATE library_metadata SET value = value + 1 WHERE key = 'revision'",
+                [],
+            ) {
+                Ok(_) => observed.committed.fetch_add(1, Ordering::SeqCst),
+                Err(_) => observed.locked_out.fetch_add(1, Ordering::SeqCst),
+            };
+            rusqlite::hooks::Authorization::Allow
+        }));
+        bumps
+    }
 }
 
 #[cfg(test)]
@@ -2270,5 +2309,69 @@ mod tests {
             super::query_dependency_revision(&conn, &["tag:%".into()]).unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn file_mutation_commit_survives_a_writer_committing_between_its_statements() {
+        use std::sync::atomic::Ordering;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("media.db");
+        let conn = super::open_connection(&db_path).expect("open db");
+        init_schema(&conn).expect("schema");
+        add_scan_root(&conn, "/media").expect("root");
+        upsert_scanned_asset(
+            &conn,
+            &NewAsset {
+                path: "/media/before.jpg".into(),
+                kind: "image".into(),
+                size_bytes: 1,
+                modified_at: 1,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_path: None,
+            },
+            1,
+            "/media",
+            1,
+        )
+        .expect("asset");
+        let asset = super::get_file_mutation_asset(&conn, 1)
+            .expect("asset query")
+            .expect("indexed asset");
+
+        // A rename reads before it writes. A deferred transaction would take its read snapshot
+        // there, and a commit by the other connection would then refuse the upgrade to a write
+        // (SQLITE_BUSY_SNAPSHOT) instead of waiting.
+        let bumps =
+            super::test_support::commit_revision_bump_before_every_statement(&conn, &db_path);
+        let revision = super::apply_file_mutations(
+            &conn,
+            "rename-op",
+            &[super::DbFileMutation::Rename {
+                asset_id: asset.id,
+                expected_path: &asset.path,
+                expected_record_version: asset.record_version,
+                new_path: "/media/after.jpg",
+                new_file_name: "after.jpg",
+            }],
+        )
+        .expect("a concurrent commit must not fail the file-mutation transaction");
+        conn.authorizer(
+            None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
+        );
+
+        assert!(bumps.committed.load(Ordering::SeqCst) > 0);
+        assert!(
+            bumps.locked_out.load(Ordering::SeqCst) > 0,
+            "the transaction must hold the write lock from its first statement"
+        );
+        let renamed = super::get_file_mutation_asset(&conn, 1)
+            .expect("asset query")
+            .expect("renamed asset");
+        assert_eq!(renamed.path, "/media/after.jpg");
+        assert_eq!(renamed.record_version, asset.record_version + 1);
+        assert_eq!(current_library_revision(&conn).expect("revision"), revision);
     }
 }

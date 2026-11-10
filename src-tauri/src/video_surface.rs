@@ -231,27 +231,8 @@ impl MpvRenderContext {
     }
 
     fn render(&self, fbo: i32, width: i32, height: i32) -> Result<(), String> {
-        let mut fbo = mpv_sys::mpv_opengl_fbo {
-            fbo,
-            w: width,
-            h: height,
-            internal_format: 0,
-        };
-        let mut flip_y: c_int = 1;
-        let mut params = [
-            mpv_sys::mpv_render_param {
-                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
-                data: (&mut fbo as *mut mpv_sys::mpv_opengl_fbo).cast(),
-            },
-            mpv_sys::mpv_render_param {
-                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y,
-                data: (&mut flip_y as *mut c_int).cast(),
-            },
-            mpv_sys::mpv_render_param {
-                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
-                data: std::ptr::null_mut(),
-            },
-        ];
+        let mut frame = FrameRenderParams::new(fbo, width, height);
+        let mut params = frame.as_params();
         let result = unsafe {
             mpv_sys::mpv_render_context_render(self.context.as_ptr(), params.as_mut_ptr())
         };
@@ -261,6 +242,77 @@ impl MpvRenderContext {
             Ok(())
         }
     }
+}
+
+/// Storage for the parameters of one frame render on the GTK main thread.
+///
+/// libmpv's default render call waits until the frame's display time. That wait
+/// would run on the thread that also serves the WebView, so it is disabled here;
+/// the player's `video-timing-offset=0` keeps the frame timing instead.
+struct FrameRenderParams {
+    fbo: mpv_sys::mpv_opengl_fbo,
+    flip_y: c_int,
+    block_for_target_time: c_int,
+}
+
+impl FrameRenderParams {
+    fn new(fbo: i32, width: i32, height: i32) -> Self {
+        Self {
+            fbo: mpv_sys::mpv_opengl_fbo {
+                fbo,
+                w: width,
+                h: height,
+                internal_format: 0,
+            },
+            flip_y: 1,
+            block_for_target_time: 0,
+        }
+    }
+
+    /// The returned pointers borrow `self`; keep it alive across the render call.
+    fn as_params(&mut self) -> [mpv_sys::mpv_render_param; 4] {
+        [
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO,
+                data: (&mut self.fbo as *mut mpv_sys::mpv_opengl_fbo).cast(),
+            },
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y,
+                data: (&mut self.flip_y as *mut c_int).cast(),
+            },
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
+                data: (&mut self.block_for_target_time as *mut c_int).cast(),
+            },
+            mpv_sys::mpv_render_param {
+                type_: mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
+        ]
+    }
+}
+
+/// Priority of the source that turns libmpv frame updates into GTK redraws.
+///
+/// GTK paints at `GDK_PRIORITY_REDRAW`, above idle priority. Requesting the next
+/// redraw from a default-priority source keeps a paint pending for as long as
+/// frames arrive, and sources at `DEFAULT_IDLE` then never run. wry answers
+/// custom-protocol requests there, which includes every async IPC response, so
+/// the WebView stopped answering while a video played. At `DEFAULT_IDLE` the
+/// request shares a main-loop turn with those sources: each paint is preceded by
+/// a full drain of them, whatever a frame costs to draw.
+const RENDER_WAKEUP_PRIORITY: glib::Priority = glib::Priority::DEFAULT_IDLE;
+
+fn spawn_render_wakeups(
+    context: &glib::MainContext,
+    updates: async_channel::Receiver<()>,
+    request_render: impl Fn() + 'static,
+) -> glib::JoinHandle<()> {
+    context.spawn_local_with_priority(RENDER_WAKEUP_PRIORITY, async move {
+        while updates.recv().await.is_ok() {
+            request_render();
+        }
+    })
 }
 
 impl Drop for MpvRenderContext {
@@ -1054,10 +1106,8 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
         });
     }
     let render_area = gl_area.clone();
-    let render_source = glib::MainContext::default().spawn_local(async move {
-        while render_rx.recv().await.is_ok() {
-            render_area.queue_render();
-        }
+    let render_source = spawn_render_wakeups(&glib::MainContext::default(), render_rx, move || {
+        render_area.queue_render()
     });
     let controls_player = player.clone();
     let controls_window = window.clone();
@@ -1592,9 +1642,103 @@ fn gles_library() -> Option<&'static Library> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        format_rate, format_time, native_controls_bounds, NativeControlsBounds, SurfaceSessions,
+    use std::{
+        ffi::c_int,
+        sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Arc,
+        },
     };
+
+    use gtk::glib;
+    use libmpv2_sys as mpv_sys;
+
+    use super::{
+        format_rate, format_time, native_controls_bounds, spawn_render_wakeups, FrameRenderParams,
+        NativeControlsBounds, SurfaceSessions,
+    };
+
+    #[test]
+    fn frame_render_never_waits_for_the_display_time() {
+        let mut frame = FrameRenderParams::new(7, 640, 360);
+        let params = frame.as_params();
+        let data = |kind: mpv_sys::mpv_render_param_type| {
+            params
+                .iter()
+                .find(|param| param.type_ == kind)
+                .map(|param| param.data)
+                .expect("render parameter")
+        };
+        // SAFETY: the pointers refer to fields of `frame`, which outlives them.
+        unsafe {
+            let block = data(mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME);
+            assert_eq!(*block.cast::<c_int>(), 0);
+            let flip = data(mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_FLIP_Y);
+            assert_eq!(*flip.cast::<c_int>(), 1);
+            let target = data(mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_OPENGL_FBO);
+            let target = &*target.cast::<mpv_sys::mpv_opengl_fbo>();
+            assert_eq!((target.fbo, target.w, target.h), (7, 640, 360));
+        }
+        let end = params.last().expect("terminator");
+        assert_eq!(
+            end.type_,
+            mpv_sys::mpv_render_param_type_MPV_RENDER_PARAM_INVALID
+        );
+        assert!(end.data.is_null());
+    }
+
+    #[test]
+    fn frame_wakeups_leave_room_for_idle_priority_sources() {
+        let context = glib::MainContext::new();
+        let _owner = context.acquire().expect("the test owns its main context");
+        let (frames, updates) = async_channel::bounded(1);
+        let paints = Arc::new(AtomicUsize::new(0));
+        // Stand-in for GTK: a redraw runs above idle priority, and by the time it
+        // returns libmpv has already announced the next frame.
+        let request_render = {
+            let (context, frames, paints) = (context.clone(), frames.clone(), Arc::clone(&paints));
+            move || {
+                let (frames, paints) = (frames.clone(), Arc::clone(&paints));
+                glib::idle_source_new(None, glib::Priority::HIGH_IDLE, move || {
+                    paints.fetch_add(1, Ordering::Relaxed);
+                    let _ = frames.try_send(());
+                    glib::ControlFlow::Break
+                })
+                .attach(Some(&context));
+            }
+        };
+        let _wakeups = spawn_render_wakeups(&context, updates, request_render);
+        frames.try_send(()).expect("first frame");
+        for _ in 0..20 {
+            context.iteration(false);
+        }
+        let playing = paints.load(Ordering::Relaxed);
+        assert!(playing >= 5, "frames must keep drawing: {playing}");
+
+        // wry answers custom-protocol requests, IPC responses included, by invoking
+        // the main context from a worker thread, which queues at DEFAULT_IDLE.
+        let served = Arc::new(AtomicBool::new(false));
+        std::thread::spawn({
+            let (context, served) = (context.clone(), Arc::clone(&served));
+            move || context.invoke(move || served.store(true, Ordering::Relaxed))
+        })
+        .join()
+        .expect("responder thread");
+        assert!(!served.load(Ordering::Relaxed), "the context has an owner");
+        for _ in 0..4 {
+            context.iteration(false);
+        }
+        assert!(
+            served.load(Ordering::Relaxed),
+            "continuous frames starved an idle-priority source"
+        );
+        assert!(paints.load(Ordering::Relaxed) - playing <= 2);
+
+        for _ in 0..20 {
+            context.iteration(false);
+        }
+        assert!(paints.load(Ordering::Relaxed) >= playing + 5);
+    }
 
     #[test]
     fn limits_the_input_receiving_overlay_to_the_bottom_of_the_video() {

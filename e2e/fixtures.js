@@ -62,6 +62,39 @@ export async function createPlayableFixtures(root, prefix) {
   return { gifPath, videoPaths };
 }
 
+// One clip with a silent audio track, so the audio-output path runs without making sound.
+// The default length outlasts a test, so playback cannot reach its loop point meanwhile.
+export async function createAudioVideoFixture(root, prefix, seconds = 60) {
+  const videoPath = path.join(root, `${prefix}-audio.mp4`);
+  await execFileAsync(process.env.FFMPEG_PATH ?? "ffmpeg", [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc2=size=640x360:rate=30",
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=channel_layout=mono:sample_rate=44100",
+    "-t",
+    String(seconds),
+    "-c:v",
+    "mpeg4",
+    "-q:v",
+    "5",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "32k",
+    "-shortest",
+    "-y",
+    videoPath
+  ]);
+  return videoPath;
+}
+
 export async function createLightboxFixtures(root) {
   for (const [name, size] of [["portrait", "800x4800"], ["panorama", "4800x400"], ["large", "4800x3200"]]) {
     await execFileAsync(process.env.FFMPEG_PATH ?? "ffmpeg", [

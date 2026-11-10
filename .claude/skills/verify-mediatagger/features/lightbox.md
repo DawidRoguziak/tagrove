@@ -10,6 +10,7 @@ in a screenshot; native video requires separate visual verification.
 - `lightbox-tag`: add a tag and confirm it remains after reopening.
 - `lightbox-video-capture`: inspect native video separately from image rendering.
 - `lightbox-video-controls`: drive the GTK video controls with `native` and read the player state.
+- `lightbox-video-responsiveness`: keep IPC answering while a long video with an audio track plays.
 - `lightbox-delete`: delete media through the inline confirmation, including the missing-file alert.
 
 ## How to get to it (user POV)
@@ -63,6 +64,30 @@ pauses and focuses the container; with that focus Space/Enter toggle pause and L
 seek 5 s, otherwise Left/Right navigate to the previous/next result. Escape closes the speed
 popover first, then fullscreen, then the lightbox. After every `native` command the
 controller runs doctor; a failed doctor taints the session.
+
+### Playback responsiveness
+
+The seeded MP4s are eight seconds long and have no audio track, so they loop before a stalled
+WebView becomes visible. To check that playback does not hold back IPC, generate a longer clip
+with a silent audio track directly in the media root that `doctor` prints, then index it:
+
+```sh
+ffmpeg -f lavfi -i testsrc2=size=640x360:rate=30 \
+  -f lavfi -i anullsrc=channel_layout=mono:sample_rate=44100 \
+  -t 60 -c:v mpeg4 -q:v 5 -c:a aac -shortest /media/root/printed/by/doctor/long-audio.mp4
+bun run app:control click "$control_session" 'button[aria-label="Open settings"]'
+bun run app:control click "$control_session" 'button=Rescan all'
+bun run app:control wait "$control_session" idle 60000
+bun run app:control click "$control_session" 'button[aria-label="Back"]'
+bun run app:control inspect "$control_session" 'button[data-asset-id]'
+```
+
+Read the new asset's ID from the session's temporary `media.db` (read-only), open its tile, and
+run `doctor` several times while `data-native-time` advances. Each run must report `ok` within
+about a second. A 30-second `execute/async` timeout means native redraws are starving IPC
+responses. `start` passes `XDG_RUNTIME_DIR` through to the app: with the host's value libmpv
+opens a real audio output (the silent track stays inaudible), and with an empty private
+directory no output opens and libmpv falls back to its null output. Check both.
 
 ### Delete and the alert
 

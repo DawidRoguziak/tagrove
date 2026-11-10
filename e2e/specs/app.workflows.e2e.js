@@ -2,7 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { copyPngFixtures, createPlayableFixtures, createLightboxFixtures } from "../fixtures.js";
+import {
+  copyPngFixtures,
+  createAudioVideoFixture,
+  createPlayableFixtures,
+  createLightboxFixtures
+} from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
 
 const tempMediaRoots = [];
@@ -756,6 +761,51 @@ describe("MediaTagger desktop workflows", () => {
     // A delayed close from the retired activation must not stop its replacement.
     await invokeTauriCommand("close_video", { sessionId });
     await waitAttribute("paused", "false");
+    await browser.keys("Escape");
+    await $(selector).waitForExist({ reverse: true });
+  });
+
+  it("keeps IPC responsive while a long video with an audio track plays", async () => {
+    await resetLibraryState();
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "media-tagger-e2e-audio-video-"));
+    tempMediaRoots.push(root);
+    // Sixty seconds: playback cannot reach its loop point while the checks below run.
+    await createAudioVideoFixture(root, "responsive");
+    await invokeTauriCommand("add_scan_root", { path: root });
+    await invokeTauriCommand("rescan_all_roots");
+    await browser.refresh();
+    await ensureGalleryView();
+    await waitForTileAtIndex(0);
+    await $('button[data-asset-index="0"]').click();
+    const selector = "[data-native-video-active]";
+    await $(selector).waitForExist({
+      timeout: 15000,
+      timeoutMsg: "Expected the native session to be acknowledged while the video plays"
+    });
+    const playbackTime = async () => Number(await $(selector).getAttribute("data-native-time"));
+    await browser.waitUntil(async () => (await playbackTime()) > 0.5, {
+      timeout: 15000,
+      timeoutMsg: "Expected playback of the audio-bearing video to advance"
+    });
+    const startedAt = await playbackTime();
+    // An async command is answered through the WebView's custom protocol. Continuous native
+    // redraws must not hold that answer back until playback pauses or loops.
+    const latencies = [];
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const sentAt = Date.now();
+      await invokeTauriCommand("list_scan_roots");
+      latencies.push(Date.now() - sentAt);
+    }
+    if (Math.max(...latencies) > 2000) {
+      throw new Error(`IPC stalled during playback: ${latencies.join(", ")} ms`);
+    }
+    const endedAt = await playbackTime();
+    if (!(endedAt > startedAt)) {
+      throw new Error(`Expected uninterrupted playback, got ${startedAt} then ${endedAt}`);
+    }
+    if ((await $(selector).getAttribute("data-native-paused")) !== "false") {
+      throw new Error("Expected the audio-bearing video to keep playing");
+    }
     await browser.keys("Escape");
     await $(selector).waitForExist({ reverse: true });
   });

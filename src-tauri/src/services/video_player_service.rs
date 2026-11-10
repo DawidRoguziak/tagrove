@@ -170,18 +170,39 @@ struct PlaybackWorker {
     session: Option<(u64, VideoEventClient)>,
 }
 
+/// Startup options of the process-wide player.
+///
+/// `video-timing-offset=0` belongs to the non-blocking render call in
+/// `video_surface`: libmpv hands a frame to the render API at its display time
+/// instead of up to 50 ms early, so nothing has to wait for the target time.
+/// `audio-fallback-to-null` keeps a file with an audio track playing, silently,
+/// when no audio device can be opened.
+const PLAYER_OPTIONS: &[(&str, &str)] = &[
+    ("vo", "libmpv"),
+    ("hwdec", "auto-safe"),
+    ("loop-file", "inf"),
+    ("volume", "100"),
+    ("mute", "no"),
+    ("video-timing-offset", "0"),
+    ("audio-fallback-to-null", "yes"),
+];
+
+/// Applies `PLAYER_OPTIONS`, then `overrides`. Later values replace earlier ones.
+fn apply_player_options(
+    init: &libmpv2::MpvInitializer,
+    overrides: &[(&str, &str)],
+) -> libmpv2::Result<()> {
+    for (name, value) in PLAYER_OPTIONS.iter().chain(overrides) {
+        init.set_option(name, *value)?;
+    }
+    Ok(())
+}
+
 impl VideoPlayerService {
     pub fn new() -> Self {
-        let mpv = Mpv::with_initializer(|init| {
-            init.set_option("vo", "libmpv")?;
-            init.set_option("hwdec", "auto-safe")?;
-            init.set_option("loop-file", "inf")?;
-            init.set_option("volume", "100")?;
-            init.set_option("mute", "no")?;
-            Ok(())
-        })
-        .map(|mpv| &*Box::leak(Box::new(mpv)))
-        .map_err(|error| format!("libmpv initialization failed: {error}"));
+        let mpv = Mpv::with_initializer(|init| apply_player_options(&init, &[]))
+            .map(|mpv| &*Box::leak(Box::new(mpv)))
+            .map_err(|error| format!("libmpv initialization failed: {error}"));
         Self::with_mpv(mpv)
     }
 
@@ -635,6 +656,72 @@ mod tests {
         });
     }
 
+    struct StopWorker(VideoPlayerService);
+    impl Drop for StopWorker {
+        fn drop(&mut self) {
+            let (done, stopped) = mpsc::sync_channel(1);
+            if self.0.enqueue(WorkerCommand::Shutdown(done)).is_ok() {
+                stopped
+                    .recv_timeout(Duration::from_secs(6))
+                    .expect("playback worker cleanup");
+            }
+        }
+    }
+
+    fn wait_for_snapshot(
+        service: &VideoPlayerService,
+        predicate: &dyn Fn(PlaybackSnapshot) -> bool,
+    ) -> PlaybackSnapshot {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(snapshot) = service.playback_snapshot() {
+                if predicate(snapshot) {
+                    return snapshot;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "playback did not reach expected state: {:?}",
+                service.playback_snapshot()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn generate_clip(path: &std::path::Path, seconds: &str, silent_audio_track: bool) {
+        let mut command = std::process::Command::new("ffmpeg");
+        command.args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=10",
+        ]);
+        if silent_audio_track {
+            command.args([
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=channel_layout=mono:sample_rate=44100",
+                "-c:a",
+                "aac",
+                "-shortest",
+            ]);
+        }
+        let output = command
+            .args(["-t", seconds, "-c:v", "mpeg4"])
+            .arg(path)
+            .output()
+            .expect("ffmpeg is required for native playback tests");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[test]
     fn cancellation_covers_pending_and_committed_opens_without_touching_a_replacement() {
         let service = service();
@@ -782,31 +869,70 @@ mod tests {
     }
 
     #[test]
+    fn real_mpv_accepts_the_player_options_for_frame_timing_and_silent_audio() {
+        let mpv = Mpv::with_initializer(|init| {
+            apply_player_options(&init, &[("vo", "null"), ("hwdec", "no"), ("ao", "null")])
+        })
+        .expect("libmpv accepts the player options");
+        assert_eq!(mpv.get_property::<f64>("video-timing-offset").unwrap(), 0.0);
+        assert!(boolean_property(&mpv, c"audio-fallback-to-null").unwrap());
+        assert_eq!(mpv.get_property::<String>("loop-file").unwrap(), "inf");
+    }
+
+    #[test]
+    fn real_mpv_plays_an_audio_track_silently_when_no_audio_device_opens() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("with-audio.mp4");
+        generate_clip(&path, "6", true);
+        // The only allowed audio driver writes a file, and its directory is missing.
+        let unopenable = temp.path().join("missing").join("audio.wav");
+        let mpv = Mpv::with_initializer(|init| {
+            apply_player_options(
+                &init,
+                &[
+                    ("vo", "null"),
+                    ("hwdec", "no"),
+                    ("ao", "pcm"),
+                    ("ao-pcm-file", unopenable.to_str().unwrap()),
+                ],
+            )
+        })
+        .unwrap();
+        let service = VideoPlayerService::with_mpv(Ok(Box::leak(Box::new(mpv))));
+        let _stop = StopWorker(service.clone());
+        let (error_tx, error_rx) = mpsc::channel();
+        let events = Channel::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+                if value["type"] == "error" {
+                    let _ = error_tx.send(value);
+                }
+            }
+            Ok(())
+        });
+        let session = service
+            .open(service.begin_open(), path.to_str().unwrap().into(), events)
+            .unwrap();
+        let playing = wait_for_snapshot(&service, &|s| {
+            s.session_id == session && s.duration > 2.0 && !s.paused && s.current_time > 0.5
+        });
+        assert!(!playing.muted);
+        let mpv = service.mpv().unwrap();
+        assert_eq!(mpv.get_property::<String>("current-ao").unwrap(), "null");
+        assert_eq!(mpv.get_property::<String>("aid").unwrap(), "1");
+        assert!(!unopenable.exists());
+        assert!(
+            error_rx.try_recv().is_err(),
+            "a missing audio device must not fail the session"
+        );
+        service.close(session).unwrap();
+    }
+
+    #[test]
     fn real_mpv_preserves_paused_seeks_and_preferences_across_replacement() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("clip.mp4");
-        let output = std::process::Command::new("ffmpeg")
-            .args([
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc2=size=160x90:rate=10",
-                "-t",
-                "20",
-                "-c:v",
-                "mpeg4",
-            ])
-            .arg(&path)
-            .output()
-            .expect("ffmpeg is required for native playback tests");
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        generate_clip(&path, "20", false);
         let mpv = Mpv::with_initializer(|init| {
             init.set_option("vo", "null")?;
             init.set_option("ao", "null")?;
@@ -815,34 +941,9 @@ mod tests {
         })
         .unwrap();
         let service = VideoPlayerService::with_mpv(Ok(Box::leak(Box::new(mpv))));
-        struct StopWorker(VideoPlayerService);
-        impl Drop for StopWorker {
-            fn drop(&mut self) {
-                let (done, stopped) = mpsc::sync_channel(1);
-                if self.0.enqueue(WorkerCommand::Shutdown(done)).is_ok() {
-                    stopped
-                        .recv_timeout(Duration::from_secs(6))
-                        .expect("playback worker cleanup");
-                }
-            }
-        }
         let _stop = StopWorker(service.clone());
-        let wait = |predicate: &dyn Fn(PlaybackSnapshot) -> bool| {
-            let deadline = Instant::now() + Duration::from_secs(5);
-            loop {
-                if let Some(snapshot) = service.playback_snapshot() {
-                    if predicate(snapshot) {
-                        return snapshot;
-                    }
-                }
-                assert!(
-                    Instant::now() < deadline,
-                    "playback did not reach expected state: {:?}",
-                    service.playback_snapshot()
-                );
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        };
+        let wait =
+            |predicate: &dyn Fn(PlaybackSnapshot) -> bool| wait_for_snapshot(&service, predicate);
         let first_request = service.begin_open();
         let first = service
             .open(

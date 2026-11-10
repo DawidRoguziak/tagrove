@@ -27,7 +27,7 @@ import {
   validateSocketPath,
   withModifiers
 } from "./control-support.js";
-import { copyPngFixtures, createPlayableFixtures } from "./fixtures.js";
+import { copyPngFixtures, createAudioVideoFixture, createPlayableFixtures } from "./fixtures.js";
 
 const id = "a".repeat(32);
 const execFileAsync = promisify(execFile);
@@ -145,6 +145,22 @@ test("shared fixtures create real media exclusively in the supplied temporary ro
       assert.ok(streams.some((stream) => stream.codec_type === "video"), videoPath);
       assert.equal(streams.filter((stream) => stream.codec_type === "audio").length, 0, videoPath);
     }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the audio video fixture has one video and one audio stream of the requested length", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "media-tagger-control-fixture-"));
+  try {
+    const videoPath = await createAudioVideoFixture(root, "responsive", 2);
+    assert.deepEqual(await fs.readdir(root), ["responsive-audio.mp4"]);
+    const { stdout } = await execFileAsync(process.env.FFPROBE_PATH ?? "ffprobe", [
+      "-v", "error", "-show_entries", "stream=codec_type:format=duration", "-of", "json", videoPath
+    ]);
+    const { streams, format } = JSON.parse(stdout);
+    assert.deepEqual(streams.map((stream) => stream.codec_type).sort(), ["audio", "video"]);
+    assert.ok(Math.abs(Number(format.duration) - 2) < 0.2, format.duration);
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

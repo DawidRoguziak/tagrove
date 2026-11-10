@@ -49,3 +49,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0009](0009-remove-list-assets-command.md) | Remove the legacy `list_assets` command | Accepted | 2026-11-07 |
 | [0010](0010-zip-9-deflate-only.md) | `zip` 9 with the Deflate backend only | Accepted | 2026-11-07 |
 | [0011](0011-audit-qa-data-safety.md) | Audit QA runs on a reflink copy inside a sandbox | Accepted | 2026-11-08 |
+| [0012](0012-non-blocking-native-video-render.md) | Native video rendering never waits on the GTK main thread | Accepted | 2026-11-10 |

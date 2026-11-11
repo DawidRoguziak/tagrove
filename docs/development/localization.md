@@ -77,7 +77,7 @@ Treat `src/i18n/locales/en.json` as the canonical tree. For every other resource
 
 ### Destructive confirmation words
 
-`lightbox.deleteConfirm.confirmWord` is functional data, not merely copy. `LightboxDeleteConfirmDialog` interpolates it into `typeYesLabel` and `typeYesPlaceholder`, and enables deletion only when the trimmed input compares equal with `localeCompare(..., { sensitivity: "base" })`. Each language therefore needs a deliberate, tested confirmation word as well as the `{{value}}` placeholder in both prompt strings. `common.yes` is unrelated to this gate.
+`lightbox.deleteConfirm.confirmWord` is functional data, not merely copy. `LightboxDeleteConfirmDialog` interpolates it into `typeYesLabel` and `typeYesPlaceholder`, and enables deletion only when the input equals the word after both are trimmed, NFC-normalized and lowercased with `toLocaleLowerCase` in the active language. The match ignores case but not accents (`si` does not match `Sí`), and it deliberately avoids `localeCompare`, whose base sensitivity does not fold case in WebKitGTK. Each language therefore needs a deliberate, tested confirmation word as well as the `{{value}}` placeholder in both prompt strings. `common.yes` is unrelated to this gate.
 
 Changing these words changes what a user must type. Verify the displayed prompt and the accepted input in the corresponding language; do not assume machine-generated wording is safe for a destructive control.
 

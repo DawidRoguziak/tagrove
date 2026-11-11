@@ -453,7 +453,7 @@ Destructive: yes.
 
 **QA-10.1 Confirm word, English**
 - **Steps:** pick a file in `edge/` or a copied photo and record `ls -la`, its `assets` row (`SELECT id,path,thumb_path FROM assets WHERE file_name='<f>'`) and the thumbnail file. Open it, `click 'button[aria-label="Delete media"]'`. Fill `#lightbox-delete-confirm-input` with `x`, then with `yes` (lowercase), check the Confirm button state with `inspect`.
-- **Expected:** Confirm stays disabled until the localized word matches (the comparison is case-insensitive, `sensitivity: base`); the word is "Yes" (`docs/subsystems/lightbox.md#toolbar-sidebar-confirmation-and-clipboard`).
+- **Expected:** Confirm stays disabled until the localized word matches (the comparison trims, NFC-normalizes and lowercases both sides with `toLocaleLowerCase` in the active language, so `yes`/`YES` match; accents stay significant); the word is "Yes" (`docs/subsystems/lightbox.md#toolbar-sidebar-confirmation-and-clipboard`).
 - **Oracle:** `inspect '[data-testid="lightbox-delete-confirm-dialog"]'` (disabled attribute), screenshot.
 
 **QA-10.2 Confirm word, Polish**

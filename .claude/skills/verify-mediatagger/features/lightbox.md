@@ -99,7 +99,10 @@ bun run app:control doctor "$control_session"
 ```
 
 The confirmation word is localized ("Yes" in English, "Tak" in Polish; the comparison ignores
-case). Escape closes only the inline confirmation. If the source file was already missing or
+case through a locale-aware lowercase compare, so `yes`, `YES` and `TAK` must enable Confirm in
+WebKitGTK; accents stay significant). Escape closes only the inline confirmation, also when focus
+is elsewhere in the lightbox (tag input, image), and a tag save or favorite toggle while it is
+open keeps it and the typed word. If the source file was already missing or
 its cleanup is pending, the app raises a `window.alert` and doctor reports `alert-open`: read
 it with `alert "$control_session" text`, then `alert "$control_session" accept`. Verify the
 file, the database row, and the thumbnail are gone, not just the tile. Use only disposable

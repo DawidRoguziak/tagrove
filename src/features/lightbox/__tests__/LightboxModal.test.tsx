@@ -11,6 +11,7 @@ import { SuggestionClient } from "../../search/suggestions/SuggestionClient";
 import { renderSolid } from "../../../test/renderSolid";
 import { settle } from "../../../test/settle";
 import { asset, summary, deferred, saved } from "./fixtures";
+import i18n from "../../../i18n/core";
 import type { AssetDetails } from "../../../platform/tauri/contracts/assets";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
@@ -338,6 +339,153 @@ describe("Solid image lightbox", () => {
     });
     await tick();
     expect(box.selected).toBeNull();
+  });
+  it("matches the confirm word case-insensitively in every locale without localeCompare", async () => {
+    // WebKitGTK's localeCompare(..., { sensitivity: "base" }) does not fold case; model that.
+    vi.spyOn(String.prototype, "localeCompare").mockImplementation(function (
+      this: string,
+      other: string
+    ) {
+      return this === other ? 0 : this < other ? -1 : 1;
+    });
+    await setup();
+    await click("Delete media");
+    const input = document.getElementById("lightbox-delete-confirm-input")!;
+    const dialog = screen.getByTestId("lightbox-delete-confirm-dialog");
+    const confirmButton = () => dialog.querySelectorAll("button")[1]!;
+    const typeWord = async (value: string) => {
+      fireEvent.input(input, { target: { value } });
+      await tick();
+    };
+    try {
+      for (const value of ["YES", "yes", " Yes "]) {
+        await typeWord(value);
+        expect(confirmButton(), value).toBeEnabled();
+      }
+      await typeWord("yess");
+      expect(confirmButton()).toBeDisabled();
+      const cases: Array<[string, string[], string]> = [
+        ["pl", ["TAK", "tak", "Tak"], "Yes"],
+        ["ru", ["ДА", "да"], "Tak"],
+        ["es", ["SÍ", "sí", "Si\u0301"], "si"],
+        ["cs", ["ANO", "ano"], "ne"]
+      ];
+      for (const [language, accepted, rejected] of cases) {
+        await settle(() => i18n.changeLanguage(language));
+        await tick();
+        for (const value of accepted) {
+          await typeWord(value);
+          expect(confirmButton(), `${language}: ${value}`).toBeEnabled();
+        }
+        await typeWord(rejected);
+        expect(confirmButton(), `${language}: ${rejected}`).toBeDisabled();
+      }
+    } finally {
+      await settle(() => i18n.changeLanguage("en"));
+    }
+  });
+  it("dismisses the confirmation first on Escape with focus outside it", async () => {
+    const { box } = await setup();
+    await click("Delete media");
+    fireEvent.input(document.getElementById("lightbox-delete-confirm-input")!, {
+      target: { value: "Yes" }
+    });
+    await tick();
+    const tagInput = screen.getByRole("combobox", { name: "Add tag" });
+    tagInput.focus();
+    fireEvent.keyDown(tagInput, { key: "Escape" });
+    await tick();
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(box.selected?.id).toBe(1);
+    await click("Delete media");
+    const shell = screen.getByRole("dialog");
+    shell.focus();
+    fireEvent.keyDown(shell, { key: "Escape" });
+    await tick();
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).not.toBeInTheDocument();
+    expect(box.selected?.id).toBe(1);
+    fireEvent.keyDown(window, { key: "Escape" });
+    await tick();
+    expect(box.selected).toBeNull();
+  });
+  it("ignores Escape outside the confirmation while a delete is pending", async () => {
+    const { box } = await setup();
+    const pending = deferred<unknown>();
+    api.deleteAsset.mockReturnValueOnce(pending.promise);
+    await click("Delete media");
+    fireEvent.input(document.getElementById("lightbox-delete-confirm-input")!, {
+      target: { value: "Yes" }
+    });
+    await tick();
+    await click("Confirm");
+    fireEvent.keyDown(window, { key: "Escape" });
+    await tick();
+    expect(screen.getByTestId("lightbox-delete-confirm-dialog")).toBeInTheDocument();
+    expect(box.selected?.id).toBe(1);
+    pending.resolve({
+      source_status: "deleted",
+      removed_assets: 1,
+      removed_thumbnails: 0,
+      revision: 2,
+      recovery_path: null
+    });
+    await tick();
+    expect(box.selected).toBeNull();
+  });
+  it("keeps the confirmation, typed word and Information open across tag and favorite writes", async () => {
+    api.setAssetFavorite.mockResolvedValue(undefined);
+    const { box } = await setup();
+    await click("Information");
+    expect(screen.getByRole("button", { name: "Information" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+    await click("Delete media");
+    const input = document.getElementById("lightbox-delete-confirm-input") as HTMLInputElement;
+    fireEvent.input(input, { target: { value: "Yes" } });
+    await tick();
+    const before = box.selected;
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    const tagInput = screen.getByRole("combobox", { name: "Add tag" });
+    tagInput.focus();
+    fireEvent.input(tagInput, { target: { value: "dog" } });
+    await tick();
+    fireEvent.keyDown(tagInput, { key: "Enter" });
+    await tick();
+    await waitFor(() => expect(box.tagEditor).toEqual(["cat", "dog"]));
+    await settle(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    await settle(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    // The republished selection must not pull focus back into the delete-confirm input.
+    expect(document.activeElement).toBe(tagInput);
+    expect(box.selected).not.toBe(before);
+    expect(box.selected?.id).toBe(1);
+    expect(screen.getByTestId("lightbox-delete-confirm-dialog")).toBeInTheDocument();
+    expect(input).toHaveValue("Yes");
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
+    await settle(() => box.toggleFavorite());
+    await tick();
+    expect(api.setAssetFavorite).toHaveBeenCalledWith(1, true);
+    expect(box.selected?.is_favorite).toBe(true);
+    expect(screen.getByTestId("lightbox-delete-confirm-dialog")).toBeInTheDocument();
+    expect(input).toHaveValue("Yes");
+    await click("Confirm");
+    expect(api.deleteAsset).toHaveBeenCalledTimes(1);
+    expect(box.selected).toBeNull();
+  });
+  it("still resets the confirmation and Information when the selected ID changes", async () => {
+    const { box } = await setup();
+    await click("Information");
+    await click("Delete media");
+    expect(screen.getByTestId("lightbox-delete-confirm-dialog")).toBeInTheDocument();
+    settle(() => box.select(summary(2)));
+    await tick();
+    expect(box.selected?.id).toBe(2);
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Information" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
   });
   it("keeps failed deletion in its confirmation and restores focus after Escape", async () => {
     api.deleteAsset.mockRejectedValue(new Error("source retained"));

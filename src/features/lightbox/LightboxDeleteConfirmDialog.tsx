@@ -17,10 +17,11 @@ interface LightboxDeleteConfirmDialogProps {
 const DELETE_BUTTON_ID = "lightbox-delete-button";
 
 export function LightboxDeleteConfirmDialog(props: LightboxDeleteConfirmDialogProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [confirmationText, setConfirmationText] = createSignal("");
   let input: HTMLInputElement | undefined;
-  let wasOpen = false;
+  let wasOpen = false,
+    focused = false;
   createEffect(
     () => ({ open: props.open, ready: props.focusReady ?? true }),
     ({ open, ready }) => {
@@ -31,19 +32,35 @@ export function LightboxDeleteConfirmDialog(props: LightboxDeleteConfirmDialogPr
             .getElementById(props.restoreFocusId ?? DELETE_BUTTON_ID)
             ?.focus({ preventScroll: true });
         wasOpen = false;
+        focused = false;
         return;
       }
       wasOpen = true;
-      if (!ready) return;
-      const frame = requestAnimationFrame(() => input?.focus());
+      // Focus the input once per open. Same-asset metadata writes re-run this effect (the
+      // selection is republished) and must not pull focus away from the tag input or heart.
+      if (!ready || focused) return;
+      const frame = requestAnimationFrame(() => {
+        focused = true;
+        input?.focus();
+      });
       return () => cancelAnimationFrame(frame);
     }
   );
   const confirmWord = () => t("lightbox.deleteConfirm.confirmWord");
-  const canConfirm = () =>
-    confirmationText()
-      .trim()
-      .localeCompare(confirmWord().trim(), undefined, { sensitivity: "base" }) === 0;
+  // Explicit locale-aware case folding: WebKitGTK's localeCompare with base sensitivity does not
+  // fold case, so "yes"/"YES" would never match "Yes" in the shipped runtime.
+  const fold = (value: string) => {
+    const text = value.trim().normalize("NFC");
+    try {
+      return text.toLocaleLowerCase(language());
+    } catch {
+      return text.toLowerCase();
+    }
+  };
+  const canConfirm = () => {
+    const word = fold(confirmWord());
+    return word.length > 0 && fold(confirmationText()) === word;
+  };
 
   return (
     <Show when={props.open}>

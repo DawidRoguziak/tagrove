@@ -79,9 +79,14 @@ function LightboxContent(
     input: HTMLInputElement | undefined;
   let disposed = false,
     focusFrame: number | undefined;
+  let resetId: number | undefined;
   createEffect(
     () => props.selected.id,
-    () => {
+    (id) => {
+      // Metadata writes republish the same asset under a new object identity; selection-scoped
+      // state (confirmation, typed word, Information, draft) resets only when the ID changes.
+      if (id === resetId) return;
+      resetId = id;
       generation++;
       setInfo(false);
       setConfirm(false);
@@ -139,8 +144,11 @@ function LightboxContent(
     active: () => props.active,
     modal: true,
     container: controls.shell,
-    closeOnEscape: () => !controls.isFullscreen && !confirm() && !deleting(),
-    onEscape: dismissWindowedLayer,
+    closeOnEscape: () => !controls.isFullscreen && !deleting(),
+    onEscape: () => {
+      if (confirm()) setConfirm(false);
+      else dismissWindowedLayer();
+    },
     getRestoreFocus: props.getRestoreFocus
   });
   function dismissWindowedLayer() {

@@ -194,14 +194,26 @@ with 32px icon buttons. Group copy requires a nonempty trimmed editor key and cl
 shows confirmation for 1,600ms; selection/key changes, failure and unmount reset it.
 
 Delete opens the panel and its existing inline confirmation. The input receives focus only
-after the panel becomes available, including GTK bounds acknowledgement. Cancel clears
-confirmation and restores focus to the bottom delete button on desktop or the drawer collapse control on narrow windows. The localized confirmation
-word, duplicate-submit guard, locked pending state and error handling remain unchanged.
+after the panel becomes available, including GTK bounds acknowledgement, and only once per
+open, so a same-asset metadata write does not pull focus back from the tag input. Cancel clears
+confirmation and restores focus to the bottom delete button on desktop or the drawer collapse control on narrow windows. Confirm is enabled when the typed text matches the localized
+confirmation word (`lightbox.deleteConfirm.confirmWord`) after trimming, NFC normalization and
+`toLocaleLowerCase` in the active language, so `YES`, `yes` and `Yes` (or `TAK`, `ДА`, `SÍ`) all
+match while accents stay significant. The comparison deliberately avoids `localeCompare`, whose
+base sensitivity does not fold case in WebKitGTK. The duplicate-submit guard, locked pending
+state and error handling are unchanged.
 The error text is backend display text and passes through `translateBackendText`
 (`src/i18n/backendText.ts`) when it is rendered, so an `i18n:` key such as the busy-library
 rejection follows the current language.
-Escape dismisses confirmation before the drawer or lightbox. A committed delete closes
-the selection; a rejected pre-commit delete retains the confirmation and error.
+Escape dismisses confirmation before the drawer or lightbox, wherever focus is inside the
+lightbox: the confirmation's own handler takes it inside the section, and otherwise the
+lightbox layer's `onEscape` dismisses the open confirmation instead of the drawer or preview
+(the native GTK `escape` intent does the same). While a delete is pending, Escape is ignored. A
+committed delete closes the selection; a rejected pre-commit delete retains the confirmation and
+error. Tag saves, favorite toggles and other metadata writes on the same asset republish the
+selection under a new object identity but keep the confirmation, its typed word and the
+Information panel open, because `LightboxContent` resets that state only when the selected ID
+changes.
 
 ## Opening and closing presence
 
@@ -298,7 +310,7 @@ The window-level shortcuts while an asset is selected are:
 
 The first key press after three seconds of inactivity both reveals the controls and executes its eligible shortcut. `createImageControls` owns one keyboard listener for its mounted scope. The listener reads current reactive options when handling the event, so activity updates do not replace it. Asset changes and control visibility do not replace the listener. Logical close disables handling through the `active`/`keyboardEnabled` options; disposal removes it.
 
-While delete confirmation is open, the lightbox shortcut listener is disabled and the inline confirmation owns Escape. Otherwise, form controls keep their keys except video fullscreen Escape. The WebView fallback consumes fullscreen Escape before other listeners and ignores repeated keydown events. It remains enabled while fullscreen hides an open narrow sidebar. Native video `F` is handled by the WebView shortcut path or GTK controls; the GTK window captures fullscreen Escape regardless of focus. Global navigation is suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
+While delete confirmation is open, the lightbox shortcut listener is disabled and Escape dismisses the confirmation, whether focus is inside it or elsewhere in the lightbox. Otherwise, form controls keep their keys except video fullscreen Escape. The WebView fallback consumes fullscreen Escape before other listeners and ignores repeated keydown events. It remains enabled while fullscreen hides an open narrow sidebar. Native video `F` is handled by the WebView shortcut path or GTK controls; the GTK window captures fullscreen Escape regardless of focus. Global navigation is suppressed when the target is inside `[data-lightbox-video-player]`; image-only zoom keys do nothing for video.
 
 A primary-button click on the video picture focuses its WebView container and toggles pause. The GTK picture passes pointer input through to that container; native controls handle their own clicks. With the picture focused, unmodified Left/Right seek by five seconds and Space/Enter toggle pause. Native play, mute, and fullscreen buttons also handle unmodified Left/Right; sliders and the speed menu retain their keyboard behavior. Seeking preserves pause state and libmpv bounds the position to the media timeline. Pause toggles and relative seeks run on the playback worker, including accumulation of rapid relative seeks against libmpv's pending target. Frontend controls queue in input order and discard queued work for retired sessions; failures use the existing recoverable control-error UI.
 
@@ -310,7 +322,7 @@ Clicking the outer backdrop closes an open narrow sidebar first, otherwise calls
 - drag start: 500 ms;
 - drag finish: 240 ms.
 
-The inline delete confirmation is part of the sidebar, so while it is open a lightbox shortcut listener is disabled and Escape targets only the confirmation; its submitting guard prevents backdrop cancellation until deletion settles.
+The inline delete confirmation is part of the sidebar, so while it is open a lightbox shortcut listener is disabled and Escape (from any focus in the lightbox) targets only the confirmation; its submitting guard prevents backdrop cancellation until deletion settles.
 
 ## Known limitations and maintenance hazards
 
@@ -354,7 +366,9 @@ When changing lightbox behavior:
 - [`LightboxModal.test.tsx`](../../src/features/lightbox/__tests__/LightboxModal.test.tsx)
   covers presence, immediate native-player disposal on logical close, retained closing
   state, tag input/suggestions, favorite/group actions, inline delete confirmation (including
-  the translated busy-library rejection with every exit usable) and
+  the translated busy-library rejection with every exit usable, Escape from outside the
+  confirmation, the case-insensitive word with `localeCompare` stubbed as in WebKitGTK, and
+  the confirmation surviving same-asset tag and favorite writes) and
   image/GIF activation identity. The backend side of that rejection is covered by
   `delete_fails_fast_while_a_scan_holds_the_scan_lock_and_changes_nothing` in
   `src-tauri/src/commands/assets.rs`. [`presentation.test.ts`](../../src/features/lightbox/__tests__/presentation.test.ts)

@@ -783,6 +783,75 @@ describe("Solid lightbox selection and metadata", () => {
     expect(box.tagEditor).toEqual(["cat", "dog"]);
     expect(box.selected?.is_favorite).toBe(true);
   });
+  // A range write admitted behind save A drops the tag lists before A's promise settles, so
+  // the edit queued behind A has no base when it would be sent.
+  async function raceRangeWriteBehindSave(closeBeforeSave: boolean) {
+    const env = await setup();
+    const { box, library } = env;
+    await settled();
+    const first = deferred<ReturnType<typeof saved>>();
+    api.setAssetTags.mockReturnValueOnce(first.promise);
+    settle(() => box.saveTags(["cat", "a"]));
+    settle(() => box.saveTags(["cat", "a", "b"]));
+    expect(api.setAssetTags).toHaveBeenCalledExactlyOnceWith(1, ["cat", "a"]);
+    if (closeBeforeSave) settle(() => box.close());
+    const write = selectionWrite();
+    const saving = library.mutations.mergeTagsInSelection(
+      { sessionId: 1, ranges: [[0, 2]], excluded: [], included: [] },
+      ["dog"]
+    );
+    await settled();
+    expect(api.applySelectionMutation).not.toHaveBeenCalled();
+    await settle(async () => first.resolve(saved(1, ["cat", "a"])));
+    await settled();
+    // The range write started before the queued edit could be sent.
+    expect(api.applySelectionMutation).toHaveBeenCalledTimes(1);
+    expect(api.setAssetTags).toHaveBeenCalledTimes(1);
+    if (!closeBeforeSave) {
+      expect(box.tagFailed).toBe(true);
+      expect(box.tagSaving).toBe(false);
+      expect(box.tagEditor).toEqual(["cat", "a", "b"]);
+    }
+    api.getAssetDetails.mockImplementation(async (id: number) =>
+      asset(id, { tags: ["a", "cat", "dog"] })
+    );
+    write.finish();
+    await settle(() => saving);
+    await settled();
+    return env;
+  }
+  async function expectRetrySendsRebasedEdit(box: ReturnType<typeof createLightbox>) {
+    expect(api.setAssetTags).toHaveBeenCalledTimes(1);
+    expect(box.tagFailed).toBe(true);
+    expect(box.tagSaving).toBe(false);
+    expect(box.tagEditingDisabled).toBe(false);
+    expect(box.tagEditor).toEqual(["a", "cat", "dog", "b"]);
+    const retry = deferred<ReturnType<typeof saved>>();
+    api.setAssetTags.mockReturnValueOnce(retry.promise);
+    settle(() => box.retryTags());
+    await settled();
+    expect(api.setAssetTags).toHaveBeenCalledTimes(2);
+    expect(api.setAssetTags).toHaveBeenLastCalledWith(1, ["a", "cat", "dog", "b"]);
+    // Not reported as saved until the backend confirms.
+    expect(box.tagSaving).toBe(true);
+    expect(box.tagFailed).toBe(false);
+    await settle(async () => retry.resolve(saved(1, ["a", "b", "cat", "dog"])));
+    await settled();
+    expect(api.setAssetTags).toHaveBeenCalledTimes(2);
+    expect(box.tagSaving).toBe(false);
+    expect(box.tagFailed).toBe(false);
+    expect(box.tagEditor).toEqual(["a", "b", "cat", "dog"]);
+  }
+  it("fails a queued edit whose base a range write dropped before the previous save settled", async () => {
+    const { box } = await raceRangeWriteBehindSave(false);
+    await expectRetrySendsRebasedEdit(box);
+  });
+  it("shows a queued edit dropped by a range write as failed after the lightbox reopens", async () => {
+    const { box } = await raceRangeWriteBehindSave(true);
+    settle(() => box.select(summary(1), 0));
+    await settled();
+    await expectRetrySendsRebasedEdit(box);
+  });
   it("synchronizes loaded summary changes without losing complete path or tags", async () => {
     const { box, library } = await setup();
     settle(() =>

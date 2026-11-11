@@ -270,7 +270,14 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
   }
   function drain(id: number) {
     const intent = intents.get(id);
-    if (!intent?.desired || intent.state !== "idle" || !tags.get(id)) return;
+    if (!intent?.desired || intent.state !== "idle") return;
+    if (!tags.get(id)) {
+      // A range write dropped the base before this queued edit could start. It was never
+      // sent, so it must not look saved: it fails like one queued behind that write.
+      intent.state = "failed";
+      syncTags();
+      return;
+    }
     let requested = intent.desired;
     intent.state = "pending";
     syncTags();

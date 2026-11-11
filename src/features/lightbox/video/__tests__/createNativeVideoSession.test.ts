@@ -315,6 +315,21 @@ describe("createNativeVideoSession", () => {
     expect(opts.onError).not.toHaveBeenCalled();
   });
 
+  it("follows unsolicited fullscreen changes from the window manager in both directions", async () => {
+    const opts = options();
+    const { result } = mountSession(opts);
+    await waitFor(() => expect(result.sessionId).toBe(10));
+    opts.onFullscreenChange.mockClear();
+    emit({ session_id: 10, type: "fullscreen", fullscreen: true });
+    expect(result.fullscreen).toBe(true);
+    emit({ session_id: 10, type: "fullscreen", fullscreen: false });
+    expect(result.fullscreen).toBe(false);
+    expect(opts.onFullscreenChange.mock.calls).toEqual([[true], [false]]);
+    expect(api.controlVideo).not.toHaveBeenCalled();
+    await act(async () => result.toggleFullscreen());
+    expect(api.controlVideo).toHaveBeenCalledExactlyOnceWith(10, { type: "toggleFullscreen" });
+  });
+
   it("serializes fullscreen toggles and reports rejection without optimistic UI state", async () => {
     const opts = options();
     const { result } = mountSession(opts);

@@ -301,6 +301,40 @@ describe("Solid native video lightbox", () => {
     expect(video.closeVideo).not.toHaveBeenCalled();
   });
 
+  it("follows window-manager fullscreen changes so the next F and Escape act on the real state", async () => {
+    const { model } = await setup();
+    await ready();
+    const node = player();
+    const column = document.querySelector(".lightbox-media-column");
+    const press = (key: string) => {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      act(() => node?.dispatchEvent(event));
+      return event;
+    };
+    // The window manager enters fullscreen on its own; the backend reports it.
+    emit({ session_id: 10, type: "fullscreen", fullscreen: true });
+    expect(column).not.toHaveClass("pt-11");
+    expect(screen.getByRole("dialog")).toHaveClass("rounded-none");
+    // ...and leaves it again: the layout returns without any control request.
+    emit({ session_id: 10, type: "fullscreen", fullscreen: false });
+    expect(column).toHaveClass("pt-11");
+    expect(screen.getByRole("dialog")).not.toHaveClass("rounded-none");
+    expect(screen.getByRole("button", { name: "Close preview" })).toBeInTheDocument();
+    expect(video.controlVideo).not.toHaveBeenCalled();
+    // One F re-enters fullscreen instead of only resyncing a stale state.
+    expect(press("f").defaultPrevented).toBe(true);
+    await waitFor(() =>
+      expect(video.controlVideo).toHaveBeenCalledExactlyOnceWith(10, { type: "toggleFullscreen" })
+    );
+    emit({ session_id: 10, type: "fullscreen", fullscreen: true });
+    emit({ session_id: 10, type: "fullscreen", fullscreen: false });
+    // Windowed again: Escape closes the lightbox rather than asking to exit fullscreen.
+    press("Escape");
+    expect(model.selected).toBeNull();
+    expect(video.controlVideo).toHaveBeenCalledOnce();
+    expect(video.closeVideo).toHaveBeenCalledWith(10);
+  });
+
   it("restores image layout when navigating away from a fullscreen native session", async () => {
     const { model } = await setup();
     await ready();

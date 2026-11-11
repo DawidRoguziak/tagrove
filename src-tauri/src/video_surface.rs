@@ -958,6 +958,28 @@ pub fn setup(window: &WebviewWindow, player: &VideoPlayerService) -> Result<(), 
             glib::Propagation::Proceed
         });
     }
+    {
+        // The window manager can change fullscreen without us (i3/sway `$mod+f`, a KDE
+        // window menu, a GNOME binding). Follow the real window so the frontend layout,
+        // F/Escape and `hide` act on it. Deferred to idle: the handler never runs inside
+        // a `with_session`/SURFACE borrow and never blocks the main loop.
+        let player = player.clone();
+        gtk_window.connect_window_state_event(move |_, event| {
+            let change = WindowFullscreenChange {
+                changed: event
+                    .changed_mask()
+                    .contains(gtk::gdk::WindowState::FULLSCREEN),
+                observed: event
+                    .new_window_state()
+                    .contains(gtk::gdk::WindowState::FULLSCREEN),
+            };
+            if change.changed {
+                let player = player.clone();
+                glib::idle_add_local_once(move || follow_window_fullscreen(&player, change));
+            }
+            glib::Propagation::Proceed
+        });
+    }
 
     // Capture observes native controls as well as the pass-through picture without
     // consuming input. The WebView uses the same activity timer for its controls.
@@ -1402,6 +1424,61 @@ pub fn set_fullscreen(
     })
 }
 
+#[derive(Debug, Clone, Copy)]
+struct WindowFullscreenChange {
+    changed: bool,
+    observed: bool,
+}
+
+/// Returns the fullscreen state the session must adopt after a GTK window-state
+/// change, or `None` when nothing changes: the fullscreen bit did not change, the
+/// surface no longer shows this session, or the recorded state already matches
+/// (our own `set_fullscreen` confirmed by the window manager).
+fn reconcile_window_fullscreen(
+    surface_session: Option<u64>,
+    session_id: u64,
+    recorded: bool,
+    change: WindowFullscreenChange,
+) -> Option<bool> {
+    (change.changed && surface_session == Some(session_id) && recorded != change.observed)
+        .then_some(change.observed)
+}
+
+fn follow_window_fullscreen(player: &VideoPlayerService, change: WindowFullscreenChange) {
+    let Some(session_id) = SURFACE.with(|surface| {
+        surface
+            .borrow()
+            .as_ref()
+            .and_then(|surface| surface.sessions.active)
+    }) else {
+        return;
+    };
+    // Same order as `set_fullscreen`: player state, then SURFACE. A retired
+    // session fails `with_session` and is ignored.
+    let followed = player.with_session(session_id, |snapshot| {
+        SURFACE.with(|surface| {
+            let mut surface = surface.borrow_mut();
+            let Some(surface) = surface.as_mut() else {
+                return Ok(None);
+            };
+            let next = reconcile_window_fullscreen(
+                surface.sessions.active,
+                session_id,
+                snapshot.fullscreen,
+                change,
+            );
+            if let Some(fullscreen) = next {
+                surface.fullscreen = fullscreen;
+                snapshot.fullscreen = fullscreen;
+            }
+            Ok(next)
+        })
+    });
+    if let Ok(Some(fullscreen)) = followed {
+        player.send_fullscreen(session_id, fullscreen);
+    }
+}
+
 pub fn hide(window: &WebviewWindow, session_id: u64) -> Result<(), String> {
     let target = window.clone();
     run_on_main_thread_result(window, move || {
@@ -1654,8 +1731,9 @@ mod tests {
     use libmpv2_sys as mpv_sys;
 
     use super::{
-        format_rate, format_time, native_controls_bounds, spawn_render_wakeups, FrameRenderParams,
-        NativeControlsBounds, SurfaceSessions,
+        format_rate, format_time, native_controls_bounds, reconcile_window_fullscreen,
+        spawn_render_wakeups, FrameRenderParams, NativeControlsBounds, SurfaceSessions,
+        WindowFullscreenChange,
     };
 
     #[test]
@@ -1770,6 +1848,45 @@ mod tests {
         assert_eq!(format_rate(1.0), "1×");
         assert_eq!(format_rate(0.75), "0.75×");
         assert_eq!(format_rate(1.5), "1.5×");
+    }
+
+    #[test]
+    fn window_manager_fullscreen_changes_reconcile_only_the_shown_session() {
+        let change = |changed, observed| WindowFullscreenChange { changed, observed };
+        // The window manager leaves or enters fullscreen on its own: follow it once.
+        assert_eq!(
+            reconcile_window_fullscreen(Some(3), 3, true, change(true, false)),
+            Some(false)
+        );
+        assert_eq!(
+            reconcile_window_fullscreen(Some(3), 3, false, change(true, true)),
+            Some(true)
+        );
+        // Our own request confirmed by the window manager: already recorded.
+        assert_eq!(
+            reconcile_window_fullscreen(Some(3), 3, true, change(true, true)),
+            None
+        );
+        assert_eq!(
+            reconcile_window_fullscreen(Some(3), 3, false, change(true, false)),
+            None
+        );
+        // Another state bit (focus, maximize) changed: never infer fullscreen from it.
+        for (recorded, observed) in [(true, false), (false, true), (true, true), (false, false)] {
+            assert_eq!(
+                reconcile_window_fullscreen(Some(3), 3, recorded, change(false, observed)),
+                None
+            );
+        }
+        // No shown session, or the surface already moved to another session.
+        assert_eq!(
+            reconcile_window_fullscreen(None, 3, true, change(true, false)),
+            None
+        );
+        assert_eq!(
+            reconcile_window_fullscreen(Some(4), 3, true, change(true, false)),
+            None
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use std::sync::{PoisonError, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{PoisonError, RwLockReadGuard, RwLockWriteGuard, TryLockError};
 
 use crate::services::db_pool::{MaintenancePermit, OperationPermit};
 
@@ -74,6 +74,26 @@ pub fn with_scan_and_thumb_lock<T>(
     let _scan_guard = recover_scan_mutex(state.scan_lock.lock())?;
     let _thumb_guard = recover_thumb_write(state.thumb_lock.write())?;
     action(&permit)
+}
+
+/// [`with_scan_and_thumb_lock`] for interactive commands that must not wait
+/// for a scan: returns `Ok(None)` without running `action` when `scan_lock` is
+/// already held. Scans and the other combined workflows hold it for their whole
+/// run, while the thumbnail write lock that follows waits only for short read
+/// sections, so only the scan mutex is tried. The order is unchanged: the
+/// permit, then `scan_lock`, then the exclusive `thumb_lock`.
+pub fn try_with_scan_and_thumb_lock<T>(
+    state: &AppState,
+    action: impl FnOnce(&OperationPermit) -> AppResult<T>,
+) -> AppResult<Option<T>> {
+    let permit = state.database.admit()?;
+    let _scan_guard = match state.scan_lock.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        Err(TryLockError::WouldBlock) => return Ok(None),
+    };
+    let _thumb_guard = recover_thumb_write(state.thumb_lock.write())?;
+    action(&permit).map(Some)
 }
 
 pub fn with_database_maintenance<T>(

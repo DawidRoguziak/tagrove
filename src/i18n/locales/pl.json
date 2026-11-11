@@ -15,7 +15,8 @@
     "apply": "Zastosuj",
     "loading": "Ladowanie...",
     "yes": "TAK",
-    "no": "Nie"
+    "no": "Nie",
+    "libraryBusy": "Trwa skanowanie lub inna operacja na bibliotece. Spróbuj ponownie, gdy się zakończy."
   },
   "lazyLoad": {
     "settingsFailed": "Nie udało się załadować ustawień",

@@ -15,7 +15,8 @@
     "apply": "Anwenden",
     "loading": "Laden...",
     "yes": "JA",
-    "no": "Nein"
+    "no": "Nein",
+    "libraryBusy": "Ein Scan oder ein anderer Bibliotheksvorgang läuft. Nach dessen Abschluss erneut versuchen."
   },
   "lazyLoad": {
     "settingsFailed": "Einstellungen konnten nicht geladen werden",

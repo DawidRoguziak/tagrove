@@ -15,7 +15,8 @@
     "apply": "Apply",
     "loading": "Loading...",
     "yes": "YES",
-    "no": "No"
+    "no": "No",
+    "libraryBusy": "A scan or another library operation is running. Try again when it finishes."
   },
   "lazyLoad": {
     "settingsFailed": "Settings could not be loaded",

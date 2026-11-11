@@ -15,7 +15,8 @@
     "apply": "Použít",
     "loading": "Načítání...",
     "yes": "ANO",
-    "no": "Ne"
+    "no": "Ne",
+    "libraryBusy": "Probíhá skenování nebo jiná operace s knihovnou. Zkuste to znovu, až skončí."
   },
   "lazyLoad": {
     "settingsFailed": "Nastavení se nepodařilo načíst",

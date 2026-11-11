@@ -354,6 +354,33 @@ describe("Solid image lightbox", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(document.activeElement?.id).toBe("lightbox-delete-button");
   });
+  it("shows a busy-library delete rejection localized and keeps every exit usable", async () => {
+    // The backend fails fast while a scan holds the scan lock (ADR 0022).
+    api.deleteAsset.mockRejectedValue("i18n:common.libraryBusy");
+    const { box } = await setup();
+    await click("Delete media");
+    const input = document.getElementById("lightbox-delete-confirm-input")!;
+    fireEvent.input(input, { target: { value: "Yes" } });
+    await tick();
+    await click("Confirm");
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(
+      "The file could not be deleted. Its library metadata was preserved. A scan or another library operation is running. Try again when it finishes."
+    );
+    expect(alert).not.toHaveTextContent("i18n:");
+    expect(box.selected?.id).toBe(1);
+    expect(input).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Close preview" })).toBeEnabled();
+    await click("Cancel");
+    expect(screen.queryByTestId("lightbox-delete-confirm-dialog")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    await tick();
+    expect(box.selected?.id).toBe(2);
+    await click("Close preview");
+    expect(box.selected).toBeNull();
+  });
   it("copies trimmed group names and rejects late clipboard results", async () => {
     const write = deferred<void>();
     Object.defineProperty(navigator, "clipboard", {

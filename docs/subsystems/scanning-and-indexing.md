@@ -115,7 +115,7 @@ Scanning broadcasts the shared `process-progress` event described by the [IPC co
 
 ## Concurrency, failure, and commit boundaries
 
-`scan_folder` and `rescan_all_roots` move blocking traversal, probing, thread coordination, and SQLite work off Tauri's async executor with `spawn_blocking`. Both hold the process-wide scan mutex for the entire workflow, so they cannot overlap another scan or a combined destructive operation. Root removal also holds the exclusive thumbnail lock because it deletes thumbnail files. Adding and listing roots take no workflow lock and can overlap a running scan. The broader lock order is documented in [system architecture](../architecture/system-overview.md).
+`scan_folder` and `rescan_all_roots` move blocking traversal, probing, thread coordination, and SQLite work off Tauri's async executor with `spawn_blocking`. Both hold the process-wide scan mutex for the entire workflow, so they cannot overlap another scan or a combined destructive operation. A lightbox delete does not queue behind a running scan; it is rejected at once with a busy-library message ([ADR 0022](../adr/0022-lightbox-delete-fails-fast-during-a-scan.md)). Root removal also holds the exclusive thumbnail lock because it deletes thumbnail files. Adding and listing roots take no workflow lock and can overlap a running scan. The broader lock order is documented in [system architecture](../architecture/system-overview.md).
 
 The scan is not one database transaction. Unchanged touches, each changed write batch, each complete-root prune, the final revision bump, and optimization have separate commit boundaries. Consequently:
 

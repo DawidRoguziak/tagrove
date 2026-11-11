@@ -7,7 +7,10 @@ use serde::Deserialize;
 use tauri::{Manager, State};
 
 use crate::{
-    app::{locks::with_scan_and_thumb_lock, state::AppState},
+    app::{
+        locks::{try_with_scan_and_thumb_lock, with_scan_and_thumb_lock},
+        state::AppState,
+    },
     db::{self, AssetMetaFilter},
     models::{
         AssetDetails, AssetQueryPageResult, AssetQueryPositionResult, AssetSummary,
@@ -542,8 +545,16 @@ pub async fn delete_asset(
     .map_err(|e| format!("delete_asset worker failed: {e}"))?
 }
 
+/// Rejection text of a delete that found a scan or another combined workflow
+/// running. It is backend display text in the `i18n:<key>` format, which the
+/// frontend translates; nothing branches on it.
+pub(crate) const LIBRARY_BUSY_ERROR: &str = "i18n:common.libraryBusy";
+
+/// Fails fast instead of waiting for `scan_lock`: a scan holds it for its whole
+/// run, and the lightbox keeps its confirmation locked while the delete is
+/// pending. Nothing is staged or written before the lock is taken.
 fn delete_asset_service(asset_id: i64, state: &AppState) -> Result<DeleteAssetSummary, String> {
-    with_scan_and_thumb_lock(state, |permit| {
+    try_with_scan_and_thumb_lock(state, |permit| {
         let conn = permit.durable_connection()?;
         Ok(asset_mutation_service::delete_asset(
             &conn,
@@ -551,7 +562,8 @@ fn delete_asset_service(asset_id: i64, state: &AppState) -> Result<DeleteAssetSu
             asset_id,
         )?)
     })
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| LIBRARY_BUSY_ERROR.to_string())
 }
 
 #[tauri::command]
@@ -666,6 +678,8 @@ fn normalize_new_file_name(raw: &str) -> Result<String, crate::error::AppError> 
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::normalize_new_file_name;
 
     #[test]
@@ -682,6 +696,120 @@ mod tests {
         let json = serde_json::to_value(response).expect("serialize");
         assert_eq!(json["processed_asset_ids"], serde_json::json!([3, 1]));
         assert_eq!(json["processed_assets"], 2);
+    }
+
+    fn delete_test_state(tmp: &std::path::Path) -> (crate::app::state::AppState, i64, PathBuf) {
+        use crate::{db, models::NewAsset, services::thumb_scheduler::ThumbnailScheduler};
+        use std::sync::{
+            atomic::{AtomicBool, AtomicU64},
+            Mutex, RwLock,
+        };
+        let root = tmp.join("library");
+        std::fs::create_dir_all(&root).expect("create root");
+        let source = root.join("photo.jpg");
+        std::fs::write(&source, b"source").expect("write source");
+        let db_path = tmp.join("media.db");
+        let conn = db::open_connection(&db_path).expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        let root_text = root.to_string_lossy().into_owned();
+        db::add_scan_root(&conn, &root_text).expect("add scan root");
+        let asset = NewAsset {
+            path: source.to_string_lossy().into_owned(),
+            kind: "image".to_string(),
+            size_bytes: 6,
+            modified_at: 1,
+            width: None,
+            height: None,
+            duration_ms: None,
+            thumb_path: None,
+        };
+        db::upsert_scanned_asset(&conn, &asset, 1, &root_text, 1).expect("index asset");
+        let asset_id = conn
+            .query_row("SELECT id FROM assets", [], |row| row.get(0))
+            .expect("asset id");
+        drop(conn);
+        let state = crate::app::state::AppState {
+            database: crate::services::db_pool::DatabaseRuntime::new(db_path.clone()),
+            db_path,
+            thumbs_dir: tmp.join("thumbs"),
+            ffmpeg_path: PathBuf::from("ffmpeg"),
+            scan_lock: Mutex::new(()),
+            thumb_lock: RwLock::new(()),
+            thumb_scheduler: ThumbnailScheduler::new(1, PathBuf::from("ffmpeg")),
+            thumbnail_render_all_running: AtomicBool::new(false),
+            thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+            thumbnail_generation: AtomicU64::new(0),
+        };
+        (state, asset_id, source)
+    }
+
+    fn indexed_assets(state: &crate::app::state::AppState) -> i64 {
+        let conn = state.database.admit().unwrap().connection().unwrap();
+        conn.query_row("SELECT count(*) FROM assets", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn delete_fails_fast_while_a_scan_holds_the_scan_lock_and_changes_nothing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (state, asset_id, source) = delete_test_state(tmp.path());
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::scope(|scope| {
+            // The scan side takes the lock through the same helper a scan uses.
+            let state = &state;
+            let scan = scope.spawn(move || {
+                crate::app::locks::with_scan_lock(state, |_| {
+                    held_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                })
+                .unwrap();
+            });
+            held_rx.recv().unwrap();
+
+            let error = super::delete_asset_service(asset_id, state)
+                .expect_err("a delete during a scan must not wait for it");
+            assert_eq!(error, super::LIBRARY_BUSY_ERROR);
+            assert!(source.exists(), "the source is not staged or removed");
+            assert_eq!(indexed_assets(state), 1);
+            let conn = state.database.admit().unwrap().connection().unwrap();
+            assert!(crate::db::list_pending_file_operations(&conn)
+                .unwrap()
+                .is_empty());
+            drop(conn);
+            assert_eq!(state.database.checked_out_connections(), 0);
+
+            release_tx.send(()).unwrap();
+            scan.join().unwrap();
+        });
+
+        let summary = super::delete_asset_service(asset_id, &state).expect("delete after the scan");
+        assert!(matches!(
+            summary.source_status,
+            crate::models::DeleteSourceStatus::Deleted
+        ));
+        assert!(!source.exists());
+        assert_eq!(indexed_assets(&state), 0);
+    }
+
+    #[test]
+    fn delete_recovers_a_scan_lock_poisoned_by_a_panicked_holder() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (state, asset_id, source) = delete_test_state(tmp.path());
+        std::thread::scope(|scope| {
+            let _ = scope
+                .spawn(|| {
+                    let _guard = state.scan_lock.lock().unwrap();
+                    panic!("poison the scan lock");
+                })
+                .join();
+        });
+        assert!(state.scan_lock.is_poisoned());
+
+        super::delete_asset_service(asset_id, &state).expect("a poisoned lock is not busy");
+        assert!(!source.exists());
+        assert_eq!(indexed_assets(&state), 0);
     }
 
     #[test]

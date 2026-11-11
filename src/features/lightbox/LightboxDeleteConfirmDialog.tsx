@@ -1,6 +1,7 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { UiButton } from "../../ui/controls/UiButton";
 import { useLanguage } from "../../i18n/solid";
+import { translateBackendText } from "../../i18n/backendText";
 import { UiAlert } from "../../ui/controls/UiAlert";
 
 interface LightboxDeleteConfirmDialogProps {
@@ -63,7 +64,9 @@ export function LightboxDeleteConfirmDialog(props: LightboxDeleteConfirmDialogPr
         </p>
         {props.errorMessage ? (
           <UiAlert tone="error">
-            {t("lightbox.deleteConfirm.failedMetadataPreserved", { error: props.errorMessage })}
+            {t("lightbox.deleteConfirm.failedMetadataPreserved", {
+              error: translateBackendText(props.errorMessage, t)
+            })}
           </UiAlert>
         ) : null}
 

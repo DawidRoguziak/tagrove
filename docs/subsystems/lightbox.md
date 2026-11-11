@@ -125,7 +125,7 @@ Tag chips are the draft model: tags are trimmed, lowercased, de-duplicated, and 
 
 Media-group apply trims the key and converts an empty key to null. The order uses a text field with a numeric keyboard hint and no native spinner arrows. Empty order becomes null. Nonempty edits must contain only digits and represent a positive safe integer, at most `9007199254740991`. Leading zeros are accepted and saved as the numeric value. Invalid typing or paste is rejected as a whole change without stripping characters. The field and Apply handler share validation; invalid preloaded drafts disable Apply and cannot be submitted. Existing stored orders remain visible and unchanged until explicitly edited or cleared. The generate button uses `crypto.randomUUID()` when available, with a timestamp/random fallback. Applying does not mutate the editor controls directly; the selected-object update rehydrates them.
 
-Delete runs under the scan/thumbnail lock. An existing source is journaled and staged before one database/revision transaction; a missing source explicitly removes stale metadata. The frontend inspects `DeleteAssetSummary`: missing source and post-commit cleanup staging are announced separately, while a pre-commit filesystem rejection remains in the confirmation dialog and states that metadata was preserved.
+Delete runs under the scan/thumbnail lock but never waits for a scan: when a scan or another combined workflow holds the scan lock, `delete_asset` rejects at once with the backend text `i18n:common.libraryBusy`, nothing is staged or written, and the confirmation shows the translated message with Cancel, Close and navigation usable; the user retries after the scan ([ADR 0022](../adr/0022-lightbox-delete-fails-fast-during-a-scan.md)). The pending state below therefore lasts only for the delete itself. An existing source is journaled and staged before one database/revision transaction; a missing source explicitly removes stale metadata. The frontend inspects `DeleteAssetSummary`: missing source and post-commit cleanup staging are announced separately, while a pre-commit filesystem rejection remains in the confirmation dialog and states that metadata was preserved.
 
 Favorite pending ownership records the asset ID, identity epoch and number of queued
 favorite writes. Closing and reopening within that epoch preserves pending state, which ends
@@ -197,6 +197,9 @@ Delete opens the panel and its existing inline confirmation. The input receives 
 after the panel becomes available, including GTK bounds acknowledgement. Cancel clears
 confirmation and restores focus to the bottom delete button on desktop or the drawer collapse control on narrow windows. The localized confirmation
 word, duplicate-submit guard, locked pending state and error handling remain unchanged.
+The error text is backend display text and passes through `translateBackendText`
+(`src/i18n/backendText.ts`) when it is rendered, so an `i18n:` key such as the busy-library
+rejection follows the current language.
 Escape dismisses confirmation before the drawer or lightbox. A committed delete closes
 the selection; a rejected pre-commit delete retains the confirmation and error.
 
@@ -350,8 +353,11 @@ When changing lightbox behavior:
   lightbox/bulk ownership, with mocked IPC.
 - [`LightboxModal.test.tsx`](../../src/features/lightbox/__tests__/LightboxModal.test.tsx)
   covers presence, immediate native-player disposal on logical close, retained closing
-  state, tag input/suggestions, favorite/group actions, inline delete confirmation and
-  image/GIF activation identity. [`presentation.test.ts`](../../src/features/lightbox/__tests__/presentation.test.ts)
+  state, tag input/suggestions, favorite/group actions, inline delete confirmation (including
+  the translated busy-library rejection with every exit usable) and
+  image/GIF activation identity. The backend side of that rejection is covered by
+  `delete_fails_fast_while_a_scan_holds_the_scan_lock_and_changes_nothing` in
+  `src-tauri/src/commands/assets.rs`. [`presentation.test.ts`](../../src/features/lightbox/__tests__/presentation.test.ts)
   covers sidebar, activity and clipboard state. [`keyboard.test.tsx`](../../src/features/lightbox/__tests__/keyboard.test.tsx)
   covers current callbacks, idle reveal, form/fullscreen keys and listener lifetime.
 - [`imageControls.test.tsx`](../../src/features/lightbox/__tests__/imageControls.test.tsx)

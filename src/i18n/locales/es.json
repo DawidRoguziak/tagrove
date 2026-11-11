@@ -15,7 +15,8 @@
     "apply": "Aplicar",
     "loading": "Cargando...",
     "yes": "SÍ",
-    "no": "No"
+    "no": "No",
+    "libraryBusy": "Hay un escaneo u otra operación de la biblioteca en curso. Vuelve a intentarlo cuando termine."
   },
   "lazyLoad": {
     "settingsFailed": "No se pudo cargar la configuración",

@@ -1,6 +1,7 @@
 import { createSignal, onCleanup } from "solid-js";
 import { listen } from "../../platform/tauri/events";
 import { useLanguage } from "../../i18n/solid";
+import { translateBackendText } from "../../i18n/backendText";
 import { createSectionOperationState } from "./operationStateService";
 import { translateProgressMessage } from "./progressService";
 import type { ScanProgress } from "../../platform/tauri/contracts/scanning";
@@ -39,35 +40,6 @@ export function createSettingsOperationRunner({
     unlisten = undefined;
   });
 
-  function translateBackendText(raw: string): string {
-    const trimmed = raw.trim();
-    if (trimmed.startsWith("i18n:") && trimmed.slice(5).trim()) return t(trimmed.slice(5).trim());
-    if (trimmed.startsWith("{")) {
-      try {
-        const parsed: unknown = JSON.parse(trimmed);
-        if (
-          typeof parsed === "object" &&
-          parsed !== null &&
-          "key" in parsed &&
-          typeof parsed.key === "string" &&
-          parsed.key.trim()
-        ) {
-          const params =
-            "params" in parsed && typeof parsed.params === "object" && parsed.params !== null
-              ? parsed.params
-              : {};
-          return t(parsed.key, { ...params });
-        }
-      } catch {
-        /* Keep free-form backend errors. */
-      }
-    }
-    if (/^[a-z0-9_.-]+$/i.test(trimmed) && trimmed.includes(".")) {
-      const translated = t(trimmed);
-      if (translated !== trimmed) return translated;
-    }
-    return raw;
-  }
   function update(
     section: SettingsOperationSection,
     updater: (state: SectionOperationState) => SectionOperationState
@@ -114,7 +86,7 @@ export function createSettingsOperationRunner({
     } catch (error) {
       setSectionMessage(
         options.section,
-        `${options.errorPrefix}: ${translateBackendText(String(error))}`
+        `${options.errorPrefix}: ${translateBackendText(String(error), t)}`
       );
     } finally {
       active = false;

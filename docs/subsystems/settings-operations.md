@@ -118,7 +118,7 @@ Operations that report progress subscribe to the single `process-progress` event
 
 An irrelevant phase is ignored. Recognized phase names are translated by `progressService` and take precedence over the payload's `message`. The known translations cover scan counting/scanning/cleanup/empty/skip, thumbnail start/work/done and failed-retry variants, library-clear work/done, and duplicate-scan work/done. Progress phases that are accepted by a prefix matcher but do not have a specific mapping fall back to translation of the raw `message`.
 
-Both fallback progress messages and backend error text accept these formats, in order:
+Both fallback progress messages and backend error text accept these formats, in order (backend error text through `translateBackendText` in `src/i18n/backendText.ts`, which the lightbox delete confirmation also uses):
 
 1. `i18n:<key>` translates the trimmed key with no parameters.
 2. A JSON string shaped like `{"key":"translation.key","params":{"name":"value"}}` translates the key with the provided parameters.

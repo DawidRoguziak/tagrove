@@ -15,7 +15,8 @@
     "apply": "Appliquer",
     "loading": "Chargement...",
     "yes": "OUI",
-    "no": "Non"
+    "no": "Non",
+    "libraryBusy": "Une analyse ou une autre opération sur la bibliothèque est en cours. Réessayez une fois terminée."
   },
   "lazyLoad": {
     "settingsFailed": "Impossible de charger les paramètres",

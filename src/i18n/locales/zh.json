@@ -15,7 +15,8 @@
     "apply": "应用",
     "loading": "加载中...",
     "yes": "是",
-    "no": "否"
+    "no": "否",
+    "libraryBusy": "正在扫描或执行其他媒体库操作。请在完成后重试。"
   },
   "lazyLoad": {
     "settingsFailed": "无法加载设置",

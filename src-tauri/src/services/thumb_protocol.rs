@@ -44,8 +44,9 @@ pub struct ThumbRequest {
     pub prefetch: bool,
 }
 
-/// Parses `/<id>?v=<hex>[&c=1][&r=<n>]`; anything else is rejected. `r`
-/// (frontend retry counter) is allowed and ignored.
+/// Parses `/<id>?v=<hex>[&c=1][&p=1][&r=<n>]`; anything else is rejected,
+/// including a repeated parameter. `r` (frontend retry counter) is allowed
+/// once and ignored.
 pub fn parse_request(path: &str, query: Option<&str>) -> Option<ThumbRequest> {
     let id_text = path.strip_prefix('/')?;
     if id_text.is_empty() || id_text.len() > 19 || !id_text.bytes().all(|b| b.is_ascii_digit()) {
@@ -55,6 +56,7 @@ pub fn parse_request(path: &str, query: Option<&str>) -> Option<ThumbRequest> {
     let mut version = None;
     let mut cached_only = false;
     let mut prefetch = false;
+    let mut retry_seen = false;
     for pair in query
         .unwrap_or_default()
         .split('&')
@@ -74,9 +76,13 @@ pub fn parse_request(path: &str, query: Option<&str>) -> Option<ThumbRequest> {
             }
             "c" if value == "1" && !cached_only => cached_only = true,
             "p" if value == "1" && !prefetch => prefetch = true,
-            "r" if !value.is_empty()
+            "r" if !retry_seen
+                && !value.is_empty()
                 && value.len() <= 3
-                && value.bytes().all(|b| b.is_ascii_digit()) => {}
+                && value.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                retry_seen = true;
+            }
             _ => return None,
         }
     }
@@ -347,6 +353,7 @@ mod tests {
             })
         );
         assert!(parse_request("/42", Some(&format!("v={V}&r=2"))).is_some());
+        assert!(parse_request("/42", Some(&format!("v={V}&c=1&p=1&r=999"))).is_some());
         assert!(
             parse_request("/42", Some(&format!("v={V}&c=1")))
                 .unwrap()
@@ -382,6 +389,9 @@ mod tests {
             ("/1", Some(&format!("v={V}&c=0"))),
             ("/1", Some(&format!("v={V}&c=1&c=1"))),
             ("/1", Some(&format!("v={V}&p=2"))),
+            ("/1", Some(&format!("v={V}&p=1&p=1"))),
+            ("/1", Some(&format!("v={V}&r=1&r=2"))),
+            ("/1", Some(&format!("v={V}&r=1&c=1&r=1"))),
         ] {
             assert_eq!(parse_request(path, query), None, "{path} {query:?}");
         }

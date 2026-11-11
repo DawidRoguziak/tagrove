@@ -240,9 +240,9 @@
     "mediaGroupOrderPlaceholder": "Порядок",
     "mediaGroupOrderAria": "Порядок в группе медиа",
     "copyMediaGroup": {
-      "title": "?????????? ???????? ??????",
-      "copied": "???????? ?????? ???????????",
-      "unavailable": "??? ???????? ?????? ??? ???????????"
+      "title": "Копировать название группы",
+      "copied": "Название группы скопировано",
+      "unavailable": "Нет названия группы для копирования"
     },
     "deleteConfirm": {
       "heading": "Вы уверены, что хотите удалить это медиа?",
@@ -335,7 +335,15 @@
       "heading": "Менеджер дубликатов",
       "description": "Найти ресурсы с одинаковым именем файла и решить каждый дубликат путем переименования или удаления файлов.",
       "start": "Начать",
-      "lastResult": "Последний результат: {{groups}} групп / {{assets}} ресурсов",
+      "lastResult": "Последний результат: {{groups}} / {{assets}}",
+      "lastResultGroups_one": "{{formattedCount}} группа",
+      "lastResultGroups_few": "{{formattedCount}} группы",
+      "lastResultGroups_many": "{{formattedCount}} групп",
+      "lastResultGroups_other": "{{formattedCount}} группы",
+      "lastResultAssets_one": "{{formattedCount}} ресурс",
+      "lastResultAssets_few": "{{formattedCount}} ресурса",
+      "lastResultAssets_many": "{{formattedCount}} ресурсов",
+      "lastResultAssets_other": "{{formattedCount}} ресурса",
       "resolverHeading": "Разрешение дубликатов",
       "resolverSummary": "Найдено групп: {{groups}}, дублирующихся ресурсов: {{assets}}",
       "saveAll": "Сохранить все",
@@ -464,7 +472,7 @@
         "dbImportCancelled": "Импорт резервной копии базы данных отменен.",
         "dbImporting": "Импорт базы данных и миниатюр...",
         "dbImported": "Архив резервной копии базы данных импортирован. Файлы: {{files}}, миниатюры: {{thumbnails}}",
-        "folderAddedWithSkipped": "????? ????????? ? ?????? ????????????: {{path}}. ????????? ??? ????????????: {{skipped}}.",
+        "folderAddedWithSkipped": "Папка добавлена в список сканирования: {{path}}. Пропущено уже существующих: {{skipped}}.",
         "foldersAdded_one": "В список сканирования добавлена {{count}} папка.",
         "foldersAdded_few": "В список сканирования добавлены {{count}} папки.",
         "foldersAdded_many": "В список сканирования добавлено {{count}} папок.",
@@ -473,8 +481,8 @@
         "foldersAddedWithSkipped_few": "В список сканирования добавлены {{count}} папки. Пропущено существующих: {{skipped}}.",
         "foldersAddedWithSkipped_many": "В список сканирования добавлено {{count}} папок. Пропущено существующих: {{skipped}}.",
         "foldersAddedWithSkipped_other": "В список сканирования добавлено {{count}} папки. Пропущено существующих: {{skipped}}.",
-        "noNewFoldersAdded": "????? ????? ? ?????? ???????????? ?? ?????????.",
-        "noNewFoldersAddedWithSkipped": "????? ????? ? ?????? ???????????? ?? ?????????. ??? ??????????: {{skipped}}."
+        "noNewFoldersAdded": "Новые папки в список сканирования не добавлены.",
+        "noNewFoldersAddedWithSkipped": "Новые папки в список сканирования не добавлены. Уже подключено: {{skipped}}."
       },
       "dialogs": {
         "selectMediaFolder": "Выберите папку с медиа",

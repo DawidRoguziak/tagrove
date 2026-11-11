@@ -3,6 +3,8 @@ import path from "node:path";
 
 export const LOCALES_DIR = "src/i18n/locales";
 const LANGUAGES_PATH = "src/i18n/languages.ts";
+// "??" or "?" between two letters: the mark of a lost non-ASCII character.
+const CORRUPTED_QUESTION_MARK = /\?\?|[\p{L}]\?[\p{L}]/u;
 const PLACEHOLDER_PATTERN = /\{\{\s*[\w.]+\s*\}\}/g;
 
 export async function loadAppLanguageCodes(rootDir = process.cwd()) {
@@ -79,6 +81,20 @@ export function validateLocaleTree(canonical, locale, code) {
       errors.push(
         `${code}: ${key} placeholders ${JSON.stringify(actualPlaceholders)}, expected ${JSON.stringify(expectedPlaceholders)}`
       );
+    }
+  }
+
+  if (code !== "en") {
+    for (const [key, leaf] of actual) {
+      const expectedLeaf = expected.get(key);
+      if (
+        typeof leaf.value === "string" &&
+        typeof expectedLeaf?.value === "string" &&
+        !expectedLeaf.value.includes("?") &&
+        CORRUPTED_QUESTION_MARK.test(leaf.value)
+      ) {
+        errors.push(`${code}: ${key} has a literal "?" inside a word (lost non-ASCII character)`);
+      }
     }
   }
 

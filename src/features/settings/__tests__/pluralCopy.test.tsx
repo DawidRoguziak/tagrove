@@ -5,6 +5,7 @@ import { createSectionOperationState } from "../operationStateService";
 import { renderSolid } from "../../../test/renderSolid";
 import { settle } from "../../../test/settle";
 import { DuplicateDeleteConfirmDialog } from "../DuplicateDeleteConfirmDialog";
+import { DuplicatesSection } from "../sections/DuplicatesSection";
 import { ScanSettingsSection } from "../sections/ScanSettingsSection";
 import { renderSettings } from "./renderSettings";
 import { LightboxInfoPanel } from "../../lightbox/LightboxInfoPanel";
@@ -47,6 +48,28 @@ describe("duplicate delete confirmation plurals", () => {
       />
     ));
     expect(dialogText()).toBe(expected);
+  });
+});
+
+describe("duplicates last result plurals", () => {
+  it.each([
+    ["en", 1, 1, "Last result: 1 group / 1 asset"],
+    ["en", 2, 5, "Last result: 2 groups / 5 assets"],
+    ["pl", 1, 1, "Ostatni wynik: 1 grupa / 1 zasób"],
+    ["pl", 2, 2, "Ostatni wynik: 2 grupy / 2 zasoby"],
+    ["pl", 5, 5, "Ostatni wynik: 5 grup / 5 zasobów"]
+  ] as const)("%s groups=%i assets=%i", async (language, groups, assets, expected) => {
+    await changeAppLanguage(language);
+    const view = renderSettings(() => (
+      <DuplicatesSection
+        isOperationLocked={false}
+        operationState={createSectionOperationState("duplicates")}
+        duplicateGroups={groups}
+        duplicateAssets={assets}
+        onStart={() => {}}
+      />
+    ));
+    expect(view.container.textContent).toContain(expected);
   });
 });
 

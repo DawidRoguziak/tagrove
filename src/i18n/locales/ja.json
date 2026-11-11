@@ -240,9 +240,9 @@
     "mediaGroupOrderPlaceholder": "順序",
     "mediaGroupOrderAria": "メディアグループの順序",
     "copyMediaGroup": {
-      "title": "?????????",
-      "copied": "?????????????",
-      "unavailable": "?????????????????"
+      "title": "グループ名をコピー",
+      "copied": "グループ名をコピーしました",
+      "unavailable": "コピーするグループ名がありません"
     },
     "deleteConfirm": {
       "heading": "このメディアを削除してもよろしいですか？",
@@ -335,7 +335,15 @@
       "heading": "重複マネージャー",
       "description": "同じファイル名のアセットを見つけ、各重複をリネームまたは削除で解決します。",
       "start": "開始",
-      "lastResult": "前回の結果: {{groups}} グループ / {{assets}} アセット",
+      "lastResult": "前回の結果: {{groups}} / {{assets}}",
+      "lastResultGroups_one": "{{formattedCount}}グループ",
+      "lastResultGroups_few": "{{formattedCount}}グループ",
+      "lastResultGroups_many": "{{formattedCount}}グループ",
+      "lastResultGroups_other": "{{formattedCount}}グループ",
+      "lastResultAssets_one": "{{formattedCount}}アセット",
+      "lastResultAssets_few": "{{formattedCount}}アセット",
+      "lastResultAssets_many": "{{formattedCount}}アセット",
+      "lastResultAssets_other": "{{formattedCount}}アセット",
       "resolverHeading": "重複解決",
       "resolverSummary": "見つかったグループ: {{groups}}、重複アセット: {{assets}}",
       "saveAll": "すべて保存",
@@ -464,7 +472,7 @@
         "dbImportCancelled": "データベースバックアップのインポートをキャンセルしました。",
         "dbImporting": "データベースとサムネイルをインポート中...",
         "dbImported": "データベースバックアップのアーカイブをインポートしました。ファイル: {{files}}、サムネイル: {{thumbnails}}",
-        "folderAddedWithSkipped": "????????????????????: {{path}}???????????: {{skipped}}?",
+        "folderAddedWithSkipped": "スキャン一覧にフォルダーを追加しました: {{path}}。既存のためスキップ: {{skipped}}。",
         "foldersAdded_one": "{{count}} 個のフォルダーをスキャン一覧に追加しました。",
         "foldersAdded_few": "{{count}} 個のフォルダーをスキャン一覧に追加しました。",
         "foldersAdded_many": "{{count}} 個のフォルダーをスキャン一覧に追加しました。",
@@ -473,8 +481,8 @@
         "foldersAddedWithSkipped_few": "{{count}} 個のフォルダーをスキャン一覧に追加しました。既に追加済みのためスキップ: {{skipped}}。",
         "foldersAddedWithSkipped_many": "{{count}} 個のフォルダーをスキャン一覧に追加しました。既に追加済みのためスキップ: {{skipped}}。",
         "foldersAddedWithSkipped_other": "{{count}} 個のフォルダーをスキャン一覧に追加しました。既に追加済みのためスキップ: {{skipped}}。",
-        "noNewFoldersAdded": "????????????????????????????",
-        "noNewFoldersAddedWithSkipped": "??????????????????????????????????: {{skipped}}?"
+        "noNewFoldersAdded": "スキャン一覧に追加された新しいフォルダーはありません。",
+        "noNewFoldersAddedWithSkipped": "スキャン一覧に追加された新しいフォルダーはありません。追加済み: {{skipped}}。"
       },
       "dialogs": {
         "selectMediaFolder": "メディアフォルダーを選択",

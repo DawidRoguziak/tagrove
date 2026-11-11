@@ -240,9 +240,9 @@
     "mediaGroupOrderPlaceholder": "순서",
     "mediaGroupOrderAria": "미디어 그룹 순서",
     "copyMediaGroup": {
-      "title": "?? ?? ??",
-      "copied": "?? ??? ??????",
-      "unavailable": "??? ?? ??? ????"
+      "title": "그룹 이름 복사",
+      "copied": "그룹 이름을 복사했습니다",
+      "unavailable": "복사할 그룹 이름이 없습니다"
     },
     "deleteConfirm": {
       "heading": "이 미디어를 삭제하시겠습니까?",
@@ -335,7 +335,15 @@
       "heading": "중복 관리자",
       "description": "같은 파일 이름을 가진 자산을 찾아, 각 중복 항목을 이름 변경 또는 삭제로 해결합니다.",
       "start": "시작",
-      "lastResult": "최근 결과: {{groups}}개 그룹 / {{assets}}개 자산",
+      "lastResult": "최근 결과: {{groups}} / {{assets}}",
+      "lastResultGroups_one": "{{formattedCount}}개 그룹",
+      "lastResultGroups_few": "{{formattedCount}}개 그룹",
+      "lastResultGroups_many": "{{formattedCount}}개 그룹",
+      "lastResultGroups_other": "{{formattedCount}}개 그룹",
+      "lastResultAssets_one": "{{formattedCount}}개 자산",
+      "lastResultAssets_few": "{{formattedCount}}개 자산",
+      "lastResultAssets_many": "{{formattedCount}}개 자산",
+      "lastResultAssets_other": "{{formattedCount}}개 자산",
       "resolverHeading": "중복 해결기",
       "resolverSummary": "찾은 그룹: {{groups}}, 중복 자산: {{assets}}",
       "saveAll": "모두 저장",
@@ -464,7 +472,7 @@
         "dbImportCancelled": "데이터베이스 백업 가져오기가 취소되었습니다.",
         "dbImporting": "데이터베이스와 썸네일 가져오는 중...",
         "dbImported": "데이터베이스 백업 아카이브 가져오기 완료. 파일: {{files}}, 썸네일: {{thumbnails}}",
-        "folderAddedWithSkipped": "?? ??? ??? ???: {{path}}. ?? ?? ???: {{skipped}}.",
+        "folderAddedWithSkipped": "스캔 목록에 폴더를 추가했습니다: {{path}}. 이미 있는 항목 건너뜀: {{skipped}}.",
         "foldersAdded_one": "스캔 목록에 폴더 {{count}}개를 추가했습니다.",
         "foldersAdded_few": "스캔 목록에 폴더 {{count}}개를 추가했습니다.",
         "foldersAdded_many": "스캔 목록에 폴더 {{count}}개를 추가했습니다.",
@@ -473,8 +481,8 @@
         "foldersAddedWithSkipped_few": "스캔 목록에 폴더 {{count}}개를 추가했습니다. 이미 있는 항목 건너뜀: {{skipped}}.",
         "foldersAddedWithSkipped_many": "스캔 목록에 폴더 {{count}}개를 추가했습니다. 이미 있는 항목 건너뜀: {{skipped}}.",
         "foldersAddedWithSkipped_other": "스캔 목록에 폴더 {{count}}개를 추가했습니다. 이미 있는 항목 건너뜀: {{skipped}}.",
-        "noNewFoldersAdded": "?? ??? ? ??? ???? ?????.",
-        "noNewFoldersAddedWithSkipped": "?? ??? ? ??? ???? ?????. ?? ???: {{skipped}}."
+        "noNewFoldersAdded": "스캔 목록에 추가된 새 폴더가 없습니다.",
+        "noNewFoldersAddedWithSkipped": "스캔 목록에 추가된 새 폴더가 없습니다. 이미 연결됨: {{skipped}}."
       },
       "dialogs": {
         "selectMediaFolder": "미디어 폴더 선택",

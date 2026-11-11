@@ -10,7 +10,8 @@ interface DuplicatesSectionProps {
   onStart: () => void;
 }
 export function DuplicatesSection(props: DuplicatesSectionProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const formatCount = (count: number) => new Intl.NumberFormat(language()).format(count);
   return (
     <section class="grid min-h-full content-start gap-4 rounded-[var(--radius-surface)] border border-[var(--border-soft)] bg-[var(--surface-solid)] p-5 shadow-[var(--shadow-surface)]">
       <h3 class="m-0 text-lg">{t("settings.duplicates.heading")}</h3>
@@ -26,8 +27,14 @@ export function DuplicatesSection(props: DuplicatesSectionProps) {
           {props.duplicateGroups > 0 ? (
             <span class="text-xs text-[var(--text-muted)]">
               {t("settings.duplicates.lastResult", {
-                groups: props.duplicateGroups,
-                assets: props.duplicateAssets
+                groups: t("settings.duplicates.lastResultGroups", {
+                  count: props.duplicateGroups,
+                  formattedCount: formatCount(props.duplicateGroups)
+                }),
+                assets: t("settings.duplicates.lastResultAssets", {
+                  count: props.duplicateAssets,
+                  formattedCount: formatCount(props.duplicateAssets)
+                })
               })}
             </span>
           ) : null}

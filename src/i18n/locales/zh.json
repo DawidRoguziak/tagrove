@@ -240,9 +240,9 @@
     "mediaGroupOrderPlaceholder": "顺序",
     "mediaGroupOrderAria": "媒体分组顺序",
     "copyMediaGroup": {
-      "title": "??????",
-      "copied": "???????",
-      "unavailable": "??????????"
+      "title": "复制组名称",
+      "copied": "组名称已复制",
+      "unavailable": "没有可复制的组名称"
     },
     "deleteConfirm": {
       "heading": "确定要删除此媒体吗？",
@@ -335,7 +335,15 @@
       "heading": "重复文件管理",
       "description": "查找具有相同文件名的资源，并通过重命名或删除文件解决重复。",
       "start": "开始",
-      "lastResult": "上次结果：{{groups}} 组 / {{assets}} 个资源",
+      "lastResult": "上次结果：{{groups}} / {{assets}}",
+      "lastResultGroups_one": "{{formattedCount}} 组",
+      "lastResultGroups_few": "{{formattedCount}} 组",
+      "lastResultGroups_many": "{{formattedCount}} 组",
+      "lastResultGroups_other": "{{formattedCount}} 组",
+      "lastResultAssets_one": "{{formattedCount}} 个资源",
+      "lastResultAssets_few": "{{formattedCount}} 个资源",
+      "lastResultAssets_many": "{{formattedCount}} 个资源",
+      "lastResultAssets_other": "{{formattedCount}} 个资源",
       "resolverHeading": "重复文件处理",
       "resolverSummary": "找到组数：{{groups}}，重复资源：{{assets}}",
       "saveAll": "全部保存",
@@ -464,7 +472,7 @@
         "dbImportCancelled": "数据库备份导入已取消。",
         "dbImporting": "正在导入数据库和缩略图...",
         "dbImported": "数据库备份归档已导入。文件：{{files}}，缩略图：{{thumbnails}}",
-        "folderAddedWithSkipped": "????????????{{path}}????????{{skipped}}?",
+        "folderAddedWithSkipped": "已将文件夹添加到扫描列表：{{path}}。已跳过现有项：{{skipped}}。",
         "foldersAdded_one": "已将 {{count}} 个文件夹添加到扫描列表。",
         "foldersAdded_few": "已将 {{count}} 个文件夹添加到扫描列表。",
         "foldersAdded_many": "已将 {{count}} 个文件夹添加到扫描列表。",
@@ -473,8 +481,8 @@
         "foldersAddedWithSkipped_few": "已将 {{count}} 个文件夹添加到扫描列表。 已跳过现有项：{{skipped}}。",
         "foldersAddedWithSkipped_many": "已将 {{count}} 个文件夹添加到扫描列表。 已跳过现有项：{{skipped}}。",
         "foldersAddedWithSkipped_other": "已将 {{count}} 个文件夹添加到扫描列表。 已跳过现有项：{{skipped}}。",
-        "noNewFoldersAdded": "???????????????",
-        "noNewFoldersAddedWithSkipped": "???????????????????{{skipped}}?"
+        "noNewFoldersAdded": "没有新文件夹添加到扫描列表。",
+        "noNewFoldersAddedWithSkipped": "没有新文件夹添加到扫描列表。已关联：{{skipped}}。"
       },
       "dialogs": {
         "selectMediaFolder": "选择媒体文件夹",

@@ -62,3 +62,12 @@ test("generator writes a corrected reviewed confirmation word without new transl
     false
   );
 });
+
+test("locale validation flags lost non-ASCII characters but not real question marks", () => {
+  assert.deepEqual(
+    validateLocaleTree({ a: "Added", b: "Really?" }, { a: "hinzugef?gt", b: "Wirklich?" }, "de"),
+    ['de: a has a literal "?" inside a word (lost non-ASCII character)']
+  );
+  assert.equal(validateLocaleTree({ a: "Added" }, { a: "????" }, "ja").length, 1);
+  assert.equal(validateLocaleTree({ a: "Added" }, { a: "Added" }, "en").length, 0);
+});

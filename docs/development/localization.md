@@ -73,7 +73,7 @@ Treat `src/i18n/locales/en.json` as the canonical tree. For every other resource
 - Every English leaf key must exist at exactly the same object path, with the same value type. Extra or relocated keys are errors, even if the visible wording looks correct.
 - Every translated string must contain the same multiset of i18next placeholders as English. Preserve each token exactly, including braces and identifier, for example `{{count}}`, `{{path}}`, or `{{assetId}}`. Translators may move tokens to suit grammar but must not translate, add, remove, or rename them.
 - Text around a placeholder may be translated normally. HTML escaping is disabled for interpolation, so do not introduce user-authored markup into translations.
-- Counts that appear in a sentence use i18next plural keys: `<key>_one`, `<key>_few`, `<key>_many` and `<key>_other`, resolved from the `count` option. Every locale carries all four leaves so the path set stays identical to English, even where the language uses fewer categories (English `few`/`many` repeat `other`; `ja`, `zh` and `ko` repeat one value). Two counts in one sentence are split into two plural keys joined in the component (`confirmDuplicateChanges` and `confirmDuplicateDeletes`). Where a count is a label (`Queued changes: {{count}}`) no plural is needed. Counts shown to the user are formatted with `Intl.NumberFormat` and passed as `formattedCount` (`gallery.resultCount`, `workspace.itemCount`). Plural behavior is pinned by `GalleryStatusFooter.test.tsx` and `src/features/settings/__tests__/pluralCopy.test.tsx`.
+- Counts that appear in a sentence use i18next plural keys: `<key>_one`, `<key>_few`, `<key>_many` and `<key>_other`, resolved from the `count` option. Every locale carries all four leaves so the path set stays identical to English, even where the language uses fewer categories (English `few`/`many` repeat `other`; `ja`, `zh` and `ko` repeat one value). Two counts in one sentence are split into two plural keys joined in the component (`confirmDuplicateChanges` and `confirmDuplicateDeletes`); `settings.duplicates.lastResult` instead takes two pre-pluralized fragments (`lastResultGroups_*`, `lastResultAssets_*`) as its `{{groups}}`/`{{assets}}` placeholders. Where a count is a label (`Queued changes: {{count}}`) no plural is needed. Counts shown to the user are formatted with `Intl.NumberFormat` and passed as `formattedCount` (`gallery.resultCount`, `workspace.itemCount`). Plural behavior is pinned by `GalleryStatusFooter.test.tsx` and `src/features/settings/__tests__/pluralCopy.test.tsx`.
 - Do not rely on English fallback to prove completeness. It prevents a missing key from appearing blank, but it also makes partial translations easy to overlook.
 
 ### Destructive confirmation words
@@ -107,7 +107,8 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 
 - a missing, extra, or relocated leaf path;
 - a different primitive value type; or
-- a different multiset of complete i18next placeholder tokens.
+- a different multiset of complete i18next placeholder tokens; or
+- a non-English value that contains `??` or a `?` between two letters when the English value has no `?` (a lost non-ASCII character, as in `hinzugef?gt`). Legitimate question marks at the end of a word, and any value whose English text also has a `?`, are not flagged.
 
 The gate also rejects missing or unexpected locale JSON files, duplicate language codes, and a language list that does not start with English. It is read-only and needs no network access. `scripts/locale-tools.test.mjs` covers these failure modes and the generator's preservation policy.
 

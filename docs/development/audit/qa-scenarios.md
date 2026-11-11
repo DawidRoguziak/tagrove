@@ -406,7 +406,7 @@ Destructive: no. Session: shared S1 session
 
 **QA-08.6 ffmpeg status**
 - **Steps:** `ctl inspect <id> '[data-testid="video-tool-status"]'`.
-- **Expected:** `ffmpeg: OK` and `ffprobe: OK` when installed; otherwise `N/A` with a hint ([thumbnail tools](../../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery)).
+- **Expected:** `ffmpeg: available` and `ffprobe: available` (en) when installed; otherwise `not available` ([thumbnail tools](../../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery)).
 - **Oracle:** The text; compare with `which ffmpeg ffprobe` on the host.
 
 **QA-08.7 About and link error handling**

@@ -23,7 +23,7 @@ it("retains the duplicate counts in the exiting dialog after confirmation clears
     "closing"
   );
   expect(heading?.parentElement).toHaveTextContent("Apply 2 queued changes?");
-  expect(heading?.parentElement).toHaveTextContent("permanently delete 1 files");
+  expect(heading?.parentElement).toHaveTextContent("permanently delete 1 file from disk");
 });
 it("retains the root path through the remove confirmation exit", () => {
   const [path, setPath] = createSignal<string | null>("/synthetic/media");

@@ -172,8 +172,22 @@ export function ScanSettingsSection(props: ScanSettingsSectionProps) {
           class="flex flex-wrap gap-3 text-xs text-[var(--text-muted)]"
           data-testid="video-tool-status"
         >
-          <span>ffmpeg: {props.videoToolStatus.ffmpeg_available ? "OK" : "N/A"}</span>
-          <span>ffprobe: {props.videoToolStatus.ffprobe_available ? "OK" : "N/A"}</span>
+          <span>
+            {t(
+              props.videoToolStatus.ffmpeg_available
+                ? "settings.scan.videoToolAvailable"
+                : "settings.scan.videoToolUnavailable",
+              { tool: "ffmpeg" }
+            )}
+          </span>
+          <span>
+            {t(
+              props.videoToolStatus.ffprobe_available
+                ? "settings.scan.videoToolAvailable"
+                : "settings.scan.videoToolUnavailable",
+              { tool: "ffprobe" }
+            )}
+          </span>
         </div>
       )}
 

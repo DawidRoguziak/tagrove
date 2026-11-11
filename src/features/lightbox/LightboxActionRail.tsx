@@ -87,7 +87,7 @@ export function LightboxActionRail(props: LightboxActionRailProps) {
           {props.selected.size_bytes !== null ? (
             <span>{formatBytes(props.selected.size_bytes)}</span>
           ) : null}
-          <span>{props.selected.kind.toUpperCase()}</span>
+          <span>{props.t(`lightbox.kind.${props.selected.kind}`).toUpperCase()}</span>
         </span>
         <UiIconButton
           icon="fullscreen"

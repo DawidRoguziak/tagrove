@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "Tag: gatto vacanza -cane",
+    "syntaxHint": "gatto vacanza -cane\ntags\ntags:3\ngN:Viaggio 2026",
     "tagSuggestions": "Suggerimenti tag",
     "mediaKind": "Tipo di media",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "Informazioni",
     "infoHeading": "Informazioni",
     "type": "Tipo",
+    "kind": {
+      "image": "Immagine",
+      "gif": "GIF",
+      "video": "Video"
+    },
     "size": "Dimensione",
     "dimensions": "Dimensioni",
     "duration": "Durata",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "Riprova solo miniature fallite",
       "stopThumbnailRender": "Ferma generazione miniature",
       "rescanDescription": "Aggiorna la libreria dalle cartelle collegate.",
-      "thumbnailsDescription": "Genera anteprime per sfogliare i file più velocemente."
+      "thumbnailsDescription": "Genera anteprime per sfogliare i file più velocemente.",
+      "videoToolAvailable": "{{tool}}: disponibile",
+      "videoToolUnavailable": "{{tool}}: non disponibile"
     },
     "importExport": {
       "heading": "Importa / Esporta",
@@ -423,7 +431,10 @@
       },
       "summary": {
         "duplicateRolledBack": "Il batch dei duplicati non è riuscito e tutte le modifiche ai file sono state annullate. I metadati non sono cambiati.",
-        "duplicateRecoveryRequired": "Il batch non è stato recuperato completamente. {{count}} elementi hanno un percorso di recupero; ripetere la scansione prima di riprovare.",
+        "duplicateRecoveryRequired_one": "Il batch non è stato recuperato completamente. {{count}} elemento ha un percorso di recupero; ripetere la scansione prima di riprovare.",
+        "duplicateRecoveryRequired_few": "Il batch non è stato recuperato completamente. {{count}} elementi hanno un percorso di recupero; ripetere la scansione prima di riprovare.",
+        "duplicateRecoveryRequired_many": "Il batch non è stato recuperato completamente. {{count}} elementi hanno un percorso di recupero; ripetere la scansione prima di riprovare.",
+        "duplicateRecoveryRequired_other": "Il batch non è stato recuperato completamente. {{count}} elementi hanno un percorso di recupero; ripetere la scansione prima di riprovare.",
         "folderAdded": "Cartella aggiunta alla lista di scansione: {{path}}",
         "folderSelectionCancelled": "Selezione cartella annullata.",
         "removedRoot": "Radice rimossa. Risorse: {{assets}}, miniature: {{thumbnails}}",
@@ -437,7 +448,10 @@
         "duplicateScanComplete": "Scansione duplicati completata. Gruppi: {{groups}}, risorse: {{assets}}",
         "noDuplicateChanges": "Nessuna modifica duplicati in attesa",
         "duplicateApplyCancelled": "Applicazione modifiche duplicati annullata.",
-        "duplicateApplied": "Applicate {{count}} modifiche. Gruppi rimanenti: {{groups}}",
+        "duplicateApplied_one": "Applicata {{count}} modifica. Gruppi rimanenti: {{groups}}",
+        "duplicateApplied_few": "Applicate {{count}} modifiche. Gruppi rimanenti: {{groups}}",
+        "duplicateApplied_many": "Applicate {{count}} modifiche. Gruppi rimanenti: {{groups}}",
+        "duplicateApplied_other": "Applicate {{count}} modifiche. Gruppi rimanenti: {{groups}}",
         "csvExportCancelled": "Esportazione CSV annullata.",
         "csvExporting": "Esportazione CSV dei tag...",
         "csvExported": "CSV esportato. Righe: {{rows}}",
@@ -451,8 +465,14 @@
         "dbImporting": "Importazione database e miniature...",
         "dbImported": "Archivio backup database importato. File: {{files}}, miniature: {{thumbnails}}",
         "folderAddedWithSkipped": "Cartella aggiunta alla lista di scansione: {{path}}. Esistenti saltate: {{skipped}}.",
-        "foldersAdded": "Aggiunte {{count}} cartelle alla lista di scansione.",
-        "foldersAddedWithSkipped": "Aggiunte {{count}} cartelle alla lista di scansione. Esistenti saltate: {{skipped}}.",
+        "foldersAdded_one": "Aggiunta {{count}} cartella alla lista di scansione.",
+        "foldersAdded_few": "Aggiunte {{count}} cartelle alla lista di scansione.",
+        "foldersAdded_many": "Aggiunte {{count}} cartelle alla lista di scansione.",
+        "foldersAdded_other": "Aggiunte {{count}} cartelle alla lista di scansione.",
+        "foldersAddedWithSkipped_one": "Aggiunta {{count}} cartella alla lista di scansione. Esistenti saltate: {{skipped}}.",
+        "foldersAddedWithSkipped_few": "Aggiunte {{count}} cartelle alla lista di scansione. Esistenti saltate: {{skipped}}.",
+        "foldersAddedWithSkipped_many": "Aggiunte {{count}} cartelle alla lista di scansione. Esistenti saltate: {{skipped}}.",
+        "foldersAddedWithSkipped_other": "Aggiunte {{count}} cartelle alla lista di scansione. Esistenti saltate: {{skipped}}.",
         "noNewFoldersAdded": "Nessuna nuova cartella e stata aggiunta alla lista di scansione.",
         "noNewFoldersAddedWithSkipped": "Nessuna nuova cartella e stata aggiunta alla lista di scansione. Gia collegate: {{skipped}}."
       },
@@ -462,7 +482,14 @@
         "importTagsCsv": "Importa CSV tag",
         "exportDbArchive": "Esporta archivio backup DB",
         "selectDbArchive": "Seleziona archivio backup DB",
-        "confirmDuplicateChanges": "Applicare {{count}} modifiche in coda?\n\nQuesto eliminerà permanentemente {{deleteCount}} file dal disco.",
+        "confirmDuplicateChanges_one": "Applicare {{count}} modifica in coda?",
+        "confirmDuplicateChanges_few": "Applicare {{count}} modifiche in coda?",
+        "confirmDuplicateChanges_many": "Applicare {{count}} modifiche in coda?",
+        "confirmDuplicateChanges_other": "Applicare {{count}} modifiche in coda?",
+        "confirmDuplicateDeletes_one": "Questo eliminerà permanentemente {{count}} file dal disco.",
+        "confirmDuplicateDeletes_few": "Questo eliminerà permanentemente {{count}} file dal disco.",
+        "confirmDuplicateDeletes_many": "Questo eliminerà permanentemente {{count}} file dal disco.",
+        "confirmDuplicateDeletes_other": "Questo eliminerà permanentemente {{count}} file dal disco.",
         "confirmDbImportOverwrite": "Importare il database dall'archivio sovrascriverà il database e le miniature correnti. Continuare?"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "Cerca",
     "settingsNavigation": "Sezioni delle impostazioni",
-    "itemCount": "Elementi: {{count}}"
+    "itemCount_one": "{{formattedCount}} elemento",
+    "itemCount_few": "{{formattedCount}} elementi",
+    "itemCount_many": "{{formattedCount}} elementi",
+    "itemCount_other": "{{formattedCount}} elementi"
   }
 }

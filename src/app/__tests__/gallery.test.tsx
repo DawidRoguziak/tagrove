@@ -91,7 +91,7 @@ it.each([0, 7])("shows capacity failure with %s previous rows and recovers by na
   flush();
   fireEvent.keyDown(input, { key: "Enter" });
   flush();
-  await screen.findByText("1 items");
+  await screen.findByText("1 item", { selector: ".workspace-count" });
   expect(screen.queryByTestId("gallery-load-error")).toBeNull();
   expect(native.invoke).toHaveBeenCalledWith("start_asset_query", expect.objectContaining({ tagsAnd: ["small"] }));
   expect(starts).toBe(3);

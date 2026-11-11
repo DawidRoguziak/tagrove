@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "Etiquetas: gato vacaciones -perro",
+    "syntaxHint": "gato vacaciones -perro\ntags\ntags:3\ngN:Viaje 2026",
     "tagSuggestions": "Sugerencias de etiquetas",
     "mediaKind": "Tipo de medio",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "Información",
     "infoHeading": "Información",
     "type": "Tipo",
+    "kind": {
+      "image": "Imagen",
+      "gif": "GIF",
+      "video": "Vídeo"
+    },
     "size": "Tamaño",
     "dimensions": "Dimensiones",
     "duration": "Duración",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "Reintentar solo las miniaturas fallidas",
       "stopThumbnailRender": "Detener la generación de miniaturas",
       "rescanDescription": "Actualiza la biblioteca desde las carpetas vinculadas.",
-      "thumbnailsDescription": "Genera vistas previas para explorar más rápido."
+      "thumbnailsDescription": "Genera vistas previas para explorar más rápido.",
+      "videoToolAvailable": "{{tool}}: disponible",
+      "videoToolUnavailable": "{{tool}}: no disponible"
     },
     "importExport": {
       "heading": "Importar / Exportar",
@@ -423,7 +431,10 @@
       },
       "summary": {
         "duplicateRolledBack": "El lote de duplicados falló y todos los cambios de archivos se revirtieron. Los metadatos no cambiaron.",
-        "duplicateRecoveryRequired": "El lote no se pudo recuperar por completo. {{count}} elemento(s) tienen una ruta de recuperación; vuelva a analizar antes de reintentar.",
+        "duplicateRecoveryRequired_one": "El lote no se pudo recuperar por completo. {{count}} elemento tiene una ruta de recuperación; vuelva a analizar antes de reintentar.",
+        "duplicateRecoveryRequired_few": "El lote no se pudo recuperar por completo. {{count}} elementos tienen una ruta de recuperación; vuelva a analizar antes de reintentar.",
+        "duplicateRecoveryRequired_many": "El lote no se pudo recuperar por completo. {{count}} elementos tienen una ruta de recuperación; vuelva a analizar antes de reintentar.",
+        "duplicateRecoveryRequired_other": "El lote no se pudo recuperar por completo. {{count}} elementos tienen una ruta de recuperación; vuelva a analizar antes de reintentar.",
         "folderAdded": "Carpeta añadida a la lista de escaneo: {{path}}",
         "folderSelectionCancelled": "Selección de carpeta cancelada.",
         "removedRoot": "Raíz eliminada. Recursos: {{assets}}, miniaturas: {{thumbnails}}",
@@ -437,7 +448,10 @@
         "duplicateScanComplete": "Escaneo de duplicados completado. Grupos: {{groups}}, recursos: {{assets}}",
         "noDuplicateChanges": "No hay cambios de duplicados pendientes por aplicar",
         "duplicateApplyCancelled": "Aplicación de cambios de duplicados cancelada.",
-        "duplicateApplied": "Se aplicaron {{count}} cambios. Grupos restantes: {{groups}}",
+        "duplicateApplied_one": "Se aplicó {{count}} cambio. Grupos restantes: {{groups}}",
+        "duplicateApplied_few": "Se aplicaron {{count}} cambios. Grupos restantes: {{groups}}",
+        "duplicateApplied_many": "Se aplicaron {{count}} cambios. Grupos restantes: {{groups}}",
+        "duplicateApplied_other": "Se aplicaron {{count}} cambios. Grupos restantes: {{groups}}",
         "csvExportCancelled": "Exportación de CSV cancelada.",
         "csvExporting": "Exportando CSV de etiquetas...",
         "csvExported": "CSV exportado. Filas: {{rows}}",
@@ -451,8 +465,14 @@
         "dbImporting": "Importando base de datos y miniaturas...",
         "dbImported": "Archivo de copia de seguridad de la base de datos importado. Archivos: {{files}}, miniaturas: {{thumbnails}}",
         "folderAddedWithSkipped": "Carpeta a?adida a la lista de escaneo: {{path}}. Ya existentes omitidas: {{skipped}}.",
-        "foldersAdded": "Se a?adieron {{count}} carpetas a la lista de escaneo.",
-        "foldersAddedWithSkipped": "Se a?adieron {{count}} carpetas a la lista de escaneo. Ya existentes omitidas: {{skipped}}.",
+        "foldersAdded_one": "Se añadió {{count}} carpeta a la lista de escaneo.",
+        "foldersAdded_few": "Se añadieron {{count}} carpetas a la lista de escaneo.",
+        "foldersAdded_many": "Se añadieron {{count}} carpetas a la lista de escaneo.",
+        "foldersAdded_other": "Se añadieron {{count}} carpetas a la lista de escaneo.",
+        "foldersAddedWithSkipped_one": "Se añadió {{count}} carpeta a la lista de escaneo. Ya existentes omitidas: {{skipped}}.",
+        "foldersAddedWithSkipped_few": "Se añadieron {{count}} carpetas a la lista de escaneo. Ya existentes omitidas: {{skipped}}.",
+        "foldersAddedWithSkipped_many": "Se añadieron {{count}} carpetas a la lista de escaneo. Ya existentes omitidas: {{skipped}}.",
+        "foldersAddedWithSkipped_other": "Se añadieron {{count}} carpetas a la lista de escaneo. Ya existentes omitidas: {{skipped}}.",
         "noNewFoldersAdded": "No se a?adieron carpetas nuevas a la lista de escaneo.",
         "noNewFoldersAddedWithSkipped": "No se a?adieron carpetas nuevas a la lista de escaneo. Ya adjuntas: {{skipped}}."
       },
@@ -462,7 +482,14 @@
         "importTagsCsv": "Importar CSV de etiquetas",
         "exportDbArchive": "Exportar archivo de copia de seguridad de la BD",
         "selectDbArchive": "Seleccionar archivo de copia de seguridad de la BD",
-        "confirmDuplicateChanges": "¿Aplicar {{count}} cambios en cola?\n\nEsto eliminará permanentemente {{deleteCount}} archivos del disco.",
+        "confirmDuplicateChanges_one": "¿Aplicar {{count}} cambio en cola?",
+        "confirmDuplicateChanges_few": "¿Aplicar {{count}} cambios en cola?",
+        "confirmDuplicateChanges_many": "¿Aplicar {{count}} cambios en cola?",
+        "confirmDuplicateChanges_other": "¿Aplicar {{count}} cambios en cola?",
+        "confirmDuplicateDeletes_one": "Esto eliminará permanentemente {{count}} archivo del disco.",
+        "confirmDuplicateDeletes_few": "Esto eliminará permanentemente {{count}} archivos del disco.",
+        "confirmDuplicateDeletes_many": "Esto eliminará permanentemente {{count}} archivos del disco.",
+        "confirmDuplicateDeletes_other": "Esto eliminará permanentemente {{count}} archivos del disco.",
         "confirmDbImportOverwrite": "Importar la base de datos desde el archivo sobrescribirá la base de datos actual y las miniaturas. ¿Continuar?"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "Buscar",
     "settingsNavigation": "Secciones de ajustes",
-    "itemCount": "Elementos: {{count}}"
+    "itemCount_one": "{{formattedCount}} elemento",
+    "itemCount_few": "{{formattedCount}} elementos",
+    "itemCount_many": "{{formattedCount}} elementos",
+    "itemCount_other": "{{formattedCount}} elementos"
   }
 }

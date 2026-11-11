@@ -68,7 +68,7 @@ export function SearchTagatorWrapper(props: SearchTagatorWrapperProps) {
         {props.identity}
         <div
           data-tauri-drag-region="false"
-          title={"cat vacation -dog\ntags\ntags:3\ngN:Trip 2026"}
+          title={t("search.syntaxHint")}
           class="workspace-search-field flex min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--surface-muted)] px-2 focus-within:border-primary"
         >
           <UiIcon name="search" className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />

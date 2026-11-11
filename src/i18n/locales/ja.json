@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "タグ: cat vacation -dog",
+    "syntaxHint": "cat vacation -dog\ntags\ntags:3\ngN:Trip 2026",
     "tagSuggestions": "タグ候補",
     "mediaKind": "メディア種別",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "情報",
     "infoHeading": "情報",
     "type": "種類",
+    "kind": {
+      "image": "画像",
+      "gif": "GIF",
+      "video": "動画"
+    },
     "size": "サイズ",
     "dimensions": "寸法",
     "duration": "長さ",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "失敗したサムネイルのみ再試行",
       "stopThumbnailRender": "サムネイル生成を停止",
       "rescanDescription": "登録済みフォルダーからライブラリを更新します。",
-      "thumbnailsDescription": "プレビューを生成して、閲覧を高速化します。"
+      "thumbnailsDescription": "プレビューを生成して、閲覧を高速化します。",
+      "videoToolAvailable": "{{tool}}: 利用可能",
+      "videoToolUnavailable": "{{tool}}: 利用不可"
     },
     "importExport": {
       "heading": "インポート / エクスポート",
@@ -423,7 +431,10 @@
       },
       "summary": {
         "duplicateRolledBack": "重複項目の一括処理に失敗し、すべてのファイル変更をロールバックしました。メタデータは変更されていません。",
-        "duplicateRecoveryRequired": "一括処理を完全には復旧できませんでした。{{count}} 件に復旧パスがあります。再試行前に再スキャンしてください。",
+        "duplicateRecoveryRequired_one": "一括処理を完全には復旧できませんでした。{{count}} 件に復旧パスがあります。再試行前に再スキャンしてください。",
+        "duplicateRecoveryRequired_few": "一括処理を完全には復旧できませんでした。{{count}} 件に復旧パスがあります。再試行前に再スキャンしてください。",
+        "duplicateRecoveryRequired_many": "一括処理を完全には復旧できませんでした。{{count}} 件に復旧パスがあります。再試行前に再スキャンしてください。",
+        "duplicateRecoveryRequired_other": "一括処理を完全には復旧できませんでした。{{count}} 件に復旧パスがあります。再試行前に再スキャンしてください。",
         "folderAdded": "フォルダーをスキャンリストに追加しました: {{path}}",
         "folderSelectionCancelled": "フォルダー選択をキャンセルしました。",
         "removedRoot": "ルートを削除しました。アセット: {{assets}}、サムネイル: {{thumbnails}}",
@@ -437,7 +448,10 @@
         "duplicateScanComplete": "重複スキャン完了。グループ: {{groups}}、アセット: {{assets}}",
         "noDuplicateChanges": "適用待ちの重複変更はありません",
         "duplicateApplyCancelled": "重複変更の適用をキャンセルしました。",
-        "duplicateApplied": "{{count}} 件の変更を適用しました。残りのグループ: {{groups}}",
+        "duplicateApplied_one": "{{count}} 件の変更を適用しました。残りのグループ: {{groups}}",
+        "duplicateApplied_few": "{{count}} 件の変更を適用しました。残りのグループ: {{groups}}",
+        "duplicateApplied_many": "{{count}} 件の変更を適用しました。残りのグループ: {{groups}}",
+        "duplicateApplied_other": "{{count}} 件の変更を適用しました。残りのグループ: {{groups}}",
         "csvExportCancelled": "CSVエクスポートをキャンセルしました。",
         "csvExporting": "タグCSVをエクスポート中...",
         "csvExported": "CSVをエクスポートしました。行数: {{rows}}",
@@ -451,8 +465,14 @@
         "dbImporting": "データベースとサムネイルをインポート中...",
         "dbImported": "データベースバックアップのアーカイブをインポートしました。ファイル: {{files}}、サムネイル: {{thumbnails}}",
         "folderAddedWithSkipped": "????????????????????: {{path}}???????????: {{skipped}}?",
-        "foldersAdded": "{{count}} ???????????????????????",
-        "foldersAddedWithSkipped": "{{count}} ?????????????????????????????????: {{skipped}}?",
+        "foldersAdded_one": "{{count}} 個のフォルダーをスキャン一覧に追加しました。",
+        "foldersAdded_few": "{{count}} 個のフォルダーをスキャン一覧に追加しました。",
+        "foldersAdded_many": "{{count}} 個のフォルダーをスキャン一覧に追加しました。",
+        "foldersAdded_other": "{{count}} 個のフォルダーをスキャン一覧に追加しました。",
+        "foldersAddedWithSkipped_one": "{{count}} 個のフォルダーをスキャン一覧に追加しました。既に追加済みのためスキップ: {{skipped}}。",
+        "foldersAddedWithSkipped_few": "{{count}} 個のフォルダーをスキャン一覧に追加しました。既に追加済みのためスキップ: {{skipped}}。",
+        "foldersAddedWithSkipped_many": "{{count}} 個のフォルダーをスキャン一覧に追加しました。既に追加済みのためスキップ: {{skipped}}。",
+        "foldersAddedWithSkipped_other": "{{count}} 個のフォルダーをスキャン一覧に追加しました。既に追加済みのためスキップ: {{skipped}}。",
         "noNewFoldersAdded": "????????????????????????????",
         "noNewFoldersAddedWithSkipped": "??????????????????????????????????: {{skipped}}?"
       },
@@ -462,7 +482,14 @@
         "importTagsCsv": "タグCSVをインポート",
         "exportDbArchive": "DBバックアップアーカイブをエクスポート",
         "selectDbArchive": "DBバックアップアーカイブを選択",
-        "confirmDuplicateChanges": "キューにある {{count}} 件の変更を適用しますか？\n\nこれにより、{{deleteCount}} 個のファイルがディスクから完全に削除されます。",
+        "confirmDuplicateChanges_one": "キューにある {{count}} 件の変更を適用しますか？",
+        "confirmDuplicateChanges_few": "キューにある {{count}} 件の変更を適用しますか？",
+        "confirmDuplicateChanges_many": "キューにある {{count}} 件の変更を適用しますか？",
+        "confirmDuplicateChanges_other": "キューにある {{count}} 件の変更を適用しますか？",
+        "confirmDuplicateDeletes_one": "これにより、{{count}} 個のファイルがディスクから完全に削除されます。",
+        "confirmDuplicateDeletes_few": "これにより、{{count}} 個のファイルがディスクから完全に削除されます。",
+        "confirmDuplicateDeletes_many": "これにより、{{count}} 個のファイルがディスクから完全に削除されます。",
+        "confirmDuplicateDeletes_other": "これにより、{{count}} 個のファイルがディスクから完全に削除されます。",
         "confirmDbImportOverwrite": "アーカイブからのデータベースインポートは、現在のデータベースとサムネイルを上書きします。続行しますか？"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "検索",
     "settingsNavigation": "設定セクション",
-    "itemCount": "{{count}} 件"
+    "itemCount_one": "{{formattedCount}}件",
+    "itemCount_few": "{{formattedCount}}件",
+    "itemCount_many": "{{formattedCount}}件",
+    "itemCount_other": "{{formattedCount}}件"
   }
 }

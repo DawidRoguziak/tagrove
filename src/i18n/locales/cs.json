@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "Tagy: kočka dovolená -pes",
+    "syntaxHint": "kočka dovolená -pes\ntags\ntags:3\ngN:Výlet 2026",
     "tagSuggestions": "Návrhy tagů",
     "mediaKind": "Typ média",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "Informace",
     "infoHeading": "Informace",
     "type": "Typ",
+    "kind": {
+      "image": "Obrázek",
+      "gif": "GIF",
+      "video": "Video"
+    },
     "size": "Velikost",
     "dimensions": "Rozměry",
     "duration": "Délka",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "Zkusit znovu pouze neúspěšné náhledy",
       "stopThumbnailRender": "Zastavit generování náhledů",
       "rescanDescription": "Aktualizujte knihovnu z připojených složek.",
-      "thumbnailsDescription": "Vygenerujte náhledy pro rychlejší procházení."
+      "thumbnailsDescription": "Vygenerujte náhledy pro rychlejší procházení.",
+      "videoToolAvailable": "{{tool}}: dostupný",
+      "videoToolUnavailable": "{{tool}}: nedostupný"
     },
     "importExport": {
       "heading": "Import / Export",
@@ -423,11 +431,20 @@
       },
       "summary": {
         "duplicateRolledBack": "Dávka duplicit selhala a všechny změny souborů byly vráceny zpět. Metadata se nezměnila.",
-        "duplicateRecoveryRequired": "Dávku se nepodařilo plně obnovit. {{count}} položek má cestu pro obnovu; před opakováním spusťte nový sken.",
+        "duplicateRecoveryRequired_one": "Dávku se nepodařilo plně obnovit. Položek s cestou pro obnovu: {{count}}; před opakováním spusťte nový sken.",
+        "duplicateRecoveryRequired_few": "Dávku se nepodařilo plně obnovit. Položek s cestou pro obnovu: {{count}}; před opakováním spusťte nový sken.",
+        "duplicateRecoveryRequired_many": "Dávku se nepodařilo plně obnovit. Položek s cestou pro obnovu: {{count}}; před opakováním spusťte nový sken.",
+        "duplicateRecoveryRequired_other": "Dávku se nepodařilo plně obnovit. Položek s cestou pro obnovu: {{count}}; před opakováním spusťte nový sken.",
         "folderAdded": "Složka přidána do seznamu skenování: {{path}}",
         "folderAddedWithSkipped": "Složka přidána do seznamu skenování: {{path}}. Přeskočeno existujících: {{skipped}}.",
-        "foldersAdded": "Do seznamu skenování bylo přidáno {{count}} složek.",
-        "foldersAddedWithSkipped": "Do seznamu skenování bylo přidáno {{count}} složek. Přeskočeno existujících: {{skipped}}.",
+        "foldersAdded_one": "Do seznamu skenování byla přidána {{count}} složka.",
+        "foldersAdded_few": "Do seznamu skenování byly přidány {{count}} složky.",
+        "foldersAdded_many": "Do seznamu skenování byly přidány {{count}} složky.",
+        "foldersAdded_other": "Do seznamu skenování bylo přidáno {{count}} složek.",
+        "foldersAddedWithSkipped_one": "Do seznamu skenování byla přidána {{count}} složka. Přeskočeno existujících: {{skipped}}.",
+        "foldersAddedWithSkipped_few": "Do seznamu skenování byly přidány {{count}} složky. Přeskočeno existujících: {{skipped}}.",
+        "foldersAddedWithSkipped_many": "Do seznamu skenování byly přidány {{count}} složky. Přeskočeno existujících: {{skipped}}.",
+        "foldersAddedWithSkipped_other": "Do seznamu skenování bylo přidáno {{count}} složek. Přeskočeno existujících: {{skipped}}.",
         "noNewFoldersAdded": "Do seznamu skenování nebyly přidány žádné nové složky.",
         "noNewFoldersAddedWithSkipped": "Do seznamu skenování nebyly přidány žádné nové složky. Již připojeno: {{skipped}}.",
         "folderSelectionCancelled": "Výběr složky byl zrušen.",
@@ -442,7 +459,10 @@
         "duplicateScanComplete": "Hledání duplicit dokončeno. Skupiny: {{groups}}, média: {{assets}}",
         "noDuplicateChanges": "Žádné čekající změny duplicit",
         "duplicateApplyCancelled": "Použití změn duplicit bylo zrušeno.",
-        "duplicateApplied": "Použito {{count}} změn. Zbývající skupiny: {{groups}}",
+        "duplicateApplied_one": "Použita {{count}} změna. Zbývající skupiny: {{groups}}",
+        "duplicateApplied_few": "Použity {{count}} změny. Zbývající skupiny: {{groups}}",
+        "duplicateApplied_many": "Použity {{count}} změny. Zbývající skupiny: {{groups}}",
+        "duplicateApplied_other": "Použito {{count}} změn. Zbývající skupiny: {{groups}}",
         "csvExportCancelled": "Export CSV byl zrušen.",
         "csvExporting": "Export tagů do CSV...",
         "csvExported": "CSV exportováno. Řádky: {{rows}}",
@@ -462,7 +482,14 @@
         "importTagsCsv": "Importovat tagy z CSV",
         "exportDbArchive": "Exportovat archiv zálohy databáze",
         "selectDbArchive": "Vybrat archiv zálohy databáze",
-        "confirmDuplicateChanges": "Použít {{count}} čekajících změn?\n\nTím bude trvale smazáno {{deleteCount}} souborů z disku.",
+        "confirmDuplicateChanges_one": "Použít {{count}} čekající změnu?",
+        "confirmDuplicateChanges_few": "Použít {{count}} čekající změny?",
+        "confirmDuplicateChanges_many": "Použít {{count}} čekající změny?",
+        "confirmDuplicateChanges_other": "Použít {{count}} čekajících změn?",
+        "confirmDuplicateDeletes_one": "Tím bude trvale smazán {{count}} soubor z disku.",
+        "confirmDuplicateDeletes_few": "Tím budou trvale smazány {{count}} soubory z disku.",
+        "confirmDuplicateDeletes_many": "Tím budou trvale smazány {{count}} soubory z disku.",
+        "confirmDuplicateDeletes_other": "Tím bude trvale smazáno {{count}} souborů z disku.",
         "confirmDbImportOverwrite": "Import databáze z archivu přepíše aktuální databázi a náhledy. Pokračovat?"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "Hledat",
     "settingsNavigation": "Sekce nastavení",
-    "itemCount": "Položky: {{count}}"
+    "itemCount_one": "{{formattedCount}} položka",
+    "itemCount_few": "{{formattedCount}} položky",
+    "itemCount_many": "{{formattedCount}} položky",
+    "itemCount_other": "{{formattedCount}} položek"
   }
 }

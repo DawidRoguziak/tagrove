@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "Tags: cat vacation -dog",
+    "syntaxHint": "cat vacation -dog\ntags\ntags:3\ngN:Trip 2026",
     "tagSuggestions": "Tag suggestions",
     "mediaKind": "Media kind",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "Info",
     "infoHeading": "Information",
     "type": "Type",
+    "kind": {
+      "image": "Image",
+      "gif": "GIF",
+      "video": "Video"
+    },
     "size": "Size",
     "dimensions": "Dimensions",
     "duration": "Duration",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "Retry failed thumbnails only",
       "stopThumbnailRender": "Stop thumbnail render",
       "rescanDescription": "Refresh the library from your attached folders.",
-      "thumbnailsDescription": "Generate previews for faster browsing."
+      "thumbnailsDescription": "Generate previews for faster browsing.",
+      "videoToolAvailable": "{{tool}}: available",
+      "videoToolUnavailable": "{{tool}}: not available"
     },
     "importExport": {
       "heading": "Import / Export",
@@ -423,11 +431,20 @@
       },
       "summary": {
         "duplicateRolledBack": "The duplicate batch failed and all file changes were rolled back. No library metadata was changed.",
-        "duplicateRecoveryRequired": "The batch could not be fully recovered. {{count}} item(s) have a reported recovery path; rescan before retrying.",
+        "duplicateRecoveryRequired_one": "The batch could not be fully recovered. {{count}} item has a reported recovery path; rescan before retrying.",
+        "duplicateRecoveryRequired_few": "The batch could not be fully recovered. {{count}} items have a reported recovery path; rescan before retrying.",
+        "duplicateRecoveryRequired_many": "The batch could not be fully recovered. {{count}} items have a reported recovery path; rescan before retrying.",
+        "duplicateRecoveryRequired_other": "The batch could not be fully recovered. {{count}} items have a reported recovery path; rescan before retrying.",
         "folderAdded": "Folder added to scan list: {{path}}",
         "folderAddedWithSkipped": "Folder added to scan list: {{path}}. Skipped existing: {{skipped}}.",
-        "foldersAdded": "{{count}} folders added to scan list.",
-        "foldersAddedWithSkipped": "{{count}} folders added to scan list. Skipped existing: {{skipped}}.",
+        "foldersAdded_one": "{{count}} folder added to scan list.",
+        "foldersAdded_few": "{{count}} folders added to scan list.",
+        "foldersAdded_many": "{{count}} folders added to scan list.",
+        "foldersAdded_other": "{{count}} folders added to scan list.",
+        "foldersAddedWithSkipped_one": "{{count}} folder added to scan list. Skipped existing: {{skipped}}.",
+        "foldersAddedWithSkipped_few": "{{count}} folders added to scan list. Skipped existing: {{skipped}}.",
+        "foldersAddedWithSkipped_many": "{{count}} folders added to scan list. Skipped existing: {{skipped}}.",
+        "foldersAddedWithSkipped_other": "{{count}} folders added to scan list. Skipped existing: {{skipped}}.",
         "noNewFoldersAdded": "No new folders were added to the scan list.",
         "noNewFoldersAddedWithSkipped": "No new folders were added to the scan list. Already attached: {{skipped}}.",
         "folderSelectionCancelled": "Folder selection cancelled.",
@@ -442,7 +459,10 @@
         "duplicateScanComplete": "Duplicate scan complete. Groups: {{groups}}, assets: {{assets}}",
         "noDuplicateChanges": "No pending duplicate changes to apply",
         "duplicateApplyCancelled": "Applying duplicate changes cancelled.",
-        "duplicateApplied": "Applied {{count}} changes. Remaining groups: {{groups}}",
+        "duplicateApplied_one": "Applied {{count}} change. Remaining groups: {{groups}}",
+        "duplicateApplied_few": "Applied {{count}} changes. Remaining groups: {{groups}}",
+        "duplicateApplied_many": "Applied {{count}} changes. Remaining groups: {{groups}}",
+        "duplicateApplied_other": "Applied {{count}} changes. Remaining groups: {{groups}}",
         "csvExportCancelled": "CSV export cancelled.",
         "csvExporting": "Exporting tags CSV...",
         "csvExported": "CSV exported. Rows: {{rows}}",
@@ -462,7 +482,14 @@
         "importTagsCsv": "Import tags CSV",
         "exportDbArchive": "Export DB backup archive",
         "selectDbArchive": "Select DB backup archive",
-        "confirmDuplicateChanges": "Apply {{count}} queued changes?\n\nThis will permanently delete {{deleteCount}} files from disk.",
+        "confirmDuplicateChanges_one": "Apply {{count}} queued change?",
+        "confirmDuplicateChanges_few": "Apply {{count}} queued changes?",
+        "confirmDuplicateChanges_many": "Apply {{count}} queued changes?",
+        "confirmDuplicateChanges_other": "Apply {{count}} queued changes?",
+        "confirmDuplicateDeletes_one": "This will permanently delete {{count}} file from disk.",
+        "confirmDuplicateDeletes_few": "This will permanently delete {{count}} files from disk.",
+        "confirmDuplicateDeletes_many": "This will permanently delete {{count}} files from disk.",
+        "confirmDuplicateDeletes_other": "This will permanently delete {{count}} files from disk.",
         "confirmDbImportOverwrite": "Importing database from archive will overwrite the current database and thumbnails. Continue?"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "Search",
     "settingsNavigation": "Settings sections",
-    "itemCount": "{{count}} items"
+    "itemCount_one": "{{formattedCount}} item",
+    "itemCount_few": "{{formattedCount}} items",
+    "itemCount_many": "{{formattedCount}} items",
+    "itemCount_other": "{{formattedCount}} items"
   }
 }

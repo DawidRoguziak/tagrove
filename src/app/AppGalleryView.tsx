@@ -15,7 +15,7 @@ import {
 export function AppGalleryView() {
   const runtime = useAppRuntime();
   const { search, library, selection } = runtime;
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [scroller, setScroller] = createSignal<HTMLElement>();
   const retry = () => {
     library.query.retryLoad();
@@ -54,7 +54,10 @@ export function AppGalleryView() {
           toolbarContent={
             <>
               <span class="workspace-count" role="status">
-                {t("workspace.itemCount", { count: library.query.total })}
+                {t("workspace.itemCount", {
+                  count: library.query.total,
+                  formattedCount: new Intl.NumberFormat(language()).format(library.query.total)
+                })}
               </span>
               <TileSizeSlider
                 tileSize={runtime.tileSize()}

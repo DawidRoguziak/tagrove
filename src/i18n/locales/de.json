@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "Tags: katze urlaub -hund",
+    "syntaxHint": "katze urlaub -hund\ntags\ntags:3\ngN:Urlaub 2026",
     "tagSuggestions": "Tag-Vorschläge",
     "mediaKind": "Medientyp",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "Info",
     "infoHeading": "Informationen",
     "type": "Typ",
+    "kind": {
+      "image": "Bild",
+      "gif": "GIF",
+      "video": "Video"
+    },
     "size": "Größe",
     "dimensions": "Abmessungen",
     "duration": "Dauer",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "Nur fehlgeschlagene Vorschaubilder erneut versuchen",
       "stopThumbnailRender": "Vorschaubild-Erstellung stoppen",
       "rescanDescription": "Aktualisiere die Bibliothek aus den eingebundenen Ordnern.",
-      "thumbnailsDescription": "Erzeuge Vorschaubilder für schnelleres Durchsuchen."
+      "thumbnailsDescription": "Erzeuge Vorschaubilder für schnelleres Durchsuchen.",
+      "videoToolAvailable": "{{tool}}: verfügbar",
+      "videoToolUnavailable": "{{tool}}: nicht verfügbar"
     },
     "importExport": {
       "heading": "Import / Export",
@@ -423,7 +431,10 @@
       },
       "summary": {
         "duplicateRolledBack": "Der Duplikatstapel ist fehlgeschlagen; alle Dateiänderungen wurden zurückgesetzt. Die Metadaten blieben unverändert.",
-        "duplicateRecoveryRequired": "Der Stapel konnte nicht vollständig wiederhergestellt werden. {{count}} Element(e) haben einen Wiederherstellungspfad. Vor erneutem Versuch neu suchen.",
+        "duplicateRecoveryRequired_one": "Der Stapel konnte nicht vollständig wiederhergestellt werden. {{count}} Element hat einen Wiederherstellungspfad. Vor erneutem Versuch neu suchen.",
+        "duplicateRecoveryRequired_few": "Der Stapel konnte nicht vollständig wiederhergestellt werden. {{count}} Elemente haben einen Wiederherstellungspfad. Vor erneutem Versuch neu suchen.",
+        "duplicateRecoveryRequired_many": "Der Stapel konnte nicht vollständig wiederhergestellt werden. {{count}} Elemente haben einen Wiederherstellungspfad. Vor erneutem Versuch neu suchen.",
+        "duplicateRecoveryRequired_other": "Der Stapel konnte nicht vollständig wiederhergestellt werden. {{count}} Elemente haben einen Wiederherstellungspfad. Vor erneutem Versuch neu suchen.",
         "folderAdded": "Ordner zur Scanliste hinzugefügt: {{path}}",
         "folderSelectionCancelled": "Ordnerauswahl abgebrochen.",
         "removedRoot": "Root entfernt. Assets: {{assets}}, Vorschaubilder: {{thumbnails}}",
@@ -437,7 +448,10 @@
         "duplicateScanComplete": "Duplikatscan abgeschlossen. Gruppen: {{groups}}, Assets: {{assets}}",
         "noDuplicateChanges": "Keine ausstehenden Duplikatänderungen zum Anwenden",
         "duplicateApplyCancelled": "Anwendung der Duplikatänderungen abgebrochen.",
-        "duplicateApplied": " {{count}} Änderungen angewendet. Verbleibende Gruppen: {{groups}}",
+        "duplicateApplied_one": "{{count}} Änderung angewendet. Verbleibende Gruppen: {{groups}}",
+        "duplicateApplied_few": "{{count}} Änderungen angewendet. Verbleibende Gruppen: {{groups}}",
+        "duplicateApplied_many": "{{count}} Änderungen angewendet. Verbleibende Gruppen: {{groups}}",
+        "duplicateApplied_other": "{{count}} Änderungen angewendet. Verbleibende Gruppen: {{groups}}",
         "csvExportCancelled": "CSV-Export abgebrochen.",
         "csvExporting": "Tags CSV wird exportiert...",
         "csvExported": "CSV exportiert. Zeilen: {{rows}}",
@@ -451,8 +465,14 @@
         "dbImporting": "Datenbank und Vorschaubilder werden importiert...",
         "dbImported": "Datenbanksicherungsarchiv importiert. Dateien: {{files}}, Vorschaubilder: {{thumbnails}}",
         "folderAddedWithSkipped": "Ordner zur Scanliste hinzugef?gt: {{path}}. Bereits vorhandene ?bersprungen: {{skipped}}.",
-        "foldersAdded": "{{count}} Ordner zur Scanliste hinzugef?gt.",
-        "foldersAddedWithSkipped": "{{count}} Ordner zur Scanliste hinzugef?gt. Bereits vorhandene ?bersprungen: {{skipped}}.",
+        "foldersAdded_one": "{{count}} Ordner zur Scanliste hinzugefügt.",
+        "foldersAdded_few": "{{count}} Ordner zur Scanliste hinzugefügt.",
+        "foldersAdded_many": "{{count}} Ordner zur Scanliste hinzugefügt.",
+        "foldersAdded_other": "{{count}} Ordner zur Scanliste hinzugefügt.",
+        "foldersAddedWithSkipped_one": "{{count}} Ordner zur Scanliste hinzugefügt. Bereits vorhandene übersprungen: {{skipped}}.",
+        "foldersAddedWithSkipped_few": "{{count}} Ordner zur Scanliste hinzugefügt. Bereits vorhandene übersprungen: {{skipped}}.",
+        "foldersAddedWithSkipped_many": "{{count}} Ordner zur Scanliste hinzugefügt. Bereits vorhandene übersprungen: {{skipped}}.",
+        "foldersAddedWithSkipped_other": "{{count}} Ordner zur Scanliste hinzugefügt. Bereits vorhandene übersprungen: {{skipped}}.",
         "noNewFoldersAdded": "Es wurden keine neuen Ordner zur Scanliste hinzugef?gt.",
         "noNewFoldersAddedWithSkipped": "Es wurden keine neuen Ordner zur Scanliste hinzugef?gt. Bereits angeh?ngt: {{skipped}}."
       },
@@ -462,7 +482,14 @@
         "importTagsCsv": "Tags CSV importieren",
         "exportDbArchive": "DB-Sicherungsarchiv exportieren",
         "selectDbArchive": "DB-Sicherungsarchiv auswählen",
-        "confirmDuplicateChanges": " {{count}} vorgemerkte Änderungen anwenden?\n\nDabei werden {{deleteCount}} Dateien dauerhaft von der Festplatte gelöscht.",
+        "confirmDuplicateChanges_one": "{{count}} vorgemerkte Änderung anwenden?",
+        "confirmDuplicateChanges_few": "{{count}} vorgemerkte Änderungen anwenden?",
+        "confirmDuplicateChanges_many": "{{count}} vorgemerkte Änderungen anwenden?",
+        "confirmDuplicateChanges_other": "{{count}} vorgemerkte Änderungen anwenden?",
+        "confirmDuplicateDeletes_one": "Dabei wird {{count}} Datei dauerhaft von der Festplatte gelöscht.",
+        "confirmDuplicateDeletes_few": "Dabei werden {{count}} Dateien dauerhaft von der Festplatte gelöscht.",
+        "confirmDuplicateDeletes_many": "Dabei werden {{count}} Dateien dauerhaft von der Festplatte gelöscht.",
+        "confirmDuplicateDeletes_other": "Dabei werden {{count}} Dateien dauerhaft von der Festplatte gelöscht.",
         "confirmDbImportOverwrite": "Der Import der Datenbank aus dem Archiv überschreibt die aktuelle Datenbank und Vorschaubilder. Fortfahren?"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "Suchen",
     "settingsNavigation": "Einstellungsbereiche",
-    "itemCount": "Elemente: {{count}}"
+    "itemCount_one": "{{formattedCount}} Element",
+    "itemCount_few": "{{formattedCount}} Elemente",
+    "itemCount_many": "{{formattedCount}} Elemente",
+    "itemCount_other": "{{formattedCount}} Elemente"
   }
 }

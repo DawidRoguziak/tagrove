@@ -144,7 +144,7 @@ suite("100k collection: Shift-click ranges and a refresh deep in the list", func
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();
     await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 120000 });
-    await browser.waitUntil(async () => (await $('.workspace-count').getText()) === `${TOTAL} items`, {
+    await browser.waitUntil(async () => (await $('.workspace-count').getText()) === `${TOTAL.toLocaleString("en-US")} items`, {
       timeout: 60000, timeoutMsg: `Expected ${TOTAL} items`
     });
   });

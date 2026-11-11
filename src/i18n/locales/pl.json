@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "Tagi: kot wakacje -pies",
+    "syntaxHint": "kot wakacje -pies\ntags\ntags:3\ngN:Wakacje 2026",
     "tagSuggestions": "Podpowiedzi tagow",
     "mediaKind": "Typ mediow",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "Info",
     "infoHeading": "Informacje",
     "type": "Typ",
+    "kind": {
+      "image": "Obraz",
+      "gif": "GIF",
+      "video": "Wideo"
+    },
     "size": "Rozmiar",
     "dimensions": "Wymiary",
     "duration": "Czas",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "Ponow tylko nieudane miniaturki",
       "stopThumbnailRender": "Zatrzymaj renderowanie miniaturek",
       "rescanDescription": "Odśwież bibliotekę z podłączonych folderów.",
-      "thumbnailsDescription": "Generuj podglądy, aby szybciej przeglądać pliki."
+      "thumbnailsDescription": "Generuj podglądy, aby szybciej przeglądać pliki.",
+      "videoToolAvailable": "{{tool}}: dostępny",
+      "videoToolUnavailable": "{{tool}}: niedostępny"
     },
     "importExport": {
       "heading": "Import / Export",
@@ -423,11 +431,20 @@
       },
       "summary": {
         "duplicateRolledBack": "Batch duplikatow nie powiodl sie i wszystkie zmiany plikow zostaly wycofane. Metadane biblioteki nie zostaly zmienione.",
-        "duplicateRecoveryRequired": "Nie udalo sie w pelni odzyskac batcha. Pozycje ze sciezka odzyskiwania: {{count}}. Przeskanuj ponownie przed kolejna proba.",
+        "duplicateRecoveryRequired_one": "Nie udało się w pełni odzyskać partii. Pozycje ze ścieżką odzyskiwania: {{count}}. Przeskanuj ponownie przed kolejną próbą.",
+        "duplicateRecoveryRequired_few": "Nie udało się w pełni odzyskać partii. Pozycje ze ścieżką odzyskiwania: {{count}}. Przeskanuj ponownie przed kolejną próbą.",
+        "duplicateRecoveryRequired_many": "Nie udało się w pełni odzyskać partii. Pozycje ze ścieżką odzyskiwania: {{count}}. Przeskanuj ponownie przed kolejną próbą.",
+        "duplicateRecoveryRequired_other": "Nie udało się w pełni odzyskać partii. Pozycje ze ścieżką odzyskiwania: {{count}}. Przeskanuj ponownie przed kolejną próbą.",
         "folderAdded": "Folder dodany do listy skanowania: {{path}}",
         "folderAddedWithSkipped": "Folder dodany do listy skanowania: {{path}}. Pominieto juz podlaczone: {{skipped}}.",
-        "foldersAdded": "Dodano {{count}} foldery do listy skanowania.",
-        "foldersAddedWithSkipped": "Dodano {{count}} foldery do listy skanowania. Pominieto juz podlaczone: {{skipped}}.",
+        "foldersAdded_one": "Dodano {{count}} folder do listy skanowania.",
+        "foldersAdded_few": "Dodano {{count}} foldery do listy skanowania.",
+        "foldersAdded_many": "Dodano {{count}} folderów do listy skanowania.",
+        "foldersAdded_other": "Dodano {{count}} folderu do listy skanowania.",
+        "foldersAddedWithSkipped_one": "Dodano {{count}} folder do listy skanowania. Pominięto już podłączone: {{skipped}}.",
+        "foldersAddedWithSkipped_few": "Dodano {{count}} foldery do listy skanowania. Pominięto już podłączone: {{skipped}}.",
+        "foldersAddedWithSkipped_many": "Dodano {{count}} folderów do listy skanowania. Pominięto już podłączone: {{skipped}}.",
+        "foldersAddedWithSkipped_other": "Dodano {{count}} folderu do listy skanowania. Pominięto już podłączone: {{skipped}}.",
         "noNewFoldersAdded": "Nie dodano nowych folderow do listy skanowania.",
         "noNewFoldersAddedWithSkipped": "Nie dodano nowych folderow do listy skanowania. Juz podlaczone: {{skipped}}.",
         "folderSelectionCancelled": "Anulowano wybor folderu.",
@@ -442,7 +459,10 @@
         "duplicateScanComplete": "Skan duplikatow zakonczony. Grupy: {{groups}}, zasoby: {{assets}}",
         "noDuplicateChanges": "Brak oczekujacych zmian duplikatow do zastosowania",
         "duplicateApplyCancelled": "Anulowano zastosowanie zmian duplikatow.",
-        "duplicateApplied": "Zastosowano {{count}} zmian. Pozostale grupy: {{groups}}",
+        "duplicateApplied_one": "Zastosowano {{count}} zmianę. Pozostałe grupy: {{groups}}",
+        "duplicateApplied_few": "Zastosowano {{count}} zmiany. Pozostałe grupy: {{groups}}",
+        "duplicateApplied_many": "Zastosowano {{count}} zmian. Pozostałe grupy: {{groups}}",
+        "duplicateApplied_other": "Zastosowano {{count}} zmiany. Pozostałe grupy: {{groups}}",
         "csvExportCancelled": "Anulowano eksport CSV.",
         "csvExporting": "Eksportowanie tagow CSV...",
         "csvExported": "CSV wyeksportowano. Wiersze: {{rows}}",
@@ -462,7 +482,14 @@
         "importTagsCsv": "Importuj tagi CSV",
         "exportDbArchive": "Eksportuj archiwum kopii bazy",
         "selectDbArchive": "Wybierz archiwum kopii bazy",
-        "confirmDuplicateChanges": "Zastosowac {{count}} zmian z kolejki?\n\nTo trwale usunie {{deleteCount}} plikow z dysku.",
+        "confirmDuplicateChanges_one": "Zastosować {{count}} zmianę z kolejki?",
+        "confirmDuplicateChanges_few": "Zastosować {{count}} zmiany z kolejki?",
+        "confirmDuplicateChanges_many": "Zastosować {{count}} zmian z kolejki?",
+        "confirmDuplicateChanges_other": "Zastosować {{count}} zmiany z kolejki?",
+        "confirmDuplicateDeletes_one": "To trwale usunie {{count}} plik z dysku.",
+        "confirmDuplicateDeletes_few": "To trwale usunie {{count}} pliki z dysku.",
+        "confirmDuplicateDeletes_many": "To trwale usunie {{count}} plików z dysku.",
+        "confirmDuplicateDeletes_other": "To trwale usunie {{count}} pliku z dysku.",
         "confirmDbImportOverwrite": "Import bazy z archiwum nadpisze obecna baze i miniaturki. Kontynuowac?"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "Szukaj",
     "settingsNavigation": "Sekcje ustawień",
-    "itemCount": "Elementy: {{count}}"
+    "itemCount_one": "{{formattedCount}} element",
+    "itemCount_few": "{{formattedCount}} elementy",
+    "itemCount_many": "{{formattedCount}} elementów",
+    "itemCount_other": "{{formattedCount}} elementu"
   }
 }

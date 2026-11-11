@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "Теги: кот отпуск -собака",
+    "syntaxHint": "кот отпуск -собака\ntags\ntags:3\ngN:Поездка 2026",
     "tagSuggestions": "Подсказки тегов",
     "mediaKind": "Тип медиа",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "Информация",
     "infoHeading": "Сведения",
     "type": "Тип",
+    "kind": {
+      "image": "Изображение",
+      "gif": "GIF",
+      "video": "Видео"
+    },
     "size": "Размер",
     "dimensions": "Размеры",
     "duration": "Длительность",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "Повторить только неудавшиеся миниатюры",
       "stopThumbnailRender": "Остановить создание миниатюр",
       "rescanDescription": "Обновите библиотеку из подключённых папок.",
-      "thumbnailsDescription": "Создайте миниатюры для быстрого просмотра."
+      "thumbnailsDescription": "Создайте миниатюры для быстрого просмотра.",
+      "videoToolAvailable": "{{tool}}: доступен",
+      "videoToolUnavailable": "{{tool}}: недоступен"
     },
     "importExport": {
       "heading": "Импорт / Экспорт",
@@ -423,7 +431,10 @@
       },
       "summary": {
         "duplicateRolledBack": "Пакет дубликатов завершился ошибкой; все изменения файлов отменены. Метаданные не изменены.",
-        "duplicateRecoveryRequired": "Пакет восстановлен не полностью. У {{count}} элементов указан путь восстановления; повторите сканирование перед новой попыткой.",
+        "duplicateRecoveryRequired_one": "Пакет восстановлен не полностью. Элементов с путём восстановления: {{count}}; повторите сканирование перед новой попыткой.",
+        "duplicateRecoveryRequired_few": "Пакет восстановлен не полностью. Элементов с путём восстановления: {{count}}; повторите сканирование перед новой попыткой.",
+        "duplicateRecoveryRequired_many": "Пакет восстановлен не полностью. Элементов с путём восстановления: {{count}}; повторите сканирование перед новой попыткой.",
+        "duplicateRecoveryRequired_other": "Пакет восстановлен не полностью. Элементов с путём восстановления: {{count}}; повторите сканирование перед новой попыткой.",
         "folderAdded": "Папка добавлена в список сканирования: {{path}}",
         "folderSelectionCancelled": "Выбор папки отменен.",
         "removedRoot": "Корневой путь удален. Ресурсы: {{assets}}, миниатюры: {{thumbnails}}",
@@ -437,7 +448,10 @@
         "duplicateScanComplete": "Поиск дубликатов завершен. Группы: {{groups}}, ресурсы: {{assets}}",
         "noDuplicateChanges": "Нет ожидающих изменений дубликатов для применения",
         "duplicateApplyCancelled": "Применение изменений дубликатов отменено.",
-        "duplicateApplied": "Применено изменений: {{count}}. Оставшиеся группы: {{groups}}",
+        "duplicateApplied_one": "Применено {{count}} изменение. Оставшиеся группы: {{groups}}",
+        "duplicateApplied_few": "Применено {{count}} изменения. Оставшиеся группы: {{groups}}",
+        "duplicateApplied_many": "Применено {{count}} изменений. Оставшиеся группы: {{groups}}",
+        "duplicateApplied_other": "Применено {{count}} изменения. Оставшиеся группы: {{groups}}",
         "csvExportCancelled": "Экспорт CSV отменен.",
         "csvExporting": "Экспорт CSV тегов...",
         "csvExported": "CSV экспортирован. Строк: {{rows}}",
@@ -451,8 +465,14 @@
         "dbImporting": "Импорт базы данных и миниатюр...",
         "dbImported": "Архив резервной копии базы данных импортирован. Файлы: {{files}}, миниатюры: {{thumbnails}}",
         "folderAddedWithSkipped": "????? ????????? ? ?????? ????????????: {{path}}. ????????? ??? ????????????: {{skipped}}.",
-        "foldersAdded": "? ?????? ???????????? ????????? ?????: {{count}}.",
-        "foldersAddedWithSkipped": "? ?????? ???????????? ????????? ?????: {{count}}. ????????? ??? ????????????: {{skipped}}.",
+        "foldersAdded_one": "В список сканирования добавлена {{count}} папка.",
+        "foldersAdded_few": "В список сканирования добавлены {{count}} папки.",
+        "foldersAdded_many": "В список сканирования добавлено {{count}} папок.",
+        "foldersAdded_other": "В список сканирования добавлено {{count}} папки.",
+        "foldersAddedWithSkipped_one": "В список сканирования добавлена {{count}} папка. Пропущено существующих: {{skipped}}.",
+        "foldersAddedWithSkipped_few": "В список сканирования добавлены {{count}} папки. Пропущено существующих: {{skipped}}.",
+        "foldersAddedWithSkipped_many": "В список сканирования добавлено {{count}} папок. Пропущено существующих: {{skipped}}.",
+        "foldersAddedWithSkipped_other": "В список сканирования добавлено {{count}} папки. Пропущено существующих: {{skipped}}.",
         "noNewFoldersAdded": "????? ????? ? ?????? ???????????? ?? ?????????.",
         "noNewFoldersAddedWithSkipped": "????? ????? ? ?????? ???????????? ?? ?????????. ??? ??????????: {{skipped}}."
       },
@@ -462,7 +482,14 @@
         "importTagsCsv": "Импортировать CSV тегов",
         "exportDbArchive": "Экспортировать архив резервной копии БД",
         "selectDbArchive": "Выберите архив резервной копии БД",
-        "confirmDuplicateChanges": "Применить {{count}} изменений в очереди?\n\nЭто навсегда удалит {{deleteCount}} файлов с диска.",
+        "confirmDuplicateChanges_one": "Применить {{count}} изменение из очереди?",
+        "confirmDuplicateChanges_few": "Применить {{count}} изменения из очереди?",
+        "confirmDuplicateChanges_many": "Применить {{count}} изменений из очереди?",
+        "confirmDuplicateChanges_other": "Применить {{count}} изменения из очереди?",
+        "confirmDuplicateDeletes_one": "Это навсегда удалит {{count}} файл с диска.",
+        "confirmDuplicateDeletes_few": "Это навсегда удалит {{count}} файла с диска.",
+        "confirmDuplicateDeletes_many": "Это навсегда удалит {{count}} файлов с диска.",
+        "confirmDuplicateDeletes_other": "Это навсегда удалит {{count}} файла с диска.",
         "confirmDbImportOverwrite": "Импорт базы данных из архива перезапишет текущую базу данных и миниатюры. Продолжить?"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "Найти",
     "settingsNavigation": "Разделы настроек",
-    "itemCount": "Объекты: {{count}}"
+    "itemCount_one": "{{formattedCount}} элемент",
+    "itemCount_few": "{{formattedCount}} элемента",
+    "itemCount_many": "{{formattedCount}} элементов",
+    "itemCount_other": "{{formattedCount}} элемента"
   }
 }

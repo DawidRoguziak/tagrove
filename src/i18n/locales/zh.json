@@ -59,6 +59,7 @@
   },
   "search": {
     "placeholder": "标签: cat vacation -dog",
+    "syntaxHint": "cat vacation -dog\ntags\ntags:3\ngN:Trip 2026",
     "tagSuggestions": "标签建议",
     "mediaKind": "媒体类型",
     "mediaKinds": {
@@ -224,6 +225,11 @@
     "info": "信息",
     "infoHeading": "信息",
     "type": "类型",
+    "kind": {
+      "image": "图片",
+      "gif": "GIF",
+      "video": "视频"
+    },
     "size": "大小",
     "dimensions": "尺寸",
     "duration": "时长",
@@ -306,7 +312,9 @@
       "retryFailedThumbnails": "仅重试失败的缩略图",
       "stopThumbnailRender": "停止缩略图生成",
       "rescanDescription": "从已关联的文件夹更新媒体库。",
-      "thumbnailsDescription": "生成缩略图以加快浏览速度。"
+      "thumbnailsDescription": "生成缩略图以加快浏览速度。",
+      "videoToolAvailable": "{{tool}}: 可用",
+      "videoToolUnavailable": "{{tool}}: 不可用"
     },
     "importExport": {
       "heading": "导入 / 导出",
@@ -423,7 +431,10 @@
       },
       "summary": {
         "duplicateRolledBack": "重复项批处理失败，所有文件更改均已回滚。媒体库元数据未更改。",
-        "duplicateRecoveryRequired": "批处理无法完全恢复。{{count}} 个项目包含恢复路径；重试前请重新扫描。",
+        "duplicateRecoveryRequired_one": "批处理无法完全恢复。{{count}} 个项目包含恢复路径；重试前请重新扫描。",
+        "duplicateRecoveryRequired_few": "批处理无法完全恢复。{{count}} 个项目包含恢复路径；重试前请重新扫描。",
+        "duplicateRecoveryRequired_many": "批处理无法完全恢复。{{count}} 个项目包含恢复路径；重试前请重新扫描。",
+        "duplicateRecoveryRequired_other": "批处理无法完全恢复。{{count}} 个项目包含恢复路径；重试前请重新扫描。",
         "folderAdded": "文件夹已添加到扫描列表：{{path}}",
         "folderSelectionCancelled": "文件夹选择已取消。",
         "removedRoot": "已移除根目录。资源：{{assets}}，缩略图：{{thumbnails}}",
@@ -437,7 +448,10 @@
         "duplicateScanComplete": "重复扫描完成。组：{{groups}}，资源：{{assets}}",
         "noDuplicateChanges": "没有待应用的重复更改",
         "duplicateApplyCancelled": "应用重复更改已取消。",
-        "duplicateApplied": "已应用 {{count}} 个更改。剩余组：{{groups}}",
+        "duplicateApplied_one": "已应用 {{count}} 个更改。剩余组：{{groups}}",
+        "duplicateApplied_few": "已应用 {{count}} 个更改。剩余组：{{groups}}",
+        "duplicateApplied_many": "已应用 {{count}} 个更改。剩余组：{{groups}}",
+        "duplicateApplied_other": "已应用 {{count}} 个更改。剩余组：{{groups}}",
         "csvExportCancelled": "CSV 导出已取消。",
         "csvExporting": "正在导出标签 CSV...",
         "csvExported": "CSV 已导出。行数：{{rows}}",
@@ -451,8 +465,14 @@
         "dbImporting": "正在导入数据库和缩略图...",
         "dbImported": "数据库备份归档已导入。文件：{{files}}，缩略图：{{thumbnails}}",
         "folderAddedWithSkipped": "????????????{{path}}????????{{skipped}}?",
-        "foldersAdded": "?? {{count}} ????????????",
-        "foldersAddedWithSkipped": "?? {{count}} ???????????????????{{skipped}}?",
+        "foldersAdded_one": "已将 {{count}} 个文件夹添加到扫描列表。",
+        "foldersAdded_few": "已将 {{count}} 个文件夹添加到扫描列表。",
+        "foldersAdded_many": "已将 {{count}} 个文件夹添加到扫描列表。",
+        "foldersAdded_other": "已将 {{count}} 个文件夹添加到扫描列表。",
+        "foldersAddedWithSkipped_one": "已将 {{count}} 个文件夹添加到扫描列表。 已跳过现有项：{{skipped}}。",
+        "foldersAddedWithSkipped_few": "已将 {{count}} 个文件夹添加到扫描列表。 已跳过现有项：{{skipped}}。",
+        "foldersAddedWithSkipped_many": "已将 {{count}} 个文件夹添加到扫描列表。 已跳过现有项：{{skipped}}。",
+        "foldersAddedWithSkipped_other": "已将 {{count}} 个文件夹添加到扫描列表。 已跳过现有项：{{skipped}}。",
         "noNewFoldersAdded": "???????????????",
         "noNewFoldersAddedWithSkipped": "???????????????????{{skipped}}?"
       },
@@ -462,7 +482,14 @@
         "importTagsCsv": "导入标签 CSV",
         "exportDbArchive": "导出数据库备份归档",
         "selectDbArchive": "选择数据库备份归档",
-        "confirmDuplicateChanges": "应用 {{count}} 个排队更改？\n\n这将永久从磁盘删除 {{deleteCount}} 个文件。",
+        "confirmDuplicateChanges_one": "应用 {{count}} 个排队更改？",
+        "confirmDuplicateChanges_few": "应用 {{count}} 个排队更改？",
+        "confirmDuplicateChanges_many": "应用 {{count}} 个排队更改？",
+        "confirmDuplicateChanges_other": "应用 {{count}} 个排队更改？",
+        "confirmDuplicateDeletes_one": "这将永久从磁盘删除 {{count}} 个文件。",
+        "confirmDuplicateDeletes_few": "这将永久从磁盘删除 {{count}} 个文件。",
+        "confirmDuplicateDeletes_many": "这将永久从磁盘删除 {{count}} 个文件。",
+        "confirmDuplicateDeletes_other": "这将永久从磁盘删除 {{count}} 个文件。",
         "confirmDbImportOverwrite": "从归档导入数据库将覆盖当前数据库和缩略图。继续？"
       }
     },
@@ -492,6 +519,9 @@
   "workspace": {
     "search": "搜索",
     "settingsNavigation": "设置分区",
-    "itemCount": "{{count}} 个项目"
+    "itemCount_one": "{{formattedCount}} 项",
+    "itemCount_few": "{{formattedCount}} 项",
+    "itemCount_many": "{{formattedCount}} 项",
+    "itemCount_other": "{{formattedCount}} 项"
   }
 }

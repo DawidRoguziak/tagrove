@@ -25,7 +25,7 @@ async function exists(file) {
   return fs.access(file).then(() => true, () => false);
 }
 async function count() {
-  return Number((await $(".workspace-count").getText()).match(/\d+/)?.[0]);
+  return Number((await $(".workspace-count").getText()).replace(/[^\d]/g, ""));
 }
 
 suite("startup scan completion across WebView remount", function () {

@@ -290,7 +290,7 @@ background and an inset border; the selected segment has a solid primary-green f
 primary-content text. Only unselected segments receive the raised hover background. Arrow keys change
 kind; the existing parent-commit search semantics are preserved. Both rows belong to a
 full-width, non-scrolling header and can grow when controls wrap, with search on its own
-row below 700px. The gallery scroll viewport fills the remaining height. Ctrl+K / Cmd+K focuses the existing search input without changing or applying its draft. An open modal or inert search field blocks the shortcut. The placeholder gives one valid query; the field tooltip separates further examples onto individual lines.
+row below 700px. The gallery scroll viewport fills the remaining height. Ctrl+K / Cmd+K focuses the existing search input without changing or applying its draft. An open modal or inert search field blocks the shortcut. The placeholder gives one valid query; the field tooltip (`search.syntaxHint`, localized; the `tags` and `gN` grammar tokens stay literal) separates further examples onto individual lines.
 The gallery retains square tiles and measured 12px gaps. Bulk selection uses a green
 outline plus a checkmark; opaque Video badges use purple `#6D28D9` and GIF badges use blue `#1D4ED8`, both with white text in either theme. Their bottom and right offsets are 4px; selection checkmarks retain their original position.
 Group backings retain their dedicated `--gallery-group-bg` and `--gallery-group-edge` tokens.

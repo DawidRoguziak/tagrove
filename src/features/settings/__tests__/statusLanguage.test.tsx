@@ -184,9 +184,9 @@ describe("duplicate apply summary language", () => {
     await settle(() =>
       duplicates.onSaveAll([{ assetId: 1, type: "rename", nextFileName: "b.jpg" }])
     );
-    expect(ui.getByText(/^Applied 1 changes\./)).toBeInTheDocument();
+    expect(ui.getByText(/^Applied 1 change\./)).toBeInTheDocument();
     await settle(() => changeAppLanguage("pl"));
-    expect(ui.getByText(/^Zastosowano 1 zmian\./)).toBeInTheDocument();
+    expect(ui.getByText(/^Zastosowano 1 zmianę\./)).toBeInTheDocument();
   });
 });
 

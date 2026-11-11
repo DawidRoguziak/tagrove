@@ -19,7 +19,7 @@ export function LightboxInfoPanel(props: LightboxInfoPanelProps) {
       <div class="grid gap-2 font-mono text-xs">
         <span>
           <strong class="font-semibold text-base-content">{t("lightbox.type")}:</strong>{" "}
-          {props.selected.kind}
+          {t(`lightbox.kind.${props.selected.kind}`)}
         </span>
         {props.selected.size_bytes !== null ? (
           <span>

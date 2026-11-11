@@ -132,7 +132,7 @@ async function nativeClick(selector, action = "click") {
         } else await chip.click();
         await $("button=Apply").click();
         await expect($(".filter-input")).toHaveValue(`${action === "single" ? "" : "-"}${tag}`);
-        await expect($(".workspace-count")).toHaveText("1 items");
+        await expect($(".workspace-count")).toHaveText("1 item");
       });
     }
   }

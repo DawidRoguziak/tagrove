@@ -227,7 +227,7 @@ suite("gallery timeline and select-all selection spec", function () {
 
     await $('.filter-input').setValue(TAG);
     await $('button=Search').click();
-    await browser.waitUntil(async () => (await $('.workspace-count').getText()) === `${TOTAL - 1} items`, {
+    await browser.waitUntil(async () => (await $('.workspace-count').getText()) === `${(TOTAL - 1).toLocaleString("en-US")} items`, {
       timeout: 30000,
       timeoutMsg: `Expected ${TOTAL - 1} tagged results`
     });

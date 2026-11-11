@@ -30,10 +30,9 @@ export function DuplicateDeleteConfirmDialog(props: DuplicateDeleteConfirmDialog
           {t("common.confirm")}
         </h3>
         <p class="m-0 whitespace-pre-line text-[13px] leading-[1.4] text-[var(--text-muted)]">
-          {t("settings.actions.dialogs.confirmDuplicateChanges", {
-            count: visible().count,
-            deleteCount: visible().deleteCount
-          })}
+          {t("settings.actions.dialogs.confirmDuplicateChanges", { count: visible().count })}
+          {"\n\n"}
+          {t("settings.actions.dialogs.confirmDuplicateDeletes", { count: visible().deleteCount })}
         </p>
         <div class="flex items-center gap-2">
           <UiButton onClick={props.onCancel} disabled={visible().locked}>

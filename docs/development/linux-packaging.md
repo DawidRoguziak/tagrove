@@ -70,6 +70,18 @@ Flatpak compilation runs with Docker `--network none`, Flatpak `--unshare=networ
 
 AppImage uses Debian 12, a pinned Bun/Node/Rust toolchain and checksum-pinned linuxdeploy, launcher, GTK/GStreamer plugins and AppImage output plugin. The compiler/bundler runs in a separate Docker container with no network access. Debian security packages can change; the output records their versions and source package names. The optional native target retains its rolling Arch base and runtime requirements.
 
+### Refreshing AppImage tool pins
+
+`packaging/linux/appimage-tools.json` pins each AppImage build tool by URL and SHA-256, and `packaging/linux/download.py` fails closed on a mismatch. Most URLs are immutable (a release tag or a commit). Two are not: `linuxdeploy-plugin-appimage.AppImage` and `runtime-x86_64` use upstream `releases/download/continuous/` assets, which upstream can re-publish at any time. The type2-runtime tagged releases are older than the commit recorded in `packaging/linux/licenses/SOURCES.json`, and the plugin publishes only `continuous`, so they stay on `continuous`.
+
+A `Checksum mismatch` for one of these means upstream re-published the asset, not that the download was tampered with. To refresh:
+
+1. Download the asset into an empty temporary directory with `curl -fL`, and review what changed upstream (release notes, commit history).
+2. Compute `sha256sum` of the downloaded file yourself. Never copy a checksum from the build error or from upstream text without having the file.
+3. Update the `sha256` field (and the `url` if it changed) in `appimage-tools.json`. For the runtime, also update the commit in `packaging/linux/licenses/SOURCES.json` to the commit that built the new asset.
+4. Run `bun run test:packaging`. Commit the pin edits, because the build exports a clean `HEAD` and refuses a dirty checkout. Then run `./scripts/build-linux-docker.sh --format appimage` and the runtime verification below.
+5. Delete the temporary download.
+
 ### Offline Bun prereleases
 
 The migration pins Solid prereleases. Bun 1.4.0 replaces their prerelease tags with

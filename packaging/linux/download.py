@@ -17,7 +17,12 @@ def download(specification, destination):
         actual = hashlib.file_digest(target.open("rb"), "sha256").hexdigest()
         if actual != source["sha256"]:
             target.unlink()
-            raise ValueError(f"Checksum mismatch for {source['url']}: {actual}")
+            raise ValueError(
+                f"Checksum mismatch for {source['url']}: expected {source['sha256']}, got {actual}. "
+                "If the URL is a mutable 'continuous' release asset, upstream may have re-published it; "
+                "see 'Refreshing AppImage tool pins' in docs/development/linux-packaging.md. "
+                "Do not copy the 'got' value without reviewing the file."
+            )
 
 
 if __name__ == "__main__":

@@ -1113,8 +1113,7 @@ as soon as they load; the historical comparison below was recorded with the fade
 
 The runner leaves raw samples, request traces, screenshots and profile/server
 cleanup evidence in ignored `artifacts/gallery-scale/`. The performance screenshot
-is `performance-thumbnails.png`. The `GALLERY_BASELINE_DIR` substitution is confined
-to this fixture's Vite configuration and does not affect application builds.
+is `performance-thumbnails.png`.
 
 The initial fast-scroll verification on 2026-10-17, before removal of the gallery
 image fade, used WebKitGTK 2.54.1 on private Xvfb, with three passes

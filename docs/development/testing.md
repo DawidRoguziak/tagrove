@@ -1036,8 +1036,9 @@ end state and its language change; there is no sequential `hasMore`/reach-end lo
 sparse viewport demand is the only page loader. For live media/IPC and timing provenance
 use the separate gallery browsing and performance suites above.
 
+`bun run typecheck` and `bun run lint` cover the fixture sources (`e2e/gallery-scale/tsconfig.json`, `*.ts`/`*.tsx`), so there is no separate manual `tsc` step.
+
 ```sh
-bunx tsc --noEmit -p e2e/gallery-scale/tsconfig.json
 bun run test -- src/features/gallery src/app/__tests__/gallery.test.tsx src/library/__tests__/createLibrary.test.ts src/library/query/__tests__/createAssetQuery.test.ts
 sh e2e/gallery-scale/run.sh
 ```

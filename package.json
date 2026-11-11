@@ -12,7 +12,7 @@
     "icons:generate": "tauri icon public/tagrove.svg --output src-tauri/icons --png 16 --png 32 --png 64 --png 128 --png 256 --png 512",
     "dev": "vite",
     "build": "bun run typecheck && vite build",
-    "typecheck": "tsc --noEmit --project tsconfig.json --pretty false && tsc --noEmit --project tsconfig.node.json --pretty false",
+    "typecheck": "tsc --noEmit --project tsconfig.json --pretty false && tsc --noEmit --project tsconfig.node.json --pretty false && tsc --noEmit --project e2e/gallery-scale/tsconfig.json --pretty false",
     "lint": "biome lint .",
     "format:check": "biome format scripts vite.config.ts vitest.config.ts",
     "locale:check": "node scripts/validate-locales.mjs",

@@ -230,7 +230,8 @@ fn serve<R: Runtime>(
         }
         Ok(ThumbnailRequestOutcome::NotFound) => not_found(origin),
         Ok(ThumbnailRequestOutcome::Pending) => return,
-        // Full queue, pool exhaustion or maintenance: transient.
+        // Full scheduler queue, busy database pool or another request error:
+        // transient. Maintenance never lands here; `admit()` waits for it.
         Err(_) => unavailable(origin),
     };
     if let Some(responder) = take(&slot) {

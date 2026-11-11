@@ -415,7 +415,7 @@ pub fn list_asset_paths(conn: &Connection) -> anyhow::Result<Vec<AssetPathRow>> 
 
 pub fn list_asset_tags(conn: &Connection, asset_id: i64) -> anyhow::Result<Vec<String>> {
     let mut out = Vec::new();
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "
         SELECT t.name
         FROM tags t

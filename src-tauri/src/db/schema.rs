@@ -144,10 +144,6 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
         )?;
     }
 
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_assets_file_name ON assets(file_name COLLATE NOCASE)",
-        [],
-    )?;
     conn.execute_batch(
         "
         CREATE INDEX IF NOT EXISTS idx_assets_gallery_kind_favorite
@@ -943,6 +939,20 @@ pub(super) fn ensure_assets_file_name_column(conn: &Connection) -> anyhow::Resul
         )?;
     }
 
+    // The gate below needs this index to stay a bounded search on a library
+    // where every name is filled. Created here rather than later in
+    // `init_schema` so the first start after the column exists already uses it.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_assets_file_name ON assets(file_name COLLATE NOCASE)",
+        [],
+    )?;
+    let needs_fill = conn
+        .prepare_cached(BLANK_FILE_NAME_EXISTS_SQL)?
+        .query_row([], |row| row.get::<_, bool>(0))?;
+    if !needs_fill {
+        return Ok(());
+    }
+
     let tx = conn.unchecked_transaction()?;
     let mut updates = Vec::<(i64, String)>::new();
     {
@@ -959,49 +969,62 @@ pub(super) fn ensure_assets_file_name_column(conn: &Connection) -> anyhow::Resul
         }
     }
 
-    for (asset_id, file_name) in updates {
-        tx.execute(
-            "UPDATE assets SET file_name = ?1 WHERE id = ?2",
-            params![file_name, asset_id],
-        )?;
+    {
+        let mut update = tx.prepare_cached("UPDATE assets SET file_name = ?1 WHERE id = ?2")?;
+        for (asset_id, file_name) in updates {
+            update.execute(params![file_name, asset_id])?;
+        }
     }
     tx.commit()?;
 
     Ok(())
 }
 
+/// True when some row matches the fill predicate
+/// `file_name IS NULL OR trim(file_name) = ''`, answered with index searches on
+/// `idx_assets_file_name` instead of a scan of `assets`. SQLite `trim` strips
+/// only spaces, so a blank text value is empty or starts with a byte below
+/// `'!'`; the range `< '!'` therefore holds every blank text value and, on a
+/// filled library, only the rare names that start with a space or a control
+/// character. Values of TEXT affinity are text, NULL or (from a crafted
+/// database) BLOB; BLOB sorts after all text, so the third search covers it.
+/// The OR form is split into three EXISTS because SQLite would not use the
+/// index for the combined predicate.
+pub(super) const BLANK_FILE_NAME_EXISTS_SQL: &str = "
+    SELECT EXISTS(SELECT 1 FROM assets WHERE file_name IS NULL)
+        OR EXISTS(SELECT 1 FROM assets
+                  WHERE file_name < '!' COLLATE NOCASE AND trim(file_name) = '')
+        OR EXISTS(SELECT 1 FROM assets
+                  WHERE file_name >= x'' COLLATE NOCASE AND trim(file_name) = '')";
+
 pub(super) fn migrate_canonical_keys_and_tags(conn: &Connection) -> anyhow::Result<()> {
     let tx = conn.unchecked_transaction()?;
     let mut changed = false;
+    // Only rows whose key differs are kept, so a large library does not hold
+    // every name in memory.
     let filename_updates = {
         let mut stmt = tx.prepare("SELECT id, file_name, file_name_key FROM assets")?;
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
-        rows.collect::<Result<Vec<_>, _>>()?
-    };
-    for (asset_id, file_name, existing_key) in filename_updates {
-        let key = canonical_key(&file_name);
-        if key == existing_key {
-            continue;
+        let mut rows = stmt.query([])?;
+        let mut updates = Vec::new();
+        while let Some(row) = rows.next()? {
+            let file_name = row.get_ref(1)?.as_str()?;
+            let key = canonical_key(file_name);
+            if key != row.get_ref(2)?.as_str()? {
+                updates.push((row.get::<_, i64>(0)?, key));
+            }
         }
-        tx.execute(
-            "UPDATE assets SET file_name_key = ?1 WHERE id = ?2",
-            params![key, asset_id],
-        )?;
-        changed = true;
+        updates
+    };
+    {
+        let mut update = tx.prepare_cached("UPDATE assets SET file_name_key = ?1 WHERE id = ?2")?;
+        for (asset_id, key) in filename_updates {
+            update.execute(params![key, asset_id])?;
+            changed = true;
+        }
     }
 
     let asset_tags = {
-        let mut stmt = tx.prepare("SELECT id FROM assets ORDER BY id")?;
-        let asset_ids = stmt
-            .query_map([], |row| row.get::<_, i64>(0))?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(stmt);
+        let asset_ids = assets_needing_tag_migration(&tx)?;
         let mut values = Vec::with_capacity(asset_ids.len());
         for asset_id in asset_ids {
             let legacy_tags = list_asset_tags(&tx, asset_id)?;
@@ -1028,6 +1051,81 @@ pub(super) fn migrate_canonical_keys_and_tags(conn: &Connection) -> anyhow::Resu
     )?;
     tx.commit()?;
     Ok(())
+}
+
+/// Ids, ascending, of the assets on which the version-3 rewrite
+/// (`set_asset_tags_in_tx` with the legacy-split tags) can change anything.
+/// For every other asset that call is a no-op, so skipping it leaves the
+/// result unchanged. An asset is selected when
+/// - it holds a tag of a dirty group: a tag whose name is not already one
+///   canonical token (`normalize_tags(parse_legacy_tags(name)) != [name]`),
+///   or any tag sharing `lower(trim(name))` with such a tag, which
+///   `canonicalize_tag_rows_in_tx` would merge or rename; or
+/// - its stored `tag_count` differs from its mapping count, which the rewrite
+///   repairs.
+///
+/// A tag outside a dirty group is canonical and alone in its
+/// `lower(trim(name))` group, so an asset holding only such tags with a
+/// correct count keeps its rows, its names and its count.
+pub(super) fn assets_needing_tag_migration(
+    tx: &rusqlite::Transaction<'_>,
+) -> anyhow::Result<std::collections::BTreeSet<i64>> {
+    let mut dirty_tag_ids = std::collections::BTreeSet::new();
+    let noncanonical_names = {
+        let mut stmt = tx.prepare("SELECT id, name FROM tags")?;
+        let mut rows = stmt.query([])?;
+        let mut names = Vec::new();
+        while let Some(row) = rows.next()? {
+            let Ok(name) = row.get_ref(1)?.as_str() else {
+                // Not UTF-8 text (crafted database): its holders go through
+                // the rewrite, which fails on it exactly as before.
+                dirty_tag_ids.insert(row.get::<_, i64>(0)?);
+                continue;
+            };
+            let tokens = normalize_tags(parse_legacy_tags(name));
+            if tokens.len() != 1 || tokens[0] != name {
+                names.push(name.to_string());
+            }
+        }
+        names
+    };
+    {
+        let mut group =
+            tx.prepare_cached("SELECT id FROM tags WHERE lower(trim(name)) = lower(trim(?1))")?;
+        for name in &noncanonical_names {
+            let rows = group.query_map(params![name], |row| row.get::<_, i64>(0))?;
+            for row in rows {
+                dirty_tag_ids.insert(row?);
+            }
+        }
+    }
+
+    let mut asset_ids = std::collections::BTreeSet::new();
+    {
+        // Joined to `assets` like the previous walk over every asset, so a
+        // mapping without its asset (foreign keys off) is ignored as before.
+        let mut holders = tx.prepare_cached(
+            "SELECT at.asset_id FROM asset_tags at JOIN assets a ON a.id = at.asset_id
+             WHERE at.tag_id = ?1",
+        )?;
+        for tag_id in dirty_tag_ids {
+            let rows = holders.query_map(params![tag_id], |row| row.get::<_, i64>(0))?;
+            for row in rows {
+                asset_ids.insert(row?);
+            }
+        }
+    }
+    {
+        let mut stmt = tx.prepare(
+            "SELECT id FROM assets
+             WHERE tag_count <> (SELECT COUNT(*) FROM asset_tags WHERE asset_id = assets.id)",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+        for row in rows {
+            asset_ids.insert(row?);
+        }
+    }
+    Ok(asset_ids)
 }
 
 /// Predicate for an asset that belongs to a media-group bucket, written for the

@@ -423,17 +423,14 @@ pub(super) fn list_asset_tags_in_tx(
     asset_id: i64,
 ) -> anyhow::Result<Option<Vec<String>>> {
     let exists = tx
-        .query_row(
-            "SELECT 1 FROM assets WHERE id = ?1",
-            params![asset_id],
-            |_| Ok(()),
-        )
+        .prepare_cached("SELECT 1 FROM assets WHERE id = ?1")?
+        .query_row(params![asset_id], |_| Ok(()))
         .optional()?
         .is_some();
     if !exists {
         return Ok(None);
     }
-    let mut stmt = tx.prepare(
+    let mut stmt = tx.prepare_cached(
         "SELECT lower(trim(t.name)) FROM tags t JOIN asset_tags at ON at.tag_id = t.id
          WHERE at.asset_id = ?1 ORDER BY lower(trim(t.name)) ASC",
     )?;
@@ -446,7 +443,7 @@ pub(super) fn canonicalize_tag_rows_in_tx(
     asset_id: i64,
 ) -> anyhow::Result<bool> {
     let normalized_names = {
-        let mut stmt = tx.prepare(
+        let mut stmt = tx.prepare_cached(
             "SELECT DISTINCT lower(trim(t.name))
              FROM tags t
              JOIN asset_tags at ON at.tag_id = t.id
@@ -459,7 +456,7 @@ pub(super) fn canonicalize_tag_rows_in_tx(
     let mut changed = false;
     for normalized_name in normalized_names {
         let tag_rows = {
-            let mut stmt = tx.prepare(
+            let mut stmt = tx.prepare_cached(
                 "SELECT id, name FROM tags
                  WHERE lower(trim(name)) = ?1
                  ORDER BY CASE WHEN name = ?1 COLLATE BINARY THEN 0 ELSE 1 END, id ASC",
@@ -506,11 +503,9 @@ pub(super) fn canonicalize_tag_rows_in_tx(
             changed = true;
         }
 
-        let keeper_name: String = tx.query_row(
-            "SELECT name FROM tags WHERE id = ?1",
-            params![keeper_id],
-            |row| row.get(0),
-        )?;
+        let keeper_name: String = tx
+            .prepare_cached("SELECT name FROM tags WHERE id = ?1")?
+            .query_row(params![keeper_id], |row| row.get(0))?;
         if keeper_name != normalized_name {
             tx.execute(
                 "UPDATE tags SET name = ?1 WHERE id = ?2",
@@ -550,16 +545,12 @@ pub(crate) fn set_asset_tags_in_tx(
     let noncanonical = existing != normalize_tags(existing.clone());
     let mut vocabulary_changed = canonicalize_tag_rows_in_tx(tx, asset_id)?;
     let canonicalized = vocabulary_changed || noncanonical;
-    let actual_count: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM asset_tags WHERE asset_id = ?1",
-        params![asset_id],
-        |row| row.get(0),
-    )?;
-    let stored_count: i64 = tx.query_row(
-        "SELECT tag_count FROM assets WHERE id = ?1",
-        params![asset_id],
-        |row| row.get(0),
-    )?;
+    let actual_count: i64 = tx
+        .prepare_cached("SELECT COUNT(*) FROM asset_tags WHERE asset_id = ?1")?
+        .query_row(params![asset_id], |row| row.get(0))?;
+    let stored_count: i64 = tx
+        .prepare_cached("SELECT tag_count FROM assets WHERE id = ?1")?
+        .query_row(params![asset_id], |row| row.get(0))?;
     let count_repaired = stored_count != actual_count;
     if count_repaired {
         tx.execute(
@@ -595,20 +586,16 @@ pub(crate) fn set_asset_tags_in_tx(
         params![asset_id],
     )?;
     for tag in &normalized {
-        vocabulary_changed |= tx.execute(
-            "INSERT INTO tags(name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
-            params![tag],
-        )? > 0;
-        let tag_id: i64 = tx.query_row(
-            "SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE",
-            params![tag],
-            |row| row.get(0),
-        )?;
+        vocabulary_changed |= tx
+            .prepare_cached("INSERT INTO tags(name) VALUES (?1) ON CONFLICT(name) DO NOTHING")?
+            .execute(params![tag])?
+            > 0;
+        let tag_id: i64 = tx
+            .prepare_cached("SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE")?
+            .query_row(params![tag], |row| row.get(0))?;
         removed_candidates.remove(&tag_id);
-        tx.execute(
-            "INSERT OR IGNORE INTO asset_tags(asset_id, tag_id) VALUES (?1, ?2)",
-            params![asset_id, tag_id],
-        )?;
+        tx.prepare_cached("INSERT OR IGNORE INTO asset_tags(asset_id, tag_id) VALUES (?1, ?2)")?
+            .execute(params![asset_id, tag_id])?;
     }
     tx.execute(
         "UPDATE assets SET tag_count = (

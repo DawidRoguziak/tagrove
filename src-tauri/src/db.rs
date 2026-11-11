@@ -1135,6 +1135,390 @@ mod tests {
         );
     }
 
+    /// Inserts `count` filled assets `/library/n.jpg` in one statement.
+    fn insert_filled_assets(conn: &Connection, count: i64) {
+        conn.execute(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+             INSERT INTO assets(path, file_name, file_name_key, kind, size_bytes, modified_at)
+             SELECT '/library/' || i || '.jpg', i || '.jpg', i || '.jpg', 'image', 1, i FROM n",
+            params![count],
+        )
+        .expect("filled assets");
+    }
+
+    /// Progress-handler callbacks (one per 100 VM instructions) spent in `run`.
+    fn vm_work(conn: &Connection, run: impl FnOnce(&Connection)) -> usize {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&ticks);
+        conn.progress_handler(
+            100,
+            Some(move || {
+                counter.fetch_add(1, Ordering::Relaxed);
+                false
+            }),
+        );
+        run(conn);
+        conn.progress_handler(100, None::<fn() -> bool>);
+        ticks.load(Ordering::Relaxed)
+    }
+
+    fn file_names(conn: &Connection) -> Vec<(String, Option<String>)> {
+        let mut stmt = conn
+            .prepare("SELECT path, file_name FROM assets ORDER BY id")
+            .expect("names");
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("name rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("names")
+    }
+
+    #[test]
+    fn startup_file_name_fill_does_no_table_scan_when_every_name_is_filled() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_filled_assets(&conn, 20_000);
+        // Filled names the range search still visits and must leave alone.
+        conn.execute_batch(
+            "INSERT INTO assets(path, file_name, file_name_key, kind, size_bytes, modified_at)
+             VALUES ('/library/ lead.jpg', ' lead.jpg', ' lead.jpg', 'image', 1, 1),
+                    ('/library/tab.jpg', char(9) || 'tab.jpg', char(9) || 'tab.jpg', 'image', 1, 1);",
+        )
+        .expect("edge names");
+        let before = file_names(&conn);
+        let changes = conn.total_changes();
+
+        let gate_work = vm_work(&conn, |conn| {
+            super::schema::ensure_assets_file_name_column(conn).expect("ensure column");
+        });
+        // The pre-K26 statement on the same library, to show the measure sees a scan.
+        let scan_work = vm_work(&conn, |conn| {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, path FROM assets WHERE file_name IS NULL OR trim(file_name) = ''",
+                )
+                .expect("scan");
+            let rows = stmt.query_map([], |_| Ok(())).expect("scan rows");
+            assert_eq!(rows.count(), 0);
+        });
+
+        assert!(gate_work < 10, "gate work {gate_work}");
+        assert!(scan_work > 200, "scan work {scan_work}");
+        assert_eq!(conn.total_changes(), changes);
+        assert_eq!(file_names(&conn), before);
+
+        // SQLite folds `IS NULL` on the NOT NULL column to false, so its
+        // "SCAN" never steps; the two range branches are index searches.
+        let plan = blank_file_name_gate_plan(&conn);
+        assert_eq!(
+            plan.iter()
+                .filter(|step| step
+                    .starts_with("SEARCH assets USING COVERING INDEX idx_assets_file_name"))
+                .count(),
+            2,
+            "{plan:?}"
+        );
+    }
+
+    fn blank_file_name_gate_plan(conn: &Connection) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN {}",
+                super::schema::BLANK_FILE_NAME_EXISTS_SQL
+            ))
+            .expect("plan");
+        stmt.query_map([], |row| row.get::<_, String>(3))
+            .expect("plan rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("plan")
+    }
+
+    #[test]
+    fn startup_file_name_fill_does_no_table_scan_on_an_earlier_nullable_column() {
+        let conn = Connection::open_in_memory().expect("db");
+        conn.execute_batch(LEGACY_ASSETS_WITHOUT_FILE_NAME)
+            .expect("legacy assets schema");
+        conn.execute_batch("ALTER TABLE assets ADD COLUMN file_name TEXT;")
+            .expect("earlier migration");
+        init_schema(&conn).expect("schema");
+        conn.execute("DELETE FROM assets", []).expect("reset");
+        insert_filled_assets(&conn, 20_000);
+        let changes = conn.total_changes();
+
+        let gate_work = vm_work(&conn, |conn| {
+            super::schema::ensure_assets_file_name_column(conn).expect("ensure column");
+        });
+
+        assert!(gate_work < 10, "gate work {gate_work}");
+        assert_eq!(conn.total_changes(), changes);
+        let plan = blank_file_name_gate_plan(&conn);
+        assert!(
+            plan.iter().all(|step| !step.starts_with("SCAN assets")),
+            "{plan:?}"
+        );
+        assert_eq!(
+            plan.iter()
+                .filter(|step| step
+                    .starts_with("SEARCH assets USING COVERING INDEX idx_assets_file_name"))
+                .count(),
+            3,
+            "{plan:?}"
+        );
+    }
+
+    #[test]
+    fn startup_file_name_fill_still_repairs_blank_names_of_a_current_library() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_filled_assets(&conn, 3);
+        // What an import or a legacy restore could leave behind.
+        conn.execute_batch(
+            "INSERT INTO assets(path, file_name, kind, size_bytes, modified_at)
+             VALUES ('/library/a/empty.jpg', '', 'image', 1, 1),
+                    ('C:\\media\\spaces.png', '   ', 'image', 1, 1),
+                    ('/library/b/blob.gif', x'2020', 'gif', 1, 1),
+                    ('/library/ lead.jpg', ' lead.jpg', 'image', 1, 1);",
+        )
+        .expect("blank names");
+
+        for _ in 0..2 {
+            init_schema(&conn).expect("schema");
+            assert_eq!(
+                file_names(&conn)
+                    .into_iter()
+                    .map(|(_, name)| name.expect("filled"))
+                    .collect::<Vec<_>>(),
+                vec![
+                    "1.jpg",
+                    "2.jpg",
+                    "3.jpg",
+                    "empty.jpg",
+                    "spaces.png",
+                    "blob.gif",
+                    " lead.jpg"
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn startup_file_name_fill_repairs_null_names_of_an_earlier_nullable_column() {
+        let conn = Connection::open_in_memory().expect("db");
+        conn.execute_batch(LEGACY_ASSETS_WITHOUT_FILE_NAME)
+            .expect("legacy assets schema");
+        conn.execute_batch("ALTER TABLE assets ADD COLUMN file_name TEXT;")
+            .expect("earlier migration");
+        init_schema(&conn).expect("schema");
+        assert_eq!(file_name_column(&conn), (false, None));
+        assert_eq!(file_names(&conn)[0].1.as_deref(), Some("photo.jpg"));
+
+        // A later NULL (crafted or legacy restore) is caught by the gate.
+        conn.execute(
+            "INSERT INTO assets(path, file_name, kind, size_bytes, modified_at)
+             VALUES ('/library/later.webp', NULL, 'image', 1, 1)",
+            [],
+        )
+        .expect("null name");
+        for _ in 0..2 {
+            init_schema(&conn).expect("schema");
+            assert_eq!(
+                file_names(&conn)
+                    .into_iter()
+                    .map(|(_, name)| name.expect("filled"))
+                    .collect::<Vec<_>>(),
+                vec!["photo.jpg", "later.webp"]
+            );
+        }
+    }
+
+    /// The version-3 migration as it was before K26: every asset went through
+    /// the rewrite. Kept as the reference for the equivalence test.
+    fn reference_version_three_migration(conn: &Connection) {
+        use super::{
+            bump_library_revision_in_tx, canonical_key, cleanup_orphan_tags, list_asset_tags,
+            normalize_tags, parse_legacy_tags, set_asset_tags_in_tx,
+        };
+        let tx = conn.unchecked_transaction().expect("tx");
+        let mut changed = false;
+        let filename_updates = {
+            let mut stmt = tx
+                .prepare("SELECT id, file_name, file_name_key FROM assets")
+                .expect("names");
+            stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .expect("name rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("names")
+        };
+        for (asset_id, file_name, existing_key) in filename_updates {
+            let key = canonical_key(&file_name);
+            if key == existing_key {
+                continue;
+            }
+            tx.execute(
+                "UPDATE assets SET file_name_key = ?1 WHERE id = ?2",
+                params![key, asset_id],
+            )
+            .expect("key");
+            changed = true;
+        }
+        let asset_ids = {
+            let mut stmt = tx
+                .prepare("SELECT id FROM assets ORDER BY id")
+                .expect("ids");
+            stmt.query_map([], |row| row.get::<_, i64>(0))
+                .expect("id rows")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("ids")
+        };
+        let asset_tags = asset_ids
+            .into_iter()
+            .map(|asset_id| {
+                let legacy = list_asset_tags(&tx, asset_id).expect("tags");
+                let normalized = normalize_tags(
+                    legacy
+                        .iter()
+                        .flat_map(|tag| parse_legacy_tags(tag))
+                        .collect(),
+                );
+                (asset_id, normalized)
+            })
+            .collect::<Vec<_>>();
+        for (asset_id, tags) in asset_tags {
+            changed |= set_asset_tags_in_tx(&tx, asset_id, &tags)
+                .expect("rewrite")
+                .changed;
+        }
+        cleanup_orphan_tags(&tx).expect("orphans");
+        if changed {
+            bump_library_revision_in_tx(&tx).expect("revision");
+        }
+        tx.execute(
+            "UPDATE library_metadata SET value = 3 WHERE key = 'performance_schema_version'",
+            [],
+        )
+        .expect("version");
+        tx.commit().expect("commit");
+    }
+
+    /// A pre-version-3 library mixing clean assets with every kind of row the
+    /// migration repairs.
+    fn version_two_library_with_mixed_tags() -> Connection {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        conn.execute_batch(
+            "
+            INSERT INTO assets(id, path, file_name, file_name_key, kind, size_bytes, modified_at, tag_count) VALUES
+              (1, '/l/clean.jpg', 'clean.jpg', 'clean.jpg', 'image', 1, 1, 1),
+              (2, '/l/spaced.jpg', 'spaced.jpg', 'spaced.jpg', 'image', 1, 2, 1),
+              (3, '/l/legacy.jpg', 'legacy.jpg', 'legacy.jpg', 'image', 1, 3, 2),
+              (4, '/l/ÉCOLE.JPG', 'ÉCOLE.JPG', 'École.jpg', 'image', 1, 4, 1),
+              (5, '/l/lower.jpg', 'lower.jpg', 'lower.jpg', 'image', 1, 5, 1),
+              (6, '/l/blank.jpg', 'blank.jpg', 'blank.jpg', 'image', 1, 6, 2),
+              (7, '/l/tree.jpg', 'tree.jpg', 'tree.jpg', 'image', 1, 7, 1),
+              (8, '/l/badcount.jpg', 'badcount.jpg', 'badcount.jpg', 'image', 1, 8, 3),
+              (9, '/l/untagged.jpg', 'untagged.jpg', 'untagged.jpg', 'image', 1, 9, 0),
+              (10, '/l/tab.jpg', 'tab.jpg', 'tab.jpg', 'image', 1, 10, 1),
+              (11, '/l/both.jpg', 'both.jpg', 'both.jpg', 'image', 1, 11, 2);
+            INSERT INTO tags(id, name) VALUES
+              (1, 'cat'), (2, ' cat'), (3, 'dog,bird'), (4, 'Ä'), (5, 'ä'), (6, ''),
+              (7, 'tree'), (8, ' tree '), (9, 'x' || char(9) || 'y'), (10, 'sky'), (11, 'Sky,sea');
+            INSERT INTO asset_tags(asset_id, tag_id) VALUES
+              (1, 1), (2, 2), (3, 3), (3, 1), (4, 4), (5, 5), (6, 6), (6, 10),
+              (7, 7), (10, 9), (11, 10), (11, 11);
+            UPDATE library_metadata SET value = 2 WHERE key = 'performance_schema_version';
+            ",
+        )
+        .expect("fixture");
+        conn
+    }
+
+    fn library_dump(conn: &Connection) -> Vec<String> {
+        let mut out = Vec::new();
+        for sql in [
+            "SELECT 'asset', id, file_name_key, tag_count FROM assets ORDER BY id",
+            "SELECT 'tag', id, name, NULL FROM tags ORDER BY id",
+            "SELECT 'map', asset_id, tag_id, NULL FROM asset_tags ORDER BY asset_id, tag_id",
+            "SELECT 'meta', key, value, NULL FROM library_metadata ORDER BY key",
+        ] {
+            let mut stmt = conn.prepare(sql).expect("dump");
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok(format!(
+                        "{:?}|{:?}|{:?}|{:?}",
+                        row.get::<_, rusqlite::types::Value>(0)?,
+                        row.get::<_, rusqlite::types::Value>(1)?,
+                        row.get::<_, rusqlite::types::Value>(2)?,
+                        row.get::<_, rusqlite::types::Value>(3)?
+                    ))
+                })
+                .expect("dump rows");
+            for row in rows {
+                out.push(row.expect("dump row"));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn version_three_migration_rewrites_only_assets_needing_it_with_the_previous_result() {
+        let reference = version_two_library_with_mixed_tags();
+        let migrated = version_two_library_with_mixed_tags();
+        {
+            let tx = migrated.unchecked_transaction().expect("tx");
+            assert_eq!(
+                super::schema::assets_needing_tag_migration(&tx)
+                    .expect("candidates")
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                // 1 holds `cat` of the ` cat` group and 7 `tree` of the orphan
+                // ` tree ` group; 5 (`ä`), 9 and the clean side of 11 are not
+                // dirty, but 11 holds `Sky,sea`.
+                vec![1, 2, 3, 4, 6, 7, 8, 10, 11]
+            );
+        }
+
+        reference_version_three_migration(&reference);
+        super::schema::migrate_canonical_keys_and_tags(&migrated).expect("migration");
+
+        assert_eq!(library_dump(&migrated), library_dump(&reference));
+        assert_eq!(
+            super::list_asset_tags(&migrated, 3).expect("tags"),
+            vec!["bird", "cat", "dog"]
+        );
+        assert_eq!(
+            super::list_asset_tags(&migrated, 11).expect("tags"),
+            vec!["sea", "sky"]
+        );
+        assert_eq!(
+            super::list_asset_tags(&migrated, 4).expect("tags"),
+            vec!["ä"]
+        );
+        assert_eq!(
+            migrated
+                .query_row("SELECT file_name_key FROM assets WHERE id = 4", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .expect("key"),
+            "école.jpg"
+        );
+
+        // Through init_schema, twice: the second run is a no-op.
+        let full = version_two_library_with_mixed_tags();
+        init_schema(&full).expect("migrate");
+        let after_first = library_dump(&full);
+        init_schema(&full).expect("rerun");
+        assert_eq!(library_dump(&full), after_first);
+    }
+
     #[test]
     fn startup_preference_migrates_and_survives_reopen_and_duplicate_add() {
         let tmp = tempfile::tempdir().unwrap();

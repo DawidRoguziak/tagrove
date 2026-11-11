@@ -606,7 +606,7 @@ Destructive: yes.
 - **Oracle:** `inspect`, screenshot, `console.jsonl`.
 
 **QA-13.4 Re-add the root through the native picker**
-- **Steps:** `click 'button=Choose folder'` (or "Add first folder"); a native dialog opens: `native key Control+l`, `native type <scratch>/media` (the path doctor prints), `native key Return`. Wait for the scan.
+- **Steps:** `click 'button=Choose folder'` (or "Add first folder"); a native dialog opens: `native key Control+l`, `native key Control+a`, `native type <scratch>/media` (the path doctor prints), `native key Return`. Wait for the scan.
 - **Expected:** the root returns, a scan starts and the library repopulates; the original files are still all there. Taint check: the doctor after `native` must be `ok` (`docs/subsystems/scanning-and-indexing.md#root-lifecycle`).
 - **Oracle:** `screenshot` of the dialog first, `DB 'SELECT path FROM scan_roots'`, `assets` count equals the file count (`find <scratch>/media -type f | wc -l` minus unsupported files).
 
@@ -628,10 +628,10 @@ Destructive: yes.
 ### QA-14 CSV and backup
 Destructive: yes.
 
-All files are written inside `<scratch>/media/` through the native save dialog (`native key Control+l`, `native type <scratch>/media/<name>`, `native key Return`); never outside the copy. Before long backup steps run `python3 .claude/skills/audit/scripts/qa_session.py --run <run> maintenance --minutes 60`.
+All files are written through the native save dialog (`native key Control+l`, `native key Control+a`, `native type <path>`, `native key Return`); never outside the scratch root. The tags CSV and DB bundle exports are refused inside an indexed root, so save them under `<scratch>/export/` (the controller creates it, empty, at start), not under `<scratch>/media/`. Before long backup steps run `python3 .claude/skills/audit/scripts/qa_session.py --run <run> maintenance --minutes 60`.
 
 **QA-14.1 CSV export**
-- **Steps:** tag/favorite/group a few assets, Settings, `button=Export tags CSV`, save as `<scratch>/media/export/tags.csv` (the directory may not exist: see QA-14.8).
+- **Steps:** tag/favorite/group a few assets, Settings, `button=Export tags CSV`, save as `<scratch>/export/tags.csv` (outside the indexed media root, which the app refuses; the directory may not exist: see QA-14.8).
 - **Expected:** a header row with five standard columns and one row per asset; summary "CSV exported. Rows: N" (`docs/subsystems/data-safety-and-portability.md#csv-metadata-transfer`).
 - **Oracle:** `head`, `wc -l` on the file, the summary text via `inspect '[role="status"]'`.
 
@@ -651,9 +651,9 @@ All files are written inside `<scratch>/media/` through the native save dialog (
 - **Oracle:** `inspect` error text, `DB` favorites/tags counts unchanged.
 
 **QA-14.5 Backup export, Clear library, import**
-- **Steps:** export `button=Export DB + thumbnails` to `<scratch>/media/backup/bundle.zip`, timing it (`actions.jsonl` timestamps); poll doctor during the export. Then Clear library (QA-13.5), then `button=Import DB + thumbnails`, choose the bundle, confirm the overwrite dialog (`#import-db-overwrite-confirm-heading`), keep polling doctor.
+- **Steps:** export `button=Export DB + thumbnails` to `<scratch>/export/backup/bundle.zip`, timing it (`actions.jsonl` timestamps); poll doctor during the export. Then Clear library (QA-13.5), then `button=Import DB + thumbnails`, choose the bundle, confirm the overwrite dialog (`#import-db-overwrite-confirm-heading`), keep polling doctor.
 - **Expected:** doctor may report `busy-maintenance` during export/import (observe-only); after import the roots, assets, tags, favorites, groups and thumbnails are back; the summary shows "Files: N, thumbnails: M"; cancelling the overwrite dialog changes nothing (`docs/subsystems/data-safety-and-portability.md#bundle-import-and-replacement-sequence`).
-- **Oracle:** `ls -la backup/bundle.zip`, `DB` counts before export and after import (never query while the import runs), `ls <app-data>/thumbs | wc -l`, durations from `actions.jsonl`, `process.log`.
+- **Oracle:** `ls -la <scratch>/export/backup/bundle.zip`, `DB` counts before export and after import (never query while the import runs), `ls <app-data>/thumbs | wc -l`, durations from `actions.jsonl`, `process.log`.
 
 **QA-14.6 Round trip**
 - **Steps:** before export snapshot `DB 'SELECT id,path,is_favorite,media_group_key,media_group_order FROM assets ORDER BY id'` and the tag join into text; repeat after import and compare.
@@ -666,7 +666,7 @@ All files are written inside `<scratch>/media/` through the native save dialog (
 - **Oracle:** `inspect '[role="status"]'`, `ls` for stray files.
 
 **QA-14.8 Export path outside allowed roots, and non-existent directories**
-- **Steps:** in the save dialog type a path in a directory that does not exist inside the copy (`<scratch>/media/new-dir/a.csv`); then try a path outside the copy only if the dialog would leave it inside `<scratch>` (for example `<scratch>/outside/a.csv`); never type any path outside the scratch root.
+- **Steps:** in the save dialog type a path in a directory that does not exist inside the scratch root (`<scratch>/export/new-dir/a.csv`); then try a path outside the copy only if the dialog would leave it inside `<scratch>` (for example `<scratch>/outside/a.csv`); never type any path outside the scratch root.
 - **Expected:** record whether the app creates missing directories, refuses the path or reports an error; the profile allowlist for writes is described in the system overview. Any file that appears must be inside the scratch root. A typed path whose folder does not exist is refused by GTK itself ("The folder contents could not be displayed"), so the app never receives it: doctor reports `unresponsive` while that dialog is open; screenshot it, dismiss it with `native key Escape`, then cancel the picker with `native key Escape` and expect "CSV export cancelled.".
 - **Oracle:** `ls -la` of the target directories, `inspect` of the error text, `process.log`.
 

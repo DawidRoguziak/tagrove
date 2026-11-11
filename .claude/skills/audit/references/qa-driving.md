@@ -31,13 +31,13 @@ Session states) and `bun run app:control help`.
 
 ## Traps
 
-- **Native file picker:** press `native key Control+l`, `native type` exactly the media root
+- **Native file picker:** press `native key Control+l` and `native key Control+a` (select all, otherwise a save name becomes `tags.csv.csv`), then `native type` exactly the media root
   that doctor prints (`<scratch>/media`), then `native key Return`. Never choose another folder.
   Cancel with `native key Escape`. A save path in a folder that does not exist makes GTK show
   its own "The folder contents could not be displayed" dialog; doctor reports `unresponsive`
   (observe, `native key Escape`, `stop`). Screenshot it, dismiss it with `native key Escape`,
   then cancel the picker with another `native key Escape`.
-- **Backups:** restore only a backup exported in the same session, from inside the copy.
+- **Backups:** restore only a backup exported in the same session, under `<scratch>/export/` (the controller creates it; the app refuses exports inside the indexed media root).
 - **Close window:** the custom Close button ends the session. Use it only as the last step of
   the last suite of a block, and only if the suite says so.
 - **Tile loader:** `[data-testid="tile-thumb-loader"]` is always in the DOM and becomes

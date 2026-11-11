@@ -159,6 +159,35 @@ export function parseWait(args) {
   return { target, state, timeout };
 }
 
+// The controller's Xvfb never takes the lowest free display (which can be :0 or :1, refused by
+// every native check). It probes numbers from this range and starts Xvfb on an explicit one.
+export const DISPLAY_FIRST = 90;
+export const DISPLAY_LAST = 189;
+
+export function chooseDisplayNumber(isTaken, skip = new Set()) {
+  for (let number = DISPLAY_FIRST; number <= DISPLAY_LAST; number++)
+    if (!skip.has(number) && !isTaken(number)) return number;
+  throw new Error(`No free X display between :${DISPLAY_FIRST} and :${DISPLAY_LAST} for the private Xvfb.`);
+}
+
+// Bare `=text` and `*=text` are WebdriverIO link-text selectors that only match anchors. Resolve
+// them to XPath over any element whose own text matches; every other selector is unchanged.
+export function resolveSelector(selector) {
+  const match = /^(\*?)=([\s\S]*)$/.exec(selector ?? "");
+  if (!match) return selector;
+  const text = match[2];
+  const literal = text.includes('"')
+    ? text.includes("'")
+      ? `concat(${text
+          .split('"')
+          .map((part) => `"${part}"`)
+          .join(`, '"', `)})`
+      : `'${text}'`
+    : `"${text}"`;
+  const test = match[1] ? `contains(normalize-space(.), ${literal})` : `normalize-space(.) = ${literal}`;
+  return `//*[text()[${test}]]`;
+}
+
 export function validateKeysym(text) {
   if (!KEYSYM.test(text ?? "")) throw invalid("native key expects a keysym such as Return or Control+a");
   return text;

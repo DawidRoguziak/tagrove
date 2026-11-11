@@ -23,6 +23,21 @@ SESSION_ID = re.compile(r"^[a-f0-9]{32}$")
 DISPLAY = re.compile(r"^:\d+$")
 
 
+# Documented names map to the X11 keysyms; the keysym spelling is accepted as well.
+KEY_ALIASES = {
+    "control": "Control_L",
+    "ctrl": "Control_L",
+    "shift": "Shift_L",
+    "alt": "Alt_L",
+    "meta": "Meta_L",
+    "super": "Super_L",
+}
+
+
+def canonical_keys(spec):
+    return "+".join(KEY_ALIASES.get(name.lower(), name) for name in spec.split("+"))
+
+
 class Refused(Exception):
     pass
 
@@ -65,7 +80,7 @@ def validate_arguments(argv):
     y = lambda text: integer(text, 0, SCREEN_HEIGHT - 1, "y")  # noqa: E731
     if sub == "key":
         require(len(rest) == 1 and KEYSYM.match(rest[0]), "key expects one keysym such as Return or Control+a")
-        return sub, [rest[0]]
+        return sub, [canonical_keys(rest[0])]
     if sub == "type":
         require(len(rest) == 1 and 0 < len(rest[0]) <= 1000, "type expects 1..1000 characters")
         require(all(0x20 <= ord(ch) <= 0x7E for ch in rest[0]), "type accepts printable ASCII only")
@@ -203,7 +218,7 @@ def main(argv, env):
         print(f"control-native: refusing: {error}", file=sys.stderr)
         return 2
     if check_only:
-        print("control-native: ok")
+        print("control-native: ok" + (f" {values[0]}" if sub == "key" else ""))
         return 0
     try:
         perform(sub, values)

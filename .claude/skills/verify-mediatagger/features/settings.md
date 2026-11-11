@@ -46,13 +46,14 @@ that `doctor` prints and never another folder:
 bun run app:control click "$control_session" 'button=Choose folder'
 bun run app:control screenshot "$control_session"
 bun run app:control native "$control_session" key Control+l
+bun run app:control native "$control_session" key Control+a
 bun run app:control native "$control_session" type /media/root/printed/by/doctor
 bun run app:control native "$control_session" key Return
 bun run app:control wait "$control_session" idle 60000
 ```
 
 Cancel a picker with `native key Escape`. The CSV and backup import/export buttons open the
-same kind of dialog; point them only at files inside the session's temporary root. A typed save
+same kind of dialog; point them only at files inside the session's temporary root, and save exports under `<scratch>/export/` (created by the controller), because the app refuses a target inside the indexed media root. A typed save
 path in a folder that does not exist opens GTK's own error dialog over the picker; doctor then
 reports `unresponsive` until `native key Escape` dismisses it (see the skill's native input
 section).

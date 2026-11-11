@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
@@ -16,6 +17,7 @@ import {
   validateE2eBuildConfiguration
 } from "./build-e2e.js";
 import {
+  chooseDisplayNumber,
   commandClass,
   createCommandQueue,
   dragActions,
@@ -34,6 +36,7 @@ import {
   REQUEST_TIMEOUT_MS,
   removeOwnedScratch,
   requireFreePort,
+  resolveSelector,
   SCRIPT_TIMEOUT_MS,
   SOCKET_TIMEOUT_MS,
   stopOwnedGroup,
@@ -339,7 +342,7 @@ async function start() {
   }
 
   async function displayed(selector) {
-    const element = await browser.$(selector);
+    const element = await browser.$(resolveSelector(selector));
     await element.waitForDisplayed({ timeout: 15000 });
     return element;
   }
@@ -372,7 +375,7 @@ async function start() {
         );
       });
     }
-    const element = await browser.$(target);
+    const element = await browser.$(resolveSelector(target));
     const exists = await element.isExisting();
     if (state === "displayed") return exists && element.isDisplayed();
     if (state === "gone") return !exists || !(await element.isDisplayed());
@@ -605,7 +608,7 @@ async function start() {
       const target = parseDragTarget(args[1]);
       let end = { x: start.x + target.dx, y: start.y + target.dy };
       if (target.selector) {
-        const destination = await browser.$(target.selector);
+        const destination = await browser.$(resolveSelector(target.selector));
         await destination.waitForExist({ timeout: 15000 });
         const point = await center(destination);
         end = { x: point.x + target.dx, y: point.y + target.dy };
@@ -695,12 +698,21 @@ async function start() {
       if (after.state === "ok") await drainConsole();
       return { command, status: "ok", state: after.state };
     } else if (["click", "fill", "scroll"].includes(command)) {
-      const element = await browser.$(args[0]);
+      const element = await browser.$(resolveSelector(args[0]));
       if (command === "scroll") await element.scrollIntoView();
       else {
         await element.waitForDisplayed({ timeout: 15000 });
         if (command === "click") await element.click();
-        else await element.setValue(args[1]);
+        else {
+          // Select the current content so typing replaces it, even when the framework
+          // restores a controlled value after a plain clear.
+          await browser.execute((node) => {
+            node.focus();
+            if (typeof node.select === "function") node.select();
+          }, element);
+          if (args[1] === "") await element.clearValue();
+          else await element.addValue(args[1]);
+        }
       }
     } else if (command === "keys") await browser.keys(args.length === 1 ? args[0] : args);
     else if (command === "refresh") await refresh();
@@ -742,7 +754,7 @@ async function start() {
       media: path.join(scratch, "media")
     };
     await saveManifest();
-    for (const dir of ["data", "config", "cache", "media"]) await fs.mkdir(path.join(scratch, dir));
+    for (const dir of ["data", "config", "cache", "media", "export"]) await fs.mkdir(path.join(scratch, dir));
     await requireFreePort(driverPort);
     await requireFreePort(nativePort);
     // Fail before an expensive build if a required executable is unavailable.
@@ -776,40 +788,58 @@ async function start() {
     const cookie = randomBytes(16).toString("hex");
     await fs.writeFile(env.XAUTHORITY, "", { mode: 0o600 });
     await run("xauth", ["-f", env.XAUTHORITY, "add", ":0", "MIT-MAGIC-COOKIE-1", cookie]);
-    display = await ownedSpawn(
-      "Xvfb",
-      [
-        "-displayfd",
-        "3",
-        "-screen",
-        "0",
-        "1440x900x24",
-        "-nolisten",
-        "tcp",
-        "-auth",
-        env.XAUTHORITY,
-        "-noreset"
-      ],
-      { stdio: ["ignore", "ignore", "pipe", "pipe"] }
-    );
-    display.stderr.on("data", (chunk) => {
-      void fs.appendFile(path.join(evidence, "process.log"), chunk);
-    });
-    const number = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Xvfb readiness timed out")), 15000);
-      let data = "";
-      display.stdio[3].on("data", (chunk) => {
-        data += chunk;
-        if (/^\d+\n$/.test(data)) {
-          clearTimeout(timeout);
-          resolve(data.trim());
-        }
+    // An explicit high display number: the default lowest-free choice can be :0 or :1, which
+    // every native check refuses. Retry with the next number if another server wins the race.
+    let number;
+    const tried = new Set();
+    for (;;) {
+      const candidate = chooseDisplayNumber(
+        (n) => existsSync(`/tmp/.X11-unix/X${n}`) || existsSync(`/tmp/.X${n}-lock`),
+        tried
+      );
+      tried.add(candidate);
+      display = await ownedSpawn(
+        "Xvfb",
+        [
+          `:${candidate}`,
+          "-displayfd",
+          "3",
+          "-screen",
+          "0",
+          "1440x900x24",
+          "-nolisten",
+          "tcp",
+          "-auth",
+          env.XAUTHORITY,
+          "-noreset"
+        ],
+        { stdio: ["ignore", "ignore", "pipe", "pipe"] }
+      );
+      display.stderr.on("data", (chunk) => {
+        void fs.appendFile(path.join(evidence, "process.log"), chunk);
       });
-      display.once("exit", () => {
-        clearTimeout(timeout);
-        reject(new Error("Xvfb exited before readiness"));
-      });
-    });
+      try {
+        number = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("Xvfb readiness timed out")), 15000);
+          let data = "";
+          display.stdio[3].on("data", (chunk) => {
+            data += chunk;
+            if (/^\d+\n$/.test(data)) {
+              clearTimeout(timeout);
+              resolve(data.trim());
+            }
+          });
+          display.once("exit", () => {
+            clearTimeout(timeout);
+            reject(new Error("Xvfb exited before readiness"));
+          });
+        });
+        break;
+      } catch (error) {
+        if (display.exitCode === null && display.signalCode === null) throw error;
+        if (tried.size >= 10) throw error;
+      }
+    }
     manifest.display = `:${number}`;
     env.DISPLAY = manifest.display;
     await run("xauth", [

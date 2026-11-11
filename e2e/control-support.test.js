@@ -9,6 +9,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import {
   CLIENT_GONE,
+  chooseDisplayNumber,
+  DISPLAY_FIRST,
+  DISPLAY_LAST,
+  resolveSelector,
   COMMAND_ARITIES,
   COMMAND_CLASS,
   commandClass,
@@ -506,7 +510,9 @@ test("the native helper refuses before opening any display", async () => {
     await fs.writeFile(path.join(scratch, "owner"), id);
     // :59999 has no server; a refusal must happen before any attempt to open it.
     const env = nativeEnvironment({ id, display: ":59999", scratch });
-    assert.deepEqual(await runNative(env, ["--check", "key", "Return"]), { code: 0, stdout: "control-native: ok\n", stderr: "" });
+    assert.deepEqual(await runNative(env, ["--check", "key", "Return"]), { code: 0, stdout: "control-native: ok Return\n", stderr: "" });
+    for (const [spec, keys] of [["Control+l", "Control_L+l"], ["Control_L+a", "Control_L+a"], ["Ctrl+Shift+Tab", "Control_L+Shift_L+Tab"], ["Return", "Return"]])
+      assert.deepEqual(await runNative(env, ["--check", "key", spec]), { code: 0, stdout: `control-native: ok ${keys}\n`, stderr: "" });
     const refusals = [
       [{ ...env, DISPLAY: ":0", MEDIATAGGER_NATIVE_DISPLAY: ":0" }, ["key", "Return"]],
       [{ ...env, MEDIATAGGER_NATIVE_DISPLAY: ":58888" }, ["key", "Return"]],
@@ -561,4 +567,21 @@ test("socket paths longer than the Linux limit are refused with a readable error
   assert.throws(() => validateSocketPath(`${ok}b`), /108 bytes; Linux allows 107\. Start with a shorter TMPDIR/);
   // Multibyte characters count as bytes, not code units.
   assert.throws(() => validateSocketPath(`/${"ż".repeat(54)}`), /bytes/);
+});
+
+test("the private display is allocated from a high range, never :0 or :1", () => {
+  assert.ok(DISPLAY_FIRST > 1);
+  assert.equal(chooseDisplayNumber(() => false), DISPLAY_FIRST);
+  assert.equal(chooseDisplayNumber((n) => n < DISPLAY_FIRST + 3), DISPLAY_FIRST + 3);
+  assert.equal(chooseDisplayNumber(() => false, new Set([DISPLAY_FIRST])), DISPLAY_FIRST + 1);
+  assert.throws(() => chooseDisplayNumber(() => true), /No free X display/);
+  assert.throws(() => chooseDisplayNumber((n) => n !== DISPLAY_LAST + 1, new Set([DISPLAY_LAST])), /No free X display/);
+});
+
+test("bare text selectors resolve to XPath over any element and others are unchanged", () => {
+  assert.equal(resolveSelector("*=Export"), '//*[text()[contains(normalize-space(.), "Export")]]');
+  assert.equal(resolveSelector("=Export tags CSV"), '//*[text()[normalize-space(.) = "Export tags CSV"]]');
+  assert.equal(resolveSelector(`*=it's "x"`), `//*[text()[contains(normalize-space(.), concat("it's ", '"', "x", '"', ""))]]`);
+  for (const unchanged of ["button=Choose folder", "button*=Choose", ".filter-input", 'button[data-a="=x"]', "a*=x"])
+    assert.equal(resolveSelector(unchanged), unchanged);
 });

@@ -115,13 +115,14 @@ dialogs:
 ```sh
 bun run app:control native "$control_session" click 720 860
 bun run app:control native "$control_session" key Control+l
+bun run app:control native "$control_session" key Control+a
 bun run app:control native "$control_session" type /path/printed/by/doctor/media
 bun run app:control native "$control_session" key Return
 bun run app:control native "$control_session" wheel 600 400 -2 ctrl
 ```
 
 Coordinates are screen pixels on the 1440x900 display (take a screenshot first). `key`
-takes X keysyms joined with `+`; `type` takes printable ASCII only. The helper receives an
+takes X keysyms joined with `+`; the names `Control`/`Ctrl`, `Shift`, `Alt`, `Meta`, and `Super` are accepted and mapped to `Control_L` and so on, and the raw keysym spelling works too; `type` takes printable ASCII only. The helper receives an
 environment built only from the session manifest and refuses, before opening any display,
 unless the display is private and matches the session, `XAUTHORITY` and `XDG_DATA_HOME`
 belong to the scratch root, and the scratch `owner` matches the session ID. After every
@@ -129,8 +130,11 @@ native command the controller runs a full doctor; if that fails, the session bec
 `tainted` and accepts only `logs`, `screenshot`, and `stop`. A doctor that reports
 `busy-maintenance` or `unresponsive` instead does not taint the session.
 
-In a native file picker, press `Control+l` and type exactly the session media root (`doctor`
-prints it as the scan root). Never navigate to another folder.
+In a native file picker, press `Control+l`, then `Control+a` (select all; without it the typed text only
+replaces the selected file-name stem and a save becomes `tags.csv.csv`), and type exactly the
+session media root (`doctor` prints it as the scan root). A CSV export must be saved outside
+any indexed root (the app refuses a path inside the media root): save under `<scratch>/export`
+(the controller creates it) as `<scratch>/export/tags.csv`. Never navigate to another folder.
 
 If a path typed into a save dialog names a folder that does not exist, GTK refuses it with its
 own modal "The folder contents could not be displayed" dialog, and the app never receives the

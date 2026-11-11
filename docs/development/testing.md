@@ -557,7 +557,7 @@ and the out-of-queue `stop` are recorded in [ADR 0023](../adr/0023-app-control-u
 session manifest. It refuses before opening any display unless the display is private and
 matches the session, `XAUTHORITY` is `<scratch>/Xauthority`, `XDG_DATA_HOME` is
 `<scratch>/data`, and `<scratch>/owner` holds the session ID. It drives GTK video controls and
-native file dialogs. The older `e2e/native-input.py` serves the Mocha specs only.
+native file dialogs. `key` accepts `Control`/`Ctrl`, `Shift`, `Alt`, `Meta`, and `Super` and maps them to the `_L` keysyms; raw keysyms work too. In a file dialog the recipe is `key Control+l`, `key Control+a`, `type <path>`, `key Return`; without the select-all a save name keeps its `.csv` suffix and becomes `tags.csv.csv`. `fill` selects the field first so it replaces the value, and a bare `*=text` or `=text` selector matches any element by its own text in every command that takes a WebdriverIO selector, not `inspect`, which uses CSS (WebdriverIO would match anchors only). The session scratch root also holds an empty `export/` directory for CSV and backup exports, which the app refuses inside the indexed media root. The controller starts Xvfb on an explicit display from `:90` up (never `:0`/`:1`) and retries the next number if one is taken. The older `e2e/native-input.py` serves the Mocha specs only.
 
 In addition to normal desktop prerequisites, this controller needs Xvfb, xauth, and
 ImageMagick's `import`. It creates an authenticated private display with TCP disabled and

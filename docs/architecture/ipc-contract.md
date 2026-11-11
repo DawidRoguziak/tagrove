@@ -58,7 +58,7 @@ The Rust models in `src-tauri/src/models.rs` produce these wire shapes and the T
 | `BulkTagMergeSummary` / `BulkTagMergeSummary` | `processed_assets`, `updated_assets`, `processed_asset_ids`, `updated_asset_ids`, `results`, `query_impact`, `vocabulary_changed`, `revision` |
 | `BulkFavoriteSummary` / `BulkFavoriteSummary` | `processed_asset_ids`, `is_favorite`, `revision`; an empty result reports `is_favorite: false` and leaves the revision unchanged |
 | `BulkMediaGroupSummary` / `BulkMediaGroupSummary` | `processed_asset_ids`, `processed_assets`, `updated_assets`, `media_group_key?` |
-| `ThumbnailRenderSummary` / `ThumbnailRenderSummary` | `generated`, `failed`, `skipped_failed`, `processed`, `total`, `cancelled` |
+| `ThumbnailRenderSummary` / `ThumbnailRenderSummary` | `stale`, `generated`, `failed`, `skipped_failed`, `processed`, `total`, `cancelled` |
 | `ClearLibrarySummary` / `ClearLibrarySummary` | `removed_assets`, `removed_roots`, `removed_thumbnails` |
 | `CsvExportSummary`, `CsvImportSummary` / same | Export: `rows`; import: `rows_read`, `rows_applied`, `assets_matched`, `assets_updated` |
 | `DbBundleExportSummary`, `DbBundleImportSummary` / same | Export: `copied_files`, `copied_thumbnails`; import: `restored_files`, `restored_thumbnails` |
@@ -334,7 +334,7 @@ When changing IPC:
 - `src/library/__tests__/createLibrary.test.ts` exercises the session-query contract through the library model, including filters and pagination.
 - `src/platform/tauri/__tests__/api.test.ts` checks the `thumb://` URL shape, including the cached-only and retry flags.
 - `src/features/settings/__tests__/progressService.test.ts` locks down phase matching and progress-summary formatting; settings model tests cover subscription lifetimes and command workflows.
-- Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, `video.rs`, and `import_export.rs` cover filename/root/CSV/video validation and cancellation behavior.
+- Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, and `video.rs` cover filename/root/video validation and cancellation behavior. `commands/import_export.rs` has no tests of its own: the CSV and bundle logic is covered by unit tests in `services/csv_service.rs` and `services/backup_service.rs` plus the `backend_integration` and `backend_e2e` targets, and the command-level lock wiring is reachable only through desktop E2E.
 - Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, `asset_query_service.rs`, `video_source_service.rs`, and `video_player_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive and video-source safety, query/session semantics, and persistence behavior.
 - `src-tauri/tests/backend_integration.rs` and `backend_e2e.rs` cover file-backed cross-layer mutation/import workflows but do not exercise JavaScript serialization.
 - `e2e/specs/*.e2e.js` exercises the registered commands through a real desktop WebView and is the strongest existing check for Rust/TypeScript integration.

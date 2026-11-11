@@ -221,7 +221,7 @@ ignore ancestor opacity. Native video playback and GTK controls keep their exist
 startup/shutdown behavior, while the WebView backdrop and dialog controls fade.
 
 Keep modal owners mounted when their logical `open` becomes false. The standard
-modal retains its last visible children and presentation props until exit completes;
+modal (`UiModal`) retains only its presentation props (`ariaLabel`, `labelledBy`, `describedBy`, `size`, `className`, `contentClassName`) until exit completes and renders its children live, so an owner whose content depends on state that changes at close snapshots that content itself with `createModalSnapshot`;
 the lightbox retains its asset/editor props. Asset navigation keeps the same presence
 owner and does not replay the entrance. On logical close, release the layer, focus
 trap, background inertness and body scroll lock immediately. The closing content is

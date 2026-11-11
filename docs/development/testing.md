@@ -69,7 +69,15 @@ The opt-in `e2e/specs/search-recovery.e2e.js` suite runs with
 suggestion-worker construction after each reload. Retry then runs the real bundled worker.
 It checks native pointer and Tab/Enter recovery in search, lightbox and bulk editors,
 plus literal `constructor` and `__proto__` selection through the rendered tag modal.
-Run it on a private display with disposable XDG directories, using the isolation rules below.
+Its native clicks go through `e2e/native-input.py`, which needs `MEDIATAGGER_NATIVE_DISPLAY`
+equal to `DISPLAY` and a `/tmp/mediatagger-*` `XDG_DATA_HOME`; without the display variable the
+first native step fails with a `KeyError`. Run it on a private display with disposable XDG
+directories, using the isolation rules below:
+
+```sh
+dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
+  sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; MEDIATAGGER_SEARCH_RECOVERY=1 exec bun run test:e2e:tauri --spec e2e/specs/search-recovery.e2e.js'
+```
 
 ## Continuous integration
 
@@ -166,7 +174,7 @@ Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`,
 | Spec | Flag |
 | --- | --- |
 | `about` | `MEDIATAGGER_ABOUT` |
-| `animations` | `MEDIATAGGER_ANIMATIONS` |
+| `animations` | `MEDIATAGGER_ANIMATIONS` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `gallery-browsing` | `MEDIATAGGER_GALLERY_BROWSING` |
 | `gallery.performance` | `MEDIATAGGER_GALLERY_PERF` |
 | `gallery-100k` | `MEDIATAGGER_GALLERY_100K` |
@@ -177,7 +185,7 @@ Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`,
 | `lightbox-images` | `MEDIATAGGER_LIGHTBOX_IMAGES` |
 | `lightbox-recovery` | `MEDIATAGGER_LIGHTBOX_RECOVERY` |
 | `native-video-escape`, `video-speed` | `MEDIATAGGER_NATIVE_VIDEO` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
-| `search-recovery` | `MEDIATAGGER_SEARCH_RECOVERY` |
+| `search-recovery` | `MEDIATAGGER_SEARCH_RECOVERY` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `selection-recovery` | `MEDIATAGGER_SELECTION_RECOVERY` |
 | `settings-language` | `MEDIATAGGER_SETTINGS_LANGUAGE` |
 | `settings-maintenance` | `MEDIATAGGER_SETTINGS_MAINTENANCE` |
@@ -362,7 +370,8 @@ With the temporary XDG directories already exported, run:
 export GSETTINGS_BACKEND=keyfile
 export GDK_BACKEND=x11
 gsettings set org.gnome.desktop.interface enable-animations false
-MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_REDUCED_MOTION=1 dbus-run-session -- xvfb-run -a bun run test:e2e:tauri --spec e2e/specs/animations.e2e.js
+dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
+  sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; MEDIATAGGER_ANIMATIONS=1 MEDIATAGGER_REDUCED_MOTION=1 exec bun run test:e2e:tauri --spec e2e/specs/animations.e2e.js'
 ```
 
 Set the key and GTK file to `true` and omit `MEDIATAGGER_REDUCED_MOTION` for normal motion.
@@ -1035,7 +1044,7 @@ sh e2e/gallery-scale/run.sh
 
 `GALLERY_MILLION=1 sh e2e/gallery-scale/run.sh` opens `million.html` (`million.tsx`) in the same private WebKitGTK setup. It mounts the production `createLibrary` page cache, `GalleryGrid` with `GalleryTimelineScrubber`, and `createSelection` wired as in `createAppRuntime`. Only the transport is synthetic: one million results, 120 months (January 2016 to December 2025) split into backend-sized sections of at most 5,000, and pages and the sections read answered after 12 ms. A stand-in `<output>` shows `selection.count`, as the bulk sidebar does.
 
-- **Timeline:** three samples, each from a fresh session (empty page cache). XTest presses End on the focused rail; the time runs from the first capturing `keydown` listener to the first animation frame in which the first tiles of the oldest month are in view with data. Each End sample must request exactly one page and stay below 300 ms; Home returns to the anchor page. The rail's `aria-valuetext` must read the oldest month.
+- **Timeline:** three samples, each from a fresh session (empty page cache). XTest presses End on the focused rail; the time runs from the first capturing `keydown` listener to the first animation frame in which the first tiles of the oldest month are in view with data. Each End sample must request at least one page (a sample served from cache fails the run; the page count is recorded but not compared with one) and stay below 300 ms; Home returns to the anchor page. The rail's `aria-valuetext` must read the oldest month.
 - **Select-all:** in bulk mode, XTest Ctrl+A from a focused tile; the time runs from the `keydown` listener to the counter text `1000000` (MutationObserver) and must stay below 50 ms, with no `get_asset_query_id_range` call (the mock rejects it), no materialized IDs (`ids.size === 0`, `ranged`), and visible tiles marked selected. Three samples.
 
 WebKitGTK's `event.timeStamp` for XTest keys is not on the `performance.now()` clock, so the fixture timestamps in its own listener; the native input latency before that is not part of the number. Results go to `artifacts/gallery-scale/result.json`, with screenshots `million-oldest-month.png` and `million-select-all.png`. Like the other fixtures this measures frontend work on software-rendered Xvfb, not SQLite, real thumbnails or native IPC; the backend side of both operations is in `grid_baseline.rs` and `backend_integration` (`one_million_select_all_tag_and_favorite`).

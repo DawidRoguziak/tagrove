@@ -66,3 +66,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0026](0026-set-based-ranged-group-write-with-index-rebuild.md) | A ranged media-group write is set-based, writes the new bucket's ordering keys itself, and rebuilds the group indexes when it changes a large part of the library | Accepted | 2026-11-11 |
 | [0027](0027-unfiltered-sections-unavailable-instead-of-stale.md) | A row-count mismatch of lazy unfiltered sections returns no sections and keeps the session | Accepted | 2026-11-11 |
 | [0028](0028-media-tools-open-only-the-file-they-are-given.md) | libmpv, ffmpeg and ffprobe open only the file they are given | Accepted | 2026-11-11 |
+| [0029](0029-range-selection-keeps-its-session-alive.md) | A held range selection keeps its query session alive with a one-ID read per minute | Accepted | 2026-11-11 |

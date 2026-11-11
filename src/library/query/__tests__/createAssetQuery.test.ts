@@ -405,6 +405,39 @@ describe("createAssetQuery", () => {
     expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the current session alive with a one-ID read and refreshes when it is stale", async () => {
+    vi.useFakeTimers();
+    apiMocks.startAssetQuery
+      .mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)], 4, 5))
+      .mockResolvedValueOnce(readyStart([createSummary(9)], 1, 6));
+    apiMocks.getAssetQuerySections.mockResolvedValue({
+      status: "ready",
+      session_id: 5,
+      total: 4,
+      sections: []
+    });
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    apiMocks.getAssetQueryIdRange.mockResolvedValueOnce(idRangeResult([1]));
+    await result.keepSessionAlive(5);
+    expect(apiMocks.getAssetQueryIdRange).toHaveBeenCalledExactlyOnceWith(5, 0, 0);
+    // A session that is not the current one is left to expire.
+    await result.keepSessionAlive(4);
+    expect(apiMocks.getAssetQueryIdRange).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS * 2);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledOnce();
+    expect(result.loadError).toBeNull();
+
+    apiMocks.getAssetQueryIdRange.mockResolvedValueOnce({ status: "stale" });
+    await result.keepSessionAlive(5);
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS);
+    flush();
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);
+    expect(result.sessionId()).toBe(6);
+  });
+
   it("splits huge ranges into chunks and assembles them in order", async () => {
     const total = ID_RANGE_CHUNK + 5;
     apiMocks.startAssetQuery.mockResolvedValue(readyStart([createSummary(1)], total, 5));

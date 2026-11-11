@@ -1,18 +1,20 @@
 import { renderHook } from "@solidjs/testing-library";
 import { createSignal, flush } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createSelection,
   MATERIALIZE_LIMIT,
   mergeRanges,
-  rangesContain
+  rangesContain,
+  SESSION_KEEPALIVE_MS
 } from "../createSelection";
 function mount(
   load = vi.fn(
     async (from: number, to: number): Promise<ArrayLike<number>> =>
       Array.from({ length: to - from + 1 }, (_, i) => from + i + 1)
   ),
-  total = 1_000_000
+  total = 1_000_000,
+  keepAlive?: (sessionId: number) => Promise<unknown>
 ) {
   // Asset ID = index + 1 in session 1, as the default loader returns.
   let session: number | null = 1;
@@ -25,7 +27,8 @@ function mount(
         identityEpoch: identity,
         getIdsRange: load,
         sessionId: () => session,
-        total: () => total
+        total: () => total,
+        keepAlive
       }),
       setQuery,
       setIdentity,
@@ -368,4 +371,121 @@ it("drops a settled failed retry on identity reset", async () => {
   expect(load).toHaveBeenCalledOnce();
   expect(model.error).toBeNull();
   expect(model.ids.size).toBe(0);
+});
+
+describe("session keepalive of a range selection", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const setup = () => {
+    vi.useFakeTimers();
+    const keepAlive = vi.fn(async (_sessionId: number) => {});
+    return { ...mount(undefined, 1_000_000, keepAlive), keepAlive };
+  };
+
+  it("reads the session at once and then once per interval, only while ranges are held", async () => {
+    const { model, keepAlive } = setup();
+    // IDs held directly (clicks, small ranges) need no session.
+    model.interact(click(1, 0));
+    await model.interact({
+      type: "rectangle-commit",
+      additive: false,
+      ranges: [{ startIndex: 0, endIndex: 9 }]
+    });
+    flush();
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 3);
+    expect(keepAlive).not.toHaveBeenCalled();
+
+    await model.interact({ type: "select-all" });
+    flush();
+    expect(model.ranged).toBe(true);
+    // The session may already have been idle for most of its TTL: read it right away.
+    expect(keepAlive).toHaveBeenCalledExactlyOnceWith(1);
+    // Idle for longer than the backend's five-minute session TTL.
+    await vi.advanceTimersByTimeAsync(6 * 60_000);
+    expect(keepAlive).toHaveBeenCalledTimes(7);
+    expect(new Set(keepAlive.mock.calls.map(([id]) => id))).toEqual(new Set([1]));
+    // Edits inside the ranges keep the same timer and read nothing extra.
+    model.interact(click(5, 4));
+    await model.interact(click(200_000, 199_999, true, true));
+    flush();
+    expect(keepAlive).toHaveBeenCalledTimes(7);
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS);
+    expect(keepAlive).toHaveBeenCalledTimes(8);
+    expect(model.capture().spec?.sessionId).toBe(1);
+
+    model.clear();
+    flush();
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 5);
+    expect(keepAlive).toHaveBeenCalledTimes(8);
+  });
+
+  it("stops when the session changes, selection mode ends or the owner unmounts", async () => {
+    const { model, result, keepAlive, cleanup } = setup();
+    await model.interact({ type: "select-all" });
+    flush();
+    expect(keepAlive).toHaveBeenCalledExactlyOnceWith(1);
+    result.nextQuery(2);
+    expect(model.ranged).toBe(false);
+    expect(model.notice).toBe("rangeCleared");
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 3);
+    expect(keepAlive).toHaveBeenCalledOnce();
+
+    await model.interact({ type: "select-all" });
+    flush();
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS);
+    expect(keepAlive).toHaveBeenCalledTimes(3);
+    expect(keepAlive).toHaveBeenLastCalledWith(2);
+    model.toggle();
+    flush();
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 3);
+    expect(keepAlive).toHaveBeenCalledTimes(3);
+
+    model.toggle();
+    await model.interact({ type: "select-all" });
+    flush();
+    expect(keepAlive).toHaveBeenCalledTimes(4);
+    cleanup();
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 3);
+    expect(keepAlive).toHaveBeenCalledTimes(4);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps the timer when a refresh returns the same cached session", async () => {
+    const { model, result, keepAlive } = setup();
+    await model.interact({ type: "select-all" });
+    flush();
+    result.nextQuery(null);
+    result.nextQuery(1);
+    expect(model.ranged).toBe(true);
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS);
+    expect(keepAlive).toHaveBeenCalledTimes(2);
+    expect(keepAlive.mock.calls).toEqual([[1], [1]]);
+  });
+
+  it("never overlaps reads and retries after a failed one", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const keepAlive = vi
+      .fn<(sessionId: number) => Promise<unknown>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          })
+      )
+      .mockRejectedValueOnce(new Error("busy"))
+      .mockResolvedValue(undefined);
+    const { model } = mount(undefined, 1_000_000, keepAlive);
+    await model.interact({ type: "select-all" });
+    flush();
+    // The immediate read is still pending through three ticks.
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 3);
+    expect(keepAlive).toHaveBeenCalledTimes(1);
+    release();
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 2);
+    expect(keepAlive).toHaveBeenCalledTimes(3);
+    expect(model.error).toBeNull();
+    expect(model.ranged).toBe(true);
+  });
 });

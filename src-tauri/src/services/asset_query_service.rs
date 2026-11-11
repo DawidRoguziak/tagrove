@@ -19,6 +19,11 @@ use crate::{
 
 const MAX_SESSIONS: usize = 4;
 const MAX_RETAINED_ID_BYTES: usize = 64 * 1024 * 1024;
+/// Idle expiry of a session. Every lookup by key or ID (start, page, position,
+/// ID range, sections, selection resolve) restarts it. While a range selection
+/// holds a session, the frontend reads one ID of it at once and then every
+/// `SESSION_KEEPALIVE_MS` (`src/features/gallery/createSelection.ts`, one
+/// minute), which must stay well below this (ADR 0029).
 const SESSION_TTL: Duration = Duration::from_secs(5 * 60);
 /// Largest asset ID that a binary ID range can carry exactly as an f64.
 const MAX_EXACT_F64_ID: i64 = 1 << 53;
@@ -1062,6 +1067,59 @@ mod tests {
             .page(&target.runtime.admit().unwrap(), session_id, 0, 10)
             .expect("expired page");
         assert_eq!(expired, AssetQueryPageResult::Stale);
+    }
+
+    /// Moves every session's last access `by` into the past, as if the app
+    /// had been idle that long.
+    fn idle_for(manager: &AssetQueryManager, by: Duration) {
+        let mut cache = manager.cache.lock().unwrap();
+        for session in cache.sessions.iter_mut() {
+            session.last_accessed = session
+                .last_accessed
+                .checked_sub(by)
+                .expect("idle timestamp");
+        }
+    }
+
+    #[test]
+    fn one_id_keepalive_reads_keep_a_selection_session_past_the_ttl() {
+        let target = test_db(3);
+        let manager = AssetQueryManager::new();
+        let request = manager.begin_request("test", 1);
+        let ready = start(&manager, &target.path, &filters(&[]), request, 1);
+        let StartAssetQueryResult::Ready { session_id, .. } = ready else {
+            panic!("expected ready result");
+        };
+        let spec = SelectionSpec {
+            session_id,
+            ranges: vec![[0, 2]],
+            ..SelectionSpec::default()
+        };
+
+        // Twice the TTL in total, but never longer than a keepalive interval
+        // without a read: the one-ID range read restarts the idle expiry.
+        for _ in 0..10 {
+            idle_for(&manager, SESSION_TTL / 5);
+            let keepalive = manager
+                .id_range(&target.runtime.admit().unwrap(), session_id, 0, 0)
+                .expect("keepalive read")
+                .expect("session kept alive");
+            assert_eq!(keepalive.len(), 16, "count plus one ID");
+        }
+        let resolved = manager
+            .resolve_selection(&spec)
+            .expect("resolve")
+            .expect("session still present");
+        assert_eq!(resolved.asset_ids, vec![1, 2, 3]);
+
+        // Without a read for longer than the TTL the session is gone, so a
+        // selection write on it reports stale instead of writing.
+        idle_for(&manager, SESSION_TTL + Duration::from_secs(1));
+        assert!(manager.resolve_selection(&spec).expect("resolve").is_none());
+        assert!(manager
+            .id_range(&target.runtime.admit().unwrap(), session_id, 0, 0)
+            .expect("expired keepalive")
+            .is_none());
     }
 
     #[test]

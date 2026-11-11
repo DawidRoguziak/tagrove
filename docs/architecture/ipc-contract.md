@@ -235,6 +235,8 @@ Sessions bind an ordered asset-ID snapshot to normalized filters and their depen
 - `ready`: little-endian IEEE-754 f64 values `[count, id_0, …, id_{count-1}]`, so a ready empty range is eight bytes. `count` equals the clamped range length.
 - `stale`: an empty body (zero bytes).
 
+Besides resolving small selections, a held range selection reads `0..=0` of its session when it is made and then once a minute as a keepalive: like every session lookup, it restarts the backend's five-minute idle expiry ([ADR 0029](../adr/0029-range-selection-keeps-its-session-alive.md)).
+
 IDs are sent as f64 because every SQLite asset ID the application creates is far below 2^53, where f64 is exact; the frontend reads them through a `Float64Array` view without BigInt conversion. The backend rejects the whole range with a text error if any ID is negative or above 2^53. `decodeAssetIdRange` in `src/platform/tauri/assets.ts` rejects bodies whose length is not a multiple of eight or whose count header disagrees with the length, copies unaligned views, and falls back to `DataView` on a big-endian host.
 
 An authoritative query exceeding the 64 MiB retained-ID budget rejects with a text error asking the user to narrow the search. It is not a superseded result; a fitting query can subsequently succeed. Frontend code uses ordinary query error handling and does not branch on the error wording.

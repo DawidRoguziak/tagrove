@@ -8,6 +8,12 @@ import type { BulkSelectionInteraction, SelectionRange } from "./selection";
  * session and are resolved by the backend (stage 09, ADR 0008).
  */
 export const MATERIALIZE_LIMIT = 10_000;
+/**
+ * While ranges are held, their session is read this often so the backend does not expire
+ * it after five idle minutes (`SESSION_TTL`) and a later bulk write is not refused as
+ * stale (ADR 0029).
+ */
+export const SESSION_KEEPALIVE_MS = 60_000;
 
 type Range = [number, number];
 interface State {
@@ -64,6 +70,8 @@ export function createSelection(options: {
   sessionId?: () => number | null;
   /** Result count of the current query (select all). */
   total?: () => number;
+  /** One cheap read of a session, which restarts its backend idle expiry. */
+  keepAlive?: (sessionId: number) => Promise<unknown>;
 }) {
   let enabled = false;
   let resolving = false;
@@ -80,11 +88,43 @@ export function createSelection(options: {
   const [error, setError] = createSignal<string | null>(null);
   const [notice, setNotice] = createSignal<"rangeCleared" | null>(null);
   const session = () => options.sessionId?.() ?? null;
+  let disposed = false;
+  let keepAlive: { session: number; timer: ReturnType<typeof setInterval> } | null = null;
+  const stopKeepAlive = () => {
+    if (keepAlive) clearInterval(keepAlive.timer);
+    keepAlive = null;
+  };
+  /**
+   * Runs exactly while ranges are held, for their session; one read in flight at most. The
+   * first read is immediate: selecting a large range reads nothing, and the session may
+   * already have been idle for most of its TTL.
+   */
+  const syncKeepAlive = () => {
+    const target = !disposed && state.ranges.length ? state.session : null;
+    if (target === (keepAlive?.session ?? null)) return;
+    stopKeepAlive();
+    const read = options.keepAlive;
+    if (target === null || !read) return;
+    let pending = false;
+    const tick = () => {
+      if (pending) return;
+      pending = true;
+      // A failed read is retried on the next tick; a stale one refreshes the query.
+      void read(target)
+        .catch(() => {})
+        .finally(() => {
+          pending = false;
+        });
+    };
+    keepAlive = { session: target, timer: setInterval(tick, SESSION_KEEPALIVE_MS) };
+    tick();
+  };
   const publish = (next: State) => {
     state = next;
     count = coverage(next.ranges) - next.excluded.size + next.included.size;
     key = {};
     idsCache = null;
+    syncKeepAlive();
     setVersion((value) => value + 1);
   };
   const ids = (): ReadonlySet<number> => {
@@ -139,6 +179,8 @@ export function createSelection(options: {
   createEffect(options.identityEpoch, clear);
   onCleanup(() => {
     generation++;
+    disposed = true;
+    stopKeepAlive();
   });
   /** Adds ranges (or replaces the selection with them), resolving IDs only when needed. */
   async function addRanges(added: Range[], additive: boolean, clearAnchor: boolean) {

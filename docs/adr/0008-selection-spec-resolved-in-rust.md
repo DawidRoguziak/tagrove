@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-07
 - Areas: gallery selection, bulk metadata writes, IPC, write queue
-- Related: [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md#bulk-selection), [IPC contract](../architecture/ipc-contract.md#asset-mutations-and-duplicate-operations), [plan stage 09](../plans/grid-performance/09-selection-spec.md), [ADR 0001](0001-per-asset-metadata-write-queue.md), [ADR 0002](0002-backend-write-priority-and-scan-revisions.md), [ADR 0005](0005-binary-id-ranges-and-anchored-refresh.md), [ADR 0026](0026-set-based-ranged-group-write-with-index-rebuild.md)
+- Related: [search, tags, and media groups](../subsystems/search-tags-and-media-groups.md#bulk-selection), [IPC contract](../architecture/ipc-contract.md#asset-mutations-and-duplicate-operations), [plan stage 09](../plans/grid-performance/09-selection-spec.md), [ADR 0001](0001-per-asset-metadata-write-queue.md), [ADR 0002](0002-backend-write-priority-and-scan-revisions.md), [ADR 0005](0005-binary-id-ranges-and-anchored-refresh.md), [ADR 0026](0026-set-based-ranged-group-write-with-index-rebuild.md), [ADR 0029](0029-range-selection-keeps-its-session-alive.md)
 
 ## Context
 

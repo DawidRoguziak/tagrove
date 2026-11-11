@@ -372,9 +372,10 @@ pub fn import_db_bundle(
         drop(conn);
         remove_database_sidecars(&state.db_path)?;
 
+        // The commit point (ADR 0031): once this rename lands, recovery keeps the new
+        // generation, so nothing after it may turn the restore into an error.
         journal.phase = RestorePhase::Committed;
-        write_restore_journal(app_data_dir, &journal)?;
-        Ok(())
+        publish_restore_journal(app_data_dir, &journal)
     })();
     if let Err(error) = install_result {
         return match recover_interrupted_restore(app_data_dir) {
@@ -386,7 +387,7 @@ pub fn import_db_bundle(
         };
     }
 
-    recover_interrupted_restore(app_data_dir)?;
+    finish_committed_restore(app_data_dir);
     state.database.queries.clear();
 
     Ok(DbBundleImportSummary {
@@ -414,6 +415,32 @@ fn carry_live_file_operations(
     // Same durability as the connection that wrote the rows.
     staged.pragma_update(None, "synchronous", "FULL")?;
     Ok(db::copy_pending_file_operations(live, staged)?)
+}
+
+/// Runs what is left of a restore after its `committed` journal was published
+/// (ADR 0031). The new generation is live and recovery keeps it, so a failure
+/// here is logged and never returned: the journal stays and the next start
+/// finishes the work.
+///
+/// The previous generation is removed only after the directory sync of the
+/// `committed` journal succeeded. When that sync fails, the rename may not be
+/// durable yet: after a power loss the `swapping` journal could be the one on
+/// disk, and startup needs a complete previous generation to roll back to. A
+/// repeated sync that passes would not prove that the first one's entry
+/// reached the disk, so the sync is not retried here.
+fn finish_committed_restore(app_data_dir: &Path) {
+    let journal_path = restore_journal_path(app_data_dir);
+    if let Err(error) = sync_parent_directory(&journal_path) {
+        eprintln!(
+            "Restore installed the new library, but its committed journal could not be synced ({error}); the previous generation is kept until the next start"
+        );
+        return;
+    }
+    if let Err(error) = recover_interrupted_restore(app_data_dir) {
+        eprintln!(
+            "Restore installed the new library, but cleanup of the previous generation failed ({error}); the next start finishes it"
+        );
+    }
 }
 
 /// Cleans up after a failure between a fully staged restore and the first live
@@ -631,6 +658,16 @@ fn restore_journal_path(app_data_dir: &Path) -> PathBuf {
 }
 
 fn write_restore_journal(app_data_dir: &Path, journal: &RestoreJournal) -> AppResult<()> {
+    publish_restore_journal(app_data_dir, journal)?;
+    sync_parent_directory(&restore_journal_path(app_data_dir))?;
+    Ok(())
+}
+
+/// Writes the journal to a synced temporary file and renames it over
+/// `restore-journal.json`. An error means the rename did not happen and the
+/// previous journal, if any, is still the one in place. The caller syncs the
+/// directory.
+fn publish_restore_journal(app_data_dir: &Path, journal: &RestoreJournal) -> AppResult<()> {
     let journal_path = restore_journal_path(app_data_dir);
     let temporary = app_data_dir.join(format!(".restore-journal-{}.tmp", temporary_token()));
     let mut file = fs::OpenOptions::new()
@@ -648,7 +685,6 @@ fn write_restore_journal(app_data_dir: &Path, journal: &RestoreJournal) -> AppRe
         let _ = fs::remove_file(&temporary);
         return Err(error);
     }
-    sync_parent_directory(&journal_path)?;
     Ok(())
 }
 
@@ -1418,38 +1454,55 @@ mod sync_fault {
         /// The n-th sync from now unwinds without running any cleanup code,
         /// which leaves the disk as a killed process would.
         Crash(usize),
+        /// The n-th sync from now and every later one return an error, until
+        /// the fault is disarmed.
+        FailFrom(usize),
     }
 
     thread_local! {
         static FAULT: Cell<SyncFault> = const { Cell::new(SyncFault::None) };
+        static FIRED: Cell<bool> = const { Cell::new(false) };
     }
 
     pub(super) fn arm(fault: SyncFault) {
         FAULT.with(|current| current.set(fault));
+        FIRED.with(|fired| fired.set(false));
     }
 
     /// Disarms the fault and reports whether it had fired.
     pub(super) fn disarm() -> bool {
-        FAULT.with(|current| current.replace(SyncFault::None)) == SyncFault::None
+        FAULT.with(|current| current.set(SyncFault::None));
+        FIRED.with(|fired| fired.replace(false))
     }
 
     pub(super) fn check() -> crate::error::AppResult<()> {
         match FAULT.with(Cell::get) {
             SyncFault::None => Ok(()),
             SyncFault::Fail(1) => {
-                arm(SyncFault::None);
+                FAULT.with(|current| current.set(SyncFault::None));
+                FIRED.with(|fired| fired.set(true));
                 Err("injected directory sync failure".into())
             }
             SyncFault::Crash(1) => {
-                arm(SyncFault::None);
+                FAULT.with(|current| current.set(SyncFault::None));
+                FIRED.with(|fired| fired.set(true));
                 std::panic::resume_unwind(Box::new("injected crash at a directory sync"))
             }
+            SyncFault::FailFrom(0 | 1) => {
+                FAULT.with(|current| current.set(SyncFault::FailFrom(1)));
+                FIRED.with(|fired| fired.set(true));
+                Err("injected persistent directory sync failure".into())
+            }
+            SyncFault::FailFrom(remaining) => {
+                FAULT.with(|current| current.set(SyncFault::FailFrom(remaining - 1)));
+                Ok(())
+            }
             SyncFault::Fail(remaining) => {
-                arm(SyncFault::Fail(remaining - 1));
+                FAULT.with(|current| current.set(SyncFault::Fail(remaining - 1)));
                 Ok(())
             }
             SyncFault::Crash(remaining) => {
-                arm(SyncFault::Crash(remaining - 1));
+                FAULT.with(|current| current.set(SyncFault::Crash(remaining - 1)));
                 Ok(())
             }
         }
@@ -3119,6 +3172,22 @@ mod tests {
     /// returned `Ok`, whether the fault fired, and whether the bundle's
     /// generation is the live one afterwards.
     fn restore_under_fault(fault: super::sync_fault::SyncFault) -> (bool, bool, bool) {
+        let run = faulted_restore(fault);
+        (run.error.is_none() && !run.crashed, run.fired, run.restored)
+    }
+
+    struct FaultedRestore {
+        /// The error the import returned, if it returned one.
+        error: Option<String>,
+        crashed: bool,
+        fired: bool,
+        /// The bundle's generation is the live one after the next start.
+        restored: bool,
+        /// The profile directory right after the import, before the next start.
+        names_after_import: Vec<String>,
+    }
+
+    fn faulted_restore(fault: super::sync_fault::SyncFault) -> FaultedRestore {
         let tmp = tempdir().expect("tempdir");
         let root = tmp.path().join("media");
         let other_root = tmp.path().join("other-media");
@@ -3135,9 +3204,26 @@ mod tests {
         let outcome =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| import(&archive, &state)));
         let fired = super::sync_fault::disarm();
-        let returned_ok = matches!(outcome, Ok(Ok(())));
         let crashed = outcome.is_err();
+        let error = match outcome {
+            Ok(Err(error)) => Some(error.to_string()),
+            _ => None,
+        };
         let names_after_import = names_in(&profile);
+        let recovery_artifacts = names_after_import
+            .iter()
+            .any(|name| name == "restore-journal.json" || name.ends_with(".restore-previous"));
+        if !crashed && recovery_artifacts {
+            // What this attempt left for recovery stays until a restart resolves it.
+            let refused = import(&archive, &state).expect_err("second import before a restart");
+            assert!(
+                refused
+                    .to_string()
+                    .contains("Restore recovery artifacts already exist"),
+                "{fault:?}: {refused}"
+            );
+            assert_eq!(names_in(&profile), names_after_import, "{fault:?}");
+        }
         drop(state);
 
         // The next start of the application.
@@ -3151,7 +3237,7 @@ mod tests {
             "{fault:?}: database and thumbnails are one generation"
         );
         assert_eq!(thumbs_dir.join("live.jpg").exists(), !restored, "{fault:?}");
-        if !crashed && !restored {
+        if matches!(fault, super::sync_fault::SyncFault::Fail(_)) && !restored {
             // One failed sync before the commit point: the import itself removed the
             // staging tree or rolled the swap back, and left nothing for startup.
             assert_eq!(names_after_import, vec!["media.db", "thumbs"], "{fault:?}");
@@ -3167,7 +3253,108 @@ mod tests {
         recovery.unwrap_or_else(|error| panic!("{fault:?}: startup failed: {error:#}"));
         assert!(!staging.exists(), "{fault:?}: cleanup finished");
         assert!(db::list_pending_file_operations(&conn).unwrap().is_empty());
-        (returned_ok, fired, restored)
+        FaultedRestore {
+            error,
+            crashed,
+            fired,
+            restored,
+            names_after_import,
+        }
+    }
+
+    /// The ninth directory sync of a restore over an existing database and
+    /// thumbnail tree is the one after the `committed` journal rename.
+    const COMMITTED_JOURNAL_SYNC: usize = 9;
+    /// The syncs of the cleanup that follows it: previous database, previous
+    /// thumbnails, staging tree, journal removal.
+    const LAST_CLEANUP_SYNC: usize = 13;
+
+    #[test]
+    fn restore_with_a_published_committed_journal_reports_success() {
+        use super::sync_fault::SyncFault;
+        // The sync of the committed journal fails, once or for good: the new generation
+        // is live and the import says so. The previous generation and the journal stay
+        // for the next start, which `faulted_restore` runs and checks.
+        for fault in [
+            SyncFault::Fail(COMMITTED_JOURNAL_SYNC),
+            SyncFault::FailFrom(COMMITTED_JOURNAL_SYNC),
+        ] {
+            let run = faulted_restore(fault);
+            assert!(run.fired && !run.crashed, "{fault:?}");
+            assert_eq!(run.error, None, "{fault:?}");
+            assert!(run.restored, "{fault:?}");
+            assert_eq!(
+                run.names_after_import,
+                vec![
+                    "media.db",
+                    "media.db.restore-previous",
+                    "restore-journal.json",
+                    "restore-staging",
+                    "thumbs",
+                    "thumbs.restore-previous",
+                ],
+                "{fault:?}: cleanup waits for the next start"
+            );
+        }
+    }
+
+    #[test]
+    fn restore_cleanup_failure_after_the_commit_point_reports_success() {
+        use super::sync_fault::SyncFault;
+        for step in COMMITTED_JOURNAL_SYNC + 1..=LAST_CLEANUP_SYNC {
+            for fault in [SyncFault::Fail(step), SyncFault::FailFrom(step)] {
+                let run = faulted_restore(fault);
+                assert!(run.fired && !run.crashed, "{fault:?}");
+                assert_eq!(run.error, None, "{fault:?}");
+                assert!(run.restored, "{fault:?}");
+                // The last cleanup step removes the journal; only its sync is left to fail.
+                assert_eq!(
+                    run.names_after_import
+                        .contains(&"restore-journal.json".to_string()),
+                    step < LAST_CLEANUP_SYNC,
+                    "{fault:?}: an unfinished cleanup keeps the journal: {:?}",
+                    run.names_after_import
+                );
+            }
+        }
+        // One sync further nothing fires: the sequence ends at the journal removal.
+        let run = faulted_restore(SyncFault::Fail(LAST_CLEANUP_SYNC + 1));
+        assert!(!run.fired && run.restored && run.error.is_none());
+        assert_eq!(run.names_after_import, vec!["media.db", "thumbs"]);
+    }
+
+    #[test]
+    fn restore_failure_before_the_commit_point_keeps_the_previous_generation() {
+        use super::sync_fault::SyncFault;
+        for step in 1..COMMITTED_JOURNAL_SYNC {
+            let run = faulted_restore(SyncFault::Fail(step));
+            assert!(run.fired && !run.crashed && !run.restored, "Fail({step})");
+            assert_eq!(
+                run.error.as_deref(),
+                Some("injected directory sync failure"),
+                "Fail({step}): the rollback succeeded"
+            );
+
+            let run = faulted_restore(SyncFault::FailFrom(step));
+            assert!(
+                run.fired && !run.crashed && !run.restored,
+                "FailFrom({step})"
+            );
+            let error = run.error.expect("a rolled-back restore is an error");
+            // From the `swapping` journal on (the third sync) the rollback needs syncs too.
+            assert_eq!(
+                error.contains("Automatic rollback also failed"),
+                step >= 3,
+                "FailFrom({step}): {error}"
+            );
+            assert_eq!(
+                run.names_after_import
+                    .contains(&"restore-journal.json".to_string()),
+                step >= 3,
+                "FailFrom({step}): {:?}",
+                run.names_after_import
+            );
+        }
     }
 
     #[test]

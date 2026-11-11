@@ -124,21 +124,32 @@ function createLayerManager() {
       return () => {
         cancelAnimationFrame(initial);
         frames.delete(initial);
-        const wasTop = layers[layers.length - 1] === layer;
+        const index = layers.indexOf(layer);
+        const wasTop = index === layers.length - 1;
+        // A modal above the removed layer owns focus; nonmodal layers above it do not.
+        const coveredByModal = layers.slice(index + 1).some((item) => item.modal);
+        const remaining = new Set(layers);
+        remaining.delete(layer);
         layers = layers.filter((item) => item !== layer);
-        if (disposed) return;
+        if (disposed || index < 0) return;
         syncLocks();
         const next = layers[layers.length - 1];
-        if (wasTop)
-          frame(() => {
-            if (layers[layers.length - 1] !== next) return;
-            const restore = layer.restoreFocus();
-            if (restore?.isConnected && !restore.closest("[inert]")) restore.focus();
-            else {
-              const el = next?.container();
-              if (el) focusInitial(el);
-            }
-          });
+        if (coveredByModal) return;
+        frame(() => {
+          // Only a modal registered after this release takes focus over the restore.
+          if (layers.some((item) => item.modal && !remaining.has(item))) return;
+          // Below a nonmodal layer, restore only focus that was lost with this layer.
+          if (!wasTop) {
+            const active = document.activeElement;
+            if (active && active !== document.body && active.isConnected) return;
+          }
+          const restore = layer.restoreFocus();
+          if (restore?.isConnected && !restore.closest("[inert]")) restore.focus();
+          else if (next && layers.includes(next)) {
+            const el = next.container();
+            if (el) focusInitial(el);
+          }
+        });
       };
     }
   };

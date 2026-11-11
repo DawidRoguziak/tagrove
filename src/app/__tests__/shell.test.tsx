@@ -36,6 +36,9 @@ describe("Solid shell", () => {
       if (command === "start_asset_query")
         return { status: "ready", session_id: 1, revision: 1, total: 0, offset: 0, items: [] };
       if (command === "list_tags") return { items: [], total: 0 };
+      if (command === "get_startup_popular_tags") return [];
+      if (command === "get_asset_query_sections")
+        return { status: "ready", session_id: 1, total: 0, sections: [] };
     });
     vi.stubGlobal(
       "ResizeObserver",
@@ -96,6 +99,30 @@ describe("Solid shell", () => {
       screen.getByRole("radio", { name: i18n.t("settings.appearance.theme.light") })
     ).toBeChecked();
   });
+  it.each([false, true])(
+    "restores focus to the settings opener after Escape (bulk mode %s)",
+    async (bulk) => {
+      render(() => <App />);
+      const user = userEvent.setup();
+      if (bulk) {
+        await user.click(await screen.findByRole("button", { name: "Enable bulk actions" }));
+        await screen.findByRole("button", { name: "Disable bulk actions" });
+      }
+      await user.click(screen.getByRole("button", { name: "Open settings" }));
+      (await screen.findByRole("button", { name: "Back" })).focus();
+      fireEvent.keyDown(window, { key: "Escape" });
+      flush();
+      expect(screen.getByTestId("gallery-grid")).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Open settings" })).toHaveFocus()
+      );
+      if (bulk)
+        expect(screen.getByRole("button", { name: "Disable bulk actions" })).toHaveAttribute(
+          "aria-pressed",
+          "true"
+        );
+    }
+  );
   it("owns one language subscription per app and removes it across remounts", async () => {
     const on = vi.spyOn(i18n, "on"),
       off = vi.spyOn(i18n, "off");

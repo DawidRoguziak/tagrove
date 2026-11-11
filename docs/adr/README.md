@@ -61,3 +61,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0021](0021-visible-tiles-drop-a-pending-prefetch.md) | A tile that scrolls into view before its prefetched thumbnail arrives drops `p=1`, and High stays FIFO | Accepted | 2026-11-11 |
 | [0022](0022-lightbox-delete-fails-fast-during-a-scan.md) | Lightbox delete fails fast while a scan holds the scan lock instead of waiting for it | Accepted | 2026-11-11 |
 | [0023](0023-app-control-unresponsive-state-and-out-of-queue-stop.md) | app:control reports an unresponsive app instead of failing, allows only native Escape there, and runs stop outside the command queue | Accepted | 2026-11-11 |
+| [0024](0024-thumbnail-retries-continue-while-the-tile-is-mounted.md) | A failed thumbnail keeps retrying with a capped backoff while its tile is mounted, and a returning source is requested again | Accepted | 2026-11-11 |

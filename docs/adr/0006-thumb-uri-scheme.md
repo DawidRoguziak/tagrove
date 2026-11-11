@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-07
 - Areas: thumbnails, IPC, gallery, security, dependencies
-- Related: [thumbnails](../subsystems/thumbnails.md), [IPC contract](../architecture/ipc-contract.md), [system overview](../architecture/system-overview.md), [library query and gallery](../subsystems/library-query-and-gallery.md), [plan stage 06](../plans/grid-performance/06-thumb-protocol.md), [ADR 0002](0002-backend-write-priority-and-scan-revisions.md), [ADR 0003](0003-custom-gallery-virtualizer.md)
+- Related: [thumbnails](../subsystems/thumbnails.md), [IPC contract](../architecture/ipc-contract.md), [system overview](../architecture/system-overview.md), [library query and gallery](../subsystems/library-query-and-gallery.md), [plan stage 06](../plans/grid-performance/06-thumb-protocol.md), [ADR 0002](0002-backend-write-priority-and-scan-revisions.md), [ADR 0003](0003-custom-gallery-virtualizer.md), [ADR 0024](0024-thumbnail-retries-continue-while-the-tile-is-mounted.md) (retries after the placeholder)
 
 ## Context
 

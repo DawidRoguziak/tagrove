@@ -158,46 +158,16 @@ fn validate_export_target(
     state: &AppState,
     conn: &rusqlite::Connection,
 ) -> AppResult<PathBuf> {
-    let requested = PathBuf::from(raw_path);
-    if requested.as_os_str().is_empty() {
-        return Err("DB export archive path is empty".into());
-    }
-    let parent = requested
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    fs::create_dir_all(parent)?;
-    let parent = parent.canonicalize()?;
-    let file_name = requested
-        .file_name()
-        .ok_or("DB export archive path has no file name")?;
-    let target = parent.join(file_name);
     let app_data = state
         .db_path
         .parent()
-        .ok_or("Cannot resolve app data directory")?
-        .canonicalize()?;
-    if target.starts_with(&app_data) {
-        return Err("DB export archive cannot be stored inside the active profile".into());
-    }
-
-    for root in db::list_scan_roots(conn)? {
-        if let Ok(root) = Path::new(&root).canonicalize() {
-            if target.starts_with(root) {
-                return Err(
-                    "DB export archive cannot be stored inside an indexed source root".into(),
-                );
-            }
-        }
-    }
-    for asset in db::list_backup_asset_paths(conn)? {
-        if let Ok(source) = Path::new(&asset.path).canonicalize() {
-            if target == source {
-                return Err("DB export archive cannot overwrite an indexed source file".into());
-            }
-        }
-    }
-    Ok(target)
+        .ok_or("Cannot resolve app data directory")?;
+    crate::services::export_target::prepare_export_target(
+        raw_path,
+        app_data,
+        conn,
+        "DB export archive",
+    )
 }
 
 fn create_database_snapshot(source: &rusqlite::Connection, target: &Path) -> AppResult<()> {
@@ -2430,6 +2400,45 @@ mod tests {
             &mut zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap()
         )
         .is_ok());
+    }
+
+    #[test]
+    fn rejected_export_targets_leave_no_new_directory() {
+        let tmp = tempdir().expect("tempdir");
+        let profile_dir = tmp.path().join("profile");
+        let db_path = profile_dir.join("media.db");
+        let thumbs_dir = profile_dir.join("thumbs");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&thumbs_dir).expect("create thumbs dir");
+        fs::create_dir_all(&root).expect("create root");
+        let conn = db::open_connection(&db_path).expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        db::add_scan_root(&conn, root.to_str().unwrap()).expect("add root");
+        drop(conn);
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let profile_before = names_in(&profile_dir);
+
+        for (target, reason) in [
+            (
+                profile_dir.join("new/deeper/backup.zip"),
+                "inside the active profile",
+            ),
+            (
+                root.join("new/deeper/backup.zip"),
+                "inside an indexed source root",
+            ),
+        ] {
+            let error = export_db_bundle(
+                target.to_string_lossy().to_string(),
+                &state,
+                &state.database.maintenance().unwrap(),
+            )
+            .expect_err("protected target");
+            assert!(error.to_string().contains(reason), "{error}");
+        }
+
+        assert_eq!(names_in(&profile_dir), profile_before);
+        assert!(names_in(&root).is_empty());
     }
 
     fn names_in(dir: &Path) -> Vec<String> {

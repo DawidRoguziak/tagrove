@@ -3,6 +3,7 @@ pub mod asset_query_service;
 pub mod backup_service;
 pub mod csv_service;
 pub mod db_pool;
+mod export_target;
 pub mod progress;
 pub mod scan_service;
 pub mod selection_service;

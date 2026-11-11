@@ -10,6 +10,7 @@ use crate::{
     db::{self, CsvImportRecord},
     error::AppResult,
     models::{CsvExportSummary, CsvImportSummary},
+    services::export_target::prepare_export_target,
     utils::{
         tags::{normalize_and_validate_tags, parse_csv_tags},
         text::canonical_key,
@@ -314,42 +315,10 @@ fn validate_export_target(
     db_path: &Path,
     conn: &rusqlite::Connection,
 ) -> AppResult<PathBuf> {
-    let requested = PathBuf::from(raw_path.trim());
-    if requested.as_os_str().is_empty() {
-        return Err("CSV export path is empty".into());
-    }
-    let parent = requested
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    fs::create_dir_all(parent)?;
-    let target = parent.canonicalize()?.join(
-        requested
-            .file_name()
-            .ok_or("CSV export path has no file name")?,
-    );
     let profile = db_path
         .parent()
-        .ok_or("Cannot resolve app data directory")?
-        .canonicalize()?;
-    if target.starts_with(profile) {
-        return Err("CSV export cannot be stored inside the active profile".into());
-    }
-    for root in db::list_scan_roots(conn)? {
-        if let Ok(root) = Path::new(&root).canonicalize() {
-            if target.starts_with(root) {
-                return Err("CSV export cannot be stored inside an indexed source root".into());
-            }
-        }
-    }
-    for asset in db::list_asset_paths(conn)? {
-        if let Ok(source) = Path::new(&asset.path).canonicalize() {
-            if target == source {
-                return Err("CSV export cannot overwrite an indexed source file".into());
-            }
-        }
-    }
-    Ok(target)
+        .ok_or("Cannot resolve app data directory")?;
+    prepare_export_target(raw_path.trim(), profile, conn, "CSV export")
 }
 
 fn publish_file(source: &Path, target: &Path) -> AppResult<()> {
@@ -514,6 +483,43 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
             .count();
         assert_eq!(temporary_count, 0);
+    }
+
+    #[test]
+    fn rejected_export_targets_leave_no_new_directory() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("profile");
+        let media = root.path().join("media");
+        fs::create_dir_all(&profile).unwrap();
+        fs::create_dir_all(&media).unwrap();
+        let db_path = profile.join("media.db");
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::add_scan_root(&conn, media.to_str().unwrap()).unwrap();
+        drop(conn);
+        let runtime = crate::services::db_pool::DatabaseRuntime::new(db_path.clone());
+
+        for (target, reason) in [
+            (
+                profile.join("new/deeper/tags.csv"),
+                "inside the active profile",
+            ),
+            (
+                media.join("new/deeper/tags.csv"),
+                "inside an indexed source root",
+            ),
+        ] {
+            let error = export_tags_csv(
+                target.to_str().unwrap(),
+                &db_path,
+                &runtime.admit().unwrap(),
+            )
+            .expect_err("protected target");
+            assert!(error.to_string().contains(reason), "{error}");
+        }
+
+        assert!(!profile.join("new").exists());
+        assert_eq!(fs::read_dir(&media).unwrap().count(), 0);
     }
 
     #[test]

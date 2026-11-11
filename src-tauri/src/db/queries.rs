@@ -19,18 +19,6 @@ pub fn ensure_no_pending_file_operations(conn: &Connection) -> anyhow::Result<()
     Ok(())
 }
 
-pub fn list_backup_asset_paths(conn: &Connection) -> anyhow::Result<Vec<BackupAssetPath>> {
-    let mut stmt = conn.prepare("SELECT id, path, thumb_path FROM assets ORDER BY id")?;
-    let rows = stmt.query_map([], |row| {
-        Ok(BackupAssetPath {
-            id: row.get(0)?,
-            path: row.get(1)?,
-            thumb_path: row.get(2)?,
-        })
-    })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-}
-
 pub fn list_backup_asset_root_mappings(conn: &Connection) -> anyhow::Result<Vec<(i64, String)>> {
     let mut stmt = conn
         .prepare("SELECT asset_id, root_path FROM asset_scan_roots ORDER BY asset_id, root_path")?;
@@ -381,6 +369,31 @@ pub fn for_each_asset_for_csv_export(
         visitor(row?)?;
     }
     Ok(())
+}
+
+/// Whether an asset row stores exactly `path`; uses the unique index on `assets.path`.
+pub fn asset_path_exists(conn: &Connection, path: &str) -> anyhow::Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM assets WHERE path = ?1)",
+        [path],
+        |row| row.get(0),
+    )?)
+}
+
+/// Streams stored asset paths without materializing them and stops at the first
+/// one for which `predicate` returns true.
+pub fn any_asset_path(
+    conn: &Connection,
+    mut predicate: impl FnMut(&str) -> bool,
+) -> anyhow::Result<bool> {
+    let mut stmt = conn.prepare("SELECT path FROM assets")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        if predicate(row.get_ref(0)?.as_str()?) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub fn list_asset_paths(conn: &Connection) -> anyhow::Result<Vec<AssetPathRow>> {

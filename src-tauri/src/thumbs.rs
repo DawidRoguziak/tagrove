@@ -279,6 +279,21 @@ fn top_biased_square_crop_rect(width: u32, height: u32) -> Option<(u32, u32, u32
     Some((0, top_offset, square_size))
 }
 
+/// Input options for every ffmpeg and ffprobe run on a library video (ADR 0028).
+///
+/// The media kind comes from the file extension, so the content can be a
+/// manifest or a script. `-format_whitelist` allows only demuxers that read
+/// the one file they are given: without it a DASH manifest or a `concat`
+/// script named `*.mp4` makes the tool read the files it names, and the
+/// thumbnail and duration then come from those files. `-protocol_whitelist`
+/// keeps the input on the `file` protocol.
+const LOCAL_VIDEO_INPUT_ARGS: [&str; 4] = [
+    "-protocol_whitelist",
+    "file",
+    "-format_whitelist",
+    "mov,matroska,avi,mpegts,mpeg,flv,asf,ogg",
+];
+
 /// How ffmpeg picks the thumbnail frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoFrameSeek {
@@ -323,6 +338,7 @@ pub fn create_video_thumb(
     command
         .arg("-ss")
         .arg(format!("{seek_seconds:.3}"))
+        .args(LOCAL_VIDEO_INPUT_ARGS)
         .arg("-i")
         .arg(source_path)
         .arg("-an")
@@ -415,6 +431,7 @@ pub fn probe_video_duration_ms(ffmpeg_path: &Path, source_path: &Path) -> Option
             .arg("format=duration")
             .arg("-of")
             .arg("default=noprint_wrappers=1:nokey=1")
+            .args(LOCAL_VIDEO_INPUT_ARGS)
             .arg(source_path)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -445,6 +462,7 @@ pub fn probe_video_duration_ms(ffmpeg_path: &Path, source_path: &Path) -> Option
     command
         .arg("-hide_banner")
         .arg("-nostdin")
+        .args(LOCAL_VIDEO_INPUT_ARGS)
         .arg("-i")
         .arg(source_path)
         .stdin(Stdio::null())
@@ -1183,5 +1201,78 @@ mod tests {
         super::create_video_thumb(ffmpeg, &video, &thumb, 3.0, super::VideoFrameSeek::Keyframe)
             .expect("render keyframe thumbnail");
         assert_eq!(image::image_dimensions(&thumb).unwrap().0, 390);
+    }
+
+    #[test]
+    fn video_tools_refuse_reference_content_and_still_read_real_containers() {
+        use crate::services::video_player_service::test_support::{
+            connection_arrived, loopback_listener, reference_fixtures, OpenWatch,
+        };
+        let ffmpeg = std::path::Path::new("/usr/bin/ffmpeg");
+        if !ffmpeg.is_file() {
+            return;
+        }
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("root");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let clip = |path: &std::path::Path| {
+            let status = std::process::Command::new(ffmpeg)
+                .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i"])
+                .args(["testsrc2=size=160x90:rate=10", "-t", "2", "-c:v", "mpeg4"])
+                .arg(path)
+                .status()
+                .expect("generate video fixture");
+            assert!(status.success());
+        };
+        let secret = outside.join("secret.mp4");
+        let sibling = root.join("sibling.mp4");
+        clip(&secret);
+        clip(&sibling);
+        let (listener, url) = loopback_listener();
+        let fixtures = reference_fixtures(&url, secret.to_str().unwrap(), "sibling.mp4");
+        for (name, content) in &fixtures {
+            std::fs::write(root.join(name), content).unwrap();
+        }
+        let watch = OpenWatch::new(&[&secret, &sibling]);
+
+        for (name, _) in &fixtures {
+            let source = root.join(name);
+            assert_eq!(probe_video_duration_ms(ffmpeg, &source), None, "{name}");
+            let thumb = tmp.path().join(format!("{name}.jpg"));
+            for seek in [
+                super::VideoFrameSeek::Keyframe,
+                super::VideoFrameSeek::Exact,
+            ] {
+                assert!(
+                    create_video_thumb(ffmpeg, &source, &thumb, 0.0, seek).is_err(),
+                    "{name}"
+                );
+            }
+            assert!(!thumb.exists(), "{name} produced a thumbnail");
+            assert!(!connection_arrived(&listener), "{name} reached the network");
+            assert!(!watch.opened(), "{name} opened a file it names");
+        }
+
+        // WebM uses the Matroska demuxer; it is not generated here because it
+        // needs an encoder that not every ffmpeg build has.
+        for extension in ["mp4", "mkv", "mov", "avi"] {
+            let source = root.join(format!("real.{extension}"));
+            clip(&source);
+            let duration = probe_video_duration_ms(ffmpeg, &source);
+            assert!(
+                duration.is_some_and(|ms| ms > 1_500),
+                "{extension}: {duration:?}"
+            );
+            let thumb = tmp.path().join(format!("real-{extension}.jpg"));
+            create_video_thumb(ffmpeg, &source, &thumb, 1.0, super::VideoFrameSeek::Exact)
+                .expect("render video thumbnail");
+            assert_eq!(
+                image::image_dimensions(&thumb).unwrap().0,
+                390,
+                "{extension}"
+            );
+        }
     }
 }

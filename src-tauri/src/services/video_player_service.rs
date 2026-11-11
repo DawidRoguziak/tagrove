@@ -177,6 +177,22 @@ struct PlaybackWorker {
 /// instead of up to 50 ms early, so nothing has to wait for the target time.
 /// `audio-fallback-to-null` keeps a file with an audio track playing, silently,
 /// when no audio device can be opened.
+///
+/// The options from `config` on keep the player on the one authorized file
+/// (ADR 0028). The media kind comes from the file extension, so the content of
+/// a `*.mp4` can be a playlist or a manifest:
+/// - `access-references=no` refuses playlist, EDL, CUE and archive content, and
+///   every file or URL that a libavformat demuxer asks libmpv to open (HLS
+///   segments, DASH representations).
+/// - `demuxer-lavf-o=protocol_whitelist=data` covers the demuxers that open
+///   their references themselves (`concat` scripts, `sdp` sockets). libmpv
+///   reads the opened file through its own stream layer, so libavformat needs
+///   no protocol of its own, and `data` (inline bytes) does no I/O.
+/// - `ordered-chapters=no` stops Matroska segment linking from scanning the
+///   folder for sibling files.
+/// - `config=no` keeps a user's mpv configuration out of the player, so it
+///   cannot turn any of this back on.
+/// - `load-unsafe-playlists=no` states libmpv's default.
 const PLAYER_OPTIONS: &[(&str, &str)] = &[
     ("vo", "libmpv"),
     ("hwdec", "auto-safe"),
@@ -185,17 +201,50 @@ const PLAYER_OPTIONS: &[(&str, &str)] = &[
     ("mute", "no"),
     ("video-timing-offset", "0"),
     ("audio-fallback-to-null", "yes"),
+    ("config", "no"),
+    ("access-references", "no"),
+    ("demuxer-lavf-o", "protocol_whitelist=data"),
+    ("ordered-chapters", "no"),
+    ("load-unsafe-playlists", "no"),
 ];
 
-/// Applies `PLAYER_OPTIONS`, then `overrides`. Later values replace earlier ones.
+/// Script options of the player (ADR 0028). `ytdl=no` does not load the hook
+/// that starts `yt-dlp`/`youtube-dl` from `PATH`, and `load-scripts=no` loads
+/// no script from a configuration folder.
+///
+/// libmpv has these options only when it is built with script support. The
+/// Flatpak build is not, and then there is no script to turn off, so an
+/// option that libmpv does not know is skipped.
+const SCRIPT_OPTIONS: &[(&str, &str)] = &[("ytdl", "no"), ("load-scripts", "no")];
+
+/// Applies `PLAYER_OPTIONS` and `SCRIPT_OPTIONS`, then `overrides`. Later
+/// values replace earlier ones.
 fn apply_player_options(
     init: &libmpv2::MpvInitializer,
     overrides: &[(&str, &str)],
 ) -> libmpv2::Result<()> {
-    for (name, value) in PLAYER_OPTIONS.iter().chain(overrides) {
+    for (name, value) in PLAYER_OPTIONS {
+        init.set_option(name, *value)?;
+    }
+    for (name, value) in SCRIPT_OPTIONS {
+        set_option_if_known(init, name, value)?;
+    }
+    for (name, value) in overrides {
         init.set_option(name, *value)?;
     }
     Ok(())
+}
+
+/// Sets an option that not every libmpv build has. A rejected value is still an error.
+fn set_option_if_known(
+    init: &libmpv2::MpvInitializer,
+    name: &str,
+    value: &str,
+) -> libmpv2::Result<()> {
+    match init.set_option(name, value) {
+        Err(libmpv2::Error::Raw(libmpv2_sys::mpv_error_MPV_ERROR_OPTION_NOT_FOUND)) => Ok(()),
+        result => result,
+    }
 }
 
 impl VideoPlayerService {
@@ -641,8 +690,135 @@ impl PlaybackWorker {
     }
 }
 
+/// Fixtures for files whose content points at other files or at the network.
+/// Shared with the ffmpeg/ffprobe tests in `thumbs.rs`.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::ffi::CString;
+    use std::io::{Error, ErrorKind};
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+
+    /// A loopback listener that only records whether anything connected to it.
+    pub(crate) fn loopback_listener() -> (std::net::TcpListener, String) {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        (listener, url)
+    }
+
+    pub(crate) fn connection_arrived(listener: &std::net::TcpListener) -> bool {
+        match listener.accept() {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => false,
+            Err(error) => panic!("loopback listener failed: {error}"),
+        }
+    }
+
+    /// Records, through inotify, every open of the watched files by any process.
+    pub(crate) struct OpenWatch(OwnedFd);
+
+    impl OpenWatch {
+        pub(crate) fn new(paths: &[&Path]) -> Self {
+            // SAFETY: the call takes no pointers; the descriptor is checked before it is owned.
+            let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
+            assert!(fd >= 0, "inotify_init1: {}", Error::last_os_error());
+            // SAFETY: `fd` is a new descriptor that nothing else owns.
+            let watch = Self(unsafe { OwnedFd::from_raw_fd(fd) });
+            for path in paths {
+                let name = CString::new(path.as_os_str().as_bytes()).unwrap();
+                // SAFETY: `name` is a NUL-terminated string that outlives the call.
+                let added = unsafe {
+                    libc::inotify_add_watch(fd, name.as_ptr(), libc::IN_OPEN | libc::IN_ACCESS)
+                };
+                assert!(added >= 0, "inotify_add_watch: {}", Error::last_os_error());
+            }
+            watch
+        }
+
+        /// Whether a watched file was opened or read since the previous call.
+        pub(crate) fn opened(&self) -> bool {
+            let mut events = [0u8; 4096];
+            let mut opened = false;
+            loop {
+                // SAFETY: the buffer is writable for the length passed.
+                let read = unsafe {
+                    libc::read(self.0.as_raw_fd(), events.as_mut_ptr().cast(), events.len())
+                };
+                if read > 0 {
+                    opened = true;
+                } else if read < 0 && Error::last_os_error().kind() == ErrorKind::WouldBlock {
+                    return opened;
+                } else {
+                    panic!("inotify read failed: {}", Error::last_os_error());
+                }
+            }
+        }
+    }
+
+    /// Text files named `*.mp4` whose content sends an unrestricted player to
+    /// `url`, to the absolute path `outside`, or to the sibling file `sibling`.
+    pub(crate) fn reference_fixtures(
+        url: &str,
+        outside: &str,
+        sibling: &str,
+    ) -> Vec<(&'static str, String)> {
+        let port = url.rsplit(':').next().unwrap();
+        let mpd = |target: &str| {
+            format!(
+                "<?xml version=\"1.0\"?>\n<MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" \
+                 type=\"static\" mediaPresentationDuration=\"PT2S\" \
+                 profiles=\"urn:mpeg:dash:profile:isoff-on-demand:2011\"><Period>\
+                 <AdaptationSet mimeType=\"video/mp4\"><Representation id=\"1\" \
+                 bandwidth=\"1000\" codecs=\"mp4v.20.9\" width=\"160\" height=\"90\">\
+                 <BaseURL>{target}</BaseURL><SegmentBase indexRange=\"0-1\"/>\
+                 </Representation></AdaptationSet></Period></MPD>\n"
+            )
+        };
+        vec![
+            ("m3u.mp4", format!("#EXTM3U\n{url}/m3u.mp4\n{outside}\n")),
+            ("m3u-local.mp4", format!("#EXTM3U\n{outside}\n")),
+            (
+                "pls.mp4",
+                format!("[playlist]\nFile1={url}/pls.mp4\nFile2={outside}\nNumberOfEntries=2\n"),
+            ),
+            (
+                "hls.mp4",
+                format!(
+                    "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n\
+                     #EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:2.0,\n{url}/hls.ts\n\
+                     #EXTINF:2.0,\n{outside}\n#EXT-X-ENDLIST\n"
+                ),
+            ),
+            (
+                "hls-master.mp4",
+                format!("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n{url}/master.m3u8\n"),
+            ),
+            ("edl.mp4", format!("# mpv EDL v0\n{outside}\n")),
+            ("edl-net.mp4", format!("# mpv EDL v0\n{url}/edl.mp4\n")),
+            ("dash.mp4", mpd(&format!("file://{outside}"))),
+            ("dash-net.mp4", mpd(&format!("{url}/dash.mp4"))),
+            (
+                "concat.mp4",
+                format!("ffconcat version 1.0\nfile {sibling}\n"),
+            ),
+            (
+                "sdp.mp4",
+                format!(
+                    "v=0\no=- 0 0 IN IP4 127.0.0.1\ns=-\nc=IN IP4 127.0.0.1\nt=0 0\n\
+                     m=video {port} RTP/AVP 96\na=rtpmap:96 H264/90000\n"
+                ),
+            ),
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::test_support::{
+        connection_arrived, loopback_listener, reference_fixtures, OpenWatch,
+    };
     use super::*;
 
     fn service() -> VideoPlayerService {
@@ -720,6 +896,56 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    /// The production options with outputs that need no display or audio device.
+    fn player_with_production_options(overrides: &[(&str, &str)]) -> VideoPlayerService {
+        let mpv = Mpv::with_initializer(|init| {
+            let outputs = [("vo", "null"), ("hwdec", "no"), ("ao", "null")];
+            apply_player_options(&init, &[&outputs[..], overrides].concat())
+        })
+        .expect("libmpv accepts the player options");
+        VideoPlayerService::with_mpv(Ok(Box::leak(Box::new(mpv))))
+    }
+
+    fn recorded_events() -> (Channel<VideoEvent>, mpsc::Receiver<serde_json::Value>) {
+        let (sender, receiver) = mpsc::channel();
+        let events = Channel::new(move |body| {
+            if let tauri::ipc::InvokeResponseBody::Json(json) = body {
+                let _ = sender.send(serde_json::from_str(&json).unwrap());
+            }
+            Ok(())
+        });
+        (events, receiver)
+    }
+
+    /// Events of one session up to and including its error event.
+    fn events_until_error(
+        events: &mpsc::Receiver<serde_json::Value>,
+        session_id: u64,
+        name: &str,
+    ) -> Vec<serde_json::Value> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut seen = Vec::new();
+        loop {
+            let event = events
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or_else(|_| panic!("{name}: no error event after {seen:?}"));
+            assert_eq!(event["session_id"], session_id, "{name}");
+            let failed = event["type"] == "error";
+            seen.push(event);
+            if failed {
+                return seen;
+            }
+        }
+    }
+
+    fn wait_until_retired(service: &VideoPlayerService, name: &str) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while service.playback_snapshot().is_some() {
+            assert!(Instant::now() < deadline, "{name}: session was not retired");
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]
@@ -926,6 +1152,174 @@ mod tests {
             "a missing audio device must not fail the session"
         );
         service.close(session).unwrap();
+    }
+
+    #[test]
+    fn real_mpv_reports_the_reference_blocking_player_options() {
+        let service = player_with_production_options(&[]);
+        let mpv = service.mpv().unwrap();
+        for option in [
+            c"config",
+            c"access-references",
+            c"ordered-chapters",
+            c"load-unsafe-playlists",
+        ] {
+            assert!(!boolean_property(mpv, option).unwrap(), "{option:?}");
+        }
+        // A libmpv without script support has neither option.
+        for option in [c"ytdl", c"load-scripts"] {
+            assert!(
+                !boolean_property(mpv, option).unwrap_or(false),
+                "{option:?}"
+            );
+        }
+        assert_eq!(
+            mpv.get_property::<String>("demuxer-lavf-o").unwrap(),
+            "protocol_whitelist=data"
+        );
+    }
+
+    #[test]
+    fn real_mpv_skips_only_an_unknown_script_option() {
+        Mpv::with_initializer(|init| {
+            init.set_option("vo", "null")?;
+            init.set_option("ao", "null")?;
+            assert!(set_option_if_known(&init, "not-a-real-option", "no").is_ok());
+            assert!(init.set_option("not-a-real-option", "no").is_err());
+            assert!(set_option_if_known(&init, "access-references", "maybe").is_err());
+            assert!(set_option_if_known(&init, "access-references", "no").is_ok());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn real_mpv_fails_reference_content_without_opening_what_it_names() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("root");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let secret = outside.join("secret.mp4");
+        let sibling = root.join("sibling.mp4");
+        let playable = root.join("with-audio.mp4");
+        generate_clip(&secret, "6", false);
+        generate_clip(&sibling, "6", false);
+        generate_clip(&playable, "6", true);
+        let (listener, url) = loopback_listener();
+        let fixtures = reference_fixtures(&url, secret.to_str().unwrap(), "sibling.mp4");
+        for (name, content) in &fixtures {
+            std::fs::write(root.join(name), content).unwrap();
+        }
+        let watch = OpenWatch::new(&[&secret, &sibling]);
+
+        let service = player_with_production_options(&[]);
+        let _stop = StopWorker(service.clone());
+        for (name, _) in &fixtures {
+            let (events, received) = recorded_events();
+            let path = root.join(name);
+            let session = service
+                .open(service.begin_open(), path.to_str().unwrap().into(), events)
+                .unwrap();
+            let seen = events_until_error(&received, session, name);
+            // Nothing was loaded: no file-loaded metadata, no duration, no playback.
+            for event in &seen {
+                assert_ne!(event["type"], "metadata", "{name}: {seen:?}");
+                if event["type"] == "snapshot" {
+                    assert_eq!(event["state"]["duration"], 0.0, "{name}: {seen:?}");
+                    assert_eq!(event["state"]["current_time"], 0.0, "{name}: {seen:?}");
+                }
+            }
+            wait_until_retired(&service, name);
+            assert!(!connection_arrived(&listener), "{name} reached the network");
+            assert!(!watch.opened(), "{name} opened a file it names");
+        }
+
+        // The failures are recoverable: the same player still plays a real file.
+        let (events, received) = recorded_events();
+        let session = service
+            .open(
+                service.begin_open(),
+                playable.to_str().unwrap().into(),
+                events,
+            )
+            .unwrap();
+        wait_for_snapshot(&service, &|s| {
+            s.session_id == session && s.duration > 2.0 && !s.paused && s.current_time > 0.3
+        });
+        assert_eq!(
+            service
+                .mpv()
+                .unwrap()
+                .get_property::<String>("path")
+                .unwrap(),
+            playable.to_str().unwrap()
+        );
+        assert!(received.try_iter().all(|event| event["type"] != "error"));
+        service.close(session).unwrap();
+        assert!(!connection_arrived(&listener));
+        assert!(!watch.opened());
+    }
+
+    // The fixtures and detectors above are live: with reference access turned
+    // back on, the same playlist content reaches the listener and plays the
+    // file outside the root.
+    #[test]
+    fn real_mpv_follows_the_reference_fixtures_once_reference_access_is_allowed() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("root");
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let secret = outside.join("secret.mp4");
+        generate_clip(&secret, "6", false);
+        let (listener, url) = loopback_listener();
+        for (name, content) in reference_fixtures(&url, secret.to_str().unwrap(), "sibling.mp4") {
+            std::fs::write(root.join(name), content).unwrap();
+        }
+        let watch = OpenWatch::new(&[&secret]);
+        let service = player_with_production_options(&[("access-references", "yes")]);
+        let _stop = StopWorker(service.clone());
+
+        let local = service
+            .open(
+                service.begin_open(),
+                root.join("m3u-local.mp4").to_str().unwrap().into(),
+                Channel::new(|_| Ok(())),
+            )
+            .unwrap();
+        wait_for_snapshot(&service, &|s| {
+            s.session_id == local && s.duration > 2.0 && !s.paused && s.current_time > 0.0
+        });
+        assert_eq!(
+            service
+                .mpv()
+                .unwrap()
+                .get_property::<String>("path")
+                .unwrap(),
+            secret.to_str().unwrap()
+        );
+        assert!(watch.opened());
+        service.close(local).unwrap();
+
+        let (events, received) = recorded_events();
+        let network = service
+            .open(
+                service.begin_open(),
+                root.join("m3u.mp4").to_str().unwrap().into(),
+                events,
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        // Dropping the accepted connection ends the request at once.
+        while !connection_arrived(&listener) {
+            assert!(
+                Instant::now() < deadline,
+                "the playlist entry was not requested"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        events_until_error(&received, network, "m3u.mp4");
     }
 
     #[test]

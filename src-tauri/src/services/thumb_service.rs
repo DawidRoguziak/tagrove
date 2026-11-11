@@ -639,11 +639,32 @@ fn read_served(path: &Path, version: &crate::thumbs::SourceVersion) -> Option<Se
     })
 }
 
+/// The row version a `thumb://` request checks its source for. The result of
+/// the check is used only while the row still has this version.
+#[derive(Debug, PartialEq, Eq)]
+struct SourceProbe {
+    version: crate::thumbs::SourceVersion,
+    record_version: i64,
+}
+
+/// What one guarded section of a `thumb://` request decided.
+enum RequestStep<F> {
+    Done(ThumbnailRequestOutcome),
+    /// Nothing to serve and no legacy file: the source has to be checked
+    /// first, outside the section. The unused render callback comes back.
+    ProbeSource(SourceProbe, F),
+}
+
 /// First phase of a `thumb://` request: serves an existing thumbnail from one
 /// short read section, or enqueues an Interactive (LIFO) render whose result
 /// is passed to `on_rendered` on a worker thread. Never waits for a render.
 /// With `mode.cached_only` (fast-scroll pause) a missing thumbnail is
 /// `NotFound` and nothing is written or enqueued.
+///
+/// A row with no thumbnail and no legacy file needs a source check before its
+/// render is enqueued. The check runs between two sections, without the guard
+/// and without a pooled connection, so a hung mount blocks only this request.
+/// The second section decides again from a fresh row and clear epoch.
 pub fn request_thumbnail(
     asset_id: i64,
     mode: ThumbnailRequestMode,
@@ -651,13 +672,57 @@ pub fn request_thumbnail(
     permit: &OperationPermit,
     on_rendered: impl FnOnce(PendingThumbnail) + Send + 'static,
 ) -> AppResult<ThumbnailRequestOutcome> {
+    request_thumbnail_probing(asset_id, mode, state, permit, on_rendered, Path::exists)
+}
+
+/// [`request_thumbnail`] with the source check passed in, so a test can block
+/// it the way a hung mount would.
+fn request_thumbnail_probing<F: FnOnce(PendingThumbnail) + Send + 'static>(
+    asset_id: i64,
+    mode: ThumbnailRequestMode,
+    state: &AppState,
+    permit: &OperationPermit,
+    on_rendered: F,
+    source_exists: impl FnOnce(&Path) -> bool,
+) -> AppResult<ThumbnailRequestOutcome> {
+    let (probe, on_rendered) =
+        match thumbnail_request_section(asset_id, mode, state, permit, on_rendered, None)? {
+            RequestStep::Done(outcome) => return Ok(outcome),
+            RequestStep::ProbeSource(probe, on_rendered) => (probe, on_rendered),
+        };
+    // No section is open here: a stat that hangs must not hold the read guard
+    // (a waiting writer would then stop every later request) or a connection.
+    let exists = source_exists(Path::new(&probe.version.path));
+    let checked = Some((&probe, exists));
+    match thumbnail_request_section(asset_id, mode, state, permit, on_rendered, checked)? {
+        RequestStep::Done(outcome) => Ok(outcome),
+        // The row changed during the check, so the result describes another
+        // version. Nothing is written; like a lost compare-and-set, the
+        // frontend's retry starts over.
+        RequestStep::ProbeSource(..) => Ok(ThumbnailRequestOutcome::NotFound),
+    }
+}
+
+/// One guarded section of a `thumb://` request: reads the row and the clear
+/// epoch, then serves, publishes, writes a marker or enqueues from that one
+/// snapshot. `checked` is the source check made after an earlier section; it
+/// counts only for the row version it was made for.
+fn thumbnail_request_section<F: FnOnce(PendingThumbnail) + Send + 'static>(
+    asset_id: i64,
+    mode: ThumbnailRequestMode,
+    state: &AppState,
+    permit: &OperationPermit,
+    on_rendered: F,
+    checked: Option<(&SourceProbe, bool)>,
+) -> AppResult<RequestStep<F>> {
+    let done = |outcome| Ok(RequestStep::Done(outcome));
     let _thumbs = thumb_read_section(state);
     let generation = state.thumbnail_generation.load(Ordering::SeqCst);
     let conn = permit.connection()?;
     let Some((asset, has_failure)) =
         db::get_assets_for_thumbnails_by_ids(&conn, &[asset_id])?.pop()
     else {
-        return Ok(ThumbnailRequestOutcome::NotFound);
+        return done(ThumbnailRequestOutcome::NotFound);
     };
     let version = source_version_for(&asset);
     let target = thumbs::thumb_target(&state.thumbs_dir, &version);
@@ -677,13 +742,13 @@ pub fn request_thumbnail(
                 let write = ready_write(asset.id, existing, version, asset.record_version);
                 publish_one(state, &conn, write, generation)?;
             }
-            return Ok(ThumbnailRequestOutcome::Ready(served));
+            return done(ThumbnailRequestOutcome::Ready(served));
         }
     }
 
     if let Some(served) = read_served(&target, &version) {
         if mode.cached_only {
-            return Ok(ThumbnailRequestOutcome::Ready(served));
+            return done(ThumbnailRequestOutcome::Ready(served));
         }
         let write = ready_write(
             asset.id,
@@ -694,11 +759,11 @@ pub fn request_thumbnail(
         // A lost compare-and-set means the record changed; the bytes still
         // match the version the response is labelled with.
         publish_one(state, &conn, write, generation)?;
-        return Ok(ThumbnailRequestOutcome::Ready(served));
+        return done(ThumbnailRequestOutcome::Ready(served));
     }
 
     if mode.cached_only {
-        return Ok(ThumbnailRequestOutcome::NotFound);
+        return done(ThumbnailRequestOutcome::NotFound);
     }
 
     // A render that already failed in this process is not repeated on every
@@ -709,7 +774,7 @@ pub fn request_thumbnail(
             .thumb_scheduler
             .failed_interactively(asset.id, asset.record_version)
     {
-        return Ok(ThumbnailRequestOutcome::NotFound);
+        return done(ThumbnailRequestOutcome::NotFound);
     }
 
     // An owned legacy file goes to the worker, which checks the source outside
@@ -720,10 +785,24 @@ pub fn request_thumbnail(
         legacy_thumbnail(Some(existing), &target, root.as_deref())
     });
     let source_path = PathBuf::from(&asset.path);
-    if legacy_thumb.is_none() && !source_path.exists() {
-        let write = failed_write(asset.id, version, asset.record_version, SOURCE_MISSING);
-        publish_one(state, &conn, write, generation)?;
-        return Ok(ThumbnailRequestOutcome::NotFound);
+    if legacy_thumb.is_none() {
+        // Without a legacy file the request checks the source itself, but not
+        // in here: the section ends and the caller comes back with the result.
+        let probe = SourceProbe {
+            version: version.clone(),
+            record_version: asset.record_version,
+        };
+        match checked {
+            Some((checked, exists)) if *checked == probe => {
+                if !exists {
+                    let write =
+                        failed_write(asset.id, version, asset.record_version, SOURCE_MISSING);
+                    publish_one(state, &conn, write, generation)?;
+                    return done(ThumbnailRequestOutcome::NotFound);
+                }
+            }
+            _ => return Ok(RequestStep::ProbeSource(probe, on_rendered)),
+        }
     }
 
     let record_version = asset.record_version;
@@ -758,7 +837,7 @@ pub fn request_thumbnail(
             })
         }),
     )?;
-    Ok(ThumbnailRequestOutcome::Pending)
+    done(ThumbnailRequestOutcome::Pending)
 }
 
 /// Second phase: publishes a finished render through the usual
@@ -1957,6 +2036,299 @@ mod tests {
 
         slow_job.release.send(()).unwrap();
         assert!(slow.join().unwrap().unwrap().is_some());
+    }
+
+    /// Both phases of a `thumb://` request with the source check passed in.
+    /// Returns the served thumbnail, and the clear epoch a render was enqueued
+    /// under when the request had to render.
+    fn request_with_probe(
+        state: &AppState,
+        asset_id: i64,
+        mode: super::ThumbnailRequestMode,
+        source_exists: impl FnOnce(&Path) -> bool,
+    ) -> crate::error::AppResult<(Option<super::ServedThumbnail>, Option<u64>)> {
+        crate::app::locks::with_thumb_operation(state, |permit| {
+            let (tx, rx) = mpsc::channel();
+            match super::request_thumbnail_probing(
+                asset_id,
+                mode,
+                state,
+                permit,
+                move |pending| {
+                    let _ = tx.send(pending);
+                },
+                source_exists,
+            )? {
+                super::ThumbnailRequestOutcome::Ready(served) => Ok((Some(served), None)),
+                super::ThumbnailRequestOutcome::NotFound => Ok((None, None)),
+                super::ThumbnailRequestOutcome::Pending => {
+                    let pending = rx
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .expect("render result");
+                    let generation = pending.generation;
+                    let served = super::finish_thumbnail_request(pending, state, permit)?;
+                    Ok((served, Some(generation)))
+                }
+            }
+        })
+    }
+
+    /// A `thumb://` request on its own thread whose source check blocks until
+    /// the test answers it, the way a stat on a hung mount blocks.
+    struct BlockedRequest {
+        entered: mpsc::Receiver<PathBuf>,
+        answer: mpsc::Sender<bool>,
+        thread: std::thread::JoinHandle<
+            crate::error::AppResult<(Option<super::ServedThumbnail>, Option<u64>)>,
+        >,
+    }
+
+    impl BlockedRequest {
+        fn start(state: &Arc<AppState>, asset_id: i64) -> Self {
+            use crate::services::thumb_scheduler::test_support::WAIT;
+            let (entered_tx, entered) = mpsc::channel();
+            let (answer, answer_rx) = mpsc::channel();
+            let state = state.clone();
+            let thread = std::thread::spawn(move || {
+                request_with_probe(&state, asset_id, Default::default(), move |path| {
+                    entered_tx.send(path.to_path_buf()).unwrap();
+                    answer_rx
+                        .recv_timeout(WAIT)
+                        .expect("the test must answer the source check")
+                })
+            });
+            Self {
+                entered,
+                answer,
+                thread,
+            }
+        }
+
+        /// Waits until the request is inside its source check; returns the
+        /// checked path.
+        fn wait_until_blocked(&self) -> PathBuf {
+            self.entered
+                .recv_timeout(crate::services::thumb_scheduler::test_support::WAIT)
+                .expect("the request must reach the source check")
+        }
+
+        fn finish(self, source_exists: bool) -> (Option<super::ServedThumbnail>, Option<u64>) {
+            self.answer.send(source_exists).unwrap();
+            self.thread.join().unwrap().unwrap()
+        }
+    }
+
+    /// Unrendered images with IDs from 1 in the given order, whose sources
+    /// exist, and a scheduler that writes each target at once and counts its
+    /// renders.
+    struct UnrenderedLibrary {
+        dir: tempfile::TempDir,
+        db_path: PathBuf,
+        state: Arc<AppState>,
+        renders: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    fn unrendered_library(names: &[&str]) -> UnrenderedLibrary {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        for name in names {
+            let source = dir.path().join(name);
+            fs::write(&source, b"source").unwrap();
+            db::upsert_asset(&conn, &new_asset(&source, 1, None)).unwrap();
+        }
+        drop(conn);
+        let mut state = create_test_state(&db_path, &thumbs);
+        let renders = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = renders.clone();
+        state.thumb_scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                fs::write(&task.target_path, b"thumbnail").unwrap();
+                Some(task.target_path.to_string_lossy().into())
+            }),
+        );
+        UnrenderedLibrary {
+            dir,
+            db_path,
+            state: Arc::new(state),
+            renders,
+        }
+    }
+
+    #[test]
+    fn a_hung_source_check_holds_neither_the_thumbnail_guard_nor_a_connection() {
+        let library = unrendered_library(&["hung.png", "next.png"]);
+        let state = &library.state;
+
+        let hung = BlockedRequest::start(state, 1);
+        assert_eq!(
+            hung.wait_until_blocked(),
+            library.dir.path().join("hung.png")
+        );
+        assert_eq!(
+            state.database.checked_out_connections(),
+            0,
+            "the source check must not keep a pooled connection"
+        );
+
+        // Delete/rename/root removal take scan, then the exclusive thumb lock.
+        let writer_state = state.clone();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            crate::app::locks::with_scan_and_thumb_lock(&writer_state, |_| {
+                locked_tx.send(()).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        });
+        locked_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("the exclusive writer must not wait for a source check");
+        writer.join().unwrap();
+
+        // Another tile renders and is served while the first check still hangs.
+        let next = request_now(state, 2).unwrap().expect("served");
+        assert_eq!(next.bytes, b"thumbnail");
+        assert!(!hung.thread.is_finished(), "the source check still hangs");
+
+        let (served, generation) = hung.finish(true);
+        assert_eq!(served.expect("served").bytes, b"thumbnail");
+        assert_eq!(generation, Some(0));
+        assert_eq!(library.renders.load(Ordering::SeqCst), 2);
+        let conn = db::open_connection(&library.db_path).unwrap();
+        assert!(thumb_path_of(&conn, 1).is_some());
+    }
+
+    #[test]
+    fn a_clear_during_the_source_check_renders_under_the_new_epoch() {
+        let library = unrendered_library(&["source.png"]);
+        let state = &library.state;
+
+        let request = BlockedRequest::start(state, 1);
+        request.wait_until_blocked();
+        crate::app::locks::with_thumb_lock(state, |permit| {
+            super::clear_all_thumbnails(state, permit, &|_| Ok(()))
+        })
+        .unwrap();
+
+        // The second section reads the epoch again, so the render is not a
+        // pre-clear result: it is published and served (ADR 0019).
+        let (served, generation) = request.finish(true);
+        assert_eq!(generation, Some(1));
+        assert_eq!(served.expect("served").bytes, b"thumbnail");
+        let conn = db::open_connection(&library.db_path).unwrap();
+        let recorded = thumb_path_of(&conn, 1).expect("published after the clear");
+        assert!(Path::new(&recorded).is_file());
+    }
+
+    #[test]
+    fn a_missing_source_checked_across_a_clear_is_still_recorded() {
+        let library = unrendered_library(&["gone.png"]);
+        let state = &library.state;
+
+        let request = BlockedRequest::start(state, 1);
+        request.wait_until_blocked();
+        crate::app::locks::with_thumb_lock(state, |permit| {
+            super::clear_all_thumbnails(state, permit, &|_| Ok(()))
+        })
+        .unwrap();
+
+        assert_eq!(request.finish(false), (None, None));
+        let conn = db::open_connection(&library.db_path).unwrap();
+        assert_eq!(db::list_failed_thumbnail_asset_ids(&conn).unwrap(), vec![1]);
+        assert_eq!(library.renders.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_row_changed_during_the_source_check_is_not_found_and_nothing_is_written() {
+        let changes = [
+            // A scan re-indexed the file: the check describes the old version.
+            "UPDATE assets SET fingerprint_mtime_ns = fingerprint_mtime_ns + 1, record_version = record_version + 1",
+            // A rename keeps the size and mtime but bumps the record version.
+            "UPDATE assets SET record_version = record_version + 1",
+            "DELETE FROM assets",
+        ];
+        for change in changes {
+            for source_exists in [false, true] {
+                let library = unrendered_library(&["source.png"]);
+                let request = BlockedRequest::start(&library.state, 1);
+                request.wait_until_blocked();
+                let conn = db::open_connection(&library.db_path).unwrap();
+                conn.execute(change, []).unwrap();
+
+                assert_eq!(
+                    request.finish(source_exists),
+                    (None, None),
+                    "{change}, source_exists={source_exists}"
+                );
+                assert!(
+                    db::list_failed_thumbnail_asset_ids(&conn)
+                        .unwrap()
+                        .is_empty(),
+                    "{change}: no marker for a version that was not checked"
+                );
+                assert_eq!(
+                    library.renders.load(Ordering::SeqCst),
+                    0,
+                    "{change}: no render for a version that was not checked"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_thumbnail_published_during_the_source_check_is_served_without_another_render() {
+        let library = unrendered_library(&["source.png"]);
+        let state = &library.state;
+
+        let request = BlockedRequest::start(state, 1);
+        request.wait_until_blocked();
+        assert!(request_now(state, 1).unwrap().is_some());
+        assert_eq!(library.renders.load(Ordering::SeqCst), 1);
+
+        // Ready from the second section's own row read, not a second job.
+        let (served, generation) = request.finish(true);
+        assert_eq!(served.expect("served").bytes, b"thumbnail");
+        assert_eq!(generation, None);
+        assert_eq!(library.renders.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn served_cached_only_and_legacy_requests_never_check_the_source() {
+        let library = unrendered_library(&["current.png", "legacy.png"]);
+        let state = &library.state;
+        let never = |_: &Path| -> bool { panic!("this request must not check the source") };
+
+        // Cached only: a miss is a 404 without a check.
+        assert_eq!(
+            request_with_probe(state, 1, cached_only(), never).unwrap(),
+            (None, None)
+        );
+        // An existing current target is served without a check.
+        assert!(request_now(state, 1).unwrap().is_some());
+        for mode in [cached_only(), Default::default()] {
+            let (served, generation) = request_with_probe(state, 1, mode, never).unwrap();
+            assert_eq!(served.expect("served").bytes, b"thumbnail");
+            assert_eq!(generation, None);
+        }
+        // An owned legacy file goes to the worker, which checks the source.
+        let legacy = state.thumbs_dir.join("legacy.jpg");
+        fs::write(&legacy, b"legacy").unwrap();
+        let conn = db::open_connection(&library.db_path).unwrap();
+        conn.execute(
+            "UPDATE assets SET thumb_path = ?1 WHERE id = 2",
+            [legacy.to_string_lossy()],
+        )
+        .unwrap();
+        let (served, generation) = request_with_probe(state, 2, Default::default(), never).unwrap();
+        assert!(served.is_some());
+        assert_eq!(generation, Some(0));
     }
 
     #[test]

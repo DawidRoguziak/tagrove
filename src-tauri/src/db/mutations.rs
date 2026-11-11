@@ -957,9 +957,9 @@ pub fn import_csv_record_batches(
                 rows_applied += 1;
                 for asset_id in asset_ids {
                     assets_matched += 1;
-                    let existing = list_asset_tags(tx, asset_id)?;
+                    let existing = split_legacy_feff(&list_asset_tags(tx, asset_id)?);
                     let merged = merge_tags(&existing, &record.tags);
-                    let normalized_existing = normalize_and_validate_tags(existing)?;
+                    let normalized_existing = existing;
                     let mut changed = false;
 
                     if merged != normalized_existing {

@@ -4,15 +4,21 @@ use anyhow::ensure;
 
 use super::text::canonical_key;
 
+/// Whitespace as the frontend's `\s`/`trim()` see it: Unicode White_Space plus U+FEFF (BOM / zero
+/// width no-break space), which `char::is_whitespace` rejects but JavaScript treats as a space.
+fn is_tag_space(ch: char) -> bool {
+    ch.is_whitespace() || ch == '\u{FEFF}'
+}
+
 fn is_invalid_tag_character(ch: char) -> bool {
-    ch.is_whitespace() || ch.is_control() || matches!(ch, ',' | ';')
+    is_tag_space(ch) || ch.is_control() || matches!(ch, ',' | ';')
 }
 
 pub fn normalize_tags(tags: Vec<String>) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     for tag in tags {
-        let normalized = canonical_key(tag.trim());
+        let normalized = canonical_key(tag.trim_matches(is_tag_space));
         if normalized.is_empty() {
             continue;
         }
@@ -34,8 +40,21 @@ pub fn normalize_and_validate_tags(tags: Vec<String>) -> anyhow::Result<Vec<Stri
     Ok(normalized)
 }
 
+/// Stored tags with U+FEFF split into separate tags (then normalized). Earlier versions could store
+/// such a tag through CSV import; reads that feed validation use this so the legacy row neither
+/// aborts a bulk merge, a CSV import nor a CSV export. Other invalid characters keep failing.
+pub fn split_legacy_feff(stored: &[String]) -> Vec<String> {
+    normalize_tags(
+        stored
+            .iter()
+            .flat_map(|tag| tag.split('\u{FEFF}'))
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
 pub fn merge_tags(existing: &[String], incoming: &[String]) -> Vec<String> {
-    let mut merged = normalize_tags(existing.to_vec());
+    let mut merged = split_legacy_feff(existing);
     let mut seen: HashSet<String> = merged.iter().cloned().collect();
 
     for tag in incoming {
@@ -48,9 +67,9 @@ pub fn merge_tags(existing: &[String], incoming: &[String]) -> Vec<String> {
 }
 
 pub fn parse_csv_tags(raw: &str) -> Vec<String> {
-    raw.split(|ch: char| ch == ',' || ch == ';' || ch.is_whitespace())
+    raw.split(|ch: char| ch == ',' || ch == ';' || is_tag_space(ch))
         .filter_map(|tag| {
-            let trimmed = tag.trim();
+            let trimmed = tag.trim_matches(is_tag_space);
             if trimmed.is_empty() {
                 None
             } else {
@@ -96,6 +115,30 @@ mod tests {
     fn parse_csv_tags_splits_on_common_delimiters() {
         let parsed = parse_csv_tags("cat, dog;bird fish");
         assert_eq!(parsed, vec!["cat", "dog", "bird", "fish"]);
+    }
+
+    /// Shared with `src/utils/__tests__/media.test.ts`: (input, accepted tags). `None` means the
+    /// tag is invalid (Rust rejects it, the frontend drops it).
+    const FEFF_VECTORS: [(&str, Option<&[&str]>); 5] = [
+        ("\u{FEFF}cat", Some(&["cat"])),
+        ("ca\u{FEFF}t", None),
+        ("cat\u{FEFF}", Some(&["cat"])),
+        ("\u{FEFF}", Some(&[])),
+        ("\u{FEFF}Cat\u{FEFF}", Some(&["cat"])),
+    ];
+
+    #[test]
+    fn feff_is_trimmed_at_the_edges_and_invalid_inside_like_the_frontend() {
+        for (input, expected) in FEFF_VECTORS {
+            let result = normalize_and_validate_tags(vec![input.to_string()]);
+            match expected {
+                Some(tags) => assert_eq!(result.unwrap(), tags, "{input:?}"),
+                None => assert!(result.is_err(), "{input:?}"),
+            }
+        }
+        assert_eq!(parse_csv_tags("cat\u{FEFF}dog"), vec!["cat", "dog"]);
+        assert_eq!(parse_csv_tags("\u{FEFF}cat, \u{FEFF}"), vec!["cat"]);
+        assert_eq!(parse_legacy_tags("cat\u{FEFF}dog"), vec!["cat", "dog"]);
     }
 
     #[test]

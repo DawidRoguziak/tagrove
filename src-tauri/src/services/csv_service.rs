@@ -12,7 +12,7 @@ use crate::{
     models::{CsvExportSummary, CsvImportSummary},
     services::export_target::prepare_export_target,
     utils::{
-        tags::{normalize_and_validate_tags, parse_csv_tags},
+        tags::{normalize_and_validate_tags, parse_csv_tags, split_legacy_feff},
         text::canonical_key,
     },
 };
@@ -69,7 +69,7 @@ fn export_tags_csv_with_limits(
         writer.write_record(CSV_HEADERS)?;
         let mut rows = 0usize;
         db::for_each_asset_for_csv_export(&conn, |row| {
-            let tags = normalize_and_validate_tags(row.tags)?;
+            let tags = normalize_and_validate_tags(split_legacy_feff(&row.tags))?;
             let file_name = Path::new(&row.path)
                 .file_name()
                 .map(|name| name.to_string_lossy().to_string())
@@ -385,6 +385,13 @@ mod tests {
     }
 
     #[test]
+    fn parser_treats_u_feff_in_a_tags_field_as_a_separator() {
+        let csv = format!("{HEADERS}a.jpg,\"cat\u{FEFF}dog \u{FEFF}Bird\u{FEFF}\",,,\n");
+        let records = parse_csv_document(Cursor::new(csv)).unwrap();
+        assert_eq!(records[0].tags, vec!["cat", "dog", "bird"]);
+    }
+
+    #[test]
     fn parser_rejects_a_malformed_late_row_before_any_database_work() {
         let csv = format!("{HEADERS}a.jpg,cat,1,trip,1\nb.jpg,\"unterminated,0,,\n");
         assert!(parse_csv_document(Cursor::new(csv)).is_err());
@@ -409,6 +416,25 @@ mod tests {
         assert_eq!(db::current_library_revision(&conn).unwrap(), baseline + 1);
         assert_eq!(db::list_asset_tags(&conn, 1).unwrap(), vec!["animal"]);
         assert_eq!(db::list_asset_tags(&conn, 2).unwrap(), vec!["animal"]);
+    }
+
+    #[test]
+    fn import_over_an_asset_with_a_legacy_u_feff_tag_is_not_rejected() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &asset("/one/a.jpg")).unwrap();
+        conn.execute("INSERT INTO tags(name) VALUES ('ca\u{FEFF}t')", [])
+            .unwrap();
+        conn.execute("INSERT INTO asset_tags(asset_id, tag_id) VALUES (1, 1)", [])
+            .unwrap();
+        let records = parse_csv_document(Cursor::new(format!("{HEADERS}a.jpg,dog,,,\n"))).unwrap();
+
+        let summary = db::import_csv_records(&mut conn, &records).unwrap();
+
+        assert_eq!(summary.assets_matched, 1);
+        assert!(db::list_asset_tags(&conn, 1)
+            .unwrap()
+            .contains(&"dog".to_string()));
     }
 
     #[test]
@@ -483,6 +509,36 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
             .count();
         assert_eq!(temporary_count, 0);
+    }
+
+    #[test]
+    fn export_writes_a_legacy_u_feff_tag_as_separate_tags() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("profile");
+        let exports = root.path().join("exports");
+        fs::create_dir_all(&profile).unwrap();
+        fs::create_dir_all(&exports).unwrap();
+        let db_path = profile.join("media.db");
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &asset("/source/a.jpg")).unwrap();
+        conn.execute("INSERT INTO tags(name) VALUES ('ca\u{FEFF}t')", [])
+            .unwrap();
+        conn.execute("INSERT INTO asset_tags(asset_id, tag_id) VALUES (1, 1)", [])
+            .unwrap();
+        let target = exports.join("tags.csv");
+
+        export_tags_csv(
+            target.to_str().unwrap(),
+            &db_path,
+            &crate::services::db_pool::DatabaseRuntime::new(db_path.clone())
+                .admit()
+                .unwrap(),
+        )
+        .unwrap();
+
+        let exported = fs::read_to_string(target).unwrap();
+        assert!(exported.contains("a.jpg,ca t,"), "{exported}");
     }
 
     #[test]

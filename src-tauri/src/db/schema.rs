@@ -809,6 +809,10 @@ pub(super) fn validate_backup_data(
             let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
             for row in rows {
                 let name = row?;
+                // Versions before the U+FEFF rule could store such a tag (CSV import); a backup
+                // that carries one stays restorable (the tag is kept as stored). Everything else
+                // about the name must still be canonical.
+                let name = name.replace('\u{FEFF}', "");
                 let normalized = normalize_and_validate_tags(vec![name.clone()])?;
                 anyhow::ensure!(
                     normalized.len() == 1 && normalized[0] == name,

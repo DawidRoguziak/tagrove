@@ -288,7 +288,7 @@ while a higher registered layer is active.
 | Session page size/limit | Clamp to 1–256; first-page wrapper default is 128. |
 | Legacy asset page | Offset at least 0; limit 1–500. |
 | Tag page | Offset at least 0; limit 1–200; query trimmed and case-insensitive. |
-| Query/tag arrays | Trim, Unicode-lowercase, remove empty strings, de-duplicate preserving first occurrence, and reject whitespace, comma, semicolon, or control characters inside a tag. |
+| Query/tag arrays | Trim, Unicode-lowercase, remove empty strings, de-duplicate preserving first occurrence, and reject whitespace (including U+FEFF), comma, semicolon, or control characters inside a tag. |
 | Query media kind | Trim/lowercase; unsupported values become no filter. |
 | Meta-filter | Reject negative `tagCount` and blank `groupName`; require the tagged camelCase shape. |
 | Bulk asset IDs | Tag/group mutation APIs drop non-positive and duplicate IDs. `thumb://` accepts one positive ID per request. |

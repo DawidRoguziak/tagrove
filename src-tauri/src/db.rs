@@ -29,7 +29,10 @@ use crate::models::{
     SetAssetTagsSummary, TagListPage, TagQueryImpact, ThumbnailAsset,
 };
 use crate::utils::{
-    tags::{merge_tags, normalize_and_validate_tags, normalize_tags, parse_legacy_tags},
+    tags::{
+        merge_tags, normalize_and_validate_tags, normalize_tags, parse_legacy_tags,
+        split_legacy_feff,
+    },
     text::canonical_key,
 };
 
@@ -1779,6 +1782,45 @@ mod tests {
 
         let error = validate_backup_database(&conn, false).expect_err("invalid backup tag");
         assert!(error.to_string().contains("noncanonical tag names"));
+    }
+
+    #[test]
+    fn backup_validation_accepts_a_legacy_tag_name_containing_u_feff() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        init_schema(&conn).expect("schema is idempotent");
+        conn.execute("INSERT INTO tags(name) VALUES ('ca\u{FEFF}t')", [])
+            .expect("legacy tag");
+
+        validate_backup_database(&conn, false).expect("legacy tag stays restorable");
+    }
+
+    #[test]
+    fn bulk_tag_merge_splits_a_legacy_u_feff_tag_instead_of_failing() {
+        let mut conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        let asset = |path: &str| NewAsset {
+            path: path.to_string(),
+            kind: "image".to_string(),
+            size_bytes: 1,
+            modified_at: 1,
+            width: None,
+            height: None,
+            duration_ms: None,
+            thumb_path: None,
+        };
+        upsert_asset(&conn, &asset("/a.jpg")).expect("asset");
+        conn.execute("INSERT INTO tags(name) VALUES ('ca\u{FEFF}t')", [])
+            .expect("legacy tag");
+        conn.execute("INSERT INTO asset_tags(asset_id, tag_id) VALUES (1, 1)", [])
+            .expect("mapping");
+
+        merge_asset_tags_bulk_with_revision(&mut conn, &[1], &["dog".to_string()]).expect("merge");
+
+        assert_eq!(
+            crate::db::list_asset_tags(&conn, 1).expect("tags"),
+            vec!["ca", "dog", "t"]
+        );
     }
 
     #[test]

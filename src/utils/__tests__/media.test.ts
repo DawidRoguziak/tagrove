@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatBytes,
   formatDuration,
+  isValidTag,
   normalizeTags,
   parseFilterTags,
   parseSearchFilter
@@ -11,6 +12,23 @@ describe("media utils", () => {
   it("normalizes tags to lowercase and deduplicates", () => {
     expect(normalizeTags(" Cat  DOG cat  ")).toEqual(["cat", "dog"]);
     expect(normalizeTags(["cat", "new york", "dog;bird"])).toEqual(["cat"]);
+  });
+
+  // Same vectors and expectations as FEFF_VECTORS in src-tauri/src/utils/tags.rs: U+FEFF is trimmed
+  // at the edges and invalid inside a tag (Rust rejects it, the frontend drops it).
+  it("treats U+FEFF like the backend: trimmed at the edges, invalid inside", () => {
+    const vectors: Array<[string, string[] | null]> = [
+      ["\uFEFFcat", ["cat"]],
+      ["ca\uFEFFt", null],
+      ["cat\uFEFF", ["cat"]],
+      ["\uFEFF", []],
+      ["\uFEFFCat\uFEFF", ["cat"]]
+    ];
+    for (const [input, expected] of vectors) {
+      expect(normalizeTags([input]), JSON.stringify(input)).toEqual(expected ?? []);
+    }
+    expect(isValidTag("ca\uFEFFt")).toBe(false);
+    expect(normalizeTags("cat\uFEFFdog")).toEqual(["cat", "dog"]);
   });
 
   it("parses include and exclude filter tags", () => {

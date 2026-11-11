@@ -584,6 +584,12 @@ it("adds the month timeline beside the position bar and jumps to the oldest mont
   const slider = await screen.findByRole("slider", { name: "Timeline" });
   expect(screen.getByRole("scrollbar", { name: "Gallery position" })).toBeInTheDocument();
   expect(slider).toHaveAttribute("aria-valuetext", "March 2024");
+  // The rail's [W-right-width, W-right] span lies inside the grid section's right padding,
+  // so it never covers a tile column.
+  const rail = slider.style;
+  expect(screen.getByTestId("gallery-grid").style.paddingRight).toBe(
+    `${Number.parseFloat(rail.right) + Number.parseFloat(rail.width)}px`
+  );
   fireEvent.keyDown(slider, { key: "ArrowDown" });
   flush();
   await waitFor(() =>

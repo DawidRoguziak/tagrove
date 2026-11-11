@@ -8,6 +8,8 @@ import {
   yearOf
 } from "./timeline";
 
+/** Hit width of the rail in px; the grid reserves it (plus the right offset) as padding. */
+export const TIMELINE_WIDTH = 10;
 const INSET = 4;
 const MIN_TICK_GAP = 14;
 const KEYS = new Set<string>(["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"]);
@@ -135,11 +137,19 @@ export function GalleryTimelineScrubber(props: {
         aria-valuetext={currentText()}
         tabindex="0"
         data-gallery-timeline-dragging={dragging() ? "" : undefined}
-        class="group pointer-events-auto absolute w-2.5 touch-none rounded-full outline-offset-2 hover:bg-base-content/5 focus-visible:outline-2 focus-visible:outline-primary"
-        style={{ top: `${INSET}px`, height: `${track()}px`, right: `${props.right}px` }}
+        class="group pointer-events-auto absolute touch-none rounded-full outline-offset-2 hover:bg-base-content/5 focus-visible:outline-2 focus-visible:outline-primary"
+        style={{
+          top: `${INSET}px`,
+          width: `${TIMELINE_WIDTH}px`,
+          height: `${track()}px`,
+          right: `${props.right}px`
+        }}
         onPointerDown={(event) => {
           if (event.button !== 0 || props.total <= 0) return;
           event.preventDefault();
+          // preventDefault also cancels the focus change in WebKitGTK; take it explicitly so
+          // the arrow and page keys that follow a click move the timeline.
+          event.currentTarget.focus({ preventScroll: true });
           pointerId = event.pointerId;
           setDragging(true);
           event.currentTarget.setPointerCapture(event.pointerId);

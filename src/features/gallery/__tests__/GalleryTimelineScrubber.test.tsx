@@ -132,6 +132,28 @@ it("drags once per frame with demand held, and releases demand on pointer up", (
   expect(view.onJump).toHaveBeenCalledTimes(1);
 });
 
+it("takes keyboard focus on a mouse press even though pointerdown is default-prevented", () => {
+  const view = mount();
+  const other = document.createElement("button");
+  document.body.append(other);
+  other.focus();
+  const focus = vi.spyOn(view.slider, "focus");
+  expect(fireEvent.pointerDown(view.slider, { button: 0, clientY: 4 + 300, pointerId: 3 })).toBe(
+    false
+  );
+  expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+  expect(document.activeElement).toBe(view.slider);
+  fireEvent.pointerUp(view.slider, { pointerId: 3 });
+  // Keys that follow the click move the timeline.
+  fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+  expect(view.onJump).toHaveBeenLastCalledWith(500_000);
+  // A press the rail ignores does not steal focus.
+  other.focus();
+  fireEvent.pointerDown(view.slider, { button: 2, pointerId: 4 });
+  expect(document.activeElement).toBe(other);
+  other.remove();
+});
+
 it("reports and steps from its own target when the scroll clamps near the end", () => {
   // The last row that can reach the top is in December 2023.
   const view = mount(999_000);

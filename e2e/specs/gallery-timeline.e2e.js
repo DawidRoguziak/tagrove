@@ -152,6 +152,53 @@ suite("gallery timeline and select-all selection spec", function () {
     });
   });
 
+  it("focuses the rail on a native click so the arrow keys move the timeline", async () => {
+    await focusSlider();
+    await browser.keys("Home");
+    await valueText("December 2023");
+    await browser.execute(() => document.activeElement?.blur());
+    const box = await browser.execute(() => {
+      const rect = document.querySelector('[role="slider"][aria-label="Timeline"]').getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), top: Math.round(rect.top), height: Math.round(rect.height) };
+    });
+    // 10% of 12,005 is index 1,200: November 2023.
+    await browser.performActions([{ id: "timeline-click", type: "pointer", parameters: { pointerType: "mouse" }, actions: [
+      { type: "pointerMove", duration: 0, x: box.x, y: Math.round(box.top + box.height * 0.1) },
+      { type: "pointerDown", button: 0 },
+      { type: "pointerUp", button: 0 }
+    ] }]);
+    await browser.releaseActions();
+    await valueText("November 2023");
+    assert.equal(await browser.execute(() => document.activeElement?.getAttribute("role")), "slider");
+    await browser.keys("ArrowDown");
+    await valueText("October 2023");
+  });
+
+  it("opens a last-column tile clicked at its right edge instead of jumping the timeline", async () => {
+    await focusSlider();
+    await browser.keys("Home");
+    await valueText("December 2023");
+    const target = await browser.execute(() => {
+      const tiles = [...document.querySelectorAll("button[data-asset-index]")].map(tile => ({ index: Number(tile.dataset.assetIndex), rect: tile.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.width > 0 && rect.top >= 0 && rect.bottom <= window.innerHeight);
+      const right = Math.max(...tiles.map(({ rect }) => rect.right));
+      const tile = tiles.find(({ rect }) => rect.right === right);
+      const rail = document.querySelector('[role="slider"][aria-label="Timeline"]').getBoundingClientRect();
+      return { index: tile.index, x: Math.floor(tile.rect.right) - 2, y: Math.round(tile.rect.top + tile.rect.height / 2), railLeft: rail.left, tileRight: tile.rect.right };
+    });
+    assert.ok(target.tileRight <= target.railLeft, `last column (${target.tileRight}) clears the rail (${target.railLeft})`);
+    await browser.performActions([{ id: "edge-click", type: "pointer", parameters: { pointerType: "mouse" }, actions: [
+      { type: "pointerMove", duration: 0, x: target.x, y: target.y },
+      { type: "pointerDown", button: 0 },
+      { type: "pointerUp", button: 0 }
+    ] }]);
+    await browser.releaseActions();
+    await $('[data-testid="lightbox-image"]').waitForExist({ timeout: 15000 });
+    await browser.keys("Escape");
+    await $('[data-testid="lightbox-image"]').waitForExist({ reverse: true, timeout: 15000 });
+    await valueText("December 2023");
+  });
+
   it("selects all results as one range, tags them with one spec write and matches the tag filter", async () => {
     await focusSlider();
     await browser.keys("Home");

@@ -7,7 +7,7 @@ import { useLanguage } from "../../i18n/solid";
 import { GalleryEmptyState } from "./GalleryEmptyState";
 import { GalleryScrollbar } from "./GalleryScrollbar";
 import { GalleryStatusFooter } from "./GalleryStatusFooter";
-import { GalleryTimelineScrubber } from "./GalleryTimelineScrubber";
+import { GalleryTimelineScrubber, TIMELINE_WIDTH } from "./GalleryTimelineScrubber";
 import { formatTimelineMonth, timelineMonths } from "./timeline";
 import { GalleryTile } from "./GalleryTile";
 import { createVirtualGrid } from "./createVirtualGrid";
@@ -38,8 +38,18 @@ interface Slot {
   id: number;
 }
 const CONTENT_ID = "gallery-grid-content";
-/** Right offset of the timeline rail, clear of the position bar in both scroll modes. */
-const TIMELINE_RIGHT = 16;
+/**
+ * Right offset of the timeline rail, clear of the position bar in both scroll modes. WebKitGTK's
+ * overlay scrollbar takes the pointer hits of the right 21 px (measured in the E2E build).
+ */
+const TIMELINE_RIGHT = 24;
+/**
+ * The rail (`TIMELINE_WIDTH` wide, `TIMELINE_RIGHT` from the edge) spans [W-34, W-24]. The tile
+ * area's right padding (inline style on the gallery section) keeps every column out of it, so the
+ * rail never takes a tile's pointer hits. Geometry follows `grid.clientWidth`, so columns
+ * adapt without further bookkeeping.
+ */
+const TIMELINE_CLEARANCE = TIMELINE_RIGHT + TIMELINE_WIDTH;
 export function GalleryGrid(props: GalleryGridProps) {
   const { t, language } = useLanguage();
   const [gallery, setGallery] = createSignal<HTMLElement>();
@@ -272,7 +282,7 @@ export function GalleryGrid(props: GalleryGridProps) {
         />
       </Show>
       {/* Month navigation beside the position bar. GTK's overlay scrollbar (native mode) and
-          `GalleryScrollbar` (windowed) both occupy the right 14px, which would take its hits. */}
+          `GalleryScrollbar` (windowed) both take pointer hits in the right 14-21px (see TIMELINE_RIGHT). */}
       <Show when={props.assetCount > 0 && months().length > 1}>
         <GalleryTimelineScrubber
           controls={CONTENT_ID}
@@ -289,7 +299,7 @@ export function GalleryGrid(props: GalleryGridProps) {
         />
       </Show>
       <section
-        class={`min-h-0 flex-1 min-w-0 w-full px-3 pt-3 sm:px-5 sm:pt-5 ${props.selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""}`}
+        class={`min-h-0 flex-1 min-w-0 w-full pl-3 pt-3 sm:pl-5 sm:pt-5 ${props.selectionModeEnabled ? (handlers.isDragSelecting ? "cursor-crosshair select-none" : "select-none") : ""}`}
         ref={setGallery}
         onWheel={handlers.handleGalleryWheel}
         onPointerDown={handlers.handlePointerDown}
@@ -298,7 +308,10 @@ export function GalleryGrid(props: GalleryGridProps) {
         onPointerCancel={handlers.handlePointerCancel}
         onLostPointerCapture={handlers.handleLostPointerCapture}
         onDragStart={(event) => event.preventDefault()}
-        style={{ "touch-action": props.selectionModeEnabled ? "none" : undefined }}
+        style={{
+          "padding-right": `${TIMELINE_CLEARANCE}px`,
+          "touch-action": props.selectionModeEnabled ? "none" : undefined
+        }}
         data-testid="gallery-grid"
         data-scroll-paused={virtual.paused}
       >

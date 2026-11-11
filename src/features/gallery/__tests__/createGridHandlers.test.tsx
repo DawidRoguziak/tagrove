@@ -599,3 +599,61 @@ it("keeps a released rectangle read through layout changes while removing its ol
   expect([...selection.ids]).toEqual([1, 2, 4, 5]);
   expect(selection.busy).toBe(false);
 });
+
+it("keeps a released selection read through window blur", async () => {
+  let finish: (ids: number[]) => void = () => {};
+  const { result: selection } = renderHook(() =>
+    createSelection({
+      queryEpoch: () => 0,
+      identityEpoch: () => 0,
+      sessionId: () => 1,
+      getIdsRange: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    })
+  );
+  selection.toggle();
+  renderSolid(Harness, { interaction: selection.interact });
+  layout();
+  down();
+  clock += 150;
+  move(125, 125);
+  up(125, 125);
+  expect(selection.busy).toBe(true);
+  fireEvent.blur(window);
+  expect(selection.busy).toBe(true);
+  await act(async () => finish([1, 2, 3, 4, 5]));
+  expect([...selection.ids]).toEqual([1, 2, 4, 5]);
+  expect(selection.busy).toBe(false);
+});
+
+it("keeps a failed selection read and its Retry through window blur", async () => {
+  const load = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("failed range"))
+    .mockResolvedValue([1, 2]);
+  const { result: selection } = renderHook(() =>
+    createSelection({
+      queryEpoch: () => 0,
+      identityEpoch: () => 0,
+      sessionId: () => 1,
+      getIdsRange: load
+    })
+  );
+  selection.toggle();
+  renderSolid(Harness, { interaction: selection.interact });
+  layout();
+  await selection.interact({
+    type: "rectangle-commit",
+    ranges: [{ startIndex: 0, endIndex: 1 }],
+    additive: false
+  });
+  flush();
+  expect(selection.error).toContain("failed range");
+  fireEvent.blur(window);
+  expect(selection.error).toContain("failed range");
+  await selection.retry();
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(selection.error).toBeNull();
+});

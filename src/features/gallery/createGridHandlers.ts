@@ -80,6 +80,10 @@ export function createGridHandlers(options: Options) {
       setPreview(null);
     }
   };
+  // Window blur ends only a held gesture; a released range read and its Retry survive it.
+  const cancelHeldGesture = () => {
+    if (gesture) cancel();
+  };
   const clearSelection = () => {
     if (gesture) suppressClick = true;
     cancel();
@@ -261,12 +265,12 @@ export function createGridHandlers(options: Options) {
       options.scrollContainerRef?.()
     ],
     () => {
-      window.addEventListener("blur", cancel);
+      window.addEventListener("blur", cancelHeldGesture);
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp);
       window.addEventListener("resize", cancelForLayout);
       return () => {
-        window.removeEventListener("blur", cancel);
+        window.removeEventListener("blur", cancelHeldGesture);
         window.removeEventListener("pointermove", handlePointerMove);
         window.removeEventListener("pointerup", handlePointerUp);
         window.removeEventListener("resize", cancelForLayout);

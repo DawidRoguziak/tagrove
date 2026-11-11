@@ -18,6 +18,9 @@ const BUNDLE_APPLICATION_ID: &str = "io.github.mediatagger.bundle";
 const BUNDLE_FORMAT_VERSION: u32 = 2;
 const MAX_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 2_000_000;
+/// Upper bound for a declared central directory: 2,000,000 entries at an average
+/// of 512 bytes each. Bundles written by this application use far less per entry.
+const MAX_CENTRAL_DIRECTORY_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_ENTRY_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_EXPANDED_BYTES: u64 = 256 * 1024 * 1024 * 1024;
 const MAX_COMPRESSION_RATIO: u64 = 1_000;
@@ -135,9 +138,7 @@ pub fn export_db_bundle(
             return Err("Backup archive exceeds the size limit".into());
         }
         drop(archive);
-        validate_archive(&mut zip::ZipArchive::new(fs::File::open(
-            &temporary_target,
-        )?)?)?;
+        validate_archive(&mut open_bundle_archive(&temporary_target)?)?;
         publish_archive(&temporary_target, &target_file)?;
         sync_parent_directory(&target_file)?;
         Ok(DbBundleExportSummary {
@@ -183,8 +184,7 @@ fn create_database_snapshot(source: &rusqlite::Connection, target: &Path) -> App
 
 pub fn inspect_db_bundle(path: String, state: &AppState) -> AppResult<DbBundleInspection> {
     let source_file = validate_bundle_source(&path)?;
-    let file = fs::File::open(&source_file)?;
-    let mut archive = zip::ZipArchive::new(file)?;
+    let mut archive = open_bundle_archive(&source_file)?;
     let validated = validate_archive(&mut archive)?;
     let inspect_root = state
         .db_path
@@ -238,8 +238,7 @@ pub fn import_db_bundle(
 ) -> AppResult<DbBundleImportSummary> {
     let source_file = validate_bundle_source(&path)?;
 
-    let file = fs::File::open(&source_file)?;
-    let mut archive = zip::ZipArchive::new(file)?;
+    let mut archive = open_bundle_archive(&source_file)?;
     let validated = validate_archive(&mut archive)?;
 
     let app_data_dir = state
@@ -1152,6 +1151,156 @@ fn resolve_imported_thumbnail(
     Ok(Some(
         live_thumbs.join(relative).to_string_lossy().into_owned(),
     ))
+}
+
+/// Opens a bundle as a ZIP archive after checking the entry count its end records
+/// declare. `zip::ZipArchive::new` materializes the whole central directory (about
+/// 200 bytes of memory per entry) before `validate_archive` can apply the entry limit,
+/// so the declared count is bounded here first.
+fn open_bundle_archive(path: &Path) -> AppResult<zip::ZipArchive<fs::File>> {
+    let mut file = fs::File::open(path)?;
+    check_declared_central_directory(&mut file, MAX_ARCHIVE_ENTRIES as u64)?;
+    Ok(zip::ZipArchive::new(file)?)
+}
+
+const EOCD_SIGNATURE: [u8; 4] = 0x0605_4b50u32.to_le_bytes();
+const ZIP64_EOCD_SIGNATURE: [u8; 4] = 0x0606_4b50u32.to_le_bytes();
+const ZIP64_LOCATOR_SIGNATURE: [u8; 4] = 0x0706_4b50u32.to_le_bytes();
+const EOCD_LEN: u64 = 22;
+const ZIP64_LOCATOR_LEN: u64 = 20;
+const ZIP64_EOCD_FIXED_LEN: u64 = 56;
+const CENTRAL_HEADER_MIN_LEN: u64 = 46;
+/// The crate allocates a ZIP64 end record's extensible data sector in full; this
+/// application writes none, so anything past 64 KiB is not a bundle.
+const MAX_ZIP64_EXTENSIBLE_BYTES: u64 = 64 * 1024;
+
+fn le_u16(bytes: &[u8], at: usize) -> u16 {
+    u16::from_le_bytes([bytes[at], bytes[at + 1]])
+}
+
+fn le_u32(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap_or_default())
+}
+
+fn le_u64(bytes: &[u8], at: usize) -> u64 {
+    u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap_or_default())
+}
+
+fn read_exact_at(
+    reader: &mut (impl Read + std::io::Seek),
+    offset: u64,
+    buf: &mut [u8],
+) -> AppResult<()> {
+    reader.seek(std::io::SeekFrom::Start(offset))?;
+    reader.read_exact(buf)?;
+    Ok(())
+}
+
+/// Rejects an archive whose end of central directory records declare more than
+/// `max_entries` entries or an implausible central directory size, reading only the
+/// tail of the file and the ZIP64 end record.
+///
+/// Every end-of-central-directory signature in the region the `zip` crate searches
+/// (the last 22 bytes plus a 64 KiB comment) is checked, not only the last one, because
+/// the crate falls back to an earlier candidate when a later one does not parse. A
+/// candidate the crate skips without reading entries is skipped here too. For a ZIP64
+/// candidate the end record must sit exactly where its locator points and be
+/// consistent; the crate then uses that record, so the count checked here is the count
+/// it parses. Archives with data prepended before the ZIP (where the crate would search
+/// further for the ZIP64 end record) are rejected; this application never writes them.
+fn check_declared_central_directory(
+    reader: &mut (impl Read + std::io::Seek),
+    max_entries: u64,
+) -> AppResult<()> {
+    let file_len = reader.seek(std::io::SeekFrom::End(0))?;
+    let tail_len = file_len.min(EOCD_LEN + u64::from(u16::MAX) + 64);
+    let tail_start = file_len - tail_len;
+    let mut tail = vec![0u8; tail_len as usize];
+    read_exact_at(reader, tail_start, &mut tail)?;
+
+    for at in (0..tail.len().saturating_sub(EOCD_LEN as usize - 1)).rev() {
+        if tail[at..at + 4] != EOCD_SIGNATURE {
+            continue;
+        }
+        let eocd_offset = tail_start + at as u64;
+        let eocd = &tail[at..at + EOCD_LEN as usize];
+        let disk_number = le_u16(eocd, 4);
+        let disk_with_directory = le_u16(eocd, 6);
+        let files_on_disk = le_u16(eocd, 8);
+        let files = le_u16(eocd, 10);
+        let directory_size = le_u32(eocd, 12);
+        let directory_offset = le_u32(eocd, 16);
+        let comment_len = le_u16(eocd, 20);
+        if eocd_offset + EOCD_LEN + u64::from(comment_len) > file_len {
+            continue;
+        }
+        let may_be_zip64 =
+            files == u16::MAX || directory_size == u32::MAX || directory_offset == u32::MAX;
+        let mut locator = [0u8; ZIP64_LOCATOR_LEN as usize];
+        let has_locator = may_be_zip64
+            && eocd_offset >= ZIP64_LOCATOR_LEN
+            && read_exact_at(reader, eocd_offset - ZIP64_LOCATOR_LEN, &mut locator).is_ok()
+            && locator[..4] == ZIP64_LOCATOR_SIGNATURE;
+
+        if !has_locator {
+            // ZIP32: at most 65,535 entries, so only the directory size can be implausible.
+            if disk_number != 0
+                || disk_with_directory != 0
+                || files_on_disk != files
+                || (files > 0 && u64::from(directory_offset) >= eocd_offset)
+            {
+                continue;
+            }
+            if u64::from(files) > max_entries {
+                return Err("Backup archive contains too many entries".into());
+            }
+            if u64::from(directory_size) > MAX_CENTRAL_DIRECTORY_BYTES {
+                return Err("Backup archive has an implausible central directory size".into());
+            }
+            continue;
+        }
+
+        let locator_offset = eocd_offset - ZIP64_LOCATOR_LEN;
+        let locator_disk_with_directory = le_u32(&locator, 4);
+        let zip64_offset = le_u64(&locator, 8);
+        let number_of_disks = le_u32(&locator, 16);
+        if zip64_offset >= locator_offset || number_of_disks > 1 {
+            continue;
+        }
+        let invalid_zip64 = || "Backup archive has an invalid ZIP64 end of central directory";
+        if locator_offset - zip64_offset < ZIP64_EOCD_FIXED_LEN {
+            return Err(invalid_zip64().into());
+        }
+        let mut record = [0u8; ZIP64_EOCD_FIXED_LEN as usize];
+        read_exact_at(reader, zip64_offset, &mut record)?;
+        let record_size = le_u64(&record, 4);
+        let zip64_disk_number = le_u32(&record, 16);
+        let zip64_disk_with_directory = le_u32(&record, 20);
+        let zip64_files_on_disk = le_u64(&record, 24);
+        let zip64_files = le_u64(&record, 32);
+        let zip64_directory_size = le_u64(&record, 40);
+        let zip64_directory_offset = le_u64(&record, 48);
+        if record[..4] != ZIP64_EOCD_SIGNATURE
+            || record_size.checked_add(12) != Some(locator_offset - zip64_offset)
+            || record_size > ZIP64_EOCD_FIXED_LEN - 12 + MAX_ZIP64_EXTENSIBLE_BYTES
+            || zip64_disk_number != 0
+            || zip64_disk_with_directory != locator_disk_with_directory
+            || zip64_files_on_disk != zip64_files
+        {
+            return Err(invalid_zip64().into());
+        }
+        if zip64_files > max_entries {
+            return Err("Backup archive contains too many entries".into());
+        }
+        let directory_end = zip64_directory_offset.checked_add(zip64_directory_size);
+        if zip64_directory_size > MAX_CENTRAL_DIRECTORY_BYTES
+            || directory_end.is_none_or(|end| end > zip64_offset)
+            || zip64_files.saturating_mul(CENTRAL_HEADER_MIN_LEN) > zip64_directory_size
+        {
+            return Err("Backup archive has an implausible central directory size".into());
+        }
+    }
+    Ok(())
 }
 
 fn validate_archive(archive: &mut zip::ZipArchive<fs::File>) -> AppResult<ValidatedArchive> {
@@ -3479,6 +3628,303 @@ mod tests {
             assert_eq!(root.join("thumbs/old.jpg").exists(), !committed);
             assert!(!super::restore_journal_path(root).exists());
             super::recover_interrupted_restore(root).unwrap();
+        }
+    }
+
+    /// Writes a ZIP made only of a central directory (no local headers or data)
+    /// with `real_entries` unique minimal records, followed by an end of central
+    /// directory that declares `declared_entries`. Above 0xFFFF entries the
+    /// counts and offsets go to a ZIP64 end record.
+    fn write_synthetic_central_directory(
+        path: &Path,
+        real_entries: u64,
+        declared_entries: u64,
+        force_zip64: bool,
+    ) {
+        let file = fs::File::create(path).unwrap();
+        let mut out = std::io::BufWriter::with_capacity(1 << 20, file);
+        let mut directory_size = 0u64;
+        for index in 0..real_entries {
+            let name = format!("{index:010x}");
+            let mut record = Vec::with_capacity(46 + name.len());
+            record.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+            record.extend_from_slice(&20u16.to_le_bytes()); // made by
+            record.extend_from_slice(&20u16.to_le_bytes()); // needed
+            record.extend_from_slice(&0u16.to_le_bytes()); // flags
+            record.extend_from_slice(&0u16.to_le_bytes()); // stored
+            record.extend_from_slice(&0u32.to_le_bytes()); // time + date
+            record.extend_from_slice(&0u32.to_le_bytes()); // crc
+            record.extend_from_slice(&0u32.to_le_bytes()); // compressed
+            record.extend_from_slice(&0u32.to_le_bytes()); // uncompressed
+            record.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            record.extend_from_slice(&0u16.to_le_bytes()); // extra
+            record.extend_from_slice(&0u16.to_le_bytes()); // comment
+            record.extend_from_slice(&0u16.to_le_bytes()); // disk start
+            record.extend_from_slice(&0u16.to_le_bytes()); // internal attrs
+            record.extend_from_slice(&0u32.to_le_bytes()); // external attrs
+            record.extend_from_slice(&0u32.to_le_bytes()); // local header offset
+            record.extend_from_slice(name.as_bytes());
+            out.write_all(&record).unwrap();
+            directory_size += record.len() as u64;
+        }
+        let zip64 = force_zip64 || declared_entries > 0xFFFF || directory_size > 0xFFFF_FFFF;
+        if zip64 {
+            let zip64_end_offset = directory_size;
+            out.write_all(&0x0606_4b50u32.to_le_bytes()).unwrap();
+            out.write_all(&44u64.to_le_bytes()).unwrap();
+            out.write_all(&45u16.to_le_bytes()).unwrap();
+            out.write_all(&45u16.to_le_bytes()).unwrap();
+            out.write_all(&0u32.to_le_bytes()).unwrap();
+            out.write_all(&0u32.to_le_bytes()).unwrap();
+            out.write_all(&declared_entries.to_le_bytes()).unwrap();
+            out.write_all(&declared_entries.to_le_bytes()).unwrap();
+            out.write_all(&directory_size.to_le_bytes()).unwrap();
+            out.write_all(&0u64.to_le_bytes()).unwrap();
+            out.write_all(&0x0706_4b50u32.to_le_bytes()).unwrap();
+            out.write_all(&0u32.to_le_bytes()).unwrap();
+            out.write_all(&zip64_end_offset.to_le_bytes()).unwrap();
+            out.write_all(&1u32.to_le_bytes()).unwrap();
+        }
+        out.write_all(&0x0605_4b50u32.to_le_bytes()).unwrap();
+        out.write_all(&0u16.to_le_bytes()).unwrap();
+        out.write_all(&0u16.to_le_bytes()).unwrap();
+        let short_count = if zip64 {
+            0xFFFF
+        } else {
+            declared_entries as u16
+        };
+        out.write_all(&short_count.to_le_bytes()).unwrap();
+        out.write_all(&short_count.to_le_bytes()).unwrap();
+        let short_size = if zip64 {
+            0xFFFF_FFFF
+        } else {
+            directory_size as u32
+        };
+        out.write_all(&short_size.to_le_bytes()).unwrap();
+        let short_offset = if zip64 { 0xFFFF_FFFFu32 } else { 0 };
+        out.write_all(&short_offset.to_le_bytes()).unwrap();
+        out.write_all(&0u16.to_le_bytes()).unwrap();
+        out.flush().unwrap();
+    }
+
+    fn declared_check(path: &Path, max_entries: u64) -> Result<(), String> {
+        super::check_declared_central_directory(&mut fs::File::open(path).unwrap(), max_entries)
+            .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn declared_entry_count_above_the_limit_is_rejected_before_the_directory_is_read() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("forged.zip");
+        // A ZIP64 end record declaring 50 million entries over an empty directory.
+        write_synthetic_central_directory(&path, 0, 50_000_000, true);
+        let started = std::time::Instant::now();
+        let error = super::open_bundle_archive(&path).expect_err("must reject");
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(
+            error.to_string(),
+            "Backup archive contains too many entries"
+        );
+
+        // One entry above a small limit, with the directory actually present.
+        write_synthetic_central_directory(&path, 1_001, 1_001, true);
+        assert_eq!(
+            declared_check(&path, 1_000).unwrap_err(),
+            "Backup archive contains too many entries"
+        );
+    }
+
+    #[test]
+    fn declared_entry_count_at_the_limit_still_opens() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("at-limit.zip");
+        for force_zip64 in [false, true] {
+            write_synthetic_central_directory(&path, 1_000, 1_000, force_zip64);
+            declared_check(&path, 1_000).unwrap();
+            let archive = zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+            assert_eq!(archive.len(), 1_000);
+        }
+        // Above 0xFFFF entries the count only exists in the ZIP64 end record.
+        write_synthetic_central_directory(&path, 70_000, 70_000, false);
+        declared_check(&path, 70_000).unwrap();
+        assert_eq!(
+            declared_check(&path, 69_999).unwrap_err(),
+            "Backup archive contains too many entries"
+        );
+        assert_eq!(super::open_bundle_archive(&path).unwrap().len(), 70_000);
+    }
+
+    #[test]
+    fn written_bundles_pass_the_declared_directory_check() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("bundle.zip");
+        let source = dir.path().join("media.db");
+        fs::write(&source, b"fixture").unwrap();
+        let mut writer = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        super::add_file_to_zip(&mut writer, &source, "media.db").unwrap();
+        writer
+            .set_comment("PK\u{5}\u{6} looks like an end record")
+            .unwrap();
+        writer.finish().unwrap();
+        let mut archive = super::open_bundle_archive(&path).unwrap();
+        super::validate_archive(&mut archive).unwrap();
+    }
+
+    #[test]
+    fn corrupted_end_records_fail_cleanly() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("corrupt.zip");
+        write_synthetic_central_directory(&path, 10, 10, true);
+        let original = fs::read(&path).unwrap();
+        let eocd = original.len() - 22;
+        let locator = eocd - 20;
+        let zip64 = locator - 56;
+
+        // Locator pointing into the middle of the directory.
+        let mut bytes = original.clone();
+        bytes[locator + 8..locator + 16].copy_from_slice(&5u64.to_le_bytes());
+        fs::write(&path, &bytes).unwrap();
+        assert_eq!(
+            declared_check(&path, 1_000).unwrap_err(),
+            "Backup archive has an invalid ZIP64 end of central directory"
+        );
+
+        // ZIP64 record whose size field disagrees with the locator.
+        let mut bytes = original.clone();
+        bytes[zip64 + 4..zip64 + 12].copy_from_slice(&100u64.to_le_bytes());
+        fs::write(&path, &bytes).unwrap();
+        assert!(declared_check(&path, 1_000).is_err());
+
+        // ZIP64 record with an oversized extensible data sector that the locator agrees with.
+        for (padding, accepted) in [(16usize, true), (128 * 1024, false)] {
+            let mut bytes = original[..zip64 + 56].to_vec();
+            bytes[zip64 + 4..zip64 + 12].copy_from_slice(&(44 + padding as u64).to_le_bytes());
+            bytes.extend(std::iter::repeat_n(0u8, padding));
+            bytes.extend_from_slice(&original[locator..]);
+            fs::write(&path, &bytes).unwrap();
+            assert_eq!(
+                declared_check(&path, 1_000).is_ok(),
+                accepted,
+                "padding {padding}"
+            );
+        }
+
+        // Directory size larger than the bytes before the ZIP64 record.
+        let mut bytes = original.clone();
+        bytes[zip64 + 40..zip64 + 48].copy_from_slice(&u64::MAX.to_le_bytes());
+        fs::write(&path, &bytes).unwrap();
+        assert_eq!(
+            declared_check(&path, 1_000).unwrap_err(),
+            "Backup archive has an implausible central directory size"
+        );
+
+        // ZIP32 end record declaring a 4 GiB directory.
+        write_synthetic_central_directory(&path, 10, 10, false);
+        let mut bytes = fs::read(&path).unwrap();
+        let eocd = bytes.len() - 22;
+        bytes[eocd + 12..eocd + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[eocd + 10..eocd + 12].copy_from_slice(&10u16.to_le_bytes());
+        fs::write(&path, &bytes).unwrap();
+        assert!(super::open_bundle_archive(&path).is_err());
+
+        // Truncated end record and plain garbage: no end record, the zip crate reports it.
+        for bytes in [
+            original[..original.len() - 10].to_vec(),
+            vec![0x5a; 4096],
+            Vec::new(),
+        ] {
+            fs::write(&path, &bytes).unwrap();
+            declared_check(&path, 1_000).unwrap();
+            assert!(super::open_bundle_archive(&path).is_err());
+        }
+    }
+
+    #[test]
+    fn inspect_and_import_reject_a_forged_entry_count_before_staging() {
+        let tmp = tempdir().unwrap();
+        let profile_dir = tmp.path().join("profile");
+        let db_path = profile_dir.join("media.db");
+        let thumbs_dir = profile_dir.join("thumbs");
+        fs::create_dir_all(&thumbs_dir).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        drop(conn);
+        let archive_path = tmp.path().join("forged.zip");
+        write_synthetic_central_directory(&archive_path, 0, 50_000_000, true);
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let path = archive_path.to_string_lossy().to_string();
+
+        let error = inspect_db_bundle(path.clone(), &state).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Backup archive contains too many entries"
+        );
+        let error = import_db_bundle(
+            path,
+            Vec::new(),
+            &state,
+            &state.database.maintenance().unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Backup archive contains too many entries"
+        );
+        let leftovers: Vec<_> = fs::read_dir(&profile_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("restore-"))
+            .collect();
+        assert!(leftovers.is_empty(), "unexpected leftovers: {leftovers:?}");
+    }
+
+    fn peak_rss_kib() -> u64 {
+        let status = fs::read_to_string("/proc/self/status").unwrap();
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix("VmHWM:"))
+            .and_then(|value| value.trim().trim_end_matches("kB").trim().parse().ok())
+            .unwrap()
+    }
+
+    #[test]
+    #[ignore = "memory and timing diagnostic: run in release with --ignored --nocapture --test-threads=1"]
+    fn zip_central_directory_parse_cost_diagnostic() {
+        // MEDIATAGGER_ZIP_DIAG="real:declared,..." (default: a small smoke run).
+        let spec = std::env::var("MEDIATAGGER_ZIP_DIAG").unwrap_or_else(|_| "100000:100000".into());
+        for case in spec.split(',') {
+            let (real, declared) = case.split_once(':').unwrap();
+            let (real, declared): (u64, u64) = (real.parse().unwrap(), declared.parse().unwrap());
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("synthetic.zip");
+            write_synthetic_central_directory(&path, real, declared, false);
+            let file_len = fs::metadata(&path).unwrap().len();
+            let _ = fs::write("/proc/self/clear_refs", "5");
+            let before = peak_rss_kib();
+            let started = std::time::Instant::now();
+            let result = zip::ZipArchive::new(fs::File::open(&path).unwrap());
+            let elapsed = started.elapsed();
+            let peak = peak_rss_kib();
+            let outcome = match &result {
+                Ok(archive) => format!("ok len={}", archive.len()),
+                Err(error) => format!("err {error}"),
+            };
+            drop(result);
+            let pre = std::time::Instant::now();
+            let precheck = super::check_declared_central_directory(
+                &mut fs::File::open(&path).unwrap(),
+                super::MAX_ARCHIVE_ENTRIES as u64,
+            );
+            let pre_elapsed = pre.elapsed();
+            println!(
+                "real={real} declared={declared} file={:.1}MiB parse={:.2}s peak_delta={:.1}MiB ({:.0} B/entry) -> {outcome}; precheck={:?} in {:?}",
+                file_len as f64 / 1048576.0,
+                elapsed.as_secs_f64(),
+                peak.saturating_sub(before) as f64 / 1024.0,
+                if real > 0 { peak.saturating_sub(before) as f64 * 1024.0 / real as f64 } else { 0.0 },
+                precheck.map_err(|error| error.to_string()),
+                pre_elapsed,
+            );
         }
     }
 }

@@ -813,6 +813,10 @@ pub(super) fn validate_backup_data(
                 // that carries one stays restorable (the tag is kept as stored). Everything else
                 // about the name must still be canonical.
                 let name = name.replace('\u{FEFF}', "");
+                if name.is_empty() {
+                    // Only U+FEFF: the old rule stored and accepted it as a tag; keep it restorable.
+                    continue;
+                }
                 let normalized = normalize_and_validate_tags(vec![name.clone()])?;
                 anyhow::ensure!(
                     normalized.len() == 1 && normalized[0] == name,

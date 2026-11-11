@@ -1793,6 +1793,10 @@ mod tests {
             .expect("legacy tag");
 
         validate_backup_database(&conn, false).expect("legacy tag stays restorable");
+
+        conn.execute("INSERT INTO tags(name) VALUES ('\u{FEFF}')", [])
+            .expect("tag made only of U+FEFF");
+        validate_backup_database(&conn, false).expect("U+FEFF-only tag stays restorable");
     }
 
     #[test]

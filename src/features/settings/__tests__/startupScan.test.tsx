@@ -123,4 +123,47 @@ describe("startup scanning", () => {
     await waitFor(() => expect(result.operationState.message).toMatch(/partial/i));
     expect(refreshLibrary).toHaveBeenCalledTimes(1);
   });
+
+  describe.each([
+    ["rescan all", "rescanAllRoots", (c: ReturnType<typeof useController>) => c.onRescanAll()],
+    [
+      "rescan one root",
+      "scanFolder",
+      (c: ReturnType<typeof useController>) => c.onRescanRoot(root.path)
+    ]
+  ] as const)("manual %s", (_name, apiName, run) => {
+    it("refreshes the library and roots after a rejection and keeps the error status", async () => {
+      api[apiName].mockRejectedValue(new Error("scan exploded"));
+      const { result } = renderHook(() => useController(), { wrapper: LanguageProvider });
+      await act(async () => {
+        await run(result);
+      });
+      expect(refreshLibrary).toHaveBeenCalledTimes(1);
+      expect(api.listScanRoots).toHaveBeenCalledTimes(1);
+      expect(result.operationState.message).toContain("scan exploded");
+      expect(result.isOperationLocked).toBe(false);
+    });
+
+    it("still refreshes roots and keeps the error when the library refresh fails", async () => {
+      api[apiName].mockRejectedValue(new Error("scan exploded"));
+      refreshLibrary.mockRejectedValue(new Error("refresh failed"));
+      const { result } = renderHook(() => useController(), { wrapper: LanguageProvider });
+      await act(async () => {
+        await run(result);
+      });
+      expect(api.listScanRoots).toHaveBeenCalledTimes(1);
+      expect(result.operationState.message).toContain("scan exploded");
+    });
+
+    it("keeps the success path: one refresh each and the summary", async () => {
+      api[apiName].mockResolvedValue(summary);
+      const { result } = renderHook(() => useController(), { wrapper: LanguageProvider });
+      await act(async () => {
+        await run(result);
+      });
+      expect(refreshLibrary).toHaveBeenCalledTimes(1);
+      expect(api.listScanRoots).toHaveBeenCalledTimes(1);
+      expect(result.operationState.message).toContain("Indexed: 2");
+    });
+  });
 });

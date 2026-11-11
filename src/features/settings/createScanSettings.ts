@@ -266,7 +266,14 @@ export function createScanSettings({
         progressPhaseMatcher: isScanProgressPhase
       },
       async () => {
-        const summary = await rescanAllRoots();
+        let summary: ScanSummary;
+        try {
+          summary = await rescanAllRoots();
+        } catch (error) {
+          // Batches committed before the failure already changed the library.
+          if (!disposed) await Promise.allSettled([refreshLibrary(), refreshScanRoots()]);
+          throw error;
+        }
         await refreshLibrary();
         await refreshScanRoots();
         runner.setSectionMessage("scan", () => formatScanSummary(t, summary));
@@ -282,7 +289,14 @@ export function createScanSettings({
         progressPhaseMatcher: isScanProgressPhase
       },
       async () => {
-        const summary = await scanFolder(path);
+        let summary: ScanSummary;
+        try {
+          summary = await scanFolder(path);
+        } catch (error) {
+          // Batches committed before the failure already changed the library.
+          if (!disposed) await Promise.allSettled([refreshLibrary(), refreshScanRoots()]);
+          throw error;
+        }
         await refreshLibrary();
         await refreshScanRoots();
         runner.setSectionMessage("scan", () => formatScanSummary(t, summary));

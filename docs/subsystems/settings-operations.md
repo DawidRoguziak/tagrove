@@ -212,8 +212,8 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Remove confirmed scan root | Reload `scanRoots`; refresh assets/query pages and known tags. The pending root was already cleared before the API call. |
 | Save startup-scan preference | Update the saved root flag locally. No library refresh or scan. |
 | Startup scan | For a scan result, refresh assets/tags, then roots. On rejection, attempt both refreshes; null requires neither. |
-| Rescan one root | Refresh assets/query pages and known tags; then reload `scanRoots`. No explicit thumbnail reset. |
-| Rescan all roots | Refresh assets/query pages and known tags; then reload `scanRoots`. No explicit thumbnail reset. |
+| Rescan one root | Refresh assets/query pages and known tags; then reload `scanRoots`. On rejection, attempt both refreshes (batches committed before the failure) and keep the error status. No explicit thumbnail reset. |
+| Rescan all roots | Refresh assets/query pages and known tags; then reload `scanRoots`. On rejection, attempt both refreshes (batches committed before the failure) and keep the error status. No explicit thumbnail reset. |
 | Render all thumbnails | Refresh assets/query pages and known tags; publish the thumbnail summary. The inner `finally` clears `thumbnailBulkRunning`. No scan-root refresh or explicit thumbnail reset. |
 | Retry failed thumbnails | Refresh assets/query pages and known tags; publish the thumbnail summary. The inner `finally` clears `thumbnailBulkRunning`. No scan-root refresh or explicit thumbnail reset. |
 | Request thumbnail cancellation | Publish accepted/rejected/error status and clear `cancelThumbnailRunning`. No refresh/reset; the original render later owns its normal success follow-up. |
@@ -225,7 +225,7 @@ In this table, `refreshLibrary` means `Promise.all([asset-query refresh, known-t
 | Find/rescan duplicates | Replace duplicate groups and count; publish scan summary. No library/root refresh or thumbnail reset; mounted rows request their previews through `thumb://`. |
 | Apply duplicate changes | After the backend batch returns, refresh assets/query pages and known tags; scan duplicates; replace groups/count/revision; publish committed, rolled-back, or recovery-required summary. No root refresh or explicit thumbnail reset. |
 
-Picker or confirmation cancellation, an empty duplicate batch, and a no-op thumbnail stop perform no lifecycle reset. The runner has no generic compensating refresh. CSV import, database restore, and clear-library actions explicitly invalidate their affected caches inside the metadata barrier on both success and rejection, then attempt relevant refreshes before showing an error. CSV database work is transactional, but an IPC rejection alone does not establish what the frontend observed. Other follow-ups remain sequential; a failed refresh prevents later follow-ups and the intended success summary.
+Picker or confirmation cancellation, an empty duplicate batch, and a no-op thumbnail stop perform no lifecycle reset. The runner has no generic compensating refresh. CSV import, database restore, and clear-library actions explicitly invalidate their affected caches inside the metadata barrier on both success and rejection, then attempt relevant refreshes before showing an error. CSV database work is transactional, but an IPC rejection alone does not establish what the frontend observed. Other follow-ups remain sequential; a failed refresh prevents later follow-ups and the intended success summary, except for duplicate apply, whose refresh and rescan are deliberately best effort after a committed batch so the committed, rolled-back, or recovery-required summary is always shown.
 
 Settings rename/rescan refreshes clear the shared details-cache generation. A metadata
 save held across that refresh can still publish canonical metadata, but cannot reinsert

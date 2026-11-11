@@ -139,3 +139,114 @@ it("stops shortcuts when disabled, closed or disposed and reopens with one liste
   reopened.cleanup();
   expect(press("ArrowRight").defaultPrevented).toBe(false);
 });
+
+function mockDomFullscreen(shell: HTMLElement) {
+  let current: Element | null = null;
+  Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => current });
+  const exit = vi.fn(async () => {
+    current = null;
+    document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  document.exitFullscreen = exit;
+  shell.requestFullscreen = vi.fn(async () => {
+    current = shell;
+    document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  return { exit, set: (el: Element | null) => {
+      current = el;
+    }
+  };
+}
+
+it("exits the image DOM fullscreen when navigation reaches a video and routes F and Escape to the video", async () => {
+  const shell = document.createElement("div");
+  document.body.append(shell);
+  const dom = mockDomFullscreen(shell);
+  const toggleFullscreen = vi.fn(async () => {});
+  const { result } = renderHook(() => {
+    const [selected, setSelected] = createSignal<ReturnType<typeof asset>>(asset(1));
+    const close = vi.fn();
+    const controls = createImageControls({ ...options(), close, selected });
+    return { controls, setSelected };
+  });
+  try {
+    flush();
+    result.controls.shellRef(shell as HTMLDivElement);
+    press("F");
+    await Promise.resolve();
+    flush();
+    expect(result.controls.isFullscreen).toBe(true);
+    result.setSelected({ ...asset(2), kind: "video" });
+    flush();
+    expect(dom.exit).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    flush();
+    expect(document.fullscreenElement).toBeNull();
+    expect(result.controls.isFullscreen).toBe(false);
+    result.controls.videoPlayerRef({ toggleFullscreen });
+    expect(press("F").defaultPrevented).toBe(true);
+    expect(toggleFullscreen).toHaveBeenCalledOnce();
+    // Not fullscreen: Escape is left to the lightbox close path.
+    expect(press("Escape").defaultPrevented).toBe(false);
+    expect(toggleFullscreen).toHaveBeenCalledOnce();
+    result.controls.onVideoFullscreenChange(true);
+    flush();
+    expect(press("Escape").defaultPrevented).toBe(true);
+    expect(toggleFullscreen).toHaveBeenCalledTimes(2);
+  } finally {
+    delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+    shell.remove();
+  }
+});
+
+it("keeps another element's fullscreen untouched and exits the shell's when the lightbox is deactivated", async () => {
+  const shell = document.createElement("div");
+  const dom = mockDomFullscreen(shell);
+  const { result } = renderHook(() => {
+    const [active, setActive] = createSignal(true);
+    const controls = createImageControls({ ...options(), active });
+    return { controls, setActive };
+  });
+  try {
+    flush();
+    result.controls.shellRef(shell as HTMLDivElement);
+    dom.set(document.body);
+    result.setActive(false);
+    flush();
+    expect(dom.exit).not.toHaveBeenCalled();
+    dom.set(shell);
+    result.setActive(true);
+    flush();
+    result.setActive(false);
+    flush();
+    expect(dom.exit).toHaveBeenCalledOnce();
+    await Promise.resolve();
+  } finally {
+    delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+  }
+});
+
+it("drops a shell fullscreen request that resolves after the selection moved to a video", async () => {
+  const shell = document.createElement("div");
+  const dom = mockDomFullscreen(shell);
+  const { result } = renderHook(() => {
+    const [selected, setSelected] = createSignal<ReturnType<typeof asset>>(asset(1));
+    const controls = createImageControls({ ...options(), selected });
+    return { controls, setSelected };
+  });
+  try {
+    flush();
+    result.controls.shellRef(shell as HTMLDivElement);
+    result.setSelected({ ...asset(2), kind: "video" });
+    flush();
+    // The window finishes entering fullscreen only now.
+    dom.set(shell);
+    document.dispatchEvent(new Event("fullscreenchange"));
+    flush();
+    expect(dom.exit).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(result.controls.isFullscreen).toBe(false);
+  } finally {
+    delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+  }
+});

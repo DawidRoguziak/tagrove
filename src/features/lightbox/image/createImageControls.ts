@@ -106,6 +106,17 @@ export function createImageControls(options: {
   function end(event: PointerEvent) {
     if (drag?.pointerId === event.pointerId) finishDrag();
   }
+  function leaveDomFullscreen() {
+    if (!shell || document.fullscreenElement !== shell) return;
+    setFullscreen(false);
+    try {
+      void Promise.resolve(document.exitFullscreen()).catch(() => {
+        /* The document may already have left fullscreen. */
+      });
+    } catch {
+      /* Fullscreen may be unavailable in the current window. */
+    }
+  }
   async function toggleFullscreen() {
     if (!isImage()) {
       await videoPlayer?.toggleFullscreen();
@@ -176,6 +187,7 @@ export function createImageControls(options: {
   createEffect(options.active, (active) => {
     if (!active) {
       finishDrag();
+      leaveDomFullscreen();
       return;
     }
     window.addEventListener("pointermove", move, { passive: false });
@@ -191,10 +203,13 @@ export function createImageControls(options: {
   });
   createEffect(isImage, (imageSelected) => {
     if (imageSelected) setFullscreen(!!shell && document.fullscreenElement === shell);
+    else leaveDomFullscreen();
   });
   onSettled(() => {
     const changed = () => {
-      if (isImage()) setFullscreen(!!shell && document.fullscreenElement === shell);
+      // A request still pending when the selection left the image resolves late: drop it.
+      if (!isImage() || !options.active()) leaveDomFullscreen();
+      else setFullscreen(!!shell && document.fullscreenElement === shell);
     };
     const keyboard = (event: KeyboardEvent) => {
       if (!options.active() || !options.keyboardEnabled() || event.defaultPrevented) return;
@@ -247,6 +262,7 @@ export function createImageControls(options: {
   onCleanup(() => {
     disposed = true;
     finishDrag();
+    leaveDomFullscreen();
     if (frame !== undefined) cancelAnimationFrame(frame);
   });
   return {

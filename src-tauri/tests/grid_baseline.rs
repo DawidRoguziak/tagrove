@@ -19,7 +19,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-        Arc, Mutex, RwLock,
+        Arc, Condvar, Mutex, RwLock,
     },
     thread,
     time::{Duration, Instant},
@@ -31,8 +31,10 @@ use media_tagger::{
     error::AppResult,
     models::{AssetQueryPageResult, ScanProgress, StartAssetQueryResult},
     services::{
-        asset_query_service::AssetQueryFilters, db_pool::DatabaseRuntime, scan_service,
-        thumb_scheduler::ThumbnailScheduler,
+        asset_query_service::AssetQueryFilters,
+        db_pool::DatabaseRuntime,
+        scan_service,
+        thumb_scheduler::{ThumbnailPriority, ThumbnailScheduler, ThumbnailTask},
     },
     thumbs,
 };
@@ -670,13 +672,9 @@ fn mutation_latency_and_rebuilds_during_scan_baseline() {
     );
 }
 
-#[test]
-#[ignore = "baseline diagnostic: run explicitly, alone, in release mode"]
-fn jpeg_24mp_thumbnail_baseline() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("synthetic-24mp.jpg");
-    // Smooth gradients plus deterministic high-frequency detail, so the JPEG
-    // carries a realistic amount of entropy for a 6000x4000 photo.
+/// Writes a synthetic 6000x4000 JPEG: smooth gradients plus deterministic
+/// high-frequency detail, so it carries a realistic amount of entropy.
+fn write_24mp_jpeg(source: &Path) {
     let mut seed = 0x2545_f491_u32;
     image::RgbImage::from_fn(6_000, 4_000, |x, y| {
         seed ^= seed << 13;
@@ -689,8 +687,16 @@ fn jpeg_24mp_thumbnail_baseline() {
             (((x + y) / 40) as u8) ^ noise,
         ])
     })
-    .save_with_format(&source, image::ImageFormat::Jpeg)
+    .save_with_format(source, image::ImageFormat::Jpeg)
     .unwrap();
+}
+
+#[test]
+#[ignore = "baseline diagnostic: run explicitly, alone, in release mode"]
+fn jpeg_24mp_thumbnail_baseline() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("synthetic-24mp.jpg");
+    write_24mp_jpeg(&source);
     let source_bytes = fs::metadata(&source).unwrap().len();
 
     let mut samples = Vec::new();
@@ -705,4 +711,179 @@ fn jpeg_24mp_thumbnail_baseline() {
         "[baseline] metric=thumbnail_jpeg_24mp source_bytes={source_bytes} {}",
         summary(&samples)
     );
+}
+
+/// How the modelled gallery requests a tile first shown in the overscan.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ScrollRequests {
+    /// Before ADR 0021: the tile keeps `p=1` (High, FIFO) when it scrolls into view.
+    StickyFifo,
+    /// The rejected alternative, a LIFO High queue. Modelled by sending the
+    /// prefetches at Interactive (LIFO): during a steady scroll nothing else is.
+    LifoHigh,
+    /// ADR 0021: a tile that scrolls into view before its result asks again
+    /// without `p=1`, which moves the queued job to the front of Interactive.
+    Reveal,
+}
+
+/// Completion time per tile index, with a condition variable to wait on.
+type TileDone = Arc<(Mutex<Vec<Option<Instant>>>, Condvar)>;
+
+fn wait_for_tiles(done: &TileDone, tiles: std::ops::Range<usize>) {
+    let (lock, ready) = &**done;
+    let mut times = lock.lock().unwrap();
+    while times[tiles.clone()].iter().any(Option::is_none) {
+        times = ready
+            .wait_timeout(times, Duration::from_secs(120))
+            .unwrap()
+            .0;
+    }
+}
+
+/// Steady scrolling over never-rendered images, then a stop. The gallery is
+/// modelled with 8 columns, 5 visible rows and the 4 overscan rows ahead; one
+/// row scrolls into view every 50 ms (20 rows/s, below the fast-scroll pause).
+/// The real scheduler renders real JPEGs with the browsing worker count of
+/// this host and with 2 workers (the browsing minimum, as on a 4-CPU host).
+/// Every asset is a hard link to one synthetic 24 MP JPEG, so each has its own
+/// cache key. Reports the backlog of queued renders at the stop and how long
+/// each tile visible at the stop still waits for its result. Each run renders
+/// into its own empty thumbnail directory and drains before the next starts.
+#[test]
+#[ignore = "baseline diagnostic: run explicitly, alone, in release mode"]
+fn steady_scroll_visible_thumbnail_wait_baseline() {
+    const COLUMNS: usize = 8;
+    const VISIBLE_ROWS: usize = 5;
+    const OVERSCAN_ROWS: usize = 4;
+    const SCROLL_ROWS: usize = 160;
+    const ROW_INTERVAL: Duration = Duration::from_millis(50);
+    let rows = VISIBLE_ROWS + OVERSCAN_ROWS + SCROLL_ROWS;
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("synthetic-24mp.jpg");
+    write_24mp_jpeg(&source);
+    let size = fs::metadata(&source).unwrap().len() as i64;
+    let links: Vec<PathBuf> = (0..rows * COLUMNS)
+        .map(|index| {
+            let link = dir.path().join(format!("asset-{index}.jpg"));
+            fs::hard_link(&source, &link).unwrap();
+            link
+        })
+        .collect();
+    let render_ms: Vec<f64> = (0..3)
+        .map(|attempt| {
+            let started = Instant::now();
+            thumbs::create_image_thumb(&source, &dir.path().join(format!("probe-{attempt}.jpg")))
+                .unwrap();
+            ms(started)
+        })
+        .collect();
+    let browsing = thread::available_parallelism()
+        .map(|count| count.get().saturating_sub(2).clamp(2, 8))
+        .unwrap_or(4);
+    println!(
+        "[baseline] metric=steady_scroll_setup columns={COLUMNS} visible_rows={VISIBLE_ROWS} overscan_rows={OVERSCAN_ROWS} rows_per_s={} scrolled_rows={SCROLL_ROWS} render {}",
+        1_000 / ROW_INTERVAL.as_millis(),
+        summary(&render_ms)
+    );
+    let mut worker_counts = vec![browsing, 2];
+    worker_counts.dedup();
+    let runs = worker_counts.into_iter().flat_map(|workers| {
+        [
+            ("sticky_fifo", ScrollRequests::StickyFifo),
+            ("lifo_high", ScrollRequests::LifoHigh),
+            ("reveal", ScrollRequests::Reveal),
+        ]
+        .map(|(name, mode)| (workers, name, mode))
+    });
+    for (workers, name, mode) in runs {
+        let scheduler = ThumbnailScheduler::new(workers, "ffmpeg".into());
+        let thumbs_dir = dir.path().join(format!("thumbs-{workers}-{name}"));
+        fs::create_dir_all(&thumbs_dir).unwrap();
+        let done: TileDone = Arc::new((Mutex::new(vec![None; links.len()]), Condvar::new()));
+        let requested = AtomicUsize::new(0);
+        let request = |index: usize, priority: ThumbnailPriority| {
+            let source_path = links[index].clone();
+            let version = thumbs::SourceVersion::new(source_path.to_string_lossy(), size, 0);
+            let done = Arc::clone(&done);
+            scheduler
+                .enqueue_with_callback(
+                    ThumbnailTask {
+                        operation: None,
+                        asset_id: index as i64,
+                        source_path,
+                        target_path: thumbs::thumb_target(&thumbs_dir, &version),
+                        kind: "image".into(),
+                        duration_ms: None,
+                        source_version: version,
+                        legacy_thumb: None,
+                    },
+                    priority,
+                    Box::new(move |result| {
+                        assert!(result.thumb_path.is_some(), "render failed");
+                        let (lock, ready) = &*done;
+                        lock.lock().unwrap()[index].get_or_insert_with(Instant::now);
+                        ready.notify_all();
+                    }),
+                )
+                .unwrap();
+            requested.fetch_max(index + 1, Ordering::Relaxed);
+        };
+        let prefetch = if mode == ScrollRequests::LifoHigh {
+            ThumbnailPriority::Interactive
+        } else {
+            ThumbnailPriority::High
+        };
+        let row = |row: usize| row * COLUMNS..(row + 1) * COLUMNS;
+        // Mount: visible rows first, then the overscan ahead.
+        for index in 0..VISIBLE_ROWS * COLUMNS {
+            request(index, ThumbnailPriority::Interactive);
+        }
+        for index in row(VISIBLE_ROWS).start..row(VISIBLE_ROWS + OVERSCAN_ROWS - 1).end {
+            request(index, prefetch);
+        }
+        let mut next = Instant::now();
+        for step in 1..=SCROLL_ROWS {
+            next += ROW_INTERVAL;
+            thread::sleep(next.saturating_duration_since(Instant::now()));
+            if mode == ScrollRequests::Reveal {
+                let shown: Vec<usize> = {
+                    let times = done.0.lock().unwrap();
+                    row(step + VISIBLE_ROWS - 1)
+                        .filter(|&index| times[index].is_none())
+                        .collect()
+                };
+                for index in shown {
+                    request(index, ThumbnailPriority::Interactive);
+                }
+            }
+            for index in row(step + VISIBLE_ROWS + OVERSCAN_ROWS - 1) {
+                request(index, prefetch);
+            }
+        }
+        let stop = Instant::now();
+        let visible = row(SCROLL_ROWS).start..row(SCROLL_ROWS + VISIBLE_ROWS - 1).end;
+        let backlog = {
+            let times = done.0.lock().unwrap();
+            times[..requested.load(Ordering::Relaxed)]
+                .iter()
+                .filter(|time| time.is_none())
+                .count()
+        };
+        wait_for_tiles(&done, visible.clone());
+        let visible_wait: Vec<f64> = {
+            let times = done.0.lock().unwrap();
+            times[visible]
+                .iter()
+                .map(|time| time.unwrap().saturating_duration_since(stop).as_secs_f64() * 1_000.0)
+                .collect()
+        };
+        let ready_at_stop = visible_wait.iter().filter(|wait| **wait == 0.0).count();
+        wait_for_tiles(&done, 0..links.len());
+        println!(
+            "[baseline] metric=steady_scroll_visible_wait workers={workers} mode={name} backlog_at_stop={backlog} visible_ready_at_stop={ready_at_stop}/{} drain_ms={:.0} wait {}",
+            visible_wait.len(),
+            ms(stop),
+            summary(&visible_wait)
+        );
+    }
 }

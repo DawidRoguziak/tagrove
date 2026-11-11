@@ -11,6 +11,8 @@ type Props = Omit<JSX.ImgHTMLAttributes<HTMLImageElement>, "src" | "onError" | "
   fadeIn?: boolean;
   className?: string;
   onLoad?: (event: Event & { currentTarget: HTMLImageElement }) => void;
+  /** Called when the picture of the current `src` (or one of its retries) is shown. */
+  onReady?: () => void;
   /** Called once per `src` after the load and every retry failed. */
   onFailed?: () => void;
 };
@@ -22,7 +24,16 @@ type Props = Omit<JSX.ImgHTMLAttributes<HTMLImageElement>, "src" | "onError" | "
  * placeholder.
  */
 export function ThumbnailImage(props: Props) {
-  const rest = omit(props, "src", "retrySrc", "fadeIn", "className", "onLoad", "onFailed");
+  const rest = omit(
+    props,
+    "src",
+    "retrySrc",
+    "fadeIn",
+    "className",
+    "onLoad",
+    "onReady",
+    "onFailed"
+  );
   let image: HTMLImageElement | undefined;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   // Load, retry and failure state belong to the source they were observed for.
@@ -47,14 +58,23 @@ export function ThumbnailImage(props: Props) {
     if (retryTimer !== undefined) clearTimeout(retryTimer);
     retryTimer = undefined;
   };
+  const markLoaded = () => {
+    setLoaded(props.src);
+    if (props.src !== TRANSPARENT_THUMBNAIL_SRC) props.onReady?.();
+  };
   onCleanup(clearRetry);
   // A cached picture can be complete without a load event once the attribute changes.
   createEffect(
     () => shown(),
     (src) => {
       clearRetry();
-      if (image?.complete && image.naturalWidth > 0 && image.getAttribute("src") === src)
-        setLoaded(props.src);
+      if (
+        src !== TRANSPARENT_THUMBNAIL_SRC &&
+        image?.complete &&
+        image.naturalWidth > 0 &&
+        image.getAttribute("src") === src
+      )
+        markLoaded();
     }
   );
   return (
@@ -72,7 +92,7 @@ export function ThumbnailImage(props: Props) {
           event.currentTarget.naturalWidth > 0 &&
           event.currentTarget.getAttribute("src") === requested()
         )
-          setLoaded(props.src);
+          markLoaded();
         props.onLoad?.(event);
       }}
       onError={(event) => {

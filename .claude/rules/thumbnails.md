@@ -17,5 +17,5 @@ Read `docs/subsystems/thumbnails.md`.
 - `assets.thumb_path` is untrusted. Before deleting a file, canonicalize the path, reject symlinks and non-files, and require it to stay inside the thumbnail root.
 - Locks: render and `thumb://` requests take the `thumb_lock` read guard per short section (never while a render runs), `clear_all_thumbnails` takes the write guard, and bulk cancel takes no lock (it only sets a flag).
 - On-demand thumbnails are the `thumb://localhost/<id>?v=<thumb_version>` scheme (`services/thumb_protocol.rs`, ADR 0006), not a command. The parser accepts only a positive numeric ID, a 16-hex version and the `c`/`p`/`r` flags, never a path. `thumbnailUrl` in `src/platform/tauri/thumbnails.ts` is the only URL builder.
-- Visible `thumb://` jobs are `Interactive` (LIFO) ahead of High (prefetch `p=1`, FIFO) and Low (bulk); WebKitGTK cannot cancel requests, so every request is answered.
+- Visible `thumb://` jobs are `Interactive` (LIFO) ahead of High (prefetch `p=1`, FIFO) and Low (bulk); WebKitGTK cannot cancel requests, so every request is answered. A tile whose prefetch has not arrived drops `p=1` once when it scrolls into view outside a pause, which promotes the queued job (ADR 0021).
 - Gallery GIF tiles always use static thumbnails and never load the original GIF.

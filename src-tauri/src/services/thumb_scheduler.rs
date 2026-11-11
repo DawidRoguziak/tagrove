@@ -1040,6 +1040,89 @@ mod tests {
         assert_eq!(*order.lock().expect("order lock"), vec![10, 30, 20]);
     }
 
+    /// Render order of a steady scroll that stops: every tile entered the
+    /// overscan first, so all of them were queued at High (`p=1`) in scroll
+    /// order. Tiles 9-16 are visible at the stop, tiles 17-20 are still in the
+    /// overscan ahead and tiles 1-8 were scrolled past. With `reveal`, the
+    /// gallery requests the visible tiles again without `p=1`, row by row as
+    /// they came into view (ADR 0021).
+    fn steady_scroll_render_order(reveal: bool) -> Vec<i64> {
+        let order = Arc::new(Mutex::new(Vec::<i64>::new()));
+        let (started_tx, started_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let release_rx = Mutex::new(release_rx);
+        let order_clone = Arc::clone(&order);
+        let scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                if task.asset_id == 0 {
+                    started_tx.send(()).expect("start signal");
+                    release_rx
+                        .lock()
+                        .expect("release lock")
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("release");
+                }
+                order_clone.lock().expect("order lock").push(task.asset_id);
+                Some(task.target_path.to_string_lossy().to_string())
+            }),
+        );
+        let (tx, rx) = mpsc::channel::<ThumbnailTaskResult>();
+        // The worker is busy, so the scroll builds a backlog.
+        scheduler
+            .enqueue_with_sender(
+                task(0, "C:/tmp/busy.jpg"),
+                ThumbnailPriority::High,
+                tx.clone(),
+            )
+            .expect("busy job");
+        started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("busy job started");
+        let target = |id: i64| format!("C:/tmp/scroll-{id}.jpg");
+        for id in 1..=20 {
+            scheduler
+                .enqueue_with_sender(task(id, &target(id)), ThumbnailPriority::High, tx.clone())
+                .expect("prefetch");
+        }
+        let mut waiters = 21;
+        if reveal {
+            for id in 9..=16 {
+                scheduler
+                    .enqueue_with_sender(
+                        task(id, &target(id)),
+                        ThumbnailPriority::Interactive,
+                        tx.clone(),
+                    )
+                    .expect("visible request");
+                waiters += 1;
+            }
+        }
+        release_tx.send(()).expect("release busy job");
+        for _ in 0..waiters {
+            rx.recv_timeout(Duration::from_secs(5)).expect("result");
+        }
+        let processed = order.lock().expect("order lock").clone();
+        processed
+    }
+
+    #[test]
+    fn visible_requests_for_queued_prefetches_render_before_the_scrolled_past_backlog() {
+        // Without a new request the visible tiles wait behind every
+        // scrolled-past prefetch (High is FIFO and nothing promotes them).
+        let sticky: Vec<i64> = (0..=20).collect();
+        assert_eq!(steady_scroll_render_order(false), sticky);
+        // A visible request moves each queued job to the front of Interactive:
+        // the visible tiles render first, the row that came into view last
+        // first, then the remaining prefetches in their FIFO order.
+        let mut revealed = vec![0];
+        revealed.extend((9..=16).rev());
+        revealed.extend(1..=8);
+        revealed.extend(17..=20);
+        assert_eq!(steady_scroll_render_order(true), revealed);
+    }
+
     #[test]
     fn scheduler_processes_jobs_in_parallel() {
         let active = Arc::new(AtomicUsize::new(0));

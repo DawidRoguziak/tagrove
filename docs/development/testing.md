@@ -602,7 +602,7 @@ The observations measure scroll-to-visible-JPEG-decode with WebDriver/polling ov
 
 The [grid-performance plan](../plans/grid-performance/README.md) records numbers before and after its stages in the results table of [stage 07](../plans/grid-performance/07-verification-and-docs.md#wyniki). Two opt-in measurements produce them. Neither has thresholds; compare runs made with the same build profile on the same idle host.
 
-`src-tauri/tests/grid_baseline.rs` contains three ignored diagnostics. Run them alone, in release mode, with `TMPDIR` on a disk-backed filesystem, because a tmpfs `/tmp` hides SQLite write costs:
+`src-tauri/tests/grid_baseline.rs` contains five ignored diagnostics. Run them alone, in release mode, with `TMPDIR` on a disk-backed filesystem, because a tmpfs `/tmp` hides SQLite write costs:
 
 ```sh
 TMPDIR=/var/tmp cargo test --manifest-path src-tauri/Cargo.toml --locked --release \
@@ -611,7 +611,9 @@ TMPDIR=/var/tmp cargo test --manifest-path src-tauri/Cargo.toml --locked --relea
 
 - `query_rebuild_and_page_baseline` seeds synthetic 100,000- and 1,000,000-row libraries with SQL. The rows contain kinds, favorites, four-item media groups, 2,000 vocabulary tags, a `common` and a `rare` tag, a scan-root mapping and pseudo-random modification times, 0.1% of them zero. It bumps the revision before each `AssetQueryManager::start` call, so every sample rebuilds the ID vector. The filters are none, favorites, an included tag, a rare tag, an excluded tag and a media kind. It also times cached starts and 128-item pages.
 - `mutation_latency_and_rebuilds_during_scan_baseline` times the revision-aware favorite and tag writes through the database runtime, first idle on 100,000 rows. It then repeats them during ten `scan_folder`-shaped scans of 20,000 new small JPEGs. During each scan, a simulated user writes every 50 ms, and a simulated gallery reads a page every 100 ms and rebuilds the session whenever the page is stale. The output reports scan duration, revision bumps, rebuilds, latency distributions and failed writes.
+- `sort_key_backfill_plan_and_bulk_group_baseline` times the one-time sort-key backfill of a 1,000,000-row library, prints the plan of the unfiltered order query and times grouping 5,000 assets ([ADR 0004](../adr/0004-trigger-maintained-gallery-sort-keys.md)).
 - `jpeg_24mp_thumbnail_baseline` generates a 6000×4000 JPEG and times `thumbs::create_image_thumb`.
+- `steady_scroll_visible_thumbnail_wait_baseline` models a gallery of 8 columns, 5 visible rows and 4 overscan rows that scrolls 160 rows at 20 rows/s over never-rendered images and then stops. The real scheduler renders hard links of one synthetic 24 MP JPEG with this host's browsing worker count and with 2 workers. For sticky prefetches (before [ADR 0021](../adr/0021-visible-tiles-drop-a-pending-prefetch.md)), a LIFO High queue (modelled as Interactive) and the `p=1` drop, it reports the backlog at the stop and how long each tile visible at the stop waits for its result. The request pattern is modelled; WebKit and IPC are not part of it.
 
 Each output line starts with `[baseline]` and contains only counts and timings. Rust-side samples exclude IPC, serialization and the WebView.
 

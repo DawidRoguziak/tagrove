@@ -222,7 +222,9 @@ During the pause, `createLibrary` remembers the latest range but skips automatic
 reads, including on query-epoch changes. Page arrivals can populate the cache but cannot
 restart page demand while paused. Tiles that receive a new asset during the pause request a
 cached thumbnail only (`c=1`): an existing file shows at once, a missing one is rendered only
-after the pause ends. Resume loads only the latest range, retaining the four-row overscan.
+after the pause ends. A tile whose overscan prefetch (`p=1`) is still pending when it reaches
+the view keeps that URL during the pause and drops `p=1` once it ends, which moves its queued
+render ahead of every prefetch ([thumbnails](thumbnails.md#frontend-tiles)). Resume loads only the latest range, retaining the four-row overscan.
 Already dispatched reads can finish; caches remain intact. Explicit lightbox/selection reads
 continue. Unmount publishes
 `null` to release gallery demand while the application-owned library stays alive.
@@ -303,7 +305,7 @@ Inclusive range reads capture one session and generation, checking them after ev
 5. Treat `total` and cached `assets` as different quantities. Use global-index accessors for virtualized navigation and selection; do not index the loaded-assets array as though it were the session snapshot.
 6. Keep `AssetSummary` lean. If a gallery feature needs full path, size, or tags, either justify adding that cost to every summary or cross the `AssetDetails` boundary and define cache invalidation for the added data.
 7. Preserve generation checks, per-offset request de-duplication, loading-counter balance, and stale recovery. Add explicit cancellation or error state before relying on either behavior in the UI.
-8. Test virtual holes, cache eviction and reload, resize/overscan ranges, placeholder-to-tile transitions, overscan thumbnails requested with `p=1`, zero-result loading, group backplates, and static GIF previews with missing, ready, and failed thumbnails.
+8. Test virtual holes, cache eviction and reload, resize/overscan ranges, placeholder-to-tile transitions, overscan thumbnails requested with `p=1` and the one-way drop of `p=1` when a pending overscan tile scrolls into view, zero-result loading, group backplates, and static GIF previews with missing, ready, and failed thumbnails.
 9. Add backend tests for equal-key reuse, supersession, revision mismatch, missing/expired/evicted sessions, LRU promotion, TTL, page clamps, and cross-session isolation. Use a controllable clock or cache constructor rather than sleeping for the TTL.
 10. Run Rust formatting and the relevant backend query/database tests, then run the focused Solid model, gallery, selection, search-filter, lightbox, and thumbnail tests. For cache or virtualizer changes, also exercise a library larger than 24 pages and scroll backward into evicted ranges.
 
@@ -321,7 +323,7 @@ Inclusive range reads capture one session and generation, checking them after ev
 
 ### Gallery performance verification
 
-`src/features/gallery/__tests__/createVirtualGrid.test.tsx` mounts 10,000 and 26,000 slots with initially null parent refs, bounds every range callback on cold mount and remount, and checks that demand is republished only when rows change, resize and margin anchoring, partial rows, observer and timer cleanup, and the one-million-slot window (End/Home, edge and idle rebasing, subpixel edge scrolling, return to native mode). These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. `GalleryGrid.test.tsx` checks the `thumb://` URL per slot and `p=1` on overscan tiles, and `ThumbnailImage.test.tsx` covers per-source load state and retry backoff; page-cache tests cross the 24-page bound and reload evicted pages.
+`src/features/gallery/__tests__/createVirtualGrid.test.tsx` mounts 10,000 and 26,000 slots with initially null parent refs, bounds every range callback on cold mount and remount, and checks that demand is republished only when rows change, resize and margin anchoring, partial rows, observer and timer cleanup, and the one-million-slot window (End/Home, edge and idle rebasing, subpixel edge scrolling, return to native mode). These tests simulate DOM geometry in jsdom; they do not measure Linux desktop latency. `GalleryGrid.test.tsx` checks the `thumb://` URL per slot, `p=1` on overscan tiles and its one-way drop when a pending overscan tile scrolls into view (kept for a loaded picture and during a pause), and `ThumbnailImage.test.tsx` covers per-source load state and retry backoff; page-cache tests cross the 24-page bound and reload evicted pages.
 
 The opt-in desktop spec uses 3,584 copied PNGs (28 pages), 12 GIFs, and two videos in a temporary root. Its first case samples an image-only route before metadata traversal, then revisits the identical route without clearing caches. The starting target at index zero, the initially mounted area, and the final return legs are excluded from timing. Each sample records the final JPEG filenames present before scrolling and the visible thumbnail filenames after decoding. Only samples with no pre-existing visible previews enter the first-use summary; mixed samples stay in the raw record. Every revisit sample must find all visible previews already on disk. These labels describe preview-file reuse, not an OS-cold cache or a fully resident frontend page cache.
 

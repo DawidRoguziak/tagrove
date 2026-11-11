@@ -2157,6 +2157,91 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_visible_request_moves_a_queued_prefetch_ahead_and_both_requests_are_served() {
+        // An overscan tile that scrolls into view before its picture arrived
+        // asks again without `p=1` (ADR 0021): the second request joins the
+        // queued High job, moves it ahead, and both requests get the picture.
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        for name in ["busy.png", "past.png", "ahead.png", "visible.png"] {
+            let source = dir.path().join(name);
+            fs::write(&source, b"source").unwrap();
+            db::upsert_asset(&conn, &new_asset(&source, 1, None)).unwrap();
+        }
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let (started_tx, started_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let release_rx = Mutex::new(release_rx);
+        let order_clone = Arc::clone(&order);
+        let mut state = create_test_state(&db_path, &thumbs);
+        state.thumb_scheduler = ThumbnailScheduler::with_processor(
+            1,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                if task.asset_id == 1 {
+                    started_tx.send(()).unwrap();
+                    release_rx
+                        .lock()
+                        .unwrap()
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                }
+                order_clone.lock().unwrap().push(task.asset_id);
+                fs::write(&task.target_path, format!("thumb-{}", task.asset_id)).unwrap();
+                Some(task.target_path.to_string_lossy().into())
+            }),
+        );
+        let permit = state.database.admit().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let request = |asset_id: i64, prefetch: bool| {
+            let tx = tx.clone();
+            let mode = super::ThumbnailRequestMode {
+                cached_only: false,
+                prefetch,
+            };
+            let outcome =
+                super::request_thumbnail(asset_id, mode, &state, &permit, move |pending| {
+                    let _ = tx.send(pending);
+                })
+                .unwrap();
+            assert!(matches!(outcome, super::ThumbnailRequestOutcome::Pending));
+        };
+        request(1, false);
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        for asset_id in [2, 3, 4] {
+            request(asset_id, true);
+        }
+        // Asset 4 scrolled into view while its prefetch was still queued.
+        request(4, false);
+        release_tx.send(()).unwrap();
+        let mut pending: Vec<_> = (0..5)
+            .map(|_| rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap())
+            .collect();
+        assert_eq!(*order.lock().unwrap(), vec![1, 4, 2, 3]);
+        pending.sort_by_key(|item| item.asset_id);
+        let served = super::finish_thumbnail_requests(pending, &state, &permit).unwrap();
+        let bytes: Vec<_> = served.into_iter().map(|item| item.unwrap().bytes).collect();
+        let expected: Vec<Vec<u8>> = [1, 2, 3, 4, 4]
+            .iter()
+            .map(|id| format!("thumb-{id}").into_bytes())
+            .collect();
+        assert_eq!(bytes, expected);
+        for id in 1..=4 {
+            assert!(db::get_asset_for_thumbnail(&conn, id)
+                .unwrap()
+                .unwrap()
+                .thumb_path
+                .is_some());
+        }
+    }
+
     /// A state whose renderer writes a placeholder file and counts renders.
     fn counting_bulk_state(
         db_path: &Path,

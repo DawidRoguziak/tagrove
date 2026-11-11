@@ -12,16 +12,19 @@ export function GalleryTile(props: {
   selected: boolean;
   /** Fast-scroll pause: newly shown assets must not start thumbnail renders. */
   thumbnailsPaused: boolean;
-  /** Overscan tile: its render waits behind every visible tile's. */
+  /** Overscan tile (outside the visible rows): its render waits behind every visible tile's. */
   prefetch: boolean;
   onClick: (event: MouseEvent & { currentTarget: HTMLButtonElement }) => void;
 }) {
   const { t } = useLanguage();
   // The backend serves or renders the thumbnail for this URL (`thumb://`). An asset
   // first shown during a fast-scroll pause asks for a cached file only, and one first
-  // shown in the overscan asks at prefetch priority. Both choices stick for the asset,
-  // so its URL never changes while it stays in this tile; only a cached-only miss
-  // switches to the rendering URL once the pause ends.
+  // shown in the overscan asks at prefetch priority. Both choices stick for the asset
+  // while it stays in this tile, with two one-way exceptions: a cached-only miss
+  // switches to the rendering URL once the pause ends, and a prefetch whose picture has
+  // not arrived when the tile scrolls into view (outside a pause) drops `p=1`. The new
+  // request joins the queued render and moves it ahead of every prefetch (ADR 0021); a
+  // loaded picture never changes its URL.
   const key = () => `${props.asset.id}:${props.asset.thumb_version}`;
   const shownAs = createMemo<{ key: string; cachedOnly: boolean; prefetch: boolean }>(
     (previous) =>
@@ -30,17 +33,32 @@ export function GalleryTile(props: {
         : { key: key(), cachedOnly: props.thumbnailsPaused, prefetch: props.prefetch }
   );
   const [missed, setMissed] = createSignal<string | null>(null);
+  /** Key whose picture was shown or whose rendering URL finally failed. */
+  const [settled, setSettled] = createSignal<string | null>(null);
   const cachedOnly = () =>
     shownAs().cachedOnly && (props.thumbnailsPaused || missed() !== shownAs().key);
+  /** Key of a prefetched asset that became visible before its picture arrived. */
+  const promoted = createMemo<string | null>((previous) => {
+    const shown = shownAs();
+    if (previous === shown.key) return previous;
+    return shown.prefetch &&
+      !props.prefetch &&
+      !props.thumbnailsPaused &&
+      !cachedOnly() &&
+      settled() !== shown.key
+      ? shown.key
+      : null;
+  });
+  const prefetch = () => shownAs().prefetch && promoted() !== shownAs().key;
   const src = () =>
     thumbnailUrl(props.asset.id, props.asset.thumb_version, {
       cachedOnly: cachedOnly(),
-      prefetch: shownAs().prefetch
+      prefetch: prefetch()
     });
   const retrySrc = (retry: number) =>
     thumbnailUrl(props.asset.id, props.asset.thumb_version, {
       retry,
-      prefetch: shownAs().prefetch
+      prefetch: prefetch()
     });
   return (
     <button
@@ -55,8 +73,10 @@ export function GalleryTile(props: {
         className="block h-full w-full object-cover"
         src={src()}
         retrySrc={cachedOnly() ? undefined : retrySrc}
+        onReady={() => setSettled(shownAs().key)}
         onFailed={() => {
           if (cachedOnly()) setMissed(shownAs().key);
+          else setSettled(shownAs().key);
         }}
         // `preview_path` is the full source path for videos and GIFs; screen readers get
         // the file name only.

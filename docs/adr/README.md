@@ -58,3 +58,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0018](0018-render-all-keeps-thumbnails-of-unreachable-sources.md) | Render all keeps the cached thumbnail of an unreachable source and writes only rows that change | Accepted | 2026-11-11 |
 | [0019](0019-clear-epoch-keeps-current-version-targets.md) | A result dropped by the clear epoch keeps a target whose source version is still current | Accepted | 2026-11-11 |
 | [0020](0020-exif-orientation-and-legacy-thumbnail-adoption.md) | Image thumbnails apply EXIF orientation, and cache version 3 adopts a legacy thumbnail only when the picture is unchanged | Accepted | 2026-11-11 |
+| [0021](0021-visible-tiles-drop-a-pending-prefetch.md) | A tile that scrolls into view before its prefetched thumbnail arrives drops `p=1`, and High stays FIFO | Accepted | 2026-11-11 |

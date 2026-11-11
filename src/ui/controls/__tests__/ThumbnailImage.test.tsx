@@ -149,6 +149,30 @@ describe("ThumbnailImage", () => {
     expect(image).not.toHaveClass("invisible");
   });
 
+  it("reports readiness of the current source, never of the failure placeholder", () => {
+    const onReady = vi.fn();
+    const { getByRole, rerender } = renderSolid(ThumbnailImage, {
+      src: "a.jpg",
+      alt: "preview",
+      onReady
+    });
+    const image = getByRole("img");
+    expect(onReady).not.toHaveBeenCalled();
+    load(image);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    rerender({ src: "broken.jpg", alt: "preview", onReady });
+    fireEvent.error(image);
+    flush();
+    expect(image).toHaveAttribute("src", TRANSPARENT_THUMBNAIL_SRC);
+    load(image);
+    expect(onReady).toHaveBeenCalledTimes(1);
+    // A cached replacement is ready without a load event.
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    rerender({ src: "cached.jpg", alt: "preview", onReady });
+    expect(image).not.toHaveClass("invisible");
+    expect(onReady).toHaveBeenCalledTimes(2);
+  });
+
   it("does not animate the transparent placeholder", () => {
     const { getByRole } = renderSolid(ThumbnailImage, {
       src: TRANSPARENT_THUMBNAIL_SRC,

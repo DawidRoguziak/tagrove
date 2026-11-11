@@ -237,6 +237,77 @@ it("requests overscan thumbnails at prefetch priority and visible ones without i
     );
   }
 });
+
+/** Fires a successful load on the tile image at a global index. */
+function loadTile(container: HTMLElement, index: number) {
+  const image = container.querySelector<HTMLImageElement>(`button[data-asset-index="${index}"] img`);
+  if (!image) throw new Error(`Missing tile image ${index}`);
+  Object.defineProperty(image, "naturalWidth", { configurable: true, value: 100 });
+  fireEvent.load(image);
+  flush();
+}
+
+const scrollPaused = (container: HTMLElement) => {
+  const paused = container
+    .querySelector("[data-testid=gallery-grid]")
+    ?.getAttribute("data-scroll-paused");
+  return paused !== null && paused !== undefined && paused !== "false";
+};
+
+it("drops p=1 once when an overscan tile scrolls into view before its thumbnail loaded", async () => {
+  const { view, range, scroller } = await mount();
+  const pending = (range.mock.lastCall?.[0]?.visibleEndIndex ?? -2) + 1;
+  const loaded = pending + 1;
+  const url = (index: number, prefetch: boolean) =>
+    `thumb://localhost/${index + 1}?v=${V}${prefetch ? "&p=1" : ""}`;
+  expect(tileSrc(view.container, pending)).toBe(url(pending, true));
+  expect(tileSrc(view.container, loaded)).toBe(url(loaded, true));
+  loadTile(view.container, loaded);
+  // One row down, below the fast-scroll threshold: the first overscan row becomes visible.
+  scroller.scrollTop = 280;
+  fireEvent.scroll(scroller);
+  flush();
+  const moved = range.mock.lastCall?.[0];
+  expect(moved?.visibleStartIndex).toBeLessThanOrEqual(pending);
+  expect(moved?.visibleEndIndex).toBeGreaterThanOrEqual(loaded);
+  expect(scrollPaused(view.container)).toBe(false);
+  // The new URL moves the queued prefetch render ahead of every prefetch.
+  expect(tileSrc(view.container, pending)).toBe(url(pending, false));
+  // A loaded picture keeps its URL, so it is never requested again.
+  expect(tileSrc(view.container, loaded)).toBe(url(loaded, true));
+  // One way only: back in the overscan, the tile keeps the visible URL.
+  scroller.scrollTop = 0;
+  fireEvent.scroll(scroller);
+  flush();
+  expect(range.mock.lastCall?.[0]?.visibleEndIndex).toBeLessThan(pending);
+  expect(tileSrc(view.container, pending)).toBe(url(pending, false));
+  expect(tileSrc(view.container, loaded)).toBe(url(loaded, true));
+});
+
+it("keeps p=1 on a pending tile that reaches the view during a fast-scroll pause until it ends", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  try {
+    const { view, range, scroller } = await mount();
+    const pending = (range.mock.lastCall?.[0]?.visibleEndIndex ?? -2) + 1;
+    const prefetchUrl = `thumb://localhost/${pending + 1}?v=${V}&p=1`;
+    expect(tileSrc(view.container, pending)).toBe(prefetchUrl);
+    // Two rows in one move start the pause; the overscan row is now visible.
+    scroller.scrollTop = 480;
+    fireEvent.scroll(scroller);
+    flush();
+    expect(scrollPaused(view.container)).toBe(true);
+    const moved = range.mock.lastCall?.[0];
+    expect(moved?.visibleStartIndex).toBeLessThanOrEqual(pending);
+    expect(moved?.visibleEndIndex).toBeGreaterThanOrEqual(pending);
+    expect(tileSrc(view.container, pending)).toBe(prefetchUrl);
+    vi.advanceTimersByTime(150);
+    flush();
+    expect(scrollPaused(view.container)).toBe(false);
+    expect(tileSrc(view.container, pending)).toBe(`thumb://localhost/${pending + 1}?v=${V}`);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("holds failed pages until explicit retry and replaces error placeholders on success", async () => {
   const { view, scroll } = await mount();
   api.getAssetQueryPage.mockRejectedValue(new Error("synthetic page failure"));

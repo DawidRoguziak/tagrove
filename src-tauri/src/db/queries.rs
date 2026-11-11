@@ -270,6 +270,20 @@ pub fn list_popular_tags(conn: &Connection) -> anyhow::Result<Vec<String>> {
     Ok(tags.collect::<rusqlite::Result<Vec<String>>>()?)
 }
 
+/// Builds a literal-substring LIKE pattern (`ESCAPE '\\'`) from user text.
+fn tag_filter_like_pattern(query: &str) -> String {
+    let mut out = String::with_capacity(query.len() + 2);
+    out.push('%');
+    for ch in query.to_lowercase().chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out.push('%');
+    out
+}
+
 pub fn list_tags_page(
     conn: &Connection,
     query: &str,
@@ -283,9 +297,9 @@ pub fn list_tags_page(
     let total = if trimmed_query.is_empty() {
         conn.query_row("SELECT COUNT(*) FROM tags", [], |row| row.get::<_, i64>(0))?
     } else {
-        let q = format!("%{}%", trimmed_query.to_lowercase());
+        let q = tag_filter_like_pattern(trimmed_query);
         conn.query_row(
-            "SELECT COUNT(*) FROM tags WHERE lower(name) LIKE ?1",
+            "SELECT COUNT(*) FROM tags WHERE lower(name) LIKE ?1 ESCAPE '\\'",
             params![q],
             |row| row.get::<_, i64>(0),
         )?
@@ -302,9 +316,9 @@ pub fn list_tags_page(
             items.push(row?);
         }
     } else {
-        let q = format!("%{}%", trimmed_query.to_lowercase());
+        let q = tag_filter_like_pattern(trimmed_query);
         let mut stmt = conn.prepare(
-            "SELECT name FROM tags WHERE lower(name) LIKE ?1 ORDER BY name ASC LIMIT ?2 OFFSET ?3",
+            "SELECT name FROM tags WHERE lower(name) LIKE ?1 ESCAPE '\\' ORDER BY name ASC LIMIT ?2 OFFSET ?3",
         )?;
         let rows = stmt.query_map(params![q, safe_limit, safe_offset], |row| {
             row.get::<_, String>(0)

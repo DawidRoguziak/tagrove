@@ -114,7 +114,7 @@ Viewport suggestions retain their requested above/below placement rather than fl
 Rust stores case-insensitively unique tag names and `list_tags`:
 
 - trims the query;
-- uses a case-insensitive substring-style `lower(name) LIKE "%query%"` lookup;
+- uses a case-insensitive literal-substring `lower(name) LIKE "%query%" ESCAPE '\'` lookup (the query's `\`, `%` and `_` are escaped, so they match themselves);
 - sorts by tag name ascending;
 - floors offset at zero; and
 - clamps every requested limit to 1–200.
@@ -240,7 +240,7 @@ Revision behavior for tag, favorite, and group writes is defined in [database pe
 
 ## Known limitations
 
-- SQL tag-list search interpolates the user's `%` and `_` characters into a `LIKE` pattern without an escape clause, so they act as SQLite wildcards rather than literal characters. Backend ordering and the locale-sensitive fallback ordering can also differ.
+- Backend ordering and the locale-sensitive fallback ordering of the tag list can differ.
 - Quoted literals protect reserved-looking tag names and leading minus signs. They do not permit whitespace or CSV delimiters inside stored tags.
 - Tag-list selection is always a new expression. Opening it does not show or preserve the current include/exclude choices, and applying it discards any existing normal or meta-filter search text. Its 220 ms timer is mouse-oriented; selection does not expose an equivalent explicit include/exclude keyboard command beyond activating the tag buttons.
 - Selected IDs and selection metadata survive page eviction and filter changes. Range selections larger than 10,000 positions are tied to their query session and are cleared, with a notice, when the session changes. A new query invalidates the Shift anchor rather than guessing its new position.

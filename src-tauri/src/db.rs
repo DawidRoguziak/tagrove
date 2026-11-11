@@ -1802,6 +1802,44 @@ mod tests {
     }
 
     #[test]
+    fn list_tags_page_filter_treats_like_wildcards_literally() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        insert_asset(&conn, "C:\\media\\a.jpg", "image", 1);
+        let tags: Vec<String> = [
+            "axb",
+            "a_b",
+            "50%",
+            "500",
+            "back\\slash",
+            "plain",
+            "Hello_World",
+        ]
+        .iter()
+        .map(|t| t.to_string())
+        .collect();
+        set_asset_tags(&conn, 1, &tags).expect("tags");
+
+        let names = |q: &str| {
+            let page = list_tags_page(&conn, q, 0, 100).expect("page");
+            (page.items, page.total)
+        };
+        assert_eq!(names("%"), (vec!["50%".to_string()], 1));
+        assert_eq!(
+            names("_"),
+            (vec!["a_b".to_string(), "hello_world".to_string()], 2)
+        );
+        assert_eq!(names("\\"), (vec!["back\\slash".to_string()], 1));
+        assert_eq!(names("a_b"), (vec!["a_b".to_string()], 1));
+        assert_eq!(names("50%"), (vec!["50%".to_string()], 1));
+        assert_eq!(names("O_W"), (vec!["hello_world".to_string()], 1));
+        assert_eq!(names("pla"), (vec!["plain".to_string()], 1));
+        assert_eq!(names("lai"), (vec!["plain".to_string()], 1));
+        assert_eq!(names("PLAIN").1, 1);
+        assert_eq!(names("zzz"), (Vec::<String>::new(), 0));
+    }
+
+    #[test]
     fn set_asset_tags_normalizes_defensively_and_rejects_missing_assets() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");

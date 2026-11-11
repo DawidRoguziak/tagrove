@@ -169,6 +169,8 @@ suite("shared inline tag editor", function () {
     mediaRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-tag-editor-"));
     await fs.mkdir(evidence, { recursive: true });
     await copyPngFixtures(mediaRoot, "tag-editor", 2);
+    // Earlier specs share the profile; the exact-count assertion below needs an empty library.
+    await invoke("clear_library_data");
     await invoke("add_scan_root", { path: mediaRoot });
     await invoke("rescan_all_roots");
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
@@ -188,8 +190,8 @@ suite("shared inline tag editor", function () {
     }
   });
   after(async () => {
+    await invoke("clear_library_data");
     if (mediaRoot) {
-      await invoke("remove_scan_root", { path: mediaRoot });
       await fs.rm(mediaRoot, { recursive: true, force: true });
     }
   });

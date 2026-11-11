@@ -45,6 +45,19 @@ async function galleryReady() {
     return images.length > 0 && images.every((img) => img.complete && img.naturalWidth > 1);
   }), { timeout: 20000 });
 }
+async function selectMediaKind(kind) {
+  await $(`#gallery-media-kind label:has(input[value="${kind}"])`).click();
+  // The previous result set stays rendered until the new query replies, so wait for
+  // tiles that belong to the selected kind before reading or opening the first one.
+  await browser.waitUntil(() => browser.execute((wanted) => {
+    const tiles = [...document.querySelectorAll('button[data-asset-id]')];
+    const chipOf = (tile) => [...tile.querySelectorAll('span')].map(el => el.textContent).find(text => text === "Video" || text === "GIF");
+    if (tiles.length === 0) return false;
+    if (wanted === "all") return tiles.some(tile => chipOf(tile) === undefined);
+    return tiles.every(tile => chipOf(tile) === (wanted === "video" ? "Video" : "GIF"));
+  }, kind), { timeout: 20000, timeoutMsg: `Gallery did not show ${kind} results` });
+  await galleryReady();
+}
 async function closeLightbox() {
   await click('button[aria-label="Close preview"]');
   await $('[data-lightbox-kind]').waitForExist({ reverse: true });
@@ -75,6 +88,20 @@ suite("UI redesign desktop review", function () {
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await browser.refresh();
     await galleryReady();
+  });
+  afterEach(async function () {
+    // Restore the baseline even when a test failed half-way through its Polish or bulk steps.
+    await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
+    const dirty = await browser.execute(() =>
+      document.documentElement.lang !== "en" ||
+      document.querySelector('button[aria-label="Disable bulk actions"]') !== null ||
+      document.querySelector('[data-lightbox-kind]') !== null
+    );
+    // A failed case may also leave Settings or a dialog open, so always reload after a failure.
+    if (dirty || this.currentTest?.state === "failed") {
+      await browser.refresh();
+      await galleryReady();
+    }
   });
   after(async () => {
     await invoke("clear_library_data");
@@ -180,8 +207,7 @@ suite("UI redesign desktop review", function () {
       await click('button[aria-label="Back"]');
       await galleryReady();
       for (const kind of ["video", "gif"]) {
-        await $(`#gallery-media-kind label:has(input[value="${kind}"])`).click();
-        await galleryReady();
+        await selectMediaKind(kind);
         const badge = await browser.execute(() => {
           const tile = document.querySelector('button[data-asset-id]');
           const chip = [...tile.querySelectorAll('span')].find(el => el.textContent === "Video" || el.textContent === "GIF");
@@ -194,8 +220,7 @@ suite("UI redesign desktop review", function () {
         assert.equal(badge.background, kind === "video" ? "rgb(109, 40, 217)" : "rgb(29, 78, 216)");
         await capture(`fixes-${theme}-${kind}-badge`);
       }
-      await $('#gallery-media-kind label:has(input[value="all"])').click();
-      await galleryReady();
+      await selectMediaKind("all");
       for (const id of [imageId, gifId]) {
         for (const width of [1000, 600, 320]) {
           await browser.setWindowSize(1000, 720);
@@ -484,8 +509,7 @@ suite("UI redesign desktop review", function () {
     await browser.setWindowSize(1440, 900);
     await browser.refresh();
     await galleryReady();
-    await $('#gallery-media-kind label:has(input[value="video"])').click();
-    await $('button[data-asset-index="0"]').waitForDisplayed();
+    await selectMediaKind("video");
     await click('button[data-asset-index="0"]');
     await $('[data-lightbox-video-player]').waitForDisplayed();
     await capture('native-video-controls');

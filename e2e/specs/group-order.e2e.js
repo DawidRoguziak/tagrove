@@ -252,12 +252,31 @@ describe("large group order modal", function () {
         edgeY: Math.round(grid.bottom - 8)
       };
     }, handle);
+    // Both chains share one input source so the second chain releases the held button.
+    const mouse = { id: "group-order-mouse" };
     await browser
-      .action("pointer")
+      .action("pointer", mouse)
       .move({ x: coords.x, y: coords.y })
       .down()
       .move({ x: coords.edgeX, y: coords.edgeY, duration: 500 })
-      .pause(7000)
+      .perform(true);
+    // Autoscroll advances per animation frame, so wait for the grid to reach its end
+    // instead of holding the pointer for a fixed time.
+    // The final tile must also be rendered, so the drop target is resolved among the last row.
+    await browser.waitUntil(
+      () =>
+        browser.execute((lastId) => {
+          const grid = document.querySelector('[data-testid="bulk-order-grid"]');
+          return (
+            grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 2 &&
+            document.querySelector(`[data-sort-asset="${lastId}"]`) !== null
+          );
+        }, saved[groupSize - 1]),
+      { timeout: 60000, interval: 250, timeoutMsg: "edge scrolling did not reach the end of the grid" }
+    );
+    await browser
+      .action("pointer", mouse)
+      .move({ x: coords.edgeX, y: coords.edgeY })
       .up()
       .perform();
     assert.ok(

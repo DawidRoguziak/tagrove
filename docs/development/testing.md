@@ -303,6 +303,7 @@ Contrast checks read the live theme tokens and require 4.5:1 for main/primary te
 three surfaces and secondary text on workspace/panels. Inactive segments use main text
 because the light secondary color does not meet 4.5:1 on raised controls.
 The fixtures include long filenames and tags.
+The media-kind cases wait until every rendered tile carries the selected kind's chip before reading or opening the first tile, because the previous result set stays rendered until the new query replies. An `afterEach` hook restores English and bulk-off (reload only when needed), so one failed case does not leave Polish selectors for the rest of the suite.
 It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the stacked bulk layout at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
 the private X11 display into a fresh timestamped `artifacts/ui-redesign/` subdirectory per run.
 The normal workflow suite covers narrow lightbox and native media behavior; the separate

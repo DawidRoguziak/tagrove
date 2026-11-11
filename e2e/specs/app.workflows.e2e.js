@@ -104,6 +104,19 @@ async function waitForTileAtIndex(index) {
   });
 }
 
+async function waitForTileCount(expected) {
+  // The library is small enough to render every tile, so an exact count proves the
+  // gallery shows the new result set and not the previous one.
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (count) => document.querySelectorAll("button[data-asset-id]").length === count,
+        expected
+      ),
+    { timeout: 15000, timeoutMsg: `Expected ${expected} gallery tiles` }
+  );
+}
+
 async function listTagsForAssertions(query = "") {
   return invokeTauriCommand("list_tags", {
     query,
@@ -288,7 +301,7 @@ describe("MediaTagger desktop workflows", () => {
     }
 
     await submitSearchQuery("tags");
-    await waitForTileAtIndex(0);
+    await waitForTileCount(1);
 
     const noResultsHeading = await $("h3=No results");
     await noResultsHeading.waitForDisplayed({ timeout: 5000, reverse: true });
@@ -304,7 +317,7 @@ describe("MediaTagger desktop workflows", () => {
     }
 
     await submitSearchQuery("tags:2");
-    await waitForTileAtIndex(1);
+    await waitForTileCount(2);
     await noResultsHeading.waitForDisplayed({ timeout: 5000, reverse: true });
 
     await clearSearchFilter();
@@ -346,7 +359,7 @@ describe("MediaTagger desktop workflows", () => {
     }
 
     await submitSearchQuery("gN:trip-2026");
-    await waitForTileAtIndex(1);
+    await waitForTileCount(2);
 
     const noResultsHeading = await $("h3=No results");
     await noResultsHeading.waitForDisplayed({ timeout: 5000, reverse: true });
@@ -355,7 +368,7 @@ describe("MediaTagger desktop workflows", () => {
     await waitForTileAtIndex(3);
 
     await submitSearchQuery("gN:TRIP-2026");
-    await waitForTileAtIndex(1);
+    await waitForTileCount(2);
     await noResultsHeading.waitForDisplayed({ timeout: 5000, reverse: true });
 
     await clearSearchFilter();

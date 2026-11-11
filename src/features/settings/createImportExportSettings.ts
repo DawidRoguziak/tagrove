@@ -54,8 +54,8 @@ export function createImportExportSettings({
     await runner.runExclusiveOperation(
       {
         section: "importExport",
-        pendingMessage: t("settings.actions.pending.prepareCsvExport"),
-        errorPrefix: t("settings.actions.errorPrefix.exportCsv")
+        pendingMessage: () => t("settings.actions.pending.prepareCsvExport"),
+        errorPrefix: () => t("settings.actions.errorPrefix.exportCsv")
       },
       async () => {
         const targetPath = await save({
@@ -64,16 +64,14 @@ export function createImportExportSettings({
           filters: [{ name: "CSV", extensions: ["csv"] }]
         });
         if (typeof targetPath !== "string") {
-          runner.setSectionMessage(
-            "importExport",
+          runner.setSectionMessage("importExport", () =>
             t("settings.actions.summary.csvExportCancelled")
           );
           return;
         }
-        runner.setSectionMessage("importExport", t("settings.actions.summary.csvExporting"));
+        runner.setSectionMessage("importExport", () => t("settings.actions.summary.csvExporting"));
         const summary = await exportTagsCsv(targetPath);
-        runner.setSectionMessage(
-          "importExport",
+        runner.setSectionMessage("importExport", () =>
           t("settings.actions.summary.csvExported", { rows: summary.rows })
         );
       }
@@ -83,8 +81,8 @@ export function createImportExportSettings({
     await runner.runExclusiveOperation(
       {
         section: "importExport",
-        pendingMessage: t("settings.actions.pending.prepareCsvImport"),
-        errorPrefix: t("settings.actions.errorPrefix.importCsv")
+        pendingMessage: () => t("settings.actions.pending.prepareCsvImport"),
+        errorPrefix: () => t("settings.actions.errorPrefix.importCsv")
       },
       async () => {
         const sourcePath = await open({
@@ -94,13 +92,12 @@ export function createImportExportSettings({
           filters: [{ name: "CSV", extensions: ["csv"] }]
         });
         if (typeof sourcePath !== "string") {
-          runner.setSectionMessage(
-            "importExport",
+          runner.setSectionMessage("importExport", () =>
             t("settings.actions.summary.csvImportCancelled")
           );
           return;
         }
-        runner.setSectionMessage("importExport", t("settings.actions.summary.csvImporting"));
+        runner.setSectionMessage("importExport", () => t("settings.actions.summary.csvImporting"));
         let summary: Awaited<ReturnType<typeof importTagsCsv>>;
         try {
           summary = await runWithTagMutationBarrier(async () => {
@@ -115,8 +112,7 @@ export function createImportExportSettings({
           throw error;
         }
         await refreshLibrary();
-        runner.setSectionMessage(
-          "importExport",
+        runner.setSectionMessage("importExport", () =>
           t("settings.actions.summary.csvImported", {
             rowsRead: summary.rows_read,
             rowsApplied: summary.rows_applied,
@@ -131,8 +127,8 @@ export function createImportExportSettings({
     await runner.runExclusiveOperation(
       {
         section: "importExport",
-        pendingMessage: t("settings.actions.pending.prepareDbExport"),
-        errorPrefix: t("settings.actions.errorPrefix.exportDb")
+        pendingMessage: () => t("settings.actions.pending.prepareDbExport"),
+        errorPrefix: () => t("settings.actions.errorPrefix.exportDb")
       },
       async () => {
         const targetPath = await save({
@@ -141,13 +137,14 @@ export function createImportExportSettings({
           filters: [{ name: "ZIP", extensions: ["zip"] }]
         });
         if (typeof targetPath !== "string") {
-          runner.setSectionMessage("importExport", t("settings.actions.summary.dbExportCancelled"));
+          runner.setSectionMessage("importExport", () =>
+            t("settings.actions.summary.dbExportCancelled")
+          );
           return;
         }
-        runner.setSectionMessage("importExport", t("settings.actions.summary.dbExporting"));
+        runner.setSectionMessage("importExport", () => t("settings.actions.summary.dbExporting"));
         const summary = await exportDbBundle(targetPath);
-        runner.setSectionMessage(
-          "importExport",
+        runner.setSectionMessage("importExport", () =>
           t("settings.actions.summary.dbExported", {
             files: summary.copied_files,
             thumbnails: summary.copied_thumbnails
@@ -160,8 +157,8 @@ export function createImportExportSettings({
     await runner.runExclusiveOperation(
       {
         section: "importExport",
-        pendingMessage: t("settings.actions.pending.prepareDbImport"),
-        errorPrefix: t("settings.actions.errorPrefix.importDb")
+        pendingMessage: () => t("settings.actions.pending.prepareDbImport"),
+        errorPrefix: () => t("settings.actions.errorPrefix.importDb")
       },
       async () => {
         const sourcePath = await open({
@@ -171,7 +168,9 @@ export function createImportExportSettings({
           filters: [{ name: "ZIP", extensions: ["zip"] }]
         });
         if (typeof sourcePath !== "string") {
-          runner.setSectionMessage("importExport", t("settings.actions.summary.dbImportCancelled"));
+          runner.setSectionMessage("importExport", () =>
+            t("settings.actions.summary.dbImportCancelled")
+          );
           return;
         }
         const inspection = await inspectDbBundle(sourcePath);
@@ -184,8 +183,7 @@ export function createImportExportSettings({
               directory: true
             });
             if (typeof targetRoot !== "string") {
-              runner.setSectionMessage(
-                "importExport",
+              runner.setSectionMessage("importExport", () =>
                 t("settings.actions.summary.dbImportCancelled")
               );
               return;
@@ -202,17 +200,17 @@ export function createImportExportSettings({
       return;
     }
     setPending(null);
-    runner.setSectionMessage("importExport", t("settings.actions.summary.dbImportCancelled"));
+    runner.setSectionMessage("importExport", () => t("settings.actions.summary.dbImportCancelled"));
   };
   const runImportDbBundle = async (sourcePath: string, rootMappings: DbRootMapping[]) => {
     await runner.runExclusiveOperation(
       {
         section: "importExport",
-        pendingMessage: t("settings.actions.pending.prepareDbImport"),
-        errorPrefix: t("settings.actions.errorPrefix.importDb")
+        pendingMessage: () => t("settings.actions.pending.prepareDbImport"),
+        errorPrefix: () => t("settings.actions.errorPrefix.importDb")
       },
       async () => {
-        runner.setSectionMessage("importExport", t("settings.actions.summary.dbImporting"));
+        runner.setSectionMessage("importExport", () => t("settings.actions.summary.dbImporting"));
         let summary: Awaited<ReturnType<typeof importDbBundle>>;
         try {
           summary = await runWithTagMutationBarrier(async () => {
@@ -230,8 +228,7 @@ export function createImportExportSettings({
         }
         await refreshScanRoots();
         await refreshLibrary();
-        runner.setSectionMessage(
-          "importExport",
+        runner.setSectionMessage("importExport", () =>
           t("settings.actions.summary.dbImported", {
             files: summary.restored_files,
             thumbnails: summary.restored_thumbnails

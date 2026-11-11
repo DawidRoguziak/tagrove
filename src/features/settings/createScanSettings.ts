@@ -128,8 +128,8 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.scan.startupPending"),
-        errorPrefix: t("settings.actions.errorPrefix.rescan"),
+        pendingMessage: () => t("settings.scan.startupPending"),
+        errorPrefix: () => t("settings.actions.errorPrefix.rescan"),
         progressPhaseMatcher: isScanProgressPhase
       },
       async () => {
@@ -145,7 +145,7 @@ export function createScanSettings({
         if (summary) {
           await refreshLibrary();
           await refreshScanRoots();
-          runner.setSectionMessage("scan", formatScanSummary(t, summary));
+          runner.setSectionMessage("scan", () => formatScanSummary(t, summary));
         } else {
           runner.setSectionMessage("scan", "");
         }
@@ -156,18 +156,27 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.scan.savingAutoScan"),
-        errorPrefix: t("settings.scan.saveAutoScanError"),
+        pendingMessage: () => t("settings.scan.savingAutoScan"),
+        errorPrefix: () => t("settings.scan.saveAutoScanError"),
         setGlobalLoading: false
       },
       async () => {
-        await setScanRootAutoScan(path, enabled);
+        try {
+          await setScanRootAutoScan(path, enabled);
+        } catch (error) {
+          // The checkbox already flipped in the DOM. Republish the canonical list, with fresh
+          // row objects if the reload fails too, so the row binds the saved value again.
+          await refreshScanRoots().catch(() => {
+            if (!disposed) setScanRoots((roots) => roots.map((root) => ({ ...root })));
+          });
+          throw error;
+        }
         setScanRoots((roots) =>
           roots.map((root) =>
             root.path === path ? { ...root, auto_scan_on_startup: enabled } : root
           )
         );
-        runner.setSectionMessage("scan", t("settings.scan.autoScanSaved"));
+        runner.setSectionMessage("scan", () => t("settings.scan.autoScanSaved"));
       }
     );
   };
@@ -175,8 +184,8 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.actions.pending.waitFolderSelection"),
-        errorPrefix: t("settings.actions.errorPrefix.addFolder"),
+        pendingMessage: () => t("settings.actions.pending.waitFolderSelection"),
+        errorPrefix: () => t("settings.actions.errorPrefix.addFolder"),
         setGlobalLoading: false
       },
       async () => {
@@ -188,7 +197,9 @@ export function createScanSettings({
           })
         );
         if (!selection) {
-          runner.setSectionMessage("scan", t("settings.actions.summary.folderSelectionCancelled"));
+          runner.setSectionMessage("scan", () =>
+            t("settings.actions.summary.folderSelectionCancelled")
+          );
           return;
         }
         const previousRoots = await listScanRoots();
@@ -201,8 +212,7 @@ export function createScanSettings({
           .map((root) => root.path)
           .filter((path) => !previousRootSet.has(path));
         const skippedCount = Math.max(selection.length - addedPaths.length, 0);
-        runner.setSectionMessage(
-          "scan",
+        runner.setSectionMessage("scan", () =>
           formatFolderAddMessage(t, selection, addedPaths, skippedCount)
         );
       }
@@ -230,16 +240,15 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.actions.pending.removeFolder", { path }),
-        errorPrefix: t("settings.actions.errorPrefix.removeFolder")
+        pendingMessage: () => t("settings.actions.pending.removeFolder", { path }),
+        errorPrefix: () => t("settings.actions.errorPrefix.removeFolder")
       },
       async () => {
         const summary = await removeScanRoot(path);
         onRootRemoved?.();
         await refreshScanRoots();
         await refreshLibrary();
-        runner.setSectionMessage(
-          "scan",
+        runner.setSectionMessage("scan", () =>
           t("settings.actions.summary.removedRoot", {
             assets: summary.removed_assets,
             thumbnails: summary.removed_thumbnails
@@ -252,15 +261,15 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.actions.pending.rescanAll"),
-        errorPrefix: t("settings.actions.errorPrefix.rescan"),
+        pendingMessage: () => t("settings.actions.pending.rescanAll"),
+        errorPrefix: () => t("settings.actions.errorPrefix.rescan"),
         progressPhaseMatcher: isScanProgressPhase
       },
       async () => {
         const summary = await rescanAllRoots();
         await refreshLibrary();
         await refreshScanRoots();
-        runner.setSectionMessage("scan", formatScanSummary(t, summary));
+        runner.setSectionMessage("scan", () => formatScanSummary(t, summary));
       }
     );
   };
@@ -268,15 +277,15 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.actions.pending.rescanFolder", { path }),
-        errorPrefix: t("settings.actions.errorPrefix.rescanFolder"),
+        pendingMessage: () => t("settings.actions.pending.rescanFolder", { path }),
+        errorPrefix: () => t("settings.actions.errorPrefix.rescanFolder"),
         progressPhaseMatcher: isScanProgressPhase
       },
       async () => {
         const summary = await scanFolder(path);
         await refreshLibrary();
         await refreshScanRoots();
-        runner.setSectionMessage("scan", formatScanSummary(t, summary));
+        runner.setSectionMessage("scan", () => formatScanSummary(t, summary));
       }
     );
   };
@@ -284,8 +293,8 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.actions.pending.renderAllThumbs"),
-        errorPrefix: t("settings.actions.errorPrefix.renderThumbs"),
+        pendingMessage: () => t("settings.actions.pending.renderAllThumbs"),
+        errorPrefix: () => t("settings.actions.errorPrefix.renderThumbs"),
         progressPhaseMatcher: isThumbnailProgressPhase
       },
       async () => {
@@ -294,9 +303,8 @@ export function createScanSettings({
         try {
           const summary = await renderAllThumbnails();
           await refreshLibrary();
-          runner.setSectionMessage(
-            "scan",
-            formatThumbnailSummary(t("settings.actions.summary.allThumbnailsLabel"), summary)
+          runner.setSectionMessage("scan", () =>
+            formatThumbnailSummary(t("settings.actions.summary.allThumbnailsLabel"), summary, t)
           );
         } finally {
           activeThumbnailRender = null;
@@ -311,8 +319,8 @@ export function createScanSettings({
     await runner.runExclusiveOperation(
       {
         section: "scan",
-        pendingMessage: t("settings.actions.pending.retryFailedThumbs"),
-        errorPrefix: t("settings.actions.errorPrefix.retryThumbs"),
+        pendingMessage: () => t("settings.actions.pending.retryFailedThumbs"),
+        errorPrefix: () => t("settings.actions.errorPrefix.retryThumbs"),
         progressPhaseMatcher: isThumbnailProgressPhase
       },
       async () => {
@@ -321,9 +329,8 @@ export function createScanSettings({
         try {
           const summary = await renderFailedThumbnails();
           await refreshLibrary();
-          runner.setSectionMessage(
-            "scan",
-            formatThumbnailSummary(t("settings.actions.summary.failedRetryLabel"), summary)
+          runner.setSectionMessage("scan", () =>
+            formatThumbnailSummary(t("settings.actions.summary.failedRetryLabel"), summary, t)
           );
         } finally {
           activeThumbnailRender = null;
@@ -345,15 +352,15 @@ export function createScanSettings({
       const accepted = await cancelRenderAllThumbnails();
       if (disposed || activeThumbnailRender !== render) return;
       if (accepted) {
-        runner.setSectionMessage("scan", t("settings.actions.summary.stopRequested"));
+        runner.setSectionMessage("scan", () => t("settings.actions.summary.stopRequested"));
       } else {
-        runner.setSectionMessage("scan", t("settings.actions.summary.noThumbRenderRunning"));
+        runner.setSectionMessage("scan", () => t("settings.actions.summary.noThumbRenderRunning"));
       }
     } catch (error) {
       if (disposed || activeThumbnailRender !== render) return;
       runner.setSectionMessage(
         "scan",
-        `${t("settings.actions.errorPrefix.cancelThumbRender")}: ${String(error)}`
+        () => `${t("settings.actions.errorPrefix.cancelThumbRender")}: ${String(error)}`
       );
     } finally {
       if (cancelPending === render) {

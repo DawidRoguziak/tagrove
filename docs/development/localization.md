@@ -33,7 +33,7 @@ There is deliberately more than one source that must stay synchronized:
 `createLanguage` owner per provider tree. `useLanguage()` returns its normalized language
 accessor, async `setLanguage` and translator `t`. The translator reads the language signal
 before calling i18next, so JSX/memos recompute when the language changes. Consumers need a
-provider; `useLanguage` throws when it is missing. Disposal removes the provider's
+provider; `useLanguage` throws when it is missing. Text kept in long-lived state must not be stored as a resolved string: store a key plus parameters (or a function of the translator) and translate where it renders, as the settings section status lines do (`docs/subsystems/settings-operations.md`). Disposal removes the provider's
 `languageChanged` subscription. Core HMR cleanup removes the separate persistence listener.
 
 `LanguageSection` builds options from `APP_LANGUAGES` and `APP_LANGUAGE_NATIVE_LABELS`.

@@ -88,6 +88,8 @@ The lock is global, but operation feedback is per section. Each of `scan`, `impo
 }
 ```
 
+The runner stores each message untranslated (`SectionStatusState.message`, a `StatusMessage` in `src/features/settings/statusMessage.ts`: a literal string or a function of the reactive translator) and publishes the `SectionOperationState` above as a view whose `message` getter translates on every read. `SectionOperationStatus` reads it in JSX, so the ready line, pending line, live progress line, summary, and error line all follow a language switch in the same session; only text frozen into a thrown `Error` (for example a validation message) keeps the language it was thrown in. Callers pass `() => t(...)` (or a function that formats from captured numbers) instead of a resolved string.
+
 Each starts with a translated section-specific ready message. Running an operation changes only the initiating section to `loading: true`, installs its pending message, and clears its previous progress. Status messages in other sections remain unchanged. `SectionOperationStatus` renders a `role="status"` spinner while `loading` is true. When progress exists it also renders `processed/total`; a zero total produces an indeterminate progress bar with `max=1` and no `value`.
 
 The runner lifecycle is:
@@ -125,7 +127,7 @@ Both fallback progress messages and backend error text accept these formats, in 
 3. A dotted token containing only letters, digits, underscore, period, and hyphen is translated only when i18next resolves it to a different string.
 4. Empty, malformed, unknown, or free-form text is shown unchanged.
 
-Successful action summaries use frontend translation keys directly. Setting a summary through `setSectionMessage` clears stored progress by default. An active render's Stop response does this too, although a later accepted progress event can repopulate it before the render returns its final summary. Retired Stop responses leave both message and progress unchanged.
+Successful action summaries use frontend translation keys directly, wrapped in a `StatusMessage` function so they re-translate when the language changes (see above). The runner stores the error line as the translated prefix plus `translateBackendText(<raw error string>)`, also resolved at read time. Setting a summary through `setSectionMessage` clears stored progress by default. An active render's Stop response does this too, although a later accepted progress event can repopulate it before the render returns its final summary. Retired Stop responses leave both message and progress unchanged.
 
 ## Scan roots and rescanning
 
@@ -145,7 +147,7 @@ Per-root rescan calls `scanFolder(path)`; Rescan all is disabled when the fronte
 
 `createScanSettings` reads `getVideoToolStatus` once on mount. Pending status is null; a rejected check becomes both tools unavailable. The section warns when ffmpeg or ffprobe is unavailable. This does not measure libmpv playback capability and does not automatically recheck after installing tools.
 
-Each folder row includes a localized, accessible **Scan on app startup** checkbox. Its saved value is false for existing and newly added roots. Saving uses the shared runner with `setGlobalLoading: false`, updates the row after backend success, and keeps the previous value on error. The checkbox is disabled while a settings operation holds the lock. Enabling it takes effect at the next app launch.
+Each folder row includes a localized, accessible **Scan on app startup** checkbox. Its saved value is false for existing and newly added roots. Saving uses the shared runner with `setGlobalLoading: false`, updates the row after backend success, and keeps the previous value on error: the native checkbox has already flipped, so a rejected save republishes the canonical root list (a reload through `listScanRoots`, or fresh row objects when that reload fails too) before the error is shown, which rebinds the row to the saved value. The checkbox is disabled while a settings operation holds the lock. Enabling it takes effect at the next app launch.
 
 The shell invokes `scanOnStartup` at mount, independently of whether Settings is open. Synchronous once-only flags in the runtime and scan model prevent repeated dispatch; the backend process owns the authoritative once-only snapshot and retains its result. A replacement runtime joins an active startup scan or reads its terminal result. The startup action uses the scan progress matcher and ordinary loading/summary behavior. A null response means no roots were enabled at launch and clears the pending message without refreshing the library. A scan result refreshes assets, tags, and roots; rejection attempts both refreshes before reporting the error because scan batches may already have committed. Disposed scan models skip these completion follow-ups. No automatic retry runs during that process.
 
@@ -265,6 +267,7 @@ When changing settings behavior:
 - `src/features/settings/__tests__/createSettingsActions.test.tsx` covers root add/remove/rescan, progress updates, cross-section exclusion, thumbnail summaries/cancel errors, clear-library, picker cancellation, duplicate scan/basic validation, CSV import, and bundle export.
 - `src/features/settings/__tests__/createSettingsActionsConfirmFlow.test.tsx` covers cancel/confirm ordering for mixed duplicate deletion and database-bundle overwrite.
 - `src/features/settings/__tests__/operationStateService.test.ts`, `progressService.test.ts`, and `duplicateValidationService.test.ts` cover ready state, progress formatting/matchers, thumbnail summaries, file-name validation, case-insensitive collisions, unknown assets, and touched-group rules.
+- `src/features/settings/__tests__/statusLanguage.test.tsx` covers section status lines (ready, pending, progress, summary, error) following a language switch and the startup-scan toggle returning to the saved value after a failed save.
 - `src/features/settings/__tests__/createDuplicateResolver.test.tsx` covers rename draft updates and queue/delete toggling.
 - `src/features/settings/__tests__` covers panel wiring, operation-status rendering, destructive-dialog controls, and resolver staging/locking; the same directory covers section callbacks and locked disabled states.
 - `src/app/__tests__/shell.test.tsx` covers settings navigation, Back/Escape, the first-folder highlight, themes and ordered language choices. `runtimeIntegration.test.ts` composes real settings/library/lightbox/bulk models for CSV draining/invalidation and cleared-ID reuse. Export names and cross-section locks live in the settings model suites.

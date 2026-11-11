@@ -2,18 +2,20 @@ import { createSignal, onCleanup } from "solid-js";
 import { listen } from "../../platform/tauri/events";
 import { useLanguage } from "../../i18n/solid";
 import { translateBackendText } from "../../i18n/backendText";
-import { createSectionOperationState } from "./operationStateService";
+import { createSectionStatusState } from "./operationStateService";
 import { translateProgressMessage } from "./progressService";
+import { resolveStatusMessage, type StatusMessage } from "./statusMessage";
 import type { ScanProgress } from "../../platform/tauri/contracts/scanning";
 import type {
   SectionOperationState,
+  SectionStatusState,
   SettingsOperationSection
 } from "./types";
 
 interface OperationOptions {
   section: SettingsOperationSection;
-  pendingMessage: string;
-  errorPrefix: string;
+  pendingMessage: StatusMessage;
+  errorPrefix: StatusMessage;
   progressPhaseMatcher?: (phase: string) => boolean;
   setGlobalLoading?: boolean;
 }
@@ -26,10 +28,10 @@ export function createSettingsOperationRunner({
   const { t } = useLanguage();
   const [locked, setLocked] = createSignal(false);
   const sections = {
-    scan: createSignal(createSectionOperationState("scan")),
-    importExport: createSignal(createSectionOperationState("importExport")),
-    danger: createSignal(createSectionOperationState("danger")),
-    duplicates: createSignal(createSectionOperationState("duplicates"))
+    scan: createSignal(createSectionStatusState("scan")),
+    importExport: createSignal(createSectionStatusState("importExport")),
+    danger: createSignal(createSectionStatusState("danger")),
+    duplicates: createSignal(createSectionStatusState("duplicates"))
   };
   let operationLock = false;
   let disposed = false;
@@ -42,16 +44,26 @@ export function createSettingsOperationRunner({
 
   function update(
     section: SettingsOperationSection,
-    updater: (state: SectionOperationState) => SectionOperationState
+    updater: (state: SectionStatusState) => SectionStatusState
   ) {
     if (!disposed) sections[section][1](updater);
   }
   function setSectionMessage(
     section: SettingsOperationSection,
-    message: string,
+    message: StatusMessage,
     progress: ScanProgress | null = null
   ) {
     update(section, (state) => ({ ...state, message, progress }));
+  }
+  // The stored message is translated when it is read, which renders track the language.
+  function view(state: SectionStatusState): SectionOperationState {
+    return {
+      loading: state.loading,
+      progress: state.progress,
+      get message() {
+        return resolveStatusMessage(state.message, t);
+      }
+    };
   }
   async function runExclusiveOperation(options: OperationOptions, action: () => Promise<void>) {
     if (operationLock || disposed) return;
@@ -72,7 +84,7 @@ export function createSettingsOperationRunner({
           if (!active || disposed || !options.progressPhaseMatcher?.(event.payload.phase)) return;
           update(options.section, (state) => ({
             ...state,
-            message: translateProgressMessage(event.payload),
+            message: (translate) => translateProgressMessage(event.payload, translate),
             progress: event.payload
           }));
         });
@@ -84,9 +96,11 @@ export function createSettingsOperationRunner({
       }
       if (!disposed) await action();
     } catch (error) {
+      const detail = String(error);
       setSectionMessage(
         options.section,
-        `${options.errorPrefix}: ${translateBackendText(String(error), t)}`
+        (translate) =>
+          `${resolveStatusMessage(options.errorPrefix, translate)}: ${translateBackendText(detail, translate)}`
       );
     } finally {
       active = false;
@@ -108,16 +122,16 @@ export function createSettingsOperationRunner({
       return operationLock;
     },
     get scanOperationState() {
-      return sections.scan[0]();
+      return view(sections.scan[0]());
     },
     get importExportOperationState() {
-      return sections.importExport[0]();
+      return view(sections.importExport[0]());
     },
     get dangerOperationState() {
-      return sections.danger[0]();
+      return view(sections.danger[0]());
     },
     get duplicateOperationState() {
-      return sections.duplicates[0]();
+      return view(sections.duplicates[0]());
     },
     setSectionMessage,
     runExclusiveOperation

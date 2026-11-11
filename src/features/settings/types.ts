@@ -3,12 +3,20 @@ import type { VideoToolStatus } from "../../platform/tauri/contracts/maintenance
 import type { DuplicateGroup } from "../../platform/tauri/contracts/maintenance";
 import type { AppLanguage } from "../../i18n/languages";
 import type { AppTheme } from "../../ui/dom/theme";
+import type { StatusMessage } from "./statusMessage";
 
 export type SettingsOperationSection = "scan" | "importExport" | "danger" | "duplicates";
 
 export interface SectionOperationState {
   loading: boolean;
   message: string;
+  progress: ScanProgress | null;
+}
+
+/** The stored form: the message stays untranslated until it is read. */
+export interface SectionStatusState {
+  loading: boolean;
+  message: StatusMessage;
   progress: ScanProgress | null;
 }
 

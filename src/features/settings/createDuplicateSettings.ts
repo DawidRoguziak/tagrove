@@ -44,16 +44,15 @@ export function createDuplicateSettings({
     await runner.runExclusiveOperation(
       {
         section: "duplicates",
-        pendingMessage: t("settings.actions.pending.findDuplicates"),
-        errorPrefix: t("settings.actions.errorPrefix.duplicateScan"),
+        pendingMessage: () => t("settings.actions.pending.findDuplicates"),
+        errorPrefix: () => t("settings.actions.errorPrefix.duplicateScan"),
         progressPhaseMatcher: isDuplicateScanProgressPhase,
         setGlobalLoading: false
       },
       async () => {
         const summary = await findDuplicateAssets();
         publishScan(summary);
-        runner.setSectionMessage(
-          "duplicates",
+        runner.setSectionMessage("duplicates", () =>
           t("settings.actions.summary.duplicateScanComplete", {
             groups: summary.duplicate_groups,
             assets: summary.duplicate_assets
@@ -70,8 +69,8 @@ export function createDuplicateSettings({
     await runner.runExclusiveOperation(
       {
         section: "duplicates",
-        pendingMessage: t("settings.actions.pending.applyDuplicateChanges"),
-        errorPrefix: t("settings.actions.errorPrefix.saveDuplicateChanges"),
+        pendingMessage: () => t("settings.actions.pending.applyDuplicateChanges"),
+        errorPrefix: () => t("settings.actions.errorPrefix.saveDuplicateChanges"),
         setGlobalLoading: false
       },
       async () => {
@@ -103,7 +102,9 @@ export function createDuplicateSettings({
           publishScan(duplicateSummary);
         }
         if (result.status === "rolled_back") {
-          runner.setSectionMessage("duplicates", t("settings.actions.summary.duplicateRolledBack"));
+          runner.setSectionMessage("duplicates", () =>
+            t("settings.actions.summary.duplicateRolledBack")
+          );
           return;
         }
         if (result.status === "recovery_required") {
@@ -111,8 +112,7 @@ export function createDuplicateSettings({
           const details = recoveryItems
             .map((item) => `#${item.asset_id}: ${item.recovery_path}`)
             .join("; ");
-          runner.setSectionMessage(
-            "duplicates",
+          runner.setSectionMessage("duplicates", () =>
             `${t("settings.actions.summary.duplicateRecoveryRequired", {
               count: recoveryItems.length
             })} ${details}`.trim()
@@ -122,23 +122,25 @@ export function createDuplicateSettings({
         const missingSources = result.results.filter(
           (item) => item.status === "source_missing"
         ).length;
-        const appliedMessage = t("settings.actions.summary.duplicateApplied", {
-          count: changes.length,
-          groups: duplicateSummary?.duplicate_groups ?? latest.groups.length
-        });
-        runner.setSectionMessage(
-          "duplicates",
-          missingSources > 0
+        const groups = duplicateSummary?.duplicate_groups ?? latest.groups.length;
+        runner.setSectionMessage("duplicates", () => {
+          const appliedMessage = t("settings.actions.summary.duplicateApplied", {
+            count: changes.length,
+            groups
+          });
+          return missingSources > 0
             ? `${appliedMessage} ${t("lightbox.deleteConfirm.sourceMissing")} (${missingSources})`
-            : appliedMessage
-        );
+            : appliedMessage;
+        });
       }
     );
   };
   const onSaveAll = async (changes: DuplicateResolutionChange[]) => {
     if (runner.isOperationLocked) return;
     if (!changes.length) {
-      runner.setSectionMessage("duplicates", t("settings.actions.summary.noDuplicateChanges"));
+      runner.setSectionMessage("duplicates", () =>
+        t("settings.actions.summary.noDuplicateChanges")
+      );
       return;
     }
     const deleteCount = changes.filter((change) => change.type === "delete").length;
@@ -156,7 +158,9 @@ export function createDuplicateSettings({
       return;
     }
     setPendingDuplicateDeleteConfirm(null);
-    runner.setSectionMessage("duplicates", t("settings.actions.summary.duplicateApplyCancelled"));
+    runner.setSectionMessage("duplicates", () =>
+      t("settings.actions.summary.duplicateApplyCancelled")
+    );
   };
   const onConfirmDuplicateDeleteConfirm = async () => {
     if (runner.isOperationLocked) return;

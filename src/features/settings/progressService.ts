@@ -1,24 +1,32 @@
 import type { ScanProgress } from "../../platform/tauri/contracts/scanning";
 import type { ThumbnailRenderSummary } from "../../platform/tauri/contracts/thumbnails";
 import i18n from "../../i18n/core";
+import { translateBackendText } from "../../i18n/backendText";
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+const i18nTranslate: Translate = (key, options) => i18n.t(key, options);
 
 const SCAN_PHASES = new Set(["counting", "scanning", "cleanup", "scan-empty", "scan-skip"]);
 
-export function formatThumbnailSummary(label: string, summary: ThumbnailRenderSummary): string {
-  const base = `${label}. ${i18n.t("settings.progress.thumbnailSummary.ready", {
+export function formatThumbnailSummary(
+  label: string,
+  summary: ThumbnailRenderSummary,
+  t: Translate = i18nTranslate
+): string {
+  const base = `${label}. ${t("settings.progress.thumbnailSummary.ready", {
     count: summary.generated
-  })}, ${i18n.t("settings.progress.thumbnailSummary.failed", {
+  })}, ${t("settings.progress.thumbnailSummary.failed", {
     count: summary.failed
-  })}, ${i18n.t("settings.progress.thumbnailSummary.skippedFailed", {
+  })}, ${t("settings.progress.thumbnailSummary.skippedFailed", {
     count: summary.skipped_failed
   })}`;
   if (summary.cancelled) {
-    return `${base}. ${i18n.t("settings.progress.thumbnailSummary.cancelledAt", {
+    return `${base}. ${t("settings.progress.thumbnailSummary.cancelledAt", {
       processed: summary.processed,
       total: summary.total
     })}`;
   }
-  return `${base}. ${i18n.t("settings.progress.thumbnailSummary.processed", {
+  return `${base}. ${t("settings.progress.thumbnailSummary.processed", {
     processed: summary.processed,
     total: summary.total
   })}`;
@@ -44,92 +52,64 @@ export function isDuplicateScanProgressPhase(phase: string): boolean {
   return phase.startsWith("duplicates-scan");
 }
 
-function translateProgressByPhase(progress: ScanProgress): string | null {
+function translateProgressByPhase(progress: ScanProgress, t: Translate): string | null {
   const params = {
     processed: progress.processed,
     total: progress.total
   };
 
   if (progress.phase === "counting") {
-    return i18n.t("settings.progress.counting", params);
+    return t("settings.progress.counting", params);
   }
   if (progress.phase === "scanning") {
-    return i18n.t("settings.progress.scanning", params);
+    return t("settings.progress.scanning", params);
   }
   if (progress.phase === "cleanup") {
-    return i18n.t("settings.progress.cleanup", params);
+    return t("settings.progress.cleanup", params);
   }
   if (progress.phase === "scan-empty") {
-    return i18n.t("settings.progress.scanEmpty");
+    return t("settings.progress.scanEmpty");
   }
   if (progress.phase === "scan-skip") {
-    return i18n.t("settings.progress.scanSkip");
+    return t("settings.progress.scanSkip");
   }
   if (progress.phase === "thumbs-start") {
-    return i18n.t("settings.progress.thumbsStart");
+    return t("settings.progress.thumbsStart");
   }
   if (progress.phase === "thumbs") {
-    return i18n.t("settings.progress.thumbs", params);
+    return t("settings.progress.thumbs", params);
   }
   if (progress.phase === "thumbs-done") {
-    return i18n.t("settings.progress.thumbsDone");
+    return t("settings.progress.thumbsDone");
   }
   if (progress.phase === "thumbs-failed-start") {
-    return i18n.t("settings.progress.thumbsFailedStart");
+    return t("settings.progress.thumbsFailedStart");
   }
   if (progress.phase === "thumbs-failed") {
-    return i18n.t("settings.progress.thumbsFailed", params);
+    return t("settings.progress.thumbsFailed", params);
   }
   if (progress.phase === "thumbs-failed-done") {
-    return i18n.t("settings.progress.thumbsFailedDone");
+    return t("settings.progress.thumbsFailedDone");
   }
   if (progress.phase === "library-clear") {
-    return i18n.t("settings.progress.libraryClear", params);
+    return t("settings.progress.libraryClear", params);
   }
   if (progress.phase === "library-clear-done") {
-    return i18n.t("settings.progress.libraryClearDone");
+    return t("settings.progress.libraryClearDone");
   }
   if (progress.phase === "duplicates-scan") {
-    return i18n.t("settings.progress.duplicatesScan", params);
+    return t("settings.progress.duplicatesScan", params);
   }
   if (progress.phase === "duplicates-scan-done") {
-    return i18n.t("settings.progress.duplicatesScanDone");
+    return t("settings.progress.duplicatesScanDone");
   }
 
   return null;
 }
 
-function translateRawProgressMessage(rawMessage: string): string {
-  const trimmed = rawMessage.trim();
-
-  if (trimmed.startsWith("i18n:")) {
-    const key = trimmed.slice(5).trim();
-    if (key.length > 0) {
-      return i18n.t(key);
-    }
-  }
-
-  if (trimmed.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(trimmed) as { key?: string; params?: Record<string, unknown> };
-      if (typeof parsed.key === "string" && parsed.key.trim().length > 0) {
-        return i18n.t(parsed.key, parsed.params ?? {});
-      }
-    } catch {
-      // ignore invalid payload and keep raw message
-    }
-  }
-
-  if (/^[a-z0-9_.-]+$/i.test(trimmed) && trimmed.includes(".")) {
-    const translated = i18n.t(trimmed);
-    if (translated !== trimmed) {
-      return translated;
-    }
-  }
-
-  return rawMessage;
-}
-
-export function translateProgressMessage(progress: ScanProgress): string {
-  return translateProgressByPhase(progress) ?? translateRawProgressMessage(progress.message);
+export function translateProgressMessage(
+  progress: ScanProgress,
+  t: Translate = i18nTranslate
+): string {
+  return translateProgressByPhase(progress, t) ?? translateBackendText(progress.message, t);
 }

@@ -1,4 +1,8 @@
-import type { SectionOperationState, SettingsOperationSection } from "./types";
+import type {
+  SectionOperationState,
+  SectionStatusState,
+  SettingsOperationSection
+} from "./types";
 import i18n from "../../i18n/core";
 
 export const SECTION_READY_MESSAGE_KEYS: Record<SettingsOperationSection, string> = {
@@ -23,6 +27,14 @@ export function createSectionOperationState(section: SettingsOperationSection): 
   return {
     loading: false,
     message: getSectionReadyMessage(section),
+    progress: null
+  };
+}
+
+export function createSectionStatusState(section: SettingsOperationSection): SectionStatusState {
+  return {
+    loading: false,
+    message: (t) => t(SECTION_READY_MESSAGE_KEYS[section]),
     progress: null
   };
 }

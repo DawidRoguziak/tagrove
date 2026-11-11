@@ -25,8 +25,8 @@ export function createDangerZoneSettings({
     await runner.runExclusiveOperation(
       {
         section: "danger",
-        pendingMessage: t("settings.actions.pending.clearLibrary"),
-        errorPrefix: t("settings.actions.errorPrefix.clearLibrary"),
+        pendingMessage: () => t("settings.actions.pending.clearLibrary"),
+        errorPrefix: () => t("settings.actions.errorPrefix.clearLibrary"),
         progressPhaseMatcher: isLibraryClearProgressPhase
       },
       async () => {
@@ -46,8 +46,7 @@ export function createDangerZoneSettings({
           throw error;
         }
         await refreshScanRoots();
-        runner.setSectionMessage(
-          "danger",
+        runner.setSectionMessage("danger", () =>
           t("settings.actions.summary.libraryCleared", {
             assets: summary.removed_assets,
             roots: summary.removed_roots,

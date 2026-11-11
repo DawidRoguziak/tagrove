@@ -1699,3 +1699,179 @@ fn startup_restores_an_interrupted_delete_and_keeps_the_asset_indexed() {
         baseline_revision
     );
 }
+
+/// Full scan -> prune workflow with a supported file whose name is not valid
+/// UTF-8: discovery skips it with a warning, the root stays complete, and the
+/// row of a file deleted outside the app is pruned on the next scan.
+#[cfg(unix)]
+mod scan_prune_with_non_utf8_names {
+    use std::{
+        ffi::OsString,
+        os::unix::ffi::OsStringExt,
+        path::{Path, PathBuf},
+        sync::{
+            atomic::{AtomicBool, AtomicU64},
+            Mutex, RwLock,
+        },
+    };
+
+    use media_tagger::{
+        app::state::AppState,
+        db,
+        models::{ScanCompletion, ScanSummary},
+        services::{db_pool::DatabaseRuntime, scan_service, thumb_scheduler::ThumbnailScheduler},
+    };
+    use tempfile::tempdir;
+
+    fn state(dir: &Path) -> AppState {
+        let db_path = dir.join("media.db");
+        AppState {
+            database: DatabaseRuntime::new(db_path.clone()),
+            db_path,
+            thumbs_dir: dir.join("thumbs"),
+            ffmpeg_path: "ffmpeg".into(),
+            scan_lock: Mutex::new(()),
+            thumb_lock: RwLock::new(()),
+            thumb_scheduler: ThumbnailScheduler::new(1, "ffmpeg".into()),
+            thumbnail_render_all_running: AtomicBool::new(false),
+            thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+            thumbnail_generation: AtomicU64::new(0),
+        }
+    }
+
+    fn scan(state: &AppState, root: &Path) -> ScanSummary {
+        let permit = state.database.admit().expect("admit");
+        scan_service::scan_roots(
+            &[root.to_str().expect("UTF-8 root").to_string()],
+            state,
+            &permit,
+            &|_| Ok(()),
+        )
+        .expect("scan")
+    }
+
+    fn asset_paths(state: &AppState) -> Vec<String> {
+        let conn = state
+            .database
+            .admit()
+            .expect("admit")
+            .connection()
+            .expect("connection");
+        let mut stmt = conn
+            .prepare("SELECT path FROM assets ORDER BY path")
+            .expect("prepare");
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query");
+        rows.map(|row| row.expect("row")).collect()
+    }
+
+    fn tag_names(state: &AppState) -> Vec<String> {
+        let conn = state
+            .database
+            .admit()
+            .expect("admit")
+            .connection()
+            .expect("connection");
+        let mut stmt = conn
+            .prepare("SELECT name FROM tags ORDER BY name")
+            .expect("prepare");
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query");
+        rows.map(|row| row.expect("row")).collect()
+    }
+
+    fn non_utf8(root: &Path) -> PathBuf {
+        // "caf" + Latin-1 0xE9 + ".jpg": a byte sequence that is not UTF-8.
+        root.join(OsString::from_vec(b"caf\xE9.jpg".to_vec()))
+    }
+
+    #[test]
+    fn complete_scan_prunes_rows_of_deleted_files_next_to_a_non_utf8_name() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().join("media");
+        std::fs::create_dir_all(&root).expect("root");
+        std::fs::write(root.join("kept.jpg"), b"kept").expect("kept");
+        std::fs::write(root.join("deleted.jpg"), b"deleted").expect("deleted");
+        std::fs::write(non_utf8(&root), b"latin-1 name").expect("non-UTF-8 file");
+        let state = state(dir.path());
+        {
+            let conn = state
+                .database
+                .admit()
+                .expect("admit")
+                .connection()
+                .expect("connection");
+            db::init_schema(&conn).expect("schema");
+            db::add_scan_root(&conn, root.to_str().expect("UTF-8 root")).expect("add root");
+        }
+        let root_text = root.to_string_lossy().to_string();
+        let kept = format!("{root_text}/kept.jpg");
+        let deleted = format!("{root_text}/deleted.jpg");
+
+        let first = scan(&state, &root);
+        assert!(matches!(first.completion, ScanCompletion::Complete));
+        assert_eq!((first.indexed, first.removed, first.failed), (2, 0, 0));
+        assert_eq!(asset_paths(&state), vec![deleted.clone(), kept.clone()]);
+
+        {
+            let conn = state
+                .database
+                .admit()
+                .expect("admit")
+                .connection()
+                .expect("connection");
+            for (path, tag) in [(&kept, "keep"), (&deleted, "gone")] {
+                let id: i64 = conn
+                    .query_row("SELECT id FROM assets WHERE path = ?1", [path], |row| {
+                        row.get(0)
+                    })
+                    .expect("asset id");
+                db::set_asset_tags(&conn, id, &[tag.to_string()]).expect("tag");
+            }
+        }
+        std::fs::remove_file(root.join("deleted.jpg")).expect("delete outside the app");
+
+        // The non-UTF-8 file is still there, and the root is still complete,
+        // so the stale row and its now-orphaned tag are pruned.
+        let second = scan(&state, &root);
+        assert!(matches!(second.completion, ScanCompletion::Complete));
+        assert_eq!((second.indexed, second.removed, second.failed), (1, 1, 0));
+        assert_eq!(asset_paths(&state), vec![kept.clone()]);
+        assert_eq!(tag_names(&state), vec!["keep".to_string()]);
+
+        // An unchanged rescan stays complete and removes nothing. With no
+        // stale mapping the prune skips the library-wide orphan sweeps, so an
+        // unrelated row without any mapping is left alone.
+        {
+            let conn = state
+                .database
+                .admit()
+                .expect("admit")
+                .connection()
+                .expect("connection");
+            db::upsert_asset(
+                &conn,
+                &media_tagger::models::NewAsset {
+                    path: "/elsewhere/unmapped.jpg".to_string(),
+                    kind: "image".to_string(),
+                    size_bytes: 1,
+                    modified_at: 1,
+                    width: None,
+                    height: None,
+                    duration_ms: None,
+                    thumb_path: None,
+                },
+            )
+            .expect("unmapped asset");
+        }
+        let third = scan(&state, &root);
+        assert!(matches!(third.completion, ScanCompletion::Complete));
+        assert_eq!((third.indexed, third.removed, third.failed), (1, 0, 0));
+        let mut expected = vec!["/elsewhere/unmapped.jpg".to_string(), kept];
+        expected.sort();
+        assert_eq!(asset_paths(&state), expected);
+        assert_eq!(tag_names(&state), vec!["keep".to_string()]);
+    }
+}

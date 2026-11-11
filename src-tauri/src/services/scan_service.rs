@@ -249,12 +249,14 @@ pub fn scan_roots(
         let mut pending_writes = Vec::with_capacity(SCAN_DB_BATCH_SIZE);
         let mut discovery_batch =
             Vec::<(PathBuf, String, indexer::FileFingerprint)>::with_capacity(SCAN_DB_BATCH_SIZE);
-        let discovery = indexer::visit_supported_files(&root, |path, kind| {
+        let warnings = indexer::ScanWarningLog::default();
+        let discovery = indexer::visit_supported_files(&root, &warnings, |path, kind| {
             discovered_count += 1;
             let fingerprint = match indexer::read_file_fingerprint(&path) {
                 Ok(value) => value,
-                Err(_) => {
+                Err(error) => {
                     discovery_failures += 1;
+                    warnings.warn(|| format!("cannot read {}: {error}", path.display()));
                     if discovered_count.is_multiple_of(100) {
                         let _ = emit_progress(
                             app,
@@ -290,6 +292,7 @@ pub fn scan_roots(
                     &mut completed_changed,
                     &mut changed_indexed,
                     &mut changed_failed,
+                    &warnings,
                     root_str,
                     generation,
                 )?;
@@ -327,6 +330,7 @@ pub fn scan_roots(
             &mut completed_changed,
             &mut changed_indexed,
             &mut changed_failed,
+            &warnings,
             root_str,
             generation,
         )?;
@@ -349,6 +353,7 @@ pub fn scan_roots(
                 &mut completed_changed,
                 &mut changed_indexed,
                 &mut changed_failed,
+                &warnings,
                 root_str,
                 generation,
             )?;
@@ -377,6 +382,7 @@ pub fn scan_roots(
                 .join()
                 .map_err(|_| "scan worker panicked".to_string())?;
         }
+        warnings.finish_root(root_str);
 
         let root_scan_complete =
             discovery.is_complete() && discovery_failures == 0 && changed_failed == 0;
@@ -532,12 +538,13 @@ fn drain_ready_scan_results(
     completed: &mut usize,
     indexed: &mut usize,
     failed: &mut usize,
+    warnings: &indexer::ScanWarningLog,
     root: &str,
     generation: i64,
 ) -> AppResult<()> {
     while let Ok(result) = receiver.try_recv() {
         accept_scan_result(
-            writer, result, pending, completed, indexed, failed, root, generation,
+            writer, result, pending, completed, indexed, failed, warnings, root, generation,
         )?;
     }
     Ok(())
@@ -551,11 +558,15 @@ fn accept_scan_result(
     completed: &mut usize,
     indexed: &mut usize,
     failed: &mut usize,
+    warnings: &indexer::ScanWarningLog,
     root: &str,
     generation: i64,
 ) -> AppResult<()> {
     *completed += 1;
     *failed += result.failed;
+    if let Some(warning) = result.warning {
+        warnings.warn(|| warning);
+    }
     if let Some(item) = result.item {
         pending.push(item);
     }

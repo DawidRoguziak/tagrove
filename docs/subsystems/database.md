@@ -114,7 +114,7 @@ Application-mediated writes maintain these invariants:
 - `tag_count` is the number of assigned normalized tags. Query count filters read it directly; startup backfills repair older data from the mappings.
 - `upsert_scanned_asset` clears a thumbnail reference when the precise fingerprint changes, including same-second edits. The same write increments `record_version`; thumbnail failures compare that source record version. See [thumbnail identity and limits](thumbnails.md#source-versions-cache-and-target-identity).
 
-Root-prefix SQL escapes `%`, `_`, and `^` before using `LIKE ... ESCAPE '^'`. On Unix, discovery skips non-UTF-8 paths rather than storing a lossy identity.
+Root-prefix SQL escapes `%`, `_`, and `^` before using `LIKE ... ESCAPE '^'`. On Unix, discovery skips non-UTF-8 paths rather than storing a lossy identity; the skip is logged to stderr and does not make the root partial ([scanning](scanning-and-indexing.md#path-identity-and-discovery), [ADR 0025](../adr/0025-non-utf8-paths-skip-and-prune-sweeps-gated-on-stale-mappings.md)).
 
 These are code invariants, not SQLite generated columns, checks, or triggers. Callers that issue ad hoc SQL or call low-level helpers with unnormalized values can violate them.
 

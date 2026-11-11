@@ -34,6 +34,10 @@ The normalizer does not canonicalize `.` or `..`, resolve symlinks, expand relat
 
 Discovery recursively uses `WalkDir::new(root).follow_links(false)`. Entries that are not regular files are ignored, so symbolic-link entries are not indexed and linked directories are not traversed. An unreadable or otherwise failing walk entry increments `traversal_errors`, traversal continues where possible, and the discovery report becomes partial. A failure returned by the visitor itself is different: it aborts discovery and propagates as a command error.
 
+On Unix, a supported file whose path is not valid UTF-8 (for example a Latin-1 name extracted from an old archive, or any file below a folder with such a name) is skipped before fingerprinting and counted as `non_utf8_skipped` in the discovery report. Asset paths are stored as UTF-8 text, so no asset row can exist for such a file and skipping it cannot hide a stale row: the skip does not make the root partial, does not count toward `failed` or the progress totals, and the file is never indexed ([ADR 0025](../adr/0025-non-utf8-paths-skip-and-prune-sweeps-gated-on-stale-mappings.md)).
+
+Per-file warnings go to stderr as `[scan] warning: ...` lines: traversal errors, skipped non-UTF-8 paths, fingerprint failures and failed worker results, each naming the path. The log is non-blocking and capped at 20 lines per root (`MAX_LOGGED_SCAN_WARNINGS`); the rest are counted and summarized in one line when the root finishes. Logging never decides completeness; the counters below do.
+
 Extensions are matched case-insensitively after lossy conversion to lowercase:
 
 | Stored kind | Supported extensions |
@@ -95,7 +99,7 @@ A root is complete only when all of these are true:
 - every supported discovered file produced a fingerprint; and
 - every queued changed/new file produced an indexed item.
 
-For a complete root, pruning transactionally deletes mappings for that root whose generation is stale, deletes globally orphaned assets, deletes thumbnail failures for missing assets, removes orphan tags, and conditionally bumps the revision when an asset row was removed. A revision failure rolls back that prune. `ScanSummary.removed` counts deleted asset rows, not stale mappings. For a partial root, pruning is skipped entirely, so older mappings and assets are preserved; successful touches and upserts from that same partial pass remain committed.
+For a complete root, pruning transactionally deletes mappings for that root whose generation is stale. Only when that deleted at least one mapping does it go on to delete globally orphaned assets, delete thumbnail failures for missing assets, remove orphan tags, and conditionally bump the revision when an asset row was removed. Those three sweeps read the whole library, so a complete root with no stale mapping commits without them: such a prune cannot have orphaned anything, and its cost stays proportional to the root ([ADR 0025](../adr/0025-non-utf8-paths-skip-and-prune-sweeps-gated-on-stale-mappings.md)). An orphan that arose some other way (for example an unmapped legacy row) is removed by the next prune that does delete a mapping, or by root removal, which always sweeps. A revision failure rolls back that prune. `ScanSummary.removed` counts deleted asset rows, not stale mappings. For a partial root, pruning is skipped entirely, so older mappings and assets are preserved; successful touches and upserts from that same partial pass remain committed.
 
 Generation pruning does not delete thumbnail files belonging to assets removed by a completed scan. In contrast, explicit root removal collects orphan thumbnail paths in its database transaction and tries to delete those files afterward.
 
@@ -111,7 +115,7 @@ Scanning broadcasts the shared `process-progress` event described by the [IPC co
 | `scanning` | While consuming changed-file results, every 100 processed files and at the end of the changed queue. `processed` includes unchanged touches plus completed changed tasks; `total` is the final supported-file discovery count. A root with no queued changes may emit no `scanning` event. |
 | `cleanup` | Once after each valid root, reporting either completed cleanup and its removed count or partial completion and the warning count. |
 
-`ScanSummary.completion` is `complete` unless at least one supplied root is invalid or at least one valid root is partial. `failed` adds invalid-root skips, traversal errors, fingerprint failures, and failed worker results. `removed` sums assets orphaned by complete-generation pruning. The command result, not progress delivery, is the completion signal.
+`ScanSummary.completion` is `complete` unless at least one supplied root is invalid or at least one valid root is partial. `failed` adds invalid-root skips, traversal errors, fingerprint failures, and failed worker results; skipped non-UTF-8 paths are not failures. `removed` sums assets orphaned by complete-generation pruning. The command result, not progress delivery, is the completion signal.
 
 ## Concurrency, failure, and commit boundaries
 
@@ -132,6 +136,7 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 - Path normalization is string cleanup, not canonicalization. Relative paths, case variants, dot segments, symlinks, and aliases can produce duplicate logical roots or fail exact path/mapping comparisons.
 - Root-prefix SQL escapes `%`, `_`, and `^`, but textual path aliases can still create distinct roots and mappings. Canonicalization is not part of scan-root normalization.
 - Symlinked files and directories are intentionally absent from discovery; no option exposes follow-links behavior.
+- Files with non-UTF-8 paths are never indexed. The only signal is a capped stderr warning; the scan summary and the Settings status do not mention them.
 - Extension-only kind detection can admit corrupt or mislabeled files. Image dimensions and video duration are optional, and their probe failures do not contribute to `failed` or partial completion.
 - A same-second file change clears its stored thumbnail reference through the precise scan fingerprint. Thumbnail-failure markers still use seconds, so a previous failure can remain current after that change; see [thumbnail limits](thumbnails.md#known-limitations).
 - Generation values come from wall-clock time rather than a persistent monotonic sequence. The scan mutex prevents simultaneous scans in one process, but uniqueness is not enforced by SQLite.
@@ -147,7 +152,7 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 2. Preserve one stable path-identity policy across normalization, asset upserts, exact batch lookups, root mappings, migration/backfill SQL, removal, and frontend path conversion. Test filesystem roots, trailing separators, slash direction, case/alias behavior, and root names containing SQL wildcard characters.
 3. Treat fingerprint changes as cache-invalidation changes. Keep incremental comparison, stored fields, thumbnail versioning, and thumbnail-failure versioning aligned; include a same-second/nanosecond-only modification test.
 4. Preserve bounded backpressure and transactional batch sizes deliberately. If changing worker, queue, or batch limits, test zero/small inputs, more files than each boundary, slow workers, worker failure, and result-channel shutdown.
-5. Keep discovery completeness explicit. Every new warning/failure source must either make the root partial or be documented as optional metadata; never run destructive generation pruning when any directory or supported file may have been missed.
+5. Keep discovery completeness explicit. Every new warning/failure source must either make the root partial or be documented as optional metadata; never run destructive generation pruning when any directory or supported file may have been missed. The one documented exception is a path that cannot be stored at all (non-UTF-8), because no row can exist for it.
 6. For root-ownership changes, test parent/child and duplicate-spelling overlaps, rescanning each root in both orders, removing one root, removing the last root, and ensuring only globally orphaned assets/tags/failures are deleted.
 7. Keep mutation and revision semantics aligned with [database persistence](database.md). Add fault tests at touch, upsert-batch, prune, revision, and optimize boundaries if those boundaries change.
 8. Keep blocking work under `spawn_blocking`, scan serialization under the shared lock helper, and the combined lock order as scan then exclusive thumbnail. Consider direct IPC concurrency with unlocked add/list operations.
@@ -157,12 +162,13 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 ### Relevant existing tests
 
 - `src-tauri/src/utils/paths.rs` covers whitespace trimming, trailing Unix separators, and filesystem-root preservation.
-- `src-tauri/src/indexer.rs` covers case-insensitive supported extensions, recursive supported-file collection, and success/failure for existing versus missing files.
+- `src-tauri/src/indexer.rs` covers case-insensitive supported extensions, recursive supported-file collection, success/failure (with its warning) for existing versus missing files, skipping non-UTF-8 file and folder names without a partial report, and the per-root warning cap.
 - `src-tauri/src/services/scan_service.rs` covers worker-count resolution, the empty summary, root validity, the older prefix-based stale cleanup helper, the revision throttle, the error-path bump, and a real 1,500-file scan (one checked-out connection, bump count bounded by elapsed seconds).
 - `src-tauri/src/commands/scan.rs` also runs `scan_folder_service` and `rescan_all_roots_service` with a progress sink that checks they hold one connection.
 - `src-tauri/src/commands/scan.rs` covers rejecting an invalid root, persisting a valid normalized root, and explicit root removal deleting an orphan asset and its thumbnail.
-- `src-tauri/src/db.rs` covers escaped root-prefix boundaries and both low-level thumbnail preservation and precise-fingerprint reference release.
+- `src-tauri/src/db.rs` covers escaped root-prefix boundaries, both low-level thumbnail preservation and precise-fingerprint reference release, the prune's conditional revision bump and its rollback, and that a prune without a stale mapping skips the orphan sweeps while one with a stale mapping still runs them.
 - `src-tauri/src/thumbs.rs` covers ffprobe/ffmpeg duration parsing and related duration/seek edge cases; these are parser tests rather than live-tool scan integration.
-- `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` exercise scan-root persistence as part of library clear and data workflows, but do not run the complete discovery/worker/generation pipeline.
+- `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` exercise scan-root persistence as part of library clear and data workflows. `backend_integration` (`scan_prune_with_non_utf8_names`) also runs the full `scan_roots` pipeline three times over a root holding a non-UTF-8 name: every scan is complete, the row and orphaned tag of a file deleted outside the app are pruned, and an unchanged rescan leaves an unrelated unmapped row alone.
+- `src-tauri/tests/backend_runtime.rs` runs a real scan across batch boundaries with overlapping roots, then a rescan with a missing root that reports partial.
 
 Run the focused Rust unit tests plus the repository's backend integration suite after scanning changes. Tests that require actual filesystem traversal, timestamp resolution, permissions, symlinks, or media tools should assert the intended complete-versus-partial outcome.

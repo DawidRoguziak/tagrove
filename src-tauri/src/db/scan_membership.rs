@@ -267,16 +267,24 @@ pub fn touch_scan_root_assets(
 
 /// Prunes stale mappings only after the caller has confirmed that discovery for
 /// this exact root and generation completed without warnings.
+///
+/// The orphan sweeps below read the whole library, so they run only when this
+/// root actually lost a mapping. With no stale mapping, this prune cannot have
+/// orphaned an asset, a failure row or a tag.
 pub fn prune_completed_scan_root_generation(
     conn: &Connection,
     root: &str,
     generation: i64,
 ) -> anyhow::Result<usize> {
     let tx = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    tx.execute(
+    let stale_mappings = tx.execute(
         "DELETE FROM asset_scan_roots WHERE root_path = ?1 AND last_seen_generation != ?2",
         params![root, generation],
     )?;
+    if stale_mappings == 0 {
+        tx.commit()?;
+        return Ok(0);
+    }
     let removed = tx.execute(
         "DELETE FROM assets
          WHERE NOT EXISTS (

@@ -376,6 +376,70 @@ mod tests {
     }
 
     #[test]
+    fn completed_scan_prune_sweeps_orphans_only_when_the_root_lost_a_mapping() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_schema(&conn).expect("schema");
+        add_scan_root(&conn, "/media").expect("root");
+        let image = |path: &str| NewAsset {
+            path: path.to_string(),
+            kind: "image".to_string(),
+            size_bytes: 1,
+            modified_at: 1,
+            width: None,
+            height: None,
+            duration_ms: None,
+            thumb_path: None,
+        };
+        upsert_scanned_asset(&conn, &image("/media/kept.jpg"), 1, "/media", 2).expect("kept");
+        upsert_scanned_asset(&conn, &image("/media/stale.jpg"), 1, "/media", 2).expect("stale");
+        // Orphans the sweeps would find: an asset without any mapping, a tag
+        // without any asset, and a failure row of a missing asset.
+        upsert_asset(&conn, &image("/elsewhere/unmapped.jpg")).expect("unmapped");
+        conn.execute_batch(
+            "INSERT INTO tags(name) VALUES ('orphan-tag');
+             INSERT INTO thumbnail_failures(
+               asset_id, failure_count, last_failed_at, asset_modified_at, source_record_version
+             ) VALUES (9999, 1, 1, 1, 1);",
+        )
+        .expect("orphans");
+        let counts = |conn: &Connection| -> (i64, i64, i64) {
+            conn.query_row(
+                "SELECT (SELECT COUNT(*) FROM assets), (SELECT COUNT(*) FROM tags),
+                        (SELECT COUNT(*) FROM thumbnail_failures)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("counts")
+        };
+        let baseline = current_library_revision(&conn).expect("baseline");
+
+        // Every mapping of the root is current: no sweep, unrelated orphans stay.
+        assert_eq!(
+            prune_completed_scan_root_generation(&conn, "/media", 2).expect("no-op prune"),
+            0
+        );
+        assert_eq!(counts(&conn), (3, 1, 1));
+        assert_eq!(current_library_revision(&conn).expect("revision"), baseline);
+
+        // A stale mapping still runs the library-wide sweeps.
+        conn.execute(
+            "UPDATE asset_scan_roots SET last_seen_generation = 1
+             WHERE asset_id = (SELECT id FROM assets WHERE path = '/media/stale.jpg')",
+            [],
+        )
+        .expect("stale generation");
+        assert_eq!(
+            prune_completed_scan_root_generation(&conn, "/media", 2).expect("prune"),
+            2
+        );
+        assert_eq!(counts(&conn), (1, 0, 0));
+        assert_eq!(
+            current_library_revision(&conn).expect("pruned revision"),
+            baseline + 1
+        );
+    }
+
+    #[test]
     fn completed_scan_prune_rolls_back_asset_removal_when_revision_bump_fails() {
         let conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");

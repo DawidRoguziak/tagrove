@@ -146,7 +146,7 @@ done — 2026-11-07 (krok 0, fala D i weryfikacja po fali E; wiersze E2E „Po 0
 - Odkryte:
   - Błąd like odtworzony w prawdziwej aplikacji, przyczyna we frontendzie (szczegóły w etapie 01).
   - Skan 20k małych plików trwa 0,8–1 s (release) i ~1,5 s (debug E2E), dlatego scenariusz E2E przeplata skan z usuwaniem folderu.
-  - Wiersze bez mapowania w `asset_scan_roots` znikają przy zakończonym skanie dowolnego folderu (`prune_completed_scan_root_generation`, `src-tauri/src/db/scan_membership.rs:267`). To zgodne z dokumentacją, ale syntetyczne bazy muszą mieć mapowanie.
+  - Wiersze bez mapowania w `asset_scan_roots` znikają przy zakończonym skanie dowolnego folderu (`prune_completed_scan_root_generation`, `src-tauri/src/db/scan_membership.rs:267`). To zgodne z dokumentacją, ale syntetyczne bazy muszą mieć mapowanie. (Później [ADR 0025](../../adr/0025-non-utf8-paths-skip-and-prune-sweeps-gated-on-stale-mappings.md): tylko przy skanie, który usunął jakieś nieaktualne mapowanie.)
   - WebKitGTK 2.54 nie udostępnia `longtask`; klatki mierzone są przez `requestAnimationFrame`.
   - `render_all_thumbnails` trwa dłużej niż limit skryptu WebDrivera. WDIO ponawia `executeAsync`, a ponowienie kończy się „Thumbnail render is already running”. Długie komendy uruchamia się w stronie i odpytuje o wynik (`invokeLong` w specu).
   - Chip tagu w podglądzie pojawia się od razu jako zamiar w toku, więc potwierdzenie zapisu tagu liczy się z IPC, nie z UI.

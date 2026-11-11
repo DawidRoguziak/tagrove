@@ -30,7 +30,7 @@ Run commands from the repository root.
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
 | `bun run app:control` | Keeps an isolated desktop E2E session open on a private Xvfb display for UI interaction, screenshots, and console inspection; see persistent desktop control below. |
 | `bun run test:e2e-build` | Checks frontend build order, profile rejection, preference isolation, and WDIO failure exit with fake build tools in a disposable project. |
-| `bun run test:app-control` | Runs Node tests for controller input validation, local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Checks both playable MP4s with ffprobe for video and zero audio streams, and the audio video fixture for one video stream, one audio stream, and the requested length. Requires Linux local sockets, ffmpeg, and ffprobe. |
+| `bun run test:app-control` | Runs Node tests for controller input validation, session-state gating, probe-timeout classification, timeout budgets, the command queue (stop outside the queue, skipped stale commands, coalesced console polls), local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Checks both playable MP4s with ffprobe for video and zero audio streams, and the audio video fixture for one video stream, one audio stream, and the requested length. Requires Linux local sockets, ffmpeg, and ffprobe. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
 | `bun run typecheck` | Runs separate no-emit checks for the Solid application/tests and Vite/Vitest configuration. |
 | `bun run lint` | Runs Biome lint across its configured source, E2E, and script includes. |
@@ -513,7 +513,11 @@ The commands are grouped into classes (`COMMAND_CLASS` in `e2e/control-support.j
   `alert accept|dismiss|send`, `resize`, and `native`;
 - control: `refresh`, `diagnose`, and `stop`.
 
-Every command except `stop` and `logs` first runs the doctor, which checks the live E2E title,
+Commands run one at a time through one WebDriver session. `stop` is handled at once, outside
+that queue, so it ends a session even while another command waits on a WebView that does not
+answer; queued commands that have not started by then, or whose client already disconnected,
+are not run. The 2-second console poll keeps at most one drain queued. Every command except
+`stop` and `logs` first runs the doctor, which checks the live E2E title,
 resolved app-data path, scan roots, and owned display/driver processes. `validateRequest`
 enforces arities and ranges (drag hold 150–3000 ms, wheel ±5000, wait ≤ 90 s, resize
 320–1440 × 240–900, native coordinates inside the 1440×900 display, keysyms, printable ASCII).
@@ -526,12 +530,28 @@ The doctor reports a session `state`:
 - `alert-open` when a `window.alert` is showing; WebDriver runs with
   `unhandledPromptBehavior: "ignore"`, and only `alert`, `screenshot`, `doctor`, `logs`, and
   `stop` run until it is handled;
-- `busy-maintenance` when the `list_scan_roots` probe outlasts the 30 s script timeout. The
-  maintenance gate (backup export/import) and the scan/thumbnail locks (Clear library, Remove
-  root) wait without a limit, so this lasts as long as the operation. Observe commands still
-  run; actions are refused. The guards themselves are unchanged;
+- `busy-maintenance` when the title and app-data path are verified but the `list_scan_roots`
+  probe outlasts the 30 s script timeout. The maintenance gate (backup export/import) and the
+  scan/thumbnail locks (Clear library, Remove root) wait without a limit, so this lasts as long
+  as the operation. Observe commands still run; actions are refused. The guards themselves are
+  unchanged;
+- `unresponsive` when an identity probe (window title, app-data path) times out. These need the
+  app's main thread, which a native modal dialog blocks: GTK's own "The folder contents could
+  not be displayed" dialog, shown when a path typed into a save dialog names a missing folder,
+  is the known case. Observe commands, `native key Escape` (to dismiss the dialog), and `stop`
+  run; every other action is refused. The doctor result names the `probe` that timed out and
+  a `hint`;
 - `tainted` after a `native` command whose follow-up doctor failed; only `logs`,
-  `screenshot`, and `stop` run.
+  `screenshot`, and `stop` run. A follow-up doctor that reports `busy-maintenance` or
+  `unresponsive` does not taint the session.
+
+The WebDriver HTTP request budget (35 s) is 5 s above the 30 s script timeout, so the driver
+reports a script timeout before the client aborts the request; a client-side "Request timed
+out!" during a probe is classified the same way. One doctor costs at most two request budgets
+(the alert probe and the first probe that does not answer), and the 190 s socket budget covers
+the doctor before a command plus a 90 s `wait`, or a native command with its 20 s helper limit
+and its own doctor (`SOCKET_TIMEOUT_MS` in `e2e/control-support.js`). The `unresponsive` gate
+and the out-of-queue `stop` are recorded in [ADR 0023](../adr/0023-app-control-unresponsive-state-and-out-of-queue-stop.md).
 
 `native` runs `e2e/control-native.py` (XTest) with an environment built only from the
 session manifest. It refuses before opening any display unless the display is private and

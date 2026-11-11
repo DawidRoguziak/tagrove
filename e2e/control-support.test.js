@@ -8,20 +8,31 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import {
+  CLIENT_GONE,
   COMMAND_ARITIES,
   COMMAND_CLASS,
   commandClass,
+  createCommandQueue,
+  DOCTOR_BUDGET_MS,
   dragActions,
   gateCommand,
+  isRequestTimeout,
   isScriptTimeout,
   liveGroupMembers,
+  NATIVE_HELPER_TIMEOUT_MS,
   nativeEnvironment,
   parseDragTarget,
   parseWait,
+  probeFailureState,
+  REQUEST_TIMEOUT_MS,
   removeOwnedScratch,
   requireFreePort,
+  SCRIPT_TIMEOUT_MS,
+  SESSION_STOPPING,
   SOCKET_PATH_LIMIT,
+  SOCKET_TIMEOUT_MS,
   stopOwnedGroup,
+  WAIT_MAX_MS,
   validateRequest,
   validateSessionId,
   validateSocketPath,
@@ -268,6 +279,142 @@ test("session states gate commands", () => {
   assert.equal(gateCommand("ok", request("native", "key", "a")), null);
   assert.ok(isScriptTimeout(new Error("script timeout: Timed out waiting for asynchronous script result")));
   assert.equal(isScriptTimeout(new Error("Refusing unexpected app identity/profile")), false);
+  assert.equal(gateCommand("unresponsive", request("screenshot")), null);
+  assert.equal(gateCommand("unresponsive", request("inspect")), null);
+  assert.equal(gateCommand("unresponsive", request("doctor")), null);
+  assert.equal(gateCommand("unresponsive", request("stop")), null);
+  assert.equal(gateCommand("unresponsive", request("native", "key", "Escape")), null);
+  for (const refused of [
+    request("native", "key", "Return"),
+    request("native", "click", "10", "10"),
+    request("native", "type", "x"),
+    request("click", "x"),
+    request("alert", "accept"),
+    request("refresh")
+  ])
+    assert.match(gateCommand("unresponsive", refused), /^unresponsive/, JSON.stringify(refused));
+  // Escape is a dismissal only when the session is unresponsive; busy-maintenance stays observe-only.
+  assert.ok(gateCommand("busy-maintenance", request("native", "key", "Escape")));
+});
+
+// The exact text webdriver 9 throws when connectionRetryTimeout aborts a request, as recorded in
+// actions.jsonl by the audit sessions.
+const requestTimeoutText =
+  'WebDriverError: Request timed out! Consider increasing the "connectionRetryTimeout" option. when running "execute/async" with method "POST"';
+
+test("probe timeouts map to waiting states instead of failing the doctor", () => {
+  const requestTimeout = Object.assign(new Error(requestTimeoutText.replace(/^WebDriverError: /, "")), {
+    name: "WebDriverError"
+  });
+  const scriptTimeout = new Error("script timeout: Timed out waiting for asynchronous script result");
+  assert.ok(isRequestTimeout(requestTimeout));
+  assert.ok(isRequestTimeout(requestTimeoutText));
+  assert.equal(isRequestTimeout(scriptTimeout), false);
+  for (const error of [requestTimeout, scriptTimeout]) {
+    assert.equal(probeFailureState(error, "library"), "busy-maintenance");
+    assert.equal(probeFailureState(error, "identity"), "unresponsive");
+  }
+  assert.equal(probeFailureState(new Error("unexpected alert open: {Alert text : x}"), "identity"), "alert-open");
+  for (const error of [
+    new Error("Refusing unexpected app identity/profile: Other, /var/lib/other-profile"),
+    new Error("Request failed with error code ECONNREFUSED"),
+    new Error("Missing Tauri bridge"),
+    new Error("Failed to fetch [POST] http://127.0.0.1:4446/session: please make sure you have a WebDriver compatible server running")
+  ])
+    for (const stage of ["identity", "library"]) assert.equal(probeFailureState(error, stage), null, `${stage}: ${error}`);
+});
+
+test("the request budget outlasts the script timeout and the socket outlasts every command", () => {
+  // The driver must report its script timeout before the client aborts the HTTP request.
+  assert.ok(REQUEST_TIMEOUT_MS - SCRIPT_TIMEOUT_MS >= 5000);
+  assert.ok(DOCTOR_BUDGET_MS >= 2 * REQUEST_TIMEOUT_MS);
+  // Doctor before the command, then the longest command body: a full wait, or a native helper
+  // run with its own doctor.
+  assert.ok(SOCKET_TIMEOUT_MS > DOCTOR_BUDGET_MS + WAIT_MAX_MS);
+  assert.ok(SOCKET_TIMEOUT_MS > DOCTOR_BUDGET_MS + NATIVE_HELPER_TIMEOUT_MS + DOCTOR_BUDGET_MS);
+});
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+const settledWithin = (promise, ms) =>
+  Promise.race([promise.then(() => true, () => true), delay(ms).then(() => false)]);
+
+test("stop runs outside the command queue while a command hangs, and skips queued work", async () => {
+  let stopping = false;
+  const queue = createCommandQueue({ isStopping: () => stopping });
+  const hang = deferred();
+  const ran = [];
+  const hanging = queue.dispatch({ command: "doctor", args: [] }, async () => {
+    ran.push("doctor");
+    await hang.promise;
+    return "late";
+  });
+  const queued = queue.dispatch({ command: "click", args: ["x"] }, async () => ran.push("click"));
+  await delay(10);
+  const stopped = queue.dispatch({ command: "stop", args: [] }, async () => {
+    stopping = true;
+    ran.push("stop");
+    return { status: "stopped" };
+  });
+  assert.equal(await settledWithin(stopped, 200), true, "stop must not wait behind the hung command");
+  assert.deepEqual(await stopped, { status: "stopped" });
+  assert.equal(await settledWithin(hanging, 50), false);
+  hang.resolve();
+  assert.equal(await hanging, "late");
+  await assert.rejects(queued, (error) => error.message === SESSION_STOPPING);
+  await assert.rejects(queue.dispatch({ command: "inspect", args: [] }, async () => ran.push("inspect")), {
+    message: SESSION_STOPPING
+  });
+  // A repeated stop still runs its job (cleanup itself is idempotent).
+  assert.deepEqual(await queue.dispatch({ command: "stop", args: [] }, async () => "again"), "again");
+  assert.deepEqual(ran, ["doctor", "stop"]);
+  assert.equal(queue.poll(async () => ran.push("poll")), null, "no console poll after stop");
+});
+
+test("queued commands whose client left are not run, and a failure does not block the queue", async () => {
+  const queue = createCommandQueue({ isStopping: () => false });
+  const hang = deferred();
+  const ran = [];
+  const first = queue.dispatch({ command: "wait", args: ["idle"] }, async () => {
+    await hang.promise;
+    throw new Error("wait timed out");
+  });
+  let gone = false;
+  const abandoned = queue.dispatch({ command: "click", args: ["x"] }, async () => ran.push("click"), () => gone);
+  const next = queue.dispatch({ command: "inspect", args: [] }, async () => ran.push("inspect"));
+  gone = true;
+  hang.resolve();
+  await assert.rejects(first, /wait timed out/);
+  await assert.rejects(abandoned, { message: CLIENT_GONE });
+  await next;
+  assert.deepEqual(ran, ["inspect"]);
+});
+
+test("console polls coalesce while the queue is blocked", async () => {
+  const queue = createCommandQueue({ isStopping: () => false });
+  const hang = deferred();
+  let drains = 0;
+  const blocked = queue.dispatch({ command: "doctor", args: [] }, () => hang.promise);
+  const first = queue.poll(async () => drains++);
+  assert.ok(first);
+  for (let index = 0; index < 20; index++) assert.equal(queue.poll(async () => drains++), null);
+  const command = queue.dispatch({ command: "inspect", args: [] }, async () => "inspected");
+  hang.resolve();
+  await blocked;
+  await first;
+  assert.equal(drains, 1);
+  assert.equal(await command, "inspected");
+  // Once the pending poll ran, the next one is accepted again; a failing poll does not stick.
+  await assert.rejects(queue.poll(async () => {
+    throw new Error("drain failed");
+  }), /drain failed/);
+  await queue.poll(async () => drains++);
+  assert.equal(drains, 2);
 });
 
 test("drag holds at least 150 ms and starts with a move of at least 5 px", () => {

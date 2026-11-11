@@ -667,7 +667,7 @@ All files are written inside `<scratch>/media/` through the native save dialog (
 
 **QA-14.8 Export path outside allowed roots, and non-existent directories**
 - **Steps:** in the save dialog type a path in a directory that does not exist inside the copy (`<scratch>/media/new-dir/a.csv`); then try a path outside the copy only if the dialog would leave it inside `<scratch>` (for example `<scratch>/outside/a.csv`); never type any path outside the scratch root.
-- **Expected:** record whether the app creates missing directories, refuses the path or reports an error; the profile allowlist for writes is described in the system overview. Any file that appears must be inside the scratch root.
+- **Expected:** record whether the app creates missing directories, refuses the path or reports an error; the profile allowlist for writes is described in the system overview. Any file that appears must be inside the scratch root. A typed path whose folder does not exist is refused by GTK itself ("The folder contents could not be displayed"), so the app never receives it: doctor reports `unresponsive` while that dialog is open; screenshot it, dismiss it with `native key Escape`, then cancel the picker with `native key Escape` and expect "CSV export cancelled.".
 - **Oracle:** `ls -la` of the target directories, `inspect` of the error text, `process.log`.
 
 **QA-14.9 Zip-2 backup compatibility**

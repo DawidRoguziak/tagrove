@@ -126,10 +126,23 @@ environment built only from the session manifest and refuses, before opening any
 unless the display is private and matches the session, `XAUTHORITY` and `XDG_DATA_HOME`
 belong to the scratch root, and the scratch `owner` matches the session ID. After every
 native command the controller runs a full doctor; if that fails, the session becomes
-`tainted` and accepts only `logs`, `screenshot`, and `stop`.
+`tainted` and accepts only `logs`, `screenshot`, and `stop`. A doctor that reports
+`busy-maintenance` or `unresponsive` instead does not taint the session.
 
 In a native file picker, press `Control+l` and type exactly the session media root (`doctor`
 prints it as the scan root). Never navigate to another folder.
+
+If a path typed into a save dialog names a folder that does not exist, GTK refuses it with its
+own modal "The folder contents could not be displayed" dialog, and the app never receives the
+path. That dialog blocks the app's main thread, so `doctor` reports `unresponsive`. Take a
+screenshot, dismiss it with `native key Escape` (doctor is `ok` again), then cancel the file
+chooser with another `native key Escape` or correct the path:
+
+```sh
+bun run app:control screenshot "$control_session"
+bun run app:control native "$control_session" key Escape
+bun run app:control native "$control_session" key Escape
+```
 
 ### Session states
 
@@ -139,11 +152,19 @@ prints it as the scan root). Never navigate to another folder.
 - `alert-open`: a `window.alert` is showing (the lightbox shows one when a deleted file is
   missing or its cleanup is pending). Only `alert`, `screenshot`, `doctor`, `logs`, and
   `stop` run; read it with `alert text`, then `alert accept`.
-- `busy-maintenance`: a library probe outlasted the 30 s script timeout. The maintenance gate
-  used by backup export/import, and the scan/thumbnail locks used by Clear library and Remove
-  root, wait without a limit. Observation commands (`inspect`, `wait`, `screenshot`, `logs`)
-  still run; actions are refused. Wait with `logs` and `process.log` until doctor says `ok`.
+- `busy-maintenance`: the identity is verified, but the library probe outlasted the 30 s
+  script timeout. The maintenance gate used by backup export/import, and the scan/thumbnail
+  locks used by Clear library and Remove root, wait without a limit. Observation commands
+  (`inspect`, `wait`, `screenshot`, `logs`) still run; actions are refused. Wait with `logs`
+  and `process.log` until doctor says `ok`.
+- `unresponsive`: an identity probe (window title, app-data path) timed out, because the app's
+  main thread does not answer, typically under a native modal dialog (see native input above).
+  Observation commands, `native key Escape`, and `stop` run; other actions are refused. The
+  result names the `probe` and gives a `hint`.
 - `tainted`: see native input above.
+
+While a probe hangs, each command that runs the doctor takes about 30 s before it answers, up
+to about 60 s when it also waits behind a console drain.
 
 ## Evidence
 
@@ -188,7 +209,9 @@ bun run app:control stop "$control_session"
 ```
 
 Stop closes the WebDriver session and owned process groups, then removes only the owned
-temporary directory. It leaves screenshots and logs intact. Repeated stop is safe. SIGINT,
+temporary directory. It leaves screenshots and logs intact. Repeated stop is safe. Stop does
+not wait behind other commands: it ends a session whose WebView hangs within seconds, and
+commands still queued at that point fail with "The session is stopping or stopped". SIGINT,
 SIGTERM, and SIGHUP also clean up. Verify `session.json` says `stopped`, its temporary root
 is gone, and evidence still exists. If a process will not stop, preserve the temporary data.
 
@@ -210,5 +233,7 @@ where it lives. `start` refuses a scratch root whose `control.sock` path would e
 controller's `realpath(os.tmpdir())`; the controller process itself performs `stop`, so keep
 `TMPDIR` unchanged for its whole life.
 Run `bun run test:app-control` for socket, cleanup, process-tree, input validation, modifier
-release, drag thresholds, native-helper refusals, socket-length, and fixture checks.
+release, drag thresholds, native-helper refusals, socket-length, session-state gating,
+probe-timeout classification, timeout budgets, command-queue (stop outside the queue), and
+fixture checks.
 Keep feature recipes current when selectors or behavior change.

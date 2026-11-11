@@ -33,7 +33,10 @@ Session states) and `bun run app:control help`.
 
 - **Native file picker:** press `native key Control+l`, `native type` exactly the media root
   that doctor prints (`<scratch>/media`), then `native key Return`. Never choose another folder.
-  Cancel with `native key Escape`.
+  Cancel with `native key Escape`. A save path in a folder that does not exist makes GTK show
+  its own "The folder contents could not be displayed" dialog; doctor reports `unresponsive`
+  (observe, `native key Escape`, `stop`). Screenshot it, dismiss it with `native key Escape`,
+  then cancel the picker with another `native key Escape`.
 - **Backups:** restore only a backup exported in the same session, from inside the copy.
 - **Close window:** the custom Close button ends the session. Use it only as the last step of
   the last suite of a block, and only if the suite says so.

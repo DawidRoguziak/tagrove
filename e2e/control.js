@@ -17,12 +17,12 @@ import {
 } from "./build-e2e.js";
 import {
   commandClass,
+  createCommandQueue,
   dragActions,
   driverPort,
   gateCommand,
-  isAlertOpenError,
-  isScriptTimeout,
   liveGroupMembers,
+  NATIVE_HELPER_TIMEOUT_MS,
   nativeEnvironment,
   nativePort,
   parseDragOptions,
@@ -30,8 +30,12 @@ import {
   parseInteger,
   parseModifiers,
   parseWait,
+  probeFailureState,
+  REQUEST_TIMEOUT_MS,
   removeOwnedScratch,
   requireFreePort,
+  SCRIPT_TIMEOUT_MS,
+  SOCKET_TIMEOUT_MS,
   stopOwnedGroup,
   validateRequest,
   validateSessionId,
@@ -42,8 +46,6 @@ import { copyPngFixtures, createPlayableFixtures } from "./fixtures.js";
 
 const evidenceRoot = path.join(projectRoot, "artifacts", "app-control");
 const nativeHelper = path.join(projectRoot, "e2e", "control-native.py");
-// Client and server socket budget: a 90 s wait plus a 30 s doctor probe must fit.
-const socketTimeoutMs = 150000;
 const help = `Usage: bun run app:control start
 Keep start running in a terminal or an exec session. It prints READY with a session ID.
 In another command: bun run app:control <command> <session> [arguments]
@@ -83,7 +85,9 @@ Control:
   diagnose                  Emit known console/error markers to test capture
   stop                      Stop owned processes; preserve evidence
 Doctor states: ok, alert-open (only alert/screenshot/doctor/logs/stop), busy-maintenance
-(an IPC probe timed out, e.g. backup export/import; observe only), tainted (logs/screenshot/stop).
+(the library probe timed out, e.g. backup export/import; observe only), unresponsive (the
+window identity probe timed out, e.g. a native modal dialog; observe, native key Escape),
+tainted (logs/screenshot/stop). stop runs at once, even while another command hangs.
 Selectors use WebdriverIO syntax. Quote selectors and text in your shell.
 Only one control session per checkout; do not build/run E2E concurrently.
 No arbitrary code execution or external media-root command is exposed.`;
@@ -110,7 +114,7 @@ async function main() {
   }
   const result = await new Promise((resolve, reject) => {
     const socket = net.createConnection(manifest.socket);
-    socket.setTimeout(socketTimeoutMs, () => socket.destroy(new Error("Control command timed out")));
+    socket.setTimeout(SOCKET_TIMEOUT_MS, () => socket.destroy(new Error("Control command timed out")));
     socket.once("error", (error) =>
       reject(
         ["ENOENT", "ECONNREFUSED"].includes(error.code)
@@ -159,7 +163,7 @@ async function start() {
   let stopping;
   let monitor;
   let consolePoll;
-  let queue = Promise.resolve();
+  const commands = createCommandQueue({ isStopping: () => Boolean(stopping) });
   let sequence = 0;
   let env;
   let driver;
@@ -275,6 +279,7 @@ async function start() {
     let title;
     let dataDir;
     let roots;
+    let stage = "identity";
     try {
       title = await invoke("plugin:window|title", { label: "main" });
       dataDir = await invoke("plugin:path|resolve_directory", {
@@ -283,15 +288,28 @@ async function start() {
       if (title !== e2eWindowTitle || path.resolve(dataDir) !== manifest.appData) {
         throw new Error(`Refusing unexpected app identity/profile: ${title}, ${dataDir}`);
       }
+      stage = "library";
       roots = await invoke("list_scan_roots");
     } catch (error) {
       // The maintenance gate and the scan/thumbnail locks wait without a limit, so a library
-      // probe can outlast the 30 s script timeout while a backup export/import runs. The
-      // guards stay unchanged: the session may only observe until the probe answers again.
-      if (isScriptTimeout(error))
-        return { ...base, title, dataDir, state: "busy-maintenance", detail: String(error) };
-      if (isAlertOpenError(error)) return { ...base, state: "alert-open" };
-      throw error;
+      // probe can outlast the script timeout while a backup export/import runs. A native modal
+      // dialog (GTK's own error dialog over a file chooser) can stall the identity probe, which
+      // needs the app's main thread. The guards stay unchanged: the session may only observe
+      // (and, when unresponsive, press Escape) until the probe answers again.
+      const state = probeFailureState(error, stage);
+      if (state === "alert-open") return { ...base, state };
+      if (!state) throw error;
+      return {
+        ...base,
+        ...(stage === "library" ? { title, dataDir } : {}),
+        state,
+        probe: stage === "library" ? "list_scan_roots" : "window identity",
+        detail: String(error).slice(0, 2000),
+        hint:
+          state === "busy-maintenance"
+            ? "A library operation holds the database; observe and wait until doctor says ok."
+            : "The app does not answer; take a screenshot. A native dialog may be open: native key Escape dismisses it. stop always works."
+      };
     }
     if (
       roots.some(
@@ -660,13 +678,15 @@ async function start() {
     } else if (command === "native") {
       await run("python3", [nativeHelper, ...args], {
         env: nativeEnvironment(manifest),
-        timeoutMs: 20000
+        timeoutMs: NATIVE_HELPER_TIMEOUT_MS
       });
       // Native input bypasses WebDriver, so prove identity again before anything else.
       let after;
       try {
         after = await doctor();
       } catch (error) {
+        // A stop that killed the driver mid-doctor must not turn a stopped manifest into tainted.
+        if (stopping) throw error;
         tainted = true;
         manifest.status = "tainted";
         await saveManifest();
@@ -833,14 +853,18 @@ async function start() {
       port: driverPort,
       logLevel: "error",
       connectionRetryCount: 0,
-      connectionRetryTimeout: 30000,
+      connectionRetryTimeout: REQUEST_TIMEOUT_MS,
       capabilities: {
         "tauri:options": { application: e2eBinaryPath },
         // Leave window.alert open so doctor reports alert-open and `alert` can handle it.
         unhandledPromptBehavior: "ignore"
       }
     });
-    await browser.setTimeout({ script: 30000, pageLoad: 30000, implicit: 0 });
+    await browser.setTimeout({
+      script: SCRIPT_TIMEOUT_MS,
+      pageLoad: SCRIPT_TIMEOUT_MS,
+      implicit: 0
+    });
     await doctor();
     await installConsole();
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
@@ -855,7 +879,7 @@ async function start() {
     manifest.processGroups = [display.pid, driver.pid];
     await saveManifest();
     server = net.createServer((socket) => {
-      socket.setTimeout(socketTimeoutMs, () => socket.destroy());
+      socket.setTimeout(SOCKET_TIMEOUT_MS, () => socket.destroy());
       socket.on("error", () => {});
       let data = "";
       socket.on("data", (chunk) => {
@@ -866,28 +890,34 @@ async function start() {
         }
         if (!data.includes("\n")) return;
         socket.removeAllListeners("data");
-        queue = queue
-          .then(async () => {
-            let request;
-            try {
-              request = validateRequest(JSON.parse(data));
-              await record("actions.jsonl", {
-                phase: "before",
-                class: commandClass(request),
-                ...request
-              });
-              const value = await handle(request);
-              await record("actions.jsonl", { phase: "after", ...request, value });
-              socket.end(`${JSON.stringify({ ok: true, value })}\n`);
-            } catch (error) {
-              await record("actions.jsonl", { ...request, error: String(error) });
-              socket.end(`${JSON.stringify({ ok: false, error: String(error) })}\n`);
-            }
-          })
-          .catch((error) => {
-            console.error(error);
-            socket.destroy();
-          });
+        let request;
+        (async () => {
+          try {
+            request = validateRequest(JSON.parse(data));
+            // stop bypasses the queue; other commands wait for their turn and are skipped when
+            // stopping began or their client left in the meantime.
+            const value = await commands.dispatch(
+              request,
+              async () => {
+                await record("actions.jsonl", {
+                  phase: "before",
+                  class: commandClass(request),
+                  ...request
+                });
+                return handle(request);
+              },
+              () => socket.destroyed
+            );
+            await record("actions.jsonl", { phase: "after", ...request, value });
+            socket.end(`${JSON.stringify({ ok: true, value })}\n`);
+          } catch (error) {
+            await record("actions.jsonl", { ...request, error: String(error) });
+            socket.end(`${JSON.stringify({ ok: false, error: String(error) })}\n`);
+          }
+        })().catch((error) => {
+          console.error(error);
+          socket.destroy();
+        });
       });
     });
     await new Promise((resolve, reject) => {
@@ -896,11 +926,14 @@ async function start() {
     });
     await fs.chmod(manifest.socket, 0o600);
     consolePoll = setInterval(() => {
-      queue = queue
-        .then(() => (stopping ? undefined : drainConsole()))
-        .catch((error) =>
-          record("console.jsonl", { level: "capture-error", message: String(error) })
-        );
+      commands
+        .poll(drainConsole)
+        ?.catch((error) =>
+          stopping
+            ? undefined
+            : record("console.jsonl", { level: "capture-error", message: String(error) })
+        )
+        .catch(console.error);
     }, 2000);
     monitor = setInterval(() => {
       if ([display, driver].some((child) => child.exitCode !== null || child.signalCode !== null)) {

@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-08
 - Areas: testing, data safety, security surface, agent tooling
-- Related: [audit process](../development/audit/README.md), [audit safety model](../../.claude/skills/audit/references/safety.md), [testing: persistent desktop control](../development/testing.md#persistent-desktop-control)
+- Related: [audit process](../development/audit/README.md), [audit safety model](../../.claude/skills/audit/references/safety.md), [testing: persistent desktop control](../development/testing.md#persistent-desktop-control), [ADR 0023](0023-app-control-unresponsive-state-and-out-of-queue-stop.md)
 
 ## Context
 

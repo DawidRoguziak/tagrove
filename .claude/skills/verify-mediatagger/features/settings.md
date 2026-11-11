@@ -52,14 +52,18 @@ bun run app:control wait "$control_session" idle 60000
 ```
 
 Cancel a picker with `native key Escape`. The CSV and backup import/export buttons open the
-same kind of dialog; point them only at files inside the session's temporary root.
+same kind of dialog; point them only at files inside the session's temporary root. A typed save
+path in a folder that does not exist opens GTK's own error dialog over the picker; doctor then
+reports `unresponsive` until `native key Escape` dismisses it (see the skill's native input
+section).
 
 Long operations: Rescan all, Remove root, Clear library, and backup export/import hold locks
 without a time limit. While one runs, `doctor` can report `busy-maintenance` (a probe timed
 out): `inspect`, `wait`, `screenshot`, and `logs` still work and actions are refused. Poll with
 `wait ... idle <ms>` and `logs` until doctor says `ok`. A deleted file in the lightbox may
 leave a `window.alert` (`alert-open`: use `alert text`, then `alert accept`). A failed doctor
-after `native` sets `tainted`, which allows only `logs`, `screenshot`, and `stop`.
+after `native` sets `tainted`, which allows only `logs`, `screenshot`, and `stop`. `stop`
+always works, even while another command hangs.
 
 Confirmation dialogs (`#remove-scan-root-confirm-heading`, `#clear-library-confirm-heading`,
 `#import-db-overwrite-confirm-heading`, `#duplicate-delete-confirm-heading`) are modals:

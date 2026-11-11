@@ -67,6 +67,18 @@ export const MODIFIER_SPECS = Object.freeze(["Shift", "Control", "Control+Shift"
 export const WAIT_STATES = Object.freeze(["displayed", "gone", "enabled", "visible", "hidden"]);
 export const WAIT_DEFAULT_MS = 15000;
 export const WAIT_MAX_MS = 90000;
+// WebKitWebDriver's script timeout. The client's HTTP request budget has a margin above it, so
+// the driver reports a script timeout before the client aborts the request.
+export const SCRIPT_TIMEOUT_MS = 30000;
+export const REQUEST_TIMEOUT_MS = SCRIPT_TIMEOUT_MS + 5000;
+export const NATIVE_HELPER_TIMEOUT_MS = 20000;
+// A doctor makes at most two requests that can each run into the request timeout: the alert
+// probe and the first IPC probe that does not answer.
+export const DOCTOR_BUDGET_MS = 2 * REQUEST_TIMEOUT_MS;
+// Client and server socket budget: the doctor before a command, then a 90 s wait or a native
+// command (helper limit plus its own doctor), plus a margin.
+export const SOCKET_TIMEOUT_MS =
+  DOCTOR_BUDGET_MS + Math.max(WAIT_MAX_MS, NATIVE_HELPER_TIMEOUT_MS + DOCTOR_BUDGET_MS) + 30000;
 export const DRAG_HOLD_DEFAULT_MS = 200;
 // A Linux sockaddr_un path holds 108 bytes including the terminating NUL.
 export const SOCKET_PATH_LIMIT = 107;
@@ -257,9 +269,17 @@ export function commandClass(request) {
   return COMMAND_CLASS[request.command];
 }
 
+// `native key Escape` is the only action an unresponsive session accepts: it can dismiss a native
+// modal dialog (for example GTK's own error dialog over a file chooser) on the private display.
+export function isNativeDismiss(request) {
+  return request.command === "native" && request.args[0] === "key" && request.args[1] === "Escape";
+}
+
 // Session states: ok, alert-open (a window.alert blocks script execution), busy-maintenance
-// (an IPC identity probe timed out, e.g. during a backup export/import), tainted (a native
-// command was followed by a failed doctor). Returns null when allowed or the refusal reason.
+// (identity verified, but the library probe timed out, e.g. during a backup export/import or
+// while a library lock is held), unresponsive (an identity probe timed out: the app's main
+// thread does not answer, e.g. under a native modal dialog), tainted (a native command was
+// followed by a failed doctor). Returns null when allowed or the refusal reason.
 export function gateCommand(state, request) {
   const kind = commandClass(request);
   if (request.command === "stop" || request.command === "logs") return null;
@@ -274,13 +294,71 @@ export function gateCommand(state, request) {
   if (state === "busy-maintenance")
     return kind === "observe"
       ? null
-      : "busy-maintenance: the identity probe timed out (backup export/import or a held library lock); observe and wait, do not act.";
+      : "busy-maintenance: the library probe timed out (backup export/import or a held library lock); observe and wait, do not act.";
+  if (state === "unresponsive")
+    return kind === "observe" || isNativeDismiss(request)
+      ? null
+      : "unresponsive: the window identity probe timed out (a native modal dialog may block the app); take a screenshot, dismiss it with native key Escape, or stop.";
   return null;
 }
 
 export function isScriptTimeout(error) {
   const text = `${error?.name ?? ""} ${error?.message ?? error ?? ""}`;
   return /script timeout|timed out waiting for (?:script|async)|asynchronous script timeout/i.test(text);
+}
+
+// The webdriver client aborts a request after connectionRetryTimeout with this message.
+export function isRequestTimeout(error) {
+  const text = `${error?.name ?? ""} ${error?.message ?? error ?? ""}`;
+  return /request timed out/i.test(text);
+}
+
+// Maps a failed doctor IPC probe to a session state, or null when the failure is not a known
+// waiting state and must fail the doctor. `stage` is "identity" (window title, app-data path)
+// or "library" (scan roots, after the identity is verified).
+export function probeFailureState(error, stage) {
+  if (isAlertOpenError(error)) return "alert-open";
+  if (!isScriptTimeout(error) && !isRequestTimeout(error)) return null;
+  return stage === "library" ? "busy-maintenance" : "unresponsive";
+}
+
+export const SESSION_STOPPING = "The session is stopping or stopped; the command was not run.";
+export const CLIENT_GONE = "The client disconnected before the command started; it was not run.";
+
+// Serializes session commands through one browser session. `stop` runs at once, outside the
+// queue, because queued work may wait on a WebView or driver that no longer answers. Commands
+// that have not started when stopping begins, or whose client already left, are not run.
+// Console polls coalesce: at most one waits or runs at a time, so a hang cannot pile them up.
+export function createCommandQueue({ isStopping }) {
+  let tail = Promise.resolve();
+  let pollPending = false;
+  const enqueue = (job) => {
+    const result = tail.then(() => {
+      if (isStopping()) throw new Error(SESSION_STOPPING);
+      return job();
+    });
+    tail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  };
+  return {
+    dispatch(request, job, isAbandoned = () => false) {
+      if (request.command === "stop") return Promise.resolve().then(job);
+      return enqueue(() => {
+        if (isAbandoned()) throw new Error(CLIENT_GONE);
+        return job();
+      });
+    },
+    poll(job) {
+      if (pollPending || isStopping()) return null;
+      pollPending = true;
+      return enqueue(job).finally(() => {
+        pollPending = false;
+      });
+    }
+  };
 }
 
 export function isAlertOpenError(error) {

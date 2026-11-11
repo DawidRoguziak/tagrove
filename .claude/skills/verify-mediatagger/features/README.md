@@ -15,7 +15,7 @@ arbitrary IPC is exposed, so do not claim them as verified through an IPC call.
 Controller commands beyond click/fill/keys: `wait ... visible|hidden` (tile loader), `drag`
 (timeline scrubber, rectangle selection), `modclick` (Shift/Ctrl selection), `wheel ... ctrl`
 (tile size), `select` (language), `alert` (delete alert), `resize`, and `native`. Doctor states
-beyond `ok`: `alert-open`, `busy-maintenance`, `tainted`.
+beyond `ok`: `alert-open`, `busy-maintenance`, `unresponsive`, `tainted`.
 
 For each proof, record the action and resulting state with `inspect` and `screenshot`. For
 a persistent change, reopen the affected UI or read the temporary database as well. Follow

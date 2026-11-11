@@ -21,3 +21,32 @@ fn resolve_window_theme(theme: &str) -> Result<(Theme, Color), String> {
         _ => Err(format!("unsupported theme '{theme}'")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_light_theme() {
+        let (theme, color) = resolve_window_theme("light").unwrap();
+        assert_eq!(theme, Theme::Light);
+        assert_eq!(color, Color(0xED, 0xE8, 0xDD, 0xFF));
+    }
+
+    #[test]
+    fn resolves_dark_theme() {
+        let (theme, color) = resolve_window_theme("dark").unwrap();
+        assert_eq!(theme, Theme::Dark);
+        assert_eq!(color, Color(0x12, 0x12, 0x12, 0xFF));
+    }
+
+    #[test]
+    fn rejects_unknown_empty_and_differently_cased_themes() {
+        for input in [
+            "", "system", "auto", "Light", "DARK", " dark", "dark ", "light\n",
+        ] {
+            let error = resolve_window_theme(input).unwrap_err();
+            assert_eq!(error, format!("unsupported theme '{input}'"));
+        }
+    }
+}

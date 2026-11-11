@@ -53,6 +53,8 @@ describe("api contract", () => {
         { t: 0, start: 2, count: 1 }
       ]
     },
+    // Sections unavailable for this snapshot (ADR 0027): ready, kept session, no list.
+    { status: "ready", session_id: 7, total: 3, sections: [] },
     { status: "stale" }
   ])("reads timeline sections of a session: %j", async (response) => {
     coreMocks.invoke.mockResolvedValueOnce(response);

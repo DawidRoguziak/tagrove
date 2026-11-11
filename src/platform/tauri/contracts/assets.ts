@@ -75,6 +75,11 @@ export interface AssetQuerySection {
   count: number;
 }
 
+/**
+ * `ready` with an empty `sections` list while `total > 0` means the sections
+ * are unavailable for this snapshot (ADR 0027): the session stays valid and
+ * the timeline stays hidden. Only `stale` means the session is gone.
+ */
 export type AssetQuerySectionsResult =
   | { status: "ready"; session_id: number; total: number; sections: AssetQuerySection[] }
   | AssetQueryStale;

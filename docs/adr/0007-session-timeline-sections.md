@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-07
 - Areas: library query, IPC, gallery
-- Related: [library query and gallery](../subsystems/library-query-and-gallery.md#timeline-sections-and-scrubber), [IPC contract](../architecture/ipc-contract.md#asset-queries-and-reads), [plan stage 08](../plans/grid-performance/08-timeline-scrubber.md), [ADR 0003](0003-custom-gallery-virtualizer.md), [ADR 0004](0004-trigger-maintained-gallery-sort-keys.md)
+- Related: [library query and gallery](../subsystems/library-query-and-gallery.md#timeline-sections-and-scrubber), [IPC contract](../architecture/ipc-contract.md#asset-queries-and-reads), [plan stage 08](../plans/grid-performance/08-timeline-scrubber.md), [ADR 0003](0003-custom-gallery-virtualizer.md), [ADR 0004](0004-trigger-maintained-gallery-sort-keys.md), [ADR 0027](0027-unfiltered-sections-unavailable-instead-of-stale.md) (amends the row-count rule)
 
 ## Context
 

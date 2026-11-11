@@ -2094,3 +2094,203 @@ mod scan_prune_with_non_utf8_names {
         assert_eq!(tag_names(&state), vec!["keep".to_string()]);
     }
 }
+
+/// Unfiltered timeline sections while a scan commits batches between its
+/// throttled revision bumps (ADR 0002, ADR 0027).
+mod sections_during_a_scan {
+    use std::{
+        path::Path,
+        sync::{
+            atomic::{AtomicBool, AtomicU64},
+            Mutex, RwLock,
+        },
+    };
+
+    use media_tagger::{
+        app::state::AppState,
+        db,
+        models::{
+            AssetQueryPageResult, AssetQuerySectionsResult, NewAsset, ScanCompletion,
+            StartAssetQueryResult,
+        },
+        services::{
+            asset_query_service::AssetQueryFilters, db_pool::DatabaseRuntime, scan_service,
+            thumb_scheduler::ThumbnailScheduler,
+        },
+    };
+    use tempfile::tempdir;
+
+    fn state(dir: &Path) -> AppState {
+        let db_path = dir.join("media.db");
+        AppState {
+            database: DatabaseRuntime::new(db_path.clone()),
+            db_path,
+            thumbs_dir: dir.join("thumbs"),
+            ffmpeg_path: "ffmpeg".into(),
+            scan_lock: Mutex::new(()),
+            thumb_lock: RwLock::new(()),
+            thumb_scheduler: ThumbnailScheduler::new(1, "ffmpeg".into()),
+            thumbnail_render_all_running: AtomicBool::new(false),
+            thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+            thumbnail_generation: AtomicU64::new(0),
+        }
+    }
+
+    fn scan(state: &AppState, root: &str) {
+        let permit = state.database.admit().expect("admit");
+        let summary = scan_service::scan_roots(&[root.to_string()], state, &permit, &|_| Ok(()))
+            .expect("scan");
+        assert!(matches!(summary.completion, ScanCompletion::Complete));
+    }
+
+    fn start(state: &AppState, generation: u64) -> (u64, usize) {
+        let queries = &state.database.queries;
+        let request = queries.begin_request("sections-scan-test", generation);
+        let filters = AssetQueryFilters {
+            tags_and: vec![],
+            tags_not: vec![],
+            kind: None,
+            favorites_only: false,
+            meta_filter: None,
+        };
+        match queries
+            .start(
+                &state.database.admit().expect("admit"),
+                filters,
+                16,
+                request,
+                generation,
+            )
+            .expect("start")
+        {
+            StartAssetQueryResult::Ready {
+                session_id, total, ..
+            } => (session_id, total),
+            StartAssetQueryResult::Superseded => panic!("superseded"),
+        }
+    }
+
+    fn sections(state: &AppState, session_id: u64) -> AssetQuerySectionsResult {
+        state
+            .database
+            .queries
+            .sections(&state.database.admit().expect("admit"), session_id)
+            .expect("sections")
+    }
+
+    fn page_total(state: &AppState, session_id: u64) -> Option<usize> {
+        match state
+            .database
+            .queries
+            .page(&state.database.admit().expect("admit"), session_id, 0, 16)
+            .expect("page")
+        {
+            AssetQueryPageResult::Ready { total, .. } => Some(total),
+            AssetQueryPageResult::Stale => None,
+        }
+    }
+
+    #[test]
+    fn a_session_survives_an_unbumped_scan_batch_and_gets_sections_after_the_scan_ends() {
+        let dir = tempdir().expect("tempdir");
+        let root = dir.path().join("media");
+        std::fs::create_dir_all(&root).expect("root");
+        std::fs::write(root.join("first.jpg"), b"first").expect("first");
+        std::fs::write(root.join("second.jpg"), b"second").expect("second");
+        let state = state(dir.path());
+        let root_text = root.to_str().expect("UTF-8 root").to_string();
+        {
+            let conn = state
+                .database
+                .admit()
+                .expect("admit")
+                .connection()
+                .expect("connection");
+            db::init_schema(&conn).expect("schema");
+            db::add_scan_root(&conn, &root_text).expect("add root");
+        }
+        scan(&state, &root_text);
+        let (session_id, total) = start(&state, 1);
+        assert_eq!(total, 2);
+
+        // A rescan finds a new file and commits its batch without a bump,
+        // as `flush_scan_batch` does between two throttled bumps.
+        std::fs::write(root.join("third.jpg"), b"third").expect("third");
+        {
+            let conn = state
+                .database
+                .admit()
+                .expect("admit")
+                .connection()
+                .expect("connection");
+            let revision = db::current_library_revision(&conn).expect("revision");
+            let tx = rusqlite::Transaction::new_unchecked(
+                &conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+            .expect("begin");
+            db::upsert_scanned_asset(
+                &tx,
+                &NewAsset {
+                    path: format!("{root_text}/third.jpg"),
+                    kind: "image".into(),
+                    size_bytes: 5,
+                    modified_at: 1_700_000_000,
+                    width: None,
+                    height: None,
+                    duration_ms: None,
+                    thumb_path: None,
+                },
+                1,
+                &root_text,
+                1,
+            )
+            .expect("batch row");
+            tx.commit().expect("commit");
+            assert_eq!(
+                db::current_library_revision(&conn).expect("revision"),
+                revision
+            );
+        }
+
+        // The gallery's session keeps serving its snapshot; only the
+        // timeline is unavailable for it.
+        assert_eq!(
+            sections(&state, session_id),
+            AssetQuerySectionsResult::Ready {
+                session_id,
+                total: 2,
+                sections: vec![],
+            }
+        );
+        assert_eq!(page_total(&state, session_id), Some(2));
+        assert_eq!(start(&state, 2), (session_id, 2));
+
+        // The real scan bumps when it ends: the old session goes stale and the
+        // new one has sections covering every row.
+        scan(&state, &root_text);
+        assert_eq!(page_total(&state, session_id), None);
+        assert_eq!(
+            sections(&state, session_id),
+            AssetQuerySectionsResult::Stale
+        );
+        let (fresh, total) = start(&state, 3);
+        assert_ne!(fresh, session_id);
+        assert_eq!(total, 3);
+        let AssetQuerySectionsResult::Ready {
+            session_id: returned,
+            total,
+            sections,
+        } = sections(&state, fresh)
+        else {
+            panic!("ready sections after the scan");
+        };
+        assert_eq!((returned, total), (fresh, 3));
+        assert!(!sections.is_empty());
+        assert_eq!(sections[0].start, 0);
+        assert_eq!(
+            sections.iter().map(|section| section.count).sum::<usize>(),
+            3
+        );
+    }
+}

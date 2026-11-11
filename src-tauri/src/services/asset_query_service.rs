@@ -319,7 +319,9 @@ impl AssetQueryManager {
     /// Timeline sections of a session (stage 08), checked against the
     /// dependency revision like pages. A filtered session built them with its
     /// IDs; an unfiltered one reads them once, here, from the sort-key index in
-    /// this read transaction, keeping that scan off the rebuild path.
+    /// this read transaction, keeping that scan off the rebuild path. When the
+    /// live index no longer matches the session's row count, the result is
+    /// `Ready` with no sections and the session stays usable (ADR 0027).
     pub fn sections(
         &self,
         permit: &OperationPermit,
@@ -342,11 +344,21 @@ impl AssetQueryManager {
             let started = Instant::now();
             let sections = db::list_unfiltered_query_sections(&tx)?;
             perf_log("asset-query-sections", started, sections.len());
-            // The revision check above makes this the session's snapshot; a
-            // different row count would mean a broken invariant, not a race.
+            // A scan commits batches between its throttled revision bumps
+            // (ADR 0002), so the table can hold rows this session's snapshot
+            // does not while the dependency revision still matches. Those
+            // sections do not describe the session, but its IDs and pages are
+            // still the snapshot the revision promises: keep the session,
+            // return no sections, and store nothing. The scan's next bump
+            // (throttled, final, or error-path) makes the session stale, and
+            // the session built after it reads its sections again (ADR 0027).
             if sections.iter().map(|section| section.count).sum::<usize>() != total {
-                self.remove_session(session_id);
-                return Ok(AssetQuerySectionsResult::Stale);
+                perf_log("asset-query-sections-mismatch", started, total);
+                return Ok(AssetQuerySectionsResult::Ready {
+                    session_id,
+                    total,
+                    sections: Vec::new(),
+                });
             }
             let _ = session.sections.set(sections);
         }
@@ -1319,6 +1331,87 @@ mod tests {
                 "sections": [{"t": 202401, "start": 0, "count": 1}, {"t": 0, "start": 1, "count": 1}]
             })
         );
+    }
+
+    #[test]
+    fn unbumped_scan_commit_keeps_the_session_without_sections_until_the_next_bump() {
+        const MAR_2024: i64 = 1_710_000_000; // 2024-03-09
+        let target = test_db(3);
+        let manager = AssetQueryManager::new();
+        let permit = target.runtime.admit().unwrap();
+        let request = manager.begin_request("test", 1);
+        let StartAssetQueryResult::Ready {
+            session_id, total, ..
+        } = start(&manager, &target.path, &filters(&[]), request, 1)
+        else {
+            panic!("ready");
+        };
+        assert_eq!(total, 3);
+
+        // A scan batch between two throttled bumps: committed, no bump.
+        let conn = permit.connection().unwrap();
+        let revision = db::current_library_revision(&conn).unwrap();
+        dated_asset(&conn, "batch", MAR_2024);
+        assert_eq!(db::current_library_revision(&conn).unwrap(), revision);
+
+        // The session is still the snapshot its revision promises: no
+        // sections, nothing stored, and pages, positions and the cached start
+        // keep using it.
+        for _ in 0..2 {
+            assert_eq!(ready_sections(&manager, &permit, session_id), (3, vec![]));
+        }
+        let session = manager.session_by_id(session_id).expect("session kept");
+        assert!(session.sections.get().is_none());
+        let AssetQueryPageResult::Ready {
+            session_id: page_session,
+            total: page_total,
+            items,
+            ..
+        } = manager.page(&permit, session_id, 0, 10).unwrap()
+        else {
+            panic!("ready page");
+        };
+        assert_eq!((page_session, page_total, items.len()), (session_id, 3, 3));
+        let request = manager.begin_request("test", 2);
+        let StartAssetQueryResult::Ready {
+            session_id: cached,
+            total,
+            ..
+        } = start(&manager, &target.path, &filters(&[]), request, 2)
+        else {
+            panic!("ready");
+        };
+        assert_eq!((cached, total), (session_id, 3));
+
+        // The scan's final bump makes the session stale; the next one reads
+        // sections that cover the new row.
+        db::bump_library_revision(&conn).unwrap();
+        assert_eq!(
+            manager.sections(&permit, session_id).unwrap(),
+            AssetQuerySectionsResult::Stale
+        );
+        assert!(manager.session_by_id(session_id).is_none());
+        let request = manager.begin_request("test", 3);
+        let StartAssetQueryResult::Ready {
+            session_id: fresh,
+            total,
+            ..
+        } = start(&manager, &target.path, &filters(&[]), request, 3)
+        else {
+            panic!("ready");
+        };
+        assert_ne!(fresh, session_id);
+        assert_eq!(total, 4);
+        assert_eq!(
+            ready_sections(&manager, &permit, fresh),
+            (4, vec![(202_403, 0, 1), (197_001, 1, 3)])
+        );
+        assert!(manager
+            .session_by_id(fresh)
+            .unwrap()
+            .sections
+            .get()
+            .is_some());
     }
 
     #[test]

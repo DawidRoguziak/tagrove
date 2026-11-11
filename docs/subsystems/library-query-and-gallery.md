@@ -186,7 +186,16 @@ Each session has timeline sections `{ t, start, count }` (`src-tauri/src/db/quer
 IDs. An unfiltered build reads only IDs (reading the bucket columns per row doubled the 1M
 rebuild); its sections are read once, on the first `get_asset_query_sections` call, from the
 sort-key index inside the read transaction that checks the session's revision (about 29 ms for
-1M rows, release), then kept in the session.
+1M rows, release), then kept in the session. A scan commits batches between its throttled
+revision bumps ([ADR 0002](../adr/0002-backend-write-priority-and-scan-revisions.md)), so the live
+index can hold rows the session snapshot does not while the revision still matches. When the
+sections' row count differs from the session total, the read returns `ready` with an empty list,
+keeps the session (its pages, positions, ID ranges and cached start stay valid), and stores
+nothing; the scan's next bump (throttled, final or error-path) makes the session `stale`, and the
+session built after it reads its sections again
+([ADR 0027](../adr/0027-unfiltered-sections-unavailable-instead-of-stale.md)). A batch that only
+changes existing rows' times keeps the count, so those sections can be slightly misaligned for
+the session's remaining life, which the same bump ends.
 `t` is the UTC month (`yyyymm`) of the row's **bucket time**, the time the gallery order sorts
 by ([database ordering](database.md#gallery-and-media-group-ordering)): a media group belongs to
 the month of its newest (matching) member, so a group is never split and a month is one
@@ -195,8 +204,8 @@ A month larger than 5,000 rows is split between buckets (unfiltered: where the b
 changes) into further sections with the same `t`. `get_asset_query_sections` returns them for a session, or `stale` like a page read.
 
 `createAssetQuery` loads sections once per session after a `ready` start (a cache hit with the
-same session ID keeps them) and exposes `sections`; a failed or stale read leaves the timeline
-hidden. `GalleryTimelineScrubber` appears when the result spans at least two months. It is a
+same session ID keeps them) and exposes `sections`; a failed or stale read, or a `ready` read
+with no sections, leaves the timeline hidden. Only a stale read schedules a refresh. `GalleryTimelineScrubber` appears when the result spans at least two months. It is a
 sticky `role="slider"` named “Timeline”, 10 px wide and 24 px from the right edge, beside the
 position bar: GTK's overlay scrollbar (native mode) and `GalleryScrollbar` (windowed mode) take the
 pointer hits of the right 14 to 21 px (the native one measures 21 px in the WebKitGTK E2E build;
@@ -329,9 +338,9 @@ Inclusive range reads capture one session and generation, checking them after ev
 - `src-tauri/src/db.rs` tests cover filter composition, grouped ordering, summary-supporting data invariants, cooperative ID-build cancellation, and related mutations including same-transaction revision bumps.
 - `src-tauri/src/services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, inverted admission, independent owner generations, capacity rejection/recovery, revision-stale pages, LRU/TTL eviction, clear semantics, and snapshot starts.
 - `src/library/query/__tests__/createAssetQuery.test.ts` covers first-page replacement, current supersession error/retry and obsolete-response rejection, start/page failure error state with retry recovery, debounced stale-triggered restarts, page-failure epoch signaling, late-generation response rejection, `version` notification of in-place merges, the page bound, and render-only refresh fallback.
-- `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, although it does not exercise `AssetQueryManager` session policy directly.
+- `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, selection specs resolved on a session (`selection_spec`), and in `sections_during_a_scan` the session policy of timeline sections across a real scan: a session kept through an unbumped batch commit, then stale after the scan's final bump and replaced by one with sections.
 - `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate range-demand suppression, shared in-flight indexed page lookup, the paused-range hold, and clear-library reset.
-- `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews, per-asset thumbnail DOM isolation, loaded tiles kept through a fast jump and through a refresh deep in the list, one-slot recycling with constant DOM and row order, per-row backplates and the windowed scrollbar. `gridGeometry.test.ts` covers layout, ranges, anchors and window bases at 10k/26k/1M slots; `createVirtualGrid.test.tsx` covers ranges, anchors, the windowed mode, the pause and disposal; `GalleryScrollbar.test.tsx` covers its accessibility, pointer and keyboard input. `timeline.test.ts` and `GalleryTimelineScrubber.test.tsx` cover month merging, position mapping, keys, ARIA, the focus taken on a press and the per-frame drag with held demand; `GalleryGrid.test.tsx` covers the timeline beside the windowed bar and the right padding that clears its rail; `query_sections.rs` and `asset_query_service.rs` tests cover section boundaries, groups, no-date rows, splits, filters and staleness. `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior, including a released read and its Retry surviving window blur.
+- `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews, per-asset thumbnail DOM isolation, loaded tiles kept through a fast jump and through a refresh deep in the list, one-slot recycling with constant DOM and row order, per-row backplates and the windowed scrollbar. `gridGeometry.test.ts` covers layout, ranges, anchors and window bases at 10k/26k/1M slots; `createVirtualGrid.test.tsx` covers ranges, anchors, the windowed mode, the pause and disposal; `GalleryScrollbar.test.tsx` covers its accessibility, pointer and keyboard input. `timeline.test.ts` and `GalleryTimelineScrubber.test.tsx` cover month merging, position mapping, keys, ARIA, the focus taken on a press and the per-frame drag with held demand; `GalleryGrid.test.tsx` covers the timeline beside the windowed bar and the right padding that clears its rail; `query_sections.rs` and `asset_query_service.rs` tests cover section boundaries, groups, no-date rows, splits, filters and staleness, and that an unbumped scan commit keeps the session without sections until the next bump (also `backend_integration`, `sections_during_a_scan`, with a real scan). `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior, including a released read and its Retry surviving window blur.
 - `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers one element across source changes, hiding until the current source loads, async decoding, fade readiness for delayed/cached loads, failures, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail checks](../development/testing.md#gallery-thumbnail-fade) require immediate full opacity during filtering and scrolling in both themes and with reduced motion.
 - `src/features/lightbox/__tests__/createLightbox.test.ts` covers detail/mutation races, identity-reset ID reuse, deletion tombstones, query-session cache invalidation, rapid navigation, and query-position recomputation. See [lightbox tests](lightbox.md#tests) for remaining navigation/prefetch scenarios.
 - `src/features/search/__tests__/createSearch.test.ts` covers applied-state transitions, meta-filter validation, and explicit refresh when filters are unchanged.

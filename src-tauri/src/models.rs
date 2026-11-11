@@ -69,6 +69,8 @@ pub struct AssetQuerySection {
     pub count: usize,
 }
 
+/// `Ready` with no sections while `total > 0` means the sections are
+/// unavailable for this snapshot and the session stays valid (ADR 0027).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum AssetQuerySectionsResult {

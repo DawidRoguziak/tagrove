@@ -135,6 +135,36 @@ describe("createAssetQuery", () => {
     expect(result.sessionId()).toBe(8);
   });
 
+  it("keeps the session and hides the timeline when ready sections are unavailable", async () => {
+    // A scan batch committed without a revision bump (ADR 0027): the backend
+    // keeps the session and returns `ready` with no sections.
+    vi.useFakeTimers();
+    apiMocks.startAssetQuery.mockResolvedValueOnce(readyStart([createSummary(1), createSummary(2)], 4, 7));
+    apiMocks.getAssetQuerySections.mockResolvedValueOnce({
+      status: "ready",
+      session_id: 7,
+      total: 4,
+      sections: []
+    });
+    apiMocks.getAssetQueryPage.mockResolvedValueOnce({
+      ...readyStart([createSummary(3), createSummary(4)], 4, 7),
+      offset: 2
+    });
+    const { result } = await renderAssets();
+    await settle(async () => {
+      await result.refresh();
+    });
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS + STALE_REFRESH_MIN_INTERVAL_MS);
+    expect(apiMocks.getAssetQuerySections).toHaveBeenCalledTimes(1);
+    expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(1);
+    expect(result.sections).toEqual([]);
+    expect(result.sessionId()).toBe(7);
+    await settle(async () => {
+      expect((await result.getAssetAtAsync(3))?.id).toBe(4);
+    });
+    expect(apiMocks.getAssetQueryPage).toHaveBeenCalledWith(7, 2, PAGE_SIZE);
+  });
+
   it("exposes current supersession for retry while keeping the previous cache visible", async () => {
     apiMocks.startAssetQuery.mockResolvedValueOnce(readyStart([createSummary(1)], 1, 7));
     const { result } = await renderAssets();

@@ -218,8 +218,8 @@ Reloads within a spec preserve preferences so persistence checks remain meaningf
 5. The build helper verifies that the expected executable exists.
 6. WebdriverIO `beforeSession` starts `tauri-driver` with `--native-driver <WEBKIT_WEBDRIVER_PATH>`.
 7. WebdriverIO opens one session for the isolated application. `maxInstances: 1` keeps the shared desktop state serial.
-8. Before tests run, the suite reads the live window title and refuses to continue unless it exactly matches the E2E title.
-9. `afterSession` and process signal handlers stop `tauri-driver`.
+8. Before tests run, the suite reads the live window title and refuses to continue unless it exactly matches the E2E title. WebdriverIO logs and ignores an error thrown from the `before` hook, so on a mismatch (or an unreadable title) the guard stops `tauri-driver` and ends the worker with exit status 78 before any spec or preference write, and the launcher's `onWorkerEnd` hook then ends the whole run with status 1 so no later spec file starts another worker.
+9. `afterSession` and process signal handlers stop `tauri-driver`. An interrupted run exits with the conventional signal status (130 for SIGINT, 143 for SIGTERM, 129 for SIGHUP) instead of 0, so `&&` chains such as `test:all` stop (the handlers are prepended because the `create-wdio` SIGINT handler that the WDIO CLI loads exits with 1 synchronously and would otherwise run first). A worker whose launcher disappears stops its own `tauri-driver` and exits with status 1 instead of staying orphaned.
 
 The exact E2E identity is:
 
@@ -250,7 +250,7 @@ The pre-run app-data cleanup resolves both paths and refuses recursive deletion 
 - its basename is exactly `com.example.mediatagger.e2e`;
 - the identifier ends in `.e2e`.
 
-Only then does it recursively remove the E2E directory with retries. An `EPERM` lock is a limitation: the runner warns, skips that cleanup, and continues, so stale isolated E2E state may remain. The live-title check is the final guard before specs containing destructive actions.
+Only then does it recursively remove the E2E directory with retries. An `EPERM` lock is a limitation: the runner warns, skips that cleanup, and continues, so stale isolated E2E state may remain. The live-title check is the final guard before specs containing destructive actions; it ends the run with a non-zero status rather than throwing.
 
 ### Isolated desktop smoke
 
@@ -289,7 +289,7 @@ The workflow suite deliberately tests library clear, scan-root removal, backup r
 
 Desktop selectors currently mix stable IDs/classes/data attributes, `aria-label` values, visible English text selectors such as `button=Apply`, and a small number of XPath expressions. Prefer stable accessible roles/names or explicit test IDs when text is not itself the behavior. If visible copy or accessibility labels change, update the associated E2E selectors in the same change.
 
-After checking the live E2E title, the desktop harness sets only `media-tagger.language=en` and `media-tagger.theme=dark`, then reloads before each spec. It leaves unrelated storage untouched. A reload inside a spec retains any language/theme changes, allowing persistence assertions. The tooling tests verify that an unexpected title prevents preference writes.
+After checking the live E2E title, the desktop harness sets only `media-tagger.language=en` and `media-tagger.theme=dark`, then reloads before each spec. It leaves unrelated storage untouched. A reload inside a spec retains any language/theme changes, allowing persistence assertions. The tooling tests (`bun run test:e2e-build`) verify that an unexpected or unreadable title ends the worker with status 78 before any preference write, that the launcher's `onWorkerEnd` hook turns that status into a run-ending exit 1, that SIGINT, SIGTERM and SIGHUP end it with 130, 143 and 129, and that a worker exits when its launcher disconnects.
 
 ### UI redesign matrix
 

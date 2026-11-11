@@ -103,19 +103,74 @@ async function getNativeWindowTitle() {
   return response.value;
 }
 
-function onShutdown(fn) {
-  const cleanup = () => {
-    try {
-      fn();
-    } finally {
-      process.exit();
-    }
-  };
+// Exit status of a worker stopped by the live-title guard (EX_CONFIG).
+const guardAbortExitCode = 78;
+const signalExitCodes = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
 
-  process.on("exit", cleanup);
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
-  process.on("SIGHUP", cleanup);
+function onShutdown(fn) {
+  // A normal exit already carries its code; only run the cleanup.
+  process.on("exit", () => {
+    fn();
+  });
+
+  // An interrupted run must not report success to `&&` chains such as `test:all`.
+  // Prepend: the create-wdio SIGINT handler loaded by the WDIO CLI exits with status 1 synchronously.
+  for (const [signal, code] of Object.entries(signalExitCodes)) {
+    process.prependListener(signal, () => {
+      try {
+        fn();
+      } finally {
+        process.exit(code);
+      }
+    });
+  }
+
+  // A worker whose launcher has gone away (killed or exited on a signal) is orphaned together with
+  // its tauri-driver and the app; stop them instead of leaving the display session occupied.
+  if (typeof process.send === "function") {
+    process.once("disconnect", () => {
+      try {
+        fn();
+      } finally {
+        process.exit(1);
+      }
+    });
+  }
+}
+
+// WebdriverIO logs a rejected `before` hook and still runs the specs, so the live-title guard
+// has to end the worker itself. A worker that exits non-zero fails the whole run.
+export function abortRun(message, exit = process.exit) {
+  console.error(message);
+  try {
+    closeTauriDriver();
+  } finally {
+    exit(guardAbortExitCode);
+  }
+}
+
+// The launcher keeps scheduling workers for the remaining spec files after a failed one. A worker
+// that ended on the title guard must end the whole run, so `onWorkerEnd` recognizes its exit code.
+export function stopRunAfterGuardAbort(exitCode, exit = process.exit) {
+  if (exitCode === guardAbortExitCode) {
+    console.error("[E2E] ABORT The live window title guard failed; skipping the remaining specs");
+    exit(1);
+  }
+}
+
+export async function assertLiveWindowTitle(readTitle = getNativeWindowTitle, exit = process.exit) {
+  let windowTitle;
+  try {
+    windowTitle = await readTitle();
+  } catch (error) {
+    abortRun(`Refusing destructive E2E suite, the live window title is unreadable: ${error?.message ?? error}`, exit);
+    return false;
+  }
+  if (windowTitle !== e2eWindowTitle) {
+    abortRun(`Refusing destructive E2E suite for unexpected application window: ${windowTitle}`, exit);
+    return false;
+  }
+  return true;
 }
 
 export const config = {
@@ -180,11 +235,8 @@ export const config = {
     });
   },
   before: async () => {
-    const windowTitle = await getNativeWindowTitle();
-    if (windowTitle !== e2eWindowTitle) {
-      throw new Error(
-        `Refusing destructive E2E suite for unexpected application window: ${windowTitle}`
-      );
+    if (!(await assertLiveWindowTitle())) {
+      return;
     }
     // Each spec starts from the same preferences. Reloads within a spec retain them.
     await browser.execute(() => {
@@ -192,6 +244,9 @@ export const config = {
       localStorage.setItem("media-tagger.theme", "dark");
     });
     await browser.refresh();
+  },
+  onWorkerEnd: (_cid, exitCode) => {
+    stopRunAfterGuardAbort(exitCode);
   },
   afterSession: () => {
     closeTauriDriver();

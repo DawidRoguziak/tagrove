@@ -74,6 +74,10 @@ pub struct ThumbnailTask {
     /// Exact source version the render belongs to; echoed back in the result
     /// and used as the SQL compare-and-set guard on publication.
     pub source_version: crate::thumbs::SourceVersion,
+    /// Owned thumbnail file recorded for this source version under an earlier
+    /// cache version. The default processor moves it to the target when the
+    /// current rules draw the same picture, and removes it after a fresh render.
+    pub legacy_thumb: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -412,7 +416,7 @@ fn worker_loop(shared: Arc<SchedulerShared>) {
                     } else {
                         continue;
                     };
-                    if task.kind == "video" {
+                    if uses_video_slot(&task) {
                         state.active_videos += 1;
                     }
                     state.active_jobs += 1;
@@ -446,7 +450,7 @@ fn worker_loop(shared: Arc<SchedulerShared>) {
                 Ok(guard) => guard,
                 Err(_) => return,
             };
-            if task.kind == "video" {
+            if uses_video_slot(&task) {
                 state.active_videos = state.active_videos.saturating_sub(1);
             }
             state.active_jobs -= 1;
@@ -471,6 +475,13 @@ fn worker_loop(shared: Arc<SchedulerShared>) {
     }
 }
 
+/// Whether a job counts against the video cap. A video job carrying a legacy
+/// thumbnail normally only renames that file (ADR 0020), so it must not wait
+/// behind ffmpeg renders; if the rename fails it renders outside the cap.
+fn uses_video_slot(task: &ThumbnailTask) -> bool {
+    task.kind == "video" && task.legacy_thumb.is_none()
+}
+
 fn pop_runnable_key(state: &mut SchedulerState) -> Option<String> {
     let (total_limit, video_limit) = if state.bulk_scopes > 0 {
         (state.concurrency.bulk, state.concurrency.bulk)
@@ -489,7 +500,7 @@ fn pop_runnable_key(state: &mut SchedulerState) -> Option<String> {
             state
                 .jobs
                 .get(key)
-                .map(|job| job.task.kind != "video" || state.active_videos < video_limit)
+                .map(|job| !uses_video_slot(&job.task) || state.active_videos < video_limit)
                 .unwrap_or(true)
         });
         if let Some(position) = position {
@@ -550,9 +561,53 @@ fn remove_from_queue(
     queue.remove(index)
 }
 
+/// Moves a thumbnail of an earlier cache version to the current target when
+/// the current renderer would draw the same picture (ADR 0020): video frames
+/// did not change, and an image is only drawn differently when it carries an
+/// EXIF orientation transform. An orientation that cannot be read keeps the
+/// recorded picture, as the demand path served it before.
+fn adopt_legacy_thumbnail(task: &ThumbnailTask, legacy: &Path) -> bool {
+    let same_picture = task.kind == "video"
+        || !matches!(
+            thumbs::image_orientation(&task.source_path),
+            Ok(orientation) if orientation != image::metadata::Orientation::NoTransforms
+        );
+    same_picture
+        && legacy != task.target_path
+        && is_owned_legacy(legacy, &task.target_path)
+        && std::fs::rename(legacy, &task.target_path).is_ok()
+}
+
+/// Whether `legacy` is a regular file (not a symbolic link) inside the
+/// thumbnail directory of `target`. `thumb_path` is untrusted, so this is
+/// checked again right before the file is moved, removed or served.
+fn is_owned_legacy(legacy: &Path, target: &Path) -> bool {
+    std::fs::symlink_metadata(legacy).is_ok_and(|metadata| metadata.file_type().is_file())
+        && target
+            .parent()
+            .and_then(|root| root.canonicalize().ok())
+            .is_some_and(|root| {
+                legacy
+                    .canonicalize()
+                    .is_ok_and(|canonical| canonical.starts_with(root))
+            })
+}
+
 fn process_thumbnail_task(ffmpeg_path: &Path, task: &ThumbnailTask) -> Option<String> {
     if !task.source_path.exists() {
-        return None;
+        // An unreachable source can be neither checked nor rendered, so its
+        // recorded legacy thumbnail stays in use (ADR 0018, ADR 0020).
+        return task
+            .legacy_thumb
+            .as_deref()
+            .filter(|path| is_owned_legacy(path, &task.target_path))
+            .map(|path| path.to_string_lossy().into_owned());
+    }
+
+    if !task.target_path.exists() {
+        if let Some(legacy) = &task.legacy_thumb {
+            adopt_legacy_thumbnail(task, legacy);
+        }
     }
 
     if !task.target_path.exists() {
@@ -586,6 +641,16 @@ fn process_thumbnail_task(ffmpeg_path: &Path, task: &ThumbnailTask) -> Option<St
 
     if !task.target_path.exists() {
         return None;
+    }
+
+    // A freshly rendered target supersedes the recorded file. Requests that
+    // still read the old reference fall through to the target.
+    if let Some(legacy) = task
+        .legacy_thumb
+        .as_deref()
+        .filter(|path| *path != task.target_path && is_owned_legacy(path, &task.target_path))
+    {
+        let _ = std::fs::remove_file(legacy);
     }
 
     Some(task.target_path.to_string_lossy().to_string())
@@ -675,6 +740,7 @@ mod tests {
             kind: "image".to_string(),
             duration_ms: None,
             source_version: crate::thumbs::SourceVersion::new(source, 1, 0),
+            legacy_thumb: None,
         }
     }
 
@@ -1102,6 +1168,89 @@ mod tests {
                 }
                 drop(bulk);
             }
+        }
+    }
+
+    #[test]
+    fn default_processor_never_moves_or_serves_a_legacy_file_outside_the_thumbnail_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let thumbs = dir.path().join("thumbs");
+        std::fs::create_dir_all(&thumbs).unwrap();
+        let outside = dir.path().join("outside.jpg");
+        std::fs::write(&outside, b"user file").unwrap();
+        let target = thumbs.join("target.jpg");
+        let mut job = task(1, &target.to_string_lossy());
+        job.kind = "video".into();
+        job.legacy_thumb = Some(outside.clone());
+        let ffmpeg = std::path::Path::new("/nonexistent/ffmpeg");
+
+        // Unreachable source: the outside file is not served.
+        assert_eq!(super::process_thumbnail_task(ffmpeg, &job), None);
+        // Reachable source: the outside file is not adopted or removed.
+        let source = dir.path().join("clip.mp4");
+        std::fs::write(&source, b"not decoded").unwrap();
+        job.source_path = source;
+        assert_eq!(super::process_thumbnail_task(ffmpeg, &job), None);
+        assert_eq!(std::fs::read(&outside).unwrap(), b"user file");
+        assert!(!target.exists());
+
+        // The same file inside the thumbnail directory is adopted.
+        let inside = thumbs.join("legacy.jpg");
+        std::fs::rename(&outside, &inside).unwrap();
+        job.legacy_thumb = Some(inside.clone());
+        assert_eq!(
+            super::process_thumbnail_task(ffmpeg, &job),
+            Some(target.to_string_lossy().into_owned())
+        );
+        assert!(!inside.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"user file");
+    }
+
+    #[test]
+    fn a_video_job_that_adopts_a_legacy_thumbnail_does_not_wait_for_a_video_slot() {
+        use super::test_support::{controlled_scheduler, WAIT};
+        let (scheduler, started) = controlled_scheduler(16);
+        let mut results = Vec::new();
+        for id in 0..3 {
+            let mut job = task(id, &format!("render-video-{id}.jpg"));
+            job.kind = "video".into();
+            results.push(
+                scheduler
+                    .enqueue(job, ThumbnailPriority::Interactive)
+                    .unwrap(),
+            );
+        }
+        let running: Vec<_> = (0..2)
+            .map(|_| started.recv_timeout(WAIT).unwrap())
+            .collect();
+        // Both browsing video slots are taken by renders; a third render waits.
+        assert!(started.recv_timeout(Duration::from_millis(50)).is_err());
+
+        let mut adopt = task(10, "adopt-video.jpg");
+        adopt.kind = "video".into();
+        adopt.legacy_thumb = Some("legacy-video.jpg".into());
+        results.push(
+            scheduler
+                .enqueue(adopt, ThumbnailPriority::Interactive)
+                .unwrap(),
+        );
+        let adopting = started.recv_timeout(WAIT).unwrap();
+        assert_eq!(adopting.asset_id, 10);
+        adopting.release.send(()).unwrap();
+
+        // The third render still waits for a video slot.
+        assert!(started.recv_timeout(Duration::from_millis(50)).is_err());
+        for job in running {
+            job.release.send(()).unwrap();
+        }
+        started
+            .recv_timeout(WAIT)
+            .unwrap()
+            .release
+            .send(())
+            .unwrap();
+        for result in results {
+            assert!(result.recv_timeout(WAIT).unwrap().thumb_path.is_some());
         }
     }
 

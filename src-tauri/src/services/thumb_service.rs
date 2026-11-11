@@ -287,6 +287,8 @@ fn render_bulk_thumbnails_inner(
                 continue;
             }
 
+            let legacy_thumb =
+                legacy_thumbnail(asset.thumb_path.as_deref(), &target, thumbs_root.as_deref());
             state.thumb_scheduler.enqueue_with_sender(
                 ThumbnailTask {
                     operation: Some(permit.clone()),
@@ -296,6 +298,7 @@ fn render_bulk_thumbnails_inner(
                     kind: asset.kind,
                     duration_ms: asset.duration_ms,
                     source_version: version.clone(),
+                    legacy_thumb,
                 },
                 ThumbnailPriority::Low,
                 completion_tx.clone(),
@@ -618,6 +621,9 @@ pub struct PendingThumbnail {
     record_version: i64,
     generation: u64,
     result: ThumbnailTaskResult,
+    /// The recorded legacy path when the row had no failure marker: a result
+    /// that keeps it (an unreachable source) needs no write.
+    unchanged_path: Option<String>,
 }
 
 fn version_token(version: &crate::thumbs::SourceVersion) -> String {
@@ -654,8 +660,16 @@ pub fn request_thumbnail(
         return Ok(ThumbnailRequestOutcome::NotFound);
     };
     let version = source_version_for(&asset);
+    let target = thumbs::thumb_target(&state.thumbs_dir, &version);
+    // A recorded path other than the current target is a thumbnail of an
+    // earlier cache version (or a restored one). Its picture may predate the
+    // current rendering rules, so it is not served as current (ADR 0020).
+    let legacy = asset
+        .thumb_path
+        .clone()
+        .filter(|existing| Path::new(existing) != target);
 
-    if let Some(existing) = asset.thumb_path.clone() {
+    if let Some(existing) = asset.thumb_path.clone().filter(|_| legacy.is_none()) {
         if let Some(served) = read_served(Path::new(&existing), &version) {
             // Path and version come from one snapshot; a stale failure
             // marker is cleared so the bulk "failed" count stays honest.
@@ -667,7 +681,6 @@ pub fn request_thumbnail(
         }
     }
 
-    let target = thumbs::thumb_target(&state.thumbs_dir, &version);
     if let Some(served) = read_served(&target, &version) {
         if mode.cached_only {
             return Ok(ThumbnailRequestOutcome::Ready(served));
@@ -699,8 +712,15 @@ pub fn request_thumbnail(
         return Ok(ThumbnailRequestOutcome::NotFound);
     }
 
+    // An owned legacy file goes to the worker, which checks the source outside
+    // this section: a hung mount must not hold the thumbnail read guard. The
+    // worker adopts, redraws, or keeps serving it for an unreachable source.
+    let legacy_thumb = legacy.as_deref().and_then(|existing| {
+        let root = state.thumbs_dir.canonicalize().ok();
+        legacy_thumbnail(Some(existing), &target, root.as_deref())
+    });
     let source_path = PathBuf::from(&asset.path);
-    if !source_path.exists() {
+    if legacy_thumb.is_none() && !source_path.exists() {
         let write = failed_write(asset.id, version, asset.record_version, SOURCE_MISSING);
         publish_one(state, &conn, write, generation)?;
         return Ok(ThumbnailRequestOutcome::NotFound);
@@ -708,6 +728,9 @@ pub fn request_thumbnail(
 
     let record_version = asset.record_version;
     let pending_version = version.clone();
+    // Only a legacy file can come back unchanged (an unreachable source); a
+    // rendered current target always goes through the compare-and-set.
+    let unchanged_path = legacy.filter(|_| !has_failure);
     state.thumb_scheduler.enqueue_with_callback(
         ThumbnailTask {
             operation: Some(permit.clone()),
@@ -717,6 +740,7 @@ pub fn request_thumbnail(
             kind: asset.kind,
             duration_ms: asset.duration_ms,
             source_version: version,
+            legacy_thumb,
         },
         if mode.prefetch {
             ThumbnailPriority::High
@@ -730,6 +754,7 @@ pub fn request_thumbnail(
                 record_version,
                 generation,
                 result,
+                unchanged_path,
             })
         }),
     )?;
@@ -759,6 +784,11 @@ pub fn finish_thumbnail_requests(
 ) -> AppResult<Vec<Option<ServedThumbnail>>> {
     let mut by_generation: Vec<(u64, Vec<ThumbnailWrite>)> = Vec::new();
     for item in &pending {
+        if item.result.thumb_path.is_some() && item.result.thumb_path == item.unchanged_path {
+            // Rewriting the recorded path would change nothing and still cost
+            // an IMMEDIATE transaction on every request for that tile.
+            continue;
+        }
         let write = match &item.result.thumb_path {
             Some(path) => ready_write(
                 item.asset_id,
@@ -807,7 +837,19 @@ pub fn finish_thumbnail_requests(
             if stale.contains(&(item.generation, item.asset_id)) {
                 return None;
             }
-            read_served(Path::new(path), &item.version)
+            let path = Path::new(path);
+            if path == thumbs::thumb_target(&state.thumbs_dir, &item.version) {
+                read_served(path, &item.version)
+            } else {
+                // A legacy file kept for an unreachable source may predate the
+                // current rendering rules (ADR 0020). An empty token never
+                // matches the requested one, so the response is `no-store`
+                // and the tile asks again once the source is back.
+                fs::read(path).ok().map(|bytes| ServedThumbnail {
+                    bytes,
+                    version: String::new(),
+                })
+            }
         })
         .collect())
 }
@@ -1000,6 +1042,19 @@ pub fn delete_thumbnail_files_with_progress(
         }
     }
     removed
+}
+
+/// The recorded thumbnail a render task may adopt or must supersede: an owned
+/// file other than the current target (ADR 0020).
+fn legacy_thumbnail(
+    recorded: Option<&str>,
+    target: &Path,
+    canonical_root: Option<&Path>,
+) -> Option<PathBuf> {
+    let recorded = Path::new(recorded?);
+    (recorded != target
+        && canonical_root.is_some_and(|root| is_owned_thumbnail_file(root, recorded)))
+    .then(|| recorded.to_path_buf())
 }
 
 /// Whether `candidate` is a regular file (not a symbolic link) inside the
@@ -1199,11 +1254,17 @@ mod tests {
         db::init_schema(&conn).expect("init schema");
 
         let source_path = tmp.path().join("missing-source.jpg");
-        let existing_thumb = thumbs_dir.join("ready-thumb.jpg");
+        db::upsert_asset(&conn, &new_asset(&source_path, 77, None)).expect("upsert asset");
+        let existing_thumb = crate::thumbs::thumb_target(
+            &thumbs_dir,
+            &super::source_version_for(&db::get_asset_for_thumbnail(&conn, 1).unwrap().unwrap()),
+        );
         fs::write(&existing_thumb, b"thumb").expect("write existing thumb");
-
-        db::upsert_asset(&conn, &new_asset(&source_path, 77, Some(&existing_thumb)))
-            .expect("upsert asset");
+        conn.execute(
+            "UPDATE assets SET thumb_path = ?1 WHERE id = 1",
+            [existing_thumb.to_string_lossy()],
+        )
+        .expect("record thumb path");
 
         let state = create_test_state(&db_path, &thumbs_dir);
         let state_ref = &state;
@@ -1345,6 +1406,7 @@ mod tests {
                                     1,
                                     0,
                                 ),
+                                legacy_thumb: None,
                             },
                             ThumbnailPriority::High,
                         )
@@ -1526,6 +1588,7 @@ mod tests {
                         kind: "video".into(),
                         duration_ms: None,
                         source_version: crate::thumbs::SourceVersion::new("shared-source", 1, 0),
+                        legacy_thumb: None,
                     },
                     ThumbnailPriority::Low,
                 )
@@ -2491,5 +2554,169 @@ mod tests {
         assert_eq!(stale, vec![1, 2]);
         assert!(!owned.exists(), "an owned stale file is removed");
         assert!(outside.exists(), "an untrusted path outside the root stays");
+    }
+
+    /// A library whose rows reference thumbnails of an earlier cache version:
+    /// one JPEG per Exif orientation (`None` means no Exif) and a video.
+    struct LegacyLibrary {
+        _dir: tempfile::TempDir,
+        db_path: PathBuf,
+        thumbs: PathBuf,
+        legacy: Vec<PathBuf>,
+    }
+
+    fn legacy_library(orientations: &[Option<u16>], with_video: bool) -> LegacyLibrary {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        let mut legacy = Vec::new();
+        for (index, orientation) in orientations.iter().enumerate() {
+            let source = dir.path().join(format!("photo-{index}.jpg"));
+            crate::thumbs::test_support::write_oriented(
+                &source,
+                &image::DynamicImage::ImageRgb8(image::RgbImage::new(1_200, 900)),
+                image::ImageFormat::Jpeg,
+                *orientation,
+            );
+            let old = thumbs.join(format!("legacy-{index}.jpg"));
+            fs::write(&old, format!("legacy {index}")).unwrap();
+            db::upsert_asset(&conn, &new_asset(&source, 1, Some(&old))).unwrap();
+            legacy.push(old);
+        }
+        if with_video {
+            let source = dir.path().join("clip.mp4");
+            fs::write(&source, b"not decoded").unwrap();
+            let old = thumbs.join("legacy-video.jpg");
+            fs::write(&old, b"legacy video").unwrap();
+            let mut asset = new_asset(&source, 1, Some(&old));
+            asset.kind = "video".into();
+            db::upsert_asset(&conn, &asset).unwrap();
+            legacy.push(old);
+        }
+        LegacyLibrary {
+            _dir: dir,
+            db_path,
+            thumbs,
+            legacy,
+        }
+    }
+
+    fn current_target(conn: &rusqlite::Connection, thumbs: &Path, id: i64) -> PathBuf {
+        let asset = db::get_asset_for_thumbnail(conn, id).unwrap().unwrap();
+        crate::thumbs::thumb_target(thumbs, &super::source_version_for(&asset))
+    }
+
+    #[test]
+    fn legacy_thumbnail_of_an_unrotated_image_is_adopted_without_rendering() {
+        let library = legacy_library(&[Some(1)], false);
+        let conn = db::open_connection(&library.db_path).unwrap();
+        let state = create_test_state(&library.db_path, &library.thumbs);
+        let target = current_target(&conn, &library.thumbs, 1);
+
+        // A fast-scroll request does not serve the old picture as current.
+        let permit = state.database.admit().unwrap();
+        let outcome = super::request_thumbnail(1, cached_only(), &state, &permit, |_| {}).unwrap();
+        assert!(matches!(outcome, super::ThumbnailRequestOutcome::NotFound));
+        drop(permit);
+
+        let served = request_now(&state, 1).unwrap().expect("served");
+        assert_eq!(served.bytes, b"legacy 0", "the recorded picture is reused");
+        assert!(!library.legacy[0].exists(), "moved, not copied");
+        assert_eq!(fs::read(&target).unwrap(), b"legacy 0");
+        assert_eq!(
+            thumb_path_of(&conn, 1),
+            Some(target.to_string_lossy().into_owned())
+        );
+    }
+
+    #[test]
+    fn legacy_thumbnail_of_a_rotated_image_is_rendered_again() {
+        let library = legacy_library(&[Some(6)], false);
+        let conn = db::open_connection(&library.db_path).unwrap();
+        let state = create_test_state(&library.db_path, &library.thumbs);
+        let target = current_target(&conn, &library.thumbs, 1);
+
+        let served = request_now(&state, 1).unwrap().expect("served");
+        let thumb = image::load_from_memory(&served.bytes).expect("a rendered JPEG");
+        assert_eq!((thumb.width(), thumb.height()), (293, 390));
+        assert!(
+            !library.legacy[0].exists(),
+            "the superseded file is removed"
+        );
+        assert_eq!(
+            thumb_path_of(&conn, 1),
+            Some(target.to_string_lossy().into_owned())
+        );
+    }
+
+    #[test]
+    fn render_all_adopts_unchanged_legacy_thumbnails_and_renders_rotated_ones() {
+        let library = legacy_library(&[None, Some(8), Some(2)], true);
+        let conn = db::open_connection(&library.db_path).unwrap();
+        let state = create_test_state(&library.db_path, &library.thumbs);
+
+        let summary = render_all(&state);
+        assert_eq!((summary.generated, summary.failed), (4, 0));
+        for (id, old) in (1..=4).zip(&library.legacy) {
+            let target = current_target(&conn, &library.thumbs, id);
+            assert_eq!(
+                thumb_path_of(&conn, id),
+                Some(target.to_string_lossy().into_owned())
+            );
+            assert!(
+                !old.exists(),
+                "asset {id}: the legacy file is moved or removed"
+            );
+        }
+        let bytes = |id| fs::read(current_target(&conn, &library.thumbs, id)).unwrap();
+        assert_eq!(bytes(1), b"legacy 0", "no Exif: adopted");
+        assert_eq!(bytes(4), b"legacy video", "video frames did not change");
+        // Rotated and mirrored sources are drawn again under the new rules.
+        let rotated = image::load_from_memory(&bytes(2)).unwrap();
+        assert_eq!((rotated.width(), rotated.height()), (293, 390));
+        let mirrored = image::load_from_memory(&bytes(3)).unwrap();
+        assert_eq!((mirrored.width(), mirrored.height()), (390, 293));
+    }
+
+    #[test]
+    fn legacy_thumbnail_of_an_unreachable_source_is_still_served() {
+        let library = legacy_library(&[Some(6)], false);
+        let conn = db::open_connection(&library.db_path).unwrap();
+        let source = db::get_asset_for_thumbnail(&conn, 1).unwrap().unwrap().path;
+        fs::remove_file(&source).unwrap();
+        let state = create_test_state(&library.db_path, &library.thumbs);
+
+        // The source is checked by the worker, outside the read section, so a
+        // cached-only request does not look at it.
+        let permit = state.database.admit().unwrap();
+        let outcome = super::request_thumbnail(1, cached_only(), &state, &permit, |_| {}).unwrap();
+        assert!(matches!(outcome, super::ThumbnailRequestOutcome::NotFound));
+        drop(permit);
+        let served = request_now(&state, 1).unwrap().unwrap();
+        assert_eq!(served.bytes, b"legacy 0");
+        // The old picture is never labelled as the current version, so WebKit
+        // does not keep it for the tile's URL once the source is back.
+        let token =
+            super::source_version_for(&db::get_asset_for_thumbnail(&conn, 1).unwrap().unwrap());
+        let response = crate::services::thumb_protocol::image_response(
+            served,
+            &super::version_token(&token),
+            "tauri://localhost",
+        );
+        assert_eq!(
+            response.headers()[tauri::http::header::CACHE_CONTROL],
+            "no-store"
+        );
+        assert!(library.legacy[0].exists());
+        assert_eq!(
+            thumb_path_of(&conn, 1),
+            Some(library.legacy[0].to_string_lossy().into_owned())
+        );
+        assert!(db::list_failed_thumbnail_asset_ids(&conn)
+            .unwrap()
+            .is_empty());
     }
 }

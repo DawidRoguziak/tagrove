@@ -57,3 +57,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0017](0017-export-target-validated-before-creating-folders.md) | Export targets are validated before any folder is created, and the indexed-asset check reads assets only for an existing target | Accepted | 2026-11-11 |
 | [0018](0018-render-all-keeps-thumbnails-of-unreachable-sources.md) | Render all keeps the cached thumbnail of an unreachable source and writes only rows that change | Accepted | 2026-11-11 |
 | [0019](0019-clear-epoch-keeps-current-version-targets.md) | A result dropped by the clear epoch keeps a target whose source version is still current | Accepted | 2026-11-11 |
+| [0020](0020-exif-orientation-and-legacy-thumbnail-adoption.md) | Image thumbnails apply EXIF orientation, and cache version 3 adopts a legacy thumbnail only when the picture is unchanged | Accepted | 2026-11-11 |

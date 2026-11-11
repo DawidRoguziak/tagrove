@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use image::imageops::FilterType;
+use image::{imageops::FilterType, metadata::Orientation};
 use sha2::{Digest, Sha256};
 
 const IMAGE_THUMB_SIZE: u32 = 390;
@@ -20,8 +20,10 @@ const VIDEO_TOOL_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 /// Bump when thumbnail identity inputs or rendering rules change. Version 2
 /// hashes path, size bytes, and nanosecond mtime instead of seconds-resolution
-/// `modified_at`; targets produced by older versions are regenerated on demand.
-pub const THUMB_CACHE_VERSION: u32 = 2;
+/// `modified_at`. Version 3 applies the EXIF orientation of images (ADR 0020);
+/// a thumbnail recorded under an older version is reused only when the render
+/// worker finds the current rules draw the same picture.
+pub const THUMB_CACHE_VERSION: u32 = 3;
 
 /// Upper bound on source pixels accepted before a full decode. The decoded
 /// RGB8 buffer alone would be three times this many bytes; Lanczos resizing
@@ -101,9 +103,57 @@ fn scaled_decode_request(width: u32, height: u32) -> (u16, u16) {
     }
 }
 
+/// Whether applying `orientation` exchanges width and height.
+fn swaps_axes(orientation: Orientation) -> bool {
+    matches!(
+        orientation,
+        Orientation::Rotate90
+            | Orientation::Rotate270
+            | Orientation::Rotate90FlipH
+            | Orientation::Rotate270FlipH
+    )
+}
+
+/// `scaled_decode_request` for a stored `width` x `height` that is displayed
+/// after `orientation`: decided on the displayed size, returned in stored axes.
+fn oriented_decode_request(width: u32, height: u32, orientation: Orientation) -> (u16, u16) {
+    if swaps_axes(orientation) {
+        let (request_height, request_width) = scaled_decode_request(height, width);
+        (request_width, request_height)
+    } else {
+        scaled_decode_request(width, height)
+    }
+}
+
+/// EXIF orientation of a JPEG after `read_info`, from the APP1 segment before
+/// the frame header, where the Exif standard places it.
+fn jpeg_orientation<R: Read>(decoder: &jpeg_decoder::Decoder<R>) -> Orientation {
+    decoder
+        .exif_data()
+        .and_then(Orientation::from_exif_chunk)
+        .unwrap_or(Orientation::NoTransforms)
+}
+
+/// Orientation that rendering applies to an image source, read from its
+/// header without decoding pixels. The render worker uses it to decide whether
+/// a thumbnail of an earlier cache version still shows the right picture.
+pub fn image_orientation(source_path: &Path) -> anyhow::Result<Orientation> {
+    if is_jpeg(source_path)? {
+        let mut decoder = jpeg_decoder::Decoder::new(BufReader::new(fs::File::open(source_path)?));
+        if decoder.read_info().is_ok() {
+            return Ok(jpeg_orientation(&decoder));
+        }
+    }
+    let mut decoder = image::ImageReader::new(BufReader::new(fs::File::open(source_path)?))
+        .with_guessed_format()?
+        .into_decoder()?;
+    Ok(image::ImageDecoder::orientation(&mut decoder)?)
+}
+
 /// Decodes a baseline or progressive JPEG directly at the smallest IDCT scale
-/// (1/8, 1/4, 1/2 or 1) that still covers the thumbnail. `None` means the
-/// caller must use the general decoder (CMYK, 16-bit, or a decoder error).
+/// (1/8, 1/4, 1/2 or 1) that still covers the thumbnail, then applies its EXIF
+/// orientation. `None` means the caller must use the general decoder (CMYK,
+/// 16-bit, or a decoder error).
 fn decode_scaled_jpeg(source_path: &Path) -> anyhow::Result<Option<image::DynamicImage>> {
     let mut decoder = jpeg_decoder::Decoder::new(BufReader::new(fs::File::open(source_path)?));
     if decoder.read_info().is_err() {
@@ -116,7 +166,8 @@ fn decode_scaled_jpeg(source_path: &Path) -> anyhow::Result<Option<image::Dynami
     if exceeds_decode_budget(width, height) {
         return Err(budget_error(width, height));
     }
-    let (request_width, request_height) = scaled_decode_request(width, height);
+    let orientation = jpeg_orientation(&decoder);
+    let (request_width, request_height) = oriented_decode_request(width, height, orientation);
     if decoder.scale(request_width, request_height).is_err() {
         return Ok(None);
     }
@@ -127,7 +178,7 @@ fn decode_scaled_jpeg(source_path: &Path) -> anyhow::Result<Option<image::Dynami
         return Ok(None);
     };
     let (width, height) = (u32::from(info.width), u32::from(info.height));
-    Ok(match info.pixel_format {
+    let image = match info.pixel_format {
         jpeg_decoder::PixelFormat::RGB24 => {
             image::RgbImage::from_raw(width, height, pixels).map(image::DynamicImage::ImageRgb8)
         }
@@ -135,7 +186,12 @@ fn decode_scaled_jpeg(source_path: &Path) -> anyhow::Result<Option<image::Dynami
             image::GrayImage::from_raw(width, height, pixels).map(image::DynamicImage::ImageLuma8)
         }
         jpeg_decoder::PixelFormat::L16 | jpeg_decoder::PixelFormat::CMYK32 => None,
-    })
+    };
+    // The scaled buffer is near thumbnail size, so rotating it is cheap.
+    Ok(image.map(|mut image| {
+        image.apply_orientation(orientation);
+        image
+    }))
 }
 
 fn is_jpeg(source_path: &Path) -> std::io::Result<bool> {
@@ -145,16 +201,30 @@ fn is_jpeg(source_path: &Path) -> std::io::Result<bool> {
 }
 
 /// Full decode through `image`, checking the budget from the header of the
-/// same open file instead of probing it separately.
+/// same open file instead of probing it separately, then applying the EXIF
+/// orientation the decoder reports.
 fn decode_full(source_path: &Path) -> anyhow::Result<image::DynamicImage> {
-    let decoder = image::ImageReader::new(BufReader::new(fs::File::open(source_path)?))
+    let mut decoder = image::ImageReader::new(BufReader::new(fs::File::open(source_path)?))
         .with_guessed_format()?
         .into_decoder()?;
     let (width, height) = image::ImageDecoder::dimensions(&decoder);
     if exceeds_decode_budget(width, height) {
         return Err(budget_error(width, height));
     }
-    Ok(image::DynamicImage::from_decoder(decoder)?)
+    // Unreadable orientation metadata leaves the stored orientation.
+    let orientation =
+        image::ImageDecoder::orientation(&mut decoder).unwrap_or(Orientation::NoTransforms);
+    let mut image = image::DynamicImage::from_decoder(decoder)?;
+    if orientation != Orientation::NoTransforms {
+        // A rotation copies the buffer, so shrink to the decode request first.
+        let (request_width, request_height) = oriented_decode_request(width, height, orientation);
+        let (request_width, request_height) = (u32::from(request_width), u32::from(request_height));
+        if image.width() > request_width || image.height() > request_height {
+            image = image.thumbnail(request_width, request_height);
+        }
+        image.apply_orientation(orientation);
+    }
+    Ok(image)
 }
 
 pub fn create_image_thumb(source_path: &Path, target_path: &Path) -> anyhow::Result<()> {
@@ -167,6 +237,8 @@ pub fn create_image_thumb(source_path: &Path, target_path: &Path) -> anyhow::Res
     } else {
         None
     };
+    // Both decoders return the image in its displayed orientation, so the
+    // tall-image crop below is decided on the displayed size.
     let image = match scaled {
         Some(image) => image,
         None => decode_full(source_path)?,
@@ -575,11 +647,71 @@ fn terminate_child(child: &mut Child) {
 }
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    /// A minimal big-endian Exif (TIFF) chunk with one Orientation entry.
+    pub fn exif_orientation_chunk(orientation: u16) -> Vec<u8> {
+        let mut tiff = b"MM\0\x2a".to_vec();
+        tiff.extend_from_slice(&8u32.to_be_bytes());
+        tiff.extend_from_slice(&1u16.to_be_bytes());
+        tiff.extend_from_slice(&0x0112u16.to_be_bytes());
+        tiff.extend_from_slice(&3u16.to_be_bytes());
+        tiff.extend_from_slice(&1u32.to_be_bytes());
+        tiff.extend_from_slice(&orientation.to_be_bytes());
+        tiff.extend_from_slice(&[0, 0]);
+        tiff.extend_from_slice(&0u32.to_be_bytes());
+        tiff
+    }
+
+    /// Writes `image` as a JPEG or PNG with an optional Exif Orientation.
+    pub fn write_oriented(
+        path: &std::path::Path,
+        image: &image::DynamicImage,
+        format: image::ImageFormat,
+        orientation: Option<u16>,
+    ) {
+        use image::ImageEncoder;
+        let mut bytes = Vec::new();
+        let rgb = image.to_rgb8();
+        let exif = orientation.map(exif_orientation_chunk).unwrap_or_default();
+        match format {
+            image::ImageFormat::Jpeg => {
+                let mut encoder =
+                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 95);
+                encoder.set_exif_metadata(exif).unwrap();
+                encoder
+                    .write_image(
+                        rgb.as_raw(),
+                        rgb.width(),
+                        rgb.height(),
+                        image::ExtendedColorType::Rgb8,
+                    )
+                    .unwrap();
+            }
+            image::ImageFormat::Png => {
+                let mut encoder = image::codecs::png::PngEncoder::new(&mut bytes);
+                encoder.set_exif_metadata(exif).unwrap();
+                encoder
+                    .write_image(
+                        rgb.as_raw(),
+                        rgb.width(),
+                        rgb.height(),
+                        image::ExtendedColorType::Rgb8,
+                    )
+                    .unwrap();
+            }
+            other => panic!("unsupported fixture format {other:?}"),
+        }
+        std::fs::write(path, bytes).unwrap();
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    use super::test_support::write_oriented;
     use super::{
         create_video_thumb, exceeds_decode_budget, parse_duration_ms_from_ffmpeg_stderr,
         parse_duration_ms_from_ffprobe_stdout, probe_video_duration_ms, resolve_video_seek_seconds,
-        thumb_target, top_biased_square_crop_rect, SourceVersion, MAX_DECODE_PIXELS,
+        thumb_target, top_biased_square_crop_rect, Orientation, SourceVersion, MAX_DECODE_PIXELS,
     };
 
     #[test]
@@ -806,6 +938,218 @@ mod tests {
         std::fs::write(&source, [0xFF, 0xD8, 0xFF, 0xE0, 0, 16, b'J']).unwrap();
         assert!(super::create_image_thumb(&source, &dir.path().join("out.jpg")).is_err());
     }
+    const RED: [u8; 3] = [230, 20, 20];
+    const GREEN: [u8; 3] = [20, 230, 20];
+    const BLUE: [u8; 3] = [20, 20, 230];
+    const WHITE: [u8; 3] = [240, 240, 240];
+
+    /// Stored pixels: red top-left, green top-right, blue bottom-left, white
+    /// bottom-right, so every orientation gives a distinct corner order.
+    fn quadrants(width: u32, height: u32) -> image::DynamicImage {
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(width, height, |x, y| {
+            image::Rgb(match (x < width / 2, y < height / 2) {
+                (true, true) => RED,
+                (false, true) => GREEN,
+                (true, false) => BLUE,
+                (false, false) => WHITE,
+            })
+        }))
+    }
+
+    /// Colors at the centers of the four quadrants: TL, TR, BL, BR.
+    fn corner_colors(image: &image::DynamicImage) -> [[u8; 3]; 4] {
+        let rgb = image.to_rgb8();
+        let (width, height) = rgb.dimensions();
+        [(1, 1), (3, 1), (1, 3), (3, 3)]
+            .map(|(x, y)| rgb.get_pixel(width * x / 4, height * y / 4).0)
+    }
+
+    fn assert_corners(actual: [[u8; 3]; 4], expected: [[u8; 3]; 4], context: &str) {
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!(
+                actual
+                    .iter()
+                    .zip(expected)
+                    .all(|(a, e)| a.abs_diff(e) <= 48),
+                "{context}: corners {actual:?} do not match {expected:?}"
+            );
+        }
+    }
+
+    /// Exif orientation, displayed (landscape?) and expected corner colors.
+    const ORIENTATION_CASES: [(Option<u16>, bool, [[u8; 3]; 4]); 7] = [
+        (None, true, [RED, GREEN, BLUE, WHITE]),
+        (Some(1), true, [RED, GREEN, BLUE, WHITE]),
+        // Mirrored horizontally.
+        (Some(2), true, [GREEN, RED, WHITE, BLUE]),
+        (Some(3), true, [WHITE, BLUE, GREEN, RED]),
+        // Transposed (rotated 90 degrees clockwise and mirrored).
+        (Some(5), false, [RED, BLUE, GREEN, WHITE]),
+        // Rotated 90 degrees clockwise, the usual phone portrait.
+        (Some(6), false, [BLUE, RED, WHITE, GREEN]),
+        // Rotated 90 degrees counter-clockwise.
+        (Some(8), false, [GREEN, WHITE, RED, BLUE]),
+    ];
+
+    #[test]
+    fn exif_orientation_is_applied_on_the_scaled_jpeg_path() {
+        let dir = tempfile::tempdir().unwrap();
+        for (orientation, landscape, corners) in ORIENTATION_CASES {
+            let source = dir.path().join("source.jpg");
+            write_oriented(
+                &source,
+                &quadrants(1_200, 900),
+                image::ImageFormat::Jpeg,
+                orientation,
+            );
+            let context = format!("jpeg orientation {orientation:?}");
+            let expected = orientation
+                .and_then(|value| Orientation::from_exif(value as u8))
+                .unwrap_or(Orientation::NoTransforms);
+            assert_eq!(
+                super::image_orientation(&source).unwrap(),
+                expected,
+                "{context}"
+            );
+
+            let decoded = super::decode_scaled_jpeg(&source)
+                .unwrap()
+                .expect("an RGB JPEG takes the scaled path");
+            assert_eq!(decoded.width() > decoded.height(), landscape, "{context}");
+            assert_corners(corner_colors(&decoded), corners, &context);
+
+            let target = dir.path().join(format!("thumbs/jpeg-{orientation:?}.jpg"));
+            super::create_image_thumb(&source, &target).unwrap();
+            let thumb = image::open(&target).unwrap();
+            let size = if landscape { (390, 293) } else { (293, 390) };
+            assert_eq!((thumb.width(), thumb.height()), size, "{context}");
+            assert_corners(corner_colors(&thumb), corners, &context);
+        }
+    }
+
+    #[test]
+    fn exif_orientation_is_applied_on_the_general_decoder_path() {
+        let dir = tempfile::tempdir().unwrap();
+        for (orientation, landscape, corners) in ORIENTATION_CASES {
+            let context = format!("orientation {orientation:?}");
+            // A JPEG through `image` itself, as CMYK and 16-bit JPEGs go.
+            let jpeg = dir.path().join("source.jpg");
+            write_oriented(
+                &jpeg,
+                &quadrants(1_200, 900),
+                image::ImageFormat::Jpeg,
+                orientation,
+            );
+            let decoded = super::decode_full(&jpeg).unwrap();
+            assert_eq!(decoded.width() > decoded.height(), landscape, "{context}");
+            assert_corners(corner_colors(&decoded), corners, &context);
+
+            let png = dir.path().join("source.png");
+            write_oriented(
+                &png,
+                &quadrants(1_200, 900),
+                image::ImageFormat::Png,
+                orientation,
+            );
+            let target = dir.path().join(format!("thumbs/png-{orientation:?}.jpg"));
+            super::create_image_thumb(&png, &target).unwrap();
+            let thumb = image::open(&target).unwrap();
+            let size = if landscape { (390, 293) } else { (293, 390) };
+            assert_eq!((thumb.width(), thumb.height()), size, "png {context}");
+            assert_corners(corner_colors(&thumb), corners, &format!("png {context}"));
+        }
+    }
+
+    #[test]
+    fn tall_image_crop_is_decided_on_the_displayed_size() {
+        let dir = tempfile::tempdir().unwrap();
+        // Stored landscape 2:1. Rotated by 90 degrees it is a 1:2 portrait,
+        // which gets the top-biased square crop.
+        for (format, name) in [
+            (image::ImageFormat::Jpeg, "wide.jpg"),
+            (image::ImageFormat::Png, "wide.png"),
+        ] {
+            let source = dir.path().join(name);
+            for (orientation, size) in [
+                (Some(1), (390, 195)),
+                (Some(3), (390, 195)),
+                (Some(6), (390, 390)),
+                (Some(8), (390, 390)),
+            ] {
+                write_oriented(&source, &quadrants(1_600, 800), format, orientation);
+                let target = dir
+                    .path()
+                    .join(format!("thumbs/{name}-{orientation:?}.jpg"));
+                super::create_image_thumb(&source, &target).unwrap();
+                assert_eq!(
+                    image::image_dimensions(&target).unwrap(),
+                    size,
+                    "{name} orientation {orientation:?}"
+                );
+            }
+        }
+        // The crop keeps the displayed top: for orientation 6 that is the
+        // stored left edge (red over blue becomes blue left of red).
+        let source = dir.path().join("portrait.jpg");
+        write_oriented(
+            &source,
+            &quadrants(1_600, 800),
+            image::ImageFormat::Jpeg,
+            Some(6),
+        );
+        let target = dir.path().join("thumbs/portrait.jpg");
+        super::create_image_thumb(&source, &target).unwrap();
+        let thumb = image::open(&target).unwrap();
+        let [top_left, top_right, ..] = corner_colors(&thumb);
+        assert_corners(
+            [top_left, top_right, BLUE, RED],
+            [BLUE, RED, BLUE, RED],
+            "cropped portrait",
+        );
+    }
+
+    #[test]
+    fn oriented_decode_request_swaps_axes_for_quarter_turns() {
+        // Stored 3000x1000 displayed as a 1000x3000 portrait: the crop width
+        // is the stored height.
+        assert_eq!(
+            super::oriented_decode_request(3_000, 1_000, Orientation::Rotate90),
+            (1_170, 390)
+        );
+        assert_eq!(
+            super::oriented_decode_request(3_000, 1_000, Orientation::Rotate270FlipH),
+            (1_170, 390)
+        );
+        assert_eq!(
+            super::oriented_decode_request(3_000, 1_000, Orientation::Rotate180),
+            (390, 390)
+        );
+        assert_eq!(
+            super::oriented_decode_request(1_000, 3_000, Orientation::NoTransforms),
+            (390, 1_170)
+        );
+    }
+
+    #[test]
+    fn unreadable_exif_orientation_leaves_the_stored_orientation() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.jpg");
+        // Orientation value 9 is outside the Exif range.
+        write_oriented(
+            &source,
+            &quadrants(1_200, 900),
+            image::ImageFormat::Jpeg,
+            Some(9),
+        );
+        assert_eq!(
+            super::image_orientation(&source).unwrap(),
+            Orientation::NoTransforms
+        );
+        let target = dir.path().join("thumbs/out.jpg");
+        super::create_image_thumb(&source, &target).unwrap();
+        assert_eq!(image::image_dimensions(&target).unwrap(), (390, 293));
+    }
+
     #[test]
     fn keyframe_mode_renders_a_long_gop_video_with_system_tools() {
         let ffmpeg = std::path::Path::new("/usr/bin/ffmpeg");

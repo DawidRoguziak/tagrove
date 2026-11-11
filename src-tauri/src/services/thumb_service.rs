@@ -174,6 +174,10 @@ fn render_bulk_thumbnails_inner(
 
     let in_flight_limit = state.thumb_scheduler.bulk_in_flight_limit();
     let candidate_page_size = 512.max(in_flight_limit);
+    // `thumb_path` is untrusted: only a file owned by the thumbnail root is
+    // kept for an unreachable source, so a stale publication of it can only
+    // remove a cache file.
+    let thumbs_root = state.thumbs_dir.canonicalize().ok();
 
     let mut stale = 0usize;
     let mut after = 0;
@@ -197,6 +201,9 @@ fn render_bulk_thumbnails_inner(
             break;
         }
         after = candidates.last().expect("nonempty page").0.id;
+        // Current thumbnails counted as generated without a write; a clear
+        // since this page was read makes them stale like the written ones.
+        let mut unwritten_ready = 0usize;
         for (asset, previously_failed) in candidates {
             if state
                 .thumbnail_render_all_cancel_requested
@@ -209,8 +216,58 @@ fn render_bulk_thumbnails_inner(
             let source_path = PathBuf::from(&asset.path);
             let version = source_version_for(&asset);
             let target = thumbs::thumb_target(&state.thumbs_dir, &version);
+            // `exists` is false for an unmounted root and for EACCES alike.
+            let source_reachable = source_path.exists();
 
-            if !source_path.exists() {
+            // An unreachable source keeps the recorded thumbnail the demand
+            // path still serves: an offline drive or an unreadable folder must
+            // not cost its cached thumbnails or leave failure markers that
+            // make later runs skip it once the source is back.
+            if !source_reachable {
+                if let Some(existing) = asset.thumb_path.as_deref().filter(|existing| {
+                    thumbs_root
+                        .as_deref()
+                        .is_some_and(|root| is_owned_thumbnail_file(root, Path::new(existing)))
+                }) {
+                    generated += 1;
+                    processed += 1;
+                    if previously_failed {
+                        writes.push(ready_write(
+                            asset.id,
+                            existing.to_owned(),
+                            version,
+                            asset.record_version,
+                        ));
+                    } else {
+                        unwritten_ready += 1;
+                    }
+                    emit_render_progress(app, mode.progress_phase(), processed, total);
+                    continue;
+                }
+            }
+
+            if target.exists() {
+                generated += 1;
+                processed += 1;
+                let target = target.to_string_lossy();
+                // An already-current row is not re-published: the write would
+                // change nothing and still cost an IMMEDIATE transaction slot.
+                if previously_failed || asset.thumb_path.as_deref() != Some(target.as_ref()) {
+                    writes.push(ready_write(
+                        asset.id,
+                        target.into_owned(),
+                        version,
+                        asset.record_version,
+                    ));
+                } else {
+                    unwritten_ready += 1;
+                }
+                emit_render_progress(app, mode.progress_phase(), processed, total);
+                continue;
+            }
+
+            if !source_reachable {
+                // No usable thumbnail is recorded, so there is no file to keep.
                 failed += 1;
                 processed += 1;
                 writes.push(failed_write(
@@ -218,23 +275,6 @@ fn render_bulk_thumbnails_inner(
                     version,
                     asset.record_version,
                     SOURCE_MISSING,
-                ));
-                if let Some(existing) = asset.thumb_path {
-                    let _thumbs = thumb_read_section(state);
-                    let _ = remove_thumbnail_file(&state.thumbs_dir, Path::new(&existing));
-                }
-                emit_render_progress(app, mode.progress_phase(), processed, total);
-                continue;
-            }
-
-            if target.exists() {
-                generated += 1;
-                processed += 1;
-                writes.push(ready_write(
-                    asset.id,
-                    target.to_string_lossy().to_string(),
-                    version,
-                    asset.record_version,
                 ));
                 emit_render_progress(app, mode.progress_phase(), processed, total);
                 continue;
@@ -358,6 +398,10 @@ fn render_bulk_thumbnails_inner(
             }
         }
         stale += stale_ids.len();
+        if state.thumbnail_generation.load(Ordering::SeqCst) != generation {
+            generated -= unwritten_ready;
+            stale += unwritten_ready;
+        }
         writes.clear();
         if cancelled {
             break;
@@ -885,6 +929,16 @@ pub fn delete_thumbnail_files_with_progress(
         }
     }
     removed
+}
+
+/// Whether `candidate` is a regular file (not a symbolic link) inside the
+/// already canonical thumbnail root.
+fn is_owned_thumbnail_file(canonical_root: &Path, candidate: &Path) -> bool {
+    fs::symlink_metadata(candidate)
+        .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+        && candidate
+            .canonicalize()
+            .is_ok_and(|canonical| canonical.starts_with(canonical_root))
 }
 
 fn remove_thumbnail_file(thumbs_root: &Path, candidate: &Path) -> bool {
@@ -1966,5 +2020,245 @@ mod tests {
                 .thumb_path
                 .is_some());
         }
+    }
+
+    /// A state whose renderer writes a placeholder file and counts renders.
+    fn counting_bulk_state(
+        db_path: &Path,
+        thumbs: &Path,
+    ) -> (AppState, Arc<std::sync::atomic::AtomicUsize>) {
+        let mut state = create_test_state(db_path, thumbs);
+        let renders = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = renders.clone();
+        state.thumb_scheduler = ThumbnailScheduler::with_processor(
+            2,
+            "ffmpeg".into(),
+            Arc::new(move |_, task| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                fs::write(&task.target_path, b"thumbnail").unwrap();
+                Some(task.target_path.to_string_lossy().into())
+            }),
+        );
+        (state, renders)
+    }
+
+    fn render_all(state: &AppState) -> crate::models::ThumbnailRenderSummary {
+        let permit = state.database.admit().unwrap();
+        super::render_all_thumbnails(state, &permit, &|_| Ok(())).unwrap()
+    }
+
+    fn thumb_path_of(conn: &rusqlite::Connection, id: i64) -> Option<String> {
+        db::get_asset_for_thumbnail(conn, id)
+            .unwrap()
+            .unwrap()
+            .thumb_path
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn render_all_keeps_the_cached_thumbnail_of_an_unreadable_source() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let folder = dir.path().join("folder");
+        fs::create_dir(&folder).unwrap();
+        let source = folder.join("source.png");
+        fs::write(&source, b"source").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &new_asset(&source, 1, None)).unwrap();
+        let (state, renders) = counting_bulk_state(&db_path, &thumbs);
+
+        assert_eq!(render_all(&state).generated, 1);
+        let cached = thumb_path_of(&conn, 1).expect("rendered path");
+
+        // Restores the folder even when an assertion below panics, so the
+        // temporary directory can still be removed.
+        struct Readable<'a>(&'a Path);
+        impl Drop for Readable<'_> {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(self.0, fs::Permissions::from_mode(0o755));
+            }
+        }
+        let readable = Readable(&folder);
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o000)).unwrap();
+        // Root bypasses directory permissions; the case cannot be modelled then.
+        let unreadable = !source.exists();
+        let offline = render_all(&state);
+        drop(readable);
+        if !unreadable {
+            return;
+        }
+        assert_eq!(
+            (offline.generated, offline.failed, offline.stale),
+            (1, 0, 0)
+        );
+        assert_eq!(thumb_path_of(&conn, 1).as_deref(), Some(cached.as_str()));
+        assert_eq!(fs::read(&cached).unwrap(), b"thumbnail");
+        assert!(db::list_failed_thumbnail_asset_ids(&conn)
+            .unwrap()
+            .is_empty());
+
+        let readable = render_all(&state);
+        assert_eq!((readable.generated, readable.skipped_failed), (1, 0));
+        assert_eq!(renders.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn render_all_clears_a_stale_marker_of_an_offline_source_and_keeps_its_file() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        // A recorded file outside the deterministic target (for example from
+        // an earlier cache version) is what the demand path keeps serving.
+        let recorded = thumbs.join("recorded.jpg");
+        fs::write(&recorded, b"recorded").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        let gone = dir.path().join("offline").join("gone.png");
+        db::upsert_asset(&conn, &new_asset(&gone, 3, Some(&recorded))).unwrap();
+        db::record_thumbnail_failure(&conn, 1, 3, Some("earlier failure")).unwrap();
+        let (state, renders) = counting_bulk_state(&db_path, &thumbs);
+
+        let summary = render_all(&state);
+        assert_eq!((summary.generated, summary.failed), (1, 0));
+        assert_eq!(
+            thumb_path_of(&conn, 1),
+            Some(recorded.to_string_lossy().into_owned())
+        );
+        assert_eq!(fs::read(&recorded).unwrap(), b"recorded");
+        assert!(db::list_failed_thumbnail_asset_ids(&conn)
+            .unwrap()
+            .is_empty());
+        assert_eq!(renders.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn render_all_without_a_cached_thumbnail_still_records_a_missing_source() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        // The recorded path no longer names a file.
+        let vanished = thumbs.join("vanished.jpg");
+        db::upsert_asset(
+            &conn,
+            &new_asset(&dir.path().join("gone.png"), 3, Some(&vanished)),
+        )
+        .unwrap();
+
+        // A recorded file outside the thumbnail root is untrusted: it is not
+        // kept as this asset's thumbnail, and it is never removed.
+        let foreign = dir.path().join("foreign.jpg");
+        fs::write(&foreign, b"not a cache file").unwrap();
+        db::upsert_asset(
+            &conn,
+            &new_asset(&dir.path().join("gone-too.png"), 3, Some(&foreign)),
+        )
+        .unwrap();
+        db::record_thumbnail_failure(&conn, 2, 3, Some("earlier failure")).unwrap();
+        let (state, renders) = counting_bulk_state(&db_path, &thumbs);
+
+        let summary = render_all(&state);
+        assert_eq!((summary.generated, summary.failed), (0, 2));
+        assert_eq!(thumb_path_of(&conn, 1), None);
+        assert_eq!(thumb_path_of(&conn, 2), None);
+        assert_eq!(fs::read(&foreign).unwrap(), b"not a cache file");
+        assert_eq!(
+            db::list_failed_thumbnail_asset_ids(&conn).unwrap(),
+            vec![1, 2]
+        );
+        assert_eq!(renders.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn render_all_does_not_rewrite_rows_whose_thumbnail_is_current() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        for id in 0..3 {
+            let source = dir.path().join(format!("source-{id}.png"));
+            fs::write(&source, b"source").unwrap();
+            db::upsert_asset(&conn, &new_asset(&source, 1, None)).unwrap();
+        }
+        let (state, renders) = counting_bulk_state(&db_path, &thumbs);
+        assert_eq!(render_all(&state).generated, 3);
+        let paths: Vec<_> = (1..=3).map(|id| thumb_path_of(&conn, id)).collect();
+
+        // Another writer holds the SQLite write lock. A run with nothing to
+        // change must not wait for it (busy timeout) or fail.
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let started = std::time::Instant::now();
+        let permit = state.database.admit().unwrap();
+        let current = super::render_all_thumbnails(&state, &permit, &|_| Ok(()));
+        let elapsed = started.elapsed();
+        conn.execute_batch("ROLLBACK").unwrap();
+        let current = current.expect("no write is attempted for current rows");
+        assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+        assert_eq!(
+            (current.generated, current.processed, current.stale),
+            (3, 3, 0)
+        );
+        assert_eq!(renders.load(Ordering::SeqCst), 3);
+
+        // A row that lost its path and a row with a stale failure marker are
+        // still repaired from the existing target.
+        conn.execute("UPDATE assets SET thumb_path = NULL WHERE id = 1", [])
+            .unwrap();
+        db::record_thumbnail_failure(&conn, 2, 1, Some("stale marker")).unwrap();
+        let repaired = render_all(&state);
+        assert_eq!((repaired.generated, repaired.failed), (3, 0));
+        assert_eq!(
+            (1..=3)
+                .map(|id| thumb_path_of(&conn, id))
+                .collect::<Vec<_>>(),
+            paths
+        );
+        assert!(db::list_failed_thumbnail_asset_ids(&conn)
+            .unwrap()
+            .is_empty());
+        assert_eq!(renders.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn a_clear_during_render_all_counts_unwritten_current_rows_as_stale() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let source = dir.path().join("source.png");
+        fs::write(&source, b"source").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        db::upsert_asset(&conn, &new_asset(&source, 1, None)).unwrap();
+        let (state, _) = counting_bulk_state(&db_path, &thumbs);
+        assert_eq!(render_all(&state).generated, 1);
+
+        // The per-asset progress event fires after the page was read; bumping
+        // the clear epoch there models Clear all running between page and
+        // publication.
+        let permit = state.database.admit().unwrap();
+        let generation = &state.thumbnail_generation;
+        let summary = super::render_all_thumbnails(
+            &state,
+            &permit,
+            &|progress: crate::models::ScanProgress| {
+                if progress.phase == "thumbs" {
+                    generation.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!((summary.generated, summary.stale), (0, 1));
     }
 }

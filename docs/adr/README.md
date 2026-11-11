@@ -55,3 +55,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0015](0015-restore-tolerates-unresolved-thumbnails-and-nullable-file-name.md) | Restore drops unresolved thumbnail references and accepts the nullable `file_name` column of an earlier migration | Accepted | 2026-11-10 |
 | [0016](0016-startup-sweep-of-abandoned-backup-temporaries.md) | Startup removes abandoned backup temporaries by exact name, and a failed pre-swap restore removes its staging | Accepted | 2026-11-11 |
 | [0017](0017-export-target-validated-before-creating-folders.md) | Export targets are validated before any folder is created, and the indexed-asset check reads assets only for an existing target | Accepted | 2026-11-11 |
+| [0018](0018-render-all-keeps-thumbnails-of-unreachable-sources.md) | Render all keeps the cached thumbnail of an unreachable source and writes only rows that change | Accepted | 2026-11-11 |

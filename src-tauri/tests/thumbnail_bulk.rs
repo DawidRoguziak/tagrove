@@ -160,3 +160,117 @@ fn bulk_render_and_retry_publish_decodable_jpegs_for_temporary_media() {
     assert_eq!(fs::read_dir(&state.thumbs_dir).unwrap().count(), 39);
     eprintln!("Rendered 39 temporary image/GIF/video assets; decoded every published JPEG and verified SQLite paths and cleared failure markers.");
 }
+
+fn bulk_state(dir: &Path) -> AppState {
+    let db_path = dir.join("media.db");
+    AppState {
+        database: DatabaseRuntime::new(db_path.clone()),
+        db_path,
+        thumbs_dir: dir.join("thumbs"),
+        ffmpeg_path: "ffmpeg".into(),
+        scan_lock: Mutex::new(()),
+        thumb_lock: RwLock::new(()),
+        thumb_scheduler: ThumbnailScheduler::from_available_parallelism("ffmpeg".into()),
+        thumbnail_render_all_running: AtomicBool::new(false),
+        thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+        thumbnail_generation: AtomicU64::new(0),
+    }
+}
+
+fn thumb_rows(conn: &rusqlite::Connection) -> Vec<(i64, Option<String>)> {
+    let mut statement = conn
+        .prepare("SELECT id, thumb_path FROM assets ORDER BY id")
+        .unwrap();
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+}
+
+fn failure_ids(conn: &rusqlite::Connection) -> Vec<i64> {
+    db::list_failed_thumbnail_asset_ids(conn).unwrap()
+}
+
+/// An indexed folder goes offline (an unmounted drive) between two Render all
+/// runs and comes back before a third: the cached thumbnails, their paths and
+/// their files survive, no failure marker is left behind, and nothing is
+/// rendered again once the folder is back.
+#[test]
+fn render_all_keeps_cached_thumbnails_of_an_offline_folder_and_recovers_after_remount() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("thumbs")).unwrap();
+    let drive = dir.path().join("drive");
+    let offline = dir.path().join("drive-offline");
+    fs::create_dir(&drive).unwrap();
+    let conn = db::open_connection(&dir.path().join("media.db")).unwrap();
+    db::init_schema(&conn).unwrap();
+    let image = image::RgbImage::from_pixel(32, 24, image::Rgb([200, 40, 90]));
+    let mut cached_ids = Vec::new();
+    for id in 0..3 {
+        let source = drive.join(format!("image-{id}.png"));
+        image.save(&source).unwrap();
+        cached_ids.push(index_fixture(&conn, &source, "image"));
+    }
+    // Indexed but absent on disk: without a cached thumbnail a missing source
+    // is still a failure.
+    let missing = drive.join("missing.png");
+    image.save(&missing).unwrap();
+    let missing_id = index_fixture(&conn, &missing, "image");
+    fs::remove_file(&missing).unwrap();
+    let state = bulk_state(dir.path());
+    let permit = state.database.admit().unwrap();
+
+    let first = thumb_service::render_all_thumbnails(&state, &permit, &|_| Ok(())).unwrap();
+    assert_eq!((first.processed, first.generated, first.failed), (4, 3, 1));
+    let rendered = thumb_rows(&conn);
+    let cached: Vec<String> = rendered
+        .iter()
+        .filter(|(id, _)| cached_ids.contains(id))
+        .map(|(_, path)| path.clone().expect("rendered path"))
+        .collect();
+    assert_eq!(cached.len(), 3);
+    let modified: Vec<_> = cached
+        .iter()
+        .map(|path| fs::metadata(path).unwrap().modified().unwrap())
+        .collect();
+    assert_eq!(failure_ids(&conn), vec![missing_id]);
+
+    fs::rename(&drive, &offline).unwrap();
+    let offline_run = thumb_service::render_all_thumbnails(&state, &permit, &|_| Ok(())).unwrap();
+    assert_eq!(
+        (
+            offline_run.processed,
+            offline_run.generated,
+            offline_run.failed,
+            offline_run.skipped_failed,
+            offline_run.stale
+        ),
+        (4, 3, 1, 0, 0)
+    );
+    assert_eq!(thumb_rows(&conn), rendered);
+    for path in &cached {
+        assert!(Path::new(path).is_file(), "{path} was removed");
+    }
+    assert_eq!(failure_ids(&conn), vec![missing_id]);
+
+    fs::rename(&offline, &drive).unwrap();
+    let remounted = thumb_service::render_all_thumbnails(&state, &permit, &|_| Ok(())).unwrap();
+    assert_eq!(
+        (
+            remounted.generated,
+            remounted.failed,
+            remounted.skipped_failed
+        ),
+        (3, 1, 0)
+    );
+    assert_eq!(thumb_rows(&conn), rendered);
+    for (path, before) in cached.iter().zip(modified) {
+        assert_eq!(
+            fs::metadata(path).unwrap().modified().unwrap(),
+            before,
+            "{path} was rendered again"
+        );
+    }
+    assert_eq!(failure_ids(&conn), vec![missing_id]);
+}

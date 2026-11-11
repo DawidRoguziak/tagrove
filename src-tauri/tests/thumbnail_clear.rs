@@ -1,7 +1,7 @@
 use media_tagger::{
     app::state::AppState,
     db,
-    models::NewAsset,
+    models::{NewAsset, ScanProgress},
     services::{db_pool::DatabaseRuntime, thumb_scheduler::ThumbnailScheduler, thumb_service},
 };
 use std::{
@@ -154,4 +154,93 @@ fn rescan_then_clear_all_removes_obsolete_and_current_files_and_regenerates() {
         .unwrap();
     assert!(std::path::Path::new(&stored).is_file());
     assert!(source.exists());
+}
+
+fn clear_state(dir: &std::path::Path) -> AppState {
+    let db_path = dir.join("media.db");
+    let conn = db::open_connection(&db_path).unwrap();
+    db::init_schema(&conn).unwrap();
+    drop(conn);
+    AppState {
+        database: DatabaseRuntime::new(db_path.clone()),
+        db_path,
+        thumbs_dir: dir.join("thumbs"),
+        ffmpeg_path: PathBuf::from("ffmpeg"),
+        scan_lock: Mutex::new(()),
+        thumb_lock: RwLock::new(()),
+        thumb_scheduler: ThumbnailScheduler::new(1, PathBuf::from("ffmpeg")),
+        thumbnail_render_all_running: AtomicBool::new(false),
+        thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+        thumbnail_generation: AtomicU64::new(0),
+    }
+}
+
+/// Clear all counts in one pass and deletes in a second walk without a path
+/// buffer. Files that appear or vanish between the passes (a render still
+/// finishing) keep the progress truthful, and only owned files are removed.
+#[test]
+fn clear_all_deletes_while_walking_and_keeps_progress_truthful_across_passes() {
+    for (added, vanished) in [(20usize, 0usize), (0, 5)] {
+        let dir = tempfile::tempdir().unwrap();
+        let state = clear_state(dir.path());
+        let nested = state.thumbs_dir.join("nested/deeper");
+        fs::create_dir_all(&nested).unwrap();
+        let files: Vec<PathBuf> = (0..60)
+            .map(|index| {
+                let parent = if index % 2 == 0 {
+                    &state.thumbs_dir
+                } else {
+                    &nested
+                };
+                let path = parent.join(format!("{index:064x}.jpg"));
+                fs::write(&path, b"thumbnail").unwrap();
+                path
+            })
+            .collect();
+        let outside = dir.path().join("outside.jpg");
+        fs::write(&outside, b"not a thumbnail").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, state.thumbs_dir.join("link.jpg")).unwrap();
+
+        let events = Mutex::new(Vec::<ScanProgress>::new());
+        let thumbs_dir = state.thumbs_dir.clone();
+        let sink = |progress: ScanProgress| {
+            let mut events = events.lock().unwrap();
+            if events.is_empty() {
+                // Between the counting pass and the deleting walk.
+                for index in 0..added {
+                    fs::write(thumbs_dir.join(format!("late-{index}.jpg")), b"late").unwrap();
+                }
+                for path in files.iter().take(vanished) {
+                    fs::remove_file(path).unwrap();
+                }
+            }
+            events.push(progress);
+            Ok(())
+        };
+        let removed = media_tagger::app::locks::with_thumb_lock(&state, |permit| {
+            thumb_service::clear_all_thumbnails(&state, permit, &sink)
+        })
+        .unwrap();
+
+        assert_eq!(removed, 60 + added - vanished);
+        let events = events.into_inner().unwrap();
+        assert!(events.iter().all(|event| event.phase == "thumbs-clear"));
+        assert_eq!((events[0].processed, events[0].total), (0, 60));
+        assert!(events.iter().all(|event| event.processed <= event.total));
+        assert!(events
+            .windows(2)
+            .all(|pair| pair[0].processed <= pair[1].processed));
+        let last = events.last().unwrap();
+        assert_eq!((last.processed, last.total), (removed, removed));
+        assert!(!nested.exists() && !state.thumbs_dir.join("nested").exists());
+        assert!(state.thumbs_dir.is_dir());
+        assert!(outside.exists(), "a symlink target outside the root stays");
+        let left: Vec<_> = fs::read_dir(&state.thumbs_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        #[cfg(unix)]
+        assert_eq!(left, vec![std::ffi::OsString::from("link.jpg")]);
+    }
 }

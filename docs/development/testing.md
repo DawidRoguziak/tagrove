@@ -735,7 +735,7 @@ The fixtures contain 1,000 and 10,000 metadata rows and no media collection. The
 bun run test:e2e:tauri -- --spec ./e2e/specs/review-fixes.e2e.js
 ```
 
-Lower-layer regressions are `src/features/lightbox/__tests__/createLightbox.test.ts`, `literalTagSearch.test.ts`, the library model/API tests, the query-position service test, and `src-tauri/tests/thumbnail_clear.rs`. The Rust file-backed test also checks nested obsolete files, skipped symlinks, exclusive-reader coordination, failure-marker removal, source preservation, and actual image regeneration.
+Lower-layer regressions are `src/features/lightbox/__tests__/createLightbox.test.ts`, `literalTagSearch.test.ts`, the library model/API tests, the query-position service test, and `src-tauri/tests/thumbnail_clear.rs`. The Rust file-backed test also checks nested obsolete files, skipped symlinks, exclusive-reader coordination, failure-marker removal, source preservation, actual image regeneration, and the two-pass sweep's progress when files appear or vanish between the counting and deleting walks.
 
 ## About and publisher metadata
 

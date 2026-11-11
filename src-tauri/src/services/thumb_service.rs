@@ -451,6 +451,7 @@ fn publish_bulk_results(
         let _thumbs = thumb_read_section(state);
         stale.extend(publish_thumbnail_results(
             &*permit.connection()?,
+            &state.thumbs_dir,
             chunk,
             state.thumbnail_generation.load(Ordering::SeqCst),
             captured_generation,
@@ -576,6 +577,7 @@ fn publish_one(
     };
     let stale = publish_thumbnail_results(
         conn,
+        &state.thumbs_dir,
         std::slice::from_ref(&write),
         state.thumbnail_generation.load(Ordering::SeqCst),
         captured_generation,
@@ -788,20 +790,21 @@ pub fn finish_thumbnail_requests(
     let _thumbs = thumb_read_section(state);
     let conn = permit.connection()?;
     let current = state.thumbnail_generation.load(Ordering::SeqCst);
+    // Keyed per generation group: a pre-clear and a post-clear request for
+    // one asset can share a render job, and only the pre-clear one is stale.
     let mut stale = HashSet::new();
     for (generation, writes) in &by_generation {
-        stale.extend(publish_thumbnail_results(
-            &conn,
-            writes,
-            current,
-            *generation,
-        )?);
+        stale.extend(
+            publish_thumbnail_results(&conn, &state.thumbs_dir, writes, current, *generation)?
+                .into_iter()
+                .map(|asset_id| (*generation, asset_id)),
+        );
     }
     Ok(pending
         .iter()
         .map(|item| {
             let path = item.result.thumb_path.as_deref()?;
-            if stale.contains(&item.asset_id) {
+            if stale.contains(&(item.generation, item.asset_id)) {
                 return None;
             }
             read_served(Path::new(path), &item.version)
@@ -812,10 +815,13 @@ pub fn finish_thumbnail_requests(
 /// Publishes collected thumbnail results: paths and failure markers in one
 /// transaction, each guarded by the source version captured at enqueue time.
 /// When the generation advanced meanwhile (thumbnail reset), nothing is
-/// committed and every ID is reported stale. Produced files of stale results
-/// are removed best-effort. Callers hold `thumb_read_section`.
+/// committed and every ID is reported stale. Produced files of results whose
+/// source version is no longer current are removed best-effort, and only when
+/// they are owned thumbnail files (`thumb_path` is untrusted). Callers hold
+/// `thumb_read_section`.
 fn publish_thumbnail_results(
     conn: &rusqlite::Connection,
+    thumbs_root: &Path,
     writes: &[ThumbnailWrite],
     current_generation: u64,
     captured_generation: u64,
@@ -823,15 +829,45 @@ fn publish_thumbnail_results(
     if writes.is_empty() {
         return Ok(Vec::new());
     }
-    let stale = if current_generation != captured_generation {
-        writes.iter().map(|write| write.asset_id).collect()
-    } else {
-        db::commit_thumbnail_results(conn, writes)?
+    let ready_path = |write: &ThumbnailWrite| match &write.outcome {
+        ThumbnailWriteOutcome::Ready(path) => Some(path.clone()),
+        ThumbnailWriteOutcome::Failed(_) => None,
     };
-    for write in writes {
-        if let ThumbnailWriteOutcome::Ready(path) = &write.outcome {
-            if stale.contains(&write.asset_id) {
-                let _ = fs::remove_file(path);
+    let mut obsolete = Vec::new();
+    let stale = if current_generation != captured_generation {
+        // The clear already swept the directory. Jobs are keyed by target, so
+        // a post-clear request can share this render and publish the same
+        // file: a target of a still-current source version is kept (a later
+        // request reconciles it). Nothing is removed when the rows cannot be
+        // read.
+        let ids: Vec<i64> = writes.iter().map(|write| write.asset_id).collect();
+        if let Ok(rows) = db::get_assets_for_thumbnails_by_ids(conn, &ids) {
+            let current: HashMap<i64, crate::thumbs::SourceVersion> = rows
+                .into_iter()
+                .map(|(asset, _)| (asset.id, source_version_for(&asset)))
+                .collect();
+            obsolete.extend(
+                writes
+                    .iter()
+                    .filter(|write| current.get(&write.asset_id) != Some(&write.version))
+                    .filter_map(ready_path),
+            );
+        }
+        ids
+    } else {
+        let stale = db::commit_thumbnail_results(conn, writes)?;
+        obsolete.extend(
+            writes
+                .iter()
+                .filter(|write| stale.contains(&write.asset_id))
+                .filter_map(ready_path),
+        );
+        stale
+    };
+    if !obsolete.is_empty() {
+        if let Ok(canonical_root) = thumbs_root.canonicalize() {
+            for path in obsolete {
+                remove_owned_thumbnail_file(&canonical_root, Path::new(&path));
             }
         }
     }
@@ -867,21 +903,16 @@ pub fn clear_all_thumbnails(
     db::clear_all_thumbnail_paths(&conn)?;
     // Rescans and pruning can release a reference before its old cache file is
     // removed. Sweep the owned directory, without following directory symlinks.
-    let mut thumbs = Vec::new();
-    let mut directories = Vec::new();
-    for entry in walkdir::WalkDir::new(&state.thumbs_dir)
-        .follow_links(false)
-        .contents_first(true)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
-        if entry.file_type().is_file() {
-            thumbs.push(entry.path().to_string_lossy().into_owned());
-        } else if entry.file_type().is_dir() && entry.depth() > 0 {
-            directories.push(entry.into_path());
-        }
-    }
-    let total = thumbs.len();
+    // A counting pass gives the progress total, so no path is buffered; the
+    // second pass deletes as it walks, against a root canonicalized once.
+    let walk = || {
+        walkdir::WalkDir::new(&state.thumbs_dir)
+            .follow_links(false)
+            .contents_first(true)
+            .into_iter()
+            .filter_map(Result::ok)
+    };
+    let total = walk().filter(|entry| entry.file_type().is_file()).count();
     let _ = emit_progress(
         app,
         "thumbs-clear",
@@ -889,19 +920,55 @@ pub fn clear_all_thumbnails(
         total,
         "Removing all thumbnails".to_string(),
     );
-    let removed =
-        delete_thumbnail_files_with_progress(app, &state.thumbs_dir, thumbs, total, "thumbs-clear");
-    for directory in directories {
-        // Only empty directories are removed; failed file cleanup remains retryable.
-        let _ = fs::remove_dir(directory);
+    let canonical_root = state.thumbs_dir.canonicalize().ok();
+    let (mut processed, mut reported, mut removed) = (0usize, 0usize, 0usize);
+    for entry in walk() {
+        if entry.file_type().is_file() {
+            if canonical_root
+                .as_deref()
+                .is_some_and(|root| remove_owned_thumbnail_file(root, entry.path()))
+            {
+                removed += 1;
+            }
+            processed += 1;
+            if processed.is_multiple_of(25) || processed == total {
+                emit_clear_progress(app, processed, total.max(processed));
+                reported = processed;
+            }
+        } else if entry.file_type().is_dir() && entry.depth() > 0 {
+            // Yielded after its contents. Only an empty directory is removed;
+            // failed file cleanup remains retryable.
+            let _ = fs::remove_dir(entry.path());
+        }
+    }
+    // A render still finishing can change the file count between the passes.
+    if processed < total || reported != processed {
+        emit_clear_progress(app, processed, processed);
     }
     Ok(removed)
 }
 
+fn emit_clear_progress(
+    app: &impl crate::services::progress::ProgressSink,
+    processed: usize,
+    total: usize,
+) {
+    let _ = emit_progress(
+        app,
+        "thumbs-clear",
+        processed,
+        total,
+        format!("Processed {processed}/{total}"),
+    );
+}
+
 pub fn delete_thumbnail_files_in_root(thumbs_root: &Path, paths: Vec<String>) -> usize {
+    let Ok(canonical_root) = thumbs_root.canonicalize() else {
+        return 0;
+    };
     paths
         .into_iter()
-        .filter(|path| remove_thumbnail_file(thumbs_root, Path::new(path)))
+        .filter(|path| remove_owned_thumbnail_file(&canonical_root, Path::new(path)))
         .count()
 }
 
@@ -912,9 +979,13 @@ pub fn delete_thumbnail_files_with_progress(
     total: usize,
     phase: &str,
 ) -> usize {
+    let canonical_root = thumbs_root.canonicalize().ok();
     let mut removed = 0usize;
     for (idx, path) in paths.into_iter().enumerate() {
-        if remove_thumbnail_file(thumbs_root, Path::new(&path)) {
+        if canonical_root
+            .as_deref()
+            .is_some_and(|root| remove_owned_thumbnail_file(root, Path::new(&path)))
+        {
             removed += 1;
         }
         let processed = idx + 1;
@@ -941,10 +1012,9 @@ fn is_owned_thumbnail_file(canonical_root: &Path, candidate: &Path) -> bool {
             .is_ok_and(|canonical| canonical.starts_with(canonical_root))
 }
 
-fn remove_thumbnail_file(thumbs_root: &Path, candidate: &Path) -> bool {
-    let Ok(canonical_root) = thumbs_root.canonicalize() else {
-        return false;
-    };
+/// Removes `candidate` when it is an owned thumbnail file of the already
+/// canonical root; callers canonicalize the root once per operation.
+fn remove_owned_thumbnail_file(canonical_root: &Path, candidate: &Path) -> bool {
     let Ok(metadata) = fs::symlink_metadata(candidate) else {
         return false;
     };
@@ -954,7 +1024,7 @@ fn remove_thumbnail_file(thumbs_root: &Path, candidate: &Path) -> bool {
     let Ok(canonical_candidate) = candidate.canonicalize() else {
         return false;
     };
-    if !canonical_candidate.starts_with(&canonical_root) {
+    if !canonical_candidate.starts_with(canonical_root) {
         return false;
     }
     fs::remove_file(canonical_candidate).is_ok()
@@ -1666,12 +1736,14 @@ mod tests {
         )];
 
         // Same generation: normal CAS commit (row missing -> reported stale).
-        let stale =
-            publish_thumbnail_results(&conn, &updates, 7, 7).expect("publish same generation");
+        let root = Path::new("C:/thumbs");
+        let stale = publish_thumbnail_results(&conn, root, &updates, 7, 7)
+            .expect("publish same generation");
         assert_eq!(stale, vec![1]);
 
         // Generation advanced meanwhile: nothing is committed at all.
-        let stale = publish_thumbnail_results(&conn, &updates, 8, 7).expect("publish after reset");
+        let stale =
+            publish_thumbnail_results(&conn, root, &updates, 8, 7).expect("publish after reset");
         assert_eq!(stale, vec![1]);
     }
     #[test]
@@ -2260,5 +2332,164 @@ mod tests {
         )
         .unwrap();
         assert_eq!((summary.generated, summary.stale), (0, 1));
+    }
+
+    /// One `thumb://` request enqueued before Clear all and one after it, for
+    /// the same asset, sharing one render job (jobs are keyed by target).
+    struct SharedClearJob {
+        _dir: tempfile::TempDir,
+        db_path: PathBuf,
+        state: AppState,
+        before_clear: super::PendingThumbnail,
+        after_clear: super::PendingThumbnail,
+        target: PathBuf,
+    }
+
+    fn shared_job_across_a_clear() -> SharedClearJob {
+        use crate::services::thumb_scheduler::test_support::{
+            controlled_scheduler, wait_for_pending, WAIT,
+        };
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("media.db");
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let source = dir.path().join("source.png");
+        fs::write(&source, b"source").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        db::init_schema(&conn).unwrap();
+        insert_scanned_asset(&conn, &source, 6, 1, 1_000_000_000);
+        drop(conn);
+        let mut state = create_test_state(&db_path, &thumbs);
+        let (scheduler, started) = controlled_scheduler(16);
+        state.thumb_scheduler = scheduler;
+
+        let enqueue = |state: &AppState| {
+            let (tx, rx) = mpsc::channel();
+            let outcome = crate::app::locks::with_thumb_operation(state, |permit| {
+                super::request_thumbnail(1, Default::default(), state, permit, move |pending| {
+                    let _ = tx.send(pending);
+                })
+            })
+            .unwrap();
+            assert!(matches!(outcome, super::ThumbnailRequestOutcome::Pending));
+            rx
+        };
+        let before_rx = enqueue(&state);
+        let job = started.recv_timeout(WAIT).unwrap();
+        assert_eq!(job.asset_id, 1);
+        crate::app::locks::with_thumb_lock(&state, |permit| {
+            super::clear_all_thumbnails(&state, permit, &|_| Ok(()))
+        })
+        .unwrap();
+        let after_rx = enqueue(&state);
+        wait_for_pending(&state.thumb_scheduler, 1);
+        assert!(
+            started.try_recv().is_err(),
+            "the post-clear request joins the pending job"
+        );
+        job.release.send(()).unwrap();
+        let before_clear = before_rx.recv_timeout(WAIT).unwrap();
+        let after_clear = after_rx.recv_timeout(WAIT).unwrap();
+        assert_eq!((before_clear.generation, after_clear.generation), (0, 1));
+        let target = PathBuf::from(after_clear.result.thumb_path.clone().unwrap());
+        assert!(target.is_file());
+        SharedClearJob {
+            _dir: dir,
+            db_path,
+            state,
+            before_clear,
+            after_clear,
+            target,
+        }
+    }
+
+    fn finish(
+        state: &AppState,
+        pending: Vec<super::PendingThumbnail>,
+    ) -> Vec<Option<super::ServedThumbnail>> {
+        crate::app::locks::with_thumb_operation(state, |permit| {
+            super::finish_thumbnail_requests(pending, state, permit)
+        })
+        .unwrap()
+    }
+
+    fn assert_post_clear_publication(db_path: &Path, target: &Path) {
+        assert!(target.is_file(), "the published file must stay");
+        let conn = db::open_connection(db_path).unwrap();
+        assert_eq!(
+            thumb_path_of(&conn, 1).as_deref(),
+            Some(target.to_string_lossy().as_ref())
+        );
+    }
+
+    #[test]
+    fn a_pre_clear_waiter_in_the_same_batch_keeps_the_post_clear_publication() {
+        let job = shared_job_across_a_clear();
+        let served = finish(&job.state, vec![job.before_clear, job.after_clear]);
+        assert!(served[0].is_none(), "the pre-clear result is stale");
+        assert_eq!(
+            served[1].as_ref().map(|served| served.bytes.as_slice()),
+            Some(&b"thumbnail"[..]),
+            "the post-clear result is served"
+        );
+        assert_post_clear_publication(&job.db_path, &job.target);
+    }
+
+    #[test]
+    fn a_pre_clear_waiter_published_first_keeps_the_shared_target() {
+        let job = shared_job_across_a_clear();
+        assert!(finish(&job.state, vec![job.before_clear])[0].is_none());
+        assert!(job.target.is_file(), "the current-version target stays");
+        assert!(finish(&job.state, vec![job.after_clear])[0].is_some());
+        assert_post_clear_publication(&job.db_path, &job.target);
+    }
+
+    #[test]
+    fn a_pre_clear_waiter_published_last_does_not_remove_the_served_file() {
+        let job = shared_job_across_a_clear();
+        assert!(finish(&job.state, vec![job.after_clear])[0].is_some());
+        assert!(finish(&job.state, vec![job.before_clear])[0].is_none());
+        assert_post_clear_publication(&job.db_path, &job.target);
+    }
+
+    #[test]
+    fn a_pre_clear_result_of_a_reindexed_version_is_still_removed() {
+        let job = shared_job_across_a_clear();
+        let conn = db::open_connection(&job.db_path).unwrap();
+        conn.execute(
+            "UPDATE assets SET fingerprint_mtime_ns = fingerprint_mtime_ns + 1, record_version = record_version + 1",
+            [],
+        )
+        .unwrap();
+        assert!(finish(&job.state, vec![job.before_clear])[0].is_none());
+        assert!(
+            !job.target.exists(),
+            "an obsolete-version target is removed"
+        );
+    }
+
+    #[test]
+    fn stale_cleanup_removes_only_owned_thumbnail_files() {
+        let dir = tempdir().unwrap();
+        let thumbs = dir.path().join("thumbs");
+        fs::create_dir_all(&thumbs).unwrap();
+        let owned = thumbs.join("owned.jpg");
+        let outside = dir.path().join("outside.jpg");
+        fs::write(&owned, b"owned").unwrap();
+        fs::write(&outside, b"outside").unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        db::init_schema(&conn).unwrap();
+        let version = crate::thumbs::SourceVersion::new("/media/missing.jpg", 10, 0);
+        let writes: Vec<_> = [(1, &owned), (2, &outside)]
+            .into_iter()
+            .map(|(id, path)| {
+                super::ready_write(id, path.to_string_lossy().into(), version.clone(), 1)
+            })
+            .collect();
+        // Missing rows lose the compare-and-set, so both results are stale.
+        let stale = publish_thumbnail_results(&conn, &thumbs, &writes, 3, 3).unwrap();
+        assert_eq!(stale, vec![1, 2]);
+        assert!(!owned.exists(), "an owned stale file is removed");
+        assert!(outside.exists(), "an untrusted path outside the root stays");
     }
 }

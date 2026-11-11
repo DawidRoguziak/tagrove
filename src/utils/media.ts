@@ -55,15 +55,24 @@ export function isValidTag(tag: string): boolean {
   return Boolean(tag) && !/[,;\s\p{Cc}]/u.test(tag);
 }
 
+/**
+ * The anchored `gN:` rule: when the trimmed input begins with `gN:`, everything after the first
+ * colon is one group-name value (outer whitespace trimmed). Returns null when the rule does not
+ * apply. Autocomplete uses the same rule so it never treats words of that value as tags.
+ */
+export function readGroupNameFilterValue(input: string): string | null {
+  const match = /^gn:(.*)$/i.exec(input.trim());
+  return match ? (match[1] ?? "").trim() : null;
+}
+
 export function parseSearchFilter(input: string): ParsedSearchFilter {
   const trimmed = input.trim();
   if (!trimmed) {
     return createTagFilter();
   }
 
-  const groupNameMatch = /^gn:(.*)$/i.exec(trimmed);
-  if (groupNameMatch) {
-    const groupName = groupNameMatch[1]?.trim() ?? "";
+  const groupName = readGroupNameFilterValue(trimmed);
+  if (groupName !== null) {
     if (!groupName) {
       return createValidationError("groupNameMissingValue");
     }
@@ -109,7 +118,10 @@ export function parseSearchFilter(input: string): ParsedSearchFilter {
     }
 
     const rawCount = metaToken.slice(separatorIndex + 1).trim();
-    if (!/^\d+$/.test(rawCount)) {
+    // Past Number.MAX_SAFE_INTEGER the parsed count is no longer exact, and past i64 the backend
+    // cannot deserialize it, so such counts get the same validation message as non-digits.
+    const tagCount = /^\d+$/.test(rawCount) ? Number.parseInt(rawCount, 10) : Number.NaN;
+    if (!Number.isSafeInteger(tagCount)) {
       return createValidationError("hasNoTagsInvalidCount");
     }
 
@@ -119,7 +131,7 @@ export function parseSearchFilter(input: string): ParsedSearchFilter {
       exclude: [],
       metaFilter: {
         type: "hasNoTags",
-        tagCount: Number.parseInt(rawCount, 10)
+        tagCount
       },
       validationError: null
     };

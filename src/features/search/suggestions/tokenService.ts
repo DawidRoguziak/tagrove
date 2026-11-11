@@ -1,3 +1,4 @@
+import { readGroupNameFilterValue } from "../../../utils/media";
 import { readTagToken } from "../../../utils/searchTokens";
 import type { ActiveToken } from "./types";
 
@@ -6,6 +7,12 @@ export function normalizeTagToken(token: string): string {
 }
 
 export function readActiveToken(input: string, caret: number): ActiveToken | null {
+  // The anchored `gN:` rule consumes the whole input as one group name, so none of its words is
+  // a tag token that a suggestion may replace.
+  if (readGroupNameFilterValue(input) !== null) {
+    return null;
+  }
+
   const position = Math.max(0, Math.min(caret, input.length));
 
   let start = position;

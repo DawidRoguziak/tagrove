@@ -64,6 +64,7 @@ describe("Solid search commands", () => {
   it.each([
     "gN:",
     "tags:-1",
+    "tags:99999999999999999999",
     '"unfinished'
   ])("rejects %s, retains applied values and resets through clear", async (input) => {
     const apply = vi.fn().mockResolvedValue(undefined),
@@ -74,6 +75,7 @@ describe("Solid search commands", () => {
     await result.applyFavorites(true);
     flush();
     expect(result.validationError).not.toBeNull();
+    if (input.startsWith("tags:")) expect(result.validationError).toBe("hasNoTagsInvalidCount");
     expect(apply).toHaveBeenCalledOnce();
     expect(valid.filterInclude).toEqual(["cat"]);
     await result.clear();

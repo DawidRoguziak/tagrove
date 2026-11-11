@@ -407,6 +407,54 @@ describe("SearchTagator", () => {
     expect((input as HTMLInputElement).value).toBe("gN:trip-2026");
   });
 
+  it("submits a multi-word gN: group name on Enter without rewriting its words", async () => {
+    const onSubmit = vi.fn();
+    let current = () => "";
+    function SubmittingSearchTagator() {
+      const [value, setValue] = createSignal("");
+      current = value;
+      return (
+        <SearchTagator
+          client={client}
+          value={value()}
+          onValueChange={setValue}
+          onSubmit={onSubmit}
+          knownTags={["trip-2026", "cat"]}
+          ariaLabel="Search tags"
+          listboxAriaLabel="Tag suggestions"
+        />
+      );
+    }
+    renderSolid(SubmittingSearchTagator, {});
+    const input = screen.getByRole("combobox", { name: "Search tags" }) as HTMLInputElement;
+
+    // Control: outside the anchored gN: rule the trailing word does get a tag suggestion.
+    await userEvent.type(input, "cat 2026");
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual(["trip-2026"]);
+
+    for (const typed of ["gN:Trip 2026", 'gN:"Trip 2026"']) {
+      await userEvent.clear(input);
+      await userEvent.type(input, typed);
+      // Let the in-process suggestion worker answer any request before Enter.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(screen.queryByRole("option")).not.toBeInTheDocument();
+      expect(input).toHaveAttribute("aria-expanded", "false");
+
+      onSubmit.mockClear();
+      await userEvent.keyboard("{Enter}");
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      expect(input.value).toBe(typed);
+      expect(current()).toBe(typed);
+    }
+
+    // The caret inside an earlier word of the value is suppressed too.
+    input.setSelectionRange(5, 5);
+    await userEvent.click(input);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+  });
+
   it("consumes Escape when closing an open suggestion list", async () => {
     const onOuterKeyDown = vi.fn();
     render(() => (

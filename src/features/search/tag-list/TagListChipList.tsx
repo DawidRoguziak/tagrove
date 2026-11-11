@@ -1,6 +1,7 @@
-import { For } from "solid-js";
+import { createMemo, For } from "solid-js";
 import {
   getTagMode,
+  type TagSelectionMode,
   type TagSelections
 } from "./tagListSelectionService";
 interface TagListChipListProps {
@@ -9,7 +10,7 @@ interface TagListChipListProps {
   disabled: boolean;
   onTagClick: (tag: string, clickCount: number) => void;
   onTagDoubleClick: (tag: string) => void;
-  getStateLabel: (tag: string) => string;
+  getStateLabel: (mode: TagSelectionMode | null) => string;
   getButtonTitle: (tag: string, state: string) => string;
   getButtonAriaLabel: (tag: string, state: string) => string;
 }
@@ -18,8 +19,12 @@ export function TagListChipList(props: TagListChipListProps) {
     <div class="flex flex-wrap gap-1.5">
       <For each={props.tags}>
         {(tag) => {
-          const tagMode = () => getTagMode(props.selections, tag);
-          const stateLabel = () => props.getStateLabel(tag);
+          // Memos cut the selection signal down to this chip's own mode, so a click only
+          // recomputes the translated strings of chips whose mode (or the language) changed.
+          const tagMode = createMemo(() => getTagMode(props.selections, tag));
+          const stateLabel = createMemo(() => props.getStateLabel(tagMode()));
+          const ariaLabel = createMemo(() => props.getButtonAriaLabel(tag, stateLabel()));
+          const title = createMemo(() => props.getButtonTitle(tag, stateLabel()));
           const tagClasses = () =>
             [
               "inline-flex break-all items-center rounded-[var(--radius-control)] border px-3 py-1 text-xs font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary/35",
@@ -37,8 +42,8 @@ export function TagListChipList(props: TagListChipListProps) {
               class={tagClasses()}
               aria-pressed={tagMode() !== null ? "true" : "false"}
               aria-keyshortcuts="Shift+Enter Shift+Space"
-              aria-label={props.getButtonAriaLabel(tag, stateLabel())}
-              title={props.getButtonTitle(tag, stateLabel())}
+              aria-label={ariaLabel()}
+              title={title()}
               disabled={props.disabled}
               onClick={(event) => props.onTagClick(tag, event.detail)}
               onDblClick={() => props.onTagDoubleClick(tag)}

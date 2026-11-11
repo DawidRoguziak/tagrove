@@ -173,13 +173,11 @@ export function TagListModal(props: TagListModalProps) {
             disabled={isApplying()}
             onTagClick={handleTagClick}
             onTagDoubleClick={handleTagDoubleClick}
-            getStateLabel={(tag) => {
-              const included = selection().included.has(tag.trim().toLowerCase());
-              const excluded = selection().excluded.has(tag.trim().toLowerCase());
-              if (included) {
+            getStateLabel={(mode) => {
+              if (mode === "include") {
                 return t("tagList.states.included");
               }
-              if (excluded) {
+              if (mode === "exclude") {
                 return t("tagList.states.excluded");
               }
               return t("tagList.states.inactive");

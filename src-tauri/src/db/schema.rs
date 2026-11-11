@@ -207,6 +207,33 @@ pub fn validate_backup_database(
     conn: &Connection,
     allow_legacy: bool,
 ) -> anyhow::Result<BackupSchemaCompatibility> {
+    let compatibility = validate_backup_database_except_journal(conn, allow_legacy)?;
+    ensure_no_pending_file_operations(conn)?;
+    Ok(compatibility)
+}
+
+/// Validation of the generation a restore is about to install or has installed (ADR 0030).
+///
+/// A bundle never carries a file-mutation journal, so `validate_backup_database` rejects any
+/// row. The generation a restore builds additionally holds the rows the restore copied from
+/// the live database: every other check is the same, and `pending_file_operations` must hold
+/// exactly `carried`, in journal order.
+pub fn validate_restored_generation(
+    conn: &Connection,
+    carried: &[PendingFileOperation],
+) -> anyhow::Result<()> {
+    validate_backup_database_except_journal(conn, false)?;
+    anyhow::ensure!(
+        list_pending_file_operations(conn)? == carried,
+        "restored database does not hold exactly the carried local file operations"
+    );
+    Ok(())
+}
+
+fn validate_backup_database_except_journal(
+    conn: &Connection,
+    allow_legacy: bool,
+) -> anyhow::Result<BackupSchemaCompatibility> {
     let integrity = conn.query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))?;
     anyhow::ensure!(
         integrity.eq_ignore_ascii_case("ok"),
@@ -808,7 +835,6 @@ pub(super) fn validate_backup_data(
         let invalid = conn.query_row(&sql, [], |row| row.get::<_, i64>(0))?;
         anyhow::ensure!(invalid == 0, "backup table {table} contains invalid values");
     }
-    ensure_no_pending_file_operations(conn)?;
     Ok(())
 }
 

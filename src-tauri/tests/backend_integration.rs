@@ -1919,6 +1919,141 @@ fn startup_restores_an_interrupted_delete_and_keeps_the_asset_indexed() {
     );
 }
 
+/// Bundle restore over a library whose file-mutation journal is not empty (ADR 0030).
+mod restore_with_a_live_file_journal {
+    use std::{
+        path::Path,
+        sync::{
+            atomic::{AtomicBool, AtomicU64},
+            Mutex, RwLock,
+        },
+    };
+
+    use media_tagger::{
+        app::state::AppState,
+        db,
+        services::{backup_service, db_pool::DatabaseRuntime, thumb_scheduler::ThumbnailScheduler},
+    };
+    use tempfile::tempdir;
+
+    fn state(profile: &Path) -> AppState {
+        let db_path = profile.join("media.db");
+        let thumbs_dir = profile.join("thumbs");
+        std::fs::create_dir_all(&thumbs_dir).expect("create thumbs");
+        AppState {
+            database: DatabaseRuntime::new(db_path.clone()),
+            db_path,
+            thumbs_dir,
+            ffmpeg_path: "ffmpeg".into(),
+            scan_lock: Mutex::new(()),
+            thumb_lock: RwLock::new(()),
+            thumb_scheduler: ThumbnailScheduler::new(1, "ffmpeg".into()),
+            thumbnail_render_all_running: AtomicBool::new(false),
+            thumbnail_render_all_cancel_requested: AtomicBool::new(false),
+            thumbnail_generation: AtomicU64::new(0),
+        }
+    }
+
+    fn export(state: &AppState, target: &Path) -> Result<(), String> {
+        backup_service::export_db_bundle(
+            target.to_string_lossy().into_owned(),
+            state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+    }
+
+    /// The whole startup sequence of `lib.rs` setup for the profile.
+    fn restart(profile: &Path) -> (rusqlite::Connection, anyhow::Result<()>) {
+        backup_service::recover_interrupted_restore(profile).expect("restore journal recovery");
+        backup_service::remove_abandoned_backup_temporaries(profile);
+        super::restart_and_recover(&profile.join("media.db"))
+    }
+
+    #[test]
+    fn restore_keeps_a_committed_delete_until_a_later_start_can_finish_it() {
+        let tmp = tempdir().expect("tempdir");
+        // The bundle: another library with its own root and one tagged asset.
+        let bundled_root = tmp.path().join("bundled-library");
+        std::fs::create_dir_all(&bundled_root).expect("create bundled root");
+        let bundled_asset = bundled_root.join("kept.jpg");
+        std::fs::write(&bundled_asset, b"kept").expect("write bundled asset");
+        let source_profile = tmp.path().join("source-profile");
+        let source = state(&source_profile);
+        {
+            let conn = db::open_connection(&source.db_path).expect("open source db");
+            db::init_schema(&conn).expect("init source schema");
+            let root_text = bundled_root.to_string_lossy();
+            db::add_scan_root(&conn, &root_text).expect("add bundled root");
+            db::upsert_scanned_asset(
+                &conn,
+                &super::new_asset(&bundled_asset, "image", 1, None),
+                1,
+                &root_text,
+                1,
+            )
+            .expect("index bundled asset");
+            db::set_asset_tags(&conn, 1, &["bundled".to_string()]).expect("tag bundled asset");
+        }
+        let archive = tmp.path().join("bundle.zip");
+        export(&source, &archive).expect("export the bundle");
+
+        // The live library: a committed delete whose staged file is still on disk.
+        let profile = tmp.path().join("profile");
+        let live = state(&profile);
+        let root = tmp.path().join("library");
+        let staging = super::library_with_a_committed_delete_awaiting_cleanup(&live.db_path, &root);
+        let journal_before = {
+            let conn = db::open_connection(&live.db_path).expect("open live db");
+            db::list_pending_file_operations(&conn).expect("list journal")
+        };
+        let blocked_export = tmp.path().join("blocked.zip");
+        assert!(export(&live, &blocked_export).is_err());
+
+        backup_service::import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            &live,
+            &live.database.maintenance().expect("maintenance"),
+        )
+        .expect("a retained journal row must not block restore");
+
+        // The restored library does not know the journaled root or asset.
+        let (conn, recovery) = restart(&profile);
+        recovery.expect("startup after restore must not fail");
+        assert_eq!(
+            db::list_scan_roots(&conn).expect("roots"),
+            vec![bundled_root.to_string_lossy().into_owned()]
+        );
+        let page =
+            super::support::session_page(&conn, 0, 10, &["bundled".to_string()], &[], None, false)
+                .expect("query the restored asset");
+        assert_eq!(page.total, 1);
+        assert_eq!(
+            db::list_pending_file_operations(&conn).expect("list journal"),
+            journal_before,
+            "the row stays while no registered root covers the staged file"
+        );
+        assert_eq!(std::fs::read(&staging).expect("staged bytes"), b"source");
+        drop(conn);
+        let error = export(&live, &blocked_export).expect_err("export stays rejected");
+        assert!(error.contains("pending local file operations"), "{error}");
+
+        // Registering the root in the restored library lets a later start finish.
+        {
+            let conn = db::open_connection(&live.db_path).expect("open restored db");
+            db::add_scan_root(&conn, &root.to_string_lossy()).expect("add the root again");
+        }
+        let (conn, recovery) = restart(&profile);
+        recovery.expect("startup with the root registered");
+        assert!(!staging.exists());
+        db::ensure_no_pending_file_operations(&conn).expect("journal is empty");
+        drop(conn);
+        export(&live, &blocked_export).expect("export works again");
+    }
+}
+
 /// Full scan -> prune workflow with a supported file whose name is not valid
 /// UTF-8: discovery skips it with a warning, the root stays complete, and the
 /// row of a file deleted outside the app is pruned on the next scan.

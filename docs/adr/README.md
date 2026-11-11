@@ -67,3 +67,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0027](0027-unfiltered-sections-unavailable-instead-of-stale.md) | A row-count mismatch of lazy unfiltered sections returns no sections and keeps the session | Accepted | 2026-11-11 |
 | [0028](0028-media-tools-open-only-the-file-they-are-given.md) | libmpv, ffmpeg and ffprobe open only the file they are given | Accepted | 2026-11-11 |
 | [0029](0029-range-selection-keeps-its-session-alive.md) | A held range selection keeps its query session alive with a one-ID read per minute | Accepted | 2026-11-11 |
+| [0030](0030-restore-carries-the-live-file-mutation-journal.md) | Bundle restore carries the live file-mutation journal into the restored generation | Accepted | 2026-11-11 |

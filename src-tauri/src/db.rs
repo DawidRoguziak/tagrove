@@ -116,7 +116,7 @@ pub struct FileMutationAsset {
     pub record_version: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingFileOperation {
     pub operation_id: String,
     pub asset_id: i64,
@@ -1589,6 +1589,43 @@ mod tests {
     fn backup_validation_accepts_consistent_sort_keys() {
         let conn = grouped_backup_fixture();
         validate_backup_database(&conn, false).expect("consistent backup");
+    }
+
+    #[test]
+    fn backup_validation_rejects_a_journal_that_restore_validation_requires() {
+        let conn = grouped_backup_fixture();
+        let operation = |operation_id: &str, committed: bool| super::PendingFileOperation {
+            operation_id: operation_id.to_string(),
+            asset_id: 41,
+            action: "delete".to_string(),
+            original_path: "/media/gone.jpg".to_string(),
+            staging_path: "/media/.mediatagger-000000000000000000000000.pending".to_string(),
+            final_path: None,
+            committed,
+        };
+        let carried = [operation("first", true), operation("second", false)];
+        super::validate_restored_generation(&conn, &[]).expect("empty journal, nothing carried");
+        let error = super::validate_restored_generation(&conn, &carried).expect_err("rows lost");
+        assert!(error.to_string().contains("carried"), "{error}");
+
+        super::insert_pending_file_operations(&conn, &carried).expect("journal rows");
+        let error = validate_backup_database(&conn, false).expect_err("a bundle has no journal");
+        assert!(error.to_string().contains("pending local file operations"));
+        super::validate_restored_generation(&conn, &carried).expect("exactly the carried rows");
+        for other in [
+            &carried[..1],
+            &[][..],
+            &[operation("first", false), operation("second", false)][..],
+        ] {
+            super::validate_restored_generation(&conn, other).expect_err("a different journal");
+        }
+        // Every other backup check still applies to the restored generation.
+        conn.execute("UPDATE assets SET sort_bucket_time = 999 WHERE id = 1", [])
+            .expect("tamper");
+        let error = super::validate_restored_generation(&conn, &carried).expect_err("tampered");
+        assert!(error
+            .to_string()
+            .contains("inconsistent asset ordering keys"));
     }
 
     #[test]

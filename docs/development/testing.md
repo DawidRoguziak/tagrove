@@ -137,7 +137,7 @@ Cargo discovers integration targets in `src-tauri/tests/`. Inspect the current t
 
 The integration binaries use the public `media_tagger` library API. Examples include:
 
-- `backend_integration.rs` covers file-backed asset/tag queries, root-prefix deletion and distinct thumbnail paths, complete library clearing, bulk tag merge, bulk media-group replacement, and file-mutation journal recovery across a restart (root removed, library cleared, root unreachable, interrupted delete).
+- `backend_integration.rs` covers file-backed asset/tag queries, root-prefix deletion and distinct thumbnail paths, complete library clearing, bulk tag merge, bulk media-group replacement, and file-mutation journal recovery across a restart (root removed, library cleared, root unreachable, interrupted delete, and a bundle restored over a library with a committed delete awaiting cleanup).
 - `backend_e2e.rs` composes database and tag helpers into one backend workflow: export-shaped rows, CSV-style tag parsing/normalization/merge, filtering, group replacement, and library clearing. It does not invoke the CSV command parser itself.
 
 Ignored diagnostics require explicit opt-in. For example, run `cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_runtime metadata_scale_measurements -- --ignored --nocapture --test-threads=1` for isolated memory/timing measurements, or use the [tag-save benchmark command](#tag-save-performance-regressions). Discovering or building these targets in the default suite does not execute their ignored tests.

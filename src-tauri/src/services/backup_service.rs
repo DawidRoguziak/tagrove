@@ -271,7 +271,9 @@ pub fn import_db_bundle(
     }
     fs::create_dir_all(&staging_thumbs)?;
 
-    let staged_result = (|| -> AppResult<(usize, usize)> {
+    // Maintenance keeps every other database user out, so this cannot change before the swap.
+    let previous_db_existed = state.db_path.exists();
+    let staged_result = (|| -> AppResult<(usize, usize, Vec<db::PendingFileOperation>)> {
         let (restored_files, restored_thumbnails) = extract_archive_entries(
             &mut archive,
             &validated.entries,
@@ -302,18 +304,25 @@ pub fn import_db_bundle(
             &root_mappings,
             validated.manifest.as_ref(),
         )?;
-        {
+        let carried = {
             let conn = db::open_connection_untracked(&staging_db)?;
+            let carried = if previous_db_existed {
+                let live = maintenance.connection()?;
+                carry_live_file_operations(&live, &conn)?
+            } else {
+                Vec::new()
+            };
             conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
-        }
+            carried
+        };
         remove_database_sidecars(&staging_db)?;
         {
             let conn = db::open_connection_read_only_untracked(&staging_db)?;
-            db::validate_backup_database(&conn, false)?;
+            db::validate_restored_generation(&conn, &carried)?;
         }
-        Ok((restored_files, restored_thumbnails))
+        Ok((restored_files, restored_thumbnails, carried))
     })();
-    let (restored_files, restored_thumbnails) = match staged_result {
+    let (restored_files, restored_thumbnails, carried) = match staged_result {
         Ok(summary) => summary,
         Err(error) => {
             let _ = fs::remove_dir_all(&staging_root);
@@ -321,7 +330,6 @@ pub fn import_db_bundle(
         }
     };
 
-    let previous_db_existed = state.db_path.exists();
     let previous_thumbs_existed = state.thumbs_dir.exists();
     let mut journal = RestoreJournal {
         phase: RestorePhase::Swapping,
@@ -356,7 +364,7 @@ pub fn import_db_bundle(
 
         let conn = maintenance.connection()?;
         db::init_schema(&conn)?;
-        db::validate_backup_database(&conn, false)?;
+        db::validate_restored_generation(&conn, &carried)?;
         db::bump_library_revision(&conn)?;
         let _ = db::current_library_revision(&conn)?;
         let _ = db::list_scan_roots(&conn)?;
@@ -385,6 +393,27 @@ pub fn import_db_bundle(
         restored_files,
         restored_thumbnails,
     })
+}
+
+/// Copies the live file-mutation journal into the staged database (ADR 0030).
+///
+/// A `pending_file_operations` row is the only record of a hidden
+/// `.mediatagger-*.pending` file next to the user's media: a committed delete
+/// whose staged file could not be removed, or a batch whose rollback failed.
+/// The row describes files on this machine, not library content, so it has to
+/// outlive the database generation that wrote it. The rows are copied as they
+/// are, with their `created_at`; the bundle's own journal was validated as
+/// empty, so no key can collide. The copy sits in the staged file before any
+/// live path moves: a rolled-back restore keeps the previous generation with
+/// its journal untouched, and a committed one starts with the same rows, which
+/// startup recovery then handles as it would have without the restore.
+fn carry_live_file_operations(
+    live: &rusqlite::Connection,
+    staged: &rusqlite::Connection,
+) -> AppResult<Vec<db::PendingFileOperation>> {
+    // Same durability as the connection that wrote the rows.
+    staged.pragma_update(None, "synchronous", "FULL")?;
+    Ok(db::copy_pending_file_operations(live, staged)?)
 }
 
 /// Cleans up after a failure between a fully staged restore and the first live
@@ -1367,9 +1396,64 @@ fn rename_durable(source: &Path, target: &Path) -> AppResult<()> {
 }
 
 fn sync_parent_directory(path: &Path) -> AppResult<()> {
+    #[cfg(test)]
+    sync_fault::check()?;
     let parent = path.parent().ok_or("Path has no parent directory")?;
     fs::File::open(parent)?.sync_all()?;
     Ok(())
+}
+
+/// Test-only fault injection at this module's directory syncs. Every rename and
+/// removal of the restore sequence is followed by one, so the n-th sync marks
+/// the point right after the n-th step landed on disk.
+#[cfg(test)]
+mod sync_fault {
+    use std::cell::Cell;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) enum SyncFault {
+        None,
+        /// The n-th sync from now returns an error once (1 is the next sync).
+        Fail(usize),
+        /// The n-th sync from now unwinds without running any cleanup code,
+        /// which leaves the disk as a killed process would.
+        Crash(usize),
+    }
+
+    thread_local! {
+        static FAULT: Cell<SyncFault> = const { Cell::new(SyncFault::None) };
+    }
+
+    pub(super) fn arm(fault: SyncFault) {
+        FAULT.with(|current| current.set(fault));
+    }
+
+    /// Disarms the fault and reports whether it had fired.
+    pub(super) fn disarm() -> bool {
+        FAULT.with(|current| current.replace(SyncFault::None)) == SyncFault::None
+    }
+
+    pub(super) fn check() -> crate::error::AppResult<()> {
+        match FAULT.with(Cell::get) {
+            SyncFault::None => Ok(()),
+            SyncFault::Fail(1) => {
+                arm(SyncFault::None);
+                Err("injected directory sync failure".into())
+            }
+            SyncFault::Crash(1) => {
+                arm(SyncFault::None);
+                std::panic::resume_unwind(Box::new("injected crash at a directory sync"))
+            }
+            SyncFault::Fail(remaining) => {
+                arm(SyncFault::Fail(remaining - 1));
+                Ok(())
+            }
+            SyncFault::Crash(remaining) => {
+                arm(SyncFault::Crash(remaining - 1));
+                Ok(())
+            }
+        }
+    }
 }
 
 fn add_file_to_zip(
@@ -2673,8 +2757,9 @@ mod tests {
             db::add_scan_root(&conn, &root.to_string_lossy()).unwrap();
         }
         fs::write(thumbs_dir.join("live.jpg"), b"live").unwrap();
-        // A directory where the live WAL belongs fails the live checkpoint or the
-        // sidecar removal, after staging has completed and before any journal.
+        // A directory where the live WAL belongs makes the live database unreadable:
+        // reading its file-mutation journal fails after extraction, validation and
+        // path rewriting of the staged database, and before any restore journal.
         let wal = profile.join("media.db-wal");
         let _ = fs::remove_file(&wal);
         let _ = fs::remove_file(profile.join("media.db-shm"));
@@ -2687,7 +2772,7 @@ mod tests {
             &state,
             &state.database.maintenance().expect("maintenance"),
         );
-        assert!(result.is_err(), "the live checkpoint must fail");
+        assert!(result.is_err(), "reading the live database must fail");
         assert_eq!(
             names_in(&profile),
             vec!["media.db", "media.db-wal", "thumbs"],
@@ -2753,6 +2838,421 @@ mod tests {
         let error = super::abandon_staged_restore(profile, &staging, "checkpoint failed".into());
         assert_eq!(error.to_string(), "checkpoint failed");
         assert_eq!(names_in(profile), vec!["media.db", "thumbs"]);
+    }
+
+    /// What `lib.rs` setup does with the profile before any command can run:
+    /// restore-journal recovery, the temporaries sweep, then `init_schema` and
+    /// file-mutation journal recovery on a FULL-sync connection.
+    fn start_profile(profile: &Path) -> (rusqlite::Connection, anyhow::Result<()>) {
+        super::recover_interrupted_restore(profile).expect("restore journal recovery");
+        super::remove_abandoned_backup_temporaries(profile);
+        assert_eq!(
+            names_in(profile),
+            vec!["media.db", "thumbs"],
+            "startup leaves exactly one generation"
+        );
+        let conn = db::open_connection(&profile.join("media.db")).expect("open profile db");
+        db::init_schema(&conn).expect("init schema at startup");
+        conn.pragma_update(None, "synchronous", "FULL").unwrap();
+        let recovery =
+            crate::services::asset_mutation_service::recover_pending_file_operations(&conn);
+        (conn, recovery)
+    }
+
+    /// The journal with `created_at`, in the order recovery walks it.
+    fn journal_rows(db_path: &Path) -> Vec<(db::PendingFileOperation, i64)> {
+        let conn = db::open_connection(db_path).expect("open db");
+        let operations = db::list_pending_file_operations(&conn).expect("list journal");
+        let created_at: Vec<i64> = conn
+            .prepare(
+                "SELECT created_at FROM pending_file_operations
+                 ORDER BY created_at, operation_id, asset_id",
+            )
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        operations.into_iter().zip(created_at).collect()
+    }
+
+    /// Exports a bundle of a library that has `roots` and no assets.
+    fn bundle_with_roots(dir: &Path, roots: &[&Path]) -> PathBuf {
+        let (source_db, source_thumbs) = empty_profile(&dir.join("bundle-source"));
+        fs::write(source_thumbs.join("bundled.jpg"), b"thumb").unwrap();
+        {
+            let conn = db::open_connection(&source_db).unwrap();
+            for root in roots {
+                db::add_scan_root(&conn, &root.to_string_lossy()).unwrap();
+            }
+        }
+        let source = create_test_state(&source_db, &source_thumbs);
+        let archive = dir.join("bundle.zip");
+        export_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            &source,
+            &source.database.maintenance().expect("maintenance"),
+        )
+        .expect("export bundle");
+        archive
+    }
+
+    /// A live profile whose library has `root`, one deleted asset and that
+    /// delete's committed journal row; the hidden staging file still holds the
+    /// bytes (`cleanup_pending`). Returns the staging path.
+    fn profile_with_a_committed_delete_awaiting_cleanup(profile: &Path, root: &Path) -> PathBuf {
+        fs::create_dir_all(root).unwrap();
+        let original = root.join("photo.jpg");
+        let staging = root.join(".mediatagger-0123456789abcdefghijklmn.pending");
+        fs::write(&original, b"deleted content").unwrap();
+        let (db_path, thumbs_dir) = empty_profile(profile);
+        fs::write(thumbs_dir.join("live.jpg"), b"live").unwrap();
+        let conn = db::open_connection(&db_path).unwrap();
+        conn.pragma_update(None, "synchronous", "FULL").unwrap();
+        let root_text = root.to_string_lossy();
+        db::add_scan_root(&conn, &root_text).unwrap();
+        db::upsert_scanned_asset(&conn, &new_asset(&original, 1), 1, &root_text, 1).unwrap();
+        let asset = db::get_file_mutation_asset(&conn, 1).unwrap().unwrap();
+        db::insert_pending_file_operations(
+            &conn,
+            &[db::PendingFileOperation {
+                operation_id: "cleanup-pending-delete".to_string(),
+                asset_id: asset.id,
+                action: "delete".to_string(),
+                original_path: asset.path.clone(),
+                staging_path: staging.to_string_lossy().into_owned(),
+                final_path: None,
+                committed: false,
+            }],
+        )
+        .unwrap();
+        fs::rename(&original, &staging).unwrap();
+        db::apply_file_mutations(
+            &conn,
+            "cleanup-pending-delete",
+            &[db::DbFileMutation::Delete {
+                asset_id: asset.id,
+                expected_path: &asset.path,
+                expected_record_version: asset.record_version,
+            }],
+        )
+        .unwrap();
+        // A distinct timestamp shows that the copy keeps it.
+        conn.execute("UPDATE pending_file_operations SET created_at = 1234", [])
+            .unwrap();
+        staging
+    }
+
+    fn import(archive: &Path, state: &AppState) -> crate::error::AppResult<()> {
+        import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .map(|_| ())
+    }
+
+    fn scan_roots_of(db_path: &Path) -> Vec<String> {
+        db::list_scan_roots(&db::open_connection(db_path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn restore_carries_a_committed_delete_and_a_later_start_finishes_its_cleanup() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        let other_root = tmp.path().join("other-media");
+        fs::create_dir_all(&other_root).unwrap();
+        let profile = tmp.path().join("profile");
+        let staging = profile_with_a_committed_delete_awaiting_cleanup(&profile, &root);
+        let archive = bundle_with_roots(tmp.path(), &[&root, &other_root]);
+        let db_path = profile.join("media.db");
+        let thumbs_dir = profile.join("thumbs");
+        let before = journal_rows(&db_path);
+        assert_eq!(before.len(), 1);
+        assert!(before[0].0.committed);
+        assert_eq!(before[0].1, 1234);
+
+        let state = create_test_state(&db_path, &thumbs_dir);
+        import(&archive, &state).expect("a retained journal row must not block restore");
+
+        assert_eq!(scan_roots_of(&db_path).len(), 2, "the bundle is installed");
+        assert!(thumbs_dir.join("bundled.jpg").exists());
+        assert_eq!(journal_rows(&db_path), before, "the row moved unchanged");
+        assert_eq!(fs::read(&staging).unwrap(), b"deleted content");
+        assert_eq!(names_in(&profile), vec!["media.db", "thumbs"]);
+
+        // The restored library is still not exportable, as before the restore.
+        let export_target = tmp.path().join("after-restore.zip");
+        let export = |state: &AppState| {
+            export_db_bundle(
+                export_target.to_string_lossy().into_owned(),
+                state,
+                &state.database.maintenance().expect("maintenance"),
+            )
+        };
+        let error = export(&state).expect_err("pending rows keep rejecting export");
+        assert!(error.to_string().contains("pending local file operations"));
+        assert!(!export_target.exists());
+
+        // A second restore carries the same row again, once.
+        import(&archive, &state).expect("second restore");
+        assert_eq!(journal_rows(&db_path), before);
+
+        let (conn, recovery) = start_profile(&profile);
+        recovery.expect("startup after restore");
+        assert!(!staging.exists(), "the root is registered, so cleanup runs");
+        assert!(db::list_pending_file_operations(&conn).unwrap().is_empty());
+        drop(conn);
+
+        export(&state).expect("export works once the journal is empty");
+        // The exported bundle carries no journal and restores into a clean profile.
+        let (clean_db, clean_thumbs) = empty_profile(&tmp.path().join("clean-profile"));
+        let clean = create_test_state(&clean_db, &clean_thumbs);
+        import(&export_target, &clean).expect("restore the later export");
+        assert!(journal_rows(&clean_db).is_empty());
+    }
+
+    #[test]
+    fn restore_carries_uncommitted_and_rename_rows_for_startup_recovery() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&root).unwrap();
+        let profile = tmp.path().join("profile");
+        let (db_path, thumbs_dir) = empty_profile(&profile);
+        let path = |name: &str| root.join(name).to_string_lossy().into_owned();
+        // A batch whose rollback failed: the source is still under its staging name.
+        fs::write(
+            path(".mediatagger-aaaaaaaaaaaaaaaaaaaaaaaa.pending"),
+            b"hidden",
+        )
+        .unwrap();
+        // A rollback that restored the file but could not drop its row.
+        fs::write(path("restored.jpg"), b"restored").unwrap();
+        // A committed rename whose row removal failed: the file is at its final name.
+        fs::write(path("renamed.jpg"), b"renamed").unwrap();
+        let operation =
+            |id: &str, asset_id: i64, action: &str, names: [&str; 2]| db::PendingFileOperation {
+                operation_id: id.to_string(),
+                asset_id,
+                action: action.to_string(),
+                original_path: path(names[0]),
+                staging_path: path(names[1]),
+                final_path: (action == "rename").then(|| path("renamed.jpg")),
+                committed: action == "rename",
+            };
+        {
+            let conn = db::open_connection(&db_path).unwrap();
+            db::add_scan_root(&conn, &root.to_string_lossy()).unwrap();
+            db::insert_pending_file_operations(
+                &conn,
+                &[
+                    operation(
+                        "rollback-failed",
+                        7,
+                        "delete",
+                        [
+                            "hidden.jpg",
+                            ".mediatagger-aaaaaaaaaaaaaaaaaaaaaaaa.pending",
+                        ],
+                    ),
+                    operation(
+                        "row-left-behind",
+                        8,
+                        "delete",
+                        [
+                            "restored.jpg",
+                            ".mediatagger-bbbbbbbbbbbbbbbbbbbbbbbb.pending",
+                        ],
+                    ),
+                    operation(
+                        "renamed",
+                        9,
+                        "rename",
+                        [
+                            "before.jpg",
+                            ".mediatagger-cccccccccccccccccccccccc.pending",
+                        ],
+                    ),
+                ],
+            )
+            .unwrap();
+            // Reverse the insertion order to show that the copy keeps the journal order.
+            conn.execute_batch(
+                "UPDATE pending_file_operations SET created_at = 300 WHERE asset_id = 7;
+                 UPDATE pending_file_operations SET created_at = 200 WHERE asset_id = 8;
+                 UPDATE pending_file_operations SET created_at = 100 WHERE asset_id = 9;",
+            )
+            .unwrap();
+        }
+        let before = journal_rows(&db_path);
+        assert_eq!(
+            before.iter().map(|row| row.0.asset_id).collect::<Vec<_>>(),
+            vec![9, 8, 7]
+        );
+        // The bundle knows neither the root nor any of the journaled assets.
+        let archive = bundle_with_roots(tmp.path(), &[]);
+
+        let state = create_test_state(&db_path, &thumbs_dir);
+        import(&archive, &state).expect("uncommitted rows must not block restore");
+
+        assert!(
+            scan_roots_of(&db_path).is_empty(),
+            "the bundle is installed"
+        );
+        assert_eq!(journal_rows(&db_path), before);
+        assert!(!root.join("hidden.jpg").exists());
+
+        let (conn, recovery) = start_profile(&profile);
+        recovery.expect("startup after restore");
+        assert_eq!(fs::read(root.join("hidden.jpg")).unwrap(), b"hidden");
+        assert_eq!(
+            names_in(&root),
+            vec!["hidden.jpg", "renamed.jpg", "restored.jpg"],
+            "the user's file is back under its own name and nothing hidden remains"
+        );
+        assert!(db::list_pending_file_operations(&conn).unwrap().is_empty());
+    }
+
+    /// Runs one restore of a profile with a committed delete awaiting cleanup
+    /// under `fault`, then starts the profile. Returns whether the import
+    /// returned `Ok`, whether the fault fired, and whether the bundle's
+    /// generation is the live one afterwards.
+    fn restore_under_fault(fault: super::sync_fault::SyncFault) -> (bool, bool, bool) {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        let other_root = tmp.path().join("other-media");
+        fs::create_dir_all(&other_root).unwrap();
+        let profile = tmp.path().join("profile");
+        let staging = profile_with_a_committed_delete_awaiting_cleanup(&profile, &root);
+        let archive = bundle_with_roots(tmp.path(), &[&root, &other_root]);
+        let db_path = profile.join("media.db");
+        let thumbs_dir = profile.join("thumbs");
+        let before = journal_rows(&db_path);
+        let state = create_test_state(&db_path, &thumbs_dir);
+
+        super::sync_fault::arm(fault);
+        let outcome =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| import(&archive, &state)));
+        let fired = super::sync_fault::disarm();
+        let returned_ok = matches!(outcome, Ok(Ok(())));
+        let crashed = outcome.is_err();
+        let names_after_import = names_in(&profile);
+        drop(state);
+
+        // The next start of the application.
+        super::recover_interrupted_restore(&profile).expect("restore journal recovery");
+        super::remove_abandoned_backup_temporaries(&profile);
+        assert_eq!(names_in(&profile), vec!["media.db", "thumbs"], "{fault:?}");
+        let restored = scan_roots_of(&db_path).len() == 2;
+        assert_eq!(
+            thumbs_dir.join("bundled.jpg").exists(),
+            restored,
+            "{fault:?}: database and thumbnails are one generation"
+        );
+        assert_eq!(thumbs_dir.join("live.jpg").exists(), !restored, "{fault:?}");
+        if !crashed && !restored {
+            // One failed sync before the commit point: the import itself removed the
+            // staging tree or rolled the swap back, and left nothing for startup.
+            assert_eq!(names_after_import, vec!["media.db", "thumbs"], "{fault:?}");
+        }
+        assert_eq!(
+            journal_rows(&db_path),
+            before,
+            "{fault:?}: whichever generation is live holds the journal row"
+        );
+        assert_eq!(fs::read(&staging).unwrap(), b"deleted content", "{fault:?}");
+
+        let (conn, recovery) = start_profile(&profile);
+        recovery.unwrap_or_else(|error| panic!("{fault:?}: startup failed: {error:#}"));
+        assert!(!staging.exists(), "{fault:?}: cleanup finished");
+        assert!(db::list_pending_file_operations(&conn).unwrap().is_empty());
+        (returned_ok, fired, restored)
+    }
+
+    #[test]
+    fn restore_interrupted_at_any_step_keeps_the_journal_with_the_live_generation() {
+        use super::sync_fault::SyncFault;
+        for crash in [false, true] {
+            let mut generations = std::collections::BTreeSet::new();
+            let mut step = 1;
+            loop {
+                let fault = if crash {
+                    SyncFault::Crash(step)
+                } else {
+                    SyncFault::Fail(step)
+                };
+                let (returned_ok, fired, restored) = restore_under_fault(fault);
+                if !fired {
+                    assert!(returned_ok && restored, "{fault:?}: an undisturbed restore");
+                    break;
+                }
+                assert!(!returned_ok || restored, "{fault:?}: Ok means restored");
+                generations.insert(restored);
+                step += 1;
+                assert!(step < 64, "the restore sequence has far fewer syncs");
+            }
+            assert!(
+                step > 9,
+                "every move-aside, install and cleanup step ran: {step}"
+            );
+            assert_eq!(
+                generations.len(),
+                2,
+                "faults before and after the commit point were both exercised"
+            );
+        }
+    }
+
+    #[test]
+    fn restore_fails_before_the_swap_when_the_journal_cannot_be_carried() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        let profile = tmp.path().join("profile");
+        let staging = profile_with_a_committed_delete_awaiting_cleanup(&profile, &root);
+        let db_path = profile.join("media.db");
+        let thumbs_dir = profile.join("thumbs");
+        let before = journal_rows(&db_path);
+        // A hand-made bundle whose journal table rejects the copy: `action` has a CHECK
+        // that no real row satisfies. Structure validation looks at columns, not at checks.
+        let (source_db, _) = empty_profile(&tmp.path().join("bundle-source"));
+        {
+            let conn = db::open_connection(&source_db).unwrap();
+            conn.execute_batch(
+                "DROP TABLE pending_file_operations;
+                 CREATE TABLE pending_file_operations (
+                   operation_id TEXT NOT NULL,
+                   asset_id INTEGER NOT NULL,
+                   action TEXT NOT NULL CHECK (action = 'never'),
+                   original_path TEXT NOT NULL,
+                   staging_path TEXT NOT NULL,
+                   final_path TEXT,
+                   committed INTEGER NOT NULL DEFAULT 0,
+                   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                   PRIMARY KEY(operation_id, asset_id)
+                 );
+                 PRAGMA wal_checkpoint(TRUNCATE);",
+            )
+            .unwrap();
+        }
+        let archive = tmp.path().join("bundle.zip");
+        {
+            let mut zip = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+            zip.start_file("media.db", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(&fs::read(&source_db).unwrap()).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let error = import(&archive, &state).expect_err("the copy must fail");
+        assert!(error.to_string().contains("CHECK constraint"), "{error}");
+
+        assert_eq!(names_in(&profile), vec!["media.db", "thumbs"]);
+        assert_eq!(scan_roots_of(&db_path).len(), 1, "the live library stays");
+        assert_eq!(journal_rows(&db_path), before);
+        assert_eq!(fs::read(&staging).unwrap(), b"deleted content");
+        assert_eq!(fs::read(thumbs_dir.join("live.jpg")).unwrap(), b"live");
     }
 
     #[test]

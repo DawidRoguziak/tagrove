@@ -186,6 +186,69 @@ pub fn insert_pending_file_operations(
     Ok(())
 }
 
+/// Copies every `pending_file_operations` row of `source` into `target` in one transaction,
+/// keeping `created_at` so recovery later walks the rows in their original order, and returns
+/// the copied rows in that order. A source without the table has nothing to copy. `target`
+/// must not already hold a row with the same key.
+pub fn copy_pending_file_operations(
+    source: &Connection,
+    target: &Connection,
+) -> anyhow::Result<Vec<PendingFileOperation>> {
+    let has_journal = source.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'pending_file_operations')",
+        [],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !has_journal {
+        return Ok(Vec::new());
+    }
+    let mut statement = source.prepare(
+        "SELECT operation_id, asset_id, action, original_path, staging_path, final_path, committed,
+                created_at
+         FROM pending_file_operations ORDER BY created_at, operation_id, asset_id",
+    )?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                PendingFileOperation {
+                    operation_id: row.get(0)?,
+                    asset_id: row.get(1)?,
+                    action: row.get(2)?,
+                    original_path: row.get(3)?,
+                    staging_path: row.get(4)?,
+                    final_path: row.get(5)?,
+                    committed: row.get(6)?,
+                },
+                row.get::<_, i64>(7)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tx = target.unchecked_transaction()?;
+    for (operation, created_at) in &rows {
+        tx.execute(
+            "INSERT INTO pending_file_operations(
+               operation_id, asset_id, action, original_path, staging_path, final_path, committed,
+               created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                operation.operation_id,
+                operation.asset_id,
+                operation.action,
+                operation.original_path,
+                operation.staging_path,
+                operation.final_path,
+                operation.committed,
+                created_at,
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(rows.into_iter().map(|(operation, _)| operation).collect())
+}
+
 pub fn remove_pending_file_operation(
     conn: &Connection,
     operation_id: &str,

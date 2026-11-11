@@ -51,13 +51,30 @@ const page = (offset: number, total = 26000) => ({
 });
 const observers = new Set<ResizeObserver>();
 const resizeCallbacks = new Map<ResizeObserver, ResizeObserverCallback>();
+const observed = new Map<ResizeObserver, Set<Element>>();
+/** Elements observed while a ResizeObserver callback ran (a browser "loop" error). */
+const observedDuringDelivery: Element[] = [];
+let delivering = false;
+/** Extra px above the grid (a toolbar that grew), measured only by the observers. */
+let shiftAbove = 0;
 function deliverResize() {
-  for (const observer of [...observers]) resizeCallbacks.get(observer)?.([], observer);
-  flush();
+  delivering = true;
+  try {
+    // Effects run in the delivery, as microtasks do between ResizeObserver callbacks.
+    for (const observer of [...observers]) {
+      resizeCallbacks.get(observer)?.([], observer);
+      flush();
+    }
+  } finally {
+    delivering = false;
+  }
 }
 beforeEach(() => {
   observers.clear();
   resizeCallbacks.clear();
+  observed.clear();
+  observedDuringDelivery.length = 0;
+  shiftAbove = 0;
   vi.clearAllMocks();
   vi.stubGlobal(
     "ResizeObserver",
@@ -65,12 +82,15 @@ beforeEach(() => {
       constructor(callback: ResizeObserverCallback) {
         resizeCallbacks.set(this, callback);
       }
-      observe() {
+      observe(target: Element) {
         observers.add(this);
+        observed.set(this, (observed.get(this) ?? new Set()).add(target));
+        if (delivering) observedDuringDelivery.push(target);
       }
       unobserve() {}
       disconnect() {
         observers.delete(this);
+        observed.delete(this);
       }
     }
   );
@@ -83,11 +103,13 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement
   ) {
+    // A detached element has an empty box, as in WebKit.
+    if (!this.isConnected) return new DOMRect(0, 0, 0, 0);
     const scroller = this.closest<HTMLElement>("[data-scroller]");
     const bannerHeight = document.querySelector('[data-testid="gallery-load-error"]') ? 48 : 0;
     return new DOMRect(
       0,
-      this === scroller ? 0 : 80 + bannerHeight - (scroller?.scrollTop ?? 0),
+      this === scroller ? 0 : 80 + shiftAbove + bannerHeight - (scroller?.scrollTop ?? 0),
       988,
       600
     );
@@ -595,4 +617,75 @@ it("keeps a deep viewport's tiles mounted while a refresh reloads its pages", as
     expect(library.query.getAssetIndex(5001)).toBe(5000)
   );
   expect(view.container.querySelector('button[data-asset-index="5000"]')).toBeInTheDocument();
+});
+
+it("enters the empty-result state without observing the detached grid or observing during a delivery", async () => {
+  const { library, view } = await mount();
+  deliverResize();
+  expect(observedDuringDelivery).toEqual([]);
+  const content = view.container.querySelector('[data-testid="gallery-grid-content"]');
+  if (!content) throw new Error("Missing grid content");
+  api.startAssetQuery.mockResolvedValue(page(0, 0));
+  await library.query.refresh();
+  flush();
+  expect(await screen.findByText("No results")).toBeInTheDocument();
+  expect(content.isConnected).toBe(false);
+  const targets = [...observed.values()].flatMap((set) => [...set]);
+  expect(targets).not.toContain(content);
+  expect(targets.every((target) => target.isConnected)).toBe(true);
+  // The browser reports the unmounted grid's size change in the next frame.
+  deliverResize();
+  expect(observedDuringDelivery).toEqual([]);
+  // The grid comes back measured, with its observers attached again.
+  api.startAssetQuery.mockResolvedValue(page(0));
+  await library.query.refresh();
+  flush();
+  await waitFor(() =>
+    expect(view.container.querySelector('button[data-asset-index="0"]')).toBeInTheDocument()
+  );
+  const next = view.container.querySelector('[data-testid="gallery-grid-content"]');
+  expect([...observed.values()].some((set) => next !== null && set.has(next))).toBe(true);
+});
+
+it("publishes a grid margin change from its ResizeObserver without observing in that delivery", async () => {
+  const { view } = await mount();
+  const content = view.container.querySelector<HTMLElement>('[data-testid="gallery-grid-content"]');
+  const row = content?.querySelector<HTMLElement>('[data-gallery-row="0"]');
+  if (!row) throw new Error("Missing first row");
+  shiftAbove = 40;
+  deliverResize();
+  expect(observedDuringDelivery).toEqual([]);
+  // The rows stay in place: the margin moves the grid, not the scroll position.
+  expect(row.style.transform).toBe("translate(0, -6px)");
+});
+
+it("lets a recycled tile's late image load or error after a large jump pass without a stale Show read", async () => {
+  const errors: string[] = [];
+  const onError = (event: ErrorEvent) => {
+    event.preventDefault();
+    errors.push(event.message);
+  };
+  window.addEventListener("error", onError);
+  try {
+    const { view, scroll } = await mount();
+    const images = [...view.container.querySelectorAll("img")];
+    expect(images.length).toBe(60);
+    // Every row slot moves to unloaded indices: the tiles become placeholders.
+    scroll(5000);
+    expect(view.container.querySelector('div[data-asset-index="5000"]')).toBeInTheDocument();
+    expect(images.every((image) => !image.isConnected)).toBe(true);
+    // WebKit still answers the detached images' thumbnail requests.
+    for (const image of images) {
+      fireEvent.load(image);
+      fireEvent.error(image);
+    }
+    flush();
+    expect(errors).toEqual([]);
+    await waitFor(() =>
+      expect(view.container.querySelector('button[data-asset-index="5000"]')).toBeInTheDocument()
+    );
+    expect(tileSrc(view.container, 5000)).toBe(`thumb://localhost/5001?v=${V}`);
+  } finally {
+    window.removeEventListener("error", onError);
+  }
 });

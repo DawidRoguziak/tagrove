@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Repeat, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Repeat, Show } from "solid-js";
 import { Portal } from "@solidjs/web";
 import type { AssetQuerySection, AssetSummary } from "../../platform/tauri/contracts/assets";
 import type { BulkSelectionHandler } from "./selection";
@@ -194,6 +194,12 @@ export function GalleryGrid(props: GalleryGridProps) {
           {(lane) => {
             const index = createMemo(() => row() * virtual.columnCount + lane);
             const asset = createMemo(() => (active() ? assetAt(index()) : undefined));
+            // The tile reads the slot's last shown asset, never the inner Show's narrowed
+            // accessor: a recycled tile's late image load or error would read that accessor
+            // after the slot moved to an unloaded index and throw "Stale read from <Show>".
+            const tileAsset = createMemo<AssetSummary | undefined>(
+              (previous) => asset() ?? previous
+            );
             const selected = () => {
               const current = asset();
               return (
@@ -213,24 +219,40 @@ export function GalleryGrid(props: GalleryGridProps) {
                     />
                   }
                 >
-                  {(current) => (
-                    <GalleryTile
-                      asset={current()}
-                      index={index()}
-                      selected={selected()}
-                      thumbnailsPaused={virtual.paused}
-                      prefetch={
-                        index() < virtual.range.visibleStartIndex ||
-                        index() > virtual.range.visibleEndIndex
-                      }
-                      onClick={handlers.handleTileClick}
-                    />
-                  )}
+                  <GalleryTile
+                    // Defined: the Show renders the tile only while `asset()` is.
+                    asset={tileAsset() as AssetSummary}
+                    index={index()}
+                    selected={selected()}
+                    thumbnailsPaused={virtual.paused}
+                    prefetch={
+                      index() < virtual.range.visibleStartIndex ||
+                      index() > virtual.range.visibleEndIndex
+                    }
+                    onClick={handlers.handleTileClick}
+                  />
                 </Show>
               </Show>
             );
           }}
         </Repeat>
+      </div>
+    );
+  }
+  function GridContent() {
+    // The empty state unmounts the content. Without its element the virtual grid and the
+    // selection handlers drop their observers at once, instead of measuring a detached
+    // node from inside a ResizeObserver delivery.
+    onCleanup(() => setGrid(undefined));
+    return (
+      <div
+        ref={setGrid}
+        id={CONTENT_ID}
+        data-testid="gallery-grid-content"
+        class="relative"
+        style={{ height: `${virtual.physicalHeight}px`, "overflow-anchor": "none" }}
+      >
+        <For each={orderedSlots()}>{(slot) => <Row slot={slot} />}</For>
       </div>
     );
   }
@@ -316,15 +338,7 @@ export function GalleryGrid(props: GalleryGridProps) {
             />
           }
         >
-          <div
-            ref={setGrid}
-            id={CONTENT_ID}
-            data-testid="gallery-grid-content"
-            class="relative"
-            style={{ height: `${virtual.physicalHeight}px`, "overflow-anchor": "none" }}
-          >
-            <For each={orderedSlots()}>{(slot) => <Row slot={slot} />}</For>
-          </div>
+          <GridContent />
         </Show>
       </section>
       {props.assetCount > 0 ? (

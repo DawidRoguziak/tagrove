@@ -36,9 +36,17 @@ accepted canonical metadata still publishes to tags, summaries and the current s
 `features/gallery/createVirtualGrid.ts` is the gallery's own virtualizer over the pure
 geometry in `gridGeometry.ts` ([ADR 0003](../adr/0003-custom-gallery-virtualizer.md)). It waits for
 measured grid width before publishing nonempty ranges, owns observers under the mounted view
-and preserves global-index resize anchors. `GalleryGrid` renders a fixed pool of row slots;
+and preserves global-index resize anchors. The empty-result state unmounts the grid content
+and clears its element, so the virtual grid and the selection handlers drop their observers
+instead of measuring a detached node. Geometry is published from inside a ResizeObserver
+callback, so no observer is created in response to it: the selection handlers' observer
+follows only the grid and scroller elements, and a new one in that delivery would raise
+WebKit's "ResizeObserver loop" error. `GalleryGrid` renders a fixed pool of row slots;
 crossing a row re-indexes one slot, so thumbnail loads, page arrivals and scrolling
 create no tile components. Each loaded tile points its image at its current asset's `thumb://` URL.
+A tile reads its slot's last shown asset rather than the narrowed `<Show>` accessor, because
+WebKit still answers a recycled tile's detached image after the slot moved to an unloaded
+index, and reading the accessor then would throw "Stale read from <Show>".
 The image element keeps its identity and resets load and failure state when its source changes.
 Gallery images have no entrance animation.
 

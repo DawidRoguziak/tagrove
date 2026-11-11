@@ -265,6 +265,21 @@ export function createGridHandlers(options: Options) {
       window.addEventListener("pointermove", handlePointerMove);
       window.addEventListener("pointerup", handlePointerUp);
       window.addEventListener("resize", cancelForLayout);
+      return () => {
+        window.removeEventListener("blur", cancel);
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("resize", cancelForLayout);
+        cancelForLayout();
+      };
+    }
+  );
+  // The observer follows the elements only. The virtual grid publishes geometry from its
+  // own ResizeObserver callback; an observer created in that delivery would leave its
+  // first notification undelivered ("ResizeObserver loop completed ...").
+  createEffect(
+    () => ({ grid: options.gridRef(), scroller: options.scrollContainerRef?.() }),
+    ({ grid, scroller }) => {
       const sizes = new Map<Element, string>();
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
@@ -274,18 +289,9 @@ export function createGridHandlers(options: Options) {
           if (previous !== undefined && previous !== size) cancelForLayout();
         }
       });
-      const grid = untrack(options.gridRef);
       if (grid) observer.observe(grid);
-      const scroller = untrack(() => options.scrollContainerRef?.());
       if (scroller) observer.observe(scroller);
-      return () => {
-        window.removeEventListener("blur", cancel);
-        window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("resize", cancelForLayout);
-        observer.disconnect();
-        cancelForLayout();
-      };
+      return () => observer.disconnect();
     }
   );
   const handleTileClick = (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {

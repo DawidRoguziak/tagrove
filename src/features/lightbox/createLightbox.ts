@@ -140,11 +140,13 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
         .catch(() => {});
     }
   }
-  async function readDetails(id: number) {
+  async function readDetails(id: number, afterWrites = false) {
     const request = ++selectionRequest;
     const epoch = tags.captureGeneration(id).epoch;
     setDetailState("loading");
     try {
+      // A re-read after an invalidating write waits for it, so it reads the written rows once.
+      if (afterWrites) await tags.waitForIdle();
       // A metadata write invalidates the entire record, not just its tag list.
       while (valid(request, epoch) && current?.id === id) {
         const token = tags.captureGeneration(id),
@@ -240,9 +242,9 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
     if (previous === null || query.navigationSnapshot().total === 0 || !current) return;
     const next =
       (previous + step + query.navigationSnapshot().total) % query.navigationSnapshot().total;
-    void loadTarget(next, previous);
+    void loadTarget(next);
   }
-  async function loadTarget(next: number, previous: number, retry = false) {
+  async function loadTarget(next: number, retry = false) {
     if (!retry) failedTarget = null;
     setNavigation("ready");
     targetIndex = next;
@@ -252,7 +254,8 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       !disposed && request === navigationRequest && epoch === query.navigationSnapshot().epoch;
     const fail = () => {
       if (!isCurrent()) return;
-      targetIndex = previous;
+      // Earlier rapid presses never committed, so the next key steps from the shown asset.
+      targetIndex = selectedIndex;
       failedTarget = next;
       setNavigation("failed");
     };
@@ -339,7 +342,12 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       untrack(() => {
         if (!current) return;
         const canonical = tags.get(current.id);
-        if (!canonical) return;
+        if (!canonical) {
+          // A selection-wide write drops every tag list, even one read while it ran; a
+          // failed or running read already shows its own notice.
+          if (detailState() === "ready") void readDetails(current.id, true);
+          return;
+        }
         const intent = intents.get(current.id);
         if (intent && intent.state !== "pending") rebase(intent, canonical.tags);
         if (!sameTags(current.tags, canonical.tags)) publish({ ...current, tags: canonical.tags });
@@ -468,7 +476,7 @@ export function createLightbox(library: ReturnType<typeof createLibrary>) {
       if (disposed || !current || query.navigationSnapshot().pending) return;
       if (failedTarget !== null) {
         if (query.navigationSnapshot().epoch !== queryEpoch || selectedIndex === null) return;
-        await loadTarget(failedTarget, selectedIndex, true);
+        await loadTarget(failedTarget, true);
         return;
       }
       const request = selectionRequest;

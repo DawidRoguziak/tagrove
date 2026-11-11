@@ -4,7 +4,12 @@ import { createLibrary } from "../../../library/createLibrary";
 import { createLightbox } from "../createLightbox";
 import { settle } from "../../../test/settle";
 import { asset, summary, deferred, saved } from "./fixtures";
-import type { AssetDetails, AssetSummary, AssetQueryPositionResult } from "../../../platform/tauri/contracts/assets";
+import type {
+  AssetDetails,
+  AssetSummary,
+  AssetQueryPositionResult,
+  SelectionMutationResult
+} from "../../../platform/tauri/contracts/assets";
 const api = vi.hoisted(() => ({
   startAssetQuery: vi.fn(),
   getAssetQueryPage: vi.fn(),
@@ -14,6 +19,7 @@ const api = vi.hoisted(() => ({
   setAssetFavorite: vi.fn(),
   setAssetMediaGroup: vi.fn(),
   deleteAsset: vi.fn(),
+  applySelectionMutation: vi.fn(),
   listTags: vi.fn()
 }));
 vi.mock("../../../platform/tauri/assets", () => api);
@@ -627,6 +633,29 @@ describe("Solid lightbox selection and metadata", () => {
     expect(api.getAssetQueryPage).toHaveBeenCalledTimes(1);
     return view;
   }
+  it("rolls rapid failed navigation back to the shown asset, not an uncommitted target", async () => {
+    api.startAssetQuery.mockResolvedValue(ready(Array.from({ length: 128 }, (_, i) => i + 1), 260));
+    api.getAssetQueryPage.mockRejectedValue(new Error("page unavailable"));
+    const { box, library } = await setup(false);
+    settle(() => box.select(summary(128), 127));
+    await waitFor(() => expect(library.query.loadError).toBe("page unavailable"));
+    const lookup = vi.spyOn(library.query, "getAssetAtAsync");
+    settle(() => {
+      box.next();
+      box.next();
+    });
+    expect(lookup.mock.calls.map(([index]) => index)).toEqual([128, 129]);
+    await waitFor(() => expect(box.navigationStatus).toBe("failed"));
+    expect(box.selected?.id).toBe(128);
+    lookup.mockClear();
+    settle(box.next);
+    expect(lookup).toHaveBeenCalledWith(128);
+    await waitFor(() => expect(box.navigationStatus).toBe("failed"));
+    settle(box.previous);
+    expect(lookup).toHaveBeenLastCalledWith(126);
+    await waitFor(() => expect(box.selected?.id).toBe(127));
+    expect(box.navigationStatus).toBe("ready");
+  });
   it("explicitly retries a page poisoned by adjacent prefetch and keeps cached Previous usable", async () => {
     const { box, library } = await failedBoundary();
     settle(box.previous);
@@ -678,6 +707,81 @@ describe("Solid lightbox selection and metadata", () => {
     settle(box.next);
     await settled();
     expect(box.selected?.id).toBe(3);
+  });
+  const selectionWrite = () => {
+    const write = deferred<SelectionMutationResult>();
+    api.applySelectionMutation.mockReturnValueOnce(write.promise);
+    const finish = () =>
+      write.resolve({
+        status: "ready",
+        processed_assets: 3,
+        updated_assets: 3,
+        revision: 2,
+        query_impact: { type: "none" },
+        vocabulary_changed: false,
+        is_favorite: null,
+        media_group_key: null
+      });
+    return { finish };
+  };
+  const detailReads = (id: number) => api.getAssetDetails.mock.calls.filter(([read]) => read === id);
+  it("re-reads details read during a range write so the tag editor and Retry work afterwards", async () => {
+    const { box, library } = await setup(false);
+    const write = selectionWrite();
+    const saving = library.mutations.mergeTagsInSelection(
+      { sessionId: 1, ranges: [[0, 2]], excluded: [], included: [] },
+      ["dog"]
+    );
+    await settled();
+    expect(api.applySelectionMutation).toHaveBeenCalledTimes(1);
+    // The asset opens and its details resolve while the write still runs.
+    settle(() => box.select(summary(2), 1));
+    await settled();
+    expect(box.tagEditingDisabled).toBe(false);
+    expect(detailReads(2)).toHaveLength(1);
+    // An edit made now queues behind the write and fails once the write drops the tag list.
+    settle(() => box.saveTags(["cat", "fox"]));
+    api.getAssetDetails.mockImplementation(async (id: number) => asset(id, { tags: ["cat", "dog"] }));
+    write.finish();
+    await settle(() => saving);
+    await settled();
+    expect(detailReads(2)).toHaveLength(2);
+    expect(box.tagEditingDisabled).toBe(false);
+    expect(box.tagDetailsLoading).toBe(false);
+    expect(box.tagFailed).toBe(true);
+    expect(box.tagEditor).toEqual(["cat", "dog", "fox"]);
+    await settle(async () => box.retryTags());
+    await settled();
+    expect(api.setAssetTags).toHaveBeenCalledWith(2, ["cat", "dog", "fox"]);
+    expect(box.tagFailed).toBe(false);
+    expect(box.tagEditor).toEqual(["cat", "dog", "fox"]);
+  });
+  it("shows tag loading during a range write on the open asset and re-reads once it ends", async () => {
+    const { box, library } = await setup();
+    await settled();
+    const before = detailReads(1).length;
+    const write = selectionWrite();
+    const saving = library.mutations.toggleFavoritesInSelection({
+      sessionId: 1,
+      ranges: [[0, 2]],
+      excluded: [],
+      included: []
+    });
+    await settled();
+    expect(box.tagEditingDisabled).toBe(true);
+    expect(box.tagDetailsLoading).toBe(true);
+    expect(detailReads(1)).toHaveLength(before);
+    api.getAssetDetails.mockImplementation(async (id: number) =>
+      asset(id, { is_favorite: true, tags: ["cat", "dog"] })
+    );
+    write.finish();
+    await settle(() => saving);
+    await settled();
+    expect(detailReads(1)).toHaveLength(before + 1);
+    expect(box.tagEditingDisabled).toBe(false);
+    expect(box.tagDetailsLoading).toBe(false);
+    expect(box.tagEditor).toEqual(["cat", "dog"]);
+    expect(box.selected?.is_favorite).toBe(true);
   });
   it("synchronizes loaded summary changes without losing complete path or tags", async () => {
     const { box, library } = await setup();

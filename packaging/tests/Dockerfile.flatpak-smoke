@@ -9,6 +9,6 @@ RUN printf 'deb http://deb.debian.org/debian bookworm-backports main\n' > /etc/a
     && rm -rf /var/lib/apt/lists/*
 COPY --from=runtimes /var/lib/flatpak /var/lib/flatpak
 COPY packaging/tests /inputs/packaging/tests
-COPY packaging/flatpak/publisher.json /inputs/packaging/flatpak/publisher.json
+COPY src-tauri/tauri.conf.json /inputs/src-tauri/tauri.conf.json
 RUN dbus-uuidgen --ensure=/etc/machine-id
 ENTRYPOINT ["dbus-run-session", "--", "bash", "/inputs/packaging/tests/flatpak-lifecycle.sh"]

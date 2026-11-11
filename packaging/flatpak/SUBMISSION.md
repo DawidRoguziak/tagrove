@@ -4,8 +4,8 @@ These are generated technical notes for the maintainer, not a submission PR
 description. Flathub currently requires the human maintainer to author and open
 submission interactions and disclose generated application or packaging material.
 
-Tagrove browses and tags local image, GIF and video collections. It uses React
-with Tauri, GTK/WebKit and libmpv. Application code is GPL-3.0-or-later.
+Tagrove browses and tags local image, GIF and video collections. It uses a Solid
+frontend with Tauri, GTK/WebKit and libmpv. Application code is GPL-3.0-or-later.
 
 The manifest targets x86_64 and GNOME 50. Frontend and Rust dependencies come
 from the release lockfiles and compile without network access. libmpv, ffmpeg

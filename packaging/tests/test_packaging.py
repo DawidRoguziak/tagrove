@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import io
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -179,6 +180,19 @@ class ManifestTests(unittest.TestCase):
             path = Path(temporary) / 'bun.lock'
             path.write_text('{"string": ", }", "array": [1,],}')
             self.assertEqual(generate.read_bun_lock(path), {'string': ', }', 'array': [1]})
+
+
+class FlatpakSmokeImageTests(unittest.TestCase):
+    def test_image_contains_the_inputs_the_lifecycle_script_reads(self):
+        script = (ROOT / 'packaging/tests/flatpak-lifecycle.sh').read_text()
+        copied = {}
+        for line in (ROOT / 'packaging/tests/Dockerfile.flatpak-smoke').read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 3 and parts[0] == 'COPY' and not parts[1].startswith('--'):
+                copied[parts[2]] = parts[1]
+        for read in re.findall(r'/inputs/[\w./-]*\.json', script):
+            self.assertIn(read, copied)
+            self.assertTrue((ROOT / copied[read]).is_file(), copied[read])
 
 
 class ExportTests(unittest.TestCase):

@@ -81,7 +81,7 @@ pub fn export_db_bundle(
         .db_path
         .parent()
         .ok_or("Cannot resolve app data directory")?;
-    let token = format!("{}-{}", std::process::id(), rand::random::<u64>());
+    let token = temporary_token();
     let snapshot_path = app_data_dir.join(format!("backup-snapshot-{token}.db"));
     let target_name = target_file
         .file_name()
@@ -220,11 +220,7 @@ pub fn inspect_db_bundle(path: String, state: &AppState) -> AppResult<DbBundleIn
         .db_path
         .parent()
         .ok_or("Cannot resolve app data directory")?
-        .join(format!(
-            "restore-inspect-{}-{}",
-            std::process::id(),
-            rand::random::<u64>()
-        ));
+        .join(format!("restore-inspect-{}", temporary_token()));
     let _ = fs::remove_dir_all(&inspect_root);
     fs::create_dir_all(&inspect_root)?;
     let inspect_db = inspect_root.join("media.db");
@@ -357,18 +353,22 @@ pub fn import_db_bundle(
 
     let previous_db_existed = state.db_path.exists();
     let previous_thumbs_existed = state.thumbs_dir.exists();
-    if state.db_path.exists() {
-        let current = maintenance.connection()?;
-        current.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
-    }
-    remove_database_sidecars(&state.db_path)?;
-
     let mut journal = RestoreJournal {
         phase: RestorePhase::Swapping,
         previous_db_existed,
         previous_thumbs_existed,
     };
-    write_restore_journal(app_data_dir, &journal)?;
+    let prepared = (|| -> AppResult<()> {
+        if previous_db_existed {
+            let current = maintenance.connection()?;
+            current.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        }
+        remove_database_sidecars(&state.db_path)?;
+        write_restore_journal(app_data_dir, &journal)
+    })();
+    if let Err(error) = prepared {
+        return Err(abandon_staged_restore(app_data_dir, &staging_root, error));
+    }
 
     let install_result = (|| -> AppResult<()> {
         if previous_db_existed {
@@ -414,6 +414,138 @@ pub fn import_db_bundle(
     Ok(DbBundleImportSummary {
         restored_files,
         restored_thumbnails,
+    })
+}
+
+/// Cleans up after a failure between a fully staged restore and the first live
+/// rename. Nothing live has moved yet. Normally no journal exists and only the
+/// staging tree is removed; a journal that was published but whose directory
+/// sync failed is rolled back through the same recovery as a failed swap.
+fn abandon_staged_restore(
+    app_data_dir: &Path,
+    staging_root: &Path,
+    error: crate::error::AppError,
+) -> crate::error::AppError {
+    if restore_journal_path(app_data_dir).exists() {
+        return match recover_interrupted_restore(app_data_dir) {
+            Ok(()) => error,
+            Err(recovery_error) => {
+                format!("Restore failed: {error}. Automatic rollback also failed: {recovery_error}")
+                    .into()
+            }
+        };
+    }
+    let _ = fs::remove_dir_all(staging_root);
+    error
+}
+
+/// Startup-only sweep of the temporaries that bundle export, bundle inspection,
+/// journal writes and pre-swap restore staging leave in the profile directory
+/// when the process dies before its own cleanup runs. Only direct children of
+/// `app_data_dir` whose exact name and file type match what this module
+/// creates are removed; symbolic links and every other entry are left alone.
+/// It must run after `recover_interrupted_restore` succeeded and before any
+/// command can start a new export, inspection or import. Failures are logged
+/// and never block startup. Returns the removed paths.
+pub fn remove_abandoned_backup_temporaries(app_data_dir: &Path) -> Vec<PathBuf> {
+    let mut removed = Vec::new();
+    let entries = match fs::read_dir(app_data_dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            eprintln!("Cannot list the profile directory for backup temporaries: {error}");
+            return removed;
+        }
+    };
+    // Without a journal a staging tree never belongs to a live or previous
+    // generation. Unexplained previous generations keep it for manual review.
+    let staging_is_abandoned = !restore_journal_path(app_data_dir).exists()
+        && !app_data_dir.join("media.db.restore-previous").exists()
+        && !app_data_dir.join("thumbs.restore-previous").exists();
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let directory = match abandoned_backup_temporary_kind(name) {
+            Some(TemporaryKind::File) if file_type.is_file() => false,
+            Some(TemporaryKind::Directory) if file_type.is_dir() => true,
+            Some(TemporaryKind::StagingDirectory) if file_type.is_dir() && staging_is_abandoned => {
+                true
+            }
+            _ => continue,
+        };
+        let path = entry.path();
+        let result = if directory {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        match result {
+            Ok(()) => removed.push(path),
+            Err(error) => eprintln!(
+                "Cannot remove abandoned backup temporary '{}': {error}",
+                path.display()
+            ),
+        }
+    }
+    if !removed.is_empty() {
+        if let Err(error) = fs::File::open(app_data_dir).and_then(|dir| dir.sync_all()) {
+            eprintln!(
+                "Cannot sync the profile directory after removing backup temporaries: {error}"
+            );
+        }
+    }
+    removed
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TemporaryKind {
+    File,
+    Directory,
+    StagingDirectory,
+}
+
+/// Exact names: `backup-snapshot-<pid>-<n>.db` and its `-journal`/`-wal`/`-shm`
+/// sidecars, `.restore-journal-<pid>-<n>.tmp`, `restore-inspect-<pid>-<n>` and
+/// the fixed `restore-staging`.
+fn abandoned_backup_temporary_kind(name: &str) -> Option<TemporaryKind> {
+    if name == "restore-staging" {
+        return Some(TemporaryKind::StagingDirectory);
+    }
+    if let Some(token) = name.strip_prefix("restore-inspect-") {
+        return is_temporary_token(token).then_some(TemporaryKind::Directory);
+    }
+    if let Some(token) = name
+        .strip_prefix(".restore-journal-")
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+    {
+        return is_temporary_token(token).then_some(TemporaryKind::File);
+    }
+    let rest = name.strip_prefix("backup-snapshot-")?;
+    ["", "-journal", "-wal", "-shm"].iter().find_map(|suffix| {
+        let token = rest.strip_suffix(suffix)?.strip_suffix(".db")?;
+        is_temporary_token(token).then_some(TemporaryKind::File)
+    })
+}
+
+/// Unique `<pid>-<n>` part of every temporary name in the profile directory.
+fn temporary_token() -> String {
+    format!("{}-{}", std::process::id(), rand::random::<u64>())
+}
+
+/// Matches exactly what `temporary_token` produces.
+fn is_temporary_token(token: &str) -> bool {
+    fn decimal(value: &str) -> bool {
+        !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+    }
+    token.split_once('-').is_some_and(|(pid, random)| {
+        decimal(pid)
+            && decimal(random)
+            && pid.parse::<u32>().is_ok()
+            && random.parse::<u64>().is_ok()
     })
 }
 
@@ -501,20 +633,22 @@ fn restore_journal_path(app_data_dir: &Path) -> PathBuf {
 
 fn write_restore_journal(app_data_dir: &Path, journal: &RestoreJournal) -> AppResult<()> {
     let journal_path = restore_journal_path(app_data_dir);
-    let temporary = app_data_dir.join(format!(
-        ".restore-journal-{}-{}.tmp",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
+    let temporary = app_data_dir.join(format!(".restore-journal-{}.tmp", temporary_token()));
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&temporary)?;
-    serde_json::to_writer(&mut file, journal).map_err(|error| error.to_string())?;
-    file.flush()?;
-    file.sync_all()?;
-    drop(file);
-    publish_archive(&temporary, &journal_path)?;
+    let written = (|| -> AppResult<()> {
+        serde_json::to_writer(&mut file, journal).map_err(|error| error.to_string())?;
+        file.flush()?;
+        file.sync_all()?;
+        drop(file);
+        publish_archive(&temporary, &journal_path)
+    })();
+    if let Err(error) = written {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
     sync_parent_directory(&journal_path)?;
     Ok(())
 }
@@ -2296,6 +2430,320 @@ mod tests {
             &mut zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap()
         )
         .is_ok());
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .expect("list dir")
+            .map(|entry| entry.expect("entry").file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn temporary_names_written_by_this_module_match_the_startup_sweep() {
+        use super::{abandoned_backup_temporary_kind, temporary_token, TemporaryKind};
+        for _ in 0..64 {
+            let token = temporary_token();
+            for name in [
+                format!("backup-snapshot-{token}.db"),
+                format!("backup-snapshot-{token}.db-journal"),
+                format!("backup-snapshot-{token}.db-wal"),
+                format!("backup-snapshot-{token}.db-shm"),
+                format!(".restore-journal-{token}.tmp"),
+            ] {
+                assert_eq!(
+                    abandoned_backup_temporary_kind(&name),
+                    Some(TemporaryKind::File),
+                    "{name}"
+                );
+            }
+            assert_eq!(
+                abandoned_backup_temporary_kind(&format!("restore-inspect-{token}")),
+                Some(TemporaryKind::Directory)
+            );
+        }
+        for name in [
+            "media.db",
+            "media.db-wal",
+            "media.db.restore-previous",
+            "thumbs",
+            "thumbs.restore-previous",
+            "restore-journal.json",
+            "instance.lock",
+            "backup-snapshot-.db",
+            "backup-snapshot-1.db",
+            "backup-snapshot-1-2.db.bak",
+            "backup-snapshot-1-2.dbx",
+            "backup-snapshot-1-2-3.db",
+            "backup-snapshot-a-2.db",
+            "backup-snapshot--1-2.db",
+            "backup-snapshot-+1-2.db",
+            "backup-snapshot-4294967296-2.db",
+            "backup-snapshot-1-18446744073709551616.db",
+            "backup-snapshot-1-2.db-journal.keep",
+            "Backup-snapshot-1-2.db",
+            "restore-inspect-1",
+            "restore-inspect-1-2-extra",
+            "restore-inspect-1-2/",
+            "restore-staging-old",
+            ".restore-journal-1-2.tmp.keep",
+            ".restore-journal-1-2",
+            "restore-journal-1-2.tmp",
+        ] {
+            assert_eq!(abandoned_backup_temporary_kind(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn startup_sweep_removes_only_abandoned_backup_temporaries() {
+        let tmp = tempdir().expect("tempdir");
+        let profile = tmp.path().join("profile");
+        let (db_path, thumbs_dir) = empty_profile(&profile);
+        fs::write(thumbs_dir.join("kept.jpg"), b"thumb").unwrap();
+        fs::write(profile.join("instance.lock"), b"").unwrap();
+        // Leftovers of a killed export, inspection, journal write and pre-swap staging.
+        for name in [
+            "backup-snapshot-123-456.db",
+            "backup-snapshot-123-456.db-journal",
+            "backup-snapshot-123-456.db-wal",
+            "backup-snapshot-123-456.db-shm",
+            ".restore-journal-123-789.tmp",
+        ] {
+            fs::write(profile.join(name), b"leftover").unwrap();
+        }
+        fs::create_dir_all(profile.join("restore-inspect-123-456")).unwrap();
+        fs::write(profile.join("restore-inspect-123-456/media.db"), b"copy").unwrap();
+        fs::create_dir_all(profile.join("restore-staging/thumbs/nested")).unwrap();
+        fs::write(profile.join("restore-staging/media.db"), b"copy").unwrap();
+        fs::write(profile.join("restore-staging/thumbs/nested/a.jpg"), b"a").unwrap();
+        // Lookalikes and wrong types stay.
+        fs::write(profile.join("backup-snapshot-123-456.db.bak"), b"user").unwrap();
+        fs::write(profile.join("restore-inspect-1-2"), b"a file, not a dir").unwrap();
+        fs::create_dir_all(profile.join("backup-snapshot-1-2.db")).unwrap();
+        fs::write(profile.join("backup-snapshot-1-2.db/inside"), b"x").unwrap();
+        fs::write(profile.join("restore-staging-old"), b"user").unwrap();
+        fs::write(profile.join("notes.txt"), b"user").unwrap();
+
+        // Symbolic links are never followed or removed.
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("precious.db"), b"precious").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            symlink(&outside, profile.join("restore-inspect-7-8")).unwrap();
+            symlink(
+                outside.join("precious.db"),
+                profile.join("backup-snapshot-7-8.db"),
+            )
+            .unwrap();
+        }
+
+        let mut removed: Vec<String> = super::remove_abandoned_backup_temporaries(&profile)
+            .into_iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        removed.sort();
+        assert_eq!(
+            removed,
+            vec![
+                ".restore-journal-123-789.tmp",
+                "backup-snapshot-123-456.db",
+                "backup-snapshot-123-456.db-journal",
+                "backup-snapshot-123-456.db-shm",
+                "backup-snapshot-123-456.db-wal",
+                "restore-inspect-123-456",
+                "restore-staging",
+            ]
+        );
+        let mut expected = vec![
+            "backup-snapshot-1-2.db",
+            "backup-snapshot-123-456.db.bak",
+            "instance.lock",
+            "media.db",
+            "notes.txt",
+            "restore-inspect-1-2",
+            "restore-staging-old",
+            "thumbs",
+        ];
+        if cfg!(unix) {
+            expected.extend(["backup-snapshot-7-8.db", "restore-inspect-7-8"]);
+        }
+        expected.sort();
+        let survivors = names_in(&profile);
+        let survivors: Vec<&str> = survivors
+            .iter()
+            .map(String::as_str)
+            .filter(|name| !name.starts_with("media.db-"))
+            .collect();
+        assert_eq!(survivors, expected);
+        assert_eq!(
+            fs::read(profile.join("backup-snapshot-1-2.db/inside")).unwrap(),
+            b"x"
+        );
+        assert_eq!(fs::read(outside.join("precious.db")).unwrap(), b"precious");
+        assert!(thumbs_dir.join("kept.jpg").is_file());
+        db::open_connection(&db_path).expect("live database still opens");
+
+        assert!(super::remove_abandoned_backup_temporaries(&profile).is_empty());
+        assert!(super::remove_abandoned_backup_temporaries(&tmp.path().join("missing")).is_empty());
+    }
+
+    #[test]
+    fn startup_sweep_keeps_staging_while_restore_artifacts_exist() {
+        for artifact in [
+            "restore-journal.json",
+            "media.db.restore-previous",
+            "thumbs.restore-previous",
+        ] {
+            let tmp = tempdir().expect("tempdir");
+            let profile = tmp.path();
+            fs::create_dir_all(profile.join("restore-staging")).unwrap();
+            fs::write(profile.join("restore-staging/media.db"), b"copy").unwrap();
+            if artifact.starts_with("thumbs") {
+                fs::create_dir_all(profile.join(artifact)).unwrap();
+            } else {
+                fs::write(profile.join(artifact), b"artifact").unwrap();
+            }
+            fs::create_dir_all(profile.join("restore-inspect-1-2")).unwrap();
+
+            let removed = super::remove_abandoned_backup_temporaries(profile);
+            assert_eq!(
+                removed,
+                vec![profile.join("restore-inspect-1-2")],
+                "{artifact}"
+            );
+            assert!(
+                profile.join("restore-staging/media.db").is_file(),
+                "{artifact}"
+            );
+            assert!(profile.join(artifact).exists(), "{artifact}");
+        }
+    }
+
+    #[test]
+    fn failed_journal_write_removes_its_temporary_file() {
+        let tmp = tempdir().expect("tempdir");
+        let profile = tmp.path();
+        // A non-empty directory in place of the journal makes the publishing rename fail.
+        fs::create_dir_all(profile.join("restore-journal.json/blocker")).unwrap();
+        let error = super::write_restore_journal(
+            profile,
+            &super::RestoreJournal {
+                phase: super::RestorePhase::Swapping,
+                previous_db_existed: true,
+                previous_thumbs_existed: true,
+            },
+        );
+        assert!(error.is_err());
+        assert_eq!(names_in(profile), vec!["restore-journal.json".to_string()]);
+    }
+
+    #[test]
+    fn pre_swap_failure_removes_restore_staging_and_keeps_the_live_library() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path().join("media");
+        fs::create_dir_all(&root).unwrap();
+        let (source_db, source_thumbs) = empty_profile(&tmp.path().join("source"));
+        fs::write(source_thumbs.join("t.jpg"), b"thumb").unwrap();
+        let source = create_test_state(&source_db, &source_thumbs);
+        let archive = tmp.path().join("bundle.zip");
+        export_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            &source,
+            &source.database.maintenance().expect("maintenance"),
+        )
+        .expect("export bundle");
+
+        let profile = tmp.path().join("profile");
+        let (db_path, thumbs_dir) = empty_profile(&profile);
+        {
+            let conn = db::open_connection(&db_path).unwrap();
+            db::add_scan_root(&conn, &root.to_string_lossy()).unwrap();
+        }
+        fs::write(thumbs_dir.join("live.jpg"), b"live").unwrap();
+        // A directory where the live WAL belongs fails the live checkpoint or the
+        // sidecar removal, after staging has completed and before any journal.
+        let wal = profile.join("media.db-wal");
+        let _ = fs::remove_file(&wal);
+        let _ = fs::remove_file(profile.join("media.db-shm"));
+        fs::create_dir_all(wal.join("blocker")).unwrap();
+
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let result = import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        );
+        assert!(result.is_err(), "the live checkpoint must fail");
+        assert_eq!(
+            names_in(&profile),
+            vec!["media.db", "media.db-wal", "thumbs"],
+            "no staging, journal, journal temporary or previous generation may remain"
+        );
+        assert_eq!(fs::read(thumbs_dir.join("live.jpg")).unwrap(), b"live");
+
+        fs::remove_dir_all(&wal).unwrap();
+        {
+            let conn = db::open_connection(&db_path).unwrap();
+            assert_eq!(
+                db::list_scan_roots(&conn).unwrap(),
+                vec![root.to_string_lossy().into_owned()]
+            );
+        }
+        // The same bundle installs once the live database can be checkpointed.
+        import_db_bundle(
+            archive.to_string_lossy().into_owned(),
+            Vec::new(),
+            &state,
+            &state.database.maintenance().expect("maintenance"),
+        )
+        .expect("import after the fault is gone");
+        let conn = db::open_connection(&db_path).unwrap();
+        assert!(db::list_scan_roots(&conn).unwrap().is_empty());
+        assert_eq!(fs::read(thumbs_dir.join("t.jpg")).unwrap(), b"thumb");
+        assert!(!profile.join("restore-staging").exists());
+    }
+
+    #[test]
+    fn abandoned_staged_restore_rolls_back_a_published_journal() {
+        let tmp = tempdir().expect("tempdir");
+        let profile = tmp.path();
+        fs::write(profile.join("media.db"), b"live database").unwrap();
+        fs::create_dir_all(profile.join("thumbs")).unwrap();
+        fs::write(profile.join("thumbs/live.jpg"), b"live").unwrap();
+        let staging = profile.join("restore-staging");
+        fs::create_dir_all(staging.join("thumbs")).unwrap();
+        fs::write(staging.join("media.db"), b"staged").unwrap();
+        // The journal rename landed but its directory sync reported an error.
+        super::write_restore_journal(
+            profile,
+            &super::RestoreJournal {
+                phase: super::RestorePhase::Swapping,
+                previous_db_existed: true,
+                previous_thumbs_existed: true,
+            },
+        )
+        .unwrap();
+
+        let error =
+            super::abandon_staged_restore(profile, &staging, "directory sync failed".into());
+        assert_eq!(error.to_string(), "directory sync failed");
+        assert_eq!(names_in(profile), vec!["media.db", "thumbs"]);
+        assert_eq!(
+            fs::read(profile.join("media.db")).unwrap(),
+            b"live database"
+        );
+        assert_eq!(fs::read(profile.join("thumbs/live.jpg")).unwrap(), b"live");
+
+        // Without a journal only the staging tree is removed.
+        fs::create_dir_all(staging.join("thumbs")).unwrap();
+        let error = super::abandon_staged_restore(profile, &staging, "checkpoint failed".into());
+        assert_eq!(error.to_string(), "checkpoint failed");
+        assert_eq!(names_in(profile), vec!["media.db", "thumbs"]);
     }
 
     #[test]

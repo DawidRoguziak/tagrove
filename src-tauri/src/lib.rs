@@ -79,6 +79,7 @@ pub fn run() {
             app.manage(instance_lock);
 
             services::backup_service::recover_interrupted_restore(&app_data_dir)?;
+            services::backup_service::remove_abandoned_backup_temporaries(&app_data_dir);
 
             let thumbs_dir = app_data_dir.join("thumbs");
             fs::create_dir_all(&thumbs_dir)?;

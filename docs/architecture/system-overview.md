@@ -85,7 +85,7 @@ contracts and [testing](../development/testing.md) for their observed coverage.
 2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. recovers any interrupted journaled database/thumbnail restore before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema, reconciles pending source-file operations, and captures enabled scan roots and popular tags before automatic scanning;
+5. recovers any interrupted journaled database/thumbnail restore and then removes abandoned backup/restore temporaries from the profile directory (best effort) before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema, reconciles pending source-file operations, and captures enabled scan roots and popular tags before automatic scanning;
 6. resolves ffmpeg, restores `LC_NUMERIC` to `C` after GTK initialization for libmpv, creates the process-wide `VideoPlayerService`, and installs the GTK video surface;
 7. creates the thumbnail scheduler and refuses startup if any worker failed to spawn, then manages `AppState`;
 8. registers every frontend-callable command; and

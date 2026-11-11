@@ -2936,4 +2936,191 @@ mod tests {
         assert_eq!(renamed.record_version, asset.record_version + 1);
         assert_eq!(current_library_revision(&conn).expect("revision"), revision);
     }
+
+    /// A library for the ranged group write: ties and a zero in `modified_at`,
+    /// a target group `Trip` with members inside and outside the selection
+    /// (one already at the order the selection gives it), a group `Beach`
+    /// entirely inside it, a group `Hike` split by it, a differently cased
+    /// `trip` bucket, a blank key with an order, and an ungrouped row that
+    /// kept an order. Statistics exist, so a rebuild has to put them back.
+    fn ranged_group_fixture(conn: &Connection) {
+        init_schema(conn).expect("schema");
+        conn.execute_batch(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 40)
+             INSERT INTO assets(id, path, file_name, file_name_key, kind, size_bytes,
+               modified_at, fingerprint_mtime_ns)
+             SELECT i, '/media/' || i || '.jpg', i || '.jpg', i || '.jpg', 'image', 1,
+               CASE WHEN i = 13 THEN 0 ELSE 1000 + (i * 7) % 23 END, 0 FROM n;",
+        )
+        .expect("assets");
+        for (key, members) in [
+            ("Trip", &[(3, 2.0), (21, 1.0), (30, 5.0), (31, 4.0)][..]),
+            ("Beach", &[(4, 1.0), (5, 2.0)][..]),
+            ("Hike", &[(6, 1.0), (7, 2.0), (8, 3.0), (33, 4.0)][..]),
+            ("trip", &[(9, 1.0), (34, 2.0)][..]),
+            ("  ", &[(10, 6.0)][..]),
+        ] {
+            for &(id, order) in members {
+                set_asset_media_group(conn, id, Some(key), Some(order)).expect("seed group");
+            }
+        }
+        set_asset_media_group(conn, 11, None, Some(3.0)).expect("order without key");
+        conn.execute_batch("ANALYZE;").expect("statistics");
+        assert_eq!(count_inconsistent_sort_keys(conn).expect("keys"), 0);
+    }
+
+    /// Every stored group and ordering field with its SQLite type, the index
+    /// definitions, the statistics and the revision: all a group write may
+    /// change.
+    fn group_write_state(conn: &Connection) -> (Vec<String>, Vec<String>, Vec<String>, i64) {
+        let collect = |sql: &str| -> Vec<String> {
+            conn.prepare(sql)
+                .expect("prepare")
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query")
+                .collect::<Result<_, _>>()
+                .expect("rows")
+        };
+        (
+            collect(
+                "SELECT id || '|' || quote(media_group_key) || '|' || quote(media_group_order)
+                   || '|' || quote(media_group_key_normalized) || '|' || quote(sort_bucket_time)
+                   || '|' || quote(sort_bucket_id) || '|' || quote(sort_group_null_order)
+                 FROM assets ORDER BY id",
+            ),
+            collect(
+                "SELECT name || ': ' || sql FROM sqlite_schema
+                 WHERE type = 'index' AND sql IS NOT NULL ORDER BY name",
+            ),
+            collect("SELECT tbl || '/' || idx || '=' || stat FROM sqlite_stat1 ORDER BY tbl, idx"),
+            current_library_revision(conn).expect("revision"),
+        )
+    }
+
+    #[test]
+    fn ranged_group_write_matches_the_per_asset_path_with_and_without_an_index_rebuild() {
+        let mut reference = Connection::open_in_memory().expect("db");
+        ranged_group_fixture(&reference);
+        let mut set_based: Vec<(bool, Connection)> = [false, true]
+            .into_iter()
+            .map(|rebuild| {
+                let conn = Connection::open_in_memory().expect("db");
+                ranged_group_fixture(&conn);
+                (rebuild, conn)
+            })
+            .collect();
+        // Selection order is not ID order; 999 and 998 are missing, so the
+        // later orders have gaps. Asset 21 already has the order 1 it gets.
+        let selection: Vec<i64> = vec![21, 999, 3, 4, 5, 6, 7, 10, 11, 998, 12, 13, 9, 40, 1];
+        let steps: [(&[i64], Option<&str>); 9] = [
+            (&selection, Some("Trip")),
+            (&selection, Some("Trip")),
+            (&selection[3..9], Some("Hike")),
+            (&[34, 33, 2], Some("trip")),
+            (&selection, None),
+            (&selection, None),
+            (&[30, 31, 999, 32], Some("  ")),
+            (&[999, 998], Some("Trip")),
+            (&[], Some("Trip")),
+        ];
+        for (step, (ids, key)) in steps.into_iter().enumerate() {
+            let before = current_library_revision(&reference).expect("revision");
+            let updates: Vec<(i64, Option<f64>)> = ids
+                .iter()
+                .enumerate()
+                .map(|(index, id)| (*id, key.map(|_| (index + 1) as f64)))
+                .collect();
+            let tx = reference
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .expect("tx");
+            let (processed, updated) =
+                super::set_assets_media_group_bulk_in_tx(&tx, &updates, key).expect("reference");
+            tx.commit().expect("commit");
+            let expected = group_write_state(&reference);
+            assert_eq!(
+                expected.3 - before,
+                i64::from(updated > 0),
+                "step {step}: one bump, only for a change"
+            );
+            assert_eq!(count_inconsistent_sort_keys(&reference).expect("keys"), 0);
+
+            for (rebuild, conn) in &mut set_based {
+                let tx = conn
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                    .expect("tx");
+                let counts = super::set_selection_media_group_with(&tx, ids, key, Some(*rebuild))
+                    .expect("set-based");
+                tx.commit().expect("commit");
+                assert_eq!(
+                    counts,
+                    (processed.len(), updated),
+                    "step {step} rebuild={rebuild}: counts"
+                );
+                assert_eq!(
+                    group_write_state(conn),
+                    expected,
+                    "step {step} rebuild={rebuild}: rows, indexes, statistics, revision"
+                );
+                assert_eq!(count_inconsistent_sort_keys(conn).expect("keys"), 0);
+                let integrity: String = conn
+                    .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+                    .expect("integrity");
+                assert_eq!(integrity, "ok");
+                let staged: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM temp.selection_group_ids", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap_or(0);
+                assert_eq!(staged, 0, "step {step}: nothing stays staged");
+            }
+        }
+        // The rebuilt indexes serve the gallery order and group lookups again.
+        let (_, conn) = &set_based[1];
+        let plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM assets ORDER BY sort_bucket_time DESC,
+                   sort_bucket_id DESC, sort_group_null_order ASC, media_group_order ASC,
+                   modified_at DESC, id DESC",
+                [],
+                |row| row.get(3),
+            )
+            .expect("plan");
+        assert!(plan.contains("idx_assets_sort_key"), "{plan}");
+    }
+
+    #[test]
+    fn a_rebuilding_group_write_holds_the_write_lock_from_its_first_statement() {
+        use std::sync::atomic::Ordering;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("media.db");
+        let mut conn = super::open_connection(&db_path).expect("open db");
+        ranged_group_fixture(&conn);
+        let before = current_library_revision(&conn).expect("revision");
+        let ids: Vec<i64> = (1..=40).rev().collect();
+
+        let bumps =
+            super::test_support::commit_revision_bump_before_every_statement(&conn, &db_path);
+        let counts = super::retry_immediate_transaction(&mut conn, |tx| {
+            super::set_selection_media_group_with(tx, &ids, Some("All"), Some(true))
+        })
+        .expect("group write");
+        conn.authorizer(
+            None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
+        );
+
+        assert_eq!(counts, (40, 40));
+        let committed = bumps.committed.load(Ordering::SeqCst);
+        assert!(
+            bumps.locked_out.load(Ordering::SeqCst) > 0,
+            "the transaction must hold the write lock from its first statement"
+        );
+        // Only the bump before BEGIN lands; the write adds exactly one.
+        assert_eq!(committed, 1);
+        assert_eq!(
+            current_library_revision(&conn).expect("revision"),
+            before + committed as i64 + 1
+        );
+        assert_eq!(count_inconsistent_sort_keys(&conn).expect("keys"), 0);
+    }
 }

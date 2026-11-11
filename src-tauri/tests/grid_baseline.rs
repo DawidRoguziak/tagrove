@@ -29,11 +29,12 @@ use media_tagger::{
     app::{locks::with_scan_lock, state::AppState},
     db,
     error::AppResult,
-    models::{AssetQueryPageResult, ScanProgress, StartAssetQueryResult},
+    models::{AssetQueryPageResult, ScanProgress, SelectionMutationResult, StartAssetQueryResult},
     services::{
-        asset_query_service::AssetQueryFilters,
+        asset_query_service::{AssetQueryFilters, SelectionSpec},
         db_pool::DatabaseRuntime,
         scan_service,
+        selection_service::{apply_selection_mutation, SelectionMutation},
         thumb_scheduler::{ThumbnailPriority, ThumbnailScheduler, ThumbnailTask},
     },
     thumbs,
@@ -434,6 +435,103 @@ fn sort_key_backfill_plan_and_bulk_group_baseline() {
         );
     }
     assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
+}
+
+/// Runs `work` while another connection polls the write lock every 200 µs
+/// (busy timeout zero, `BEGIN IMMEDIATE` then `ROLLBACK`, so it never writes)
+/// and returns the longest stretch that connection was locked out: what a
+/// background writer waits before its transaction can start.
+fn longest_write_lock_out<T>(path: &Path, work: impl FnOnce() -> T) -> (T, f64) {
+    let stop = AtomicBool::new(false);
+    thread::scope(|scope| {
+        let probe = scope.spawn(|| {
+            let conn = db::open_connection(path).unwrap();
+            conn.busy_timeout(Duration::ZERO).unwrap();
+            let mut longest = 0.0_f64;
+            let mut locked_since: Option<Instant> = None;
+            while !stop.load(Ordering::SeqCst) {
+                if conn.execute_batch("BEGIN IMMEDIATE; ROLLBACK;").is_ok() {
+                    if let Some(since) = locked_since.take() {
+                        longest = longest.max(ms(since));
+                    }
+                } else {
+                    locked_since.get_or_insert_with(Instant::now);
+                }
+                thread::sleep(Duration::from_micros(200));
+            }
+            if let Some(since) = locked_since {
+                longest = longest.max(ms(since));
+            }
+            longest
+        });
+        let result = work();
+        stop.store(true, Ordering::SeqCst);
+        (result, probe.join().unwrap())
+    })
+}
+
+/// Package K27 (record S-034d0ea6): a ranged `setMediaGroup` through
+/// `apply_selection_mutation`, the path a range selection in bulk mode takes
+/// (Ctrl+A, Apply group / Remove groups). The whole write is one IMMEDIATE
+/// transaction; `lock_out_ms` is how long a concurrent writer could not start
+/// one (background writers give up after their 5 s busy budget), `ms` the call
+/// including the commit's automatic checkpoint. The fixture has 10% of its
+/// rows in four-item groups. Steps: the first tenth of the gallery into a new
+/// group (existing groups are split), then every asset but three into one
+/// group, the same again (no row changes), and every group cleared.
+#[test]
+#[ignore = "baseline diagnostic: run explicitly, alone, in release mode"]
+fn ranged_set_media_group_baseline() {
+    for rows in [100_000_i64, 1_000_000] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("media.db");
+        seed_library(&path, rows);
+        let runtime = DatabaseRuntime::new(path.clone());
+        let tenth = rows as usize / 10;
+        for (name, key, tenth_only) in [
+            ("assign_tenth", Some("Tenth group"), true),
+            ("assign_all", Some("Bulk group"), false),
+            ("reassign_all_same", Some("Bulk group"), false),
+            ("clear_all", None, false),
+        ] {
+            // Each write changes the gallery order, so every step needs a
+            // fresh session: an old spec would be refused as stale.
+            let (_, session_id, total) = start_query(&runtime, filters());
+            let spec = SelectionSpec {
+                session_id,
+                ranges: vec![[0, if tenth_only { tenth - 1 } else { total - 1 }]],
+                excluded: if tenth_only { vec![] } else { vec![5, 6, 7] },
+                included: vec![],
+            };
+            let started = Instant::now();
+            let (result, lock_out_ms) = longest_write_lock_out(&path, || {
+                apply_selection_mutation(
+                    &runtime,
+                    &spec,
+                    SelectionMutation::SetMediaGroup {
+                        media_group_key: key.map(str::to_string),
+                    },
+                )
+                .unwrap()
+            });
+            let elapsed = ms(started);
+            let SelectionMutationResult::Ready {
+                processed_assets,
+                updated_assets,
+                ..
+            } = result
+            else {
+                panic!("baseline group write was stale");
+            };
+            let selected = if tenth_only { tenth } else { rows as usize - 3 };
+            assert_eq!(processed_assets, selected);
+            println!(
+                "[baseline] metric=ranged_set_media_group step={name} rows={rows} processed={processed_assets} updated={updated_assets} lock_out_ms={lock_out_ms:.0} ms={elapsed:.0}"
+            );
+        }
+        let conn = db::open_connection(&path).unwrap();
+        assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
+    }
 }
 
 fn app_state(db_path: PathBuf, thumbs: PathBuf) -> AppState {

@@ -150,8 +150,6 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
           ON assets(kind, is_favorite, modified_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_assets_tag_count
           ON assets(tag_count, modified_at DESC, id DESC);
-        CREATE INDEX IF NOT EXISTS idx_assets_group_normalized
-          ON assets(media_group_key_normalized, modified_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_assets_file_name_key
           ON assets(file_name_key, modified_at DESC, id DESC);
         CREATE INDEX IF NOT EXISTS idx_asset_tags_tag_asset
@@ -160,6 +158,7 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
           ON asset_scan_roots(root_path, last_seen_generation, asset_id);
         ",
     )?;
+    conn.execute_batch(GROUP_NORMALIZED_INDEX_SQL)?;
     if performance_schema_version < 2 {
         backfill_asset_scan_roots(conn)?;
         conn.execute(
@@ -183,12 +182,9 @@ pub fn init_schema(conn: &Connection) -> anyhow::Result<()> {
     // every start so their SQL is always the canonical text below, including
     // in a restored backup (ADR 0004).
     install_sort_key_triggers(conn)?;
+    conn.execute_batch(SORT_KEY_INDEX_SQL)?;
     conn.execute_batch(
         "
-        CREATE INDEX IF NOT EXISTS idx_assets_sort_key ON assets(
-          sort_bucket_time DESC, sort_bucket_id DESC, sort_group_null_order,
-          media_group_order, modified_at DESC, id DESC
-        );
         DROP INDEX IF EXISTS idx_assets_kind;
         DROP INDEX IF EXISTS idx_assets_modified_at;
         DROP INDEX IF EXISTS idx_tags_name;
@@ -1202,6 +1198,82 @@ macro_rules! recompute_bucket_sql {
     };
 }
 
+const GROUP_NORMALIZED_INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_assets_group_normalized
+          ON assets(media_group_key_normalized, modified_at DESC, id DESC)";
+const GROUP_BUCKET_INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_assets_group_bucket
+          ON assets(CAST(media_group_key AS TEXT), modified_at)
+          WHERE media_group_key IS NOT NULL AND trim(media_group_key) <> ''";
+const SORT_KEY_INDEX_SQL: &str = "CREATE INDEX IF NOT EXISTS idx_assets_sort_key ON assets(
+          sort_bucket_time DESC, sort_bucket_id DESC, sort_group_null_order,
+          media_group_order, modified_at DESC, id DESC
+        )";
+
+/// The `assets` indexes a media-group write changes for every row it touches
+/// (key, normalized key, order and the derived ordering keys), with the SQL
+/// `init_schema` creates them with.
+const GROUP_WRITE_INDEXES: [(&str, &str); 3] = [
+    ("idx_assets_group_normalized", GROUP_NORMALIZED_INDEX_SQL),
+    ("idx_assets_group_bucket", GROUP_BUCKET_INDEX_SQL),
+    ("idx_assets_sort_key", SORT_KEY_INDEX_SQL),
+];
+
+/// Runs `write` with the group-write indexes dropped and recreates them
+/// afterwards, all inside the caller's transaction (ADR 0026).
+///
+/// Maintaining these three indexes costs about 2 µs per changed row and index
+/// even with a warm cache, and far more once the dirty pages outgrow the page
+/// cache; rebuilding one by sorting costs about 0.5 s per 1,000,000 rows. A
+/// write that changes a large part of the library is therefore cheaper with
+/// the indexes rebuilt. `write` must not need them: it may not look up group
+/// buckets or the gallery order. Their `sqlite_stat1` rows, which `DROP INDEX`
+/// deletes, are put back and reloaded, so the query planner keeps the same
+/// statistics. An error rolls the whole transaction back, indexes included.
+pub(crate) fn with_group_write_indexes_rebuilt<T>(
+    conn: &Connection,
+    write: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let has_stats: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'sqlite_stat1')",
+        [],
+        |row| row.get(0),
+    )?;
+    let mut stats = Vec::new();
+    if has_stats {
+        let mut stmt = conn.prepare(
+            "SELECT idx, stat FROM sqlite_stat1 WHERE tbl = 'assets' AND idx IN (?1, ?2, ?3)",
+        )?;
+        let rows = stmt.query_map(
+            params![
+                GROUP_WRITE_INDEXES[0].0,
+                GROUP_WRITE_INDEXES[1].0,
+                GROUP_WRITE_INDEXES[2].0
+            ],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )?;
+        for row in rows {
+            stats.push(row?);
+        }
+    }
+    for (name, _) in GROUP_WRITE_INDEXES {
+        conn.execute_batch(&format!("DROP INDEX IF EXISTS {name};"))?;
+    }
+    let result = write()?;
+    for (_, sql) in GROUP_WRITE_INDEXES {
+        conn.execute_batch(sql)?;
+    }
+    if !stats.is_empty() {
+        let mut insert =
+            conn.prepare("INSERT INTO sqlite_stat1(tbl, idx, stat) VALUES ('assets', ?1, ?2)")?;
+        for (index, stat) in &stats {
+            insert.execute(params![index, stat])?;
+        }
+        // Loads the restored rows into this connection; other connections
+        // read them when they reload the changed schema.
+        conn.execute_batch("ANALYZE sqlite_schema;")?;
+    }
+    Ok(result)
+}
+
 /// Names of the triggers that maintain `sort_bucket_time`, `sort_bucket_id`
 /// and `sort_group_null_order`. Backup validation accepts no other trigger.
 pub const SORT_KEY_TRIGGERS: [&str; 6] = [
@@ -1230,9 +1302,7 @@ pub(super) fn install_sort_key_triggers(conn: &Connection) -> anyhow::Result<()>
     let update_of = "AFTER UPDATE OF id, modified_at, media_group_key, media_group_order ON assets";
     conn.execute_batch(&format!(
         "
-        CREATE INDEX IF NOT EXISTS idx_assets_group_bucket
-          ON assets(CAST(media_group_key AS TEXT), modified_at)
-          WHERE media_group_key IS NOT NULL AND trim(media_group_key) <> '';
+        {bucket_index};
 
         CREATE TRIGGER assets_sort_key_insert_singleton AFTER INSERT ON assets
         WHEN NOT ({grouped_new})
@@ -1274,6 +1344,7 @@ pub(super) fn install_sort_key_triggers(conn: &Connection) -> anyhow::Result<()>
           {recompute_old}
         END;
         ",
+        bucket_index = GROUP_BUCKET_INDEX_SQL,
         grouped_new = grouped!("NEW"),
         grouped_old = grouped!("OLD"),
         changed = SORT_KEY_CHANGED,

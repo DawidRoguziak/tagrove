@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-07
 - Areas: database schema, query semantics, scanning, CSV import, backup/restore
-- Related: [database persistence](../subsystems/database.md), [library query and gallery](../subsystems/library-query-and-gallery.md), [data safety and portability](../subsystems/data-safety-and-portability.md), [plan stage 03](../plans/grid-performance/03-sort-key-and-indexes.md), [ADR 0002](0002-backend-write-priority-and-scan-revisions.md)
+- Related: [database persistence](../subsystems/database.md), [library query and gallery](../subsystems/library-query-and-gallery.md), [data safety and portability](../subsystems/data-safety-and-portability.md), [plan stage 03](../plans/grid-performance/03-sort-key-and-indexes.md), [ADR 0002](0002-backend-write-priority-and-scan-revisions.md), [ADR 0026](0026-set-based-ranged-group-write-with-index-rebuild.md)
 
 ## Context
 

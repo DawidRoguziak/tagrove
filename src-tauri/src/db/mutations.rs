@@ -418,6 +418,182 @@ pub(crate) fn set_assets_media_group_bulk_in_tx(
     Ok((processed_assets, updated_assets))
 }
 
+/// A ranged group write that changes at least this many rows, and at least an
+/// eighth of the library, rebuilds the group-write indexes instead of
+/// maintaining them row by row (`with_group_write_indexes_rebuilt`).
+const GROUP_INDEX_REBUILD_MIN_ROWS: i64 = 20_000;
+
+/// Set-based media-group write for a resolved selection (record S-034d0ea6).
+///
+/// Same result as `set_assets_media_group_bulk_in_tx` with the order of each
+/// ID set to its one-based position in `asset_ids` (no order when clearing):
+/// a missing ID is skipped but keeps its position, so later orders have a gap;
+/// a row whose key and order already match is processed but not rewritten;
+/// the derived ordering keys of every touched bucket end up as a full
+/// recomputation leaves them; and the library revision is bumped once, in
+/// `tx`, only when a row changed. `asset_ids` are expected to be distinct, as
+/// a resolved selection is; a repeated ID counts once and takes its last
+/// position. Returns the processed (existing) and updated asset counts.
+///
+/// The per-asset path costs about 16 µs per row (17 s for 1,000,000 rows in
+/// one transaction). Here the IDs are staged in a temporary table and a few
+/// statements over it do the work: the new bucket's ordering keys are
+/// computed once and written with the group fields, only the buckets the rows
+/// leave are recomputed, and a write that changes a large part of the library
+/// rebuilds the three indexes it would otherwise update per row (ADR 0026).
+pub(crate) fn set_selection_media_group_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    asset_ids: &[i64],
+    media_group_key: Option<&str>,
+) -> anyhow::Result<(usize, usize)> {
+    set_selection_media_group_with(tx, asset_ids, media_group_key, None)
+}
+
+/// `rebuild_indexes` overrides the size rule that picks between maintaining
+/// and rebuilding the group-write indexes (tests cover both paths).
+pub(crate) fn set_selection_media_group_with(
+    tx: &rusqlite::Transaction<'_>,
+    asset_ids: &[i64],
+    media_group_key: Option<&str>,
+    rebuild_indexes: Option<bool>,
+) -> anyhow::Result<(usize, usize)> {
+    tx.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS selection_group_ids(
+           id INTEGER PRIMARY KEY, group_order REAL
+         );
+         DELETE FROM temp.selection_group_ids;",
+    )?;
+    {
+        // Staged in ID order, so every insert appends to the temporary B-tree
+        // and the existence checks walk the assets table forward. Missing IDs
+        // are not staged; their positions stay unused.
+        let mut staged: Vec<(i64, usize)> = asset_ids.iter().copied().zip(1..).collect();
+        staged.sort_unstable();
+        let mut stage = tx.prepare_cached(
+            "INSERT INTO temp.selection_group_ids(id, group_order)
+             SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM main.assets WHERE id = ?1)
+             ON CONFLICT(id) DO UPDATE SET group_order = excluded.group_order",
+        )?;
+        for (asset_id, position) in staged {
+            stage.execute(params![asset_id, media_group_key.map(|_| position as f64)])?;
+        }
+    }
+    let count_staged = |tx: &rusqlite::Transaction<'_>| -> anyhow::Result<i64> {
+        Ok(
+            tx.query_row("SELECT COUNT(*) FROM temp.selection_group_ids", [], |row| {
+                row.get(0)
+            })?,
+        )
+    };
+    let processed = count_staged(tx)?;
+    // Keep only the rows the write changes: the same exact comparison of key
+    // and order as the per-asset path (BINARY text, numeric order).
+    tx.execute(
+        "DELETE FROM temp.selection_group_ids
+         WHERE EXISTS (
+           SELECT 1 FROM main.assets a
+           WHERE a.id = selection_group_ids.id
+             AND a.media_group_key IS ?1
+             AND a.media_group_order IS selection_group_ids.group_order
+         )",
+        params![media_group_key],
+    )?;
+    let changed = count_staged(tx)?;
+    if changed == 0 {
+        return Ok((processed as usize, 0));
+    }
+
+    let grouped_new: bool = tx.query_row(
+        "SELECT ?1 IS NOT NULL AND trim(?1) <> ''",
+        params![media_group_key],
+        |row| row.get(0),
+    )?;
+    let mut sort_keys = DeferredSortKeys::begin(tx)?;
+    {
+        // The buckets the changed rows leave; the new one is written below.
+        let mut old_buckets = tx.prepare(
+            "SELECT DISTINCT CAST(media_group_key AS TEXT) FROM main.assets
+             WHERE id IN (SELECT id FROM temp.selection_group_ids)
+               AND media_group_key IS NOT NULL AND trim(media_group_key) <> ''
+               AND CAST(media_group_key AS TEXT) IS NOT ?1",
+        )?;
+        let keys =
+            old_buckets.query_map(params![media_group_key], |row| row.get::<_, String>(0))?;
+        for key in keys {
+            sort_keys.touch(Some(&key?));
+        }
+    }
+    // The new bucket's ordering keys over its final members: the members it
+    // already has plus the changed rows. Members outside the selection get
+    // them now, through the bucket index; the changed rows get them with the
+    // group fields. A singleton (cleared or blank key) gets its own keys.
+    let (bucket_time, bucket_id) = if grouped_new {
+        let (time, id): (rusqlite::types::Value, rusqlite::types::Value) = tx.query_row(
+            "SELECT MAX(modified_at), MAX(id) FROM (
+               SELECT modified_at, id FROM main.assets
+               WHERE media_group_key IS NOT NULL AND trim(media_group_key) <> ''
+                 AND CAST(media_group_key AS TEXT) = ?1
+               UNION ALL
+               SELECT modified_at, id FROM main.assets
+               WHERE id IN (SELECT id FROM temp.selection_group_ids)
+             )",
+            params![media_group_key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        tx.execute(
+            "UPDATE main.assets SET sort_bucket_time = ?2, sort_bucket_id = ?3,
+               sort_group_null_order = (media_group_order IS NULL)
+             WHERE media_group_key IS NOT NULL AND trim(media_group_key) <> ''
+               AND CAST(media_group_key AS TEXT) = ?1
+               AND id NOT IN (SELECT id FROM temp.selection_group_ids)
+               AND (sort_bucket_time IS NOT ?2 OR sort_bucket_id IS NOT ?3
+                 OR sort_group_null_order IS NOT (media_group_order IS NULL))",
+            params![media_group_key, time, id],
+        )?;
+        (time, id)
+    } else {
+        (rusqlite::types::Value::Null, rusqlite::types::Value::Null)
+    };
+    let rebuild = match rebuild_indexes {
+        Some(rebuild) => rebuild,
+        None => {
+            changed >= GROUP_INDEX_REBUILD_MIN_ROWS
+                && changed.saturating_mul(8)
+                    >= tx.query_row("SELECT COUNT(*) FROM main.assets", [], |row| {
+                        row.get::<_, i64>(0)
+                    })?
+        }
+    };
+    // Every changed row gets a non-null order exactly when the key is set, so
+    // `sort_group_null_order` is 0 for grouped and singleton rows alike.
+    let write = || -> anyhow::Result<usize> {
+        Ok(tx.execute(
+            "UPDATE main.assets SET media_group_key = ?1,
+               media_group_order = (
+                 SELECT group_order FROM temp.selection_group_ids WHERE id = assets.id
+               ),
+               media_group_key_normalized = CASE
+                 WHEN ?1 IS NULL OR trim(?1) = '' THEN NULL
+                 ELSE lower(trim(?1))
+               END,
+               sort_bucket_time = CASE WHEN ?4 THEN ?2 ELSE modified_at END,
+               sort_bucket_id = CASE WHEN ?4 THEN ?3 ELSE id END,
+               sort_group_null_order = 0
+             WHERE id IN (SELECT id FROM temp.selection_group_ids)",
+            params![media_group_key, bucket_time, bucket_id, grouped_new],
+        )?)
+    };
+    let updated = if rebuild {
+        with_group_write_indexes_rebuilt(tx, write)?
+    } else {
+        write()?
+    };
+    sort_keys.finish(tx)?;
+    tx.execute("DELETE FROM temp.selection_group_ids", [])?;
+    bump_library_revision_in_tx(tx)?;
+    Ok((processed as usize, updated))
+}
+
 pub(super) fn list_asset_tags_in_tx(
     tx: &rusqlite::Transaction<'_>,
     asset_id: i64,

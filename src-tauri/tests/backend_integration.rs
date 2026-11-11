@@ -1458,6 +1458,225 @@ mod selection_spec {
             "[selection] rows={ROWS} resolve_ms={resolve_ms:.1} merge_tag_ms={tag_ms:.0} toggle_favorite_ms={favorite_ms:.0}"
         );
     }
+
+    /// `rows` assets with tied and zero modification times, plus existing
+    /// groups: `Trip` (members spread over the gallery), `Beach`, a differently
+    /// cased `trip`, and one ungrouped asset that kept an order. Statistics
+    /// exist, as after the app's `PRAGMA optimize`.
+    fn group_library(path: &Path, rows: i64) {
+        let mut conn = db::open_connection(path).expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        conn.execute(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+             INSERT INTO assets(id, path, file_name, file_name_key, kind, size_bytes,
+               modified_at, fingerprint_mtime_ns)
+             SELECT i, '/synthetic/' || i || '.jpg', i || '.jpg', i || '.jpg', 'image', 10,
+               CASE WHEN i % 97 = 5 THEN 0 ELSE 1000 + (i * 7919) % (?1 / 3 + 1) END, 0
+             FROM n",
+            [rows],
+        )
+        .expect("assets");
+        for (key, updates) in [
+            (
+                "Trip",
+                (1..=8)
+                    .map(|k| (k * rows / 9, Some(k as f64)))
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                "Beach",
+                vec![(2, Some(1.0)), (3, Some(2.0)), (4, Some(3.0))],
+            ),
+            ("trip", vec![(rows - 1, Some(1.0)), (rows, Some(2.0))]),
+        ] {
+            db::set_assets_media_group_bulk(&mut conn, &updates, Some(key)).expect("seed group");
+        }
+        db::set_asset_media_group(&conn, 7, None, Some(3.0)).expect("order without key");
+        conn.execute_batch("ANALYZE;").expect("statistics");
+        assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
+    }
+
+    /// Every group and ordering field with its SQLite type, plus the index
+    /// definitions and statistics.
+    fn group_state(conn: &rusqlite::Connection) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let collect = |sql: &str| -> Vec<String> {
+            conn.prepare(sql)
+                .unwrap()
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        };
+        (
+            collect(
+                "SELECT id || '|' || quote(media_group_key) || '|' || quote(media_group_order)
+                   || '|' || quote(media_group_key_normalized) || '|' || quote(sort_bucket_time)
+                   || '|' || quote(sort_bucket_id) || '|' || quote(sort_group_null_order)
+                 FROM assets ORDER BY id",
+            ),
+            collect(
+                "SELECT name || ': ' || sql FROM sqlite_schema
+                 WHERE type = 'index' AND sql IS NOT NULL ORDER BY name",
+            ),
+            collect("SELECT tbl || '/' || idx || '=' || stat FROM sqlite_stat1 ORDER BY tbl, idx"),
+        )
+    }
+
+    fn schema_version(conn: &rusqlite::Connection) -> i64 {
+        conn.query_row("PRAGMA schema_version", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    /// Applies `key` to `spec` through `apply_selection_mutation` on `runtime`
+    /// and, as the reference, through the per-asset `set_assets_media_group_bulk`
+    /// (orders 1..n by position, as the spec path used to) on an identical
+    /// copy; both must leave the same rows and counts, and the spec write must
+    /// bump the revision exactly once, only when a row changed. Returns whether
+    /// the spec write changed the schema (it rebuilt the group indexes).
+    fn assert_group_write_matches_reference(
+        runtime: &Arc<DatabaseRuntime>,
+        reference: &mut rusqlite::Connection,
+        spec: &SelectionSpec,
+        key: Option<&str>,
+    ) -> bool {
+        let ids = runtime
+            .queries
+            .resolve_selection(spec)
+            .unwrap()
+            .unwrap()
+            .asset_ids;
+        let trimmed = key.map(str::trim).filter(|key| !key.is_empty());
+        let updates: Vec<(i64, Option<f64>)> = ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (*id, trimmed.map(|_| (index + 1) as f64)))
+            .collect();
+        let (expected_processed, expected_updated) =
+            db::set_assets_media_group_bulk(reference, &updates, trimmed).unwrap();
+
+        let conn = runtime.admit().unwrap().connection().unwrap();
+        let (revision_before, schema_before) = (
+            db::current_library_revision(&conn).unwrap(),
+            schema_version(&conn),
+        );
+        drop(conn);
+        let result = apply_selection_mutation(
+            runtime,
+            spec,
+            SelectionMutation::SetMediaGroup {
+                media_group_key: key.map(str::to_string),
+            },
+        )
+        .unwrap();
+        let SelectionMutationResult::Ready {
+            processed_assets,
+            updated_assets,
+            revision,
+            media_group_key,
+            ..
+        } = result
+        else {
+            panic!("unexpected stale");
+        };
+        assert_eq!(
+            (processed_assets, updated_assets),
+            (expected_processed.len(), expected_updated)
+        );
+        assert_eq!(media_group_key.as_deref(), trimmed);
+        let conn = runtime.admit().unwrap().connection().unwrap();
+        assert_eq!(group_state(&conn), group_state(reference));
+        assert_eq!(db::count_inconsistent_sort_keys(&conn).unwrap(), 0);
+        let revision_after = db::current_library_revision(&conn).unwrap();
+        assert_eq!(revision, revision_after);
+        assert_eq!(
+            revision_after - revision_before,
+            i64::from(updated_assets > 0)
+        );
+        schema_version(&conn) != schema_before
+    }
+
+    #[test]
+    fn ranged_group_writes_match_the_per_asset_path_on_a_mixed_library() {
+        let dir = tempdir().unwrap();
+        let (path, reference_path) = (dir.path().join("media.db"), dir.path().join("ref.db"));
+        group_library(&path, 60);
+        group_library(&reference_path, 60);
+        let mut reference = db::open_connection(&reference_path).unwrap();
+        let runtime = DatabaseRuntime::new(path);
+        // Gallery ranges with exclusions, an included asset outside them and a
+        // missing included ID (its position is skipped), then a cleared and a
+        // trimmed key, a repeat that changes nothing, and a merge of `Beach`.
+        for (generation, (ranges, excluded, included, key)) in (1..).zip([
+            (
+                vec![[0, 9], [20, 44]],
+                vec![30, 31],
+                vec![999, 1],
+                Some("  Trip "),
+            ),
+            (vec![[0, 59]], vec![], vec![], Some("Trip")),
+            (vec![[5, 25]], vec![2], vec![], Some("")),
+            (vec![[5, 25]], vec![2], vec![], None),
+            (vec![[10, 19]], vec![], vec![998, 3, 997], Some("Beach")),
+        ]) {
+            let session_id = session(&runtime, generation);
+            let spec = SelectionSpec {
+                session_id,
+                ranges,
+                excluded,
+                included,
+            };
+            assert!(
+                !assert_group_write_matches_reference(&runtime, &mut reference, &spec, key),
+                "a small write maintains the indexes"
+            );
+        }
+    }
+
+    #[test]
+    fn a_ranged_group_write_over_most_of_the_library_rebuilds_the_group_indexes() {
+        const ROWS: i64 = 24_000;
+        let dir = tempdir().unwrap();
+        let (path, reference_path) = (dir.path().join("media.db"), dir.path().join("ref.db"));
+        group_library(&path, ROWS);
+        group_library(&reference_path, ROWS);
+        let mut reference = db::open_connection(&reference_path).unwrap();
+        let runtime = DatabaseRuntime::new(path);
+        for (generation, key) in [(1, Some("Everything")), (2, None)] {
+            let spec = SelectionSpec {
+                session_id: session(&runtime, generation),
+                ranges: vec![[0, ROWS as usize - 1]],
+                excluded: vec![7, 8],
+                included: vec![],
+            };
+            assert!(
+                assert_group_write_matches_reference(&runtime, &mut reference, &spec, key),
+                "more than 20,000 changed rows and an eighth of the library rebuild the indexes"
+            );
+        }
+        // The rebuilt indexes serve the next query; the gallery order matches.
+        let session_id = session(&runtime, 3);
+        let first: Vec<i64> = runtime
+            .queries
+            .resolve_selection(&SelectionSpec {
+                session_id,
+                ranges: vec![[0, 15]],
+                ..SelectionSpec::default()
+            })
+            .unwrap()
+            .unwrap()
+            .asset_ids;
+        let expected: Vec<i64> = reference
+            .prepare(
+                "SELECT id FROM assets ORDER BY sort_bucket_time DESC, sort_bucket_id DESC,
+                   sort_group_null_order, media_group_order, modified_at DESC, id DESC LIMIT 16",
+            )
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(first, expected);
+    }
 }
 
 /// Opens the profile database the way startup does and reconciles the file-mutation journal

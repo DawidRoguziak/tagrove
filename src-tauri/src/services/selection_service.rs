@@ -98,15 +98,10 @@ pub fn apply_selection_mutation(
                     }
                 }
                 Normalized::SetMediaGroup(key) => {
-                    let updates: Vec<(i64, Option<f64>)> = ids
-                        .iter()
-                        .enumerate()
-                        .map(|(index, id)| (*id, key.as_ref().map(|_| (index + 1) as f64)))
-                        .collect();
                     let (processed, updated) =
-                        db::set_assets_media_group_bulk_in_tx(tx, &updates, key.as_deref())?;
+                        db::set_selection_media_group_in_tx(tx, ids, key.as_deref())?;
                     SelectionMutationResult::Ready {
-                        processed_assets: processed.len(),
+                        processed_assets: processed,
                         updated_assets: updated,
                         revision: db::current_library_revision(tx)?,
                         query_impact: TagQueryImpact::None,

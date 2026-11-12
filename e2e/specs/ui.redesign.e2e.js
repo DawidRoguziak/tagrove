@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { selectMediaKind } from "../gallery.js";
 
 const execFileAsync = promisify(execFile);
 const suite = process.env.MEDIATAGGER_UI_REDESIGN === "1" ? describe : describe.skip;
@@ -45,17 +46,8 @@ async function galleryReady() {
     return images.length > 0 && images.every((img) => img.complete && img.naturalWidth > 1);
   }), { timeout: 20000 });
 }
-async function selectMediaKind(kind) {
-  await $(`#gallery-media-kind label:has(input[value="${kind}"])`).click();
-  // The previous result set stays rendered until the new query replies, so wait for
-  // tiles that belong to the selected kind before reading or opening the first one.
-  await browser.waitUntil(() => browser.execute((wanted) => {
-    const tiles = [...document.querySelectorAll('button[data-asset-id]')];
-    const chipOf = (tile) => [...tile.querySelectorAll('span')].map(el => el.textContent).find(text => text === "Video" || text === "GIF");
-    if (tiles.length === 0) return false;
-    if (wanted === "all") return tiles.some(tile => chipOf(tile) === undefined);
-    return tiles.every(tile => chipOf(tile) === (wanted === "video" ? "Video" : "GIF"));
-  }, kind), { timeout: 20000, timeoutMsg: `Gallery did not show ${kind} results` });
+async function selectMediaKindReady(kind) {
+  await selectMediaKind(kind);
   await galleryReady();
 }
 async function closeLightbox() {
@@ -207,7 +199,7 @@ suite("UI redesign desktop review", function () {
       await click('button[aria-label="Back"]');
       await galleryReady();
       for (const kind of ["video", "gif"]) {
-        await selectMediaKind(kind);
+        await selectMediaKindReady(kind);
         const badge = await browser.execute(() => {
           const tile = document.querySelector('button[data-asset-id]');
           const chip = [...tile.querySelectorAll('span')].find(el => el.textContent === "Video" || el.textContent === "GIF");
@@ -220,7 +212,7 @@ suite("UI redesign desktop review", function () {
         assert.equal(badge.background, kind === "video" ? "rgb(109, 40, 217)" : "rgb(29, 78, 216)");
         await capture(`fixes-${theme}-${kind}-badge`);
       }
-      await selectMediaKind("all");
+      await selectMediaKindReady("all");
       for (const id of [imageId, gifId]) {
         for (const width of [1000, 600, 320]) {
           await browser.setWindowSize(1000, 720);
@@ -509,7 +501,7 @@ suite("UI redesign desktop review", function () {
     await browser.setWindowSize(1440, 900);
     await browser.refresh();
     await galleryReady();
-    await selectMediaKind("video");
+    await selectMediaKindReady("video");
     await click('button[data-asset-index="0"]');
     await $('[data-lightbox-video-player]').waitForDisplayed();
     await capture('native-video-controls');

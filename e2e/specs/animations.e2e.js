@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { selectMediaKind } from "../gallery.js";
 
 const suite = process.env.MEDIATAGGER_ANIMATIONS === "1" ? describe : describe.skip;
 const reduced = process.env.MEDIATAGGER_REDUCED_MOTION === "1";
@@ -25,7 +26,7 @@ async function click(selector) {
     ));
   }
   const element = await $(selector);
-  if (selector === "#lightbox-delete-button") {
+  if (["#lightbox-delete-button", 'button[aria-label="Close asset panel"]'].includes(selector)) {
     // Returning from the drawer can leave the floating rail faded by inactivity.
     await element.moveTo();
     await browser.waitUntil(() => element.isClickable());
@@ -126,7 +127,9 @@ function fades(result, direction, disabled = false) {
     }
     for (const frame of moving) {
       // A lazy loading dialog can be replaced by the full lightbox during opening.
-      const first = moving.find(candidate => candidate.layer === frame.layer);
+      // Closing a fullscreen lightbox legitimately leaves fullscreen mid-transition,
+      // so compare bounds only between frames with the same fullscreen state.
+      const first = moving.find(candidate => candidate.layer === frame.layer && candidate.fullscreen === frame.fullscreen);
       assert.deepEqual(frame.rect, first.rect, `${direction}: each dialog keeps its bounds`);
     }
     if (moving.some(frame => frame.fullscreen)) {
@@ -347,6 +350,11 @@ async function exercise(theme, disabled) {
   if (await browser.execute(() => innerWidth < 768)) {
     await check("close drawer for preview close", async () => click('button[aria-label="Close asset panel"]'), true);
   }
+  // Settle the floating rail before sampling starts so the close click is interactable
+  // without the hover move being part of the measured close transition.
+  const closePreview = await $('button[aria-label="Close preview"]');
+  await closePreview.moveTo();
+  await browser.waitUntil(() => closePreview.isClickable());
   fades(await check("lightbox close", async () => click('button[aria-label="Close preview"]')), "close", disabled);
   return results;
 }
@@ -437,7 +445,7 @@ suite("animation scroll geometry", function () {
       const evidence = {};
       await browser.refresh();
       await $('#gallery-media-kind').waitForExist();
-      await click(`#gallery-media-kind input[value="${kind}"]`);
+      await selectMediaKind(kind);
       const tile = 'button[data-asset-index="0"]';
       await $(tile).waitForDisplayed();
       const opened = await sample(() => click(tile));

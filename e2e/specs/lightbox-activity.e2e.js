@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createPlayableFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { assertPrivateDisplay, captureDisplay } from "../display.js";
 
 const run = promisify(execFile);
 const suite = process.env.MEDIATAGGER_LIGHTBOX_ACTIVITY === "1" ? describe : describe.skip;
@@ -74,7 +75,7 @@ async function opacity(value) {
 suite("lightbox activity desktop", function () {
   this.timeout(240000);
   before(async () => {
-    assert.equal(process.env.DISPLAY, process.env.MEDIATAGGER_NATIVE_DISPLAY);
+    assertPrivateDisplay();
     assert.ok(process.env.XDG_DATA_HOME?.startsWith('/tmp/mediatagger-'));
     await fs.mkdir(evidence, { recursive: true });
     console.log("LIGHTBOX_ACTIVITY_EVIDENCE", evidence);
@@ -91,7 +92,7 @@ suite("lightbox activity desktop", function () {
   });
   afterEach(async function () {
     if (this.currentTest.state === "failed") {
-      await run('import', ['-window', 'root', path.join(evidence, 'failure.png')]);
+      await captureDisplay(path.join(evidence, 'failure.png'));
     }
   });
   after(async () => {
@@ -130,7 +131,7 @@ suite("lightbox activity desktop", function () {
       assert.equal(placement.copy.y, placement.uuid.y);
       await click('#lightbox-media-group-key-input + button');
       await $('button[aria-label="Group name copied"]').waitForExist();
-      await run('import', ['-window', 'root', path.join(evidence, `copy-${width}.png`)]);
+      await captureDisplay(path.join(evidence, `copy-${width}.png`));
       await click('#lightbox-sidebar-close-button');
       await browser.pause(300);
       const move = async (selector, gap = false) => {
@@ -150,7 +151,7 @@ suite("lightbox activity desktop", function () {
         assert.equal(held.row.clickable, true);
         assert.equal(held.floating.opacity, 0);
       }
-      await run('import', ['-window', 'root', path.join(evidence, `hover-${width}.png`)]);
+      await captureDisplay(path.join(evidence, `hover-${width}.png`));
       // Empty surrounding row space exits the box and does not hold it open.
       // Capture before the deadline in-page: software WebKit driver calls can
       // take longer than the full inactivity interval.
@@ -193,7 +194,7 @@ suite("lightbox activity desktop", function () {
           assert.equal(panel.panelClose, true);
           assert.equal(panel.floating, null);
           assert.equal(panel.reduced, process.env.MEDIATAGGER_REDUCED_MOTION === "1");
-          await run('import', ['-window', 'root', path.join(evidence, `${theme}-${width}-${kind}-panel.png`)]);
+          await captureDisplay(path.join(evidence, `${theme}-${width}-${kind}-panel.png`));
           // Opening focuses collapse. Keyboard collapse must restore the reopen button.
           await click('#lightbox-sidebar-close-button');
           // The wide media column expands after the drawer's 200 ms exit.
@@ -234,7 +235,7 @@ suite("lightbox activity desktop", function () {
           await native('key', 'Return');
           await browser.waitUntil(async () => (await sample()).focus === 'lightbox-sidebar-trigger-button');
           await browser.pause(300);
-          await run('import', ['-window', 'root', path.join(evidence, `${theme}-${width}-${kind}.png`)]);
+          await captureDisplay(path.join(evidence, `${theme}-${width}-${kind}.png`));
           await fs.writeFile(path.join(evidence, `${theme}-${width}-${kind}.json`), JSON.stringify({ panel, shown, hidden }, null, 2));
           await click('.lightbox-media-controls button[aria-label="Close preview"]');
           await $('[data-lightbox-kind]').waitForExist({ reverse: true });

@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createPlayableFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { assertPrivateDisplay, captureDisplay } from "../display.js";
 
 const run = promisify(execFile);
 const suite = process.env.MEDIATAGGER_NATIVE_VIDEO === "1" ? describe : describe.skip;
@@ -63,7 +64,7 @@ async function waitAttribute(name, value) {
 }
 async function capture(name) {
   const file = path.join(output, `${name}.png`);
-  await run("import", ["-window", "root", file]);
+  await captureDisplay(file);
   return file;
 }
 async function open(id) {
@@ -91,7 +92,7 @@ async function close() {
 suite("native video speed and reopening", function () {
   this.timeout(600000);
   before(async () => {
-    assert.equal(process.env.DISPLAY, process.env.MEDIATAGGER_NATIVE_DISPLAY, "native input requires the owned private display");
+    assertPrivateDisplay();
     assert.ok(process.env.XDG_DATA_HOME?.startsWith(os.tmpdir() + path.sep));
     await fs.mkdir(output, { recursive: true });
     console.log("VIDEO_SPEED_EVIDENCE", output);

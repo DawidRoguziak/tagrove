@@ -29,7 +29,7 @@ Run commands from the repository root.
 | `bun run test:backend:e2e` | Runs only the locked Rust-only `backend_e2e` workflow test binary. It is not the WebdriverIO suite. |
 | `bun run test:e2e:tauri` | Runs all `e2e/specs/**/*.e2e.js` specs through `e2e/wdio.conf.js`; preparation builds the frontend and an isolated Tauri executable before starting the driver. |
 | `bun run app:control` | Keeps an isolated desktop E2E session open on a private Xvfb display for UI interaction, screenshots, and console inspection; see persistent desktop control below. |
-| `bun run test:e2e-build` | Checks frontend build order, profile rejection, preference isolation, and WDIO failure exit with fake build tools in a disposable project. |
+| `bun run test:e2e-build` | Checks frontend build order, profile rejection, preference isolation, and WDIO failure exit with fake build tools in a disposable project, plus the native-screenshot display guard (`e2e/display.test.js`) against fake process tables. |
 | `bun run test:app-control` | Runs Node tests for controller input validation, session-state gating, probe-timeout classification, timeout budgets, the command queue (stop outside the queue, skipped stale commands, coalesced console polls), local-port conflicts, temporary-directory ownership, process-tree cleanup, and shared PNG/GIF/MP4 fixtures. Checks both playable MP4s with ffprobe for video and zero audio streams, and the audio video fixture for one video stream, one audio stream, and the requested length. Requires Linux local sockets, ffmpeg, and ffprobe. |
 | `bun run test:locale-tools` | Runs the offline locale-validator and safe-generator regression tests through Node's built-in test runner. |
 | `bun run typecheck` | Runs separate no-emit checks for the Solid application/tests and Vite/Vitest configuration. |
@@ -178,23 +178,23 @@ Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`,
 | `about` | `MEDIATAGGER_ABOUT` |
 | `animations` | `MEDIATAGGER_ANIMATIONS` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `gallery-browsing` | `MEDIATAGGER_GALLERY_BROWSING` |
-| `gallery.performance` | `MEDIATAGGER_GALLERY_PERF` |
+| `gallery.performance` | `MEDIATAGGER_GALLERY_PERF` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `gallery-100k` | `MEDIATAGGER_GALLERY_100K` |
 | `gallery-selection` | `MEDIATAGGER_GALLERY_SELECTION` |
 | `gallery-timeline` | `MEDIATAGGER_GALLERY_TIMELINE` |
 | `grid-baseline` | `MEDIATAGGER_GRID_BASELINE` |
-| `lightbox-activity` | `MEDIATAGGER_LIGHTBOX_ACTIVITY` |
+| `lightbox-activity` | `MEDIATAGGER_LIGHTBOX_ACTIVITY` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `lightbox-images` | `MEDIATAGGER_LIGHTBOX_IMAGES` |
 | `lightbox-recovery` | `MEDIATAGGER_LIGHTBOX_RECOVERY` |
 | `native-video-escape`, `video-speed` | `MEDIATAGGER_NATIVE_VIDEO` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `search-recovery` | `MEDIATAGGER_SEARCH_RECOVERY` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `selection-recovery` | `MEDIATAGGER_SELECTION_RECOVERY` |
-| `settings-language` | `MEDIATAGGER_SETTINGS_LANGUAGE` |
+| `settings-language` | `MEDIATAGGER_SETTINGS_LANGUAGE` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 | `settings-maintenance` | `MEDIATAGGER_SETTINGS_MAINTENANCE` |
 | `startup-scan-remount` | `MEDIATAGGER_STARTUP_REMOUNT` |
 | `tag-editor` | `MEDIATAGGER_TAG_EDITOR` |
 | `thumbnail-fade` | `MEDIATAGGER_THUMBNAIL_FADE` |
-| `ui.redesign` | `MEDIATAGGER_UI_REDESIGN` |
+| `ui.redesign` | `MEDIATAGGER_UI_REDESIGN` (plus `MEDIATAGGER_NATIVE_DISPLAY`) |
 
 ### Linux prerequisites
 
@@ -211,6 +211,8 @@ Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`,
 6. Run under a graphical session with working GTK/OpenGL, and ensure TCP port `127.0.0.1:4444` is free.
 
 The harness runs `media_tagger` with WebKitWebDriver. When running the suite through Xvfb from a Wayland session, unset `WAYLAND_DISPLAY` and set `GDK_BACKEND=x11`; setting `DISPLAY` alone does not force GTK onto the private display. Only the E2E window profile permits resizing down to 320 × 240 so responsive lightbox behavior can be tested; dev and release retain their 1000 × 720 minimum.
+
+Native screenshots read the whole X screen with ImageMagick `import -window root`, which on a developer desktop would copy unrelated windows into `artifacts/`. Specs therefore capture only through `captureDisplay` in `e2e/display.js` (`animations`, `gallery.performance`, `lightbox-activity`, `native-video-escape`, `settings-language`, `ui.redesign`, `video-speed`), and their `before` hooks call `assertPrivateDisplay` first. The guard throws, and never skips, unless `DISPLAY` is a local `:N` equal to `MEDIATAGGER_NATIVE_DISPLAY`, is not `:0` or `:1`, `XAUTHORITY` is absolute, and a live `Xvfb` owned by the current user serves that display with exactly that authority file, passed as `-auth` (`app:control`, older `xvfb-run`) or as `XAUTHORITY` in the Xvfb environment (newer `xvfb-run`). Run these specs with the headless recipe that exports `MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"` inside `xvfb-run`. The standalone `e2e/gallery-scale/webkit.py` tool is not a spec and does not use this guard.
 
 The desktop harness discovers all `e2e/specs/**/*.e2e.js` files. Opt-in suites still require
 their documented environment flags; explicit `--spec` flags restrict discovery. After
@@ -285,7 +287,8 @@ dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
 ```
 
 This smoke checks gallery/settings navigation, confirmation cancellation and persisted bulk
-tag/group actions. Its input PNGs are public repository icons; source files are not deleted.
+tag/group actions. After the bulk tag is saved it searches for the tag and waits until the
+rendered tiles are exactly the two selected assets (the unfiltered gallery must show more). Its input PNGs are public repository icons; source files are not deleted.
 It does not prove native playback or native file pickers. Keep logs/screenshots in ignored
 `artifacts/`. After the owned app/driver/display processes exit, check for session-owned FUSE
 mounts under the printed temporary root, unmount any that remain, and remove only that root.
@@ -320,11 +323,14 @@ The normal workflow suite covers narrow lightbox and native media behavior; the 
 `MEDIATAGGER_GALLERY_PERF=1` suite exercises 3,584 images (28 pages, more than the 24-page frontend cache) and asserts that a revisited page is fetched again after eviction. It also checks selection summary IPC and full-selection metadata writes after eviction and filter changes.
 
 Run the opt-in spec through the existing harness on a private X11 display with temporary
-XDG data/config/cache directories. Preserve all profile and cleanup guards. Example after
-setting those XDG directories and starting a private display:
+XDG data/config/cache directories. Preserve all profile and cleanup guards. The spec's screenshot
+guard requires `MEDIATAGGER_NATIVE_DISPLAY` to name that display. Example after setting those
+XDG directories:
 
 ```sh
-MEDIATAGGER_UI_REDESIGN=1 bun run test:e2e:tauri --spec e2e/specs/ui.redesign.e2e.js
+unset WAYLAND_DISPLAY; export GDK_BACKEND=x11
+dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
+  sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; MEDIATAGGER_UI_REDESIGN=1 exec bun run test:e2e:tauri --spec e2e/specs/ui.redesign.e2e.js'
 ```
 
 ### Animation geometry
@@ -621,7 +627,9 @@ remove a lock merely because a connection failed.
 Run the complete opt-in suite in its declared order, using a private Xvfb/D-Bus session and disposable XDG directories as described under [real desktop E2E](#real-desktop-e2e):
 
 ```sh
-MEDIATAGGER_GALLERY_PERF=1 bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js
+unset WAYLAND_DISPLAY; export GDK_BACKEND=x11
+dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
+  sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; MEDIATAGGER_GALLERY_PERF=1 exec bun run test:e2e:tauri --spec e2e/specs/gallery.performance.e2e.js'
 ```
 
 Do not use a single-case filter to verify cache provenance. The timing case must precede the stable-metadata traversal, GIF check and selection scenario. The fixture contains 3,584 PNGs, 12 GIFs and two videos. Library and thumbnail clearing precede indexing; startup/filtering then prepares some previews. Timing uses only images, at indices 128 through 1920 in steps of 128 and then the last index (3583). The same route and filter apply to the revisit. The initial mounted area and untimed returns to 128/0 are excluded from first-use statistics.

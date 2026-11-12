@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createPlayableFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { assertPrivateDisplay, captureDisplay } from "../display.js";
 
 const run = promisify(execFile);
 const output = path.resolve("artifacts/native-video-escape", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -75,7 +76,7 @@ async function counters() {
     activePlayer: document.activeElement?.hasAttribute("data-lightbox-video-player") }));
 }
 async function capture(label) {
-  await run("import", ["-window", "root", path.join(output, `${label}.png`)]);
+  await captureDisplay(path.join(output, `${label}.png`));
 }
 async function record(label, extra = {}) {
   const value = { label, state: await state(), dom: await counters(), ...extra };
@@ -113,7 +114,7 @@ async function focusPlay() {
 suite("native video Escape routing", function () {
   this.timeout(120000);
   before(async () => {
-    assert.equal(process.env.DISPLAY, process.env.MEDIATAGGER_NATIVE_DISPLAY);
+    assertPrivateDisplay();
     assert.ok(process.env.XDG_DATA_HOME?.startsWith("/tmp/mediatagger-"));
     assert.equal(await invoke("plugin:window|title", { label: "main" }), "Tagrove E2E");
     await fs.mkdir(output, { recursive: true });

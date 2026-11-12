@@ -103,12 +103,21 @@ async function selectVisibleAssets(count) {
       timeoutMsg: `expected at least ${count} visible gallery assets`
     }
   );
-  const tiles = await $$('[data-testid="gallery-grid"] button[data-asset-id]');
-  for (const tile of tiles.slice(0, count)) {
+  const tiles = (await $$('[data-testid="gallery-grid"] button[data-asset-id]')).slice(0, count);
+  for (const tile of tiles) {
     await browser.execute((element) => {
       element.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
     }, tile);
   }
+  return Promise.all(tiles.map((tile) => tile.getAttribute("data-asset-id")));
+}
+
+async function renderedAssetIds() {
+  return browser.execute(() =>
+    [...document.querySelectorAll('[data-testid="gallery-grid"] button[data-asset-id]')]
+      .map((tile) => tile.getAttribute("data-asset-id"))
+      .sort()
+  );
 }
 
 async function ensureSettingsView() {
@@ -172,7 +181,7 @@ describe("MediaTagger desktop smoke", () => {
     await clearSearchFilter();
     await ensureSelectionModeEnabled();
 
-    await selectVisibleAssets(2);
+    const selectedIds = await selectVisibleAssets(2);
 
     const uniqueTag = `bulk-e2e-${Date.now()}`;
     const tagInput = await $("#bulk-tag-draft-input");
@@ -203,14 +212,31 @@ describe("MediaTagger desktop smoke", () => {
       }
     );
 
+    await browser.waitUntil(async () => (await renderedAssetIds()).length > selectedIds.length, {
+      timeout: 15000,
+      timeoutMsg: "the unfiltered gallery must show more than the tagged assets"
+    });
+
     const searchInput = await $(".filter-input");
     await searchInput.waitForDisplayed({ timeout: 10000 });
     await searchInput.click();
     await searchInput.setValue(uniqueTag);
-    await browser.keys("Enter");
+    await browser.waitUntil(async () => (await searchInput.getValue()) === uniqueTag, { timeout: 10000 });
+    // Main search auto-selects the first suggestion, so Enter would only pick it whenever the
+    // suggestion reply has arrived; the Search button submits the typed query directly.
+    await (await $(".workspace-search-field").$("button=Search")).click();
 
-    const noResultsHeading = await $("h3=No results");
-    await noResultsHeading.waitForDisplayed({ timeout: 15000, reverse: true });
+    // The gallery showed more assets than the two tagged ones before the search, so
+    // rendered tiles equal to exactly the selected IDs prove the tag filter ran in the UI;
+    // the previous result set stays rendered until the new query replies.
+    const expectedIds = [...selectedIds].sort();
+    await browser.waitUntil(
+      async () => JSON.stringify(await renderedAssetIds()) === JSON.stringify(expectedIds),
+      { timeout: 15000, timeoutMsg: `tag search did not show exactly the tagged assets ${expectedIds.join(",")}` }
+    );
+    if ((await searchInput.getValue()) !== uniqueTag) {
+      throw new Error("the search input no longer holds the applied bulk tag");
+    }
 
     await clearSearchFilter();
 

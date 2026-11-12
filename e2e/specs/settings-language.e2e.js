@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { assertPrivateDisplay, captureDisplay } from "../display.js";
 
 const suite = process.env.MEDIATAGGER_SETTINGS_LANGUAGE === "1" ? describe : describe.skip;
-const execFileAsync = promisify(execFile);
 const evidence = path.resolve("artifacts/settings-language", new Date().toISOString().replace(/[:.]/g, "-"));
 
 suite("Separate language settings card", function () {
   this.timeout(90000);
 
   before(async () => {
+    assertPrivateDisplay();
     await fs.mkdir(evidence, { recursive: true });
     console.log("SETTINGS_LANGUAGE_EVIDENCE", evidence);
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
@@ -50,7 +49,7 @@ suite("Separate language settings card", function () {
         await $('.settings-nav a[href="#settings-appearance"]').click();
         await browser.pause(250);
         const { x, y, width: windowWidth, height } = await browser.getWindowRect();
-        await execFileAsync("import", ["-window", "root", "-crop", `${windowWidth}x${height}+${x}+${y}`, path.join(evidence, `${language}-${width}.png`)]);
+        await captureDisplay(path.join(evidence, `${language}-${width}.png`), { crop: `${windowWidth}x${height}+${x}+${y}` });
         const geometry = await browser.execute(() => {
           const appearance = document.querySelector("#settings-appearance");
           const language = document.querySelector("#settings-language");

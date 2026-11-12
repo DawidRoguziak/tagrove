@@ -284,8 +284,12 @@ Run it on a private X11 display with temporary XDG directories as described in
 [desktop testing](../development/testing.md#real-desktop-e2e):
 
 ```sh
-MEDIATAGGER_SETTINGS_LANGUAGE=1 bun run test:e2e:tauri --spec e2e/specs/settings-language.e2e.js
+unset WAYLAND_DISPLAY; export GDK_BACKEND=x11
+dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
+  sh -c 'export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; MEDIATAGGER_SETTINGS_LANGUAGE=1 exec bun run test:e2e:tauri --spec e2e/specs/settings-language.e2e.js'
 ```
+
+Its screenshot guard refuses to run unless `MEDIATAGGER_NATIVE_DISPLAY` names the private Xvfb display.
 
 Screenshots stay under ignored `artifacts/settings-language/`.
 

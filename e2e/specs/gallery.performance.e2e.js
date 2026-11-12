@@ -7,6 +7,7 @@ import path from "node:path";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 import { e2eAppIdentifier } from "../build-e2e.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { assertPrivateDisplay, captureDisplay } from "../display.js";
 
 // Opt-in: the ordinary desktop suite should not seed thousands of media files.
 const gallerySuite = process.env.MEDIATAGGER_GALLERY_PERF === "1" ? describe : describe.skip;
@@ -115,6 +116,8 @@ gallerySuite("gallery scrolling performance", function () {
   this.timeout(180000);
   before(async () => {
     // wdio.conf.js validates the native E2E window before any spec runs.
+    // The GIF frame check captures the private display natively.
+    assertPrivateDisplay();
     mediaRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-gallery-perf-"));
     await copyPngFixtures(mediaRoot, "gallery", IMAGE_COUNT);
     const { gifPath } = await createPlayableFixtures(mediaRoot, "animated");
@@ -399,13 +402,9 @@ gallerySuite("gallery scrolling performance", function () {
     });
     const capture = async (index) => {
       const file = path.join(output, `gif-native-frame-${index}.png`);
-      await execFileAsync("import", [
-        "-window",
-        "root",
-        "-crop",
-        `${Math.round(bounds.width)}x${Math.round(bounds.height)}+${Math.round(location.x)}+${Math.round(location.y)}`,
-        file
-      ]);
+      await captureDisplay(file, {
+        crop: `${Math.round(bounds.width)}x${Math.round(bounds.height)}+${Math.round(location.x)}+${Math.round(location.y)}`
+      });
       const { stdout } = await execFileAsync("magick", [file, "-depth", "8", "rgba:-"], {
         encoding: "buffer",
         maxBuffer: 16 * 1024 * 1024

@@ -2,13 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
 import { selectMediaKind } from "../gallery.js";
+import { assertPrivateDisplay, captureDisplay } from "../display.js";
 
-const execFileAsync = promisify(execFile);
 const suite = process.env.MEDIATAGGER_UI_REDESIGN === "1" ? describe : describe.skip;
 const evidence = path.resolve("artifacts/ui-redesign", new Date().toISOString().replace(/[:.]/g, "-"));
 let root;
@@ -37,7 +35,7 @@ async function capture(name) {
   await browser.pause(250);
   const { x, y, width, height } = await browser.getWindowRect();
   // Capture only this window on the private display, including native GTK controls.
-  await execFileAsync("import", ["-window", "root", "-crop", `${width}x${height}+${x}+${y}`, path.join(evidence, `${name}.png`)]);
+  await captureDisplay(path.join(evidence, `${name}.png`), { crop: `${width}x${height}+${x}+${y}` });
 }
 async function galleryReady() {
   await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
@@ -58,6 +56,7 @@ async function closeLightbox() {
 suite("UI redesign desktop review", function () {
   this.timeout(240000);
   before(async () => {
+    assertPrivateDisplay();
     await fs.mkdir(evidence, { recursive: true });
     console.log("UI_REDESIGN_EVIDENCE", evidence);
     root = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-ui-redesign-"));

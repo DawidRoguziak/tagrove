@@ -7,6 +7,7 @@ import path from "node:path";
 import { copyPngFixtures, createPlayableFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
 import { selectMediaKind } from "../gallery.js";
+import { assertPrivateDisplay, captureDisplay } from "../display.js";
 
 const suite = process.env.MEDIATAGGER_ANIMATIONS === "1" ? describe : describe.skip;
 const reduced = process.env.MEDIATAGGER_REDUCED_MOTION === "1";
@@ -16,7 +17,7 @@ const execFileAsync = promisify(execFile);
 async function captureMedia(name) {
   const { x, y, width, height } = await browser.getWindowRect();
   // WebDriver captures the WebView only; capture the private display for native video.
-  await execFileAsync("import", ["-window", "root", "-crop", `${width}x${height}+${x}+${y}`, path.join(output, name)]);
+  await captureDisplay(path.join(output, name), { crop: `${width}x${height}+${x}+${y}` });
 }
 async function click(selector) {
   if (selector === 'button[aria-label="Open asset panel"]') {
@@ -411,6 +412,7 @@ function stableSegments(frames, value) {
 suite("animation scroll geometry", function () {
   this.timeout(180000);
   before(async () => {
+    assertPrivateDisplay();
     await fs.mkdir(output, { recursive: true });
     root = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-animations-"));
     await copyPngFixtures(root, "motion", 192);

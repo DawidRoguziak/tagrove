@@ -43,7 +43,7 @@
     "test:packaging": "python3 -m unittest discover -s packaging/tests -v",
     "privacy:check": "python3 scripts/privacy-check.py",
     "test:privacy": "python3 -m unittest discover -s scripts -p \"test_privacy.py\" -v",
-    "test:e2e-build": "node --test e2e/build-e2e.test.js",
+    "test:e2e-build": "node --test e2e/build-e2e.test.js e2e/display.test.js",
     "test:build": "node scripts/check-build.mjs"
   },
   "dependencies": {

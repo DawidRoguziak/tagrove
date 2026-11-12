@@ -9,7 +9,8 @@ MEDIATAGGER_REDUCED_MOTION, the gallery-scale harness (default, GALLERY_MILLION,
 GALLERY_PERFORMANCE), and with --perf the ignored grid_baseline and tag_save_benchmark Rust
 diagnostics. Results: <run>/qa/sweep/<item>.json and summary.json; logs next to them.
 Refuses to start while artifacts/app-control/active.lock exists (shared dist/, target-e2e and
-ports). Temporary XDG roots live in /tmp/mediatagger-sweep-*; FUSE mounts are unmounted and the
+ports). Spec items get a private motion preference (GTK settings.ini + GSettings keyfile in
+the temporary XDG_CONFIG_HOME; animations off for +reduced-motion, on otherwise). Temporary XDG roots live in /tmp/mediatagger-sweep-*; FUSE mounts are unmounted and the
 root removed after every item. Never touches the audit dataset.
 """
 from __future__ import annotations
@@ -74,12 +75,32 @@ def command_for(item: dict) -> list[str]:
         return item["argv"]
     if item["kind"] == "gallery-scale":
         return ["sh", "e2e/gallery-scale/run.sh"]
+    # DISPLAY and XAUTHORITY come from xvfb-run -a; e2e/display.js requires them to match the
+    # private Xvfb and MEDIATAGGER_NATIVE_DISPLAY for every native screenshot.
     inner = ('export MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"; '
              f"exec bun run test:e2e:tauri --spec {item['spec']}")
     return ["dbus-run-session", "--", "xvfb-run", "-a", "-s", XVFB, "sh", "-c", inner]
 
 
-def private_env(root: Path, extra: dict) -> dict:
+def write_motion_preference(root: Path, reduced: bool) -> dict:
+    """Configure the WebView motion preference inside the private XDG_CONFIG_HOME only.
+
+    Same recipe as testing.md "Animation geometry": the GTK settings.ini plus a GSettings
+    keyfile backend (the GTK file alone did not activate the preference), so the real
+    prefers-reduced-motion query follows MEDIATAGGER_REDUCED_MOTION. Never touches the user's
+    real config or dconf.
+    """
+    value = "false" if reduced else "true"
+    config = root / "config"
+    (config / "gtk-3.0").mkdir(mode=0o700, parents=True, exist_ok=True)
+    (config / "gtk-3.0" / "settings.ini").write_text(f"[Settings]\ngtk-enable-animations={value}\n", encoding="utf-8")
+    (config / "glib-2.0" / "settings").mkdir(mode=0o700, parents=True, exist_ok=True)
+    (config / "glib-2.0" / "settings" / "keyfile").write_text(
+        f"[org/gnome/desktop/interface]\nenable-animations={value}\n", encoding="utf-8")
+    return {"GSETTINGS_BACKEND": "keyfile"}
+
+
+def private_env(root: Path, extra: dict, motion: bool = False) -> dict:
     env = {k: v for k, v in os.environ.items()
            if k not in ("WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS")
            and not k.startswith("MEDIATAGGER_") and k != "VITE_MEDIATAGGER_PERF"}
@@ -89,6 +110,8 @@ def private_env(root: Path, extra: dict) -> dict:
                XDG_CACHE_HOME=str(root / "cache"), XDG_RUNTIME_DIR=str(root / "runtime"),
                GDK_BACKEND="x11", NO_AT_BRIDGE="1")
     env.update(extra)
+    if motion:
+        env.update(write_motion_preference(root, extra.get("MEDIATAGGER_REDUCED_MOTION") == "1"))
     return env
 
 
@@ -107,7 +130,7 @@ def run_item(repo: Path, out: Path, item: dict, timeout: int) -> dict:
     try:
         with open(log, "w", encoding="utf-8") as handle:
             try:
-                code = subprocess.run(command_for(item), cwd=repo, env=private_env(root, item.get("env", {})),
+                code = subprocess.run(command_for(item), cwd=repo, env=private_env(root, item.get("env", {}), item["kind"] == "spec"),
                                       stdout=handle, stderr=subprocess.STDOUT, timeout=timeout,
                                       start_new_session=True).returncode
                 status = "passed" if code == 0 else "failed"

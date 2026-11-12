@@ -702,6 +702,25 @@ class SweepAndCoverageTests(unittest.TestCase):
         self.assertNotIn("MEDIATAGGER_ABOUT", env)
         self.assertEqual(env["MEDIATAGGER_GALLERY_100K"], "1")
 
+    def test_reduced_motion_env_is_private(self):
+        with tempfile.TemporaryDirectory(prefix="mediatagger-sweep-test-") as root:
+            for reduced, value in ((True, "false"), (False, "true")):
+                sub = Path(root) / str(reduced)
+                sub.mkdir()
+                extra = {"MEDIATAGGER_REDUCED_MOTION": "1"} if reduced else {}
+                env = run_e2e_sweep.private_env(sub, extra, motion=True)
+                self.assertEqual(env["GSETTINGS_BACKEND"], "keyfile")
+                self.assertTrue(env["XDG_CONFIG_HOME"].startswith(str(sub)))
+                config = sub / "config"
+                self.assertIn(f"gtk-enable-animations={value}", (config / "gtk-3.0/settings.ini").read_text())
+                self.assertIn("[Settings]", (config / "gtk-3.0/settings.ini").read_text())
+                self.assertIn(f"enable-animations={value}", (config / "glib-2.0/settings/keyfile").read_text())
+            plain = Path(root) / "plain"
+            plain.mkdir()
+            self.assertNotIn("GSETTINGS_BACKEND", run_e2e_sweep.private_env(plain, {}))
+        inner = run_e2e_sweep.command_for({"kind": "spec", "spec": "e2e/specs/about.e2e.js"})[-1]
+        self.assertIn('MEDIATAGGER_NATIVE_DISPLAY="$DISPLAY"', inner)
+
     def test_coverage_inventory(self):
         import coverage
         controls = coverage.inventory(REPO)

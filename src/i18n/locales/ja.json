@@ -151,7 +151,8 @@
       "metadataFailed": "選択した項目を読み込めませんでした。一部の項目は既に削除されている可能性があります。",
       "partialResult": "選択した {{requested}} 件のうち {{processed}} 件を更新しました。",
       "selectionClearedTitle": "選択を解除しました",
-      "selectionClearedDescription": "結果が変わったため、選択した範囲が表示内容と一致しなくなりました。もう一度選択してください。"
+      "selectionClearedDescription": "結果が変わったため、選択した範囲が表示内容と一致しなくなりました。もう一度選択してください。",
+      "selectionExpiredDescription": "選択は使用される前に期限切れになりました。もう一度選択してください。"
     },
     "tagModal": {
       "ariaLabel": "一括タグ追加",

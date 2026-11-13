@@ -240,6 +240,9 @@ describe("createAssetQuery", () => {
       await expect(result.refresh()).rejects.toThrow("database is locked");
     });
     expect(result.loadError).toBe("database is locked");
+    // The selection reads this pair as a lost session (no session after a failure).
+    expect(result.sessionId()).toBeNull();
+    expect(result.pageFailureEpoch).toBe(1);
 
     await settle(async () => {
       await result.retryLoad();
@@ -264,6 +267,8 @@ describe("createAssetQuery", () => {
     });
     expect(result.loadError).toBe("page worker failed");
     expect(result.pageFailureEpoch).toBeGreaterThan(0);
+    // A page failure keeps the session.
+    expect(result.sessionId()).toBe(5);
     expect(result.getAssetAt(PAGE_SIZE)).toBeUndefined();
 
     apiMocks.getAssetQueryPage.mockResolvedValueOnce({
@@ -421,17 +426,17 @@ describe("createAssetQuery", () => {
       await result.refresh();
     });
     apiMocks.getAssetQueryIdRange.mockResolvedValueOnce(idRangeResult([1]));
-    await result.keepSessionAlive(5);
+    await expect(result.keepSessionAlive(5)).resolves.toBe("ready");
     expect(apiMocks.getAssetQueryIdRange).toHaveBeenCalledExactlyOnceWith(5, 0, 0);
     // A session that is not the current one is left to expire.
-    await result.keepSessionAlive(4);
+    await expect(result.keepSessionAlive(4)).resolves.toBe("skipped");
     expect(apiMocks.getAssetQueryIdRange).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS * 2);
     expect(apiMocks.startAssetQuery).toHaveBeenCalledOnce();
     expect(result.loadError).toBeNull();
 
     apiMocks.getAssetQueryIdRange.mockResolvedValueOnce({ status: "stale" });
-    await result.keepSessionAlive(5);
+    await expect(result.keepSessionAlive(5)).resolves.toBe("stale");
     await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS);
     flush();
     expect(apiMocks.startAssetQuery).toHaveBeenCalledTimes(2);

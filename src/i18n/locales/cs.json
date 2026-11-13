@@ -151,7 +151,8 @@
       "metadataFailed": "Vybrané položky nelze načíst. Některé již nemusí existovat.",
       "partialResult": "Aktualizováno {{processed}} z {{requested}} vybraných položek.",
       "selectionClearedTitle": "Výběr zrušen",
-      "selectionClearedDescription": "Výsledky se změnily, takže vybraný rozsah už neodpovídal zobrazení. Vyberte položky znovu."
+      "selectionClearedDescription": "Výsledky se změnily, takže vybraný rozsah už neodpovídal zobrazení. Vyberte položky znovu.",
+      "selectionExpiredDescription": "Platnost výběru vypršela dřív, než ho bylo možné použít. Vyberte položky znovu."
     },
     "tagModal": {
       "ariaLabel": "Hromadné přidání tagů",

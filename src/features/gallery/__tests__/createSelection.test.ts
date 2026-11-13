@@ -14,13 +14,14 @@ function mount(
       Array.from({ length: to - from + 1 }, (_, i) => from + i + 1)
   ),
   total = 1_000_000,
-  keepAlive?: (sessionId: number) => Promise<unknown>
+  keepAlive?: (sessionId: number) => Promise<"ready" | "stale" | "skipped" | void>
 ) {
   // Asset ID = index + 1 in session 1, as the default loader returns.
   let session: number | null = 1;
   const view = renderHook(() => {
     const [query, setQuery] = createSignal(0),
-      [identity, setIdentity] = createSignal(0);
+      [identity, setIdentity] = createSignal(0),
+      [failure, setFailure] = createSignal(0);
     return {
       selection: createSelection({
         queryEpoch: query,
@@ -28,7 +29,8 @@ function mount(
         getIdsRange: load,
         sessionId: () => session,
         total: () => total,
-        keepAlive
+        keepAlive,
+        queryFailureEpoch: failure
       }),
       setQuery,
       setIdentity,
@@ -36,6 +38,11 @@ function mount(
       nextQuery(next: number | null) {
         session = next;
         setQuery((value) => value + 1);
+        flush();
+      },
+      /** A query or page read fails; a failed refresh leaves no session behind. */
+      failRead() {
+        setFailure((value) => value + 1);
         flush();
       }
     };
@@ -467,7 +474,7 @@ describe("session keepalive of a range selection", () => {
     vi.useFakeTimers();
     let release!: () => void;
     const keepAlive = vi
-      .fn<(sessionId: number) => Promise<unknown>>()
+      .fn<(sessionId: number) => Promise<"ready" | "stale" | "skipped" | void>>()
       .mockImplementationOnce(
         () =>
           new Promise<void>((resolve) => {
@@ -487,5 +494,116 @@ describe("session keepalive of a range selection", () => {
     expect(keepAlive).toHaveBeenCalledTimes(3);
     expect(model.error).toBeNull();
     expect(model.ranged).toBe(true);
+  });
+});
+
+describe("a range selection whose session is gone", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("drops ranges with the expired notice when the read made at selection is stale", async () => {
+    vi.useFakeTimers();
+    const keepAlive = vi
+      .fn<(sessionId: number) => Promise<"ready" | "stale" | "skipped">>()
+      .mockResolvedValueOnce("stale")
+      .mockResolvedValue("ready");
+    const { model } = mount(undefined, 1_000_000, keepAlive);
+    await model.interact({ type: "select-all" });
+    flush();
+    await vi.advanceTimersByTimeAsync(0);
+    flush();
+    expect(keepAlive).toHaveBeenCalledExactlyOnceWith(1);
+    expect(model.ranged).toBe(false);
+    expect(model.count).toBe(0);
+    expect(model.capture().spec).toBeNull();
+    expect(model.notice).toBe("rangeExpired");
+    // Nothing is held any more, so nothing keeps reading the dead session.
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 3);
+    expect(keepAlive).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("leaves a later stale read to the refresh, which reports a changed result", async () => {
+    vi.useFakeTimers();
+    const keepAlive = vi
+      .fn<(sessionId: number) => Promise<"ready" | "stale" | "skipped">>()
+      .mockResolvedValueOnce("ready")
+      .mockResolvedValue("stale");
+    const { model, result } = mount(undefined, 1_000_000, keepAlive);
+    await model.interact({ type: "select-all" });
+    flush();
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS);
+    flush();
+    expect(keepAlive).toHaveBeenCalledTimes(2);
+    expect(model.ranged).toBe(true);
+    expect(model.notice).toBeNull();
+    result.nextQuery(null);
+    result.nextQuery(2);
+    expect(model.ranged).toBe(false);
+    expect(model.notice).toBe("rangeCleared");
+  });
+
+  it("ignores a stale reply that arrives after the ranges were replaced", async () => {
+    vi.useFakeTimers();
+    let reply!: (value: "stale") => void;
+    const keepAlive = vi
+      .fn<(sessionId: number) => Promise<"ready" | "stale" | "skipped">>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            reply = resolve;
+          })
+      )
+      .mockResolvedValue("ready");
+    const { model } = mount(undefined, 1_000_000, keepAlive);
+    await model.interact({ type: "select-all" });
+    flush();
+    model.clear();
+    await model.interact({ type: "select-all" });
+    flush();
+    expect(keepAlive).toHaveBeenCalledTimes(2);
+    reply("stale");
+    await vi.advanceTimersByTimeAsync(0);
+    flush();
+    expect(model.ranged).toBe(true);
+    expect(model.notice).toBeNull();
+  });
+
+  it("drops ranges with the expired notice when the refresh fails", async () => {
+    vi.useFakeTimers();
+    const keepAlive = vi.fn(async (_sessionId: number) => "ready" as const);
+    const { model, result } = mount(undefined, 1_000_000, keepAlive);
+    await model.interact({ type: "select-all" });
+    flush();
+    // A failed page read keeps the session, so the ranges stay.
+    result.failRead();
+    expect(model.ranged).toBe(true);
+    expect(model.notice).toBeNull();
+    // The refresh starts (no session yet) and then fails.
+    result.nextQuery(null);
+    expect(model.ranged).toBe(true);
+    result.failRead();
+    expect(model.ranged).toBe(false);
+    expect(model.count).toBe(0);
+    expect(model.capture().spec).toBeNull();
+    expect(model.notice).toBe("rangeExpired");
+    const reads = keepAlive.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(SESSION_KEEPALIVE_MS * 6);
+    expect(keepAlive).toHaveBeenCalledTimes(reads);
+    expect(vi.getTimerCount()).toBe(0);
+    // The retry's new session finds nothing left to clear and keeps the notice.
+    result.nextQuery(2);
+    expect(model.notice).toBe("rangeExpired");
+  });
+
+  it("keeps IDs held directly when the refresh fails", async () => {
+    const { model, result } = mount();
+    model.interact(click(1, 0));
+    model.interact(click(5, 4));
+    result.nextQuery(null);
+    result.failRead();
+    expect(model.count).toBe(2);
+    expect(model.notice).toBeNull();
   });
 });

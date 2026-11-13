@@ -86,7 +86,8 @@ If WebKit does not report `ctrlKey` for the WebDriver wheel, use
 In bulk mode (`button[aria-label="Enable bulk actions"]`), `keys Control a` selects every result
 as one range; the bulk header shows `Selected: <total>`. Selections larger than 10,000 items are
 cleared with a "Selection cleared" alert (`[data-testid="bulk-selection-cleared"]`) when the
-result changes (a new search, a scan, a regroup).
+result changes (a new search, a scan, a regroup). The same alert says "The selection expired before
+it could be used" when the session was already gone at selection time or a refresh failed.
 
 Selection gestures need bulk mode. `modclick` holds the modifier and always releases it:
 

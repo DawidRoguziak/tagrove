@@ -151,7 +151,8 @@
       "metadataFailed": "Ausgewählte Elemente konnten nicht geladen werden. Einige sind möglicherweise nicht mehr vorhanden.",
       "partialResult": "{{processed}} von {{requested}} ausgewählten Elementen aktualisiert.",
       "selectionClearedTitle": "Auswahl aufgehoben",
-      "selectionClearedDescription": "Die Ergebnisse haben sich geändert, daher passte der ausgewählte Bereich nicht mehr zur Anzeige. Wählen Sie die Elemente erneut aus."
+      "selectionClearedDescription": "Die Ergebnisse haben sich geändert, daher passte der ausgewählte Bereich nicht mehr zur Anzeige. Wählen Sie die Elemente erneut aus.",
+      "selectionExpiredDescription": "Die Auswahl ist abgelaufen, bevor sie verwendet werden konnte. Wählen Sie die Elemente erneut aus."
     },
     "tagModal": {
       "ariaLabel": "Tags in Massen hinzufügen",

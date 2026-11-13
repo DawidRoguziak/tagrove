@@ -294,6 +294,27 @@ describe("BulkActionsSidebar", () => {
     await waitFor(() => expect(input).toHaveValue(""));
   });
 
+  it("explains why a range selection was dropped: changed results or an expired session", () => {
+    renderSolid(Sidebar, { controller: createController() });
+    expect(screen.queryByTestId("bulk-selection-cleared")).not.toBeInTheDocument();
+    cleanup();
+
+    renderSolid(Sidebar, { controller: createController({ selectionNotice: "rangeCleared" }) });
+    const cleared = screen.getByTestId("bulk-selection-cleared");
+    expect(cleared).toHaveTextContent("Selection cleared");
+    expect(cleared).toHaveTextContent("The results changed");
+    expect(cleared).not.toHaveTextContent("expired");
+    cleanup();
+
+    renderSolid(Sidebar, { controller: createController({ selectionNotice: "rangeExpired" }) });
+    const expired = screen.getByTestId("bulk-selection-cleared");
+    expect(expired).toHaveTextContent("Selection cleared");
+    expect(expired).toHaveTextContent(
+      "The selection expired before it could be used. Select the items again."
+    );
+    expect(expired).not.toHaveTextContent("The results changed");
+  });
+
   it("hides the popular tag section for an empty snapshot", () => {
     renderSolid(Sidebar, { controller: createController() });
     expect(screen.queryByRole("group", { name: "Most used tags" })).not.toBeInTheDocument();

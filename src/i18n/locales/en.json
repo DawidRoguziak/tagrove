@@ -151,7 +151,8 @@
       "metadataFailed": "Could not load selected items. Some items may no longer exist.",
       "partialResult": "Updated {{processed}} of {{requested}} selected items.",
       "selectionClearedTitle": "Selection cleared",
-      "selectionClearedDescription": "The results changed, so the selected range no longer matched what you saw. Select the items again."
+      "selectionClearedDescription": "The results changed, so the selected range no longer matched what you saw. Select the items again.",
+      "selectionExpiredDescription": "The selection expired before it could be used. Select the items again."
     },
     "tagModal": {
       "ariaLabel": "Bulk add tags",

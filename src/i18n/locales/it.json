@@ -151,7 +151,8 @@
       "metadataFailed": "Impossibile caricare gli elementi selezionati. Alcuni potrebbero non esistere più.",
       "partialResult": "Aggiornati {{processed}} di {{requested}} elementi selezionati.",
       "selectionClearedTitle": "Selezione annullata",
-      "selectionClearedDescription": "I risultati sono cambiati, quindi l'intervallo selezionato non corrispondeva più a ciò che era visibile. Seleziona di nuovo gli elementi."
+      "selectionClearedDescription": "I risultati sono cambiati, quindi l'intervallo selezionato non corrispondeva più a ciò che era visibile. Seleziona di nuovo gli elementi.",
+      "selectionExpiredDescription": "La selezione è scaduta prima di poter essere usata. Seleziona di nuovo gli elementi."
     },
     "tagModal": {
       "ariaLabel": "Aggiunta tag in blocco",

@@ -22,6 +22,7 @@ const SESSION_TTL_MS = 5 * 60_000;
 const TOTAL = MATERIALIZE_LIMIT * 2;
 let revision: number;
 let nextSessionId: number;
+let failStart: boolean;
 let sessions: Map<number, { revision: number; lastAccess: number }>;
 const ready = {
   status: "ready",
@@ -49,10 +50,12 @@ beforeEach(() => {
   vi.useFakeTimers();
   revision = 1;
   nextSessionId = 1;
+  failStart = false;
   sessions = new Map();
   api.invoke.mockReset().mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
     switch (command) {
       case "start_asset_query": {
+        if (failStart) throw new Error("database is locked");
         let id = [...sessions].find(([key, session]) => session.revision === revision && lookup(key))?.[0];
         if (id === undefined) {
           id = nextSessionId++;
@@ -85,14 +88,16 @@ afterEach(() => {
 
 const calls = (command: string) => api.invoke.mock.calls.filter(([name]) => name === command);
 /** Loads the gallery, lets its session sit unread for `idleBefore` ms, then selects all. */
-async function selectAll(idleBefore = 0) {
+async function selectAll(idleBefore = 0, held = true) {
   const { result, cleanup } = renderHook(createAppRuntime, { wrapper: LanguageProvider });
   await settle(() => result.library.refreshLibrary());
   await vi.advanceTimersByTimeAsync(idleBefore);
   settle(() => result.selection.toggle());
   await settle(() => result.selection.interact({ type: "select-all" }));
-  expect(result.bulk.selectionRanged).toBe(true);
-  expect(result.bulk.selectedCount).toBe(TOTAL);
+  if (held) {
+    expect(result.bulk.selectionRanged).toBe(true);
+    expect(result.bulk.selectedCount).toBe(TOTAL);
+  }
   return { runtime: result, cleanup };
 }
 
@@ -127,14 +132,52 @@ describe("a held range selection and the session TTL", () => {
     cleanup();
   });
 
-  it("clears at once, with the notice, a selection made on a session that already expired", async () => {
-    const { runtime, cleanup } = await selectAll(SESSION_TTL_MS + 60_000);
+  it("clears at once, with the expired notice, a selection made on a session that already expired", async () => {
+    const { runtime, cleanup } = await selectAll(SESSION_TTL_MS + 60_000, false);
+    // The read made with the selection is stale: the ranges go before any refresh.
+    expect(runtime.library.query.sessionId()).toBe(1);
+    expect(runtime.bulk.selectionRanged).toBe(false);
+    expect(runtime.bulk.selectionNotice).toBe("rangeExpired");
     await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS);
     flush();
     expect(runtime.library.query.sessionId()).toBe(2);
     expect(runtime.bulk.selectionRanged).toBe(false);
-    expect(runtime.bulk.selectionNotice).toBe("rangeCleared");
+    expect(runtime.bulk.selectionNotice).toBe("rangeExpired");
     expect(calls("apply_selection_mutation")).toHaveLength(0);
+    cleanup();
+  });
+
+  it("clears, with the expired notice, a selection whose query failed to refresh", async () => {
+    const { runtime, cleanup } = await selectAll();
+    failStart = true;
+    await settle(async () => {
+      await expect(runtime.library.query.refresh()).rejects.toThrow("database is locked");
+    });
+    expect(runtime.library.query.sessionId()).toBeNull();
+    expect(runtime.bulk.selectionRanged).toBe(false);
+    expect(runtime.bulk.selectedCount).toBe(0);
+    expect(runtime.bulk.selectionNotice).toBe("rangeExpired");
+    // No keepalive is left reading a session the query gave up, and no write can use it.
+    const reads = calls("get_asset_query_id_range").length;
+    await vi.advanceTimersByTimeAsync(SESSION_TTL_MS + 60_000);
+    expect(calls("get_asset_query_id_range")).toHaveLength(reads);
+    await expect(settle(() => runtime.bulk.onAddTag("late"))).resolves.toBe(false);
+    expect(calls("apply_selection_mutation")).toHaveLength(0);
+    cleanup();
+  });
+
+  it("clears with the expired notice when a stale write's refresh fails", async () => {
+    const { runtime, cleanup } = await selectAll();
+    revision = 2;
+    failStart = true;
+    await expect(settle(() => runtime.bulk.onAddTag("late"))).resolves.toBe(false);
+    expect(runtime.bulk.appliedBulkTags).toEqual([]);
+    await vi.advanceTimersByTimeAsync(STALE_REFRESH_DELAY_MS);
+    flush();
+    expect(runtime.library.query.sessionId()).toBeNull();
+    expect(runtime.bulk.selectionRanged).toBe(false);
+    expect(runtime.bulk.selectionNotice).toBe("rangeExpired");
+    expect(calls("apply_selection_mutation")).toHaveLength(1);
     cleanup();
   });
 

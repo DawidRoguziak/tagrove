@@ -139,14 +139,18 @@ export function BulkActionsSidebar(props: BulkActionsSidebarProps) {
           disabled={controlsDisabled() || props.controller.favoriteApplying}
           onClick={() => void props.controller.onToggleFavorite()}
         />
-        {props.controller.selectionNotice === "rangeCleared" ? (
+        {props.controller.selectionNotice ? (
           <UiAlert
             className="w-full"
             tone="warning"
             title={t("bulk.panel.selectionClearedTitle")}
             data-testid="bulk-selection-cleared"
           >
-            {t("bulk.panel.selectionClearedDescription")}
+            {t(
+              props.controller.selectionNotice === "rangeExpired"
+                ? "bulk.panel.selectionExpiredDescription"
+                : "bulk.panel.selectionClearedDescription"
+            )}
           </UiAlert>
         ) : null}
         {props.controller.selectedCount > 0 ? (

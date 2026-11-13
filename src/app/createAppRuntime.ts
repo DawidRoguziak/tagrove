@@ -26,7 +26,8 @@ export function createAppRuntime() {
     getIdsRange: library.query.getIdsRangeAsync,
     sessionId: library.query.sessionId,
     total: () => library.query.navigationSnapshot().total,
-    keepAlive: library.query.keepSessionAlive
+    keepAlive: library.query.keepSessionAlive,
+    queryFailureEpoch: () => library.query.pageFailureEpoch
   });
   const bulk = createBulk(library, selection, () => view() === "settings");
   const [popularTags, setPopularTags] = createSignal<string[]>([]);

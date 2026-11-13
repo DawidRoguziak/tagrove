@@ -151,7 +151,8 @@
       "metadataFailed": "Nie udało się wczytać wybranych elementów. Niektóre mogą już nie istnieć.",
       "partialResult": "Zaktualizowano {{processed}} z {{requested}} wybranych elementów.",
       "selectionClearedTitle": "Zaznaczenie wyczyszczone",
-      "selectionClearedDescription": "Wyniki się zmieniły, więc zaznaczony zakres nie odpowiadał już temu, co było widać. Zaznacz elementy ponownie."
+      "selectionClearedDescription": "Wyniki się zmieniły, więc zaznaczony zakres nie odpowiadał już temu, co było widać. Zaznacz elementy ponownie.",
+      "selectionExpiredDescription": "Zaznaczenie wygasło, zanim można było z niego skorzystać. Zaznacz elementy ponownie."
     },
     "tagModal": {
       "ariaLabel": "Hurtowe dodawanie tagów",

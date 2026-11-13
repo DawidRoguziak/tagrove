@@ -474,14 +474,17 @@ export function createAssetQuery({
 
   /** Keeps the backend session of a held range selection from expiring (ADR 0029): one
    * one-ID range read, which restarts the session's idle expiry. Does nothing for a
-   * session that is no longer current. A `stale` reply goes through the ordinary stale
-   * refresh, whose new session clears the range selection with its notice. */
-  const keepSessionAlive = async (sessionId: number) => {
-    if (disposed || sessionId !== currentSessionId || state.total === 0) return;
+   * session that is no longer current (`skipped`). A `stale` reply, also returned to the
+   * caller, goes through the ordinary stale refresh, whose new session clears the range
+   * selection with its notice. */
+  const keepSessionAlive = async (sessionId: number): Promise<"ready" | "stale" | "skipped"> => {
+    if (disposed || sessionId !== currentSessionId || state.total === 0) return "skipped";
     const generation = currentGeneration;
     const result = await getAssetQueryIdRange(sessionId, 0, 0);
-    if (generation !== currentGeneration || sessionId !== currentSessionId) return;
-    if (result.status === "stale") scheduleStaleRefresh();
+    if (generation !== currentGeneration || sessionId !== currentSessionId) return "skipped";
+    if (result.status !== "stale") return "ready";
+    scheduleStaleRefresh();
+    return "stale";
   };
 
   const getAssetIndex = (assetId: number) => {

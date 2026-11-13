@@ -26,6 +26,12 @@ interface State {
   included: Map<number, number>;
 }
 const EMPTY: State = { ranges: [], session: null, excluded: new Map(), included: new Map() };
+/**
+ * Why ranges were dropped without a user action: `rangeCleared` when a new session (another
+ * result) replaced theirs, `rangeExpired` when their session was gone before they were
+ * used or the query lost its session in a failed refresh.
+ */
+export type SelectionNotice = "rangeCleared" | "rangeExpired";
 
 /** Sorts and merges overlapping or adjacent inclusive ranges. */
 export function mergeRanges(ranges: readonly Range[]): Range[] {
@@ -70,8 +76,16 @@ export function createSelection(options: {
   sessionId?: () => number | null;
   /** Result count of the current query (select all). */
   total?: () => number;
-  /** One cheap read of a session, which restarts its backend idle expiry. */
-  keepAlive?: (sessionId: number) => Promise<unknown>;
+  /**
+   * One cheap read of a session, which restarts its backend idle expiry. Resolves to
+   * `"stale"` when the backend no longer has that session as the current one.
+   */
+  keepAlive?: (sessionId: number) => Promise<"ready" | "stale" | "skipped" | void>;
+  /**
+   * Bumped when a query or page read fails. With no current session at that moment the
+   * refresh itself failed, so the ranges' session is no longer the query's.
+   */
+  queryFailureEpoch?: () => number;
 }) {
   let enabled = false;
   let resolving = false;
@@ -86,7 +100,7 @@ export function createSelection(options: {
   const [version, setVersion] = createSignal(0);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const [notice, setNotice] = createSignal<"rangeCleared" | null>(null);
+  const [notice, setNotice] = createSignal<SelectionNotice | null>(null);
   const session = () => options.sessionId?.() ?? null;
   let disposed = false;
   let keepAlive: { session: number; timer: ReturnType<typeof setInterval> } | null = null;
@@ -106,17 +120,27 @@ export function createSelection(options: {
     const read = options.keepAlive;
     if (target === null || !read) return;
     let pending = false;
+    let first = true;
     const tick = () => {
       if (pending) return;
       pending = true;
+      const initial = first;
+      first = false;
       // A failed read is retried on the next tick; a stale one refreshes the query.
       void read(target)
+        .then((result) => {
+          // The read made when the ranges appeared found their session already gone, so
+          // they were never usable: drop them now and say so. A later stale read is a
+          // changed result, which the query's refresh reports when its new session lands.
+          if (initial && result === "stale" && keepAlive === entry) dropRanges("rangeExpired");
+        })
         .catch(() => {})
         .finally(() => {
           pending = false;
         });
     };
-    keepAlive = { session: target, timer: setInterval(tick, SESSION_KEEPALIVE_MS) };
+    const entry = { session: target, timer: setInterval(tick, SESSION_KEEPALIVE_MS) };
+    keepAlive = entry;
     tick();
   };
   const publish = (next: State) => {
@@ -153,6 +177,13 @@ export function createSelection(options: {
     setNotice(null);
     publish(EMPTY);
   }
+  /** Drops the whole selection because its ranges can no longer be written. */
+  function dropRanges(reason: SelectionNotice) {
+    cancel();
+    anchor = null;
+    publish(EMPTY);
+    setNotice(reason);
+  }
   createEffect(options.queryEpoch, () => {
     cancel();
     anchor = null;
@@ -161,8 +192,7 @@ export function createSelection(options: {
     if (state.ranges.length && state.session !== current) {
       // Ranges are positions in the session the user saw; a new result (filter, scan,
       // reorder) gives them another meaning. Small ranges were already resolved to IDs.
-      publish(EMPTY);
-      setNotice("rangeCleared");
+      dropRanges("rangeCleared");
       return;
     }
     if (!state.ranges.length && state.session !== current && state.included.size) {
@@ -176,6 +206,14 @@ export function createSelection(options: {
       };
     }
   });
+  createEffect(
+    () => options.queryFailureEpoch?.() ?? 0,
+    () => {
+      // A failed refresh leaves the query without a session. The keepalive only reaches the
+      // query's current session, so the ranges' session would expire under the selection.
+      if (state.ranges.length && session() === null) dropRanges("rangeExpired");
+    }
+  );
   createEffect(options.identityEpoch, clear);
   onCleanup(() => {
     generation++;

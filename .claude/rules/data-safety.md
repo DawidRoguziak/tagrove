@@ -14,6 +14,7 @@ Read `docs/subsystems/data-safety-and-portability.md`. For a restore change, als
 - Deleting or renaming a source file stages it as a hidden `.mediatagger-*.pending` sibling and writes the `pending_file_operations` journal with a FULL-sync connection. The DB transaction is the commit point. Startup recovery reconciles the journal.
 - Results keep `deleted`, `missing`, and `cleanup_pending` distinct. Never collapse them.
 - Thumbnail cleanup is best effort and runs after commit.
+- Cleanup of a committed delete never blocks startup: on any failure recovery logs, keeps the journal row and the file, and continues; drop the row only when the staging file is verifiably gone (ADR 0013).
 - Bundle export/import run under the maintenance gate. Restore is staged and recovered at startup.
 - On the frontend, CSV import, restore, and clear-library run inside `library.tags.runWithMutationBarrier`.
 - Test destructive paths with lower-layer edge cases plus isolated desktop E2E on temporary media only.

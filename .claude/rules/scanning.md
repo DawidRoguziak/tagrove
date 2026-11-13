@@ -11,7 +11,7 @@ paths:
 
 Read `docs/subsystems/scanning-and-indexing.md`, especially its change checklist.
 
-- Stale rows are pruned only for a root that scanned completely. A partial root keeps its old rows. Every new warning or failure source must either make the root partial or be documented as optional metadata.
+- Stale rows are pruned only for a root that scanned completely. A partial root keeps its old rows. Every new warning or failure source must either make the root partial, be documented as optional metadata, or be a discovery skip of a path that can never have a row (non-UTF-8 paths, ADR 0025); skips are logged, never change completeness.
 - Overlapping roots share one `assets` row with several mappings. Removing a root deletes only globally orphaned assets, tags, and failures.
 - Keep one stable path-identity policy across normalization, upserts, lookups, mappings, and frontend path conversion.
 - Fingerprint changes are cache-invalidation changes. Keep thumbnail and failure versioning aligned.

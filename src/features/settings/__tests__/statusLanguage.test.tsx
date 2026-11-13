@@ -90,7 +90,7 @@ describe("section status language", () => {
     expect(screen.getByText("Gotowe do importu/eksportu")).toBeInTheDocument();
     expect(screen.getByText("Gotowe do skanowania")).toBeInTheDocument();
     expect(screen.getByText("Brak uruchomionej operacji destrukcyjnej")).toBeInTheDocument();
-    expect(screen.getByText("Gotowe do skanowania duplikatow")).toBeInTheDocument();
+    expect(screen.getByText("Gotowe do skanowania duplikatów")).toBeInTheDocument();
     expect(screen.queryByText("Ready for import/export")).not.toBeInTheDocument();
     await settle(() => changeAppLanguage("en"));
     expect(screen.getByText("Ready for import/export")).toBeInTheDocument();
@@ -108,7 +108,7 @@ describe("section status language", () => {
     await settle(() => scan.onRescanAll());
     expect(screen.getByText("Done. Indexed: 3, removed: 0, failed: 0")).toBeInTheDocument();
     await settle(() => changeAppLanguage("pl"));
-    expect(screen.getByText("Gotowe. Zindeksowano: 3, usunieto: 0, bledy: 0")).toBeInTheDocument();
+    expect(screen.getByText("Gotowe. Zindeksowano: 3, usunięto: 0, błędy: 0")).toBeInTheDocument();
     expect(screen.queryByText(/Indexed/)).not.toBeInTheDocument();
   });
 
@@ -120,7 +120,7 @@ describe("section status language", () => {
     expect(screen.getByText("Rescan error: No destructive operation running")).toBeInTheDocument();
     await settle(() => changeAppLanguage("pl"));
     expect(
-      screen.getByText("Blad ponownego skanu: Brak uruchomionej operacji destrukcyjnej")
+      screen.getByText("Błąd ponownego skanu: Brak uruchomionej operacji destrukcyjnej")
     ).toBeInTheDocument();
   });
 
@@ -138,7 +138,7 @@ describe("section status language", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Rescanning all folders...");
     await settle(() => changeAppLanguage("pl"));
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Ponowne skanowanie wszystkich folderow..."
+      "Ponowne skanowanie wszystkich folderów..."
     );
     settle(() =>
       progress({ payload: { phase: "scanning", processed: 2, total: 7, message: "x" } })

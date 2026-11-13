@@ -307,22 +307,22 @@ exports[`search and tag-list translations > renders tag selection and parser err
 exports[`search and tag-list translations > renders tag selection and parser errors in pl 1`] = `
 {
   "errors": [
-    "Metatagi musza byc uzyte samodzielnie, bez innych tagow.",
-    "Tagi nie moga zawierac bialych znakow, przecinkow, srednikow ani znakow sterujacych.",
+    "Metatagi muszą być użyte samodzielnie, bez innych tagów.",
+    "Tagi nie mogą zawierać białych znaków, przecinków, średników ani znaków sterujących.",
     "gN wymaga nazwy grupy po dwukropku.",
-    "tags akceptuje tylko nieujemna liczbe calkowita.",
+    "tags akceptuje tylko nieujemną liczbę całkowitą.",
   ],
   "tagList": {
     "filter": "Filtruj tagi",
-    "list": "Wyniki listy tagow",
+    "list": "Wyniki listy tagów",
     "messages": [
-      "Ladowanie tagow...",
-      "Ladowanie kolejnych tagow...",
-      "Brak dostepnych tagow.",
-      "Brak tagow pasujacych do filtra.",
+      "Ładowanie tagów...",
+      "Ładowanie kolejnych tagów...",
+      "Brak dostępnych tagów.",
+      "Brak tagów pasujących do filtra.",
       "Zatwierdzanie...",
     ],
-    "placeholder": "Wpisz, aby filtrowac tagi",
+    "placeholder": "Wpisz, aby filtrować tagi",
     "states": [
       {
         "label": "alpha, stan: dodany",

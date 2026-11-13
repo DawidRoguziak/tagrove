@@ -458,7 +458,7 @@ Destructive: yes.
 
 **QA-10.2 Confirm word, Polish**
 - **Steps:** `select '#settings-language-select' value=pl` in Settings, back, open another file, start delete, type `Tak`, then `Yes`.
-- **Expected:** only "Tak" (and case variants) enables Confirm; the dialog is Polish ("Czy na pewno chcesz usunac to medium?"). Switch back to `en` at the end (`docs/subsystems/lightbox.md`).
+- **Expected:** only "Tak" (and case variants) enables Confirm; the dialog is Polish ("Czy na pewno chcesz usunąć to medium?"). Switch back to `en` at the end (`docs/subsystems/lightbox.md`).
 - **Oracle:** `inspect` of the dialog text, screenshot, no console errors.
 
 **QA-10.3 Cancel and Esc leave the file intact**

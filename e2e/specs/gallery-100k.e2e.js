@@ -61,6 +61,7 @@ async function recordIpc() {
           const body = JSON.parse(options?.body ?? "{}");
           if (command === "start_asset_query") args = { anchorOffset: body.anchorOffset ?? null };
           if (command === "get_asset_query_page") args = { offset: body.offset };
+          if (command === "get_asset_query_id_range") args = { start: body.start, end: body.end };
         } catch {
           args = null;
         }
@@ -195,7 +196,7 @@ suite("100k collection: Shift-click ranges and a refresh deep in the list", func
     await count(0);
   });
 
-  it("selects the whole 100k result by Shift-click without reading IDs", async () => {
+  it("selects the whole 100k result by Shift-click without resolving IDs", async () => {
     await scrollToFraction(0);
     await recordIpc();
     await timedClick(0, 1);
@@ -203,8 +204,11 @@ suite("100k collection: Shift-click ranges and a refresh deep in the list", func
     await $(`button[data-asset-index="${TOTAL - 1}"]`).waitForDisplayed({ timeout: 30000 });
     await clearIpc();
     timings.shiftClick100kMs = await timedClick(TOTAL - 1, TOTAL, true);
-    const commands = (await ipc()).map(entry => entry.command);
-    assert.equal(commands.filter(command => command === "get_asset_query_id_range").length, 0, `no ID reads: ${commands}`);
+    // The ADR 0029 range-selection keepalive reads one ID (0..0); any other ID range read means IDs were resolved.
+    const idReads = (await ipc()).filter(entry => entry.command === "get_asset_query_id_range");
+    const keepaliveReads = idReads.filter(({ args }) => args?.start === 0 && args?.end === 0);
+    assert.equal(idReads.length, keepaliveReads.length, `only keepalive ID reads: ${JSON.stringify(idReads)}`);
+    assert.ok(keepaliveReads.length <= 1, `at most one keepalive read: ${JSON.stringify(idReads)}`);
     assert.ok(timings.shiftClick100kMs < SHIFT_CLICK_LIMIT_MS, `Shift-click 100k took ${timings.shiftClick100kMs} ms`);
     await browser.saveScreenshot(path.join(output, "shift-click-100k.png"));
     await browser.keys("Escape");

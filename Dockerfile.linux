@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libwebkit2gtk-4.1-dev libgtk-3-dev libmpv-dev libegl-dev libgl-dev libglx-dev \
     libssl-dev librsvg2-dev patchelf ffmpeg desktop-file-utils \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-    gstreamer1.0-libav squashfs-tools zsync \
+    gstreamer1.0-libav squashfs-tools zsync xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /inputs
 COPY packaging/linux/download.py packaging/linux/install-toolchains.sh packaging/linux/toolchains.json packaging/linux/appimage-tools.json packaging/linux/

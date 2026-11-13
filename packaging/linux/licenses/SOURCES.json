@@ -1,6 +1,6 @@
 {
   "AppImage-runtime.txt": {
-    "source": "https://github.com/AppImage/type2-runtime/tree/75849dce7cc37e4319b633df1f116ca895c71a12",
+    "source": "https://github.com/AppImage/type2-runtime/tree/fedfad51acc2860b2916a1eef32ba4a500ff31ef",
     "note": "The runtime LICENSE also identifies its statically linked third-party libraries and their terms."
   },
   "AppImageKit.txt": {

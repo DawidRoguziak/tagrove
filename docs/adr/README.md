@@ -70,3 +70,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0030](0030-restore-carries-the-live-file-mutation-journal.md) | Bundle restore carries the live file-mutation journal into the restored generation | Accepted | 2026-11-11 |
 | [0031](0031-restore-reports-success-from-the-committed-journal.md) | A bundle restore is a success from the `committed` journal rename on | Accepted | 2026-11-11 |
 | [0032](0032-rusqlite-0-41-for-bundled-sqlite-3-54.md) | rusqlite 0.41 with bundled SQLite 3.54 for RUSTSEC-2026-0459 | Accepted | 2026-11-13 |
+| [0033](0033-feff-is-tag-whitespace-in-rust-and-legacy-rows-are-split-on-read.md) | U+FEFF is tag whitespace in Rust, and legacy rows that contain it are split on read, not migrated | Accepted | 2026-11-13 |

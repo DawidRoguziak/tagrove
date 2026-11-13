@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { copyPngFixtures } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { submitSearch } from "../gallery.js";
 let mediaRoot;
 const evidence = path.resolve("artifacts/app-review/2026-09-06/fix-verification");
 async function invoke(command, payload = {}) {
@@ -40,12 +41,21 @@ async function list() {
 }
 async function submit(value) {
   await $('button[aria-label="Clear all search filters"]').click();
-  const input = await $(".filter-input");
-  await input.click();
-  await input.setValue(value);
-  assert.equal(await input.getValue(), value);
-  await browser.keys("Escape");
-  await browser.keys("Enter");
+  // The previous result stays rendered until the new reply lands: wait for the clear-all
+  // result so that every expected count after the submit differs from the state before it.
+  await tileCount(7);
+  await submitSearch(value);
+}
+async function tileIds() {
+  return browser.execute(() => [...document.querySelectorAll("button[data-asset-id]")].map((tile) => Number(tile.dataset.assetId)));
+}
+async function onlyTagged(taggedId) {
+  assert.deepEqual(await tileIds(), [taggedId]);
+}
+async function allButTagged(taggedId) {
+  const ids = await tileIds();
+  assert.equal(ids.length, 6);
+  assert.ok(!ids.includes(taggedId));
 }
 async function previewName(name) {
   await browser.waitUntil(async () => (await $('[data-lightbox-kind]').getAttribute("aria-label")).includes(name), { timeout: 15000 });
@@ -133,6 +143,7 @@ describe("review fix regressions", function () {
     await browser.saveScreenshot(path.join(evidence, "literal-tag.png"));
     await submit('"tags"');
     await tileCount(1);
+    await onlyTagged(items[0].id);
     await $('button[aria-label="Open tag list"]').click();
     await $('button[aria-label="tags, state: inactive"]').waitForDisplayed({ timeout: 10000 });
     await $('button[aria-label="tags, state: inactive"]').doubleClick();
@@ -142,13 +153,17 @@ describe("review fix regressions", function () {
     for (const name of names) {
       await submit(JSON.stringify(name));
       await tileCount(1);
+      await onlyTagged(items[0].id);
       await submit(`-${JSON.stringify(name)}`);
       await tileCount(6);
+      await allButTagged(items[0].id);
     }
     await submit("tags");
     await tileCount(6);
+    await allButTagged(items[0].id);
     await submit("tags:6");
     await tileCount(1);
+    await onlyTagged(items[0].id);
     // Clear through the normal control before picking an autocomplete suggestion.
     await $('button[aria-label="Clear all search filters"]').click();
     await tileCount(7);

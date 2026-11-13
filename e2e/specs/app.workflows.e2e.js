@@ -9,6 +9,7 @@ import {
   createLightboxFixtures
 } from "../fixtures.js";
 import { listAssetsForAssertions } from "../assets.js";
+import { submitSearch as submitGallerySearch } from "../gallery.js";
 
 const tempMediaRoots = [];
 const tempArtifacts = [];
@@ -88,12 +89,8 @@ async function clearSearchFilter() {
 }
 
 async function submitSearchQuery(value) {
-  const searchInput = await ensureGalleryView();
-  await searchInput.click();
-  await searchInput.setValue(value);
-  await waitForSearchInputValue(value);
-  await browser.keys("Escape");
-  await browser.keys("Enter");
+  await ensureGalleryView();
+  await submitGallerySearch(value);
 }
 
 async function waitForTileAtIndex(index) {

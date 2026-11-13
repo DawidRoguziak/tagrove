@@ -12,3 +12,19 @@ export async function selectMediaKind(kind) {
     return tiles.every(tile => chipOf(tile) === (wanted === "video" ? "Video" : "GIF"));
   }, kind), { timeout: 20000, timeoutMsg: `Gallery did not show ${kind} results` });
 }
+
+// Type a query into the main search and submit it with the Search button. Escape+Enter is not
+// deterministic: if the suggestion worker replies after Escape, Escape does nothing and Enter
+// picks the auto-selected suggestion instead of submitting the typed text. The button submits
+// the typed query directly. Callers must wait for a result that differs from the previous one.
+export async function submitSearch(value) {
+  const field = await $(".workspace-search-field");
+  const input = await field.$(".filter-input");
+  await input.click();
+  await input.setValue(value);
+  await browser.waitUntil(async () => (await input.getValue()) === value, {
+    timeout: 10000,
+    timeoutMsg: `Search input did not take ${JSON.stringify(value)}`
+  });
+  await field.$("button=Search").click();
+}

@@ -98,15 +98,36 @@ for (const [name, executeAsync] of [
   });
 }
 
+// Starts a child and resolves once it prints READY. Fails with the captured output when the child
+// exits first or never prints READY within the bound; the child is always killed on failure.
+const READY_TIMEOUT_MS = 15_000;
+async function spawnReady(root, script, { ipc = false, timeoutMs = READY_TIMEOUT_MS } = {}) {
+  const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: root, env: { ...process.env, NODE_TEST_CONTEXT: undefined, XDG_DATA_HOME: path.join(root, "data") },
+    stdio: ["ignore", "pipe", "pipe", ...(ipc ? ["ipc"] : [])]
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stderr.on("data", chunk => { stderr += chunk; });
+  let timer;
+  const outcome = await new Promise(resolve => {
+    child.stdout.on("data", chunk => { stdout += chunk; if (stdout.includes("READY")) resolve("ready"); });
+    child.once("close", (status, received) => resolve(`exited early (status ${status}, signal ${received})`));
+    timer = setTimeout(() => resolve(`no READY within ${timeoutMs} ms`), timeoutMs);
+  });
+  clearTimeout(timer);
+  if (outcome !== "ready") {
+    child.kill("SIGKILL");
+    assert.fail(`child ${outcome}\nstdout: ${stdout}\nstderr: ${stderr}`);
+  }
+  return child;
+}
+
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) {
   test(`${signal} ends the launcher with exit code ${code}`, async t => {
     const { root } = fixture(t);
-    const child = spawn(process.execPath, ["--input-type=module", "-e",
-      'process.on("SIGINT", () => process.exit(1)); import("./e2e/wdio.conf.js").then(() => { console.log("READY"); setInterval(() => {}, 1000); });'], {
-      cwd: root, env: { ...process.env, NODE_TEST_CONTEXT: undefined, XDG_DATA_HOME: path.join(root, "data") },
-      stdio: ["ignore", "pipe", "inherit"]
-    });
-    await new Promise(resolve => child.stdout.once("data", resolve));
+    const child = await spawnReady(root,
+      'process.on("SIGINT", () => process.exit(1)); import("./e2e/wdio.conf.js").then(() => { console.log("READY"); setInterval(() => {}, 1000); });');
     const exited = new Promise(resolve => child.once("exit", (status, received) => resolve({ status, received })));
     child.kill(signal);
     assert.deepEqual(await exited, { status: code, received: null });
@@ -115,12 +136,8 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]
 
 test("a worker stops when its launcher disconnects", async t => {
   const { root } = fixture(t);
-  const child = spawn(process.execPath, ["--input-type=module", "-e",
-    'import "./e2e/wdio.conf.js"; console.log("READY"); setInterval(() => {}, 1000);'], {
-    cwd: root, env: { ...process.env, NODE_TEST_CONTEXT: undefined, XDG_DATA_HOME: path.join(root, "data") },
-    stdio: ["ignore", "pipe", "inherit", "ipc"]
-  });
-  await new Promise(resolve => child.stdout.once("data", resolve));
+  const child = await spawnReady(root,
+    'import "./e2e/wdio.conf.js"; console.log("READY"); setInterval(() => {}, 1000);', { ipc: true });
   const exited = new Promise(resolve => child.once("exit", (status, received) => resolve({ status, received })));
   child.disconnect();
   assert.deepEqual(await exited, { status: 1, received: null });
@@ -139,4 +156,22 @@ test("the launcher ends the whole run when a worker stopped on the title guard",
   assert.equal(result.status, 1);
   assert.match(result.stdout, /OTHER_EXIT_CODES_CONTINUE/);
   assert.doesNotMatch(result.stdout, /UNSAFE_CONTINUATION/);
+});
+
+test("a child that never prints READY fails within the bound with its output", async t => {
+  const { root } = fixture(t);
+  const started = Date.now();
+  await assert.rejects(
+    spawnReady(root, 'console.error("hung-import"); setInterval(() => {}, 1000);', { timeoutMs: 2000 }),
+    error => /no READY within 2000 ms/.test(error.message) && /hung-import/.test(error.message));
+  assert.ok(Date.now() - started < 5000);
+});
+
+test("a child that exits before READY fails immediately with its stderr", async t => {
+  const { root } = fixture(t);
+  const started = Date.now();
+  await assert.rejects(
+    spawnReady(root, 'import("./missing-config.js")', { timeoutMs: 60_000 }),
+    error => /exited early/.test(error.message) && /missing-config/.test(error.message));
+  assert.ok(Date.now() - started < 10_000);
 });

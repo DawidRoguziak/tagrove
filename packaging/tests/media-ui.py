@@ -55,9 +55,14 @@ def await_pixels(name, predicate):
     raise AssertionError(f'{name} did not render expected fixture pixels')
 
 
+# Every pointer coordinate below is a pixel position on the fixed 1440x900 X11 display, read
+# from screenshots of the current UI (empty-library "Add first folder" button, Settings
+# "Choose folder" and per-root "Rescan" buttons, GTK file chooser, gallery tiles, lightbox
+# tag field and close button, libmpv player controls). They are not derived at runtime, so
+# re-check them with a screenshot of each step whenever the layout of those screens changes.
 input('focus-name', 'Tagrove')
-input('click', 720, 568)  # Add first folder -> settings.
-input('click', 1256, 126)
+input('click', 713, 553)  # "Add first folder" in the empty gallery -> settings.
+input('click', 1342, 130)  # Settings -> "Choose folder".
 time.sleep(2)
 input('focus-name', 'Select media folder')
 input('click', 58, 59)  # Container home contains only the fixture directory.
@@ -67,7 +72,7 @@ input('click', 241, 84)
 input('click', 1046, 798)
 time.sleep(1)
 input('focus-name', 'Tagrove')
-input('click', 1184, 257)  # Rescan the one root.
+input('click', 1270, 261)  # "Rescan" of the one attached root.
 for attempt in range(60):
     with sqlite3.connect(f'file:{database}?mode=ro', uri=True) as connection:
         rows = connection.execute('select path, thumb_path from assets').fetchall()
@@ -91,7 +96,7 @@ input('click', 506, 211)
 time.sleep(1)
 red = rgb(screenshot('image'), 500, 400)
 assert red[0] > 200 and red[1] < 40 and red[2] < 40, red
-input('click', 1212, 362)
+input('click', 1245, 306)  # Lightbox "Type to add tag" field.
 input('type', 'packageverified')
 input('key', 'Return')
 time.sleep(1)
@@ -105,12 +110,14 @@ await_pixels('gif', colorful)
 input('click', 1391, 49)
 input('click', 110, 212)
 await_pixels('video', lambda data: video_color(data, 'blue') or video_color(data, 'yellow'))
-input('click', 41, 834)
-input('click', 435, 834)
+# Player controls: pause at (80,779); the seek bar spans x 70-1029 at y 742 (435 is ~1.9 s of
+# 5 s, in the blue half; 845 is ~4.0 s, in the yellow half); fullscreen toggle at (1019,779).
+input('click', 80, 779)
+input('click', 435, 742)
 await_pixels('video-seek-start', lambda data: video_color(data, 'blue'))
-input('click', 845, 834)
+input('click', 845, 742)
 await_pixels('video-seek-end', lambda data: video_color(data, 'yellow'))
-input('click', 1081, 834)
+input('click', 1019, 779)
 await_pixels('video-fullscreen', lambda data: video_color(data, 'yellow') and
              rgb(data, 1200, 400)[0] > 200 and rgb(data, 1200, 400)[1] > 200)
 Path('/evidence/media-ui.json').write_text(json.dumps({'assets': rows, 'tags': tags, 'rendered': ['image', 'gif', 'video', 'video-fullscreen']}, indent=2))

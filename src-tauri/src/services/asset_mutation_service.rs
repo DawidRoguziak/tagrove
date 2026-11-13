@@ -980,10 +980,11 @@ mod tests {
         }
     }
 
-    fn remove_concurrent_writer(conn: &rusqlite::Connection) {
+    fn remove_concurrent_writer(conn: &mut rusqlite::Connection) {
         conn.authorizer(
             None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
-        );
+        )
+        .expect("remove concurrent writer");
     }
 
     fn thumbs_dir(fixture: &JournalFixture) -> std::path::PathBuf {
@@ -1527,7 +1528,7 @@ mod tests {
     #[test]
     fn single_asset_mutations_ignore_metadata_writes_committed_between_their_statements() {
         for rename in [false, true] {
-            let fixture = journal_fixture();
+            let mut fixture = journal_fixture();
             let source = fixture.root.join("photo.jpg");
             fs::write(&source, b"source").expect("write source");
             let asset_id = index_asset(&fixture, &source);
@@ -1536,7 +1537,7 @@ mod tests {
             // A tag or favorite save on another asset takes neither the scan nor the thumbnail
             // lock, so its revision bump can land between any two statements of the mutation.
             let bumps =
-                commit_revision_bump_before_every_statement(&fixture.conn, &fixture.db_path);
+                commit_revision_bump_before_every_statement(&mut fixture.conn, &fixture.db_path);
             if rename {
                 let summary = rename_asset(&fixture.conn, &thumbs, asset_id, "renamed.jpg".into())
                     .expect("a concurrent metadata write must not fail a rename");
@@ -1546,7 +1547,7 @@ mod tests {
                     .expect("a concurrent metadata write must not fail a delete");
                 assert!(matches!(summary.source_status, DeleteSourceStatus::Deleted));
             }
-            remove_concurrent_writer(&fixture.conn);
+            remove_concurrent_writer(&mut fixture.conn);
 
             assert!(
                 bumps.committed.load(Ordering::SeqCst) > 1,

@@ -454,7 +454,7 @@ mod candidate_page_tests {
 
     #[test]
     fn thumbnail_results_commit_paths_and_failure_markers_in_one_transaction() {
-        let conn = Connection::open_in_memory().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
         init_schema(&conn).unwrap();
         let ready = scanned_asset(&conn, "/media/ready.jpg", 1);
         let failed = scanned_asset(&conn, "/media/failed.jpg", 2);
@@ -466,7 +466,8 @@ mod candidate_page_tests {
         conn.commit_hook(Some(move || {
             counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             false
-        }));
+        }))
+        .unwrap();
         let stale = commit_thumbnail_results(
             &conn,
             &[
@@ -495,7 +496,7 @@ mod candidate_page_tests {
             ],
         )
         .unwrap();
-        conn.commit_hook(None::<fn() -> bool>);
+        conn.commit_hook(None::<fn() -> bool>).unwrap();
 
         assert_eq!(commits.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(stale, vec![3]);

@@ -274,7 +274,7 @@ pub(crate) mod test_support {
     /// skipped (busy timeout zero), so it never waits on `conn`. Remove the hook with
     /// `conn.authorizer(None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>)`.
     pub(crate) fn commit_revision_bump_before_every_statement(
-        conn: &Connection,
+        conn: &mut Connection,
         db_path: &std::path::Path,
     ) -> std::sync::Arc<ConcurrentBumps> {
         use std::sync::{atomic::Ordering, Arc};
@@ -294,7 +294,8 @@ pub(crate) mod test_support {
                 Err(_) => observed.locked_out.fetch_add(1, Ordering::SeqCst),
             };
             rusqlite::hooks::Authorization::Allow
-        }));
+        }))
+        .expect("install concurrent writer");
         bumps
     }
 }
@@ -1150,7 +1151,7 @@ mod tests {
     }
 
     /// Progress-handler callbacks (one per 100 VM instructions) spent in `run`.
-    fn vm_work(conn: &Connection, run: impl FnOnce(&Connection)) -> usize {
+    fn vm_work(conn: &mut Connection, run: impl FnOnce(&Connection)) -> usize {
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
@@ -1163,9 +1164,11 @@ mod tests {
                 counter.fetch_add(1, Ordering::Relaxed);
                 false
             }),
-        );
+        )
+        .expect("install progress handler");
         run(conn);
-        conn.progress_handler(100, None::<fn() -> bool>);
+        conn.progress_handler(100, None::<fn() -> bool>)
+            .expect("remove progress handler");
         ticks.load(Ordering::Relaxed)
     }
 
@@ -1181,7 +1184,7 @@ mod tests {
 
     #[test]
     fn startup_file_name_fill_does_no_table_scan_when_every_name_is_filled() {
-        let conn = Connection::open_in_memory().expect("db");
+        let mut conn = Connection::open_in_memory().expect("db");
         init_schema(&conn).expect("schema");
         insert_filled_assets(&conn, 20_000);
         // Filled names the range search still visits and must leave alone.
@@ -1194,11 +1197,11 @@ mod tests {
         let before = file_names(&conn);
         let changes = conn.total_changes();
 
-        let gate_work = vm_work(&conn, |conn| {
+        let gate_work = vm_work(&mut conn, |conn| {
             super::schema::ensure_assets_file_name_column(conn).expect("ensure column");
         });
         // The pre-K26 statement on the same library, to show the measure sees a scan.
-        let scan_work = vm_work(&conn, |conn| {
+        let scan_work = vm_work(&mut conn, |conn| {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, path FROM assets WHERE file_name IS NULL OR trim(file_name) = ''",
@@ -1241,7 +1244,7 @@ mod tests {
 
     #[test]
     fn startup_file_name_fill_does_no_table_scan_on_an_earlier_nullable_column() {
-        let conn = Connection::open_in_memory().expect("db");
+        let mut conn = Connection::open_in_memory().expect("db");
         conn.execute_batch(LEGACY_ASSETS_WITHOUT_FILE_NAME)
             .expect("legacy assets schema");
         conn.execute_batch("ALTER TABLE assets ADD COLUMN file_name TEXT;")
@@ -1251,7 +1254,7 @@ mod tests {
         insert_filled_assets(&conn, 20_000);
         let changes = conn.total_changes();
 
-        let gate_work = vm_work(&conn, |conn| {
+        let gate_work = vm_work(&mut conn, |conn| {
             super::schema::ensure_assets_file_name_column(conn).expect("ensure column");
         });
 
@@ -3000,7 +3003,7 @@ mod tests {
 
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("media.db");
-        let conn = super::open_connection(&db_path).expect("open db");
+        let mut conn = super::open_connection(&db_path).expect("open db");
         init_schema(&conn).expect("schema");
         add_scan_root(&conn, "/media").expect("root");
         upsert_scanned_asset(
@@ -3028,7 +3031,7 @@ mod tests {
         // there, and a commit by the other connection would then refuse the upgrade to a write
         // (SQLITE_BUSY_SNAPSHOT) instead of waiting.
         let bumps =
-            super::test_support::commit_revision_bump_before_every_statement(&conn, &db_path);
+            super::test_support::commit_revision_bump_before_every_statement(&mut conn, &db_path);
         let revision = super::apply_file_mutations(
             &conn,
             "rename-op",
@@ -3043,7 +3046,8 @@ mod tests {
         .expect("a concurrent commit must not fail the file-mutation transaction");
         conn.authorizer(
             None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
-        );
+        )
+        .expect("remove concurrent writer");
 
         assert!(bumps.committed.load(Ordering::SeqCst) > 0);
         assert!(
@@ -3221,14 +3225,15 @@ mod tests {
         let ids: Vec<i64> = (1..=40).rev().collect();
 
         let bumps =
-            super::test_support::commit_revision_bump_before_every_statement(&conn, &db_path);
+            super::test_support::commit_revision_bump_before_every_statement(&mut conn, &db_path);
         let counts = super::retry_immediate_transaction(&mut conn, |tx| {
             super::set_selection_media_group_with(tx, &ids, Some("All"), Some(true))
         })
         .expect("group write");
         conn.authorizer(
             None::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>,
-        );
+        )
+        .expect("remove concurrent writer");
 
         assert_eq!(counts, (40, 40));
         let committed = bumps.committed.load(Ordering::SeqCst);

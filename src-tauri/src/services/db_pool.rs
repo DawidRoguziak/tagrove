@@ -188,7 +188,7 @@ impl OperationPermit {
         let runtime = &self.0.runtime;
         let ticket = UserWriteTicket::new(runtime);
         let connection = runtime.checkout(MAX_CONNECTIONS)?;
-        let pooled = PooledConnection {
+        let mut pooled = PooledConnection {
             connection: Some(connection),
             permit: self.clone(),
             reusable: true,
@@ -293,14 +293,17 @@ impl DerefMut for PooledConnection {
 }
 impl Drop for PooledConnection {
     fn drop(&mut self) {
-        if let Some(connection) = self.connection.take() {
-            connection.progress_handler(0, None::<fn() -> bool>);
+        if let Some(mut connection) = self.connection.take() {
+            // A connection that still carries a cancellation callback must
+            // not return to the pool.
+            let cleared = connection.progress_handler(0, None::<fn() -> bool>).is_ok();
             let runtime = &self.permit.0.runtime;
             if self.reusable {
                 // A user-write checkout replaced the busy handler; an idle
                 // connection must carry the ordinary timeout again.
-                let restored =
-                    self.user_write.is_none() || connection.busy_timeout(db::BUSY_TIMEOUT).is_ok();
+                let restored = cleared
+                    && (self.user_write.is_none()
+                        || connection.busy_timeout(db::BUSY_TIMEOUT).is_ok());
                 let mut pool = runtime.pool.lock().unwrap_or_else(|e| e.into_inner());
                 if restored && connection.is_autocommit() {
                     pool.idle.push(connection);
@@ -368,7 +371,7 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         let dir = tempfile::tempdir().unwrap();
         let runtime = DatabaseRuntime::new(dir.path().join("media.db"));
-        let conn = runtime.admit().unwrap().connection().unwrap();
+        let mut conn = runtime.admit().unwrap().connection().unwrap();
         let request = Arc::new(AtomicU64::new(1));
         let latest = request.clone();
         let mut callbacks = 0;
@@ -381,7 +384,8 @@ mod tests {
                 }
                 latest.load(Ordering::SeqCst) != 1
             }),
-        );
+        )
+        .unwrap();
         let result = conn.query_row(
             "WITH RECURSIVE n(x) AS (VALUES (1) UNION ALL SELECT x + 1 FROM n WHERE x < 10000) SELECT x FROM n ORDER BY x DESC",
             [], |row| row.get::<_, i64>(0),
@@ -483,8 +487,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let runtime = DatabaseRuntime::new(dir.path().join("media.db"));
         let permit = runtime.admit().unwrap();
-        let conn = permit.connection().unwrap();
-        conn.progress_handler(1, Some(|| true));
+        let mut conn = permit.connection().unwrap();
+        conn.progress_handler(1, Some(|| true)).unwrap();
         drop(conn);
         drop(permit);
         assert_eq!(runtime.admission.lock().unwrap().active, 0);

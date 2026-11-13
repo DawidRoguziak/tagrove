@@ -203,12 +203,12 @@ impl AssetQueryManager {
         anchor_offset: Option<usize>,
     ) -> AppResult<StartAssetQueryResult> {
         let epoch = self.cache.lock().unwrap_or_else(|e| e.into_inner()).epoch;
-        let conn = permit.connection()?;
+        let mut conn = permit.connection()?;
         let latest = self.latest_request.clone();
         conn.progress_handler(
             1000,
             Some(move || latest.load(Ordering::SeqCst) != request_id),
-        );
+        )?;
         // One deferred read transaction gives revision, ordered IDs, and the
         // first page a single consistent SQLite snapshot.
         let tx = conn.unchecked_transaction()?;

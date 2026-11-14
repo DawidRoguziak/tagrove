@@ -237,6 +237,34 @@ mod tests {
     }
 
     #[test]
+    fn missing_folder_is_rejected_with_its_wire_text() {
+        let tmp = tempdir().expect("tempdir");
+        let db_path = tmp.path().join("media.db");
+        let thumbs_dir = tmp.path().join("thumbs");
+        let conn = db::open_connection(&db_path).expect("open db");
+        db::init_schema(&conn).expect("init schema");
+        drop(conn);
+        let state = create_test_state(&db_path, &thumbs_dir);
+        let missing = tmp
+            .path()
+            .join("missing-root")
+            .to_string_lossy()
+            .to_string();
+        let sink =
+            |_progress: crate::models::ScanProgress| -> crate::error::AppResult<()> { Ok(()) };
+
+        let expected = "Folder path does not exist or is not a directory".to_string();
+        assert_eq!(
+            scan_folder_service(missing.clone(), &state, &sink).map(|_| ()),
+            Err(expected.clone())
+        );
+        assert_eq!(add_scan_root_service(missing, &state), Err(expected));
+        assert!(list_scan_roots_service(&state)
+            .expect("list roots")
+            .is_empty());
+    }
+
+    #[test]
     fn add_scan_root_persists_valid_folder() {
         let tmp = tempdir().expect("tempdir");
         let db_path = tmp.path().join("media.db");

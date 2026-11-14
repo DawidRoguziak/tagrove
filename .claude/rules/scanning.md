@@ -1,12 +1,12 @@
 ---
 paths:
-  - "src-tauri/src/indexer.rs"
+  - "src-tauri/crates/media_tagger_core/src/indexer.rs"
   - "src-tauri/src/commands/scan.rs"
-  - "src-tauri/src/usecases/scan.rs"
+  - "src-tauri/crates/media_tagger_core/src/usecases/scan.rs"
   - "src-tauri/src/adapter/startup_scan.rs"
-  - "src-tauri/src/services/scan_service.rs"
-  - "src-tauri/src/db/scan_membership.rs"
-  - "src-tauri/src/utils/paths.rs"
+  - "src-tauri/crates/media_tagger_core/src/services/scan_service.rs"
+  - "src-tauri/crates/media_tagger_core/src/db/scan_membership.rs"
+  - "src-tauri/crates/media_tagger_core/src/utils/paths.rs"
 ---
 
 # Scanning and indexing

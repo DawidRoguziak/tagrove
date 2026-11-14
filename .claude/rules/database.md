@@ -1,9 +1,9 @@
 ---
 paths:
-  - "src-tauri/src/db.rs"
-  - "src-tauri/src/db/**"
-  - "src-tauri/src/services/db_pool.rs"
-  - "src-tauri/src/services/asset_query_service.rs"
+  - "src-tauri/crates/media_tagger_core/src/db.rs"
+  - "src-tauri/crates/media_tagger_core/src/db/**"
+  - "src-tauri/crates/media_tagger_core/src/services/db_pool.rs"
+  - "src-tauri/crates/media_tagger_core/src/services/asset_query_service.rs"
 ---
 
 # SQLite

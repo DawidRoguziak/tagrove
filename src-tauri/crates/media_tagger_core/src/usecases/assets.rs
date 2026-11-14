@@ -497,6 +497,45 @@ mod tests {
         assert_eq!(json["processed_assets"], 2);
     }
 
+    /// The validation errors reach the user as backend text; the literals pin
+    /// their wording (ADR 0034: error texts are part of the wire contract).
+    #[test]
+    fn validation_errors_keep_their_wire_text() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let database = crate::services::db_pool::DatabaseRuntime::new(tmp.path().join("media.db"));
+        let begin = |meta_filter: Option<super::AssetMetaFilterInput>, owner_id: &str| {
+            super::begin_asset_query_service(
+                &database,
+                Vec::new(),
+                Vec::new(),
+                None,
+                false,
+                meta_filter,
+                owner_id,
+                1,
+            )
+            .map(|_| ())
+        };
+        assert_eq!(begin(None, ""), Err("Invalid query owner ID".to_string()));
+        assert_eq!(
+            begin(None, &"o".repeat(129)),
+            Err("Invalid query owner ID".to_string())
+        );
+        assert_eq!(begin(None, &"o".repeat(128)), Ok(()));
+        assert_eq!(
+            begin(
+                Some(super::AssetMetaFilterInput::HasNoTags { tag_count: -1 }),
+                "owner"
+            ),
+            Err("Invalid hasNoTags meta filter".to_string())
+        );
+        assert_eq!(
+            super::validate_summary_batch(&[1; 257]),
+            Err("At most 256 asset IDs are allowed".to_string())
+        );
+        assert_eq!(super::LIBRARY_BUSY_ERROR, "i18n:common.libraryBusy");
+    }
+
     fn delete_test_state(tmp: &std::path::Path) -> (crate::app::state::AppState, i64, PathBuf) {
         use crate::{db, models::NewAsset, services::thumb_scheduler::ThumbnailScheduler};
         use std::sync::{

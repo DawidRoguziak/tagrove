@@ -33,14 +33,15 @@ HOT_PATHS = (
     "src/ui/controls/ThumbnailImage.tsx",
     "src/features/search/**",
     "src/**/*worker*",
-    "src-tauri/src/db.rs",
-    "src-tauri/src/db/**",
-    "src-tauri/src/services/asset_query_service.rs",
-    "src-tauri/src/services/db_pool.rs",
-    "src-tauri/src/services/thumb_*.rs",
-    "src-tauri/src/services/scan_service.rs",
-    "src-tauri/src/thumbs.rs",
-    "src-tauri/src/indexer.rs",
+    "src-tauri/crates/media_tagger_core/src/db.rs",
+    "src-tauri/crates/media_tagger_core/src/db/**",
+    "src-tauri/crates/media_tagger_core/src/services/asset_query_service.rs",
+    "src-tauri/crates/media_tagger_core/src/services/db_pool.rs",
+    "src-tauri/crates/media_tagger_core/src/services/thumb_*.rs",
+    "src-tauri/crates/media_tagger_core/src/services/scan_service.rs",
+    "src-tauri/crates/media_tagger_core/src/thumbs.rs",
+    "src-tauri/crates/media_tagger_core/src/indexer.rs",
+    "src-tauri/src/adapter/thumb_scheme.rs",
 )
 
 # A change larger than this (in Rust/frontend source lines) also gets the

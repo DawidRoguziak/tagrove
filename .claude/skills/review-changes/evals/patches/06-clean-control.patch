@@ -1,15 +1,15 @@
-diff --git a/src-tauri/src/commands/assets.rs b/src-tauri/src/commands/assets.rs
-index 6f767ea..b90cf94 100644
---- a/src-tauri/src/commands/assets.rs
-+++ b/src-tauri/src/commands/assets.rs
-@@ -108,9 +108,12 @@ pub async fn get_asset_query_position(
-     .map_err(|e| e.to_string())
+diff --git a/src-tauri/crates/media_tagger_core/src/usecases/assets.rs b/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
+index 5534205..5adc2e5 100644
+--- a/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
++++ b/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
+@@ -131,9 +131,12 @@ pub fn get_asset_query_sections_service(
+     database.queries.sections(&database.admit()?, session_id)
  }
  
 +/// Upper bound for one summary lookup; the frontend hydrates larger selections in batches.
 +const MAX_SUMMARY_BATCH: usize = 256;
 +
- fn validate_summary_batch(asset_ids: &[i64]) -> Result<(), String> {
+ pub fn validate_summary_batch(asset_ids: &[i64]) -> Result<(), String> {
 -    if asset_ids.len() > 256 {
 -        return Err("At most 256 asset IDs are allowed".to_string());
 +    if asset_ids.len() > MAX_SUMMARY_BATCH {

@@ -1,12 +1,30 @@
-diff --git a/src-tauri/src/commands/assets.rs b/src-tauri/src/commands/assets.rs
-index 6f767ea..e9a6250 100644
---- a/src-tauri/src/commands/assets.rs
-+++ b/src-tauri/src/commands/assets.rs
-@@ -548,15 +548,20 @@ pub async fn delete_asset(
- }
+diff --git a/src-tauri/crates/media_tagger_core/src/usecases/assets.rs b/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
+index 5534205..d6c92b9 100644
+--- a/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
++++ b/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
+@@ -3,7 +3,7 @@
  
- fn delete_asset_service(asset_id: i64, state: &AppState) -> Result<DeleteAssetSummary, String> {
--    with_scan_and_thumb_lock(state, |permit| {
+ use std::{
+     collections::HashSet,
+-    sync::Arc,
++    sync::{Arc, PoisonError, TryLockError},
+     time::{Duration, Instant},
+ };
+ 
+@@ -11,7 +11,7 @@ use serde::Deserialize;
+ 
+ use crate::{
+     app::{
+-        locks::{try_with_scan_and_thumb_lock, with_scan_and_thumb_lock},
++        locks::with_scan_and_thumb_lock,
+         state::AppState,
+     },
+     db::{self, AssetMetaFilter},
+@@ -385,16 +385,20 @@ pub(crate) const LIBRARY_BUSY_ERROR: &str = "i18n:common.libraryBusy";
+ /// run, and the lightbox keeps its confirmation locked while the delete is
+ /// pending. Nothing is staged or written before the lock is taken.
+ pub fn delete_asset_service(asset_id: i64, state: &AppState) -> Result<DeleteAssetSummary, String> {
+-    try_with_scan_and_thumb_lock(state, |permit| {
 -        let conn = permit.durable_connection()?;
 -        Ok(asset_mutation_service::delete_asset(
 -            &conn,
@@ -14,21 +32,22 @@ index 6f767ea..e9a6250 100644
 -            asset_id,
 -        )?)
 -    })
--    .map_err(|e| e.to_string())
+-    .map_err(|e| e.to_string())?
+-    .ok_or_else(|| LIBRARY_BUSY_ERROR.to_string())
++    if matches!(state.scan_lock.try_lock(), Err(TryLockError::WouldBlock)) {
++        return Err(LIBRARY_BUSY_ERROR.to_string());
++    }
++    let permit = state.database.admit().map_err(|e| e.to_string())?;
 +    // Hold the thumbnail lock first so a running thumbnail render cannot
 +    // recreate the file we are about to delete.
-+    let permit = state.database.admit().map_err(|e| e.to_string())?;
 +    let _thumb_guard = state
 +        .thumb_lock
 +        .write()
-+        .unwrap_or_else(std::sync::PoisonError::into_inner);
-+    let _scan_guard = state
-+        .scan_lock
-+        .lock()
-+        .unwrap_or_else(std::sync::PoisonError::into_inner);
++        .unwrap_or_else(PoisonError::into_inner);
++    let _scan_guard = state.scan_lock.lock().unwrap_or_else(PoisonError::into_inner);
 +    let conn = permit.durable_connection().map_err(|e| e.to_string())?;
 +    asset_mutation_service::delete_asset(&conn, &state.thumbs_dir, asset_id)
 +        .map_err(|e| e.to_string())
  }
  
- #[tauri::command]
+ pub fn find_duplicate_assets_service(

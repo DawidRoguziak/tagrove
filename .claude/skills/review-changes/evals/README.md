@@ -11,7 +11,7 @@ positives.
 | Patch | Seeded defect | Should be caught by |
 | --- | --- | --- |
 | `01-ipc-unregistered` | new command missing from `generate_handler!` and docs | conventions, rust |
-| `02-lock-order` | `thumb_lock` taken before `scan_lock` | rust |
+| `02-lock-order` | `thumb_lock` taken before `scan_lock` in `delete_asset_service` | rust |
 | `03-locale-missing` | key added to 10 of 11 locales | conventions, frontend |
 | `04-stale-details` | lightbox drops its request-ID check after `await` | frontend |
 | `05-selection-scan` | `isSelected(index, id)` (O(log r)) replaced by a per-tile scan of the rendered range | performance |

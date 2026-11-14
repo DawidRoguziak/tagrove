@@ -1,6 +1,6 @@
 # Library query and gallery
 
-Implementation entry points: [query manager](../../src-tauri/src/services/asset_query_service.rs), [query use cases](../../src-tauri/src/usecases/assets.rs), [page cache](../../src/library/query/createAssetQuery.ts), [range loading](../../src/library/createLibrary.ts), [virtual grid](../../src/features/gallery/GalleryGrid.tsx).
+Implementation entry points: [query manager](../../src-tauri/crates/media_tagger_core/src/services/asset_query_service.rs), [query use cases](../../src-tauri/crates/media_tagger_core/src/usecases/assets.rs), [page cache](../../src/library/query/createAssetQuery.ts), [range loading](../../src/library/createLibrary.ts), [virtual grid](../../src/features/gallery/GalleryGrid.tsx).
 
 This page owns query-session caching, frontend page loading/invalidation, and virtual gallery behavior. It explains how applied search state becomes a revision-bound query and a bounded sparse page cache.
 
@@ -181,7 +181,7 @@ clamped in JavaScript because WebKitGTK resets `scrollTop = Number.MAX_SAFE_INTE
 
 ### Timeline sections and scrubber
 
-Each session has timeline sections `{ t, start, count }` (`src-tauri/src/db/query_sections.rs`,
+Each session has timeline sections `{ t, start, count }` (`src-tauri/crates/media_tagger_core/src/db/query_sections.rs`,
 [ADR 0007](../adr/0007-session-timeline-sections.md)). A filtered build produces them with its
 IDs. An unfiltered build reads only IDs (reading the bucket columns per row doubled the 1M
 rebuild); its sections are read once, on the first `get_asset_query_sections` call, from the
@@ -335,8 +335,8 @@ Inclusive range reads capture one session and generation, checking them after ev
 
 ### Relevant existing tests
 
-- `src-tauri/src/db.rs` tests cover filter composition, grouped ordering, summary-supporting data invariants, cooperative ID-build cancellation, and related mutations including same-transaction revision bumps.
-- `src-tauri/src/services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, inverted admission, independent owner generations, capacity rejection/recovery, revision-stale pages, LRU/TTL eviction, the TTL restart by one-ID keepalive reads of a selected session, clear semantics, and snapshot starts.
+- `src-tauri/crates/media_tagger_core/src/db.rs` tests cover filter composition, grouped ordering, summary-supporting data invariants, cooperative ID-build cancellation, and related mutations including same-transaction revision bumps.
+- `src-tauri/crates/media_tagger_core/src/services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, inverted admission, independent owner generations, capacity rejection/recovery, revision-stale pages, LRU/TTL eviction, the TTL restart by one-ID keepalive reads of a selected session, clear semantics, and snapshot starts.
 - `src/library/query/__tests__/createAssetQuery.test.ts` covers first-page replacement, current supersession error/retry and obsolete-response rejection, start/page failure error state with retry recovery, debounced stale-triggered restarts, page-failure epoch signaling, late-generation response rejection, `version` notification of in-place merges, the page bound, render-only refresh fallback, and the session keepalive read (current session only, `stale` → debounced refresh).
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, selection specs resolved on a session (`selection_spec`), and in `sections_during_a_scan` the session policy of timeline sections across a real scan: a session kept through an unbumped batch commit, then stale after the scan's final bump and replaced by one with sections.
 - `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate range-demand suppression, shared in-flight indexed page lookup, the paused-range hold, and clear-library reset.

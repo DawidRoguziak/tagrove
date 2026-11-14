@@ -4,6 +4,7 @@ paths:
   - "src-tauri/tests/**"
   - "vitest.config.ts"
   - "src/test/**"
+  - "src-tauri/crates/media_tagger_core/src/test_support.rs"
 ---
 
 # Tests and desktop E2E

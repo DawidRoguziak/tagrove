@@ -1,12 +1,12 @@
 ---
 paths:
-  - "src-tauri/src/thumbs.rs"
-  - "src-tauri/src/services/thumb_*.rs"
+  - "src-tauri/crates/media_tagger_core/src/thumbs.rs"
+  - "src-tauri/crates/media_tagger_core/src/services/thumb_*.rs"
   - "src-tauri/src/adapter/thumb_scheme.rs"
-  - "src-tauri/src/app/bootstrap.rs"
+  - "src-tauri/crates/media_tagger_core/src/app/bootstrap.rs"
   - "src-tauri/src/commands/thumbs.rs"
-  - "src-tauri/src/usecases/thumbs.rs"
-  - "src-tauri/src/db/thumbnails.rs"
+  - "src-tauri/crates/media_tagger_core/src/usecases/thumbs.rs"
+  - "src-tauri/crates/media_tagger_core/src/db/thumbnails.rs"
   - "src/platform/tauri/thumbnails.ts"
   - "src/ui/controls/ThumbnailImage.tsx"
 ---

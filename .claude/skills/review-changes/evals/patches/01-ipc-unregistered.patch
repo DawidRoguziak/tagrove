@@ -1,32 +1,45 @@
+diff --git a/src-tauri/crates/media_tagger_core/src/usecases/assets.rs b/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
+index 5534205..8aadcf5 100644
+--- a/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
++++ b/src-tauri/crates/media_tagger_core/src/usecases/assets.rs
+@@ -146,6 +146,12 @@ pub fn get_asset_summaries_by_ids_service(
+     db::list_asset_summaries_by_ids(&conn, asset_ids).map_err(Into::into)
+ }
+ 
++pub fn count_favorite_assets_service(database: &Arc<DatabaseRuntime>) -> AppResult<i64> {
++    let conn = database.admit()?.connection()?;
++    conn.query_row("SELECT COUNT(*) FROM assets WHERE is_favorite = 1", [], |row| row.get(0))
++        .map_err(Into::into)
++}
++
+ pub fn get_asset_details_service(
+     database: &Arc<DatabaseRuntime>,
+     asset_id: i64,
 diff --git a/src-tauri/src/commands/assets.rs b/src-tauri/src/commands/assets.rs
-index 6f767ea..462a588 100644
+index 123516c..5294527 100644
 --- a/src-tauri/src/commands/assets.rs
 +++ b/src-tauri/src/commands/assets.rs
-@@ -131,6 +131,19 @@ pub async fn get_asset_summaries_by_ids(
-     .map_err(|e: crate::error::AppError| e.to_string())
+@@ -145,6 +145,15 @@ pub async fn get_asset_summaries_by_ids(
+     .map_err(|e: media_tagger_core::error::AppError| e.to_string())
  }
  
 +#[tauri::command]
 +pub async fn count_favorite_assets(state: State<'_, AppState>) -> Result<i64, String> {
 +    let database = state.database.clone();
-+    tauri::async_runtime::spawn_blocking(move || {
-+        let conn = database.admit()?.connection()?;
-+        conn.query_row("SELECT COUNT(*) FROM assets WHERE is_favorite = 1", [], |row| row.get(0))
-+            .map_err(Into::into)
-+    })
-+    .await
-+    .map_err(|e| format!("favorite count worker failed: {e}"))?
-+    .map_err(|e: crate::error::AppError| e.to_string())
++    tauri::async_runtime::spawn_blocking(move || assets::count_favorite_assets_service(&database))
++        .await
++        .map_err(|e| format!("favorite count worker failed: {e}"))?
++        .map_err(|e: media_tagger_core::error::AppError| e.to_string())
 +}
 +
  #[tauri::command]
  pub async fn get_asset_details(
      asset_id: i64,
 diff --git a/src/platform/tauri/assets.ts b/src/platform/tauri/assets.ts
-index 7c20fca..2013bab 100644
+index eafc526..8e9e817 100644
 --- a/src/platform/tauri/assets.ts
 +++ b/src/platform/tauri/assets.ts
-@@ -104,6 +104,10 @@ export function toMediaSrc(path: string): string {
+@@ -156,6 +156,10 @@ export function toMediaSrc(path: string): string {
    return convertFileSrc(path);
  }
  

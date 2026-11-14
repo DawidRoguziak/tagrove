@@ -1,13 +1,13 @@
 ---
 paths:
-  - "src-tauri/src/services/asset_mutation_service.rs"
-  - "src-tauri/src/app/bootstrap.rs"
-  - "src-tauri/src/services/backup_service.rs"
-  - "src-tauri/src/services/csv_service.rs"
+  - "src-tauri/crates/media_tagger_core/src/services/asset_mutation_service.rs"
+  - "src-tauri/crates/media_tagger_core/src/app/bootstrap.rs"
+  - "src-tauri/crates/media_tagger_core/src/services/backup_service.rs"
+  - "src-tauri/crates/media_tagger_core/src/services/csv_service.rs"
   - "src-tauri/src/commands/import_export.rs"
   - "src-tauri/src/commands/assets.rs"
-  - "src-tauri/src/usecases/import_export.rs"
-  - "src-tauri/src/usecases/assets.rs"
+  - "src-tauri/crates/media_tagger_core/src/usecases/import_export.rs"
+  - "src-tauri/crates/media_tagger_core/src/usecases/assets.rs"
 ---
 
 # Destructive operations, CSV, backup/restore

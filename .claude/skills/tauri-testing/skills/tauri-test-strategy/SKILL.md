@@ -1,6 +1,6 @@
 ---
 name: tauri-test-strategy
-description: Entry point for writing, fixing, planning or reviewing tests in Tagrove (Tauri 2, Rust crate media_tagger, Solid 2 RC frontend). Picks the lowest test layer that proves the behavior (Vitest unit, Vitest + Testing Library, Rust unit, Rust integration targets, desktop WebdriverIO E2E), gives the working loop, the exact bun/cargo commands and a review checklist. Use for "write tests", "add a regression test", "which layer", "napisz testy", "testy jednostkowe/integracyjne/E2E".
+description: Entry point for writing, fixing, planning or reviewing tests in Tagrove (Tauri 2, Rust workspace of the core crate media_tagger_core and the adapter media_tagger, Solid 2 RC frontend). Picks the lowest test layer that proves the behavior (Vitest unit, Vitest + Testing Library, Rust unit, Rust integration targets, desktop WebdriverIO E2E), gives the working loop, the exact bun/cargo commands and a review checklist. Use for "write tests", "add a regression test", "which layer", "napisz testy", "testy jednostkowe/integracyjne/E2E".
 ---
 
 # Testing strategy for Tagrove

@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etapy 01–08 `done`, 09 `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **zrealizowany** (2026-11-14). Etapy 01–09 `done`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -98,6 +98,13 @@ Porty zostają w swoich plikach (decyzja etapu 08, bez `ports.rs`): `ProgressSin
   - Reguła 1: kompilator (rdzeń nie ma tych zależności) i test `core_manifest_has_no_gui_dependencies` (parser manifestu rdzenia, tylko std, z autotestem `manifest_parser_finds_every_dependency_shape`).
   - Reguła 3: kompilator (`crate::adapter`, `crate::commands`, `media_tagger::…` w rdzeniu się nie kompilują); strona adaptera `video_does_not_import_commands` zostaje skanem.
   - Skan zostaje dla reguły 2 (`db` rdzenia), reguły 4 (`commands/` adaptera) i `video_does_not_import_commands`; `SourceFile` zna swój korzeń (`Root::Core`/`Root::Adapter`). Allowlisty, `ADAPTER_FIXED` i testy `allowlist_entries_*` usunięte.
+- **Od etapu 09:**
+  - reguła 4 flaguje też `admit`; `open_video` czyta źródło przez use case `usecases::video::open_video_service`;
+  - `bootstrap_does_not_import_usecases`: `app/bootstrap.rs` rdzenia nie sięga do `usecases`;
+  - `app_state_is_managed_last_in_setup`: w `lib.rs` adaptera `app.manage(bootstrap::start_workers(..)?)` jest ostatnim krokiem `setup` (okno 503 `thumb://`);
+  - testy use case'ów porównują teksty błędów walidacji z literałami;
+  - świadome luki: porażka spawnu workera miniatur, kolejność odzysk operacji plikowych → snapshoty, kolejność blokad w `with_scan_and_thumb_lock`, kolejność walidacja → `begin_request`;
+  - poza Rustem: testy Pythona skilli pilnują, że globy reguł, `HOT_PATHS` i batche audytu trafiają w istniejące pliki, a każdy plik `.rs` backendu należy do batcha.
 
 ## Etapy
 
@@ -111,7 +118,7 @@ Porty zostają w swoich plikach (decyzja etapu 08, bez `ports.rs`): `ProgressSin
 | 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | done 2026-11-14 ([plik etapu](06-use-cases.md)) |
 | 07 | Bootstrap w rdzeniu | C | 03, 04, 05 | done 2026-11-14 ([plik etapu](07-bootstrap.md)) |
 | 08 | Wydzielenie crate'a `media_tagger_core` | D | 01–07 | done 2026-11-14 ([plik etapu](08-crate-split.md)) |
-| 09 | Dokumentacja, reguły, skille, ADR Accepted, pełny E2E | E | 08 | todo |
+| 09 | Dokumentacja, reguły, skille, ADR Accepted, pełny E2E | E | 08 | done 2026-11-14 ([plik etapu](09-docs-and-acceptance.md)) |
 
 Statusy: `todo`, `in progress`, `blocked`, `done`, plus data. Zmianę statusu zapisuje orkiestrator w tej tabeli i w [NOTES.md](NOTES.md).
 

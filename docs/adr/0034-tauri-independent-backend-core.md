@@ -1,6 +1,6 @@
 # 0034: The backend core does not depend on Tauri; Tauri is an adapter
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-14
 - Areas: backend architecture, module boundaries, IPC, build
 - Related: [system overview](../architecture/system-overview.md#backend-module-boundaries), [IPC contract](../architecture/ipc-contract.md), plan [hexagonal-backend](../plans/hexagonal-backend/README.md), [ADR 0006](0006-thumb-uri-scheme.md), [ADR 0012](0012-non-blocking-native-video-render.md)
@@ -36,19 +36,20 @@ Nothing stops a new leak today. The use-case logic sits in private `*_service` f
 Option 2 first (stages 01–07 of the plan), then option 3 (stage 08). Since stage 08 the core is the crate `media_tagger_core` in `src-tauri/crates/media_tagger_core`, in one Cargo workspace with the adapter package `media_tagger`. The rules below were scanner rules until stage 08; rules 1 and 3 are now enforced by the compiler.
 
 - **Rule 1.** Tauri, its plugins, GTK, GDK, GLib, WebKit, libmpv, `async-channel` and `libloading` are used only by the adapter package. The core manifest names none of them, so the core cannot compile against them; `core_manifest_has_no_gui_dependencies` rejects such a dependency in any table of the core manifest (until stage 08: a token scan with an allowlist that shrank to empty in stage 04).
-- **Rule 2.** The core's `db.rs` and `db/*` do not reference `services`, `app` or `usecases` (source scan).
+- **Rule 2.** The core's `db.rs` and `db/*` do not reference `services`, `app` or `usecases`, and the core's `app/bootstrap.rs` does not reference `usecases` (source scan).
 - **Rule 3.** The core does not reference the adapter (`commands`, `adapter`, `video`, the `media_tagger` crate). Since stage 08 this does not compile. Inside the adapter, `video/` does not import `commands/` (source scan).
-- **Rule 4** (from stage 06). The adapter's `commands/**` contains no `db::`, `with_*lock`, `locks` or `Connection`; handlers call use cases (source scan).
+- **Rule 4** (from stage 06). The adapter's `commands/**` contains no `db::`, `with_*lock`, `locks`, `Connection` or `admit`; handlers call use cases (source scan).
+- **Startup.** The core's bootstrap returns `AppState` and never manages it. In the adapter's `lib.rs`, `app.manage(bootstrap::start_workers(..)?)` is the last step of `setup`, so `thumb://` answers 503 until every other phase has run (source scan of `lib.rs`).
 - **Orphan rule.** A core port is implemented in the adapter on an adapter type: `TauriProgress(&AppHandle)` implements `ProgressSink`, because `impl ProgressSink for AppHandle` is E0117 across crates. The wire event stays `process-progress`.
 - **Test fixtures.** The core's `test_support` (ADR 0028 fixtures) compiles under `cfg(any(test, feature = "test-support"))`. Only the adapter's `[dev-dependencies]` enable `test-support`, for the player tests; a release build never contains it.
-- **D1.** The whole libmpv/GTK video stack lives in the adapter. The core keeps only `video_source_service`, and there is no video event port.
+- **D1.** The whole libmpv/GTK video stack lives in the adapter. The core keeps only the source lookup of `open_video` (`usecases::video` over `video_source_service`), and there is no video event port.
 - **D2.** The core becomes a separate crate as the last structural stage.
 - **D3.** The core crate is named `media_tagger_core`, following the internal naming policy.
 - **D4.** Integration tests stay in `src-tauri/tests` and import from the core crate.
 - The core keeps `rusqlite` (no repository traits) and `serde`: `models.rs` is both domain and wire format. The core does not depend on `http`; `thumb://` replies are plain data that the adapter turns into `tauri::http::Response`.
 - The wire contract does not change in any stage: command names, argument keys, response fields, event names and error texts.
 
-`src-tauri/tests/architecture_boundaries.rs` checks the core manifest (rule 1) and scans both packages for rules 2–4. The same target freezes the wire contract:
+`src-tauri/tests/architecture_boundaries.rs` checks the core manifest (rule 1), scans both packages for rules 2–4 and checks the startup rule in `lib.rs`. The same target freezes the wire contract:
 - the `generate_handler!` list and its documentation in the IPC contract;
 - every command's wire arguments and return type;
 - the JSON shape of the response, input and video-channel DTOs;
@@ -60,7 +61,7 @@ Option 2 first (stages 01–07 of the plan), then option 3 (stage 08). Since sta
 - The core builds and tests without the GUI stack: `cargo build -p media_tagger_core --locked`, `cargo test -p media_tagger_core --locked`. Both packages are workspace `default-members`, so `bun run test:backend`, `rust:clippy` and `rust:fmt` cover both.
 - There are no allowlists left; the transitional ones and their tests were removed in stage 08.
 - An intended IPC change updates the frozen snapshot in `architecture_boundaries.rs` in the same change. This is now a step of the IPC contract-change checklist.
-- Error texts are not in the snapshot. The plan moves code verbatim and reviews the diff instead.
+- Error texts are not in the snapshot. The plan moved code verbatim and reviewed the diff; afterwards, use-case tests pin the validation texts as literals (query owner ID, the 256-ID summary batch, the `hasNoTags` filter, a missing scan folder, the busy-library key). Other error texts are not pinned.
+- Deliberate gaps, enforced by code and review only: a failed thumbnail-worker spawn at startup cannot be provoked without a port and has no test; the order of pending file-operation recovery before the startup snapshots, the scan → thumbnail order inside `with_scan_and_thumb_lock`, and validation before `begin_request` in `start_asset_query` have no test.
 - No schema, app-data, profile or wire change. Stage 08 adds a local package entry `media_tagger_core` to `Cargo.lock` (the external dependencies and their versions are unchanged) and touches the Dockerfiles (`COPY` of the core manifest and a stub `lib.rs` for the fetch layer), the notices collector, the release-input check and the privacy-check examples.
-- The scanner matches tokens after removing comments and literals. Code generated by macros is not seen. Rules 2 and 4 depend on it; rules 1 and 3 no longer do.
-- This ADR becomes Accepted in stage 09, when the core crate exists and the documentation describes the final layout.
+- The scanner matches tokens after removing comments and literals. Code generated by macros is not seen. Rules 2 and 4 and the startup rule depend on it; rules 1 and 3 no longer do. The startup rule also rejects the equivalent shape `let state = start_workers(..)?; … app.manage(state)`, so the canonical one-line form is required.

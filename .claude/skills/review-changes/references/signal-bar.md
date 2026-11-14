@@ -65,7 +65,7 @@ Return `[]` when nothing qualifies; that is a normal, valuable result.
   {
     "id": "rust-1",
     "lens": "review-rust",
-    "path": "src-tauri/src/services/scan_service.rs",
+    "path": "src-tauri/crates/media_tagger_core/src/services/scan_service.rs",
     "line": 142,
     "title": "Scan lock held across await while emitting progress",
     "priority": "P1",

@@ -55,7 +55,7 @@ src-tauri/                Cargo workspace (Cargo.toml: members, [workspace.depen
     video/               native video: libmpv player, mpv events, GTK surface, bounds/labels types
   crates/media_tagger_core/src/   core crate `media_tagger_core` (no GUI dependencies; ADR 0034)
     app/                 startup phases (bootstrap.rs), AppState, workflow locks (locks.rs), instance lock
-    usecases/            workflows behind the commands (assets, scan, thumbs, import_export): validation, locks, db
+    usecases/            workflows behind the commands (assets, scan, thumbs, import_export, video): validation, locks, db
     services/            query sessions, file mutation journal, db pool, scan, thumbnails, backup, csv, video source, progress
     db.rs, db/           SQL: connections, schema, queries, mutations, scan_membership, thumbnails, query_revisions
     indexer.rs, thumbs.rs, models.rs, error.rs, utils/, test_support.rs (feature test-support)

@@ -635,8 +635,9 @@ fn video_does_not_import_commands() {
 
 /// Rule 4: command handlers are thin and reach SQLite and the workflow locks
 /// only through use cases (`usecases/`). Flags a `db::` path, a `with_*lock`
-/// helper, `Connection`, and any `locks` path, which every helper of
-/// `app/locks.rs` needs (`try_with_scan_and_thumb_lock`, `with_thumb_operation`,
+/// helper, `Connection`, `admit` (the operation permit that hands out a
+/// connection), and any `locks` path, which every helper of `app/locks.rs`
+/// needs (`try_with_scan_and_thumb_lock`, `with_thumb_operation`,
 /// `with_database_maintenance`, ...).
 #[test]
 fn commands_do_not_touch_db_or_locks() {
@@ -649,7 +650,7 @@ fn commands_do_not_touch_db_or_locks() {
         for (index, t) in toks.iter().enumerate() {
             let db_path = t.is("db") && toks.get(index + 1).is_some_and(|n| n.is("::"));
             let lock_helper = t.text.starts_with("with_") && t.text.ends_with("lock");
-            if db_path || lock_helper || t.is("Connection") || t.is("locks") {
+            if db_path || lock_helper || t.is("Connection") || t.is("admit") || t.is("locks") {
                 violations.push(format!(
                     "{}:{}: rule 4: `{}`",
                     file.display(),
@@ -663,6 +664,141 @@ fn commands_do_not_touch_db_or_locks() {
         "Command handlers reach the database or the locks directly:",
         "Move the body into a use case in usecases/.",
         &violations,
+    );
+}
+
+/// The core's startup phases never reach the IPC use cases: `app/bootstrap.rs`
+/// prepares storage and `AppState`, `usecases/` run on a ready `AppState`.
+#[test]
+fn bootstrap_does_not_import_usecases() {
+    let files = source_files();
+    let bootstrap = files
+        .iter()
+        .find(|f| f.root == Root::Core && f.rel == "app/bootstrap.rs")
+        .expect("core app/bootstrap.rs exists");
+    let violations: Vec<String> =
+        crate_root_refs(&tokens(&strip(&bootstrap.text, Literals::Blank)))
+            .into_iter()
+            .filter(|(_, module)| module == "usecases")
+            .map(|(line, module)| format!("{}:{line}: `crate::{module}`", bootstrap.display()))
+            .collect();
+    report(
+        "The startup bootstrap imports the use cases:",
+        "Keep app/bootstrap.rs to storage, snapshots and workers; use cases run on a managed AppState.",
+        &violations,
+    );
+}
+
+/// Tokens of the closure passed to `.setup(` (between its parentheses).
+fn setup_closure(toks: &[Token]) -> Option<std::ops::Range<usize>> {
+    let start = (1..toks.len().saturating_sub(1))
+        .find(|&i| toks[i].is("setup") && toks[i - 1].is(".") && toks[i + 1].is("("))?
+        + 1;
+    let end = matching_paren(toks, start)?;
+    Some(start + 1..end)
+}
+
+/// Index of the `)` that closes the `(` at `open`.
+fn matching_paren(toks: &[Token], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, t) in toks.iter().enumerate().skip(open) {
+        if t.is("(") {
+            depth += 1;
+        } else if t.is(")") {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+    }
+    None
+}
+
+/// Violations of "`AppState` is managed last" in the adapter's `lib.rs`:
+/// `start_workers` (which builds `AppState`) occurs once, as the argument of
+/// the last `manage(` call in the `setup` closure, and only `Ok(())` follows.
+/// `thumb://` answers 503 until `AppState` is managed (ADR 0006, ADR 0034), so
+/// managing it earlier, or building it before the other phases, shortens or
+/// breaks that window without failing any other test.
+fn app_state_manage_violations(src: &str) -> Vec<String> {
+    let toks = tokens(&strip(src, Literals::Blank));
+    let Some(setup) = setup_closure(&toks) else {
+        return vec!["no `.setup(` closure found".into()];
+    };
+    let workers: Vec<usize> = (0..toks.len())
+        .filter(|&i| toks[i].is("start_workers"))
+        .collect();
+    let mut violations = Vec::new();
+    if workers.len() != 1 || !setup.contains(&workers[0]) {
+        violations.push(format!(
+            "`start_workers` occurs {} times, expected once inside `setup` (lines {:?})",
+            workers.len(),
+            workers.iter().map(|&i| toks[i].line).collect::<Vec<_>>()
+        ));
+    }
+    let calls: Vec<(usize, usize)> = setup
+        .clone()
+        .filter(|&i| toks[i].is("manage") && toks.get(i + 1).is_some_and(|t| t.is("(")))
+        .filter_map(|i| Some((i, matching_paren(&toks, i + 1)?)))
+        .collect();
+    let Some(&(last, close)) = calls.last() else {
+        violations.push("no `manage(` call in `setup`".into());
+        return violations;
+    };
+    if !workers.iter().any(|&w| w > last + 1 && w < close) {
+        violations.push(format!(
+            "line {}: the last `manage(` in `setup` does not manage `start_workers(..)`",
+            toks[last].line
+        ));
+    }
+    let rest: Vec<&str> = toks[close + 1..setup.end]
+        .iter()
+        .map(|t| t.text.as_str())
+        .collect();
+    if rest != [";", "Ok", "(", "(", ")", ")", "}"] {
+        violations.push(format!(
+            "line {}: `setup` continues after managing `AppState`: {}",
+            toks[close].line,
+            rest.join(" ")
+        ));
+    }
+    violations
+}
+
+#[test]
+fn app_state_manage_check_accepts_only_the_last_step() {
+    let ok = "fn run() { b.setup(|app| { app.manage(a); app.manage(b(c)?); \
+              app.manage(bootstrap::start_workers(&s, p)?); Ok(()) }).run(); }";
+    assert!(
+        app_state_manage_violations(ok).is_empty(),
+        "{:?}",
+        app_state_manage_violations(ok)
+    );
+    let early = "fn run() { b.setup(|app| { app.manage(bootstrap::start_workers(&s, p)?); \
+                 app.manage(player); Ok(()) }); }";
+    assert_eq!(app_state_manage_violations(early).len(), 1);
+    let bound = "fn run() { b.setup(|app| { let state = start_workers(&s, p)?; \
+                 app.manage(player); app.manage(state); Ok(()) }); }";
+    assert_eq!(app_state_manage_violations(bound).len(), 1);
+    let tail = "fn run() { b.setup(|app| { app.manage(start_workers(&s, p)?); \
+                video::surface::setup(&w, &p)?; Ok(()) }); }";
+    assert_eq!(app_state_manage_violations(tail).len(), 1);
+    let twice = "fn run() { start_workers(&s, p); b.setup(|app| { \
+                 app.manage(start_workers(&s, p)?); Ok(()) }); }";
+    assert_eq!(app_state_manage_violations(twice).len(), 1);
+    assert_eq!(
+        app_state_manage_violations("fn run() {}"),
+        ["no `.setup(` closure found"]
+    );
+}
+
+#[test]
+fn app_state_is_managed_last_in_setup() {
+    report(
+        "lib.rs manages AppState before the end of setup:",
+        "Keep `app.manage(bootstrap::start_workers(..)?)` as the last step of setup, followed only \
+         by Ok(()); thumb:// answers 503 until then (ADR 0006)",
+        &app_state_manage_violations(&read_source("lib.rs")),
     );
 }
 

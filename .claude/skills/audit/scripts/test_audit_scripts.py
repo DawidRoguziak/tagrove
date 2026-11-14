@@ -141,6 +141,23 @@ class ModelTests(unittest.TestCase):
         for batch in config["batches"]:
             self.assertTrue(state.batch_files(REPO, batch), f"{batch['id']} matches no files")
 
+    def test_every_batch_glob_matches_and_every_backend_file_is_batched(self):
+        config = lib.load_reference("batches.json")
+        batched = set()
+        for batch in config["batches"]:
+            for pattern in batch["globs"]:
+                matched = state.batch_files(REPO, {**batch, "globs": [pattern], "tests": True})
+                self.assertTrue(matched, f"{batch['id']}: {pattern!r} matches no file")
+            batched.update(state.batch_files(REPO, {**batch, "tests": True}))
+        sources = [REPO / "src-tauri/src", REPO / "src-tauri/crates/media_tagger_core/src"]
+        unbatched = sorted(
+            path.relative_to(REPO).as_posix()
+            for root in sources
+            for path in root.rglob("*.rs")
+            if path.name != "mod.rs" and path.relative_to(REPO).as_posix() not in batched
+        )
+        self.assertEqual(unbatched, [], "backend sources outside every audit batch")
+
 
 class StaticFlowTests(FakeRepo):
     def test_pending_put_assign_verify_status(self):

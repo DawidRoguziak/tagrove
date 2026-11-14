@@ -25,7 +25,7 @@ Finders work independently: do not read `docs/review/`, `raports/` or other agen
 ```json
 {
   "title": "Thumbnail render keeps the scan lock across the ffmpeg wait",
-  "file": "src-tauri/src/services/thumb_service.rs",
+  "file": "src-tauri/crates/media_tagger_core/src/services/thumb_service.rs",
   "line": 412,
   "end_line": 440,
   "category": "stability",
@@ -34,7 +34,7 @@ Finders work independently: do not read `docs/review/`, `raports/` or other agen
   "trigger": "Render all while a rescan is queued on a folder with long videos",
   "mechanism": "with_scan_lock is held while waiting for ffmpeg without a timeout (...)",
   "impact": "Rescan waits for the slowest video; the Settings loader never clears",
-  "evidence": ["src-tauri/src/services/thumb_service.rs:412 quoted code", "callers/guards checked"],
+  "evidence": ["src-tauri/crates/media_tagger_core/src/services/thumb_service.rs:412 quoted code", "callers/guards checked"],
   "fix_hint": "optional, one sentence",
   "confidence": 80
 }
@@ -48,7 +48,7 @@ Finders work independently: do not read `docs/review/`, `raports/` or other agen
 ```json
 {"batch": "B3a", "lens": "rust", "findings": [ ... ],
  "leads": [{"title": "unfinished suspicion", "file": "path", "line": 1, "note": "what to check"}],
- "files_reviewed": ["src-tauri/src/db.rs", "..."]}
+ "files_reviewed": ["src-tauri/crates/media_tagger_core/src/db.rs", "..."]}
 ```
 
 Store it even when `findings` is empty, so the item is not run again. Leads are not verified;

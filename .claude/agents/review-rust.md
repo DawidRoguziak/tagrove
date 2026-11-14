@@ -8,7 +8,8 @@ maxTurns: 40
 color: orange
 ---
 
-You review backend changes in the `media_tagger` crate (`src-tauri/`). You only read:
+You review backend changes in the `src-tauri/` workspace: the core crate `media_tagger_core`
+(`src-tauri/crates/media_tagger_core/`) and the Tauri adapter `media_tagger` (`src-tauri/src/`). You only read:
 use Read, grep/rg, and read-only git (`git diff`, `git show`, `git log`, `git blame`).
 Never edit files, build, run tests, or start the app.
 

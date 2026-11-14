@@ -1,12 +1,12 @@
 {
-  "base_commit": "76ff5b1",
+  "base_commit": "df46484",
   "cases": [
     {
       "patch": "patches/01-ipc-unregistered.patch",
       "expect": [
         {
           "path": "src-tauri/src/commands/assets.rs",
-          "about": "count_favorite_assets is not in generate_handler! (lib.rs), so countFavoriteAssets() rejects at runtime; ipc-contract.md and api.test.ts not updated",
+          "about": "count_favorite_assets (thin command calling usecases::assets::count_favorite_assets_service) is not in generate_handler! (lib.rs), so countFavoriteAssets() rejects at runtime; ipc-contract.md, api.test.ts and the architecture_boundaries snapshot not updated",
           "min_priority": "P2",
           "lenses": ["review-conventions", "review-rust"]
         }
@@ -16,8 +16,8 @@
       "patch": "patches/02-lock-order.patch",
       "expect": [
         {
-          "path": "src-tauri/src/commands/assets.rs",
-          "about": "delete takes thumb_lock before scan_lock, inverting the scan -> thumb order of with_scan_and_thumb_lock; concurrent scan/clear can deadlock; bypasses app/locks.rs helpers",
+          "path": "src-tauri/crates/media_tagger_core/src/usecases/assets.rs",
+          "about": "delete_asset_service takes the exclusive thumb_lock before a blocking scan_lock, inverting the scan -> thumb order of the app/locks.rs helpers; after its busy check a remove-root/clear/duplicate batch that holds scan_lock and waits for thumb_lock deadlocks with it; bypasses try_with_scan_and_thumb_lock",
           "min_priority": "P1",
           "lenses": ["review-rust"]
         }

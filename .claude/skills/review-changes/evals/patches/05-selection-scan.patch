@@ -1,11 +1,11 @@
 diff --git a/src/features/gallery/GalleryGrid.tsx b/src/features/gallery/GalleryGrid.tsx
-index 766cab3..854bd8d 100644
+index af186f3..5814e8a 100644
 --- a/src/features/gallery/GalleryGrid.tsx
 +++ b/src/features/gallery/GalleryGrid.tsx
-@@ -40,6 +40,21 @@ interface Slot {
- const CONTENT_ID = "gallery-grid-content";
- /** Right offset of the timeline rail, clear of the position bar in both scroll modes. */
- const TIMELINE_RIGHT = 16;
+@@ -50,6 +50,21 @@ const TIMELINE_RIGHT = 24;
+  * adapt without further bookkeeping.
+  */
+ const TIMELINE_CLEARANCE = TIMELINE_RIGHT + TIMELINE_WIDTH;
 +/**
 + * Selected global indices of the rendered range, so a tile and a placeholder that later
 + * shows the same index agree on their selected state.
@@ -24,10 +24,10 @@ index 766cab3..854bd8d 100644
  export function GalleryGrid(props: GalleryGridProps) {
    const { t, language } = useLanguage();
    const [gallery, setGallery] = createSignal<HTMLElement>();
-@@ -194,13 +209,17 @@ export function GalleryGrid(props: GalleryGridProps) {
-           {(lane) => {
-             const index = createMemo(() => row() * virtual.columnCount + lane);
-             const asset = createMemo(() => (active() ? assetAt(index()) : undefined));
+@@ -210,13 +225,17 @@ export function GalleryGrid(props: GalleryGridProps) {
+             const tileAsset = createMemo<AssetSummary | undefined>(
+               (previous) => asset() ?? previous
+             );
 -            const selected = () => {
 -              const current = asset();
 -              return (

@@ -6,8 +6,8 @@ paths:
   - "src/utils/**"
   - "src/library/metadata/**"
   - "src/library/vocabulary/**"
-  - "src-tauri/src/db/mutations.rs"
-  - "src-tauri/src/utils/tags.rs"
+  - "src-tauri/crates/media_tagger_core/src/db/mutations.rs"
+  - "src-tauri/crates/media_tagger_core/src/utils/tags.rs"
 ---
 
 # Search, tags, bulk, media groups

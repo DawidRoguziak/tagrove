@@ -2,7 +2,7 @@ use anyhow::Context;
 use serde::Deserialize;
 use tauri::{ipc::Channel, State, WebviewWindow};
 
-use media_tagger_core::services::video_source_service;
+use media_tagger_core::usecases;
 
 use crate::video::{
     player::{PlayerCommand, VideoEvent, VideoPlayerService},
@@ -51,9 +51,7 @@ pub async fn open_video(
     player.require_pending(request_id)?;
     let database = app.database.clone();
     let path = tauri::async_runtime::spawn_blocking(move || {
-        let conn = database.admit()?.connection()?;
-        video_source_service::resolve_video_path(&conn, asset_id)
-            .map_err(media_tagger_core::error::AppError::from)
+        usecases::video::open_video_service(&database, asset_id)
     })
     .await
     .map_err(|error| format!("video source worker failed: {error}"))?

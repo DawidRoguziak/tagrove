@@ -1,6 +1,6 @@
 # Scanning and indexing
 
-Implementation entry points: [scan commands](../../src-tauri/src/commands/scan.rs), [scan use cases](../../src-tauri/src/usecases/scan.rs), [startup scan state](../../src-tauri/src/adapter/startup_scan.rs), [scan pipeline](../../src-tauri/src/services/scan_service.rs), [discovery and metadata](../../src-tauri/src/indexer.rs), [root normalization](../../src-tauri/src/utils/paths.rs).
+Implementation entry points: [scan commands](../../src-tauri/src/commands/scan.rs), [scan use cases](../../src-tauri/crates/media_tagger_core/src/usecases/scan.rs), [startup scan state](../../src-tauri/src/adapter/startup_scan.rs), [scan pipeline](../../src-tauri/crates/media_tagger_core/src/services/scan_service.rs), [discovery and metadata](../../src-tauri/crates/media_tagger_core/src/indexer.rs), [root normalization](../../src-tauri/crates/media_tagger_core/src/utils/paths.rs).
 
 This page owns root discovery, fingerprints, incremental worker batches, partial scans, and generation cleanup. [Architecture](../architecture/system-overview.md#in-process-locking-policy) owns lock ordering, [database](database.md#library-revision-and-query-sessions) owns revision semantics, and [thumbnails](thumbnails.md) owns preview rendering.
 
@@ -161,14 +161,14 @@ Errors cross the IPC boundary as strings. `spawn_blocking` join failures are rep
 
 ### Relevant existing tests
 
-- `src-tauri/src/utils/paths.rs` covers whitespace trimming, trailing Unix separators, and filesystem-root preservation.
-- `src-tauri/src/indexer.rs` covers case-insensitive supported extensions, recursive supported-file collection, success/failure (with its warning) for existing versus missing files, skipping non-UTF-8 file and folder names without a partial report, and the per-root warning cap.
-- `src-tauri/src/services/scan_service.rs` covers worker-count resolution, the empty summary, root validity, the older prefix-based stale cleanup helper, the revision throttle, the error-path bump, and a real 1,500-file scan (one checked-out connection, bump count bounded by elapsed seconds).
-- `src-tauri/src/usecases/scan.rs` also runs `scan_folder_service` and `rescan_all_roots_service` with a progress sink that checks they hold one connection.
+- `src-tauri/crates/media_tagger_core/src/utils/paths.rs` covers whitespace trimming, trailing Unix separators, and filesystem-root preservation.
+- `src-tauri/crates/media_tagger_core/src/indexer.rs` covers case-insensitive supported extensions, recursive supported-file collection, success/failure (with its warning) for existing versus missing files, skipping non-UTF-8 file and folder names without a partial report, and the per-root warning cap.
+- `src-tauri/crates/media_tagger_core/src/services/scan_service.rs` covers worker-count resolution, the empty summary, root validity, the older prefix-based stale cleanup helper, the revision throttle, the error-path bump, and a real 1,500-file scan (one checked-out connection, bump count bounded by elapsed seconds).
+- `src-tauri/crates/media_tagger_core/src/usecases/scan.rs` also runs `scan_folder_service` and `rescan_all_roots_service` with a progress sink that checks they hold one connection.
 - `src-tauri/src/adapter/startup_scan.rs` covers the launch snapshot (only enabled roots, consumed once under contention, later preference changes belong to the next launch), shared waiting by a replacement observer while the first observer is aborted, replay of the retained summary, retained failures and worker panics without a retry, and a launch with no enabled roots returning null without starting a worker.
-- `src-tauri/src/usecases/scan.rs` covers rejecting an invalid root, persisting a valid normalized root, and explicit root removal deleting an orphan asset and its thumbnail.
-- `src-tauri/src/db.rs` covers escaped root-prefix boundaries, both low-level thumbnail preservation and precise-fingerprint reference release, the prune's conditional revision bump and its rollback, and that a prune without a stale mapping skips the orphan sweeps while one with a stale mapping still runs them.
-- `src-tauri/src/thumbs.rs` covers ffprobe/ffmpeg duration parsing and related duration/seek edge cases; these are parser tests rather than live-tool scan integration.
+- `src-tauri/crates/media_tagger_core/src/usecases/scan.rs` covers rejecting an invalid root, persisting a valid normalized root, and explicit root removal deleting an orphan asset and its thumbnail.
+- `src-tauri/crates/media_tagger_core/src/db.rs` covers escaped root-prefix boundaries, both low-level thumbnail preservation and precise-fingerprint reference release, the prune's conditional revision bump and its rollback, and that a prune without a stale mapping skips the orphan sweeps while one with a stale mapping still runs them.
+- `src-tauri/crates/media_tagger_core/src/thumbs.rs` covers ffprobe/ffmpeg duration parsing and related duration/seek edge cases; these are parser tests rather than live-tool scan integration.
 - `src-tauri/tests/backend_integration.rs` and `src-tauri/tests/backend_e2e.rs` exercise scan-root persistence as part of library clear and data workflows. `backend_integration` (`scan_prune_with_non_utf8_names`) also runs the full `scan_roots` pipeline three times over a root holding a non-UTF-8 name: every scan is complete, the row and orphaned tag of a file deleted outside the app are pruned, and an unchanged rescan leaves an unrelated unmapped row alone.
 - `src-tauri/tests/backend_runtime.rs` runs a real scan across batch boundaries with overlapping roots, then a rescan with a missing root that reports partial.
 

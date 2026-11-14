@@ -46,6 +46,7 @@
       "globs": [
         "src-tauri/src/services/thumb_scheduler.rs",
         "src-tauri/src/services/thumb_protocol.rs",
+        "src-tauri/src/adapter/thumb_scheme.rs",
         "src/ui/controls/ThumbnailImage.tsx",
         "src/platform/tauri/thumbnails.ts",
         "src/platform/tauri/contracts/thumbnails.ts"

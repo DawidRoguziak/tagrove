@@ -13,7 +13,7 @@ use crate::{
 // so no lock is ever held across an await. Render services take the shared
 // guard per short section (`thumb_read_section`), not while waiting.
 // On-demand gallery thumbnails are served by the `thumb://` scheme
-// (services/thumb_protocol.rs), not by a command.
+// (adapter/thumb_scheme.rs over services/thumb_protocol.rs), not by a command.
 
 #[tauri::command]
 pub async fn get_video_tool_status(app: tauri::AppHandle) -> Result<VideoToolStatus, String> {

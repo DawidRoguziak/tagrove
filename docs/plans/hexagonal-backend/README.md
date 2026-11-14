@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etapy 01–03 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji** (od 2026-11-14). Etapy 01–03 i 05 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -101,7 +101,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 | 02 | Postęp i testy bez Tauri | B | 01 | done 2026-11-14 ([plik etapu](02-progress-sink.md)) |
 | 03 | Startup scan do adaptera | B | 01 | done 2026-11-14 ([plik etapu](03-startup-scan.md)) |
 | 04 | Izolacja wideo (D1) | B | 01 | todo |
-| 05 | Podział `thumb://` | B | 01 | todo |
+| 05 | Podział `thumb://` | B | 01 | done 2026-11-14 ([plik etapu](05-thumb-scheme.md)) |
 | 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | todo |
 | 07 | Bootstrap w rdzeniu | C | 03, 04, 05 | todo |
 | 08 | Wydzielenie crate'a `media_tagger_core` | D | 01–07 | todo |
@@ -198,6 +198,11 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
 - **E2E:** `app.smoke`, `lightbox-recovery` oraz uruchomienie `bun run tauri:dev`.
 - **Ryzyko:** kolejność startu to twardy inwariant; okno 503 dla `thumb://` musi zostać.
 - Z etapu 03: `StartupScanState` jest typem adaptera (`adapter::startup_scan`). `open_storage` zwraca snapshot `db::list_scan_root_settings` jako `Vec<ScanRoot>` (obok popular tags), a adapter buduje z niego `StartupScanState::new` i robi `manage()` w tym samym miejscu kolejności startu.
+- Z etapu 05: okno 503 dla `thumb://` składa się z trzech części.
+  - Rejestracja `adapter::thumb_scheme::handle` zostaje na builderze w `lib.rs`, przed `setup`.
+  - Fakt „stanu jeszcze nie ma” podaje adapter: `TauriThumbHost::app_state` = `try_state::<AppState>()`.
+  - Rdzeń (`thumb_protocol::serve` i `publish_batch`) odpowiada na `None` kodem 503.
+  - Wniosek dla bootstrapu: `manage(AppState)` zostaje ostatnim krokiem `setup`, a `start_workers()`/`open_storage` nie mogą udostępnić `AppState` wcześniej ani przez inny kanał. Bootstrap może zwrócić gotowy `AppState`, ale `manage` robi adapter po wszystkich fazach. Test `serve_answers_503_until_app_state_exists` pilnuje strony rdzenia; stronę adaptera łapie tylko E2E.
 
 ### 08 Wydzielenie crate'a `media_tagger_core`
 
@@ -210,6 +215,12 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
 - **Wyjście:** kontrole `cargo tree` i `cargo build -p` z sekcji [Egzekucja granicy](#egzekucja-granicy); `bun run quality` i `bun run test:backend` zielone; `bun run tauri:build:e2e` + `app.smoke`; próbny build Docker lub Flatpak (tylko orkiestrator).
 - **Ryzyko:** `--test X` razem z `default-members` (sprawdzić); cache warstw w Dockerze; tarball źródeł bez `crates/`.
 - Z etapu 02: `impl ProgressSink for AppHandle` w `src/adapter/events.rs` po wydzieleniu łamie regułę sierot (E0117: trait z `media_tagger_core`, typ z `tauri`). Potrzebny newtype w adapterze (np. `TauriProgress(AppHandle)`) i podmiana `&app` na niego w wywołaniach z `commands/*` (scan, thumbs, import_export, assets) albo closure przez blanket impl `Fn`. Wire bez zmian.
+- Z etapu 05: reguła sierot nie dotyczy `thumb://`.
+  - Responder to closure (`ThumbResponder = Box<dyn FnOnce(ThumbReply) + Send>`).
+  - Host to lokalny newtype `TauriThumbHost<R>(AppHandle<R>)` w `adapter/thumb_scheme.rs`, więc `impl ThumbHost` przejdzie bez zmian.
+  - Jedynym `impl` portu rdzenia na typie Tauri zostaje `ProgressSink for AppHandle` z etapu 02.
+  - Porty `ThumbHost`, `ThumbResponder` i typ `ThumbReply` są w `services/thumb_protocol.rs`; przy wydzielaniu można je przenieść do `ports.rs`.
+  - `SCHEME` zostaje w rdzeniu, a `lib.rs` czyta go jako `services::thumb_protocol::SCHEME`, więc po wydzieleniu zmieni się tylko ścieżka.
 - Z etapu 01: `source_roots()` w `architecture_boundaries.rs` dopisuje `crates/media_tagger_core/src`. Reguły 2–3 liczą ścieżki względem korzenia, więc rdzeń i adapter trzeba rozróżnić po korzeniu. Importy `dto_snapshot` przechodzą na `media_tagger_core`.
 
 ### 09 Dokumentacja, reguły, skille, pełny E2E

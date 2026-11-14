@@ -54,11 +54,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         // `thumb://localhost/<id>?v=<version>`: numeric IDs only, see
-        // services/thumb_protocol.rs. Requests before setup finishes get 503.
+        // adapter/thumb_scheme.rs. Requests before setup finishes get 503.
         .register_asynchronous_uri_scheme_protocol(
             services::thumb_protocol::SCHEME,
             |ctx, request, responder| {
-                services::thumb_protocol::handle(ctx.app_handle(), request, responder)
+                adapter::thumb_scheme::handle(ctx.app_handle(), request, responder)
             },
         )
         .setup(|app| {

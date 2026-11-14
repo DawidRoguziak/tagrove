@@ -2,3 +2,4 @@
 
 pub mod events;
 pub mod startup_scan;
+pub mod thumb_scheme;

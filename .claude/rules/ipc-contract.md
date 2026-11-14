@@ -5,6 +5,7 @@ paths:
   - "src-tauri/src/models.rs"
   - "src-tauri/src/lib.rs"
   - "src-tauri/src/services/progress.rs"
+  - "src-tauri/src/adapter/events.rs"
 ---
 
 # IPC contract

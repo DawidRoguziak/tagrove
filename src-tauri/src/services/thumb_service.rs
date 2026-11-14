@@ -3155,18 +3155,12 @@ mod tests {
         let served = request_now(&state, 1).unwrap().unwrap();
         assert_eq!(served.bytes, b"legacy 0");
         // The old picture is never labelled as the current version, so WebKit
-        // does not keep it for the tile's URL once the source is back.
+        // does not keep it for the tile's URL once the source is back: the
+        // `thumb://` response for a version mismatch is `no-store`
+        // (`thumb_protocol` tests).
         let token =
             super::source_version_for(&db::get_asset_for_thumbnail(&conn, 1).unwrap().unwrap());
-        let response = crate::services::thumb_protocol::image_response(
-            served,
-            &super::version_token(&token),
-            "tauri://localhost",
-        );
-        assert_eq!(
-            response.headers()[tauri::http::header::CACHE_CONTROL],
-            "no-store"
-        );
+        assert_ne!(served.version, super::version_token(&token));
         assert!(library.legacy[0].exists());
         assert_eq!(
             thumb_path_of(&conn, 1),

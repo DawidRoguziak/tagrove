@@ -104,7 +104,8 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
 | `app/profile.rs` | Debug/test-only allowlist of the development and E2E identifiers used by the profile guard. |
 | `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
-| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, native video playback (`video_player_service.rs`, asset-ID source authorization in `video_source_service.rs`, playback events in `video_events.rs`), scan orchestration, thumbnail workflows, backup/restore, CSV, and progress emission. |
+| `adapter/*` | Tauri implementations of core ports: `events.rs` implements `ProgressSink` for `AppHandle` and emits `process-progress`. |
+| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, native video playback (`video_player_service.rs`, asset-ID source authorization in `video_source_service.rs`, playback events in `video_events.rs`), scan orchestration, thumbnail workflows, backup/restore, CSV, and the `ProgressSink` progress port (`progress.rs`). |
 | `video_surface.rs` | GTK overlay/GLArea placement and libmpv OpenGL rendering. |
 | `db.rs` and `db/*` | Shared types plus separate connection, schema, query, mutation, scan-membership, thumbnail, and query-revision SQL modules. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
 | `indexer.rs` | Supported-file discovery, fingerprints, and media metadata extraction. |

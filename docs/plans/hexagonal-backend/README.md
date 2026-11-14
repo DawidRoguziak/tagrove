@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etap 01 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji** (od 2026-11-14). Etapy 01–02 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -98,7 +98,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 | Etap | Nazwa | Fala | Zależy od | Status |
 | --- | --- | --- | --- | --- |
 | 01 | Strażnik granicy, snapshot wire, ADR 0034 Proposed | A | — | done 2026-11-14 ([plik etapu](01-boundary-guard.md)) |
-| 02 | Postęp i testy bez Tauri | B | 01 | todo |
+| 02 | Postęp i testy bez Tauri | B | 01 | done 2026-11-14 ([plik etapu](02-progress-sink.md)) |
 | 03 | Startup scan do adaptera | B | 01 | todo |
 | 04 | Izolacja wideo (D1) | B | 01 | todo |
 | 05 | Podział `thumb://` | B | 01 | todo |
@@ -207,6 +207,7 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - `Cargo.lock` dostaje wpis lokalnego pakietu: **jawna zmiana lockfile'a za zgodą użytkownika**.
 - **Wyjście:** kontrole `cargo tree` i `cargo build -p` z sekcji [Egzekucja granicy](#egzekucja-granicy); `bun run quality` i `bun run test:backend` zielone; `bun run tauri:build:e2e` + `app.smoke`; próbny build Docker lub Flatpak (tylko orkiestrator).
 - **Ryzyko:** `--test X` razem z `default-members` (sprawdzić); cache warstw w Dockerze; tarball źródeł bez `crates/`.
+- Z etapu 02: `impl ProgressSink for AppHandle` w `src/adapter/events.rs` po wydzieleniu łamie regułę sierot (E0117: trait z `media_tagger_core`, typ z `tauri`). Potrzebny newtype w adapterze (np. `TauriProgress(AppHandle)`) i podmiana `&app` na niego w wywołaniach z `commands/*` (scan, thumbs, import_export, assets) albo closure przez blanket impl `Fn`. Wire bez zmian.
 - Z etapu 01: `source_roots()` w `architecture_boundaries.rs` dopisuje `crates/media_tagger_core/src`. Reguły 2–3 liczą ścieżki względem korzenia, więc rdzeń i adapter trzeba rozróżnić po korzeniu. Importy `dto_snapshot` przechodzą na `media_tagger_core`.
 
 ### 09 Dokumentacja, reguły, skille, pełny E2E

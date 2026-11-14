@@ -429,9 +429,7 @@ const ADAPTER_FIXED: &[&str] = &[
 /// the entry. May only shrink.
 const FRAMEWORK_ALLOWLIST: &[(&str, &str)] = &[
     ("app/state.rs", "03"),
-    ("services/progress.rs", "02"),
     ("services/thumb_protocol.rs", "05"),
-    ("services/thumb_service.rs", "02"),
     ("services/video_events.rs", "04"),
     ("services/video_player_service.rs", "04"),
     ("video_surface.rs", "04"),

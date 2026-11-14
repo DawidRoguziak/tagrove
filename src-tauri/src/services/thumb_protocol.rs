@@ -436,6 +436,19 @@ mod tests {
     }
 
     #[test]
+    fn legacy_file_with_empty_version_is_not_cached() {
+        // `thumb_service` serves a kept legacy file with an empty token, which
+        // never matches a requested version.
+        let legacy = ServedThumbnail {
+            bytes: vec![1, 2, 3],
+            version: String::new(),
+        };
+        let response = image_response(legacy, V, "tauri://localhost");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], NO_STORE);
+    }
+
+    #[test]
     fn error_responses_are_uncached_and_503_asks_for_retry() {
         let missing = not_found("tauri://localhost");
         assert_eq!(missing.status(), StatusCode::NOT_FOUND);

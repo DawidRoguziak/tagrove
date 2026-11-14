@@ -10,7 +10,11 @@ use crate::{
         ClearLibrarySummary, CsvExportSummary, CsvImportSummary, DbBundleExportSummary,
         DbBundleImportSummary, DbBundleInspection, DbRootMapping,
     },
-    services::{backup_service, csv_service, progress::emit_progress, thumb_service},
+    services::{
+        backup_service, csv_service,
+        progress::{emit_progress, ProgressSink},
+        thumb_service,
+    },
 };
 
 #[tauri::command]
@@ -60,7 +64,7 @@ pub async fn clear_library_data(app: tauri::AppHandle) -> Result<ClearLibrarySum
     let app_state = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let state = app_state.state::<AppState>();
-        clear_library_data_service(&state, app)
+        clear_library_data_service(&state, &app)
     })
     .await
     .map_err(|e| format!("clear_library_data worker failed: {e}"))?
@@ -68,7 +72,7 @@ pub async fn clear_library_data(app: tauri::AppHandle) -> Result<ClearLibrarySum
 
 fn clear_library_data_service(
     state: &AppState,
-    app: tauri::AppHandle,
+    progress: &impl ProgressSink,
 ) -> Result<ClearLibrarySummary, String> {
     with_scan_and_thumb_lock(state, |permit| {
         let conn = permit.connection()?;
@@ -76,7 +80,7 @@ fn clear_library_data_service(
 
         let total = thumbs.len();
         let _ = emit_progress(
-            &app,
+            progress,
             "library-clear",
             0,
             total,
@@ -84,7 +88,7 @@ fn clear_library_data_service(
         );
 
         let removed_thumbnails = thumb_service::delete_thumbnail_files_with_progress(
-            &app,
+            progress,
             &state.thumbs_dir,
             thumbs,
             total,
@@ -92,7 +96,7 @@ fn clear_library_data_service(
         );
 
         let _ = emit_progress(
-            &app,
+            progress,
             "library-clear-done",
             total,
             total,

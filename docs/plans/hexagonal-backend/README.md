@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etapy 01–02 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji** (od 2026-11-14). Etapy 01–03 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -99,7 +99,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 | --- | --- | --- | --- | --- |
 | 01 | Strażnik granicy, snapshot wire, ADR 0034 Proposed | A | — | done 2026-11-14 ([plik etapu](01-boundary-guard.md)) |
 | 02 | Postęp i testy bez Tauri | B | 01 | done 2026-11-14 ([plik etapu](02-progress-sink.md)) |
-| 03 | Startup scan do adaptera | B | 01 | todo |
+| 03 | Startup scan do adaptera | B | 01 | done 2026-11-14 ([plik etapu](03-startup-scan.md)) |
 | 04 | Izolacja wideo (D1) | B | 01 | todo |
 | 05 | Podział `thumb://` | B | 01 | todo |
 | 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | todo |
@@ -185,6 +185,7 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
 - **E2E:** `app.workflows`, `gallery-selection`, `tag-editor`, `settings-maintenance`.
 - **Ryzyko:** przypadkowa zmiana tekstu błędu albo blokada trzymana przez `.await`. Przenoś dosłownie, diff przez `/review-changes`.
 - Z etapu 01: reguła 4 to test `commands_do_not_touch_db_or_locks` z `#[ignore]`. Stan wyjściowy (`-- --ignored`): `scan.rs` 24, `assets.rs` 21, `thumbs.rs` 6, `import_export.rs` 3 trafienia. Etap usuwa `#[ignore]`. `COMMAND_SIGNATURES` musi zostać bez zmian.
+- Z etapu 03: `run_startup_scan` i `StartupScanState` są w `src/adapter/startup_scan.rs` i zostają w adapterze. Do use case'u (`usecases/scan.rs`) idzie tylko closure z komendy `scan_startup_roots` (`with_scan_lock` + `scan_service::scan_roots`); komenda podaje go do `run_startup_scan`. Liczby reguły 4 po etapie 03 bez zmian (`scan.rs` 24).
 
 ### 07 Bootstrap w rdzeniu
 
@@ -196,6 +197,7 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
 - **Wyjście:** `lib.rs` zawiera tylko składanie; nowy test rdzenia uruchamia bootstrap na tempdir bez Tauri; kolejność startu w `.claude/rules/backend-core.md` zgadza się z kodem.
 - **E2E:** `app.smoke`, `lightbox-recovery` oraz uruchomienie `bun run tauri:dev`.
 - **Ryzyko:** kolejność startu to twardy inwariant; okno 503 dla `thumb://` musi zostać.
+- Z etapu 03: `StartupScanState` jest typem adaptera (`adapter::startup_scan`). `open_storage` zwraca snapshot `db::list_scan_root_settings` jako `Vec<ScanRoot>` (obok popular tags), a adapter buduje z niego `StartupScanState::new` i robi `manage()` w tym samym miejscu kolejności startu.
 
 ### 08 Wydzielenie crate'a `media_tagger_core`
 

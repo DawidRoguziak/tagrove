@@ -21,6 +21,7 @@
         "src-tauri/src/db/scan_membership.rs",
         "src-tauri/src/services/progress.rs",
         "src-tauri/src/adapter/events.rs",
+        "src-tauri/src/adapter/startup_scan.rs",
         "src-tauri/src/utils/paths.rs",
         "src-tauri/src/utils/text.rs"
       ],

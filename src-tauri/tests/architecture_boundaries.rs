@@ -428,7 +428,6 @@ const ADAPTER_FIXED: &[&str] = &[
 /// Core files that still use the framework, with the plan stage that removes
 /// the entry. May only shrink.
 const FRAMEWORK_ALLOWLIST: &[(&str, &str)] = &[
-    ("app/state.rs", "03"),
     ("services/thumb_protocol.rs", "05"),
     ("services/video_events.rs", "04"),
     ("services/video_player_service.rs", "04"),

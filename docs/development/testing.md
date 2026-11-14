@@ -739,7 +739,7 @@ The focused frontend regressions are `src/features/settings/__tests__/startupSca
 and `src/app/__tests__/startupScanRemount.test.ts`. Runtime tests defer completion across
 replacement with zero, fully cached and partially cached rows, cover retained success and
 failure, and await the actual startup action before checking disposal. Native tests in
-`app/state.rs` and `commands/scan.rs` cover launch-snapshot contention, shared waiting,
+`adapter/startup_scan.rs` cover launch-snapshot contention, shared waiting,
 abandoned observers, retained success/error, worker panic and no-work launches. Existing
 Rust tests also cover schema migration, preference persistence and backup compatibility.
 

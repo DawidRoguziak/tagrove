@@ -3,6 +3,7 @@ paths:
   - "src-tauri/src/lib.rs"
   - "src-tauri/src/main.rs"
   - "src-tauri/src/app/**"
+  - "src-tauri/src/adapter/startup_scan.rs"
   - "src-tauri/src/error.rs"
   - "src-tauri/tauri*.conf.json"
   - "src-tauri/capabilities/**"

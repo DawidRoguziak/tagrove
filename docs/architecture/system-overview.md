@@ -99,12 +99,12 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 | --- | --- |
 | `main.rs` | Native binary shim only. |
 | `lib.rs` | Builder setup, profile safety guard, app-data initialization, managed state, command registration, ffmpeg resolution, and process launch. |
-| `app/state.rs` | Process-wide shared runtime state. |
+| `app/state.rs` | Process-wide shared runtime state: `AppState` and `StartupPopularTags`. |
 | `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
 | `app/profile.rs` | Debug/test-only allowlist of the development and E2E identifiers used by the profile guard. |
 | `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
-| `adapter/*` | Tauri implementations of core ports: `events.rs` implements `ProgressSink` for `AppHandle` and emits `process-progress`. |
+| `adapter/*` | Tauri implementations of core ports and Tauri-only runtime state: `events.rs` implements `ProgressSink` for `AppHandle` and emits `process-progress`; `startup_scan.rs` holds `StartupScanState` (launch snapshot, waiters on `tauri::async_runtime` channels, retained result) and `run_startup_scan`, which runs the process-owned startup scan task. |
 | `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, native video playback (`video_player_service.rs`, asset-ID source authorization in `video_source_service.rs`, playback events in `video_events.rs`), scan orchestration, thumbnail workflows, backup/restore, CSV, and the `ProgressSink` progress port (`progress.rs`). |
 | `video_surface.rs` | GTK overlay/GLArea placement and libmpv OpenGL rendering. |
 | `db.rs` and `db/*` | Shared types plus separate connection, schema, query, mutation, scan-membership, thumbnail, and query-revision SQL modules. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
@@ -130,7 +130,7 @@ The backend is being split into a Tauri-independent core and a Tauri adapter ([A
 - the shared `ThumbnailScheduler`; and
 - atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and preserve cancellation without database or workflow locks.
 
-`StartupScanState` is separately managed by Tauri. It captures enabled scan roots after database initialization and recovery. The first startup-scan invocation consumes that snapshot and starts one process-owned task. Concurrent invocations await the same task; later invocations replay its retained summary or error. A launch with no enabled roots returns null. Dropping a frontend observer does not cancel the task or lose its result. Preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline.
+`StartupScanState` (`adapter/startup_scan.rs`) is separately managed by Tauri. It captures enabled scan roots from `db::list_scan_root_settings` after database initialization and recovery. The first startup-scan invocation consumes that snapshot and starts one process-owned task. Concurrent invocations await the same task; later invocations replay its retained summary or error. A launch with no enabled roots returns null. Dropping a frontend observer does not cancel the task or lose its result. Preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline: the adapter owns the waiting and the async task, and the scan itself is the core `scan_service::scan_roots` under `with_scan_lock`.
 
 `StartupPopularTags` is separately managed immutable state containing up to ten tag names
 ranked by library-wide assignment counts, then alphabetically. It is calculated once after

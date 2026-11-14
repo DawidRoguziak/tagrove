@@ -2,6 +2,7 @@
 paths:
   - "src-tauri/src/indexer.rs"
   - "src-tauri/src/commands/scan.rs"
+  - "src-tauri/src/adapter/startup_scan.rs"
   - "src-tauri/src/services/scan_service.rs"
   - "src-tauri/src/db/scan_membership.rs"
   - "src-tauri/src/utils/paths.rs"

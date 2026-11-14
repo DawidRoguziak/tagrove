@@ -95,7 +95,9 @@ pub fn run() {
                 Vec::new()
             });
             app.manage(app::state::StartupPopularTags::new(popular_tags));
-            app.manage(app::state::StartupScanState::new(db::list_scan_root_settings(&conn)?));
+            app.manage(adapter::startup_scan::StartupScanState::new(
+                db::list_scan_root_settings(&conn)?,
+            ));
 
             let resource_dir = app
                 .path()

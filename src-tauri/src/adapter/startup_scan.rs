@@ -4,13 +4,13 @@
 
 use std::sync::Mutex;
 
-use crate::models::ScanSummary;
+use media_tagger_core::models::ScanSummary;
 
 /// The launch snapshot and its terminal result outlive every frontend owner.
 #[derive(Clone)]
 pub struct StartupScanState(std::sync::Arc<Mutex<StartupScanPhase>>);
 
-type StartupScanResult = Result<Option<crate::models::ScanSummary>, String>;
+type StartupScanResult = Result<Option<media_tagger_core::models::ScanSummary>, String>;
 type StartupScanReceiver = tauri::async_runtime::Receiver<StartupScanResult>;
 
 enum StartupScanPhase {
@@ -26,7 +26,7 @@ pub enum StartupScanRequest {
 }
 
 impl StartupScanState {
-    pub fn new(roots: Vec<crate::models::ScanRoot>) -> Self {
+    pub fn new(roots: Vec<media_tagger_core::models::ScanRoot>) -> Self {
         let roots: Vec<_> = roots
             .into_iter()
             .filter(|root| root.auto_scan_on_startup)
@@ -105,10 +105,10 @@ pub async fn run_startup_scan(
 #[cfg(test)]
 mod tests {
     use super::{StartupScanRequest, StartupScanState};
-    use crate::{db, models::ScanRoot};
+    use media_tagger_core::{db, models::ScanRoot};
 
     fn startup_state() -> StartupScanState {
-        StartupScanState::new(vec![crate::models::ScanRoot {
+        StartupScanState::new(vec![media_tagger_core::models::ScanRoot {
             path: "/enabled".into(),
             auto_scan_on_startup: true,
         }])
@@ -176,8 +176,8 @@ mod tests {
                 assert_eq!(roots, ["/enabled"]);
                 entered_tx.send(()).unwrap();
                 release_rx.recv().unwrap();
-                Ok(crate::models::ScanSummary {
-                    completion: crate::models::ScanCompletion::Complete,
+                Ok(media_tagger_core::models::ScanSummary {
+                    completion: media_tagger_core::models::ScanCompletion::Complete,
                     indexed: 3,
                     removed: 0,
                     failed: 0,

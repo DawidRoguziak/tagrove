@@ -33,12 +33,14 @@ Nothing stops a new leak today. The use-case logic sits in private `*_service` f
 
 ## Decision
 
-Option 2 now, and option 3 as the target (stage 08 of the plan).
+Option 2 first (stages 01–07 of the plan), then option 3 (stage 08). Since stage 08 the core is the crate `media_tagger_core` in `src-tauri/crates/media_tagger_core`, in one Cargo workspace with the adapter package `media_tagger`. The rules below were scanner rules until stage 08; rules 1 and 3 are now enforced by the compiler.
 
-- **Rule 1.** The identifiers `tauri`, `tauri_plugin_*`, `AppHandle`, `gtk`, `gdk`, `glib`, `webkit2gtk`, `libmpv2`, `libmpv2_sys`, `async_channel` and `libloading` appear only in the adapter: `lib.rs`, `main.rs`, `commands/**`, `adapter/**`, `video/**` and `app/profile.rs`. They may also appear in a transitional allowlist that only shrinks.
-- **Rule 2.** `db.rs` and `db/*` do not reference `services`, `app`, `commands`, `usecases` or the adapter modules.
-- **Rule 3.** No core file references `commands`, `adapter`, `video` or `video_surface`. A transitional allowlist holds `video_surface.rs` until stage 04.
-- **Rule 4** (from stage 06). `commands/**` contains no `db::`, `with_*lock` or `Connection`; handlers call use cases.
+- **Rule 1.** Tauri, its plugins, GTK, GDK, GLib, WebKit, libmpv, `async-channel` and `libloading` are used only by the adapter package. The core manifest names none of them, so the core cannot compile against them; `core_manifest_has_no_gui_dependencies` rejects such a dependency in any table of the core manifest (until stage 08: a token scan with an allowlist that shrank to empty in stage 04).
+- **Rule 2.** The core's `db.rs` and `db/*` do not reference `services`, `app` or `usecases` (source scan).
+- **Rule 3.** The core does not reference the adapter (`commands`, `adapter`, `video`, the `media_tagger` crate). Since stage 08 this does not compile. Inside the adapter, `video/` does not import `commands/` (source scan).
+- **Rule 4** (from stage 06). The adapter's `commands/**` contains no `db::`, `with_*lock`, `locks` or `Connection`; handlers call use cases (source scan).
+- **Orphan rule.** A core port is implemented in the adapter on an adapter type: `TauriProgress(&AppHandle)` implements `ProgressSink`, because `impl ProgressSink for AppHandle` is E0117 across crates. The wire event stays `process-progress`.
+- **Test fixtures.** The core's `test_support` (ADR 0028 fixtures) compiles under `cfg(any(test, feature = "test-support"))`. Only the adapter's `[dev-dependencies]` enable `test-support`, for the player tests; a release build never contains it.
 - **D1.** The whole libmpv/GTK video stack lives in the adapter. The core keeps only `video_source_service`, and there is no video event port.
 - **D2.** The core becomes a separate crate as the last structural stage.
 - **D3.** The core crate is named `media_tagger_core`, following the internal naming policy.
@@ -46,7 +48,7 @@ Option 2 now, and option 3 as the target (stage 08 of the plan).
 - The core keeps `rusqlite` (no repository traits) and `serde`: `models.rs` is both domain and wire format. The core does not depend on `http`; `thumb://` replies are plain data that the adapter turns into `tauri::http::Response`.
 - The wire contract does not change in any stage: command names, argument keys, response fields, event names and error texts.
 
-`src-tauri/tests/architecture_boundaries.rs` enforces rules 1–3 and keeps rule 4 as an ignored test until stage 06. The same target freezes the wire contract:
+`src-tauri/tests/architecture_boundaries.rs` checks the core manifest (rule 1) and scans both packages for rules 2–4. The same target freezes the wire contract:
 - the `generate_handler!` list and its documentation in the IPC contract;
 - every command's wire arguments and return type;
 - the JSON shape of the response, input and video-channel DTOs;
@@ -54,10 +56,11 @@ Option 2 now, and option 3 as the target (stage 08 of the plan).
 
 ## Consequences
 
-- A new leak of the GUI runtime into the core fails `bun run test:backend`.
-- An allowlist entry that is no longer needed also fails the test, so the allowlists can only shrink. Only the plan orchestrator edits them.
+- A new leak of the GUI runtime into the core fails to compile, or, as a manifest change, fails `--locked` resolution and `core_manifest_has_no_gui_dependencies`. `cargo tree -p media_tagger_core --locked -e normal` lists no GUI crate.
+- The core builds and tests without the GUI stack: `cargo build -p media_tagger_core --locked`, `cargo test -p media_tagger_core --locked`. Both packages are workspace `default-members`, so `bun run test:backend`, `rust:clippy` and `rust:fmt` cover both.
+- There are no allowlists left; the transitional ones and their tests were removed in stage 08.
 - An intended IPC change updates the frozen snapshot in `architecture_boundaries.rs` in the same change. This is now a step of the IPC contract-change checklist.
 - Error texts are not in the snapshot. The plan moves code verbatim and reviews the diff instead.
-- No schema, app-data, profile or wire change. Stage 08 adds a local package entry to `Cargo.lock` and touches Dockerfiles and packaging.
-- The scanner matches tokens after removing comments and literals. Code generated by macros is not seen. Stage 08 replaces rule 1 with the compiler and `cargo tree -p media_tagger_core`, and the scanner keeps rules 2–4.
+- No schema, app-data, profile or wire change. Stage 08 adds a local package entry `media_tagger_core` to `Cargo.lock` (the external dependencies and their versions are unchanged) and touches the Dockerfiles (`COPY` of the core manifest and a stub `lib.rs` for the fetch layer), the notices collector, the release-input check and the privacy-check examples.
+- The scanner matches tokens after removing comments and literals. Code generated by macros is not seen. Rules 2 and 4 depend on it; rules 1 and 3 no longer do.
 - This ADR becomes Accepted in stage 09, when the core crate exists and the documentation describes the final layout.

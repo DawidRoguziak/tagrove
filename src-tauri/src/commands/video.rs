@@ -2,12 +2,11 @@ use anyhow::Context;
 use serde::Deserialize;
 use tauri::{ipc::Channel, State, WebviewWindow};
 
-use crate::{
-    services::video_source_service,
-    video::{
-        player::{PlayerCommand, VideoEvent, VideoPlayerService},
-        types::{VideoBounds, VideoControlLabels},
-    },
+use media_tagger_core::services::video_source_service;
+
+use crate::video::{
+    player::{PlayerCommand, VideoEvent, VideoPlayerService},
+    types::{VideoBounds, VideoControlLabels},
 };
 
 #[derive(Debug, Deserialize)]
@@ -42,7 +41,7 @@ pub async fn open_video(
     on_event: Channel<VideoEvent>,
     window: WebviewWindow,
     player: State<'_, VideoPlayerService>,
-    app: State<'_, crate::app::state::AppState>,
+    app: State<'_, media_tagger_core::app::state::AppState>,
 ) -> Result<u64, String> {
     if asset_id <= 0 {
         return Err("asset id must be positive".to_string());
@@ -54,7 +53,7 @@ pub async fn open_video(
     let path = tauri::async_runtime::spawn_blocking(move || {
         let conn = database.admit()?.connection()?;
         video_source_service::resolve_video_path(&conn, asset_id)
-            .map_err(crate::error::AppError::from)
+            .map_err(media_tagger_core::error::AppError::from)
     })
     .await
     .map_err(|error| format!("video source worker failed: {error}"))?

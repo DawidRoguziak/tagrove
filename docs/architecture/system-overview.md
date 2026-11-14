@@ -1,6 +1,6 @@
 # System overview
 
-Implementation entry points: [Tauri bootstrap](../../src-tauri/src/lib.rs), [core startup phases](../../src-tauri/src/app/bootstrap.rs), [workflow locks](../../src-tauri/src/app/locks.rs), [application state](../../src-tauri/src/app/state.rs).
+Implementation entry points: [Tauri bootstrap](../../src-tauri/src/lib.rs), [core startup phases](../../src-tauri/crates/media_tagger_core/src/app/bootstrap.rs), [workflow locks](../../src-tauri/crates/media_tagger_core/src/app/locks.rs), [application state](../../src-tauri/crates/media_tagger_core/src/app/state.rs).
 
 This page describes the architecture that is implemented today. The source code and executable configuration are authoritative.
 
@@ -81,15 +81,15 @@ contracts and [testing](../development/testing.md) for their observed coverage.
 
 ## Executable bootstrap and runtime lifecycle
 
-`src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`. It only composes the application; the framework-free startup phases live in the core module `app/bootstrap.rs` (`open_storage`, `resolve_ffmpeg_path`, `start_workers`), which manages no state and is tested on a temporary profile without Tauri. `run()`:
+`src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`. It only composes the application; the framework-free startup phases live in `app::bootstrap` of the core crate `media_tagger_core` (`open_storage`, `resolve_ffmpeg_path`, `start_workers`), which manages no state and is tested on a temporary profile without Tauri. `run()`:
 
 1. creates a `tauri::Builder`, installs the dialog and opener plugins, and registers the `thumb://` scheme (`adapter/thumb_scheme.rs`; until `AppState` is managed at the end of setup, `try_state` finds no state and the core handler answers `503`);
 2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. calls `app::bootstrap::open_storage`, which recovers any interrupted journaled database/thumbnail restore and then removes abandoned backup/restore temporaries from the profile directory (best effort) before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema on a FULL-sync startup connection, reconciles pending source-file operations, and captures popular tags and the scan-root settings before automatic scanning; `setup` manages them as `StartupPopularTags` and `StartupScanState`;
-6. resolves the resource directory and ffmpeg (`app::bootstrap::resolve_ffmpeg_path`), restores `LC_NUMERIC` to `C` after GTK initialization for libmpv, creates the process-wide `VideoPlayerService`, and installs the GTK video surface;
-7. calls `app::bootstrap::start_workers`, which creates the thumbnail scheduler, refuses startup if any worker failed to spawn, and builds `AppState`; managing that `AppState` is the last step of `setup`, and the startup connection closes when `setup` returns;
+5. calls `bootstrap::open_storage`, which recovers any interrupted journaled database/thumbnail restore and then removes abandoned backup/restore temporaries from the profile directory (best effort) before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema on a FULL-sync startup connection, reconciles pending source-file operations, and captures popular tags and the scan-root settings before automatic scanning; `setup` manages them as `StartupPopularTags` and `StartupScanState`;
+6. resolves the resource directory and ffmpeg (`bootstrap::resolve_ffmpeg_path`), restores `LC_NUMERIC` to `C` after GTK initialization for libmpv, creates the process-wide `VideoPlayerService`, and installs the GTK video surface;
+7. calls `bootstrap::start_workers`, which creates the thumbnail scheduler, refuses startup if any worker failed to spawn, and builds `AppState`; managing that `AppState` is the last step of `setup`, and the startup connection closes when `setup` returns;
 8. registers every frontend-callable command; and
 9. runs the generated Tauri context until the application exits.
 
@@ -97,35 +97,43 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 
 ## Backend module boundaries
 
-| Module | Current responsibility |
-| --- | --- |
-| `main.rs` | Native binary shim only. |
-| `lib.rs` | Composition only: builder, plugins, `thumb://` registration, profile safety guard, Tauri paths (`app_data_dir`, `resource_dir`), `InstanceLock`, the video phase, `manage()` of every state, command registration, and process launch. |
-| `app/bootstrap.rs` | Framework-free startup phases called by `lib.rs`: `open_storage` (restore recovery, sweep of backup temporaries, `thumbs/`, `media.db` and schema, pending file-operation recovery, popular-tag and scan-root snapshots), `resolve_ffmpeg_path` (bundled, executable-adjacent and system ffmpeg precedence), and `start_workers` (thumbnail scheduler and `AppState`). It returns values and never manages state. |
-| `app/state.rs` | Process-wide shared runtime state: `AppState` and `StartupPopularTags`. |
-| `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
-| `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
-| `app/profile.rs` | Debug/test-only allowlist of the development and E2E identifiers used by the profile guard. |
-| `commands/*` | Thin Tauri IPC endpoints: arguments → `spawn_blocking` → use case → error-string conversion (or `tauri::ipc::Response` for the binary ID range). They take no workflow lock and run no SQL; `commands/video.rs` is the exception by design (ADR 0034, D1): it drives the native player and resolves the source through `video_source_service`. |
-| `usecases/*` | The workflows behind the commands, one file per command file (`assets`, `scan`, `thumbs`, `import_export`), without Tauri: input validation and normalization (query filters and owner IDs, the 256-ID summary batch limit, media-group keys), the workflow locks of `app/locks.rs`, SQL through `db`, progress through the `ProgressSink` port, and delegation to services. Each `commands/X.rs::foo` runs `usecases::X::foo_service`. `start_asset_query` is split in two: `begin_asset_query_service` validates and takes the per-owner request token before the blocking task, `start_asset_query_service` runs in it. |
-| `adapter/*` | Tauri implementations of core ports and Tauri-only runtime state: `events.rs` implements `ProgressSink` for `AppHandle` and emits `process-progress`; `startup_scan.rs` holds `StartupScanState` (launch snapshot, waiters on `tauri::async_runtime` channels, retained result) and `run_startup_scan`, which runs the process-owned startup scan task; `thumb_scheme.rs` is the `thumb://` handler registered on the builder: it answers a non-GET or malformed request on the GTK main thread, runs the core `serve` on the blocking pool, provides `AppState` through `try_state` (the `ThumbHost` port), and turns each `ThumbReply` into an HTTP response. |
-| `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, asset-ID video source authorization (`video_source_service.rs`: the canonical path of a regular file, the only video code in the core), scan orchestration, thumbnail workflows, backup/restore, CSV, the `ProgressSink` progress port (`progress.rs`), and the framework-free `thumb://` core (`thumb_protocol.rs`: URL parser, allowed origins, replies as `ThumbReply` data with status, CORS and cache headers, and the publisher that commits finished renders in batches; it reaches the runtime only through the `ThumbHost` and `ThumbResponder` ports). |
-| `video/*` | Native video, entirely in the adapter (ADR 0034, D1): `player.rs` holds `VideoPlayerService` (the process-wide libmpv handle, the playback worker, `PLAYER_OPTIONS` and `SCRIPT_OPTIONS`) and the `open_video` channel messages `VideoEvent`, `VideoEventPayload` and `PlaybackSnapshot`; `mpv_events.rs` wraps the libmpv client event API; `surface.rs` does GTK overlay/GLArea placement, native controls and libmpv OpenGL rendering; `types.rs` holds the command inputs `VideoBounds` and `VideoControlLabels` with their validation. |
-| `db.rs` and `db/*` | Shared types plus separate connection, schema, query, mutation, scan-membership, thumbnail, and query-revision SQL modules. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
-| `indexer.rs` | Supported-file discovery, fingerprints, and media metadata extraction. |
-| `thumbs.rs` | Image/video thumbnail creation and video duration probing. |
-| `models.rs` | Backend serializable data models. |
-| `utils/*` | Path, tag, and text normalization helpers. |
-| `test_support.rs` | Test-only (`#[cfg(test)]`) fixtures for ADR 0028: reference files named `*.mp4`, a loopback listener and an inotify open watch, shared by the player tests in `video/player.rs` and the ffmpeg/ffprobe tests in `thumbs.rs`. |
-| `error.rs` | `AppError` and `AppResult`; command boundaries currently flatten errors to strings. |
+`src-tauri/` is a Cargo workspace with two packages ([ADR 0034](../adr/0034-tauri-independent-backend-core.md)):
 
-The backend is being split into a Tauri-independent core and a Tauri adapter ([ADR 0034](../adr/0034-tauri-independent-backend-core.md), plan [hexagonal-backend](../plans/hexagonal-backend/README.md)). `src-tauri/tests/architecture_boundaries.rs` enforces the current rules:
+- **`media_tagger`** (`src-tauri/Cargo.toml`, sources in `src-tauri/src/`): the Tauri adapter. It owns the binary, `build.rs`, the `custom-protocol` feature and every Tauri, GTK, WebKit and libmpv dependency.
+- **`media_tagger_core`** (`src-tauri/crates/media_tagger_core/`, sources in its `src/`): the backend core. It depends on no GUI crate, and the adapter imports it by path as `media_tagger_core::…`, without re-exports.
 
-- Tauri, GTK, WebKit and libmpv identifiers appear only in `lib.rs`, `main.rs`, `commands/`, `adapter/`, `video/` and `app/profile.rs`. The transitional allowlist of core files has been empty since stage 04 of the plan and may not grow back.
-- `db.rs` and `db/*` reference no `services`, `app`, `commands` or adapter module.
-- No core file references `commands` or another adapter module (`adapter`, `video`). Its transitional allowlist is empty as well.
-- Inside the adapter, `video/` does not reference `commands`: the commands import `video::{player, surface, types}`, never the reverse.
-- `commands/` contains no `db::` path, no `Connection`, no `with_*lock` helper and no `locks` path: SQL and the workflow locks are reached only through `usecases/` (rule 4, since stage 06).
+Both are workspace `members` and `default-members`, so `cargo build`, `cargo test` and `cargo clippy` on `src-tauri/Cargo.toml` cover both. Shared dependency versions (`anyhow`, `image`, `libc`, `rusqlite`, `serde`, `serde_json`, `tempfile`) live in `[workspace.dependencies]`. Module paths below are relative to the owning package's `src/`.
+
+| Module | Package | Current responsibility |
+| --- | --- | --- |
+| `main.rs` | adapter | Native binary shim only. |
+| `lib.rs` | adapter | Composition only: builder, plugins, `thumb://` registration, profile safety guard, Tauri paths (`app_data_dir`, `resource_dir`), `InstanceLock`, the video phase, `manage()` of every state, command registration, and process launch. |
+| `app/bootstrap.rs` | core | Framework-free startup phases called by `lib.rs`: `open_storage` (restore recovery, sweep of backup temporaries, `thumbs/`, `media.db` and schema, pending file-operation recovery, popular-tag and scan-root snapshots), `resolve_ffmpeg_path` (bundled, executable-adjacent and system ffmpeg precedence), and `start_workers` (thumbnail scheduler and `AppState`). It returns values and never manages state. |
+| `app/state.rs` | core | Process-wide shared runtime state: `AppState` and `StartupPopularTags`. |
+| `app/instance_lock.rs` | core | Per-profile interprocess ownership of the app-data directory. |
+| `app/locks.rs` | core | In-process workflow lock helpers and the canonical combined lock order. |
+| `app/profile.rs` | adapter | Debug/test-only allowlist of the development and E2E identifiers used by the profile guard. |
+| `commands/*` | adapter | Thin Tauri IPC endpoints: arguments → `spawn_blocking` → use case → error-string conversion (or `tauri::ipc::Response` for the binary ID range). They take no workflow lock and run no SQL; `commands/video.rs` is the exception by design (ADR 0034, D1): it drives the native player and resolves the source through `video_source_service`. |
+| `usecases/*` | core | The workflows behind the commands, one file per command file (`assets`, `scan`, `thumbs`, `import_export`), without Tauri: input validation and normalization (query filters and owner IDs, the 256-ID summary batch limit, media-group keys), the workflow locks of `app/locks.rs`, SQL through `db`, progress through the `ProgressSink` port, and delegation to services. Each `commands/X.rs::foo` runs `usecases::X::foo_service`. `start_asset_query` is split in two: `begin_asset_query_service` validates and takes the per-owner request token before the blocking task, `start_asset_query_service` runs in it. |
+| `adapter/*` | adapter | Tauri implementations of core ports and Tauri-only runtime state: `events.rs` holds `TauriProgress`, a newtype over `&AppHandle` that implements `ProgressSink` and emits `process-progress` (the orphan rule forbids implementing the core trait for the Tauri type itself, so the commands pass `&TauriProgress(&app)` to the use cases); `startup_scan.rs` holds `StartupScanState` (launch snapshot, waiters on `tauri::async_runtime` channels, retained result) and `run_startup_scan`, which runs the process-owned startup scan task; `thumb_scheme.rs` is the `thumb://` handler registered on the builder: it answers a non-GET or malformed request on the GTK main thread, runs the core `serve` on the blocking pool, provides `AppState` through `try_state` (the `ThumbHost` port), and turns each `ThumbReply` into an HTTP response. |
+| `services/*` | core | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, asset-ID video source authorization (`video_source_service.rs`: the canonical path of a regular file, the only video code in the core), scan orchestration, thumbnail workflows, backup/restore, CSV, the `ProgressSink` progress port (`progress.rs`), and the framework-free `thumb://` core (`thumb_protocol.rs`: URL parser, allowed origins, replies as `ThumbReply` data with status, CORS and cache headers, and the publisher that commits finished renders in batches; it reaches the runtime only through the `ThumbHost` and `ThumbResponder` ports). |
+| `video/*` | adapter | Native video, entirely in the adapter (ADR 0034, D1): `player.rs` holds `VideoPlayerService` (the process-wide libmpv handle, the playback worker, `PLAYER_OPTIONS` and `SCRIPT_OPTIONS`) and the `open_video` channel messages `VideoEvent`, `VideoEventPayload` and `PlaybackSnapshot`; `mpv_events.rs` wraps the libmpv client event API; `surface.rs` does GTK overlay/GLArea placement, native controls and libmpv OpenGL rendering; `types.rs` holds the command inputs `VideoBounds` and `VideoControlLabels` with their validation. |
+| `db.rs` and `db/*` | core | Shared types plus separate connection, schema, query, mutation, scan-membership, thumbnail, and query-revision SQL modules. Connections use WAL, `synchronous=NORMAL`, foreign keys, a memory temp store, cache/mmap tuning, and a five-second busy timeout. |
+| `indexer.rs` | core | Supported-file discovery, fingerprints, and media metadata extraction. |
+| `thumbs.rs` | core | Image/video thumbnail creation and video duration probing. |
+| `models.rs` | core | Backend serializable data models. |
+| `utils/*` | core | Path, tag, and text normalization helpers. |
+| `test_support.rs` | core | Test-only fixtures for ADR 0028: reference files named `*.mp4`, a loopback listener and an inotify open watch, shared by the ffmpeg/ffprobe tests in `thumbs.rs` and the player tests in the adapter's `video/player.rs`. Compiled under `#[cfg(any(test, feature = "test-support"))]`; only the adapter's `[dev-dependencies]` enable `test-support`, so it never reaches a release build. |
+| `error.rs` | core | `AppError` and `AppResult`; command boundaries currently flatten errors to strings. |
+
+The core/adapter boundary ([ADR 0034](../adr/0034-tauri-independent-backend-core.md), plan [hexagonal-backend](../plans/hexagonal-backend/README.md)) is enforced as follows:
+
+- **By the compiler.** `media_tagger_core` has no Tauri, GTK, WebKit or libmpv dependency, so naming one in the core does not compile. The core cannot see the adapter either: `crate::commands`, `crate::adapter`, `crate::video` and `media_tagger::…` do not resolve there. `cargo tree -p media_tagger_core --locked -e normal` lists no GUI crate.
+- **By the core manifest test.** `core_manifest_has_no_gui_dependencies` in `src-tauri/tests/architecture_boundaries.rs` rejects a GUI crate (`tauri`, `tauri-*`, `gtk`, `gdk`, `glib`, `webkit2gtk`, `libmpv2`, `libmpv2-sys`, `async-channel`, `libloading`, `wry`, `tao`) in any dependency table of `crates/media_tagger_core/Cargo.toml`, including renamed and target-specific dependencies.
+- **By the source scanner** in the same file, for what the compiler cannot see inside one package:
+  - `db.rs` and `db/*` of the core reference no `services`, `app` or `usecases`.
+  - Inside the adapter, `video/` does not reference `commands`: the commands import `video::{player, surface, types}`, never the reverse.
+  - The adapter's `commands/` contains no `db::` path, no `Connection`, no `with_*lock` helper and no `locks` path: SQL and the workflow locks are reached only through the core's `usecases/` (rule 4).
 
 ### Managed state
 
@@ -213,16 +221,16 @@ Security-sensitive changes should review capabilities, CSP, asset scope, the `th
 
 The user-facing product name is **Tagrove**, with `Dev` and `E2E` suffixes for isolated profiles. The frontend header, HTML metadata, npm package, native window titles, and Linux launcher use Tagrove. The Woven T mark comes from `public/tagrove.svg`; `bun run icons:generate` creates the checked-in native PNG sizes. The Linux launcher uses `Name=Tagrove`, `Icon=tagrove`, and `Exec=media_tagger`.
 
-The public publisher is Tagrove. Publication Flatpaks use `io.github.dawidroguziak.tagrove`, configured in `packaging/flatpak/publisher.json`; local Flatpaks retain `com.example.mediatagger`. The Rust crate/binary (`media_tagger`), local Tauri identifiers, SQLite identity and backup format markers, local-storage keys, and performance variables retain their existing internal names. Older repository guidance and E2E suite labels still refer to MediaTagger.
+The public publisher is Tagrove. Publication Flatpaks use `io.github.dawidroguziak.tagrove`, configured in `packaging/flatpak/publisher.json`; local Flatpaks retain `com.example.mediatagger`. The Rust crate/binary (`media_tagger`) and its core crate (`media_tagger_core`), local Tauri identifiers, SQLite identity and backup format markers, local-storage keys, and performance variables retain their existing internal names. Older repository guidance and E2E suite labels still refer to MediaTagger.
 
 This split is deliberate. Changing the Tauri identifier changes the app-data directory and can make an existing library appear empty unless data is migrated. Renaming the Rust binary also affects the E2E executable path. A future internal rename is a migration, not a cosmetic search-and-replace.
 
 ## Known limitations
 
 - CSP is disabled and the asset scope is global.
-- The debug profile allowlist has a focused unit test, and ffmpeg search precedence is unit-tested in `app/bootstrap.rs`. The profile lock is not directly unit-tested, and the adapter side of startup (the `manage` order, including `AppState` last for the `thumb://` 503 window) is covered only by desktop E2E.
+- The debug profile allowlist has a focused unit test, and ffmpeg search precedence is unit-tested in the core's `app/bootstrap.rs`. The profile lock is not directly unit-tested, and the adapter side of startup (the `manage` order, including `AppState` last for the `thumb://` 503 window) is covered only by desktop E2E.
 - Workflow locking remains selective outside database maintenance. Tag/favorite/group writes, CSV import, adding roots, and reads may overlap a scan, but they cannot overlap bundle snapshot/replacement because every live connection participates in the maintenance gate.
-- `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
+- `AppState` fields are public, so module boundaries inside the core are conventions rather than compiler-enforced interfaces. Only the core/adapter boundary is compiler-enforced.
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.
 - Query supersession is shared by the application runtime. Another window or independent caller can supersede this window's query; frontend generations separately reject late responses. Thumbnail request generations belong to individual hooks and are not compared globally. See [IPC limits](ipc-contract.md#known-limitations).
 - Many progress emissions deliberately ignore delivery errors; completion of the underlying operation does not guarantee that every progress update reached the WebView.
@@ -249,13 +257,13 @@ Use [testing](../development/testing.md) for the full test workflow. The most re
 
 - `src/platform/tauri/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
 - Frontend model/component tests under `src/library/**/__tests__` and `src/features/**/__tests__`: query lifecycle, settings progress, mutation refreshes, and UI behavior.
-- Rust unit tests in `app/bootstrap.rs` (startup phases on a temporary profile: restore rollback, temporaries sweep, pending file-operation recovery, snapshots, corrupt or newer database, `AppState`, ffmpeg precedence), `db.rs`, `usecases/*`, `commands/video.rs`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
+- Rust unit tests in the core (`cargo test -p media_tagger_core --locked`) in `app/bootstrap.rs` (startup phases on a temporary profile: restore rollback, temporaries sweep, pending file-operation recovery, snapshots, corrupt or newer database, `AppState`, ffmpeg precedence), `db.rs`, `usecases/*`, `services/*`, `thumbs.rs`, and utilities, and in the adapter (`-p media_tagger`) in `adapter/*`, `commands/video.rs` and `video/*`: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.
 - `src-tauri/tests/{backend_runtime,tag_vocabulary,thumbnail_bulk,thumbnail_clear}.rs`: runtime permits/locks, tag vocabulary, bulk thumbnail rendering, and thumbnail clearing; `tag_save_benchmark.rs` holds the ignored tag-save benchmark.
-- `src-tauri/tests/architecture_boundaries.rs`: the core/adapter import rules of [ADR 0034](../adr/0034-tauri-independent-backend-core.md) and a frozen snapshot of the IPC wire contract (registered commands, wire arguments, DTO JSON shapes, event names).
+- `src-tauri/tests/architecture_boundaries.rs`: the core manifest check and the import rules the compiler cannot see ([ADR 0034](../adr/0034-tauri-independent-backend-core.md)), and a frozen snapshot of the IPC wire contract (registered commands, wire arguments, DTO JSON shapes, event names).
 - `e2e/build-e2e.js` and `e2e/wdio.conf.js`: destructive-test isolation and real desktop build/driver setup.
 - `e2e/specs/*.e2e.js`: real-window smoke and workflows covering settings, filtering, roots, bulk edits, lightbox mutations, CSV, and DB bundles.
-- `src-tauri/tauri.conf*.json`, `capabilities/default.json`, `Cargo.toml`, checked-in `icons/`, `package.json`, and `index.html`: configuration checks that tests do not fully replace.
+- `src-tauri/tauri.conf*.json`, `capabilities/default.json`, both `Cargo.toml` manifests, checked-in `icons/`, `package.json`, and `index.html`: configuration checks that tests do not fully replace.
 
 Choose checks from [the test-level matrix](../development/testing.md#choosing-the-test-level). Desktop E2E proves the live bridge and selected workflows; a Docker release build separately verifies release linkage and records native dependency versions.

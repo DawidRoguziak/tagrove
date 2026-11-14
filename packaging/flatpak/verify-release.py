@@ -9,6 +9,7 @@ import tempfile
 
 REQUIRED_INPUTS = ["package.json", "bun.lock", "bunfig.toml", "src-tauri/tauri.conf.json",
                    "src-tauri/linux/com.example.mediatagger.desktop", "packaging/flatpak/generate.py", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock",
+                   "src-tauri/crates/media_tagger_core/Cargo.toml",
                    "src-tauri/tauri.flatpak.conf.json", "packaging/flatpak/install.sh",
                    "packaging/linux/toolchains.json", "packaging/flatpak/media.json",
                    "packaging/linux/notices.py", "packaging/linux/check-runtime.sh", "LICENSE", "PRIVACY.md",

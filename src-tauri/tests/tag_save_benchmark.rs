@@ -1,5 +1,5 @@
 //! Repeatable diagnostic, deliberately without timing assertions.
-use media_tagger::db;
+use media_tagger_core::db;
 use rusqlite::params;
 use std::time::Instant;
 

@@ -1,4 +1,4 @@
-use media_tagger::{
+use media_tagger_core::{
     app::state::AppState,
     db,
     models::{NewAsset, ScanProgress},
@@ -73,7 +73,7 @@ fn rescan_then_clear_all_removes_obsolete_and_current_files_and_regenerates() {
     let (finished_tx, finished_rx) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
         started_tx.send(()).unwrap();
-        let removed = media_tagger::app::locks::with_thumb_lock(&worker_state, |permit| {
+        let removed = media_tagger_core::app::locks::with_thumb_lock(&worker_state, |permit| {
             thumb_service::clear_all_thumbnails(&worker_state, permit, &|_| Ok(()))
         })
         .unwrap();
@@ -121,7 +121,7 @@ fn rescan_then_clear_all_removes_obsolete_and_current_files_and_regenerates() {
         0
     );
     // A `thumb://` request after the clear renders and serves a fresh file.
-    let regenerated = media_tagger::app::locks::with_thumb_operation(&state, |permit| {
+    let regenerated = media_tagger_core::app::locks::with_thumb_operation(&state, |permit| {
         let (tx, rx) = std::sync::mpsc::channel();
         match thumb_service::request_thumbnail(
             1,
@@ -218,7 +218,7 @@ fn clear_all_deletes_while_walking_and_keeps_progress_truthful_across_passes() {
             events.push(progress);
             Ok(())
         };
-        let removed = media_tagger::app::locks::with_thumb_lock(&state, |permit| {
+        let removed = media_tagger_core::app::locks::with_thumb_lock(&state, |permit| {
             thumb_service::clear_all_thumbnails(&state, permit, &sink)
         })
         .unwrap();

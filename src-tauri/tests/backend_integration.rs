@@ -2,7 +2,7 @@ use std::path::Path;
 #[path = "support/assets.rs"]
 mod support;
 
-use media_tagger::{db, models::NewAsset, services::asset_mutation_service};
+use media_tagger_core::{db, models::NewAsset, services::asset_mutation_service};
 use tempfile::tempdir;
 
 fn new_asset(path: &Path, kind: &str, modified_at: i64, thumb_path: Option<&str>) -> NewAsset {
@@ -276,7 +276,7 @@ fn set_assets_media_group_bulk_overwrites_existing_values() {
 // ---------------------------------------------------------------------------
 
 mod golden_order {
-    use media_tagger::db::{self, AssetMetaFilter};
+    use media_tagger_core::db::{self, AssetMetaFilter};
     use rusqlite::{params, types::Value, Connection};
 
     #[derive(Clone, Debug)]
@@ -864,7 +864,7 @@ mod sort_key_maintenance {
     use super::golden_order::{
         current_ordered_ids, filter_matrix, legacy_ordered_ids, open, seed_random_fixture,
     };
-    use media_tagger::{db, models::NewAsset};
+    use media_tagger_core::{db, models::NewAsset};
     use rusqlite::{params, Connection};
 
     fn assert_consistent(conn: &Connection, context: &str) {
@@ -1131,7 +1131,7 @@ mod sort_key_maintenance {
 mod selection_spec {
     use std::{path::Path, sync::Arc, time::Instant};
 
-    use media_tagger::{
+    use media_tagger_core::{
         db,
         models::{NewAsset, SelectionMutationResult, StartAssetQueryResult},
         services::{
@@ -1929,7 +1929,7 @@ mod restore_with_a_live_file_journal {
         },
     };
 
-    use media_tagger::{
+    use media_tagger_core::{
         app::state::AppState,
         db,
         services::{backup_service, db_pool::DatabaseRuntime, thumb_scheduler::ThumbnailScheduler},
@@ -2069,7 +2069,7 @@ mod scan_prune_with_non_utf8_names {
         },
     };
 
-    use media_tagger::{
+    use media_tagger_core::{
         app::state::AppState,
         db,
         models::{ScanCompletion, ScanSummary},
@@ -2207,7 +2207,7 @@ mod scan_prune_with_non_utf8_names {
                 .expect("connection");
             db::upsert_asset(
                 &conn,
-                &media_tagger::models::NewAsset {
+                &media_tagger_core::models::NewAsset {
                     path: "/elsewhere/unmapped.jpg".to_string(),
                     kind: "image".to_string(),
                     size_bytes: 1,
@@ -2241,7 +2241,7 @@ mod sections_during_a_scan {
         },
     };
 
-    use media_tagger::{
+    use media_tagger_core::{
         app::state::AppState,
         db,
         models::{

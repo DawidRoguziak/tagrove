@@ -11,7 +11,7 @@ use tauri::{
     AppHandle, Manager, Runtime, UriSchemeResponder,
 };
 
-use crate::{
+use media_tagger_core::{
     app::state::AppState,
     services::thumb_protocol::{self, ThumbHost, ThumbReply},
 };
@@ -84,7 +84,7 @@ mod tests {
     use tauri::http::StatusCode;
 
     use super::*;
-    use crate::services::thumb_service::ServedThumbnail;
+    use media_tagger_core::services::thumb_service::ServedThumbnail;
 
     #[test]
     fn reply_becomes_an_http_response() {

@@ -1,17 +1,21 @@
 use tauri::Manager;
 
-use crate::{
-    adapter::startup_scan::{run_startup_scan, StartupScanState},
+use media_tagger_core::{
     app::state::AppState,
     models::{RemoveRootSummary, ScanRoot, ScanSummary},
     usecases::scan,
+};
+
+use crate::adapter::{
+    events::TauriProgress,
+    startup_scan::{run_startup_scan, StartupScanState},
 };
 
 #[tauri::command]
 pub async fn scan_folder(path: String, app: tauri::AppHandle) -> Result<ScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        scan::scan_folder_service(path, &state, &app)
+        scan::scan_folder_service(path, &state, &TauriProgress(&app))
     })
     .await
     .map_err(|e| format!("scan worker failed: {e}"))?
@@ -57,7 +61,7 @@ pub async fn remove_scan_root(
 pub async fn rescan_all_roots(app: tauri::AppHandle) -> Result<ScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        scan::rescan_all_roots_service(&state, &app)
+        scan::rescan_all_roots_service(&state, &TauriProgress(&app))
     })
     .await
     .map_err(|e| format!("rescan worker failed: {e}"))?
@@ -83,7 +87,7 @@ pub async fn scan_startup_roots(app: tauri::AppHandle) -> Result<Option<ScanSumm
     let startup = app.state::<StartupScanState>().inner().clone();
     run_startup_scan(&startup, move |roots| {
         let state = app.state::<AppState>();
-        scan::scan_startup_roots_service(&roots, &state, &app)
+        scan::scan_startup_roots_service(&roots, &state, &TauriProgress(&app))
     })
     .await
 }

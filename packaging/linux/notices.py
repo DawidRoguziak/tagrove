@@ -10,6 +10,7 @@ destination = Path(sys.argv[1])
 destination.mkdir(parents=True, exist_ok=True)
 for name in ("package.json", "bun.lock", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"):
     shutil.copyfile(name, destination / Path(name).name)
+shutil.copyfile("src-tauri/crates/media_tagger_core/Cargo.toml", destination / "media_tagger_core.Cargo.toml")
 roots = [Path("node_modules"), Path("cargo-vendor"), Path("/app/tools/share/doc/rust"),
          Path("/usr/local/share/doc/rust"),
          Path(os.environ.get("CARGO_HOME", str(Path.home() / ".cargo"))) / "registry/src"]

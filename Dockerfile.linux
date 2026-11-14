@@ -16,7 +16,9 @@ RUN bash packaging/linux/install-toolchains.sh \
 COPY package.json bun.lock bunfig.toml ./
 RUN bun install --frozen-lockfile
 COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
-RUN mkdir -p src-tauri/src && touch src-tauri/src/lib.rs \
+COPY src-tauri/crates/media_tagger_core/Cargo.toml ./src-tauri/crates/media_tagger_core/
+RUN mkdir -p src-tauri/src src-tauri/crates/media_tagger_core/src \
+    && touch src-tauri/src/lib.rs src-tauri/crates/media_tagger_core/src/lib.rs \
     && cargo fetch --manifest-path src-tauri/Cargo.toml --locked
 COPY . .
 

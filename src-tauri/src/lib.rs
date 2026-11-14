@@ -1,23 +1,16 @@
 pub mod adapter;
 pub mod app;
 pub mod commands;
-pub mod db;
-pub mod error;
-pub mod indexer;
-pub mod models;
-pub mod services;
-#[cfg(test)]
-pub(crate) mod test_support;
-pub mod thumbs;
-pub mod usecases;
-pub mod utils;
 pub mod video;
 
 use std::fs;
 
+use media_tagger_core::{
+    app::{bootstrap, instance_lock::InstanceLock},
+    services,
+};
 use tauri::Manager;
 
-use app::instance_lock::InstanceLock;
 use commands::video::{
     begin_video_open, cancel_video_open, close_video, control_video, open_video, set_video_bounds,
     set_video_control_labels,
@@ -76,7 +69,7 @@ pub fn run() {
             let instance_lock = InstanceLock::acquire(&app_data_dir)?;
             app.manage(instance_lock);
 
-            let (storage, snapshots) = app::bootstrap::open_storage(&app_data_dir)?;
+            let (storage, snapshots) = bootstrap::open_storage(&app_data_dir)?;
             app.manage(snapshots.popular_tags);
             app.manage(adapter::startup_scan::StartupScanState::new(snapshots.scan_roots));
 
@@ -84,7 +77,7 @@ pub fn run() {
                 .path()
                 .resource_dir()
                 .map_err(|e| format!("cannot resolve resource_dir: {e}"))?;
-            let ffmpeg_path = app::bootstrap::resolve_ffmpeg_path(&resource_dir);
+            let ffmpeg_path = bootstrap::resolve_ffmpeg_path(&resource_dir);
             // GTK activates the environment locale during Tauri initialization, so
             // libmpv's required numeric locale must be restored after GTK starts.
             let locale = unsafe { libc::setlocale(libc::LC_NUMERIC, c"C".as_ptr()) };
@@ -98,7 +91,7 @@ pub fn run() {
             video::surface::setup(&main_window, &player)?;
             app.manage(player);
             // Last step: `thumb://` answers 503 until `AppState` is managed.
-            app.manage(app::bootstrap::start_workers(&storage, ffmpeg_path)?);
+            app.manage(bootstrap::start_workers(&storage, ffmpeg_path)?);
 
             Ok(())
         })

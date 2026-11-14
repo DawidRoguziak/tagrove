@@ -21,6 +21,8 @@ HOME_PATH = re.compile(rb"""(?<![A-Za-z0-9_-])(?:/(?:home|Users)/[^/\s<>"'\x00]+
 EXAMPLES = {
     '.agents/skills/recall/SKILL.md': {b'/Users/' + b'you/'},
     'src-tauri/src/services/backup_service.rs': {b'C:/Users/' + b'Example/', b'C:\\Users\\' + b'Example\\'},
+    'src-tauri/crates/media_tagger_core/src/services/backup_service.rs': {
+        b'C:/Users/' + b'Example/', b'C:\\Users\\' + b'Example\\'},
 }
 
 

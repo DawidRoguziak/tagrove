@@ -693,7 +693,7 @@ impl PlaybackWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{
+    use media_tagger_core::test_support::{
         connection_arrived, loopback_listener, reference_fixtures, OpenWatch,
     };
 

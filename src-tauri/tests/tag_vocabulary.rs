@@ -1,4 +1,4 @@
-use media_tagger::{db, models::TagQueryImpact};
+use media_tagger_core::{db, models::TagQueryImpact};
 use rusqlite::{params, Connection};
 
 fn fixture() -> (tempfile::TempDir, Connection) {

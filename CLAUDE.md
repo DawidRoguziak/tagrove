@@ -19,7 +19,7 @@ Tagrove is a Linux desktop app for browsing and tagging very large local collect
 
 The product name everywhere a user sees it is **Tagrove**. The internal names stay `media_tagger`/MediaTagger on purpose, because renaming them is a data migration rather than a search-and-replace (`docs/architecture/system-overview.md`, "naming"):
 
-- the crate and binary `media_tagger`;
+- the crate and binary `media_tagger`, and the core crate `media_tagger_core`;
 - the identifiers `com.example.mediatagger`, `.dev`, and `.e2e`;
 - the localStorage keys `media-tagger.*`;
 - the `MEDIATAGGER_*` / `VITE_MEDIATAGGER_PERF` environment variables;
@@ -46,16 +46,20 @@ src/                     Solid frontend
   i18n/                  i18next core + 11 locale JSONs (en canonical)
   utils/                 tag normalization (media.ts), search tokens
   test/                  shared test setup and helpers
-src-tauri/src/           Rust crate `media_tagger`
-  lib.rs                 composition: builder, profile guard, Tauri paths, InstanceLock, video phase, manage(), generate_handler! list
-  app/                   startup phases (bootstrap.rs), AppState, workflow locks (locks.rs), instance lock, profile allowlist
-  commands/              thin IPC endpoints: assets, scan, thumbs, import_export, video, window
-  usecases/              workflows behind the commands (assets, scan, thumbs, import_export): validation, locks, db
-  services/              query sessions, file mutation journal, db pool, scan, thumbnails, backup, csv, video source, progress
-  db.rs, db/             SQL: connections, schema, queries, mutations, scan_membership, thumbnails, query_revisions
-  indexer.rs, thumbs.rs
-  video/                 native video (adapter): libmpv player, mpv events, GTK surface, bounds/labels types
-src-tauri/tests/         Rust integration targets
+src-tauri/                Cargo workspace (Cargo.toml: members, [workspace.dependencies]; one Cargo.lock)
+  src/                   adapter crate `media_tagger` (Tauri, GTK, libmpv; binary, build.rs)
+    lib.rs               composition: builder, profile guard, Tauri paths, InstanceLock, video phase, manage(), generate_handler! list
+    app/                 profile allowlist (profile.rs) only
+    adapter/             events (TauriProgress), startup scan state, thumb:// handler
+    commands/            thin IPC endpoints: assets, scan, thumbs, import_export, video, window
+    video/               native video: libmpv player, mpv events, GTK surface, bounds/labels types
+  crates/media_tagger_core/src/   core crate `media_tagger_core` (no GUI dependencies; ADR 0034)
+    app/                 startup phases (bootstrap.rs), AppState, workflow locks (locks.rs), instance lock
+    usecases/            workflows behind the commands (assets, scan, thumbs, import_export): validation, locks, db
+    services/            query sessions, file mutation journal, db pool, scan, thumbnails, backup, csv, video source, progress
+    db.rs, db/           SQL: connections, schema, queries, mutations, scan_membership, thumbnails, query_revisions
+    indexer.rs, thumbs.rs, models.rs, error.rs, utils/, test_support.rs (feature test-support)
+  tests/                 Rust integration targets (adapter package; import media_tagger_core)
 e2e/                     WebdriverIO desktop E2E (specs/), app:control driver (control.js)
 docs/                    owning documentation per subsystem (see index below)
   adr/                   Architecture Decision Records (NNNN-title.md, template.md)
@@ -96,10 +100,12 @@ bun run test -- <file> -t "test name"
 bun run test -- --maxWorkers=1    # if it runs out of memory
 
 # Rust tests
-bun run test:backend              # unit + all src-tauri/tests targets
+bun run test:backend              # unit tests of both crates + all src-tauri/tests targets
 cargo test --manifest-path src-tauri/Cargo.toml --locked <name>
+cargo test --manifest-path src-tauri/Cargo.toml --locked -p media_tagger_core <name>   # core only, no GUI stack
+cargo tree --manifest-path src-tauri/Cargo.toml --locked -p media_tagger_core -e normal  # must list no tauri/gtk/webkit/libmpv
 cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_integration <name>
-# targets: architecture_boundaries (core/adapter rules + wire snapshot),
+# targets: architecture_boundaries (core manifest, import rules + wire snapshot),
 #          backend_e2e (Rust-only, not desktop E2E), backend_integration, backend_runtime,
 #          grid_baseline, tag_save_benchmark, tag_vocabulary, thumbnail_bulk, thumbnail_clear
 # ignored diagnostics: add -- --ignored --nocapture --test-threads=1

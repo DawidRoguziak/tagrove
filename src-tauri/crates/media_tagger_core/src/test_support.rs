@@ -9,14 +9,14 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 /// A loopback listener that only records whether anything connected to it.
-pub(crate) fn loopback_listener() -> (std::net::TcpListener, String) {
+pub fn loopback_listener() -> (std::net::TcpListener, String) {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
     (listener, url)
 }
 
-pub(crate) fn connection_arrived(listener: &std::net::TcpListener) -> bool {
+pub fn connection_arrived(listener: &std::net::TcpListener) -> bool {
     match listener.accept() {
         Ok(_) => true,
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => false,
@@ -25,10 +25,10 @@ pub(crate) fn connection_arrived(listener: &std::net::TcpListener) -> bool {
 }
 
 /// Records, through inotify, every open of the watched files by any process.
-pub(crate) struct OpenWatch(OwnedFd);
+pub struct OpenWatch(OwnedFd);
 
 impl OpenWatch {
-    pub(crate) fn new(paths: &[&Path]) -> Self {
+    pub fn new(paths: &[&Path]) -> Self {
         // SAFETY: the call takes no pointers; the descriptor is checked before it is owned.
         let fd = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
         assert!(fd >= 0, "inotify_init1: {}", Error::last_os_error());
@@ -46,7 +46,7 @@ impl OpenWatch {
     }
 
     /// Whether a watched file was opened or read since the previous call.
-    pub(crate) fn opened(&self) -> bool {
+    pub fn opened(&self) -> bool {
         let mut events = [0u8; 4096];
         let mut opened = false;
         loop {
@@ -66,11 +66,7 @@ impl OpenWatch {
 
 /// Text files named `*.mp4` whose content sends an unrestricted player to
 /// `url`, to the absolute path `outside`, or to the sibling file `sibling`.
-pub(crate) fn reference_fixtures(
-    url: &str,
-    outside: &str,
-    sibling: &str,
-) -> Vec<(&'static str, String)> {
+pub fn reference_fixtures(url: &str, outside: &str, sibling: &str) -> Vec<(&'static str, String)> {
     let port = url.rsplit(':').next().unwrap();
     let mpd = |target: &str| {
         format!(

@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etapy 01–07 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji** (od 2026-11-14). Etapy 01–08 `done`, 09 `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -42,7 +42,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
   src/                              ADAPTER: tauri, pluginy, gtk, webkit2gtk, libmpv2*, async-channel
     lib.rs                          Builder, pluginy, strażnik identyfikatora, generate_handler!, manage()
     commands/*.rs                   cienkie: argumenty → spawn_blocking → use case → map_err(String) / ipc::Response
-    adapter/events.rs               impl ProgressSink dla AppHandle ("process-progress")
+    adapter/events.rs               TauriProgress(&AppHandle): impl ProgressSink ("process-progress"; newtype przez regułę sierot)
     adapter/thumb_scheme.rs         UriSchemeResponder, try_state, spawn_blocking, 503 przed AppState
     adapter/startup_scan.rs         StartupScanState (kanały async) + orkiestracja run_startup_scan
     app/profile.rs                  allowlista identyfikatorów (sprawa konfiguracji Tauri)
@@ -55,8 +55,10 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
     services/thumb_protocol.rs      czysta część: parse_request, allowed_origin, ThumbReply{status, headers, body}
     usecases/{assets,scan,thumbs,import_export}.rs   dawne prywatne *_service z commands/* (od etapu 06)
     app/{state,locks,instance_lock,bootstrap}.rs
-    ports.rs                        ProgressSink, ThumbResponder
+    test_support.rs                 fixtury ADR 0028 pod cfg(any(test, feature = "test-support"))
 ```
+
+Porty zostają w swoich plikach (decyzja etapu 08, bez `ports.rs`): `ProgressSink` w `services/progress.rs`, `ThumbHost`, `ThumbResponder` i `ThumbReply` w `services/thumb_protocol.rs`.
 
 ## Decyzje
 
@@ -93,7 +95,9 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 - **Od etapu 08:** granicę pilnuje crate.
   - `cargo tree -p media_tagger_core --locked -e normal` nie zawiera `tauri`, `gtk`, `webkit2gtk`, `libmpv`.
   - `cargo build -p media_tagger_core --locked` przechodzi.
-  - Test grep zostaje dla reguł 2 i 4.
+  - Reguła 1: kompilator (rdzeń nie ma tych zależności) i test `core_manifest_has_no_gui_dependencies` (parser manifestu rdzenia, tylko std, z autotestem `manifest_parser_finds_every_dependency_shape`).
+  - Reguła 3: kompilator (`crate::adapter`, `crate::commands`, `media_tagger::…` w rdzeniu się nie kompilują); strona adaptera `video_does_not_import_commands` zostaje skanem.
+  - Skan zostaje dla reguły 2 (`db` rdzenia), reguły 4 (`commands/` adaptera) i `video_does_not_import_commands`; `SourceFile` zna swój korzeń (`Root::Core`/`Root::Adapter`). Allowlisty, `ADAPTER_FIXED` i testy `allowlist_entries_*` usunięte.
 
 ## Etapy
 
@@ -106,7 +110,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 | 05 | Podział `thumb://` | B | 01 | done 2026-11-14 ([plik etapu](05-thumb-scheme.md)) |
 | 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | done 2026-11-14 ([plik etapu](06-use-cases.md)) |
 | 07 | Bootstrap w rdzeniu | C | 03, 04, 05 | done 2026-11-14 ([plik etapu](07-bootstrap.md)) |
-| 08 | Wydzielenie crate'a `media_tagger_core` | D | 01–07 | todo |
+| 08 | Wydzielenie crate'a `media_tagger_core` | D | 01–07 | done 2026-11-14 ([plik etapu](08-crate-split.md)) |
 | 09 | Dokumentacja, reguły, skille, ADR Accepted, pełny E2E | E | 08 | todo |
 
 Statusy: `todo`, `in progress`, `blocked`, `done`, plus data. Zmianę statusu zapisuje orkiestrator w tej tabeli i w [NOTES.md](NOTES.md).
@@ -264,6 +268,11 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - `rg 'src-tauri/src/app/bootstrap' docs .claude CLAUDE.md` (system-overview, data-safety, thumbnails, setup-and-build, testing, reguły `backend-core`, `data-safety`, `thumbnails`) przechodzi na ścieżkę crate'a rdzenia; `lib.rs` w `CLAUDE.md` i tabeli modułów to już tylko składanie;
   - luki bez strażnika (wyniki prób w [07](07-bootstrap.md)): kolejność `manage(AppState)` jako ostatniego kroku `setup` (i brak wcześniejszego udostępnienia `AppState`) pilnuje tylko desktop E2E; odzysk operacji plikowych przesunięty za snapshoty przechodzi; kontrola `worker_spawn_failures` nie ma testu; nic nie zabrania `app/bootstrap.rs` importu `usecases` (reguła granicy do decyzji w 09 albo kompilator po 08, jeśli `usecases` trafi do innego modułu);
   - batch audytu B12 („Bootstrap, runtime…”) obejmuje `app/*.rs`, a `lib.rs` jest w B11; po wydzieleniu glob B12 dostaje ścieżkę crate'a rdzenia.
+- Z etapu 08 (szczegóły w [08](08-crate-split.md)):
+  - `.claude/**` celowo bez zmian w 08: globy `paths:` w `.claude/rules/{backend-core,database,data-safety,ipc-contract,scanning,search-tags,thumbnails,lightbox-video}.md`, `HOT_PATHS` w `.claude/skills/review-changes/scripts/collect_scope.py` (i jego test `test_collect_scope.py`), `.claude/skills/audit/references/batches.json`, `finding-format.md`, `recon-candidates.json`, `signal-bar.md` i `tauri-testing/skills/tauri-rust-tests/SKILL.md` wskazują `src-tauri/src/{db,services,usecases,app,…}`; po 08 te pliki są w `src-tauri/crates/media_tagger_core/src/`. Dopóki globy nie zostaną poprawione, reguły ścieżkowe nie ładują się dla plików rdzenia, a `collect_scope.py` nie oznacza ich jako hot path;
+  - ścieżki `src-tauri/src/<moduł rdzenia>` (także linki względne) zostały w `docs/architecture/ipc-contract.md` i `docs/subsystems/{database,scanning-and-indexing,library-query-and-gallery,thumbnails,search-tags-and-media-groups,lightbox,data-safety-and-portability}.md`; w 08 poprawione tylko `system-overview.md`, `setup-and-build.md`, `testing.md`, `linux-packaging.md` i `CLAUDE.md`. ADR-y z tymi ścieżkami są historyczne (Accepted się nie przepisuje);
+  - skill `tauri-testing:tauri-rust-tests` opisuje jeden crate `media_tagger`; komendy `-p media_tagger_core` / `-p media_tagger --lib` są w `testing.md`;
+  - `git diff --check` zgłasza jedyną zmienioną linię CRLF w `tests/backend_e2e.rs` (`\r` jako trailing whitespace); tak samo było przy każdej edycji pliku z CRLF.
 
 ## Zasady dla agentów
 

@@ -1,6 +1,6 @@
 use tauri::{Manager, State};
 
-use crate::{
+use media_tagger_core::{
     app::state::AppState,
     models::{
         AssetDetails, AssetQueryPageResult, AssetQueryPositionResult, AssetSummary,
@@ -11,11 +11,13 @@ use crate::{
     usecases::assets,
 };
 
-pub use crate::usecases::assets::{AssetMetaFilterInput, BulkMediaGroupUpdateInput};
+use crate::adapter::events::TauriProgress;
+
+pub use media_tagger_core::usecases::assets::{AssetMetaFilterInput, BulkMediaGroupUpdateInput};
 
 #[tauri::command]
 pub fn get_startup_popular_tags(
-    state: State<'_, crate::app::state::StartupPopularTags>,
+    state: State<'_, media_tagger_core::app::state::StartupPopularTags>,
 ) -> Vec<String> {
     state.tags().to_vec()
 }
@@ -118,7 +120,7 @@ pub async fn get_asset_query_id_range(
 pub async fn get_asset_query_sections(
     session_id: u64,
     state: State<'_, AppState>,
-) -> Result<crate::models::AssetQuerySectionsResult, String> {
+) -> Result<media_tagger_core::models::AssetQuerySectionsResult, String> {
     let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
         assets::get_asset_query_sections_service(&database, session_id)
@@ -140,7 +142,7 @@ pub async fn get_asset_summaries_by_ids(
     })
     .await
     .map_err(|e| format!("asset summaries worker failed: {e}"))?
-    .map_err(|e: crate::error::AppError| e.to_string())
+    .map_err(|e: media_tagger_core::error::AppError| e.to_string())
 }
 
 #[tauri::command]
@@ -154,7 +156,7 @@ pub async fn get_asset_details(
     })
     .await
     .map_err(|e| format!("asset details worker failed: {e}"))?
-    .map_err(|e: crate::error::AppError| e.to_string())
+    .map_err(|e: media_tagger_core::error::AppError| e.to_string())
 }
 
 #[tauri::command]
@@ -191,7 +193,7 @@ pub async fn merge_asset_tags_bulk(
 pub async fn toggle_assets_favorite_bulk(
     asset_ids: Vec<i64>,
     state: State<'_, AppState>,
-) -> Result<crate::models::BulkFavoriteSummary, String> {
+) -> Result<media_tagger_core::models::BulkFavoriteSummary, String> {
     let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
         assets::toggle_assets_favorite_bulk_service(&database, &asset_ids)
@@ -205,13 +207,13 @@ pub async fn toggle_assets_favorite_bulk(
 /// Resolved against the spec's query session; `stale` writes nothing.
 #[tauri::command]
 pub async fn apply_selection_mutation(
-    selection: crate::services::asset_query_service::SelectionSpec,
-    mutation: crate::services::selection_service::SelectionMutation,
+    selection: media_tagger_core::services::asset_query_service::SelectionSpec,
+    mutation: media_tagger_core::services::selection_service::SelectionMutation,
     state: State<'_, AppState>,
-) -> Result<crate::models::SelectionMutationResult, String> {
+) -> Result<media_tagger_core::models::SelectionMutationResult, String> {
     let database = state.database.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::services::selection_service::apply_selection_mutation(
+        media_tagger_core::services::selection_service::apply_selection_mutation(
             &database, &selection, mutation,
         )
     })
@@ -300,7 +302,7 @@ pub async fn delete_asset(
 pub async fn find_duplicate_assets(app: tauri::AppHandle) -> Result<DuplicateScanSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        assets::find_duplicate_assets_service(&state, &app)
+        assets::find_duplicate_assets_service(&state, &TauriProgress(&app))
     })
     .await
     .map_err(|e| format!("duplicate query worker failed: {e}"))?

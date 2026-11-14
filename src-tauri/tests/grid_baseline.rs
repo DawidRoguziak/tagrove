@@ -25,7 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use media_tagger::{
+use media_tagger_core::{
     app::{locks::with_scan_lock, state::AppState},
     db,
     error::AppResult,
@@ -301,8 +301,10 @@ fn query_rebuild_and_page_baseline() {
                 let permit = runtime.admit().unwrap();
                 let result = runtime.queries.sections(&permit, session).unwrap();
                 samples.push(ms(started));
-                let media_tagger::models::AssetQuerySectionsResult::Ready {
-                    sections, total, ..
+                let media_tagger_core::models::AssetQuerySectionsResult::Ready {
+                    sections,
+                    total,
+                    ..
                 } = result
                 else {
                     panic!("sections of a current session are ready");

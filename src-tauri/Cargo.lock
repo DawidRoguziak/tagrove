@@ -2469,27 +2469,41 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-channel",
- "csv",
- "fs2",
  "gtk",
  "image",
- "jpeg-decoder",
  "libc",
  "libloading 0.9.0",
  "libmpv2",
  "libmpv2-sys",
- "rand 0.8.8",
+ "media_tagger_core",
  "rusqlite",
  "serde",
  "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tempfile",
- "walkdir",
  "webkit2gtk",
+]
+
+[[package]]
+name = "media_tagger_core"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "csv",
+ "fs2",
+ "image",
+ "jpeg-decoder",
+ "libc",
+ "rand 0.8.8",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "walkdir",
  "zip",
 ]
 

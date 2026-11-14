@@ -1,11 +1,12 @@
 //! Architecture guard of the hexagonal-backend plan (ADR 0034) and a frozen
 //! snapshot of the IPC wire contract.
 //!
-//! `import_rules` keeps Tauri, GTK, WebKit and libmpv out of the backend core
-//! and freezes the import direction. Its allowlists may only shrink: an entry
-//! that no longer breaks its rule fails `allowlist_entries_are_still_needed`.
-//! Only the plan's orchestrator edits them, after a stage is accepted
-//! (`docs/plans/hexagonal-backend/README.md`).
+//! The backend core is the crate `media_tagger_core`, so the compiler keeps
+//! Tauri, GTK, WebKit and libmpv out of it and stops it from importing the
+//! adapter. `core_manifest_has_no_gui_dependencies` keeps those crates out of
+//! the core manifest. The import rules below cover what the compiler cannot:
+//! `db` does not reach upper core layers, `video/` does not import `commands/`
+//! and command handlers do not touch SQLite or the workflow locks.
 //!
 //! `wire_snapshot` freezes the registered commands, their wire arguments, the
 //! JSON shape of the response and input DTOs and the emitted event names. An
@@ -273,18 +274,49 @@ fn crate_root_refs(toks: &[Token]) -> Vec<(usize, String)> {
     refs
 }
 
-/// Source roots of the backend. Stage 08 adds the core crate's `src`.
-fn source_roots() -> Vec<PathBuf> {
-    vec![Path::new(env!("CARGO_MANIFEST_DIR")).join("src")]
+/// The two packages of the backend workspace.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Root {
+    /// `media_tagger_core`: storage, queries, use cases, bootstrap.
+    Core,
+    /// `media_tagger`: the Tauri adapter (commands, events, `thumb://`, video).
+    Adapter,
+}
+
+impl Root {
+    /// Source directory relative to `src-tauri/`.
+    fn dir(self) -> &'static str {
+        match self {
+            Root::Core => "crates/media_tagger_core/src",
+            Root::Adapter => "src",
+        }
+    }
+}
+
+/// Source roots of the backend workspace.
+fn source_roots() -> Vec<(Root, PathBuf)> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    [Root::Core, Root::Adapter]
+        .into_iter()
+        .map(|root| (root, manifest_dir.join(root.dir())))
+        .collect()
 }
 
 struct SourceFile {
+    root: Root,
     /// Path relative to its source root, with `/` separators.
     rel: String,
     text: String,
 }
 
-fn collect_rs(dir: &Path, root: &Path, out: &mut Vec<SourceFile>) {
+impl SourceFile {
+    /// `src-tauri/`-relative path for messages.
+    fn display(&self) -> String {
+        format!("{}/{}", self.root.dir(), self.rel)
+    }
+}
+
+fn collect_rs(dir: &Path, root: Root, root_dir: &Path, out: &mut Vec<SourceFile>) {
     let mut entries: Vec<_> = fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
         .map(|entry| entry.unwrap().path())
@@ -292,10 +324,10 @@ fn collect_rs(dir: &Path, root: &Path, out: &mut Vec<SourceFile>) {
     entries.sort();
     for path in entries {
         if path.is_dir() {
-            collect_rs(&path, root, out);
+            collect_rs(&path, root, root_dir, out);
         } else if path.extension().is_some_and(|ext| ext == "rs") {
             let rel = path
-                .strip_prefix(root)
+                .strip_prefix(root_dir)
                 .unwrap()
                 .components()
                 .map(|c| c.as_os_str().to_string_lossy().into_owned())
@@ -303,23 +335,25 @@ fn collect_rs(dir: &Path, root: &Path, out: &mut Vec<SourceFile>) {
                 .join("/");
             let text = fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-            out.push(SourceFile { rel, text });
+            out.push(SourceFile { root, rel, text });
         }
     }
 }
 
 fn source_files() -> Vec<SourceFile> {
     let mut files = Vec::new();
-    for root in source_roots() {
-        collect_rs(&root, &root, &mut files);
+    for (root, dir) in source_roots() {
+        collect_rs(&dir, root, &dir, &mut files);
+        assert!(
+            files.iter().any(|f| f.root == root && f.rel == "lib.rs"),
+            "source scan found no lib.rs in {}",
+            root.dir()
+        );
     }
-    assert!(
-        files.iter().any(|f| f.rel == "lib.rs"),
-        "source scan found no lib.rs"
-    );
     files
 }
 
+/// Reads an adapter source file (relative to `src-tauri/src`).
 fn read_source(rel: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src").join(rel);
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
@@ -340,24 +374,40 @@ fn f<'a>(x: &'a str) -> &'a str { x }
 let my_tauri_x = 1;
 "##;
     let code = strip(src, Literals::Blank);
-    let hits = framework_hits(&tokens(&code));
-    assert!(hits.is_empty(), "unexpected hits: {hits:?}");
+    let leaked: Vec<_> = tokens(&code)
+        .into_iter()
+        .filter(|t| {
+            ["tauri", "gtk", "glib", "libmpv2", "webkit2gtk", "AppHandle"]
+                .contains(&t.text.as_str())
+        })
+        .map(|t| (t.line, t.text))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "comment or literal text leaked: {leaked:?}"
+    );
     assert_eq!(code.lines().count(), src.lines().count());
 }
 
 #[test]
-fn scanner_finds_framework_identifiers() {
+fn scanner_finds_identifiers_with_lines() {
     let src = "use tauri::{AppHandle, Manager};\nfn f(c: async_channel::Sender<()>) {}\n\
                fn g() { tauri_plugin_dialog::init(); }";
-    let hits = framework_hits(&tokens(&strip(src, Literals::Blank)));
-    let names: Vec<_> = hits.iter().map(|(line, t)| format!("{line}:{t}")).collect();
+    let names: Vec<_> = tokens(&strip(src, Literals::Blank))
+        .into_iter()
+        .filter(|t| t.is_ident() && !["use", "fn", "f", "g", "c"].contains(&t.text.as_str()))
+        .map(|t| format!("{}:{}", t.line, t.text))
+        .collect();
     assert_eq!(
         names,
         [
             "1:tauri",
             "1:AppHandle",
+            "1:Manager",
             "2:async_channel",
-            "3:tauri_plugin_dialog"
+            "2:Sender",
+            "3:tauri_plugin_dialog",
+            "3:init"
         ]
     );
 }
@@ -389,130 +439,167 @@ fn scanner_keeps_strings_on_request() {
 // Import rules
 // ---------------------------------------------------------------------------
 
-/// Identifiers of the GUI/runtime stack that only the Tauri adapter may name.
-const FRAMEWORK_IDENTS: &[&str] = &[
-    "tauri",
-    "AppHandle",
-    "gtk",
-    "gdk",
-    "glib",
-    "webkit2gtk",
-    "libmpv2",
-    "libmpv2_sys",
-    "async_channel",
-    "libloading",
-];
+/// Top-level core modules `db` must not reach (rule 2).
+const DB_FORBIDDEN_MODULES: &[&str] = &["services", "app", "usecases"];
 
-fn is_framework_ident(text: &str) -> bool {
-    FRAMEWORK_IDENTS.contains(&text) || text.starts_with("tauri_plugin_")
-}
-
-fn framework_hits(toks: &[Token]) -> Vec<(usize, String)> {
-    toks.iter()
-        .filter(|t| is_framework_ident(&t.text))
-        .map(|t| (t.line, t.text.clone()))
-        .collect()
-}
-
-/// The permanent adapter: files and directories (trailing `/`) that may use
-/// Tauri, GTK, WebKit and libmpv.
-const ADAPTER_FIXED: &[&str] = &[
-    "lib.rs",
-    "main.rs",
-    "commands/",
-    "adapter/",
-    "video/",
-    "app/profile.rs",
-];
-
-/// Core files that still use the framework, with the plan stage that removes
-/// the entry. May only shrink; empty since stage 04, so no core file may be
-/// added back.
-const FRAMEWORK_ALLOWLIST: &[(&str, &str)] = &[];
-
-/// Core files that still import an adapter module (rule 3). May only shrink;
-/// empty since stage 04.
-const ADAPTER_IMPORT_ALLOWLIST: &[(&str, &str)] = &[];
-
-/// Top-level modules `db` must not reach (rule 2).
-const DB_FORBIDDEN_MODULES: &[&str] = &[
-    "services", "app", "commands", "usecases", "adapter", "video",
-];
-
-/// Adapter modules the core must not reach (rule 3).
-const ADAPTER_MODULES: &[&str] = &["commands", "adapter", "video"];
-
-fn is_adapter(rel: &str) -> bool {
-    ADAPTER_FIXED.iter().any(|entry| {
-        if entry.ends_with('/') {
-            rel.starts_with(entry)
-        } else {
-            rel == *entry
-        }
-    })
-}
-
-fn is_db(rel: &str) -> bool {
-    rel == "db.rs" || rel.starts_with("db/")
-}
-
-fn allowed(list: &[(&str, &str)], rel: &str) -> bool {
-    list.iter().any(|(path, _)| *path == rel)
-}
-
-fn rule1_violations(file: &SourceFile) -> Vec<String> {
-    framework_hits(&tokens(&strip(&file.text, Literals::Blank)))
-        .into_iter()
-        .map(|(line, ident)| format!("src/{}:{line}: rule 1: `{ident}`", file.rel))
-        .collect()
+fn is_db(file: &SourceFile) -> bool {
+    file.root == Root::Core && (file.rel == "db.rs" || file.rel.starts_with("db/"))
 }
 
 fn rule2_violations(file: &SourceFile) -> Vec<String> {
     crate_root_refs(&tokens(&strip(&file.text, Literals::Blank)))
         .into_iter()
         .filter(|(_, module)| DB_FORBIDDEN_MODULES.contains(&module.as_str()))
-        .map(|(line, module)| format!("src/{}:{line}: rule 2: `crate::{module}`", file.rel))
-        .collect()
-}
-
-fn rule3_violations(file: &SourceFile) -> Vec<String> {
-    crate_root_refs(&tokens(&strip(&file.text, Literals::Blank)))
-        .into_iter()
-        .filter(|(_, module)| ADAPTER_MODULES.contains(&module.as_str()))
-        .map(|(line, module)| format!("src/{}:{line}: rule 3: `crate::{module}`", file.rel))
+        .map(|(line, module)| format!("{}:{line}: rule 2: `crate::{module}`", file.display()))
         .collect()
 }
 
 fn report(rule: &str, hint: &str, violations: &[String]) {
     assert!(
         violations.is_empty(),
-        "{rule}\n{}\n\n{hint} Allowlists are changed only by the plan orchestrator \
-         (docs/plans/hexagonal-backend/README.md, ADR 0034).",
+        "{rule}\n{}\n\n{hint} (ADR 0034, docs/architecture/system-overview.md).",
         violations.join("\n")
     );
 }
 
-/// Rule 1: Tauri, GTK, WebKit and libmpv only in the adapter.
+/// Rule 1 (since stage 08 the compiler enforces the rest): the core manifest
+/// names no crate of the GUI runtime, in any dependency table.
+const GUI_CRATES: &[&str] = &[
+    "tauri",
+    "gtk",
+    "gdk",
+    "glib",
+    "webkit2gtk",
+    "libmpv2",
+    "libmpv2-sys",
+    "async-channel",
+    "libloading",
+    "wry",
+    "tao",
+];
+
+fn is_gui_crate(name: &str) -> bool {
+    GUI_CRATES.contains(&name) || name.starts_with("tauri-")
+}
+
+/// Crate names of every dependency table of a Cargo manifest: the
+/// `[dependencies]`, `[dev-dependencies]` and `[build-dependencies]` tables,
+/// their `[target.….*]` forms, `[dependencies.NAME]` headers and the
+/// `package = "…"` of a renamed dependency.
+fn manifest_dependencies(manifest: &str) -> Vec<String> {
+    const TABLES: &[&str] = &["dependencies", "dev-dependencies", "build-dependencies"];
+    let mut names = Vec::new();
+    let mut in_table = false;
+    for raw in manifest.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(header) = line.strip_prefix('[') {
+            let header = header.trim_end_matches(']').trim();
+            in_table = false;
+            for table in TABLES {
+                if header == *table || header.ends_with(&format!(".{table}")) {
+                    in_table = true;
+                } else if let Some(at) = header.find(&format!("{table}.")) {
+                    let before_ok = at == 0 || header[..at].ends_with('.');
+                    if before_ok {
+                        names.push(header[at + table.len() + 1..].trim_matches('"').to_string());
+                    }
+                }
+            }
+            continue;
+        }
+        if !in_table {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().trim_matches('"');
+        names.push(key.split('.').next().unwrap_or(key).to_string());
+        if let Some(at) = value.find("package") {
+            if let Some(open) = value[at..].find('"') {
+                let rest = &value[at + open + 1..];
+                if let Some(close) = rest.find('"') {
+                    names.push(rest[..close].to_string());
+                }
+            }
+        }
+    }
+    names
+}
+
 #[test]
-fn core_does_not_use_the_gui_runtime() {
-    let violations: Vec<String> = source_files()
-        .iter()
-        .filter(|f| !is_adapter(&f.rel) && !allowed(FRAMEWORK_ALLOWLIST, &f.rel))
-        .flat_map(rule1_violations)
+fn manifest_parser_finds_every_dependency_shape() {
+    let manifest = r#"
+[package]
+name = "tauri-lookalike" # package name, not a dependency
+
+[dependencies]
+serde = "1"
+tauri = "2"
+gtk.workspace = true
+renamed = { package = "webkit2gtk", version = "2" }
+
+[dependencies.libmpv2]
+version = "6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+glib = "0.18"
+
+[dev-dependencies]
+tauri-plugin-dialog = "2"
+
+[build-dependencies]
+tauri-build = "2"
+
+[features]
+tauri-ish = []
+"#;
+    let gui: Vec<String> = manifest_dependencies(manifest)
+        .into_iter()
+        .filter(|name| is_gui_crate(name))
         .collect();
-    report(
-        "Core files name the GUI runtime:",
-        "Move this code to the Tauri adapter (lib.rs, commands/, adapter/, video/).",
-        &violations,
+    assert_eq!(
+        gui,
+        [
+            "tauri",
+            "gtk",
+            "webkit2gtk",
+            "libmpv2",
+            "glib",
+            "tauri-plugin-dialog",
+            "tauri-build"
+        ]
     );
 }
 
-/// Rule 2: `db` does not depend on services, app state or the adapter.
+#[test]
+fn core_manifest_has_no_gui_dependencies() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/media_tagger_core/Cargo.toml");
+    let manifest =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let names = manifest_dependencies(&manifest);
+    assert!(
+        names.iter().any(|name| name == "rusqlite"),
+        "manifest parser found no dependencies in {}: {names:?}",
+        path.display()
+    );
+    let gui: Vec<&String> = names.iter().filter(|name| is_gui_crate(name)).collect();
+    assert!(
+        gui.is_empty(),
+        "media_tagger_core depends on the GUI runtime: {gui:?}. Keep Tauri, GTK, WebKit and \
+         libmpv in the adapter package media_tagger (ADR 0034)."
+    );
+}
+
+/// Rule 2: `db` does not depend on services, app state or use cases.
 #[test]
 fn db_does_not_import_upper_layers() {
     let violations: Vec<String> = source_files()
         .iter()
-        .filter(|f| is_db(&f.rel))
+        .filter(|f| is_db(f))
         .flat_map(rule2_violations)
         .collect();
     report(
@@ -522,34 +609,21 @@ fn db_does_not_import_upper_layers() {
     );
 }
 
-/// Rule 3: no core file imports an adapter module.
-#[test]
-fn core_does_not_import_the_adapter() {
-    let violations: Vec<String> = source_files()
-        .iter()
-        .filter(|f| !is_adapter(&f.rel) && !allowed(ADAPTER_IMPORT_ALLOWLIST, &f.rel))
-        .flat_map(rule3_violations)
-        .collect();
-    report(
-        "Core files import the adapter:",
-        "Move the shared type into the core, or the importing code into the adapter.",
-        &violations,
-    );
-}
-
-/// Rule 3, adapter side: the native video stack in `video/` does not depend on
+/// Adapter side of the old rule 3: the native video stack in `video/` does not depend on
 /// the IPC command layer. Commands use `video::{player, surface, types}`, never
 /// the other way round.
 #[test]
 fn video_does_not_import_commands() {
     let violations: Vec<String> = source_files()
         .iter()
-        .filter(|f| f.rel.starts_with("video/"))
+        .filter(|f| f.root == Root::Adapter && f.rel.starts_with("video/"))
         .flat_map(|file| {
             crate_root_refs(&tokens(&strip(&file.text, Literals::Blank)))
                 .into_iter()
                 .filter(|(_, module)| module == "commands")
-                .map(|(line, module)| format!("src/{}:{line}: rule 3: `crate::{module}`", file.rel))
+                .map(|(line, module)| {
+                    format!("{}:{line}: rule 3: `crate::{module}`", file.display())
+                })
         })
         .collect();
     report(
@@ -569,14 +643,19 @@ fn commands_do_not_touch_db_or_locks() {
     let mut violations = Vec::new();
     for file in source_files()
         .iter()
-        .filter(|f| f.rel.starts_with("commands/"))
+        .filter(|f| f.root == Root::Adapter && f.rel.starts_with("commands/"))
     {
         let toks = tokens(&strip(&file.text, Literals::Blank));
         for (index, t) in toks.iter().enumerate() {
             let db_path = t.is("db") && toks.get(index + 1).is_some_and(|n| n.is("::"));
             let lock_helper = t.text.starts_with("with_") && t.text.ends_with("lock");
             if db_path || lock_helper || t.is("Connection") || t.is("locks") {
-                violations.push(format!("src/{}:{}: rule 4: `{}`", file.rel, t.line, t.text));
+                violations.push(format!(
+                    "{}:{}: rule 4: `{}`",
+                    file.display(),
+                    t.line,
+                    t.text
+                ));
             }
         }
     }
@@ -585,46 +664,6 @@ fn commands_do_not_touch_db_or_locks() {
         "Move the body into a use case in usecases/.",
         &violations,
     );
-}
-
-#[test]
-fn allowlist_entries_exist() {
-    let files: BTreeSet<String> = source_files().into_iter().map(|f| f.rel).collect();
-    for (path, stage) in FRAMEWORK_ALLOWLIST.iter().chain(ADAPTER_IMPORT_ALLOWLIST) {
-        assert!(
-            files.contains(*path),
-            "allowlist entry `{path}` (stage {stage}) names a missing file: remove it"
-        );
-        assert!(
-            !is_adapter(path),
-            "allowlist entry `{path}` is already in the permanent adapter set: remove it"
-        );
-    }
-}
-
-/// The allowlists only shrink: an entry whose file is clean must be removed.
-#[test]
-fn allowlist_entries_are_still_needed() {
-    let files = source_files();
-    let find = |rel: &str| files.iter().find(|f| f.rel == rel);
-    for (path, stage) in FRAMEWORK_ALLOWLIST {
-        if let Some(file) = find(path) {
-            assert!(
-                !rule1_violations(file).is_empty(),
-                "`{path}` no longer uses the GUI runtime: remove it from FRAMEWORK_ALLOWLIST \
-                 (stage {stage} done)"
-            );
-        }
-    }
-    for (path, stage) in ADAPTER_IMPORT_ALLOWLIST {
-        if let Some(file) = find(path) {
-            assert!(
-                !rule3_violations(file).is_empty(),
-                "`{path}` no longer imports the adapter: remove it from ADAPTER_IMPORT_ALLOWLIST \
-                 (stage {stage} done)"
-            );
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -808,7 +847,7 @@ fn command_signatures() -> Vec<(String, String)> {
     let mut signatures = Vec::new();
     for file in source_files()
         .iter()
-        .filter(|f| f.rel.starts_with("commands/"))
+        .filter(|f| f.root == Root::Adapter && f.rel.starts_with("commands/"))
     {
         let toks = tokens(&strip(&file.text, Literals::Blank));
         let mut i = 0;
@@ -995,12 +1034,14 @@ mod dto_snapshot {
             assets::{AssetMetaFilterInput, BulkMediaGroupUpdateInput},
             video::VideoControl,
         },
-        models::*,
-        services::{asset_query_service::SelectionSpec, selection_service::SelectionMutation},
         video::{
             player::{PlaybackSnapshot, VideoEvent, VideoEventPayload},
             types::{VideoBounds, VideoControlLabels},
         },
+    };
+    use media_tagger_core::{
+        models::*,
+        services::{asset_query_service::SelectionSpec, selection_service::SelectionMutation},
     };
     use serde_json::{json, Value};
 

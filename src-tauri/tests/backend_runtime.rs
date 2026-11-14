@@ -1,4 +1,4 @@
-use media_tagger::{
+use media_tagger_core::{
     app::state::AppState,
     db,
     models::NewAsset,
@@ -258,7 +258,7 @@ fn real_scan_crosses_batches_preserves_overlapping_membership_and_reports_partia
     .unwrap();
     assert!(matches!(
         report.completion,
-        media_tagger::models::ScanCompletion::Partial
+        media_tagger_core::models::ScanCompletion::Partial
     ));
     let conn = permit.connection().unwrap();
     assert_eq!(

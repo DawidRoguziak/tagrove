@@ -1,6 +1,6 @@
 # Local setup and builds
 
-Implementation entry points: [package scripts](../../package.json), [Rust manifest](../../src-tauri/Cargo.toml), [Linux build](../../Dockerfile.linux), [artifact export](../../scripts/build-linux-docker.sh).
+Implementation entry points: [package scripts](../../package.json), [Rust workspace manifest](../../src-tauri/Cargo.toml), [core crate manifest](../../src-tauri/crates/media_tagger_core/Cargo.toml), [Linux build](../../Dockerfile.linux), [artifact export](../../scripts/build-linux-docker.sh).
 
 This page describes the setup and build behavior implemented by the current repository. Run the commands from the repository root. Configuration and lockfiles are authoritative; this page does not imply support for platforms or tool versions that the repository does not declare.
 
@@ -77,7 +77,7 @@ bun install
 bun install --frozen-lockfile
 ```
 
-Cargo resolves the backend from `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`. Tauri and Cargo commands fetch missing Rust crates automatically; an optional explicit fetch is:
+Cargo resolves the backend from the workspace manifest `src-tauri/Cargo.toml`, the core crate manifest `src-tauri/crates/media_tagger_core/Cargo.toml` and the one shared `src-tauri/Cargo.lock`. Both packages are default workspace members, so commands on `src-tauri/Cargo.toml` build and test both; add `-p media_tagger` (adapter) or `-p media_tagger_core` (core) to narrow one. The core builds without the GUI stack: `cargo build --manifest-path src-tauri/Cargo.toml --locked -p media_tagger_core`. Tauri and Cargo commands fetch missing Rust crates automatically; an optional explicit fetch is:
 
 ```bash
 cargo fetch --manifest-path src-tauri/Cargo.toml --locked
@@ -187,7 +187,8 @@ Both standalone `bun run tauri:build:e2e` and `bun run test:e2e:tauri` use the s
 | `src-tauri/tauri.conf.dev.json` | Development identifier, product name, window title, and development window overlay. |
 | `src-tauri/tauri.conf.e2e.json` | E2E identifier/title and suppression of Tauri's automatic frontend build. |
 | `src-tauri/capabilities/default.json` | Permissions granted to the `main` window. |
-| `src-tauri/Cargo.toml` / `Cargo.lock` | Rust crate/binary identity, edition, features, dependency ranges, and exact Rust dependency resolutions. |
+| `src-tauri/Cargo.toml` / `Cargo.lock` | Workspace members and shared `[workspace.dependencies]`; the adapter crate/binary `media_tagger` identity, edition, features and dependency ranges; exact Rust dependency resolutions for both packages. |
+| `src-tauri/crates/media_tagger_core/Cargo.toml` | The core crate `media_tagger_core`: GUI-free dependencies, `publish = false`, and the `test-support` feature that only the adapter's dev-dependencies enable. |
 | `src-tauri/build.rs` | Calls `tauri_build::build()`; generated context, application metadata, and resources come from the effective Tauri configuration. |
 | `e2e/build-e2e.js` | E2E build safety assertions, isolated Cargo target directory, debug/no-bundle flags, and expected executable path. |
 
@@ -268,7 +269,7 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **`tauri:build:e2e` fails before compiling Rust.** Check the frontend build output. The build helper produces fresh frontend assets before invoking Tauri; the overlay disables the redundant Tauri `beforeBuildCommand`.
 
-**Video probing or thumbnails fail while images still work.** Confirm `ffmpeg` and `ffprobe` are on `PATH`. Startup resolves ffmpeg once (`resolve_ffmpeg_path` in `src-tauri/src/app/bootstrap.rs`): an executable copy in the resource directory or beside the executable wins over `/usr/bin/ffmpeg` and `PATH`; see [tool discovery](../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery). Application startup succeeding does not prove that both tools were found.
+**Video probing or thumbnails fail while images still work.** Confirm `ffmpeg` and `ffprobe` are on `PATH`. Startup resolves ffmpeg once (`resolve_ffmpeg_path` in `src-tauri/crates/media_tagger_core/src/app/bootstrap.rs`): an executable copy in the resource directory or beside the executable wins over `/usr/bin/ffmpeg` and `PATH`; see [tool discovery](../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery). Application startup succeeding does not prove that both tools were found.
 
 **Linux video does not play.** Install `webkit2gtk-4.1`, `gtk3`, `mpv`, and `libglvnd`; verify `ldd /path/to/extracted/media_tagger` has no missing dependencies and includes libmpv/GTK. Check that `libEGL.so.1` exports `eglGetProcAddress` or `libGL.so.1` exports `glXGetProcAddressARB`, then inspect player/surface stderr errors. For portable packages, inspect the packaged tools and runtime rather than the host libraries.
 

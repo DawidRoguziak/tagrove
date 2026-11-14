@@ -1,11 +1,13 @@
 use tauri::Manager;
 
-use crate::{
+use media_tagger_core::{
     app::state::AppState,
     models::{ThumbnailRenderSummary, VideoToolStatus},
     services::thumb_service,
     usecases::thumbs,
 };
+
+use crate::adapter::events::TauriProgress;
 
 // Every thumbnail command performs blocking work (SQLite, filesystem scans,
 // scheduler waits). Each body runs on the blocking thread pool via
@@ -30,7 +32,7 @@ pub async fn render_all_thumbnails(
 ) -> Result<ThumbnailRenderSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        thumbs::render_all_thumbnails_service(&state, &app)
+        thumbs::render_all_thumbnails_service(&state, &TauriProgress(&app))
     })
     .await
     .map_err(|e| format!("thumbnail render worker failed: {e}"))?
@@ -42,7 +44,7 @@ pub async fn render_failed_thumbnails(
 ) -> Result<ThumbnailRenderSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        thumbs::render_failed_thumbnails_service(&state, &app)
+        thumbs::render_failed_thumbnails_service(&state, &TauriProgress(&app))
     })
     .await
     .map_err(|e| format!("thumbnail render worker failed: {e}"))?
@@ -59,7 +61,7 @@ pub async fn cancel_render_all_thumbnails(app: tauri::AppHandle) -> Result<bool,
 pub async fn clear_all_thumbnails(app: tauri::AppHandle) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        thumbs::clear_all_thumbnails_service(&state, &app)
+        thumbs::clear_all_thumbnails_service(&state, &TauriProgress(&app))
     })
     .await
     .map_err(|e| format!("thumbnail clear worker failed: {e}"))?

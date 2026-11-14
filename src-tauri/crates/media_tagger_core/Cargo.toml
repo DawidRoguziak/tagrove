@@ -1,0 +1,31 @@
+[package]
+name = "media_tagger_core"
+description = "Tagrove backend core: storage, queries, scanning, thumbnails, backup and CSV, without Tauri."
+version = "0.1.1"
+edition = "2021"
+license = "GPL-3.0-or-later"
+rust-version = "1.98"
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+csv = "1.3"
+fs2 = "0.4"
+image.workspace = true
+# Scaled (IDCT 1/2-1/8) JPEG decode for thumbnails; no SIMD, no rayon: no unsafe code.
+jpeg-decoder = { version = "0.3.2", default-features = false, features = ["platform_independent"] }
+libc.workspace = true
+rusqlite.workspace = true
+rand = "0.8"
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+walkdir = "2.5"
+zip = { version = "9.4", default-features = false, features = ["deflate-flate2"] }
+
+[features]
+# Exposes `test_support` (the ADR 0028 media-tool fixtures) to the adapter's tests.
+test-support = []
+
+[dev-dependencies]
+tempfile.workspace = true

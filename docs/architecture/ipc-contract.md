@@ -264,7 +264,7 @@ Current phase families are:
 - library clear: `library-clear`, `library-clear-done`; and
 - duplicates: `duplicates-scan`, `duplicates-scan-done`.
 
-Core workflows report progress through the `ProgressSink` port (`src-tauri/src/services/progress.rs`); the only emitter is its Tauri implementation in `src-tauri/src/adapter/events.rs`, so a command passes its `AppHandle` as the sink.
+Core workflows report progress through the `ProgressSink` port (`src-tauri/crates/media_tagger_core/src/services/progress.rs`); the only emitter is its Tauri implementation `TauriProgress` in `src-tauri/src/adapter/events.rs`, a newtype over `&AppHandle` (the orphan rule forbids implementing the core trait for the Tauri type itself), so a command passes `&TauriProgress(&app)` as the sink.
 
 Consumers must filter by phase because the event name is shared and broadcasts are not correlated to a command invocation. `createSettingsOperationRunner` subscribes only for the duration of an operation and applies a phase matcher. Messages are display text, not stable machine-readable error data. Most emit sites intentionally discard delivery errors; the command result is authoritative for operation completion.
 

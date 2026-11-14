@@ -1,6 +1,6 @@
 use tauri::Manager;
 
-use crate::{
+use media_tagger_core::{
     app::state::AppState,
     models::{
         ClearLibrarySummary, CsvExportSummary, CsvImportSummary, DbBundleExportSummary,
@@ -8,6 +8,8 @@ use crate::{
     },
     usecases::import_export,
 };
+
+use crate::adapter::events::TauriProgress;
 
 #[tauri::command]
 pub async fn export_tags_csv(
@@ -42,7 +44,7 @@ pub async fn clear_library_data(app: tauri::AppHandle) -> Result<ClearLibrarySum
     let app_state = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let state = app_state.state::<AppState>();
-        import_export::clear_library_data_service(&state, &app)
+        import_export::clear_library_data_service(&state, &TauriProgress(&app))
     })
     .await
     .map_err(|e| format!("clear_library_data worker failed: {e}"))?

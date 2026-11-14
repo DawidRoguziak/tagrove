@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path};
 #[path = "support/assets.rs"]
 mod support;
 
-use media_tagger::{
+use media_tagger_core::{
     db,
     models::NewAsset,
     utils::tags::{merge_tags, normalize_tags, parse_csv_tags},

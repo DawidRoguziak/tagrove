@@ -3,7 +3,7 @@
 //! `get_asset_details`. It replaced the removed `list_assets` OFFSET query
 //! (grid-performance stage 10). Unit tests use `db::test_support`.
 
-use media_tagger::db;
+use media_tagger_core::db;
 use rusqlite::Connection;
 
 // Shared by several test binaries; each reads only some fields.

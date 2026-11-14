@@ -1,4 +1,4 @@
-use media_tagger::{
+use media_tagger_core::{
     app::state::AppState,
     db,
     models::NewAsset,

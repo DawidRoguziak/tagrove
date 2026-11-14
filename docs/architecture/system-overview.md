@@ -14,6 +14,7 @@ flowchart LR
     API["src/platform/tauri"]
     IPC["Tauri invoke, Channel, and events"]
     CMD["commands/*"]
+    UC["usecases/*"]
     SVC["services/*"]
     CORE["db.rs, indexer.rs, thumbs.rs, utils/*"]
     DB[("SQLite media.db")]
@@ -23,13 +24,14 @@ flowchart LR
     GTK["GtkGLArea / OpenGL"]
 
     UI --> API --> IPC --> CMD
-    CMD --> SVC
-    CMD --> CORE
+    CMD --> UC
+    UC --> SVC
+    UC --> CORE
     SVC --> CORE
     CORE --> DB
     CORE --> FS
     CORE --> TOOLS
-    SVC --> VIDEO --> GTK
+    CMD --> VIDEO --> GTK
     CMD -. "Result serialized as value or error string" .-> IPC
     SVC -. "progress events / video channels" .-> IPC
     IPC -. "promise, event, or Channel message" .-> UI
@@ -41,8 +43,8 @@ The normal request path is:
 1. `src/app/main.tsx` calls `mountApplication`, which applies the persisted theme, loads i18next and mounts the application. Optional frontend performance instrumentation is enabled by `VITE_MEDIATAGGER_PERF=1`.
 2. `src/app/App.tsx` composes language, runtime and UI-layer owners. `createAppRuntime` owns library, search, selection, bulk, lightbox and settings models across view changes. Settings and lightbox are lazy-loaded and prefetched after 1.5 seconds; the gallery is eagerly imported.
 3. Feature and library models call typed functions in `src/platform/tauri`. Its subsystem modules construct command payloads, video channels, `thumb://` thumbnail URLs and image/GIF URLs.
-4. Tauri dispatches the request to a function registered by `tauri::generate_handler!` in `src-tauri/src/lib.rs`. Command functions validate or normalize inputs, obtain `AppState`, acquire a workflow lock where required, and either perform a small operation or delegate to a service.
-5. Services coordinate scanning, query sessions, backups, progress, and thumbnail scheduling. `db.rs` owns SQL; `indexer.rs` discovers and inspects media; `thumbs.rs` performs image/video probing and rendering; filesystem mutations occur in the command or service responsible for that workflow.
+4. Tauri dispatches the request to a function registered by `tauri::generate_handler!` in `src-tauri/src/lib.rs`. Command functions are thin: they take the arguments, obtain `AppState` (or its `database`), run the matching use case in `usecases/` on the blocking pool and convert the result to the wire (an error string, or raw bytes as `tauri::ipc::Response`). The use case validates or normalizes inputs, acquires a workflow lock where required, and either performs a small operation or delegates to a service.
+5. Services coordinate scanning, query sessions, backups, progress, and thumbnail scheduling. `db.rs` owns SQL; `indexer.rs` discovers and inspects media; `thumbs.rs` performs image/video probing and rendering; filesystem mutations occur in the use case or service responsible for that workflow.
 6. Results return through the invoke promise. Long-running settings work also emits `process-progress`; native video sessions use channels. On-demand thumbnails are not IPC: tiles load the `thumb://` scheme.
 
 Concrete examples:
@@ -103,7 +105,8 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 | `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
 | `app/profile.rs` | Debug/test-only allowlist of the development and E2E identifiers used by the profile guard. |
-| `commands/*` | Tauri IPC endpoints, validation, error-string conversion, and some orchestration. Commands are intended to be thin, although several asset and import/export commands still contain substantial workflow logic. |
+| `commands/*` | Thin Tauri IPC endpoints: arguments → `spawn_blocking` → use case → error-string conversion (or `tauri::ipc::Response` for the binary ID range). They take no workflow lock and run no SQL; `commands/video.rs` is the exception by design (ADR 0034, D1): it drives the native player and resolves the source through `video_source_service`. |
+| `usecases/*` | The workflows behind the commands, one file per command file (`assets`, `scan`, `thumbs`, `import_export`), without Tauri: input validation and normalization (query filters and owner IDs, the 256-ID summary batch limit, media-group keys), the workflow locks of `app/locks.rs`, SQL through `db`, progress through the `ProgressSink` port, and delegation to services. Each `commands/X.rs::foo` runs `usecases::X::foo_service`. `start_asset_query` is split in two: `begin_asset_query_service` validates and takes the per-owner request token before the blocking task, `start_asset_query_service` runs in it. |
 | `adapter/*` | Tauri implementations of core ports and Tauri-only runtime state: `events.rs` implements `ProgressSink` for `AppHandle` and emits `process-progress`; `startup_scan.rs` holds `StartupScanState` (launch snapshot, waiters on `tauri::async_runtime` channels, retained result) and `run_startup_scan`, which runs the process-owned startup scan task; `thumb_scheme.rs` is the `thumb://` handler registered on the builder: it answers a non-GET or malformed request on the GTK main thread, runs the core `serve` on the blocking pool, provides `AppState` through `try_state` (the `ThumbHost` port), and turns each `ThumbReply` into an HTTP response. |
 | `services/*` | Asset-query sessions, safe/journaled asset file mutation, SQLite connection pooling, asset-ID video source authorization (`video_source_service.rs`: the canonical path of a regular file, the only video code in the core), scan orchestration, thumbnail workflows, backup/restore, CSV, the `ProgressSink` progress port (`progress.rs`), and the framework-free `thumb://` core (`thumb_protocol.rs`: URL parser, allowed origins, replies as `ThumbReply` data with status, CORS and cache headers, and the publisher that commits finished renders in batches; it reaches the runtime only through the `ThumbHost` and `ThumbResponder` ports). |
 | `video/*` | Native video, entirely in the adapter (ADR 0034, D1): `player.rs` holds `VideoPlayerService` (the process-wide libmpv handle, the playback worker, `PLAYER_OPTIONS` and `SCRIPT_OPTIONS`) and the `open_video` channel messages `VideoEvent`, `VideoEventPayload` and `PlaybackSnapshot`; `mpv_events.rs` wraps the libmpv client event API; `surface.rs` does GTK overlay/GLArea placement, native controls and libmpv OpenGL rendering; `types.rs` holds the command inputs `VideoBounds` and `VideoControlLabels` with their validation. |
@@ -121,6 +124,7 @@ The backend is being split into a Tauri-independent core and a Tauri adapter ([A
 - `db.rs` and `db/*` reference no `services`, `app`, `commands` or adapter module.
 - No core file references `commands` or another adapter module (`adapter`, `video`). Its transitional allowlist is empty as well.
 - Inside the adapter, `video/` does not reference `commands`: the commands import `video::{player, surface, types}`, never the reverse.
+- `commands/` contains no `db::` path, no `Connection`, no `with_*lock` helper and no `locks` path: SQL and the workflow locks are reached only through `usecases/` (rule 4, since stage 06).
 
 ### Managed state
 
@@ -171,7 +175,7 @@ This guarantee is per identifier/profile, not machine-wide. The lock file itself
 
 The profile lock sits outside the runtime lock hierarchy. Inside one process, the maintenance gate is the outermost lock. Ordinary commands acquire one shared operation permit; bundle export/restore close admission, drain operations and workers, close the idle pool, clear query state, then acquire lower locks in the fixed order `maintenance`, `scan_lock`, exclusive `thumb_lock`.
 
-Command-level workflow locks have the following matrix:
+Command-level workflow locks have the following matrix. The commands do not take them themselves: their use cases in `usecases/` do, inside the blocking task.
 
 | Lock | Operations | What it excludes |
 | --- | --- | --- |
@@ -218,7 +222,6 @@ This split is deliberate. Changing the Tauri identifier changes the app-data dir
 - The debug profile allowlist has a focused unit test. The profile lock and ffmpeg search precedence are not directly unit-tested.
 - Workflow locking remains selective outside database maintenance. Tag/favorite/group writes, CSV import, adding roots, and reads may overlap a scan, but they cannot overlap bundle snapshot/replacement because every live connection participates in the maintenance gate.
 - `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
-- Several command handlers contain filesystem/DB orchestration instead of being strictly thin adapters.
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.
 - Query supersession is shared by the application runtime. Another window or independent caller can supersede this window's query; frontend generations separately reject late responses. Thumbnail request generations belong to individual hooks and are not compared globally. See [IPC limits](ipc-contract.md#known-limitations).
 - Many progress emissions deliberately ignore delivery errors; completion of the underlying operation does not guarantee that every progress update reached the WebView.
@@ -229,7 +232,7 @@ This split is deliberate. Changing the Tauri identifier changes the app-data dir
 Before merging an architectural change:
 
 - Trace the complete path from the calling model/component through `src/platform/tauri`, the registered Tauri command, service/core code, and every SQLite/filesystem effect. Update the [IPC contract](ipc-contract.md) if names, payloads, channels, events, or error semantics change.
-- If adding a command, register it in `lib.rs`, expose it through `src/platform/tauri`, validate at the command boundary, and prefer orchestration in the appropriate service.
+- If adding a command, register it in `lib.rs`, expose it through `src/platform/tauri`, keep the handler thin, and put validation, locks and SQL in a use case in `usecases/` (rule 4 of `architecture_boundaries` rejects them in `commands/`), with longer orchestration in the appropriate service.
 - Classify the operation in the lock matrix. Use the shared helpers; if both locks are needed, acquire scan before the exclusive thumbnail lock. Consider direct IPC concurrency, not only UI button state.
 - For `AppState` changes, update bootstrap construction and all test fixtures. Decide whether the value truly belongs in managed state or in a focused service.
 - For database writes, use transactions where a workflow must be atomic, bump the library revision when query-visible state changes, and invalidate process caches/pools when replacing the database. Follow [database](../subsystems/database.md) and [data safety](../subsystems/data-safety-and-portability.md) guidance.
@@ -245,7 +248,7 @@ Use [testing](../development/testing.md) for the full test workflow. The most re
 
 - `src/platform/tauri/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
 - Frontend model/component tests under `src/library/**/__tests__` and `src/features/**/__tests__`: query lifecycle, settings progress, mutation refreshes, and UI behavior.
-- Rust unit tests in `db.rs`, `commands/*`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
+- Rust unit tests in `db.rs`, `usecases/*`, `commands/video.rs`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.
 - `src-tauri/tests/{backend_runtime,tag_vocabulary,thumbnail_bulk,thumbnail_clear}.rs`: runtime permits/locks, tag vocabulary, bulk thumbnail rendering, and thumbnail clearing; `tag_save_benchmark.rs` holds the ignored tag-save benchmark.

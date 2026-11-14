@@ -383,7 +383,7 @@ When changing lightbox behavior:
   the confirmation surviving same-asset tag and favorite writes) and
   image/GIF activation identity. The backend side of that rejection is covered by
   `delete_fails_fast_while_a_scan_holds_the_scan_lock_and_changes_nothing` in
-  `src-tauri/src/commands/assets.rs`. [`presentation.test.ts`](../../src/features/lightbox/__tests__/presentation.test.ts)
+  `src-tauri/src/usecases/assets.rs`. [`presentation.test.ts`](../../src/features/lightbox/__tests__/presentation.test.ts)
   covers sidebar, activity and clipboard state. [`keyboard.test.tsx`](../../src/features/lightbox/__tests__/keyboard.test.tsx)
   covers current callbacks, idle reveal, form/fullscreen keys and listener lifetime.
 - [`imageControls.test.tsx`](../../src/features/lightbox/__tests__/imageControls.test.tsx)

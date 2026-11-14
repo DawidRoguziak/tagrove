@@ -49,7 +49,8 @@ src/                     Solid frontend
 src-tauri/src/           Rust crate `media_tagger`
   lib.rs                 builder, profile guard, startup order, generate_handler! command list
   app/                   AppState, workflow locks (locks.rs), instance lock, profile allowlist
-  commands/              IPC endpoints: assets, scan, thumbs, import_export, video, window
+  commands/              thin IPC endpoints: assets, scan, thumbs, import_export, video, window
+  usecases/              workflows behind the commands (assets, scan, thumbs, import_export): validation, locks, db
   services/              query sessions, file mutation journal, db pool, scan, thumbnails, backup, csv, video source, progress
   db.rs, db/             SQL: connections, schema, queries, mutations, scan_membership, thumbnails, query_revisions
   indexer.rs, thumbs.rs

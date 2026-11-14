@@ -9,6 +9,7 @@ pub mod services;
 #[cfg(test)]
 pub(crate) mod test_support;
 pub mod thumbs;
+pub mod usecases;
 pub mod utils;
 pub mod video;
 

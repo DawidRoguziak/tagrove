@@ -12,9 +12,11 @@ the code under test (database, scanning, thumbnails, data safety; see CLAUDE.md'
 ## 1. Where tests go
 
 - **Unit tests**: a `#[cfg(test)] mod tests` at the bottom of the module, beside the code
-  (`src-tauri/src/commands/*.rs`, `services/`, `db/`, `indexer.rs`, `thumbs.rs`, ...). This is the
+  (`src-tauri/src/usecases/*.rs`, `services/`, `db/`, `indexer.rs`, `thumbs.rs`, ...). This is the
   default for helpers, parsing/normalization, SQL semantics, validation, scheduler behavior and
-  command/service branches that do not need a running Tauri app.
+  use-case/service branches that do not need a running Tauri app. Command handlers in
+  `commands/*.rs` are thin and must not contain `db::` or lock helpers, not even in tests
+  (rule 4 of `architecture_boundaries`), so their tests go into the matching `usecases/*.rs`.
 - **Integration targets**: `src-tauri/tests/*.rs`, against the public `media_tagger` API.
   Current targets: `architecture_boundaries` (core/adapter import rules and the frozen
   IPC wire snapshot, ADR 0034), `backend_e2e` (Rust-only, not desktop), `backend_integration`,
@@ -48,13 +50,14 @@ the code under test (database, scanning, thumbnails, data safety; see CLAUDE.md'
 
 Tagrove does **not** use `tauri::test` / `MockRuntime` (the `tauri` `test` feature is not
 enabled; enabling it is a dependency decision that needs an ADR). Commands are thin wrappers
-returning `Result<T, String>` (an `AppError` mapped to a string), so the Rust half of an IPC
-contract is proved with plain unit tests in the command module:
+returning `Result<T, String>` (an `AppError` mapped to a string) around a use case in
+`usecases/*`, so the Rust half of an IPC contract is proved with plain unit tests in the use-case
+(or, for video, the command) module:
 
 - **Responses**: build the response struct and `serde_json::to_value` it; assert the
   snake_case field names and tagged discriminants (`status: "ready" | "stale" | ...`) exactly as
   `src/platform/tauri/contracts/` declares them. Example:
-  `selection_summary_batch_limit_and_group_response_contract` in `src-tauri/src/commands/assets.rs`.
+  `selection_summary_batch_limit_and_group_response_contract` in `src-tauri/src/usecases/assets.rs`.
 - **Inputs**: deserialize the JSON the frontend sends. Top-level argument keys are camelCase
   (`assetId` ↔ `asset_id`); nested inputs follow their own `rename_all`. Example:
   `parses_camel_case_track_control_fields` in `src-tauri/src/commands/video.rs`. Add a negative

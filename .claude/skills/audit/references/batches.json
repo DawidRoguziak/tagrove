@@ -18,6 +18,7 @@
         "src-tauri/src/indexer.rs",
         "src-tauri/src/services/scan_service.rs",
         "src-tauri/src/commands/scan.rs",
+        "src-tauri/src/usecases/scan.rs",
         "src-tauri/src/db/scan_membership.rs",
         "src-tauri/src/services/progress.rs",
         "src-tauri/src/adapter/events.rs",
@@ -35,7 +36,8 @@
         "src-tauri/src/services/thumb_service.rs",
         "src-tauri/src/thumbs.rs",
         "src-tauri/src/db/thumbnails.rs",
-        "src-tauri/src/commands/thumbs.rs"
+        "src-tauri/src/commands/thumbs.rs",
+        "src-tauri/src/usecases/thumbs.rs"
       ],
       "lenses": ["rust", "stability", "perf"]
     },
@@ -95,7 +97,8 @@
       "critical": true,
       "globs": [
         "src/library/metadata/*.ts",
-        "src-tauri/src/commands/assets.rs"
+        "src-tauri/src/commands/assets.rs",
+        "src-tauri/src/usecases/assets.rs"
       ],
       "lenses": ["frontend", "rust", "stability"]
     },
@@ -107,6 +110,7 @@
         "src-tauri/src/services/backup_service.rs",
         "src-tauri/src/services/csv_service.rs",
         "src-tauri/src/commands/import_export.rs",
+        "src-tauri/src/usecases/import_export.rs",
         "src/features/settings/createImportExportSettings.ts",
         "src/features/settings/createDangerZoneSettings.ts",
         "src/features/settings/ImportDbOverwriteConfirmDialog.tsx",

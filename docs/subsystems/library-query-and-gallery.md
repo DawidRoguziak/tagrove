@@ -1,6 +1,6 @@
 # Library query and gallery
 
-Implementation entry points: [query manager](../../src-tauri/src/services/asset_query_service.rs), [page cache](../../src/library/query/createAssetQuery.ts), [range loading](../../src/library/createLibrary.ts), [virtual grid](../../src/features/gallery/GalleryGrid.tsx).
+Implementation entry points: [query manager](../../src-tauri/src/services/asset_query_service.rs), [query use cases](../../src-tauri/src/usecases/assets.rs), [page cache](../../src/library/query/createAssetQuery.ts), [range loading](../../src/library/createLibrary.ts), [virtual grid](../../src/features/gallery/GalleryGrid.tsx).
 
 This page owns query-session caching, frontend page loading/invalidation, and virtual gallery behavior. It explains how applied search state becomes a revision-bound query and a bounded sparse page cache.
 
@@ -68,7 +68,7 @@ Production uses a page size of 128. `createAssetQuery.refresh`:
 5. accepts only a `ready` response for the still-current local generation; and
 6. advances the query epoch again and replaces the frontend page cache with the returned page at its returned offset. Rows of the previous viewport's other pages stay visible as [render-only fallback](#frontend-sparse-page-cache) until those pages reload.
 
-Each query model creates a random owner ID for its lifetime. The local generation rejects late frontend responses. Native async admission can run out of call order, so the backend retains the highest admitted generation per owner for the process lifetime. An equal or lower generation gets an obsolete token without replacing the current request. A new owner starts with an independent generation counter. Accepted registrations still share one process-wide request token. Input normalization belongs to [IPC validation](../architecture/ipc-contract.md#boundary-validation-and-normalization-summary), SQL membership to [database filters](database.md#filter-semantics), and user syntax to [search grammar](search-tags-and-media-groups.md#search-grammar-and-filter-semantics).
+Each query model creates a random owner ID for its lifetime. The local generation rejects late frontend responses. Native async admission can run out of call order, so the backend retains the highest admitted generation per owner for the process lifetime. An equal or lower generation gets an obsolete token without replacing the current request. A new owner starts with an independent generation counter. Accepted registrations still share one process-wide request token. Filter normalization, the owner-ID check (1–128 bytes) and this registration run in `usecases::assets::begin_asset_query_service` before the `start_asset_query` command spawns its blocking task, so they keep the order in which commands are admitted; the session start then runs on the blocking pool. Input normalization belongs to [IPC validation](../architecture/ipc-contract.md#boundary-validation-and-normalization-summary), SQL membership to [database filters](database.md#filter-semantics), and user syntax to [search grammar](search-tags-and-media-groups.md#search-grammar-and-filter-semantics).
 
 ## Backend session and page contract
 

@@ -5,6 +5,8 @@ paths:
   - "src-tauri/src/services/csv_service.rs"
   - "src-tauri/src/commands/import_export.rs"
   - "src-tauri/src/commands/assets.rs"
+  - "src-tauri/src/usecases/import_export.rs"
+  - "src-tauri/src/usecases/assets.rs"
 ---
 
 # Destructive operations, CSV, backup/restore

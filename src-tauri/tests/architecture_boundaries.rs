@@ -560,9 +560,11 @@ fn video_does_not_import_commands() {
 }
 
 /// Rule 4: command handlers are thin and reach SQLite and the workflow locks
-/// only through use cases. Stage 06 removes `#[ignore]`.
+/// only through use cases (`usecases/`). Flags a `db::` path, a `with_*lock`
+/// helper, `Connection`, and any `locks` path, which every helper of
+/// `app/locks.rs` needs (`try_with_scan_and_thumb_lock`, `with_thumb_operation`,
+/// `with_database_maintenance`, ...).
 #[test]
-#[ignore = "enabled by stage 06 of the hexagonal-backend plan"]
 fn commands_do_not_touch_db_or_locks() {
     let mut violations = Vec::new();
     for file in source_files()
@@ -573,7 +575,7 @@ fn commands_do_not_touch_db_or_locks() {
         for (index, t) in toks.iter().enumerate() {
             let db_path = t.is("db") && toks.get(index + 1).is_some_and(|n| n.is("::"));
             let lock_helper = t.text.starts_with("with_") && t.text.ends_with("lock");
-            if db_path || lock_helper || t.is("Connection") {
+            if db_path || lock_helper || t.is("Connection") || t.is("locks") {
                 violations.push(format!("src/{}:{}: rule 4: `{}`", file.rel, t.line, t.text));
             }
         }

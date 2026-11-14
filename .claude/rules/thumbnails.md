@@ -4,6 +4,7 @@ paths:
   - "src-tauri/src/services/thumb_*.rs"
   - "src-tauri/src/adapter/thumb_scheme.rs"
   - "src-tauri/src/commands/thumbs.rs"
+  - "src-tauri/src/usecases/thumbs.rs"
   - "src-tauri/src/db/thumbnails.rs"
   - "src/platform/tauri/thumbnails.ts"
   - "src/ui/controls/ThumbnailImage.tsx"

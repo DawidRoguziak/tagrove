@@ -1,6 +1,6 @@
 # Data safety and portability
 
-Implementation entry points: [journaled file mutations](../../src-tauri/src/services/asset_mutation_service.rs), [bundle validation and recovery](../../src-tauri/src/services/backup_service.rs), [CSV transfer](../../src-tauri/src/services/csv_service.rs), [command orchestration](../../src-tauri/src/commands/import_export.rs).
+Implementation entry points: [journaled file mutations](../../src-tauri/src/services/asset_mutation_service.rs), [bundle validation and recovery](../../src-tauri/src/services/backup_service.rs), [CSV transfer](../../src-tauri/src/services/csv_service.rs), [library maintenance use cases](../../src-tauri/src/usecases/import_export.rs), [asset use cases](../../src-tauri/src/usecases/assets.rs).
 
 This page owns source-file mutations, CSV/bundle formats, validation, commit points, and recovery limits. [Settings](settings-operations.md) owns confirmation and refresh sequencing; confirmation alone does not make filesystem and database work atomic. [Database](database.md) owns SQLite transactions/revisions, [scanning](scanning-and-indexing.md) owns root membership, and [thumbnails](thumbnails.md) owns cache cleanup.
 
@@ -200,8 +200,8 @@ If restore reports that automatic rollback also failed, stop mutating the librar
 
 ### Relevant existing tests
 
-- `src-tauri/src/commands/scan.rs` tests invalid/valid roots and root removal with thumbnail cleanup.
-- `src-tauri/src/commands/assets.rs` tests rename filename normalization; `src-tauri/src/db.rs` tests delete-path return values, duplicate basename groups, rename DB updates, thumbnail-reference clearing, root-prefix boundaries, and cleanup helpers.
+- `src-tauri/src/usecases/scan.rs` tests invalid/valid roots and root removal with thumbnail cleanup.
+- `src-tauri/src/usecases/assets.rs` tests rename filename normalization and the fail-fast delete during a scan; `src-tauri/src/db.rs` tests delete-path return values, duplicate basename groups, rename DB updates, thumbnail-reference clearing, root-prefix boundaries, and cleanup helpers.
 - `src-tauri/src/services/thumb_service.rs` tests successful thumbnail-file counting and selected thumbnail lifecycle behavior.
 - `src-tauri/src/services/export_target.rs` tests that rejected targets with missing parents (profile, indexed root, a missing folder followed by `..`) create no folder, that an accepted target creates only its resolved parent, that a dangling symbolic link never creates inside a root, that a symbolic link reached after a missing folder and `..` is still followed, that a registered but missing root still rejects targets below it, that a root registered through a dangling symbolic link (relative, absolute, chained) protects its destination and a link loop only drops that root, and that the indexed-asset check agrees with the earlier per-asset `canonicalize` loop on direct, file-alias, folder-alias, hard-link, symbolic-link, new and missing targets. `csv_service.rs` and `backup_service.rs` each test that a rejected export target leaves no new folder.
 - `src-tauri/src/services/csv_service.rs` tests headers, scalar parsing, complete pre-validation, basename fan-out, transaction rollback, and atomic export behavior. `src-tauri/src/utils/tags.rs` tests tag normalization, merge, CSV delimiters, and legacy separators.

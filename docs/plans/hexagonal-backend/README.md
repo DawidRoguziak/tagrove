@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etapy 01–05 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji** (od 2026-11-14). Etapy 01–06 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -53,7 +53,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
     indexer.rs, thumbs.rs           fs + ffmpeg/ffprobe używane bezpośrednio
     services/*                      obecne serwisy (query, mutation, backup, csv, scan, thumb_*, selection, video_source)
     services/thumb_protocol.rs      czysta część: parse_request, allowed_origin, ThumbReply{status, headers, body}
-    usecases/{assets,scan,thumbs,library}.rs   dawne prywatne *_service z commands/*
+    usecases/{assets,scan,thumbs,import_export}.rs   dawne prywatne *_service z commands/* (od etapu 06)
     app/{state,locks,instance_lock,bootstrap}.rs
     ports.rs                        ProgressSink, ThumbResponder
 ```
@@ -89,7 +89,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
   - Reguła 3: żaden plik rdzenia nie importuje `commands`, `adapter` ani `video`. Przejściowa allowlista była: `video_surface.rs` (do etapu 04).
   - Reguła 3, strona adaptera (od etapu 04): pliki `video/**` nie importują `commands` (test `video_does_not_import_commands`).
   - Od etapu 04 obie allowlisty (reguły 1 i 3) są puste i nie mogą odrosnąć.
-  - Reguła 4 (od etapu 06): `commands/**` nie zawiera `db::`, `with_*lock` ani `Connection`.
+  - Reguła 4 (od etapu 06): `commands/**` nie zawiera `db::`, `with_*lock`, `Connection` ani ścieżki `locks` (każdy helper z `app/locks.rs`, także `try_with_…`, `with_thumb_operation`, `with_database_maintenance`).
 - **Od etapu 08:** granicę pilnuje crate.
   - `cargo tree -p media_tagger_core --locked -e normal` nie zawiera `tauri`, `gtk`, `webkit2gtk`, `libmpv`.
   - `cargo build -p media_tagger_core --locked` przechodzi.
@@ -104,7 +104,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 | 03 | Startup scan do adaptera | B | 01 | done 2026-11-14 ([plik etapu](03-startup-scan.md)) |
 | 04 | Izolacja wideo (D1) | B | 01 | done 2026-11-14 ([plik etapu](04-video-adapter.md)) |
 | 05 | Podział `thumb://` | B | 01 | done 2026-11-14 ([plik etapu](05-thumb-scheme.md)) |
-| 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | todo |
+| 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | done 2026-11-14 ([plik etapu](06-use-cases.md)) |
 | 07 | Bootstrap w rdzeniu | C | 03, 04, 05 | todo |
 | 08 | Wydzielenie crate'a `media_tagger_core` | D | 01–07 | todo |
 | 09 | Dokumentacja, reguły, skille, ADR Accepted, pełny E2E | E | 08 | todo |
@@ -205,6 +205,7 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - Fakt „stanu jeszcze nie ma” podaje adapter: `TauriThumbHost::app_state` = `try_state::<AppState>()`.
   - Rdzeń (`thumb_protocol::serve` i `publish_batch`) odpowiada na `None` kodem 503.
   - Wniosek dla bootstrapu: `manage(AppState)` zostaje ostatnim krokiem `setup`, a `start_workers()`/`open_storage` nie mogą udostępnić `AppState` wcześniej ani przez inny kanał. Bootstrap może zwrócić gotowy `AppState`, ale `manage` robi adapter po wszystkich fazach. Test `serve_answers_503_until_app_state_exists` pilnuje strony rdzenia; stronę adaptera łapie tylko E2E.
+- Z etapu 06: bootstrap nie korzysta z use case'ów i nie powinien. `usecases/*` to wyłącznie ciała komend IPC (na gotowym `AppState`); `open_storage`/`start_workers` to osobny `app::bootstrap`. Jedyny styk: `scan_startup_roots` (komenda) woła `usecases::scan::scan_startup_roots_service` na snapshocie, który bootstrap ma zwrócić (`Vec<ScanRoot>`, notatka „Z etapu 03”). `lib.rs` dostał w etapie 06 jedną linię `pub mod usecases;` (za zgodą użytkownika); `generate_handler!` bez zmian.
 - Z etapu 04: wideo to faza adaptera między `resolve_ffmpeg_path` (koniec `open_storage`) a schedulerem miniatur (`start_workers`).
   - Kolejność w `setup` (bez zmian w etapie 04): `libc::setlocale(LC_NUMERIC, "C")` (po starcie GTK, przed utworzeniem playera) → `video::player::VideoPlayerService::new()` → `get_webview_window("main")` → `video::surface::setup(&main_window, &player)` → `app.manage(player)`.
   - Bootstrap rdzenia nie dotyka wideo ani `LC_NUMERIC`; `open_storage` zwraca ścieżkę ffmpeg, a adapter robi fazę wideo, zanim wywoła `start_workers()`.
@@ -232,6 +233,11 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - `src/test_support.rs` (fixtury ADR 0028) to `#[cfg(test)]` rdzenia, z którego korzystają też testy playera w adapterze (`video/player.rs`). Po wydzieleniu `cfg(test)` rdzenia nie jest widoczny w testach adaptera: potrzebny feature (np. `test-support`) rdzenia włączany w `[dev-dependencies]` adaptera (zmiana manifestu i `Cargo.lock` za zgodą) albo inne rozwiązanie wybrane w 08. Kopia fixtur w adapterze odpada (dwie wersje testu bezpieczeństwa).
   - `dto_snapshot` importuje typy wideo z `media_tagger::video::{player, types}` (adapter) i `media_tagger::commands::video::VideoControl`; zmieni się tylko import modeli rdzenia.
   - Puste `FRAMEWORK_ALLOWLIST` i `ADAPTER_IMPORT_ALLOWLIST` oraz testy `allowlist_entries_*` mogą zniknąć razem z grepowymi regułami 1 i 3, gdy granicę przejmie kompilator. `video_does_not_import_commands` jest wewnątrz adaptera, więc kompilator go nie zastąpi i zostaje jako test grep (obok reguł 2 i 4).
+- Z etapu 06: `src/usecases/` przechodzi do crate'a rdzenia (to rdzeń: reguły 1–3 już go obejmują).
+  - Reguła 4 (`commands_do_not_touch_db_or_locks`) zostaje testem grep: kompilator nie zabroni adapterowi wołać `db::` ani `app::locks` z publicznego API rdzenia. Po wydzieleniu dopasowanie tokenów (`db` + `::`, `locks`, `with_*lock`, `Connection`) działa bez zmian także dla ścieżek `media_tagger_core::db::…`.
+  - Typy wejściowe `AssetMetaFilterInput` i `BulkMediaGroupUpdateInput` żyją w `usecases/assets.rs`; `commands/assets.rs` je re-eksportuje (`pub use`), więc import w `dto_snapshot` zostaje `media_tagger::commands::assets::…` albo przechodzi na rdzeń.
+  - Newtype `TauriProgress` (notatka „Z etapu 02”) dotyczy teraz wywołań `&app` w komendach `scan_folder`, `rescan_all_roots`, `scan_startup_roots`, `find_duplicate_assets`, `render_all_thumbnails`, `render_failed_thumbnails`, `clear_all_thumbnails` i `clear_library_data`: use case'y przyjmują `&impl ProgressSink`.
+  - Use case'y zapytań przyjmują `&Arc<DatabaseRuntime>` (`DatabaseRuntime::admit` bierze `self: &Arc<Self>`), więc `Arc` zostaje w API rdzenia.
 - Z etapu 01: `source_roots()` w `architecture_boundaries.rs` dopisuje `crates/media_tagger_core/src`. Reguły 2–3 liczą ścieżki względem korzenia, więc rdzeń i adapter trzeba rozróżnić po korzeniu. Importy `dto_snapshot` przechodzą na `media_tagger_core`.
 
 ### 09 Dokumentacja, reguły, skille, pełny E2E
@@ -244,6 +250,10 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - Skille: `.claude/skills/review-changes/scripts/collect_scope.py` i evals, `.claude/skills/audit/references/batches.json`.
   - ADR 0034 → `Accepted`.
 - Każdy wcześniejszy etap aktualizuje swoją dokumentację w tej samej zmianie; ten etap to końcowe przeczesanie.
+- Z etapu 06:
+  - evale `review-changes` (`evals/patches/01-ipc-unregistered.patch`, `02-lock-order.patch`, `06-clean-control.patch`, `evals/expected.json`) i przykład w `references/signal-bar.md` wskazują `commands/assets.rs` i `commands/scan.rs` sprzed etapu 06; łatki stosują się na `base_commit`, ale na HEAD już nie. Do regeneracji (seeded defect `02-lock-order` przechodzi do `usecases/assets.rs`). `audit/references/recon-candidates.json` ma dowody `plik:linia` w `commands/*` (historyczne);
+  - `open_video` (`commands/video.rs`) nadal sam pobiera połączenie (`database.admit()?.connection()`) i woła `video_source_service`. Reguła 4 tego nie łapie (nie flaguje `admit`); zostawione zgodnie z D1, do decyzji w 09, czy przenieść odczyt źródła do use case'u;
+  - teksty błędów bez strażnika w testach Rust: `"Invalid query owner ID"`, `"At most 256 asset IDs are allowed"`, `"Invalid hasNoTags meta filter"`, `"Folder path does not exist or is not a directory"` w `scan_folder_service` (w `add_scan_root_service` pilnowany), wartość `LIBRARY_BUSY_ERROR` (test porównuje ze stałą); kolejność guardów w `with_scan_and_thumb_lock` i kolejność walidacja → `begin_request` nie mają testu (wyniki prób w [06](06-use-cases.md)).
 - **Wyjście:** `rg 'src-tauri/src/(db|services|models|indexer|thumbs)' docs .claude CLAUDE.md` puste poza historycznymi planami; pełny przebieg E2E, jeden spec naraz.
 
 ## Zasady dla agentów

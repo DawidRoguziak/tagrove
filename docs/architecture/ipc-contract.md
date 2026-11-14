@@ -327,6 +327,7 @@ When changing IPC:
 8. Re-evaluate boundary validation, workflow locks, revision/cache invalidation, filesystem rollback, and destructive-operation safety. Follow the [system overview](system-overview.md) and the relevant subsystem document rather than duplicating those policies here.
 9. Add focused frontend wrapper tests and Rust serialization/command/service tests. Run the frontend, backend, and real Tauri E2E suites in proportion to the change; an IPC signature change requires a real desktop-path check, not only mocked `invoke` tests.
 10. Update this document in the same change, including the primary/legacy designation and Known limitations.
+11. Update the frozen snapshot in `src-tauri/tests/architecture_boundaries.rs` (`REGISTERED_COMMANDS`, `COMMAND_SIGNATURES`, the `dto_snapshot` module or the event names) in the same change. The test prints the current signature table. A refactor that keeps the contract must leave the snapshot unchanged.
 
 ### Relevant tests
 
@@ -339,6 +340,7 @@ When changing IPC:
 - Rust tests in `src-tauri/src/commands/assets.rs`, `scan.rs`, `thumbs.rs`, and `video.rs` cover filename/root/video validation and cancellation behavior. `commands/import_export.rs` has no tests of its own: the CSV and bundle logic is covered by unit tests in `services/csv_service.rs` and `services/backup_service.rs` plus the `backend_integration` and `backend_e2e` targets, and the command-level lock wiring is reachable only through desktop E2E.
 - Rust tests in `src-tauri/src/services/thumb_service.rs`, `scan_service.rs`, `backup_service.rs`, `asset_query_service.rs`, `video_source_service.rs`, and `video_player_service.rs`, plus `src-tauri/src/db.rs`, cover thumbnail results, partial scans, archive and video-source safety, query/session semantics, and persistence behavior.
 - `src-tauri/tests/backend_integration.rs` and `backend_e2e.rs` cover file-backed cross-layer mutation/import workflows but do not exercise JavaScript serialization.
+- `src-tauri/tests/architecture_boundaries.rs` freezes the Rust side of the contract: the sorted `generate_handler!` list (and that each command is named in this document), the one deliberately unregistered command, every command's wire arguments and return type, the JSON shape of the response, input and video-channel DTOs, and the emitted event names. It does not check error texts or `thumb://` responses.
 - `e2e/specs/*.e2e.js` exercises the registered commands through a real desktop WebView and is the strongest existing check for Rust/TypeScript integration.
 
 ## System browser links

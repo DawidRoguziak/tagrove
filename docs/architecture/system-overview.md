@@ -113,6 +113,12 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 | `utils/*` | Path, tag, and text normalization helpers. |
 | `error.rs` | `AppError` and `AppResult`; command boundaries currently flatten errors to strings. |
 
+The backend is being split into a Tauri-independent core and a Tauri adapter ([ADR 0034](../adr/0034-tauri-independent-backend-core.md), plan [hexagonal-backend](../plans/hexagonal-backend/README.md)). `src-tauri/tests/architecture_boundaries.rs` enforces the current rules:
+
+- Tauri, GTK, WebKit and libmpv identifiers appear only in `lib.rs`, `main.rs`, `commands/`, `adapter/`, `video/`, `app/profile.rs` and a transitional allowlist of core files. The allowlist only shrinks.
+- `db.rs` and `db/*` reference no `services`, `app`, `commands` or adapter module.
+- No core file references `commands` or another adapter module. `video_surface.rs` is on a transitional allowlist until the video stack moves to the adapter.
+
 ### Managed state
 
 `AppState` contains:
@@ -240,6 +246,7 @@ Use [testing](../development/testing.md) for the full test workflow. The most re
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.
 - `src-tauri/tests/{backend_runtime,tag_vocabulary,thumbnail_bulk,thumbnail_clear}.rs`: runtime permits/locks, tag vocabulary, bulk thumbnail rendering, and thumbnail clearing; `tag_save_benchmark.rs` holds the ignored tag-save benchmark.
+- `src-tauri/tests/architecture_boundaries.rs`: the core/adapter import rules of [ADR 0034](../adr/0034-tauri-independent-backend-core.md) and a frozen snapshot of the IPC wire contract (registered commands, wire arguments, DTO JSON shapes, event names).
 - `e2e/build-e2e.js` and `e2e/wdio.conf.js`: destructive-test isolation and real desktop build/driver setup.
 - `e2e/specs/*.e2e.js`: real-window smoke and workflows covering settings, filtering, roots, bulk edits, lightbox mutations, CSV, and DB bundles.
 - `src-tauri/tauri.conf*.json`, `capabilities/default.json`, `Cargo.toml`, checked-in `icons/`, `package.json`, and `index.html`: configuration checks that tests do not fully replace.

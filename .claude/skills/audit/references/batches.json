@@ -388,6 +388,7 @@
       "optional": true,
       "tests": true,
       "globs": [
+        "src-tauri/tests/architecture_boundaries.rs",
         "src-tauri/tests/backend_e2e.rs",
         "src-tauri/tests/backend_runtime.rs",
         "src-tauri/tests/grid_baseline.rs",

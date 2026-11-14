@@ -97,7 +97,8 @@ bun run test -- --maxWorkers=1    # if it runs out of memory
 bun run test:backend              # unit + all src-tauri/tests targets
 cargo test --manifest-path src-tauri/Cargo.toml --locked <name>
 cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_integration <name>
-# targets: backend_e2e (Rust-only, not desktop E2E), backend_integration, backend_runtime,
+# targets: architecture_boundaries (core/adapter rules + wire snapshot),
+#          backend_e2e (Rust-only, not desktop E2E), backend_integration, backend_runtime,
 #          grid_baseline, tag_save_benchmark, tag_vocabulary, thumbnail_bulk, thumbnail_clear
 # ignored diagnostics: add -- --ignored --nocapture --test-threads=1
 

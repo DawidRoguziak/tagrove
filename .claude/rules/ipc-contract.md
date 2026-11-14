@@ -17,4 +17,5 @@ Read `docs/architecture/ipc-contract.md` before changing a command, payload, cha
 - An unregistered `#[tauri::command]` cannot be called from JS. `rename_asset_file` exists but is deliberately not registered. On-demand thumbnails use the `thumb://` scheme, not a command.
 - `process-progress` is one shared, best-effort, uncorrelated event. Consumers filter by phase, and phase names are part of the contract. Progress never proves an operation finished; only the command result does.
 - Native video is opened by asset ID only. The backend resolves and authorizes the path, so the frontend never sends a path.
+- `src-tauri/tests/architecture_boundaries.rs` freezes the Rust side of the wire contract: registered commands, wire arguments, DTO JSON, and event names. An intended change updates it in the same change; a refactor leaves it unchanged.
 - Tests: a Rust test for the command plus `src/platform/tauri/__tests__/api.test.ts` for the payload shape. A mocked `invoke` does not prove Rust accepts the payload, so a real bridge needs desktop E2E.

@@ -16,7 +16,8 @@ the code under test (database, scanning, thumbnails, data safety; see CLAUDE.md'
   default for helpers, parsing/normalization, SQL semantics, validation, scheduler behavior and
   command/service branches that do not need a running Tauri app.
 - **Integration targets**: `src-tauri/tests/*.rs`, against the public `media_tagger` API.
-  Current targets: `backend_e2e` (Rust-only, not desktop), `backend_integration`,
+  Current targets: `architecture_boundaries` (core/adapter import rules and the frozen
+  IPC wire snapshot, ADR 0034), `backend_e2e` (Rust-only, not desktop), `backend_integration`,
   `backend_runtime`, `grid_baseline`, `tag_save_benchmark`, `tag_vocabulary`,
   `thumbnail_bulk`, `thumbnail_clear`. Add to an existing target before creating a new one.
   Multi-module transactions belong in `backend_integration`.
@@ -63,7 +64,9 @@ contract is proved with plain unit tests in the command module:
 - The frontend half goes in `src/platform/tauri/__tests__/api.test.ts` (`tauri-solid-tests`);
   the real bridge is proved only by desktop E2E (`tauri-e2e-tests`).
 - An IPC change also touches the `generate_handler!` list in `src-tauri/src/lib.rs`, the
-  wrapper, its `contracts/` type and `docs/architecture/ipc-contract.md` in the same change.
+  wrapper, its `contracts/` type and `docs/architecture/ipc-contract.md` in the same change,
+  and updates the frozen snapshot in `src-tauri/tests/architecture_boundaries.rs`
+  (command list, wire signatures, DTO JSON). A refactor that keeps the contract leaves it unchanged.
 
 ## 4. Async, locks and runtime
 

@@ -1,6 +1,6 @@
 # Lightbox
 
-Implementation entry points: [selection lifecycle](../../src/features/lightbox/createLightbox.ts), [modal composition](../../src/features/lightbox/LightboxModal.tsx), [native session model](../../src/features/lightbox/video/createNativeVideoSession.ts), [native playback](../../src-tauri/src/services/video_player_service.rs), [GTK surface](../../src-tauri/src/video_surface.rs).
+Implementation entry points: [selection lifecycle](../../src/features/lightbox/createLightbox.ts), [modal composition](../../src/features/lightbox/LightboxModal.tsx), [native session model](../../src/features/lightbox/video/createNativeVideoSession.ts), [native playback](../../src-tauri/src/video/player.rs), [GTK surface](../../src-tauri/src/video/surface.rs).
 
 The lightbox is the selected-asset workspace layered over the gallery. It owns full-media presentation, per-asset editing, deletion confirmation, image transforms, video playback, fullscreen, and keyboard navigation. Selection and mutation state live above the modal in `createLightbox`; `LightboxModal` and its presentation models own transient interaction state.
 
@@ -398,10 +398,10 @@ When changing lightbox behavior:
   failed-view reopening and preservation of a healthy view during navigation.
 - [`UiModal.test.tsx`](../../src/ui/overlays/__tests__/UiModal.test.tsx) covers nested layers,
   presence, reduced motion, focus and inertness. These tests require the layer provider.
-- The Rust unit tests in `src-tauri/src/video_surface.rs` cover the non-blocking render
+- The Rust unit tests in `src-tauri/src/video/surface.rs` cover the non-blocking render
   parameters and a GLib model in which continuous frame wake-ups must not starve an
   idle-priority source. The real-libmpv tests in
-  `src-tauri/src/services/video_player_service.rs` cover the player options and silent
+  `src-tauri/src/video/player.rs` cover the player options and silent
   playback of an audio track when no audio device opens. They also open eleven text files
   named `*.mp4` (m3u, pls, HLS, EDL, DASH, `concat`, SDP) that point at a loopback
   listener, at a clip outside the folder and at a sibling clip: each must end in an error

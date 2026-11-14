@@ -12,9 +12,9 @@ use libloading::Library;
 use libmpv2_sys as mpv_sys;
 use tauri::WebviewWindow;
 
-use crate::{
-    commands::video::{VideoBounds, VideoControlLabels},
-    services::video_player_service::{PlayerCommand, VideoPlayerService},
+use crate::video::{
+    player::{PlayerCommand, VideoPlayerService},
+    types::{VideoBounds, VideoControlLabels},
 };
 
 const GL_DRAW_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
@@ -729,10 +729,7 @@ impl NativeVideoControls {
         self.sync_labels(Some(snapshot));
     }
 
-    fn sync_labels(
-        &self,
-        snapshot: Option<crate::services::video_player_service::PlaybackSnapshot>,
-    ) {
+    fn sync_labels(&self, snapshot: Option<crate::video::player::PlaybackSnapshot>) {
         let labels = self.labels.borrow();
         let paused = snapshot.is_none_or(|snapshot| snapshot.paused);
         let muted = snapshot.is_some_and(|snapshot| snapshot.muted || snapshot.volume <= 0.0);

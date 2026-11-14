@@ -123,8 +123,10 @@
       "title": "Video: native surface and sources",
       "critical": false,
       "globs": [
-        "src-tauri/src/video_surface.rs",
-        "src-tauri/src/services/video_events.rs",
+        "src-tauri/src/video/surface.rs",
+        "src-tauri/src/video/mpv_events.rs",
+        "src-tauri/src/video/types.rs",
+        "src-tauri/src/test_support.rs",
         "src-tauri/src/services/video_source_service.rs"
       ],
       "lenses": ["rust", "stability"]
@@ -134,7 +136,8 @@
       "title": "Video: player service and lightbox video UI",
       "critical": false,
       "globs": [
-        "src-tauri/src/services/video_player_service.rs",
+        "src-tauri/src/video/player.rs",
+        "src-tauri/src/video/mod.rs",
         "src-tauri/src/commands/video.rs",
         "src/features/lightbox/video/*",
         "src/platform/tauri/video.ts",

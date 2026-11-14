@@ -426,29 +426,21 @@ const ADAPTER_FIXED: &[&str] = &[
 ];
 
 /// Core files that still use the framework, with the plan stage that removes
-/// the entry. May only shrink.
-const FRAMEWORK_ALLOWLIST: &[(&str, &str)] = &[
-    ("services/video_events.rs", "04"),
-    ("services/video_player_service.rs", "04"),
-    ("video_surface.rs", "04"),
-];
+/// the entry. May only shrink; empty since stage 04, so no core file may be
+/// added back.
+const FRAMEWORK_ALLOWLIST: &[(&str, &str)] = &[];
 
-/// Core files that still import an adapter module (rule 3). May only shrink.
-const ADAPTER_IMPORT_ALLOWLIST: &[(&str, &str)] = &[("video_surface.rs", "04")];
+/// Core files that still import an adapter module (rule 3). May only shrink;
+/// empty since stage 04.
+const ADAPTER_IMPORT_ALLOWLIST: &[(&str, &str)] = &[];
 
 /// Top-level modules `db` must not reach (rule 2).
 const DB_FORBIDDEN_MODULES: &[&str] = &[
-    "services",
-    "app",
-    "commands",
-    "usecases",
-    "adapter",
-    "video",
-    "video_surface",
+    "services", "app", "commands", "usecases", "adapter", "video",
 ];
 
 /// Adapter modules the core must not reach (rule 3).
-const ADAPTER_MODULES: &[&str] = &["commands", "adapter", "video", "video_surface"];
+const ADAPTER_MODULES: &[&str] = &["commands", "adapter", "video"];
 
 fn is_adapter(rel: &str) -> bool {
     ADAPTER_FIXED.iter().any(|entry| {
@@ -541,6 +533,28 @@ fn core_does_not_import_the_adapter() {
     report(
         "Core files import the adapter:",
         "Move the shared type into the core, or the importing code into the adapter.",
+        &violations,
+    );
+}
+
+/// Rule 3, adapter side: the native video stack in `video/` does not depend on
+/// the IPC command layer. Commands use `video::{player, surface, types}`, never
+/// the other way round.
+#[test]
+fn video_does_not_import_commands() {
+    let violations: Vec<String> = source_files()
+        .iter()
+        .filter(|f| f.rel.starts_with("video/"))
+        .flat_map(|file| {
+            crate_root_refs(&tokens(&strip(&file.text, Literals::Blank)))
+                .into_iter()
+                .filter(|(_, module)| module == "commands")
+                .map(|(line, module)| format!("src/{}:{line}: rule 3: `crate::{module}`", file.rel))
+        })
+        .collect();
+    report(
+        "The video adapter imports the command layer:",
+        "Move the shared type into video/types.rs and import it from commands/.",
         &violations,
     );
 }
@@ -977,13 +991,13 @@ mod dto_snapshot {
     use media_tagger::{
         commands::{
             assets::{AssetMetaFilterInput, BulkMediaGroupUpdateInput},
-            video::{VideoBounds, VideoControl, VideoControlLabels},
+            video::VideoControl,
         },
         models::*,
-        services::{
-            asset_query_service::SelectionSpec,
-            selection_service::SelectionMutation,
-            video_player_service::{PlaybackSnapshot, VideoEvent, VideoEventPayload},
+        services::{asset_query_service::SelectionSpec, selection_service::SelectionMutation},
+        video::{
+            player::{PlaybackSnapshot, VideoEvent, VideoEventPayload},
+            types::{VideoBounds, VideoControlLabels},
         },
     };
     use serde_json::{json, Value};

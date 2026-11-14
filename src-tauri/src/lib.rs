@@ -6,9 +6,11 @@ pub mod error;
 pub mod indexer;
 pub mod models;
 pub mod services;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod thumbs;
 pub mod utils;
-pub mod video_surface;
+pub mod video;
 
 use std::{
     collections::HashSet,
@@ -110,11 +112,11 @@ pub fn run() {
             if locale.is_null() {
                 return Err("failed to activate the C numeric locale".into());
             }
-            let player = services::video_player_service::VideoPlayerService::new();
+            let player = video::player::VideoPlayerService::new();
             let main_window = app
                 .get_webview_window("main")
                 .ok_or("main WebView window is unavailable")?;
-            video_surface::setup(&main_window, &player)?;
+            video::surface::setup(&main_window, &player)?;
             app.manage(player);
             let thumb_scheduler =
                 ThumbnailScheduler::from_available_parallelism(ffmpeg_path.clone());

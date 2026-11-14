@@ -1205,7 +1205,7 @@ mod tests {
 
     #[test]
     fn video_tools_refuse_reference_content_and_still_read_real_containers() {
-        use crate::services::video_player_service::test_support::{
+        use crate::test_support::{
             connection_arrived, loopback_listener, reference_fixtures, OpenWatch,
         };
         let ffmpeg = std::path::Path::new("/usr/bin/ffmpeg");

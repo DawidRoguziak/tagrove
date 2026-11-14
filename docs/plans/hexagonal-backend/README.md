@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etapy 01–03 i 05 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji** (od 2026-11-14). Etapy 01–05 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -86,7 +86,9 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 - **Etapy 01–07:** test `src-tauri/tests/architecture_boundaries.rs` (tylko std), skanuje `CARGO_MANIFEST_DIR/src`.
   - Reguła 1: tokeny `tauri`, `tauri_plugin_*`, `AppHandle`, `gtk`, `gdk`, `glib`, `webkit2gtk`, `libmpv2`, `libmpv2_sys`, `async_channel`, `libloading` tylko w stałym zbiorze adaptera (`lib.rs`, `main.rs`, `commands/**`, `adapter/**`, `video/**`, `app/profile.rs`) i na przejściowej allowliście, która może tylko maleć.
   - Reguła 2: `db` nie importuje `services`, `app`, `commands`, `usecases` (dziś prawda; test to zamraża).
-  - Reguła 3: żaden plik rdzenia nie importuje `commands`, `adapter`, `video` ani `video_surface`. Przejściowa allowlista: `video_surface.rs` (do etapu 04).
+  - Reguła 3: żaden plik rdzenia nie importuje `commands`, `adapter` ani `video`. Przejściowa allowlista była: `video_surface.rs` (do etapu 04).
+  - Reguła 3, strona adaptera (od etapu 04): pliki `video/**` nie importują `commands` (test `video_does_not_import_commands`).
+  - Od etapu 04 obie allowlisty (reguły 1 i 3) są puste i nie mogą odrosnąć.
   - Reguła 4 (od etapu 06): `commands/**` nie zawiera `db::`, `with_*lock` ani `Connection`.
 - **Od etapu 08:** granicę pilnuje crate.
   - `cargo tree -p media_tagger_core --locked -e normal` nie zawiera `tauri`, `gtk`, `webkit2gtk`, `libmpv`.
@@ -100,7 +102,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 | 01 | Strażnik granicy, snapshot wire, ADR 0034 Proposed | A | — | done 2026-11-14 ([plik etapu](01-boundary-guard.md)) |
 | 02 | Postęp i testy bez Tauri | B | 01 | done 2026-11-14 ([plik etapu](02-progress-sink.md)) |
 | 03 | Startup scan do adaptera | B | 01 | done 2026-11-14 ([plik etapu](03-startup-scan.md)) |
-| 04 | Izolacja wideo (D1) | B | 01 | todo |
+| 04 | Izolacja wideo (D1) | B | 01 | done 2026-11-14 ([plik etapu](04-video-adapter.md)) |
 | 05 | Podział `thumb://` | B | 01 | done 2026-11-14 ([plik etapu](05-thumb-scheme.md)) |
 | 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | todo |
 | 07 | Bootstrap w rdzeniu | C | 03, 04, 05 | todo |
@@ -203,6 +205,10 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - Fakt „stanu jeszcze nie ma” podaje adapter: `TauriThumbHost::app_state` = `try_state::<AppState>()`.
   - Rdzeń (`thumb_protocol::serve` i `publish_batch`) odpowiada na `None` kodem 503.
   - Wniosek dla bootstrapu: `manage(AppState)` zostaje ostatnim krokiem `setup`, a `start_workers()`/`open_storage` nie mogą udostępnić `AppState` wcześniej ani przez inny kanał. Bootstrap może zwrócić gotowy `AppState`, ale `manage` robi adapter po wszystkich fazach. Test `serve_answers_503_until_app_state_exists` pilnuje strony rdzenia; stronę adaptera łapie tylko E2E.
+- Z etapu 04: wideo to faza adaptera między `resolve_ffmpeg_path` (koniec `open_storage`) a schedulerem miniatur (`start_workers`).
+  - Kolejność w `setup` (bez zmian w etapie 04): `libc::setlocale(LC_NUMERIC, "C")` (po starcie GTK, przed utworzeniem playera) → `video::player::VideoPlayerService::new()` → `get_webview_window("main")` → `video::surface::setup(&main_window, &player)` → `app.manage(player)`.
+  - Bootstrap rdzenia nie dotyka wideo ani `LC_NUMERIC`; `open_storage` zwraca ścieżkę ffmpeg, a adapter robi fazę wideo, zanim wywoła `start_workers()`.
+  - Rdzeń zostawia tylko `services::video_source_service`, wołany z komendy `open_video`.
 
 ### 08 Wydzielenie crate'a `media_tagger_core`
 
@@ -221,6 +227,11 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - Jedynym `impl` portu rdzenia na typie Tauri zostaje `ProgressSink for AppHandle` z etapu 02.
   - Porty `ThumbHost`, `ThumbResponder` i typ `ThumbReply` są w `services/thumb_protocol.rs`; przy wydzielaniu można je przenieść do `ports.rs`.
   - `SCHEME` zostaje w rdzeniu, a `lib.rs` czyta go jako `services::thumb_protocol::SCHEME`, więc po wydzieleniu zmieni się tylko ścieżka.
+- Z etapu 04: `src/video/` zostaje w pakiecie adaptera.
+  - `libmpv2`, `libmpv2-sys`, `gtk` i `libloading` są potrzebne tylko w manifeście adaptera; `cargo tree -p media_tagger_core --locked -e normal` ich nie zawiera. `libc` jest potrzebny w obu pakietach (adapter: `setlocale` w `lib.rs`; rdzeń: `services/asset_mutation_service.rs` i `test_support.rs`).
+  - `src/test_support.rs` (fixtury ADR 0028) to `#[cfg(test)]` rdzenia, z którego korzystają też testy playera w adapterze (`video/player.rs`). Po wydzieleniu `cfg(test)` rdzenia nie jest widoczny w testach adaptera: potrzebny feature (np. `test-support`) rdzenia włączany w `[dev-dependencies]` adaptera (zmiana manifestu i `Cargo.lock` za zgodą) albo inne rozwiązanie wybrane w 08. Kopia fixtur w adapterze odpada (dwie wersje testu bezpieczeństwa).
+  - `dto_snapshot` importuje typy wideo z `media_tagger::video::{player, types}` (adapter) i `media_tagger::commands::video::VideoControl`; zmieni się tylko import modeli rdzenia.
+  - Puste `FRAMEWORK_ALLOWLIST` i `ADAPTER_IMPORT_ALLOWLIST` oraz testy `allowlist_entries_*` mogą zniknąć razem z grepowymi regułami 1 i 3, gdy granicę przejmie kompilator. `video_does_not_import_commands` jest wewnątrz adaptera, więc kompilator go nie zastąpi i zostaje jako test grep (obok reguł 2 i 4).
 - Z etapu 01: `source_roots()` w `architecture_boundaries.rs` dopisuje `crates/media_tagger_core/src`. Reguły 2–3 liczą ścieżki względem korzenia, więc rdzeń i adapter trzeba rozróżnić po korzeniu. Importy `dto_snapshot` przechodzą na `media_tagger_core`.
 
 ### 09 Dokumentacja, reguły, skille, pełny E2E

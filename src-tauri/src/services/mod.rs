@@ -10,6 +10,4 @@ pub mod selection_service;
 pub mod thumb_protocol;
 pub mod thumb_scheduler;
 pub mod thumb_service;
-mod video_events;
-pub mod video_player_service;
 pub mod video_source_service;

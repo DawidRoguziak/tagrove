@@ -1680,7 +1680,7 @@ mod selection_spec {
 }
 
 /// Opens the profile database the way startup does and reconciles the file-mutation journal
-/// (`lib.rs` setup): a fresh connection, `init_schema`, FULL sync, then recovery.
+/// (`app::bootstrap::open_storage`): a fresh connection, `init_schema`, FULL sync, then recovery.
 fn restart_and_recover(db_path: &Path) -> (rusqlite::Connection, anyhow::Result<()>) {
     let conn = db::open_connection(db_path).expect("reopen db");
     db::init_schema(&conn).expect("init schema on restart");
@@ -1964,7 +1964,7 @@ mod restore_with_a_live_file_journal {
         .map_err(|error| error.to_string())
     }
 
-    /// The whole startup sequence of `lib.rs` setup for the profile.
+    /// The profile phases of startup (`app::bootstrap::open_storage`) for the profile.
     fn restart(profile: &Path) -> (rusqlite::Connection, anyhow::Result<()>) {
         backup_service::recover_interrupted_restore(profile).expect("restore journal recovery");
         backup_service::remove_abandoned_backup_temporaries(profile);

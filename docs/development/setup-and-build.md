@@ -268,7 +268,7 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **`tauri:build:e2e` fails before compiling Rust.** Check the frontend build output. The build helper produces fresh frontend assets before invoking Tauri; the overlay disables the redundant Tauri `beforeBuildCommand`.
 
-**Video probing or thumbnails fail while images still work.** Confirm `ffmpeg` and `ffprobe` are on `PATH`. Application startup succeeding does not prove that both tools were found.
+**Video probing or thumbnails fail while images still work.** Confirm `ffmpeg` and `ffprobe` are on `PATH`. Startup resolves ffmpeg once (`resolve_ffmpeg_path` in `src-tauri/src/app/bootstrap.rs`): an executable copy in the resource directory or beside the executable wins over `/usr/bin/ffmpeg` and `PATH`; see [tool discovery](../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery). Application startup succeeding does not prove that both tools were found.
 
 **Linux video does not play.** Install `webkit2gtk-4.1`, `gtk3`, `mpv`, and `libglvnd`; verify `ldd /path/to/extracted/media_tagger` has no missing dependencies and includes libmpv/GTK. Check that `libEGL.so.1` exports `eglGetProcAddress` or `libGL.so.1` exports `glXGetProcAddressARB`, then inspect player/surface stderr errors. For portable packages, inspect the packaged tools and runtime rather than the host libraries.
 

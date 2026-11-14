@@ -3042,7 +3042,7 @@ mod tests {
         assert_eq!(names_in(profile), vec!["media.db", "thumbs"]);
     }
 
-    /// What `lib.rs` setup does with the profile before any command can run:
+    /// What `app::bootstrap::open_storage` does with the profile before any command can run:
     /// restore-journal recovery, the temporaries sweep, then `init_schema` and
     /// file-mutation journal recovery on a FULL-sync connection.
     fn start_profile(profile: &Path) -> (rusqlite::Connection, anyhow::Result<()>) {

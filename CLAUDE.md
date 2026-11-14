@@ -47,8 +47,8 @@ src/                     Solid frontend
   utils/                 tag normalization (media.ts), search tokens
   test/                  shared test setup and helpers
 src-tauri/src/           Rust crate `media_tagger`
-  lib.rs                 builder, profile guard, startup order, generate_handler! command list
-  app/                   AppState, workflow locks (locks.rs), instance lock, profile allowlist
+  lib.rs                 composition: builder, profile guard, Tauri paths, InstanceLock, video phase, manage(), generate_handler! list
+  app/                   startup phases (bootstrap.rs), AppState, workflow locks (locks.rs), instance lock, profile allowlist
   commands/              thin IPC endpoints: assets, scan, thumbs, import_export, video, window
   usecases/              workflows behind the commands (assets, scan, thumbs, import_export): validation, locks, db
   services/              query sessions, file mutation journal, db pool, scan, thumbnails, backup, csv, video source, progress

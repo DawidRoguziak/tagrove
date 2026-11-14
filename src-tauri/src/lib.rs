@@ -13,16 +13,11 @@ pub mod usecases;
 pub mod utils;
 pub mod video;
 
-use std::{
-    collections::HashSet,
-    fs,
-    path::{Path, PathBuf},
-    sync::{atomic::AtomicBool, atomic::AtomicU64, Mutex, RwLock},
-};
+use std::fs;
 
 use tauri::Manager;
 
-use app::{instance_lock::InstanceLock, state::AppState};
+use app::instance_lock::InstanceLock;
 use commands::video::{
     begin_video_open, cancel_video_open, close_video, control_video, open_video, set_video_bounds,
     set_video_control_labels,
@@ -50,7 +45,6 @@ use commands::{
     },
     window::sync_window_theme,
 };
-use services::{asset_mutation_service, thumb_scheduler::ThumbnailScheduler};
 
 pub fn run() {
     tauri::Builder::default()
@@ -82,31 +76,15 @@ pub fn run() {
             let instance_lock = InstanceLock::acquire(&app_data_dir)?;
             app.manage(instance_lock);
 
-            services::backup_service::recover_interrupted_restore(&app_data_dir)?;
-            services::backup_service::remove_abandoned_backup_temporaries(&app_data_dir);
-
-            let thumbs_dir = app_data_dir.join("thumbs");
-            fs::create_dir_all(&thumbs_dir)?;
-
-            let db_path = app_data_dir.join("media.db");
-            let conn = db::open_connection(&db_path)?;
-            db::init_schema(&conn)?;
-            conn.pragma_update(None, "synchronous", "FULL")?;
-            asset_mutation_service::recover_pending_file_operations(&conn)?;
-            let popular_tags = db::list_popular_tags(&conn).unwrap_or_else(|error| {
-                eprintln!("Failed to calculate startup popular tags: {error}");
-                Vec::new()
-            });
-            app.manage(app::state::StartupPopularTags::new(popular_tags));
-            app.manage(adapter::startup_scan::StartupScanState::new(
-                db::list_scan_root_settings(&conn)?,
-            ));
+            let (storage, snapshots) = app::bootstrap::open_storage(&app_data_dir)?;
+            app.manage(snapshots.popular_tags);
+            app.manage(adapter::startup_scan::StartupScanState::new(snapshots.scan_roots));
 
             let resource_dir = app
                 .path()
                 .resource_dir()
                 .map_err(|e| format!("cannot resolve resource_dir: {e}"))?;
-            let ffmpeg_path = resolve_ffmpeg_path(&resource_dir);
+            let ffmpeg_path = app::bootstrap::resolve_ffmpeg_path(&resource_dir);
             // GTK activates the environment locale during Tauri initialization, so
             // libmpv's required numeric locale must be restored after GTK starts.
             let locale = unsafe { libc::setlocale(libc::LC_NUMERIC, c"C".as_ptr()) };
@@ -119,31 +97,8 @@ pub fn run() {
                 .ok_or("main WebView window is unavailable")?;
             video::surface::setup(&main_window, &player)?;
             app.manage(player);
-            let thumb_scheduler =
-                ThumbnailScheduler::from_available_parallelism(ffmpeg_path.clone());
-            // Demand calls block on scheduler results; a scheduler whose
-            // workers never started would hang every thumbnail command.
-            // Refuse the startup instead of entering a wedged state.
-            let worker_spawn_failures = thumb_scheduler.worker_spawn_failures();
-            if worker_spawn_failures > 0 {
-                return Err(format!(
-                    "failed to start {worker_spawn_failures} thumbnail worker thread(s); refusing to run with an unhealthy thumbnail scheduler"
-                )
-                .into());
-            }
-
-            app.manage(AppState {
-                database: crate::services::db_pool::DatabaseRuntime::new(db_path.clone()),
-                db_path,
-                thumbs_dir,
-                ffmpeg_path,
-                scan_lock: Mutex::new(()),
-                thumb_lock: RwLock::new(()),
-                thumb_scheduler,
-                thumbnail_render_all_running: AtomicBool::new(false),
-                thumbnail_render_all_cancel_requested: AtomicBool::new(false),
-                thumbnail_generation: AtomicU64::new(0),
-            });
+            // Last step: `thumb://` answers 503 until `AppState` is managed.
+            app.manage(app::bootstrap::start_workers(&storage, ffmpeg_path)?);
 
             Ok(())
         })
@@ -195,60 +150,4 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri app");
-}
-
-fn resolve_ffmpeg_path(resource_dir: &Path) -> PathBuf {
-    let mut candidates = Vec::new();
-    for directory in collect_ffmpeg_candidate_dirs(resource_dir) {
-        extend_ffmpeg_candidates(&mut candidates, &directory);
-    }
-
-    candidates.push(PathBuf::from("/usr/bin/ffmpeg"));
-
-    for candidate in candidates {
-        if is_executable_file(&candidate) {
-            return candidate;
-        }
-    }
-
-    PathBuf::from("ffmpeg")
-}
-
-fn collect_ffmpeg_candidate_dirs(resource_dir: &Path) -> Vec<PathBuf> {
-    let mut dirs = vec![resource_dir.to_path_buf(), resource_dir.join("binaries")];
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            dirs.push(exe_dir.to_path_buf());
-            dirs.push(exe_dir.join("binaries"));
-            dirs.push(exe_dir.join("resources"));
-            dirs.push(exe_dir.join("resources").join("binaries"));
-
-            if let Some(exe_parent) = exe_dir.parent() {
-                dirs.push(exe_parent.join("resources"));
-                dirs.push(exe_parent.join("resources").join("binaries"));
-            }
-        }
-    }
-
-    let mut seen = HashSet::new();
-    dirs.into_iter()
-        .filter(|directory| seen.insert(directory.clone()))
-        .collect()
-}
-
-fn extend_ffmpeg_candidates(candidates: &mut Vec<PathBuf>, directory: &Path) {
-    candidates.push(directory.join("ffmpeg"));
-}
-
-fn is_executable_file(path: &Path) -> bool {
-    let Ok(metadata) = path.metadata() else {
-        return false;
-    };
-    if !metadata.is_file() {
-        return false;
-    }
-
-    use std::os::unix::fs::PermissionsExt;
-    metadata.permissions().mode() & 0o111 != 0
 }

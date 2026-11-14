@@ -1,6 +1,6 @@
 # Backend heksagonalny: rdzeń niezależny od Tauri, plan etapowy
 
-Status: **w realizacji** (od 2026-11-14). Etapy 01–06 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
+Status: **w realizacji** (od 2026-11-14). Etapy 01–07 `done`, pozostałe `todo`. Bieżący stan jest w tabeli [Etapy](#etapy) i w [NOTES.md](NOTES.md). Odnośniki `plik:linia` dotyczą commita `397181f` i mogą się przesunąć; przed edycją agent sprawdza je przez `rg`.
 
 To jest **szkic etapów**, nie pełny plan wykonawczy. Szczegółowy plik `NN-nazwa.md` (format jak w [grid-performance](../grid-performance/README.md)) powstaje dopiero na starcie danego etapu, po ponownym sprawdzeniu kodu.
 
@@ -105,7 +105,7 @@ src-tauri/                          korzeń workspace + pakiet adaptera `media_t
 | 04 | Izolacja wideo (D1) | B | 01 | done 2026-11-14 ([plik etapu](04-video-adapter.md)) |
 | 05 | Podział `thumb://` | B | 01 | done 2026-11-14 ([plik etapu](05-thumb-scheme.md)) |
 | 06 | Warstwa use-case, cienkie komendy | C | 02, 03 | done 2026-11-14 ([plik etapu](06-use-cases.md)) |
-| 07 | Bootstrap w rdzeniu | C | 03, 04, 05 | todo |
+| 07 | Bootstrap w rdzeniu | C | 03, 04, 05 | done 2026-11-14 ([plik etapu](07-bootstrap.md)) |
 | 08 | Wydzielenie crate'a `media_tagger_core` | D | 01–07 | todo |
 | 09 | Dokumentacja, reguły, skille, ADR Accepted, pełny E2E | E | 08 | todo |
 
@@ -238,6 +238,11 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - Typy wejściowe `AssetMetaFilterInput` i `BulkMediaGroupUpdateInput` żyją w `usecases/assets.rs`; `commands/assets.rs` je re-eksportuje (`pub use`), więc import w `dto_snapshot` zostaje `media_tagger::commands::assets::…` albo przechodzi na rdzeń.
   - Newtype `TauriProgress` (notatka „Z etapu 02”) dotyczy teraz wywołań `&app` w komendach `scan_folder`, `rescan_all_roots`, `scan_startup_roots`, `find_duplicate_assets`, `render_all_thumbnails`, `render_failed_thumbnails`, `clear_all_thumbnails` i `clear_library_data`: use case'y przyjmują `&impl ProgressSink`.
   - Use case'y zapytań przyjmują `&Arc<DatabaseRuntime>` (`DatabaseRuntime::admit` bierze `self: &Arc<Self>`), więc `Arc` zostaje w API rdzenia.
+- Z etapu 07: `src/app/bootstrap.rs` przechodzi do crate'a rdzenia razem z `app/{state,locks,instance_lock}.rs`.
+  - API: `open_storage(&Path) -> BootstrapResult<(Storage, StartupSnapshots)>`, `resolve_ffmpeg_path(&Path) -> PathBuf`, `start_workers(&Storage, PathBuf) -> BootstrapResult<AppState>`; `BootstrapError = Box<dyn std::error::Error>` (typ błędu `setup` w Tauri, tylko std, bez nowych zależności).
+  - `resolve_ffmpeg_path` (z helperami) jest w rdzeniu: używa tylko `std::env::current_exe` i metadanych plików. `resource_dir` rozwiązuje adapter (`app.path().resource_dir()`) w tym samym miejscu startu co przed etapem i podaje ścieżkę; to samo dotyczy `app_data_dir`, `InstanceLock::acquire` i strażnika identyfikatora (`app/profile.rs` zostaje w adapterze).
+  - `Storage` trzyma `rusqlite::Connection` (połączenie startowe żyje do końca `setup`); rusqlite i tak jest w rdzeniu.
+  - Testy `app::bootstrap::tests` są w module (unit), więc idą z plikiem; korzystają tylko z `tempfile` i `db::`, nie z `test_support`.
 - Z etapu 01: `source_roots()` w `architecture_boundaries.rs` dopisuje `crates/media_tagger_core/src`. Reguły 2–3 liczą ścieżki względem korzenia, więc rdzeń i adapter trzeba rozróżnić po korzeniu. Importy `dto_snapshot` przechodzą na `media_tagger_core`.
 
 ### 09 Dokumentacja, reguły, skille, pełny E2E
@@ -255,6 +260,10 @@ Każdy etap jest osobnym, działającym commitem. Plan można zatrzymać po etap
   - `open_video` (`commands/video.rs`) nadal sam pobiera połączenie (`database.admit()?.connection()`) i woła `video_source_service`. Reguła 4 tego nie łapie (nie flaguje `admit`); zostawione zgodnie z D1, do decyzji w 09, czy przenieść odczyt źródła do use case'u;
   - teksty błędów bez strażnika w testach Rust: `"Invalid query owner ID"`, `"At most 256 asset IDs are allowed"`, `"Invalid hasNoTags meta filter"`, `"Folder path does not exist or is not a directory"` w `scan_folder_service` (w `add_scan_root_service` pilnowany), wartość `LIBRARY_BUSY_ERROR` (test porównuje ze stałą); kolejność guardów w `with_scan_and_thumb_lock` i kolejność walidacja → `begin_request` nie mają testu (wyniki prób w [06](06-use-cases.md)).
 - **Wyjście:** `rg 'src-tauri/src/(db|services|models|indexer|thumbs)' docs .claude CLAUDE.md` puste poza historycznymi planami; pełny przebieg E2E, jeden spec naraz.
+- Z etapu 07:
+  - `rg 'src-tauri/src/app/bootstrap' docs .claude CLAUDE.md` (system-overview, data-safety, thumbnails, setup-and-build, testing, reguły `backend-core`, `data-safety`, `thumbnails`) przechodzi na ścieżkę crate'a rdzenia; `lib.rs` w `CLAUDE.md` i tabeli modułów to już tylko składanie;
+  - luki bez strażnika (wyniki prób w [07](07-bootstrap.md)): kolejność `manage(AppState)` jako ostatniego kroku `setup` (i brak wcześniejszego udostępnienia `AppState`) pilnuje tylko desktop E2E; odzysk operacji plikowych przesunięty za snapshoty przechodzi; kontrola `worker_spawn_failures` nie ma testu; nic nie zabrania `app/bootstrap.rs` importu `usecases` (reguła granicy do decyzji w 09 albo kompilator po 08, jeśli `usecases` trafi do innego modułu);
+  - batch audytu B12 („Bootstrap, runtime…”) obejmuje `app/*.rs`, a `lib.rs` jest w B11; po wydzieleniu glob B12 dostaje ścieżkę crate'a rdzenia.
 
 ## Zasady dla agentów
 

@@ -133,6 +133,8 @@ The setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely
 
 Rust unit tests live in `#[cfg(test)]` modules beside their implementation. This is the right layer for private helpers, parsing and normalization, database query semantics, validation, scheduler behavior, and service/command branches that do not require a running Tauri application.
 
+The framework-free startup phases are covered the same way: `src-tauri/src/app/bootstrap.rs` runs `open_storage` and `start_workers` on a temporary profile (interrupted restore rolled back before the database opens, abandoned backup temporaries swept, an uncommitted file operation recovered and the startup connection left FULL-sync (the order of those two and of the snapshots is not pinned), scan-root and popular-tag snapshots, a corrupt or newer database refused and left unchanged, `AppState` built) and checks ffmpeg search precedence. The adapter side in `lib.rs` (identifier guard, `InstanceLock`, video phase, and `manage(AppState)` as the last step, which ends the `thumb://` 503 window) has no Rust test; desktop E2E (`app.smoke`, `startup-scan`, `thumbnail-fade`) and a `bun run tauri:dev` launch prove it.
+
 Cargo discovers integration targets in `src-tauri/tests/`. Inspect the current target list with `cargo metadata --manifest-path src-tauri/Cargo.toml --locked --offline --no-deps --format-version 1`, selecting targets whose `kind` contains `test`. The focused package scripts select only `backend_integration` and `backend_e2e`; they do not cover every integration target.
 
 The integration binaries use the public `media_tagger` library API. Examples include:

@@ -1,6 +1,6 @@
 # System overview
 
-Implementation entry points: [Tauri bootstrap](../../src-tauri/src/lib.rs), [workflow locks](../../src-tauri/src/app/locks.rs), [application state](../../src-tauri/src/app/state.rs).
+Implementation entry points: [Tauri bootstrap](../../src-tauri/src/lib.rs), [core startup phases](../../src-tauri/src/app/bootstrap.rs), [workflow locks](../../src-tauri/src/app/locks.rs), [application state](../../src-tauri/src/app/state.rs).
 
 This page describes the architecture that is implemented today. The source code and executable configuration are authoritative.
 
@@ -81,15 +81,15 @@ contracts and [testing](../development/testing.md) for their observed coverage.
 
 ## Executable bootstrap and runtime lifecycle
 
-`src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`, which:
+`src-tauri/src/main.rs` is deliberately only the binary entry point and calls `media_tagger::run()`. The actual Tauri bootstrap is the library function `run()` in `src-tauri/src/lib.rs`. It only composes the application; the framework-free startup phases live in the core module `app/bootstrap.rs` (`open_storage`, `resolve_ffmpeg_path`, `start_workers`), which manages no state and is tested on a temporary profile without Tauri. `run()`:
 
 1. creates a `tauri::Builder`, installs the dialog and opener plugins, and registers the `thumb://` scheme (`adapter/thumb_scheme.rs`; until `AppState` is managed at the end of setup, `try_state` finds no state and the core handler answers `503`);
 2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. recovers any interrupted journaled database/thumbnail restore and then removes abandoned backup/restore temporaries from the profile directory (best effort) before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema, reconciles pending source-file operations, and captures enabled scan roots and popular tags before automatic scanning;
-6. resolves ffmpeg, restores `LC_NUMERIC` to `C` after GTK initialization for libmpv, creates the process-wide `VideoPlayerService`, and installs the GTK video surface;
-7. creates the thumbnail scheduler and refuses startup if any worker failed to spawn, then manages `AppState`;
+5. calls `app::bootstrap::open_storage`, which recovers any interrupted journaled database/thumbnail restore and then removes abandoned backup/restore temporaries from the profile directory (best effort) before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema on a FULL-sync startup connection, reconciles pending source-file operations, and captures popular tags and the scan-root settings before automatic scanning; `setup` manages them as `StartupPopularTags` and `StartupScanState`;
+6. resolves the resource directory and ffmpeg (`app::bootstrap::resolve_ffmpeg_path`), restores `LC_NUMERIC` to `C` after GTK initialization for libmpv, creates the process-wide `VideoPlayerService`, and installs the GTK video surface;
+7. calls `app::bootstrap::start_workers`, which creates the thumbnail scheduler, refuses startup if any worker failed to spawn, and builds `AppState`; managing that `AppState` is the last step of `setup`, and the startup connection closes when `setup` returns;
 8. registers every frontend-callable command; and
 9. runs the generated Tauri context until the application exits.
 
@@ -100,7 +100,8 @@ Except for popular-tag calculation, which logs failures and stores an empty list
 | Module | Current responsibility |
 | --- | --- |
 | `main.rs` | Native binary shim only. |
-| `lib.rs` | Builder setup, profile safety guard, app-data initialization, managed state, command registration, ffmpeg resolution, and process launch. |
+| `lib.rs` | Composition only: builder, plugins, `thumb://` registration, profile safety guard, Tauri paths (`app_data_dir`, `resource_dir`), `InstanceLock`, the video phase, `manage()` of every state, command registration, and process launch. |
+| `app/bootstrap.rs` | Framework-free startup phases called by `lib.rs`: `open_storage` (restore recovery, sweep of backup temporaries, `thumbs/`, `media.db` and schema, pending file-operation recovery, popular-tag and scan-root snapshots), `resolve_ffmpeg_path` (bundled, executable-adjacent and system ffmpeg precedence), and `start_workers` (thumbnail scheduler and `AppState`). It returns values and never manages state. |
 | `app/state.rs` | Process-wide shared runtime state: `AppState` and `StartupPopularTags`. |
 | `app/instance_lock.rs` | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | In-process workflow lock helpers and the canonical combined lock order. |
@@ -136,10 +137,10 @@ The backend is being split into a Tauri-independent core and a Tauri adapter ([A
 - the shared `ThumbnailScheduler`; and
 - atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and preserve cancellation without database or workflow locks.
 
-`StartupScanState` (`adapter/startup_scan.rs`) is separately managed by Tauri. It captures enabled scan roots from `db::list_scan_root_settings` after database initialization and recovery. The first startup-scan invocation consumes that snapshot and starts one process-owned task. Concurrent invocations await the same task; later invocations replay its retained summary or error. A launch with no enabled roots returns null. Dropping a frontend observer does not cancel the task or lose its result. Preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline: the adapter owns the waiting and the async task, and the scan itself is the core `scan_service::scan_roots` under `with_scan_lock`.
+`StartupScanState` (`adapter/startup_scan.rs`) is separately managed by Tauri. It is built from the scan-root settings (`db::list_scan_root_settings`) that `app::bootstrap::open_storage` captures after database initialization and recovery; only enabled roots are scanned. The first startup-scan invocation consumes that snapshot and starts one process-owned task. Concurrent invocations await the same task; later invocations replay its retained summary or error. A launch with no enabled roots returns null. Dropping a frontend observer does not cancel the task or lose its result. Preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline: the adapter owns the waiting and the async task, and the scan itself is the core `scan_service::scan_roots` under `with_scan_lock`.
 
 `StartupPopularTags` is separately managed immutable state containing up to ten tag names
-ranked by library-wide assignment counts, then alphabetically. It is calculated once after
+ranked by library-wide assignment counts, then alphabetically. It is calculated once by `app::bootstrap::open_storage` after
 initialization and recovery. Its command reads only memory; frontend reloads, scans, imports,
 restore, and clearing cannot recalculate it. The shell loads it on mount for the bulk sidebar.
 Calculation or loading failures are logged and omit suggestions. See [popular-tag behavior](../subsystems/search-tags-and-media-groups.md#startup-popular-tags).
@@ -219,7 +220,7 @@ This split is deliberate. Changing the Tauri identifier changes the app-data dir
 ## Known limitations
 
 - CSP is disabled and the asset scope is global.
-- The debug profile allowlist has a focused unit test. The profile lock and ffmpeg search precedence are not directly unit-tested.
+- The debug profile allowlist has a focused unit test, and ffmpeg search precedence is unit-tested in `app/bootstrap.rs`. The profile lock is not directly unit-tested, and the adapter side of startup (the `manage` order, including `AppState` last for the `thumb://` 503 window) is covered only by desktop E2E.
 - Workflow locking remains selective outside database maintenance. Tag/favorite/group writes, CSV import, adding roots, and reads may overlap a scan, but they cannot overlap bundle snapshot/replacement because every live connection participates in the maintenance gate.
 - `AppState` fields are public, so module boundaries are conventions rather than compiler-enforced interfaces.
 - Backend errors are flattened to strings at IPC boundaries, so the frontend cannot reliably branch on structured error categories.
@@ -234,7 +235,7 @@ Before merging an architectural change:
 - Trace the complete path from the calling model/component through `src/platform/tauri`, the registered Tauri command, service/core code, and every SQLite/filesystem effect. Update the [IPC contract](ipc-contract.md) if names, payloads, channels, events, or error semantics change.
 - If adding a command, register it in `lib.rs`, expose it through `src/platform/tauri`, keep the handler thin, and put validation, locks and SQL in a use case in `usecases/` (rule 4 of `architecture_boundaries` rejects them in `commands/`), with longer orchestration in the appropriate service.
 - Classify the operation in the lock matrix. Use the shared helpers; if both locks are needed, acquire scan before the exclusive thumbnail lock. Consider direct IPC concurrency, not only UI button state.
-- For `AppState` changes, update bootstrap construction and all test fixtures. Decide whether the value truly belongs in managed state or in a focused service.
+- For `AppState` changes, update its construction in `app::bootstrap::start_workers` and all test fixtures. Decide whether the value truly belongs in managed state or in a focused service.
 - For database writes, use transactions where a workflow must be atomic, bump the library revision when query-visible state changes, and invalidate process caches/pools when replacing the database. Follow [database](../subsystems/database.md) and [data safety](../subsystems/data-safety-and-portability.md) guidance.
 - For file mutations, define failure ordering and rollback/repair behavior across the database, source file, thumbnail, WAL/SHM sidecars, and restore staging.
 - Never reuse the production identifier or app-data cleanup target for dev/E2E. Preserve the E2E identifier/title/target assertions when changing configuration.
@@ -248,7 +249,7 @@ Use [testing](../development/testing.md) for the full test workflow. The most re
 
 - `src/platform/tauri/__tests__/api.test.ts`: invoke payload mapping and media-path conversion.
 - Frontend model/component tests under `src/library/**/__tests__` and `src/features/**/__tests__`: query lifecycle, settings progress, mutation refreshes, and UI behavior.
-- Rust unit tests in `db.rs`, `usecases/*`, `commands/video.rs`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
+- Rust unit tests in `app/bootstrap.rs` (startup phases on a temporary profile: restore rollback, temporaries sweep, pending file-operation recovery, snapshots, corrupt or newer database, `AppState`, ffmpeg precedence), `db.rs`, `usecases/*`, `commands/video.rs`, `services/*`, `thumbs.rs`, and utilities: schema migration/query behavior, command validation, scan cleanup, backup sidecars and restore, thumbnail cancellation/scheduling, and video parsing.
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.
 - `src-tauri/tests/{backend_runtime,tag_vocabulary,thumbnail_bulk,thumbnail_clear}.rs`: runtime permits/locks, tag vocabulary, bulk thumbnail rendering, and thumbnail clearing; `tag_save_benchmark.rs` holds the ignored tag-save benchmark.

@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "Selected: {{count}}",
-      "clearSelection": "Clear selection",
-      "clearSelectionHint": "Esc clears selection",
       "addTag": "Add tag",
       "addGroup": "Add group",
       "ariaLabel": "Bulk actions",
-      "heading": "Bulk actions",
       "groupHeading": "Media group",
       "groupDescription": "Set one group for the current selection or clear its group assignment.",
       "groupConflictTitle": "Multiple group assignments",
@@ -137,7 +134,6 @@
       "orderHeading": "Group order",
       "orderDescription": "Drag items or use the arrow keys on their handles to set their order.",
       "dragHandleAria": "Reorder item {{position}} with drag or arrow keys",
-      "mostUsedTags": "Most used tags",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "New tags are added to every selected item. Existing tags are kept.",
       "tagsSingleDescription": "Add tags or remove the current tags from the selected item.",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "At least one selected item already has media group key/order. Applying will replace all selected items with this group and new order.",
       "applyGroup": "Apply group",
       "applyInProgress": "Applying..."
+    },
+    "dock": {
+      "tabTags": "Tags",
+      "tabGroup": "Group & order",
+      "clearSelectionAria": "Clear selection ({{count}} selected)",
+      "collapsedHint": "Select items"
     }
   },
   "lightbox": {

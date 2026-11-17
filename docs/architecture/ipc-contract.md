@@ -26,7 +26,7 @@ Consumers import payloads from their owning contract module directly. `SelectedA
 | Module under `src/platform/tauri` | Commands and payload types |
 | --- | --- |
 | `assets.ts` / `contracts/assets.ts` | Query sessions, summaries/details, favorite/group writes, deletion and media URLs. |
-| `tags.ts` / `contracts/tags.ts` | Tag listing, startup snapshot, replacements/merges and query-impact results. |
+| `tags.ts` / `contracts/tags.ts` | Tag listing, replacements/merges and query-impact results. |
 | `scanning.ts` / `contracts/scanning.ts` | Roots, scans, startup preferences and progress shape. |
 | `thumbnails.ts` / `contracts/thumbnails.ts` | `thumb://` URL builder, bulk render/retry/cancel and cleanup. |
 | `maintenance.ts` / `contracts/maintenance.ts` | CSV/bundles, duplicates, video-tool checks and library clearing. |
@@ -95,7 +95,6 @@ The session API is the only library query path: `startAssetQuery` followed by `g
 | `controlVideo` / `control_video` | `sessionId`, tagged `command` | `void` | Rejects stale sessions. Playback commands are queued to the worker; execution failure arrives as `controlError`; property reads keep the snapshot authoritative. Supports play, pause, `togglePause`, non-negative absolute seek, `seekRelative` with finite signed `seconds`, volume 0–1, mute, rate 0.25–4, nonblank track IDs, and native-window fullscreen set/toggle. Pause toggles and relative seeks use current libmpv state on the worker, preserve pause state when seeking, and bound seeks to the media timeline. Fullscreen completes on the GTK thread before acknowledgement; its toggle computes the next state atomically there. |
 | `closeVideo` / `close_video` | `sessionId` | `void` | Invalidates the current session, queues decoder stop, hides its GTK surface, and exits its fullscreen. Closing retired sessions is an idempotent no-op. |
 | `listTags` / `list_tags` | `query: string`, `offset: number`, `limit: number` | `TagListPage` | Trims the search query, matches tag names case-insensitively, clamps offset to at least 0, and clamps limit to 1–200. |
-| `getStartupPopularTags` / `get_startup_popular_tags` | none | `string[]` | Returns up to ten cached tag names, ordered by startup assignment count descending then name ascending with SQLite NOCASE ties. Reads immutable process state without SQLite or workflow locks. Captured after initialization/recovery and before startup scanning; remains fixed through frontend reload, restore, and clear until process restart. Calculation failure logs and stores an empty list. |
 
 `SearchMetaFilter` is a discriminated input union:
 

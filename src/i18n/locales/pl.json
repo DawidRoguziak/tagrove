@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "Zaznaczono: {{count}}",
-      "clearSelection": "Wyczyść zaznaczenie",
-      "clearSelectionHint": "Esc czyści zaznaczenie",
       "addTag": "Dodaj tag",
       "addGroup": "Dodaj grupę",
       "ariaLabel": "Akcje zbiorcze",
-      "heading": "Akcje zbiorcze",
       "groupHeading": "Grupa mediów",
       "groupDescription": "Ustaw jedną grupę dla zaznaczenia albo usuń przypisanie do grupy.",
       "groupConflictTitle": "Wiele przypisań do grup",
@@ -137,7 +134,6 @@
       "orderHeading": "Kolejność w grupie",
       "orderDescription": "Przeciągnij elementy lub użyj klawiszy strzałek na ich uchwytach, aby ustawić kolejność.",
       "dragHandleAria": "Zmień kolejność elementu {{position}} przeciąganiem lub klawiszami strzałek",
-      "mostUsedTags": "Najczęściej używane tagi",
       "tagsHeading": "Tagi",
       "tagsMultipleDescription": "Nowe tagi są dodawane do wszystkich zaznaczonych elementów. Istniejące tagi pozostają bez zmian.",
       "tagsSingleDescription": "Dodawaj tagi lub usuwaj aktualne tagi zaznaczonego elementu.",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "Co najmniej jeden zaznaczony element ma już klucz/kolejność grupy. Zastosowanie podmieni te dane dla wszystkich zaznaczonych elementów.",
       "applyGroup": "Zastosuj grupę",
       "applyInProgress": "Stosowanie..."
+    },
+    "dock": {
+      "tabTags": "Tagi",
+      "tabGroup": "Grupa i kolejność",
+      "clearSelectionAria": "Wyczyść zaznaczenie (zaznaczono: {{count}})",
+      "collapsedHint": "Zaznacz"
     }
   },
   "lightbox": {

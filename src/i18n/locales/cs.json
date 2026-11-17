@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "Vybráno: {{count}}",
-      "clearSelection": "Zrušit výběr",
-      "clearSelectionHint": "Esc zruší výběr",
       "addTag": "Přidat tag",
       "addGroup": "Přidat skupinu",
       "ariaLabel": "Hromadné akce",
-      "heading": "Hromadné akce",
       "groupHeading": "Skupina médií",
       "groupDescription": "Nastavte jednu skupinu pro výběr nebo odeberte přiřazení ke skupině.",
       "groupConflictTitle": "Více přiřazení ke skupinám",
@@ -137,7 +134,6 @@
       "orderHeading": "Pořadí skupiny",
       "orderDescription": "Pořadí nastavte přetažením položek nebo klávesami se šipkami na jejich úchytech.",
       "dragHandleAria": "Změnit pořadí položky {{position}} přetažením nebo klávesami se šipkami",
-      "mostUsedTags": "Nejpoužívanější štítky",
       "tagsHeading": "Tagy",
       "tagsMultipleDescription": "Nové tagy se přidají ke všem vybraným položkám. Stávající tagy zůstanou zachovány.",
       "tagsSingleDescription": "Přidejte tagy nebo odeberte aktuální tagy vybrané položky.",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "Alespoň jedna vybraná položka již má klíč/pořadí skupiny médií. Použitím budou všechny vybrané položky nahrazeny touto skupinou a novým pořadím.",
       "applyGroup": "Použít skupinu",
       "applyInProgress": "Používá se..."
+    },
+    "dock": {
+      "tabTags": "Štítky",
+      "tabGroup": "Skupina a pořadí",
+      "clearSelectionAria": "Zrušit výběr (vybráno: {{count}})",
+      "collapsedHint": "Vyberte"
     }
   },
   "lightbox": {

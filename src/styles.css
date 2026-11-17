@@ -225,16 +225,27 @@
 
 /* The header keeps its natural height; only the remaining workspace scrolls. */
 .workspace-header { position: relative; flex-shrink: 0; z-index: 40; background: var(--window-chrome-bg); border-bottom: 1px solid var(--border-strong); }
-.workspace-viewport { flex: 1; min-height: 0; container-type: size; }
+.workspace-viewport { position: relative; flex: 1; min-height: 0; container-type: size; }
 .workspace-search { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; align-items: center; gap: 20px; min-height: 52px; padding: 6px 16px; }
 .workspace-identity { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
 .workspace-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 44px; padding: 5px 16px; border-top: 1px solid var(--border-soft); }
 .workspace-sizing { margin-left: auto; display: flex; align-items: center; gap: 16px; }
 .workspace-body { display: grid; min-height: 100%; grid-template-columns: minmax(0, 1fr); }
-.bulk-inspector { align-self: start; min-width: 0; background: var(--surface-solid); border-top: 1px solid var(--border-strong); border-bottom-left-radius: var(--radius-panel); }
-.bulk-inspector > header { position: sticky; top: 0; z-index: 2; padding: 16px; border-bottom: 1px solid var(--border-strong); }
-.bulk-inspector > section { padding: 16px; border-bottom: 1px solid var(--border-soft); }
-.bulk-inspector > section:last-of-type { border-bottom-left-radius: inherit; }
+/* Bulk dock: floats at the bottom centre of the gallery viewport, centred with auto margins.
+   The order board portals its drag ghost to the body, out of this stacking context. Its size
+   changes instantly; only its content fades in. */
+.workspace-body--bulk { padding-bottom: 88px; }
+.bulk-dock { position: absolute; z-index: 30; bottom: 16px; left: 0; right: 0; margin-inline: auto; width: 100px; display: flex; flex-direction: column; gap: 10px; max-height: calc(100cqh - 32px); padding: 6px; background: var(--surface-solid); border: 1px solid var(--border-strong); border-radius: 999px; box-shadow: var(--shadow-popover); }
+.bulk-dock--expanded { width: min(760px, calc(100% - 32px)); padding: 12px; border-radius: var(--radius-panel); overflow-y: auto; }
+.bulk-dock--tall { height: min(72cqh, 680px); }
+.bulk-dock-chip { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; font-size: 12px; color: var(--text-muted); }
+.bulk-dock-count { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 50px; min-width: 56px; padding: 0 12px; border-radius: var(--radius-control); border: 1px solid var(--border-soft); background: var(--surface-raised); color: var(--color-primary-text); font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+.bulk-dock-count:hover:not(:disabled) { background: var(--color-error); color: var(--color-error-content); border-color: transparent; }
+.bulk-dock-count:disabled { opacity: 0.5; }
+.bulk-dock-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-soft); }
+.bulk-dock-tab { padding: 6px 12px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 13px; }
+.bulk-dock-tab:hover { color: var(--color-base-content); }
+.bulk-dock-tab[aria-selected="true"] { color: var(--color-primary-text); border-bottom-color: var(--color-primary); }
 .settings-layout { display: grid; gap: 16px; max-width: 1440px; margin: auto; }
 .settings-nav { display: flex; flex-wrap: wrap; align-content: start; gap: 4px; padding: 8px; border: 1px solid var(--border-soft); border-radius: var(--radius-panel); background: var(--surface-solid); }
 .settings-nav a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--text-muted); font-size: 13px; text-decoration: none; }
@@ -242,8 +253,6 @@
 .settings-nav a[aria-current="location"] { background: var(--tagator-suggestion-active-bg); color: var(--color-primary-text); box-shadow: inset 2px 0 var(--color-primary); }
 .settings-section { scroll-margin-top: 96px; min-width: 0; }
 @media (min-width: 1000px) {
-  .workspace-body--bulk { grid-template-columns: minmax(0, 1fr) 360px; }
-  .bulk-inspector { position: sticky; top: 0; max-height: 100cqh; overflow-y: auto; border-top: 0; border-left: 1px solid var(--border-strong); }
   .settings-layout { grid-template-columns: 240px minmax(0, 1fr); }
   .settings-nav { position: sticky; top: 96px; display: grid; align-self: start; }
 }
@@ -335,7 +344,7 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.motion-enter, .bulk-inspector > header, .bulk-inspector > section {
+.motion-enter, .bulk-dock {
   animation: motion-fade-in var(--motion-entrance) var(--motion-ease);
 }
 .gallery-selection-mark {
@@ -353,7 +362,7 @@ img:not(.invisible) + .thumbnail-loader { display: none; }
 @media (prefers-reduced-motion: reduce) {
   /* Keep loading spinners/pulses running, and state changes immediate. */
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
-  .motion-enter, .bulk-inspector > header, .bulk-inspector > section { animation: none; }
+  .motion-enter, .bulk-dock { animation: none; }
   .thumbnail-fade-in-ready { animation: none; }
 }
 

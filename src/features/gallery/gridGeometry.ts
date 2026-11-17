@@ -4,7 +4,7 @@ import type { LibraryRange } from "../../library/createLibrary";
  * Tallest physical grid spacer. WebKitGTK 2.54 keeps layout, scroll offsets, transforms,
  * hit testing and painting exact only below 2^24 CSS px (16,777,216) at device scales 1
  * and 2; above it odd offsets round and transformed rows stop painting. The remaining
- * ~0.78M px cover the gallery margin, footer and the stacked bulk inspector.
+ * ~0.78M px cover the gallery margin, footer and the bulk-mode bottom padding.
  * Measured by `e2e/gallery-scale/height-probe.tsx` (stage 05 gate).
  */
 export const MAX_GRID_HEIGHT = 16_000_000;

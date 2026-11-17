@@ -133,7 +133,7 @@ The setup awaits `i18n.changeLanguage("en")`. Tests that change language or rely
 
 Rust unit tests live in `#[cfg(test)]` modules beside their implementation. This is the right layer for private helpers, parsing and normalization, database query semantics, validation, scheduler behavior, and service/command branches that do not require a running Tauri application.
 
-The framework-free startup phases are covered the same way: `src-tauri/crates/media_tagger_core/src/app/bootstrap.rs` runs `open_storage` and `start_workers` on a temporary profile (interrupted restore rolled back before the database opens, abandoned backup temporaries swept, an uncommitted file operation recovered and the startup connection left FULL-sync (the order of those two and of the snapshots is not pinned), scan-root and popular-tag snapshots, a corrupt or newer database refused and left unchanged, `AppState` built) and checks ffmpeg search precedence. The adapter side in `lib.rs` (identifier guard, `InstanceLock`, video phase) has no Rust test; only the position of `manage(AppState)` as the last step of `setup`, which ends the `thumb://` 503 window, is checked statically by `app_state_is_managed_last_in_setup` in `architecture_boundaries`. Desktop E2E (`app.smoke`, `startup-scan`, `thumbnail-fade`) and a `bun run tauri:dev` launch prove the running sequence. The startup refusal when a thumbnail worker fails to spawn (`worker_spawn_failures` in `start_workers`) has no test, because a failed thread spawn cannot be provoked without a port.
+The framework-free startup phases are covered the same way: `src-tauri/crates/media_tagger_core/src/app/bootstrap.rs` runs `open_storage` and `start_workers` on a temporary profile (interrupted restore rolled back before the database opens, abandoned backup temporaries swept, an uncommitted file operation recovered and the startup connection left FULL-sync (the order of those two and of the snapshots is not pinned), the scan-root snapshot, a corrupt or newer database refused and left unchanged, `AppState` built) and checks ffmpeg search precedence. The adapter side in `lib.rs` (identifier guard, `InstanceLock`, video phase) has no Rust test; only the position of `manage(AppState)` as the last step of `setup`, which ends the `thumb://` 503 window, is checked statically by `app_state_is_managed_last_in_setup` in `architecture_boundaries`. Desktop E2E (`app.smoke`, `startup-scan`, `thumbnail-fade`) and a `bun run tauri:dev` launch prove the running sequence. The startup refusal when a thumbnail worker fails to spawn (`worker_spawn_failures` in `start_workers`) has no test, because a failed thread spawn cannot be provoked without a port.
 
 The backend is a workspace of two packages, the adapter `media_tagger` and the core `media_tagger_core` (see [system overview](../architecture/system-overview.md#backend-module-boundaries)). `bun run test:backend` runs the unit tests of both and every integration target; narrow it with `cargo test --manifest-path src-tauri/Cargo.toml --locked -p media_tagger_core` (core unit tests, no GUI stack) or `-p media_tagger --lib` (adapter unit tests). `--test <target>` needs no `-p`, because only the adapter has integration targets. The adapter's player tests use the core's ADR 0028 fixtures (`test_support.rs`) through the core feature `test-support`, which only the adapter's `[dev-dependencies]` enable.
 
@@ -176,7 +176,7 @@ Release production is documented in [setup and builds](setup-and-build.md#docker
 
 Specs that need the library contents for assertions call `listAssetsForAssertions` from `e2e/assets.js` (it replaced the removed `list_assets` command, [ADR 0009](../adr/0009-remove-list-assets-command.md)). It runs a query session under its own owner (`e2e-assertions`) and returns `{ items, total }` with `AssetDetails` items in gallery order. A start from any owner supersedes a start that is still running, so the helper waits until the app has no `start_asset_query` in flight and presses the gallery's Retry if it still interrupted one; call it while the gallery is idle when possible.
 
-Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`, `app.workflows`, `group-order`, `popular-tags`, `review-fixes`, and `startup-scan`. The others skip unless their flag is `1`:
+Specs without an opt-in flag run on every `bun run test:e2e:tauri`: `app.smoke`, `app.workflows`, `group-order`, `review-fixes`, and `startup-scan`. The others skip unless their flag is `1`:
 
 | Spec | Flag |
 | --- | --- |
@@ -322,7 +322,7 @@ three surfaces and secondary text on workspace/panels. Inactive segments use mai
 because the light secondary color does not meet 4.5:1 on raised controls.
 The fixtures include long filenames and tags.
 The media-kind cases wait until every rendered tile carries the selected kind's chip before reading or opening the first tile, because the previous result set stays rendered until the new query replies. An `afterEach` hook restores English and bulk-off (reload only when needed), so one failed case does not leave Polish selectors for the rest of the suite.
-It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the stacked bulk layout at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
+It also checks Polish gallery/settings/lightbox text, both-theme drawers at 600px and 320px, the collapsed floating bulk dock at 900px, native-control appearance, and failure to decode a temporary original. Screenshots capture
 the private X11 display into a fresh timestamped `artifacts/ui-redesign/` subdirectory per run.
 The normal workflow suite covers narrow lightbox and native media behavior; the separate
 `MEDIATAGGER_GALLERY_PERF=1` suite exercises 3,584 images (28 pages, more than the 24-page frontend cache) and asserts that a revisited page is fetched again after eviction. It also checks selection summary IPC and full-selection metadata writes after eviction and filter changes.
@@ -346,7 +346,7 @@ every rendering frame before, during and after interaction. The segmented-select
 click through `e2e/native-input.py`, so `XDG_DATA_HOME` must be a fresh `/tmp/mediatagger-*`
 directory. Both themes run at 699,
 700, 767, 768, 999 and 1000 CSS pixels. Hover/press, bottom-of-gallery selection,
-suggestions, standard dialogs, bulk inspector, inline information/confirmation and
+suggestions, standard dialogs, bulk dock, inline information/confirmation and
 repeated lightbox drawer toggles are covered. Modal samples also record opening and
 closing opacity, durations, accessibility hiding, inertness and fixed shell bounds.
 The `modal media lifecycle` case checks image/GIF/video opening, navigation without
@@ -401,7 +401,7 @@ Frame samples and failure screenshots stay in a timestamped `artifacts/animation
 directory. The component tests cover focus trapping, inertness, Escape and restoration;
 they cannot prove desktop scroll geometry.
 
-The `ui.redesign.e2e.js` case selected by `--mochaOpts.grep 'corner badges'` checks the Video/GIF badge colors and offsets, floating image/GIF controls down to 320px, and modal-only bulk ordering in both themes. Use `MEDIATAGGER_UI_REDESIGN=1` and the same isolated desktop setup.
+The `ui.redesign.e2e.js` case selected by `--mochaOpts.grep 'corner badges'` checks the Video/GIF badge colors and offsets, floating image/GIF controls down to 320px, and bulk ordering inline in the dock and in the larger modal in both themes. Use `MEDIATAGGER_UI_REDESIGN=1` and the same isolated desktop setup.
 
 ### Gallery thumbnail fade
 
@@ -426,7 +426,7 @@ source replacement, unchanged-source rerenders, and the default without fading.
 
 ### Gallery selection gestures
 
-`e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages (about 17 pages, below the 24-page cache, so it does not force eviction; its 2,051-item range is below the 10,000-position limit, so it is resolved to IDs with one binary read); normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.
+`e2e/specs/gallery-selection.e2e.js` is opt-in with `MEDIATAGGER_GALLERY_SELECTION=1`. It uses native pointer actions for additive clicks, Ctrl-click toggling, replacing and additive rectangles, shrinking, post-drag click suppression, and edge scrolling in both themes. It also checks that a long press opens the lightbox without changing the selection, Escape clearing and drag cancellation, unused space below a short gallery, and control clicks. A 2,051-file temporary collection proves selection across unloaded pages (about 17 pages, below the 24-page cache, so it does not force eviction; its 2,051-item range is below the 10,000-position limit, so it is resolved to IDs with one binary read); normal-mode clicks still open the lightbox. Screenshots are saved under `artifacts/gallery-selection/`.
 
 Run through the existing isolated harness on a private X11 display with temporary XDG directories:
 
@@ -824,7 +824,7 @@ a successful detached launch may not be reported to the application.
 ## Shared tag editor regressions
 
 `TagEditor.test.tsx` covers composition, blank-space focus, disabled/loading guards,
-controlled exclusion updates and keyboard focus. `BulkActionsSidebar.test.tsx` uses
+controlled exclusion updates and keyboard focus. `BulkDock.test.tsx` uses
 deferred saves to check that success, a failed result and rejection from a retired
 selection cannot erase a new draft or move focus. Save-completion tests also cover
 waiting for the enabled input to commit and canceling pending focus on selection changes. `LightboxModal.test.tsx` checks that
@@ -850,9 +850,11 @@ finish, then for all observed vocabulary fetches to settle; the cloned save
 response alone is not a completion barrier. The fetch observer is restored after
 the scenario and in cleanup. Both assets are read again after the frontend reload.
 `vocabulary-ipc.json` records requests and canonical responses.
-Evidence remains under `artifacts/tag-editor/<timestamp>/`. The bottom-edge suggestion
-placement limitation remains a separate issue; the popup assertion uses a desktop
-viewport with room below the input.
+Evidence remains under `artifacts/tag-editor/<timestamp>/`. The popup assertion is
+placement-aware: the lightbox editor opens suggestions below the input, and the bulk
+dock (at the bottom of the viewport) opens them above it. The bottom-edge placement
+limitation of below-input lists remains a separate issue; the lightbox check uses a
+desktop viewport with room below the input.
 
 ## Tag-save performance regressions
 
@@ -1058,7 +1060,7 @@ sh e2e/gallery-scale/run.sh
 
 ### Million-result timeline jump and select-all
 
-`GALLERY_MILLION=1 sh e2e/gallery-scale/run.sh` opens `million.html` (`million.tsx`) in the same private WebKitGTK setup. It mounts the production `createLibrary` page cache, `GalleryGrid` with `GalleryTimelineScrubber`, and `createSelection` wired as in `createAppRuntime`. Only the transport is synthetic: one million results, 120 months (January 2016 to December 2025) split into backend-sized sections of at most 5,000, and pages and the sections read answered after 12 ms. A stand-in `<output>` shows `selection.count`, as the bulk sidebar does.
+`GALLERY_MILLION=1 sh e2e/gallery-scale/run.sh` opens `million.html` (`million.tsx`) in the same private WebKitGTK setup. It mounts the production `createLibrary` page cache, `GalleryGrid` with `GalleryTimelineScrubber`, and `createSelection` wired as in `createAppRuntime`. Only the transport is synthetic: one million results, 120 months (January 2016 to December 2025) split into backend-sized sections of at most 5,000, and pages and the sections read answered after 12 ms. A stand-in `<output>` shows `selection.count`, as the bulk dock counter does.
 
 - **Timeline:** three samples, each from a fresh session (empty page cache). XTest presses End on the focused rail; the time runs from the first capturing `keydown` listener to the first animation frame in which the first tiles of the oldest month are in view with data. Each End sample must request at least one page (a sample served from cache fails the run; the page count is recorded but not compared with one) and stay below 300 ms; Home returns to the anchor page. The rail's `aria-valuetext` must read the oldest month.
 - **Select-all:** in bulk mode, XTest Ctrl+A from a focused tile; the time runs from the `keydown` listener to the counter text `1000000` (MutationObserver) and must stay below 50 ms, with no `get_asset_query_id_range` call (the mock rejects it), no materialized IDs (`ids.size === 0`, `ranged`), and visible tiles marked selected. Three samples.

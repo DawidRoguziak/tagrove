@@ -347,7 +347,6 @@
         "e2e/specs/app.smoke.e2e.js",
         "e2e/specs/app.workflows.e2e.js",
         "e2e/specs/group-order.e2e.js",
-        "e2e/specs/popular-tags.e2e.js",
         "e2e/specs/review-fixes.e2e.js",
         "e2e/specs/startup-scan.e2e.js",
         "e2e/specs/startup-scan-remount.e2e.js",

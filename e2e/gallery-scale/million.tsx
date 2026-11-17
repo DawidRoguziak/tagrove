@@ -108,7 +108,7 @@ const dispose = render(() => {
   selection = select;
   const [ref, setRef] = createSignal<HTMLElement>();
   return <LanguageProvider><UiLayerProvider>
-    {/* Stand-in for the bulk sidebar counter: the same `count` getter, no other work. */}
+    {/* Stand-in for the bulk dock counter: the same `count` getter, no other work. */}
     <output data-testid="selection-count">{select.enabled ? String(select.count) : ""}</output>
     <section ref={el => { scroller = el; setRef(el); }} class="gallery-scroll overflow-y-scroll"
       style={{width: "1044px", height: "600px"}}>

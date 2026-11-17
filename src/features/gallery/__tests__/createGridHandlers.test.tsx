@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UiLayerProvider, createUiLayer } from "../../../ui/overlays/UiLayerProvider";
 import type { BulkSelectionHandler } from "../selection";
 import { createSelection } from "../createSelection";
-import { createGridHandlers } from "../createGridHandlers";
+import { createGridHandlers, LONG_PRESS_MS } from "../createGridHandlers";
 
 class TestPointerEvent extends MouseEvent {
   pointerId: number;
@@ -656,4 +656,75 @@ it("keeps a failed selection read and its Retry through window blur", async () =
   await selection.retry();
   expect(load).toHaveBeenCalledTimes(2);
   expect(selection.error).toBeNull();
+});
+
+describe("long press in bulk mode", () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }));
+  afterEach(() => vi.useRealTimers());
+  const types = (interaction: ReturnType<typeof vi.fn>) =>
+    interaction.mock.calls.map(([value]) => (value as { type: string }).type);
+
+  it("opens the held tile and leaves the selection untouched, including the release click", () => {
+    const interaction = vi.fn(), onSelect = vi.fn();
+    renderSolid(Harness, { interaction, onSelect });
+    layout();
+    down();
+    act(() => vi.advanceTimersByTime(LONG_PRESS_MS - 1));
+    expect(onSelect).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(asset);
+    up(15, 15);
+    fireEvent.click(screen.getByText("tile"), { detail: 1 });
+    // Only gesture bookkeeping reaches the selection: no toggle, commit or clear.
+    expect(new Set(types(interaction))).toEqual(new Set(["rectangle-start", "rectangle-cancel"]));
+  });
+
+  it("keeps a short press as a selection click", () => {
+    const interaction = vi.fn(), onSelect = vi.fn();
+    renderSolid(Harness, { interaction, onSelect });
+    layout();
+    down();
+    act(() => vi.advanceTimersByTime(LONG_PRESS_MS - 100));
+    up(15, 15);
+    fireEvent.click(screen.getByText("tile"), { detail: 1 });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(types(interaction)).toContain("click");
+  });
+
+  it("does not open after the pointer moved or with a modifier held", () => {
+    const interaction = vi.fn(), onSelect = vi.fn();
+    renderSolid(Harness, { interaction, onSelect });
+    layout();
+    down();
+    move(15, 21);
+    act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+    up(15, 21);
+    down(15, 15, { ctrlKey: true });
+    act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+    up(15, 15);
+    down(15, 15, { shiftKey: true });
+    act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not open when scrolling re-indexes the pooled tile during the hold", () => {
+    const interaction = vi.fn(), onSelect = vi.fn();
+    renderSolid(Harness, { interaction, onSelect });
+    layout();
+    down();
+    // A wheel scroll moves no pointer; the recycled slot now shows another index.
+    screen.getByText("tile").dataset.assetIndex = "3";
+    act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not open outside bulk mode, where a plain click already opens the tile", () => {
+    const interaction = vi.fn(), onSelect = vi.fn();
+    renderSolid(Harness, { interaction, onSelect, enabled: false });
+    layout();
+    down();
+    act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

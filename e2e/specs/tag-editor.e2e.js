@@ -225,7 +225,7 @@ suite("shared inline tag editor", function () {
           await browser.keys(["Control", "a"]);
           await browser.keys("Backspace");
           // Resize within the same responsive layout so the editor remains mounted.
-          // Crossing the breakpoint remounts bulk or collapses the lightbox drawer.
+          // Crossing the breakpoint would collapse the lightbox drawer.
           await browser.setWindowSize(width + 40, 1000);
           await browser.waitUntil(async () => {
             const g = await geometry(kind);
@@ -266,10 +266,18 @@ suite("shared inline tag editor", function () {
           const list = document.querySelector('[role="listbox"]');
           const input = document.querySelector(selector);
           const r = list.getBoundingClientRect();
+          const field = input.getBoundingClientRect();
           return { portal: list.parentElement === document.body, top: r.top, bottom: r.bottom,
-            inputBottom: input.getBoundingClientRect().bottom, viewport: innerHeight };
+            inputTop: field.top, inputBottom: field.bottom, viewport: innerHeight };
         }, selector);
-        assert.ok(popup.portal && popup.top >= popup.inputBottom && popup.bottom <= popup.viewport);
+        assert.ok(popup.portal, `${kind} suggestions are not portalled to <body>`);
+        // The bulk dock sits at the bottom of the viewport, so it opens suggestions
+        // above the input; the lightbox editor opens them below.
+        if (kind === "bulk") {
+          assert.ok(popup.bottom <= popup.inputTop && popup.top >= 0, `bulk suggestions are not above the input: ${JSON.stringify(popup)}`);
+        } else {
+          assert.ok(popup.top >= popup.inputBottom && popup.bottom <= popup.viewport, `${kind} suggestions are not below the input: ${JSON.stringify(popup)}`);
+        }
         // Suggestions are published only after the complete startup vocabulary has
         // loaded. Start counting after that barrier, not merely after gallery load.
         if (kind === kinds[0]) await monitorTagIpc();

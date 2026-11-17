@@ -91,8 +91,8 @@ QA (agent `qa-refuter`) adds `"grounds": "none|intended|known|artifact|not-repro
 {"title": "Shift-click range across unloaded pages selects one item too many",
  "area": "bulk-selection",
  "steps": ["Enable bulk actions", "Click tile 3", "Shift-click tile 12000 after scrolling with End"],
- "expected": "Selected: 11998", "expected_ref": "docs/subsystems/search-tags-and-media-groups.md#...",
- "actual": "Selected: 11999",
+ "expected": "data-selected-count=11998", "expected_ref": "docs/subsystems/search-tags-and-media-groups.md#...",
+ "actual": "data-selected-count=11999",
  "evidence": ["artifacts/app-control/<id>/screen-0042.png", "actions.jsonl 12:03:11 modclick Shift ...",
               "console.jsonl 12:03:12 warn ..."],
  "frequency": "2/2", "priority": "P2", "category": "bug", "suspect": "src/features/gallery/createSelection.ts:210"}

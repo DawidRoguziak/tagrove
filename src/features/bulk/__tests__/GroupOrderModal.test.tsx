@@ -51,7 +51,12 @@ function mount() {
   renderSolid(
     (props: { open: boolean }) => (
       <UiLayerProvider>
-        <GroupOrderModal open={props.open} controller={controller} onClose={() => {}} />
+        <GroupOrderModal
+          open={props.open}
+          controller={controller}
+          initialOrder={ids}
+          onClose={() => {}}
+        />
       </UiLayerProvider>
     ),
     { open: true }

@@ -1,4 +1,4 @@
-import { BulkActionsSidebar } from "../features/bulk/BulkActionsSidebar";
+import { BulkDock } from "../features/bulk/BulkDock";
 import { createSignal } from "solid-js";
 import { useAppRuntime } from "./AppRuntimeContext";
 import { useLanguage } from "../i18n/solid";
@@ -110,15 +110,9 @@ export function AppGalleryView() {
               pageFailureEpoch={library.query.pageFailureEpoch}
               sections={library.query.sections}
             />
-            {selection.enabled ? (
-              <BulkActionsSidebar
-                controller={runtime.bulk}
-                client={runtime.suggestions}
-                popularTags={runtime.popularTags()}
-              />
-            ) : null}
           </div>
         </section>
+        {selection.enabled ? <BulkDock controller={runtime.bulk} client={runtime.suggestions} /> : null}
       </div>
     </>
   );

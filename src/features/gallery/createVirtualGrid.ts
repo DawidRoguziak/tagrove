@@ -228,7 +228,7 @@ export function createVirtualGrid(options: {
           target === document.documentElement ||
           target === scroller ||
           (target instanceof Node && gallery.contains(target));
-        // The bulk inspector, overlays and text controls keep their own Home/End.
+        // The bulk dock, overlays and text controls keep their own Home/End.
         if (!owned || (target instanceof Element && target.closest(editable))) return;
         event.preventDefault();
         scrollTo(event.key === "Home" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY);

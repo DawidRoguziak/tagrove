@@ -283,27 +283,27 @@ Destructive: no. Session: shared S1 session
 
 **QA-06.1 Enable bulk mode and single selection**
 - **Steps:** `ctl click <id> 'button[aria-label="Enable bulk actions"]'`; check `aria-pressed="true"`. `ctl click <id> 'button[data-asset-index="0"]'`, then `5`, then a Ctrl+click of 3 (`ctl modclick <id> Control 'button[data-asset-index="3"]'`) and of 0 again.
-- **Expected:** A click toggles one tile; the panel `[data-testid="bulk-action-panel"]` shows `Selected: N`. Tiles have `aria-pressed`. Opening the lightbox does not happen in selection mode.
-- **Oracle:** `inspect '[data-testid="bulk-action-panel"]'` for N after each step; tile `aria-pressed`.
+- **Expected:** A click toggles one tile; the bulk dock `[data-testid="bulk-action-panel"]` carries `data-selected-count="N"` and expands once N > 0 (its clear button reads `Clear selection (N selected)`). Tiles have `aria-pressed`. A click does not open the lightbox in selection mode; only a long press (500 ms, no movement) does.
+- **Oracle:** `inspect '[data-testid="bulk-action-panel"]'` for `data-selected-count` after each step; tile `aria-pressed`.
 
 **QA-06.2 Shift and Ctrl+Shift ranges across unloaded pages**
 - **Steps:** Click tile 0, scroll far (`ctl keys <id> End`), `ctl modclick <id> Shift 'button[data-asset-index="<last visible>"]'`. Then click tile 10 in the middle, `ctl modclick <id> Control+Shift 'button[data-asset-index="<n>"]'`.
 - **Expected:** Shift+click replaces the selection with the range anchor..target; Ctrl+Shift+click adds a range. The count equals the covered positions even though intermediate pages were never loaded ([selection](../../subsystems/search-tags-and-media-groups.md#bulk-selection)).
-- **Oracle:** `Selected: N` equals the index span +1 (and the union for Ctrl+Shift).
+- **Oracle:** `data-selected-count` equals the index span +1 (and the union for Ctrl+Shift).
 
 **QA-06.3 Rectangle selection with auto-scroll**
-- **Steps:** `ctl drag <id> 'button[data-asset-index="0"]' 400,300 200` (hold 200 ms), `inspect '[data-testid="gallery-selection-rectangle"]'` during if possible. Then a drag with hold 100 ms and a drag shorter than 5 px. Drag to the bottom edge (`<x>,<viewport bottom - 10>`) with hold 1000 and inspect the scroll offset. Repeat with Control held: `ctl drag <id> 'button[data-asset-index="20"]' 300,200 200 ctrl` adds to the selection.
-- **Expected:** A rectangle needs at least 150 ms hold and 5 px movement; nearer than 48 px to the viewport edge it auto-scrolls up to 900 px/s; the scrollbar gutter is ignored. Shorter holds do not draw a rectangle ([rectangle](../../subsystems/library-query-and-gallery.md#bulk-rectangle-selection)).
-- **Oracle:** `Selected: N` equals rows x columns covered; rectangle element present during the drag; `inspect` of the first visible index changes with auto-scroll.
+- **Steps:** `ctl drag <id> 'button[data-asset-index="0"]' 400,300 200` (hold 200 ms), `inspect '[data-testid="gallery-selection-rectangle"]'` during if possible. Then a drag with the minimum hold of 150 ms (`drag` accepts 150 to 3000 ms and always moves 6 px first, so a sub-5 px drag cannot be driven). Drag to the bottom edge (`<x>,<viewport bottom - 10>`) with hold 400 and inspect the scroll offset. Repeat with Control held: `ctl drag <id> 'button[data-asset-index="20"]' 300,200 200 ctrl` adds to the selection.
+- **Expected:** A rectangle needs at least 150 ms hold and 5 px movement; a still hold of 500 ms or more on a tile without modifiers is a long press that opens the lightbox instead, so keep unmodified drag holds below 500 ms; nearer than 48 px to the viewport edge it auto-scrolls up to 900 px/s; the scrollbar gutter is ignored. Shorter holds do not draw a rectangle ([rectangle](../../subsystems/library-query-and-gallery.md#bulk-rectangle-selection)).
+- **Oracle:** `data-selected-count` equals rows x columns covered; rectangle element present during the drag; `inspect` of the first visible index changes with auto-scroll.
 
 **QA-06.4 Escape clears**
 - **Steps:** With a selection, `ctl keys <id> Escape`, then `inspect '[data-testid="bulk-action-panel"]'`.
-- **Expected:** The selection is cleared and bulk mode stays on; the hint `Esc clears selection` is shown in the panel.
-- **Oracle:** `Selected: 0`; button `aria-pressed` still `true`.
+- **Expected:** The selection is cleared and bulk mode stays on; the dock collapses to the `Select items` chip `[data-testid="bulk-dock-chip"]`.
+- **Oracle:** `data-selected-count="0"`; the chip is present; button `aria-pressed` still `true`.
 
 **QA-06.5 Ctrl+A over 30k as one range (spec)**
 - **Steps:** Bulk mode on, focus not in a text field, `ctl keys <id> Control+a`, `inspect '[data-testid="bulk-action-panel"]'`. Click the first tile with Ctrl to deselect one (an exclusion inside the range).
-- **Expected:** One range `[0, total-1]` is selected without ID reads; `Selected: <total>`; with one exclusion `Selected: <total>-1`. Ctrl+A does nothing in a text field, outside selection mode, or when the lightbox/settings is on top ([ADR 0008](../../adr/0008-selection-spec-resolved-in-rust.md)).
+- **Expected:** One range `[0, total-1]` is selected without ID reads; `data-selected-count` is `<total>`, and `<total>-1` with one exclusion. Ctrl+A does nothing in a text field, outside selection mode, or when the lightbox/settings is on top ([ADR 0008](../../adr/0008-selection-spec-resolved-in-rust.md)).
 - **Oracle:** The count equals the footer count; `process.log` shows no 30k-ID range read (no `get_asset_query_id_range` for the whole range). Try Ctrl+A with focus in `.filter-input`: the count must not change.
 
 **QA-06.6 Range at most 10k versus over 10k**
@@ -313,7 +313,7 @@ Destructive: no. Session: shared S1 session
 
 **QA-06.7 Bulk tags: one item replaces, many merge**
 - **Steps:** Select one asset that has tags: check the chips, remove one chip, add one. Select three assets with different tags: add `qa-merge`; check the chips of each afterwards in the lightbox.
-- **Expected:** One item: complete replacement through `set_asset_tags` (chips removable). Several items: add-only; existing tags are kept and the new one is merged into every target; confirmation chips are non-removable ([tags](../../subsystems/search-tags-and-media-groups.md#tag-mutations)). `Most used tags` buttons add the same way.
+- **Expected:** One item: complete replacement through `set_asset_tags` (chips removable). Several items: add-only; existing tags are kept and the new one is merged into every target; confirmation chips are non-removable ([tags](../../subsystems/search-tags-and-media-groups.md#tag-mutations)).
 - **Oracle:** DB tags per asset; `Updated X of Y` is shown only when part of the IDs could not be written.
 
 **QA-06.8 Bulk favorites**
@@ -322,13 +322,13 @@ Destructive: no. Session: shared S1 session
 - **Oracle:** `select count(*) from assets where is_favorite=1` before/after; heart state in the panel.
 
 **QA-06.9 Bulk group apply and remove**
-- **Steps:** Select 4 tiles; `fill '#bulk-group-key-input' qa-bulk-grp`; click `button=Apply group`; check the gallery order; then `button=Remove from group` (or `Remove from groups`).
+- **Steps:** Select 4 tiles; open the Group & order tab (`ctl click <id> '[data-testid="bulk-tab-group"]'`); `fill '#bulk-group-key-input' qa-bulk-grp`; click `button=Apply group`; check the gallery order; then `button=Remove from group` (or `Remove from groups`).
 - **Expected:** Apply assigns orders 1..N and restarts the query (members become adjacent); removal clears key and order; conflicting groups show a warning and blank key ([groups](../../subsystems/search-tags-and-media-groups.md#favorites-and-media-groups)).
 - **Oracle:** DB `media_group_key` and order per asset; adjacent tiles in a screenshot with backplates.
 
 **QA-06.10 Group on a range: order by gallery, no order panel, selection cleared**
-- **Steps:** Ctrl+A or a Shift range over more than 10,000 items (a very large write; only this suite does it, then you must restore with Remove group). `fill '#bulk-group-key-input' qa-range`, `Apply group`. Inspect the panel and `[data-testid="bulk-open-order-modal"]`.
-- **Expected:** Orders 1..N follow gallery order (then IDs selected outside the range). The `Sort in larger view` button is not available for a range selection. After the write the session changes, so the range is cleared with `[data-testid="bulk-selection-cleared"]` (`Selection cleared`); the next write on the old spec is refused as `stale` ([refresh table](../../subsystems/library-query-and-gallery.md#refresh-and-invalidation-paths)).
+- **Steps:** Ctrl+A or a Shift range over more than 10,000 items (a very large write; only this suite does it, then you must restore with Remove group). Open the Group & order tab (`[data-testid="bulk-tab-group"]`), `fill '#bulk-group-key-input' qa-range`, `Apply group`. Inspect the panel, `[data-testid="bulk-inline-order-grid"]` and `[data-testid="bulk-open-order-modal"]`.
+- **Expected:** Orders 1..N follow gallery order (then IDs selected outside the range). Neither the inline order grid nor the `Sort in larger view` button is available for a range selection. After the write the session changes, so the range is cleared with `[data-testid="bulk-selection-cleared"]` (`Selection cleared`); the next write on the old spec is refused as `stale` ([refresh table](../../subsystems/library-query-and-gallery.md#refresh-and-invalidation-paths)).
 - **Oracle:** `select min(media_group_order),max(media_group_order),count(*) from assets where media_group_key='qa-range'` matches 1..N; order follows the gallery `order by`; `inspect '[data-testid="bulk-selection-cleared"]'`. Clean up: select the group (`gN:qa-range` in the search), Ctrl+A, `Remove from group`.
 
 **QA-06.11 Selection cleared after a result change and stale write**
@@ -337,7 +337,7 @@ Destructive: no. Session: shared S1 session
 - **Oracle:** `inspect '[data-testid="bulk-selection-cleared"]'`; DB counts unchanged; `process.log` `stale` line.
 
 **QA-06.12 Group order modal: drag and keyboard**
-- **Steps:** Select 5 tiles, `fill '#bulk-group-key-input' qa-order`, `ctl click <id> '[data-testid="bulk-open-order-modal"]'`. Drag tile 1 to position 4: `ctl drag <id> '[data-testid^="bulk-order-tile-"]' ...`. Focus a handle (`[data-testid^="bulk-order-handle-"]`) and press ArrowRight/ArrowDown. `button=Save order`. Reopen, reorder and close with `Cancel`, `Escape` and by clicking the backdrop.
+- **Steps:** Select 5 tiles, open the Group & order tab (`ctl click <id> '[data-testid="bulk-tab-group"]'`), `fill '#bulk-group-key-input' qa-order`. Reorder once in the inline grid (`[data-testid^="bulk-inline-order-tile-"]`), then `ctl click <id> '[data-testid="bulk-open-order-modal"]'`; the modal starts from the inline order. Drag tile 1 to position 4: `ctl drag <id> '[data-testid^="bulk-order-tile-"]' ...`. Focus a handle (`[data-testid^="bulk-order-handle-"]`) and press ArrowRight/ArrowDown. `button=Save order`. Reopen, reorder and close with `Cancel`, `Escape` and by clicking the backdrop.
 - **Expected:** Drag shows `[data-testid="bulk-order-insertion-line"]`; keyboard moves announce the new position; Save order writes 1..N; Cancel, Esc and the backdrop discard edits; partial failure shows the retry message ([group order](../../subsystems/search-tags-and-media-groups.md#favorites-and-media-groups)).
 - **Oracle:** DB order values after Save; unchanged after Cancel; thumbnails in the modal load via `thumb://`.
 
@@ -765,7 +765,7 @@ The block copies the first photo folder of `$AUDIT_DATASET` (`zdjecia_*:first`);
 Destructive: no.
 
 **QA-16.1 Focus trap and Tab order in every modal**
-- **Steps:** for each modal (tag list `[data-testid="tag-list-modal"]` via `button[aria-label="Open tag list"]`; group order `[data-testid="bulk-order-modal"]` via `[data-testid="bulk-open-order-modal"]` in bulk mode with a group selected; remove-root; clear-library; duplicate resolver and its nested delete confirmation; DB import overwrite) press `keys Tab` 15 times and `keys Shift Tab`, taking a screenshot every few presses, then `keys Escape`.
+- **Steps:** for each modal (tag list `[data-testid="tag-list-modal"]` via `button[aria-label="Open tag list"]`; group order `[data-testid="bulk-order-modal"]` via `[data-testid="bulk-open-order-modal"]` after selecting 2+ tiles, opening the Group & order tab (`[data-testid="bulk-tab-group"]`) and filling `#bulk-group-key-input`; remove-root; clear-library; duplicate resolver and its nested delete confirmation; DB import overwrite) press `keys Tab` 15 times and `keys Shift Tab`, taking a screenshot every few presses, then `keys Escape`.
 - **Expected:** initial focus is `[data-initial-focus]` or the first tabbable; Tab and Shift+Tab wrap inside the top modal; `#root` is inert; Escape closes the top layer and focus returns to the trigger (`docs/frontend/architecture-and-ui-conventions.md#modal-and-overlay-conventions`).
 - **Oracle:** screenshots of the focus ring (focus-visible needs a native click first: `native click` inside the modal), `inspect '[role="dialog"][aria-modal="true"]'`, `inspect '#root'` for `inert`.
 
@@ -775,7 +775,7 @@ Destructive: no.
 - **Oracle:** `inspect` attributes.
 
 **QA-16.3 Escape in every context**
-- **Steps:** exercise Escape with: search suggestions open (`.filter-input` focused with text), bulk mode with a selection, rectangle drag in progress (`drag` with a long hold), lightbox, lightbox with the delete confirmation, lightbox with the drawer open (QA-16.7), tag list, Settings page, a Settings dialog, and the nested duplicate delete dialog.
+- **Steps:** exercise Escape with: search suggestions open (`.filter-input` focused with text), bulk mode with a selection, rectangle drag in progress (`drag` with a hold under 500 ms, or with `ctrl`, so it is not a long press), lightbox, lightbox with the delete confirmation, lightbox with the drawer open (QA-16.7), tag list, Settings page, a Settings dialog, and the nested duplicate delete dialog.
 - **Expected:** only the top layer reacts per press: confirmation, then drawer/fullscreen, then lightbox; Settings Esc returns to the gallery only when no dialog is open; bulk Esc clears the selection when no modal is on top (`docs/frontend/architecture-and-ui-conventions.md#modal-and-overlay-conventions`).
 - **Oracle:** `inspect` of `[role="dialog"]`, bulk panel `[data-testid="bulk-action-panel"]`, `.filter-input` listbox state, screenshots.
 

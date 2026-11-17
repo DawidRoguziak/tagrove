@@ -147,7 +147,7 @@ URL without remounting it.
 
 The grid measures its content width and its origin inside the actual scroll container only
 from resize observers; the scroll path reads nothing but `scrollTop`, and the row range signal
-changes only when the first, last or visible rows change. Tiles remain square with a 12-pixel gap. The full-width search/tools header sits outside the gallery scroll container, which fills the remaining window height and owns the scrollbar below both header rows. Header wrapping adjusts that viewport through CSS layout. Bulk mode adds a 360px inspector at widths of at least 1000px; it sticks to the content viewport's top and scrolls independently within that viewport's height. The existing resize observers measure the narrower grid and retain the visible anchor. Changes to tile size or column count invalidate row measurements and keep the previous first visible asset in view. The scroll container, gallery, and grid have resize observation; listeners are removed on unmount.
+changes only when the first, last or visible rows change. Tiles remain square with a 12-pixel gap. The full-width search/tools header sits outside the gallery scroll container, which fills the remaining window height and owns the scrollbar below both header rows. Header wrapping adjusts that viewport through CSS layout. Bulk mode adds a dock floating over the bottom of the viewport instead of a column, so the grid keeps its width; `.workspace-body--bulk` adds 88px of bottom padding after the grid so the last row can scroll out from under the collapsed chip. Changes to tile size or column count invalidate row measurements and keep the previous first visible asset in view. The scroll container, gallery, and grid have resize observation; listeners are removed on unmount.
 
 The physical grid spacer is capped at `MAX_GRID_HEIGHT` = 16,000,000 pixels. WebKitGTK 2.54
 keeps layout, scroll offsets, transforms, hit testing and painting exact only below 2^24 CSS
@@ -162,7 +162,7 @@ when the viewport is outside the middle half of the window, or immediately when 
 scrolling comes within two viewports of a window edge the base could still move past.
 Home/End reach the ends of the whole result: in this mode the window listener handles them
 for the gallery, the scroller and the body (a recycled row can drop focus to the body), but
-not for text controls or the bulk inspector.
+not for text controls or the bulk dock.
 
 In the windowed mode the scroller carries `data-gallery-windowed`; `styles.css` hides its
 native bar, which would span only the window, and `createVirtualGrid` pads the removed gutter

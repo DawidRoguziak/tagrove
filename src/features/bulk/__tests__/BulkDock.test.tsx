@@ -7,7 +7,7 @@ import type { BulkController } from "../createBulk";
 type SelectionFields = "selectedCount" | "selectionKey" | "selectionRanged" | "selectionNotice";
 /** Fakes derive the selection count and identity from `selectedAssetIds` unless given. */
 type BulkSelectionController = Omit<BulkController, SelectionFields> &
-  Partial<Pick<BulkController, SelectionFields>> & { startupPopularTags: string[] };
+  Partial<Pick<BulkController, SelectionFields>>;
 const derived: Record<SelectionFields, (target: BulkSelectionController) => unknown> = {
   selectedCount: (target) => target.selectedAssetIds.size,
   selectionKey: (target) => target.selectedAssetIds,
@@ -26,7 +26,7 @@ import { settle as act } from "../../../test/settle";
 import { renderSolid } from "../../../test/renderSolid";
 import { SuggestionClient } from "../../search/suggestions/SuggestionClient";
 import { onCleanup } from "solid-js";
-import { BulkActionsSidebar } from "../BulkActionsSidebar";
+import { BulkDock } from "../BulkDock";
 
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(960);
@@ -46,14 +46,13 @@ function Sidebar(props: { controller: BulkSelectionController }) {
   onCleanup(() => client.dispose());
   return (
     <UiLayerProvider>
-      <BulkActionsSidebar
-        controller={withSelection(props.controller)}
-        client={client}
-        popularTags={props.controller.startupPopularTags}
-      />
+      <BulkDock controller={withSelection(props.controller)} client={client} />
     </UiLayerProvider>
   );
 }
+
+const tagsTab = () => screen.getByRole("tab", { name: "Tags" });
+const openGroupTab = () => userEvent.click(screen.getByRole("tab", { name: "Group & order" }));
 
 function createAsset(id: number, override: Partial<AssetSummary> = {}): AssetSummary {
   return {
@@ -88,7 +87,6 @@ function createController(
     partialResult: null,
     selectedAssetIds: new Set(),
     selectedAssets: [],
-    startupPopularTags: [],
     knownTags: ["cat", "travel"],
     groupKeyDraft: "",
     orderedAssetIds: [],
@@ -112,7 +110,7 @@ function createController(
   };
 }
 
-describe("BulkActionsSidebar", () => {
+describe("BulkDock", () => {
   afterEach(cleanup);
 
   it("restores focus after a completed save's disabled state is committed away", async () => {
@@ -128,7 +126,7 @@ describe("BulkActionsSidebar", () => {
     const { rerender } = renderSolid(Sidebar, { controller: controller });
     await userEvent.type(screen.getByLabelText("Add tag"), "cat{Enter}");
     rerender({ controller: { ...controller, tagApplying: true } });
-    await userEvent.click(screen.getByPlaceholderText("Group key (uuid or custom)"));
+    await userEvent.click(tagsTab());
     await act(async () => {
       settle(true);
       await pending;
@@ -156,6 +154,35 @@ describe("BulkActionsSidebar", () => {
     expect(screen.queryByTestId("bulk-tag-invalid")).not.toBeInTheDocument();
   });
 
+  it("shows header tag feedback and partial counts on the Group & order tab", async () => {
+    const controller = createController({
+      selectedAssetIds: new Set([1, 2]),
+      tagMode: "multiple",
+      tagSaveFailed: true,
+      partialResult: { processed: 1, requested: 2 }
+    });
+    renderSolid(Sidebar, { controller });
+    await openGroupTab();
+    expect(screen.getByText("Updated 1 of 2 selected items.")).toBeInTheDocument();
+    expect(screen.getByText("The tag change was not saved. Try again.")).toBeInTheDocument();
+    const input = screen.getByLabelText("Add tag");
+    await userEvent.type(input, "two;tags{Enter}");
+    expect(screen.getByTestId("bulk-tag-invalid")).toBeInTheDocument();
+    expect(controller.onAddTag).not.toHaveBeenCalled();
+  });
+
+  it("shows a partial tag write on the default Tags tab", () => {
+    renderSolid(Sidebar, {
+      controller: createController({
+        selectedAssetIds: new Set([1, 2]),
+        tagMode: "multiple",
+        partialResult: { processed: 1, requested: 2 }
+      })
+    });
+    expect(tagsTab()).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Updated 1 of 2 selected items.")).toBeInTheDocument();
+  });
+
   it("cancels deferred tag focus when selection changes before re-enabling", async () => {
     let settle: (saved: boolean) => void = () => {};
     const pending = new Promise<boolean>((resolve) => {
@@ -174,7 +201,7 @@ describe("BulkActionsSidebar", () => {
       await pending;
     });
     rerender({ controller: { ...controller, selectedAssetIds: new Set([2]) } });
-    const groupInput = screen.getByPlaceholderText("Group key (uuid or custom)");
+    const groupInput = tagsTab();
     await userEvent.click(groupInput);
     await act(async () => {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -205,7 +232,7 @@ describe("BulkActionsSidebar", () => {
     rerender({ controller: { ...controller, selectedAssetIds: new Set([2]) } });
     expect(screen.getByLabelText("Add tag")).toHaveValue("");
     await userEvent.type(screen.getByLabelText("Add tag"), "new-draft");
-    const groupInput = screen.getByPlaceholderText("Group key (uuid or custom)");
+    const groupInput = tagsTab();
     await userEvent.click(groupInput);
     await act(async () => {
       if (outcome === "rejected") reject(new Error("retired save"));
@@ -219,79 +246,6 @@ describe("BulkActionsSidebar", () => {
     expect(screen.getByLabelText("Add tag")).toHaveValue("new-draft");
     expect(groupInput).toHaveFocus();
     expect(controller.onAddTag).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows startup tags in snapshot order and keeps assigned single-asset tags clickable", async () => {
-    const controller = createController({
-      selectedAssetIds: new Set([1]),
-      tagMode: "single",
-      singleAssetTags: ["travel"],
-      startupPopularTags: ["travel", "cat"]
-    });
-    renderSolid(Sidebar, { controller: controller });
-    const group = screen.getByRole("group", { name: "Most used tags" });
-    expect(Array.from(group.querySelectorAll("button"), (button) => button.textContent)).toEqual([
-      "travel",
-      "cat"
-    ]);
-    await userEvent.click(screen.getByRole("button", { name: "travel" }));
-    expect(controller.onAddTag).toHaveBeenCalledWith("travel");
-    await waitFor(() => expect(screen.getByLabelText("Add tag")).toHaveFocus());
-    expect(screen.getByLabelText("Add tag")).toHaveValue("");
-    expect(screen.getByRole("button", { name: "travel" })).toBeVisible();
-  });
-
-  it.each(["{Enter}", " "])("activates popular tags with keyboard %s", async (key) => {
-    const controller = createController({
-      selectedAssetIds: new Set([1, 2]),
-      tagMode: "multiple",
-      startupPopularTags: ["travel"]
-    });
-    renderSolid(Sidebar, { controller: controller });
-    screen.getByRole("button", { name: "travel" }).focus();
-    await userEvent.keyboard(key);
-    expect(controller.onAddTag).toHaveBeenCalledExactlyOnceWith("travel");
-    await waitFor(() => expect(screen.getByLabelText("Add tag")).toHaveFocus());
-  });
-
-  it.each<Partial<BulkSelectionController>>([
-    { selectedAssetIds: new Set() },
-    { selectionBusy: true },
-    { tagApplying: true },
-    { tagDetailsLoading: true },
-    { tagDetailsFailed: true }
-  ])("disables popular tags under the input's disabled conditions: %j", async (state) => {
-    const controller = createController({
-      selectedAssetIds: new Set([1]),
-      startupPopularTags: ["travel"],
-      ...state
-    });
-    renderSolid(Sidebar, { controller: controller });
-    const chip = screen.getByRole("button", { name: "travel" });
-    expect(screen.getByLabelText("Add tag")).toBeDisabled();
-    expect(chip).toBeDisabled();
-    await userEvent.click(chip);
-    expect(controller.onAddTag).not.toHaveBeenCalled();
-  });
-
-  it("retains a failed chip submission as the draft for ordinary Enter retry", async () => {
-    const onAddTag = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const controller = createController({
-      selectedAssetIds: new Set([1, 2]),
-      tagMode: "multiple",
-      startupPopularTags: ["travel"],
-      onAddTag,
-      tagSaveFailed: true
-    });
-    renderSolid(Sidebar, { controller: controller });
-    await userEvent.click(screen.getByRole("button", { name: "travel" }));
-    const input = screen.getByLabelText("Add tag");
-    await waitFor(() => expect(input).toHaveFocus());
-    expect(input).toHaveValue("travel");
-    expect(screen.getByRole("alert")).toBeVisible();
-    await userEvent.keyboard("{Enter}");
-    expect(onAddTag).toHaveBeenNthCalledWith(2, "travel");
-    await waitFor(() => expect(input).toHaveValue(""));
   });
 
   it("explains why a range selection was dropped: changed results or an expired session", () => {
@@ -315,17 +269,12 @@ describe("BulkActionsSidebar", () => {
     expect(expired).not.toHaveTextContent("The results changed");
   });
 
-  it("hides the popular tag section for an empty snapshot", () => {
-    renderSolid(Sidebar, { controller: createController() });
-    expect(screen.queryByRole("group", { name: "Most used tags" })).not.toBeInTheDocument();
-  });
-
   it("renders the lightbox-style heart and exposes pending and failure states", async () => {
     const onToggleFavorite = vi.fn(async () => {});
     const { rerender } = renderSolid(Sidebar, { controller: createController() });
     expect(
-      screen.getByRole("button", { name: "Toggle favorites for selected items" })
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Toggle favorites for selected items" })
+    ).not.toBeInTheDocument();
     const controller = createController({ selectedAssetIds: new Set([1]), onToggleFavorite });
     rerender({ controller: controller });
     const heart = screen.getByRole("button", { name: "Toggle favorites for selected items" });
@@ -343,7 +292,7 @@ describe("BulkActionsSidebar", () => {
     expect(screen.getByText("Could not update favorites. Try again.")).toBeVisible();
   });
 
-  it("disables every write control while rectangle IDs are resolving", () => {
+  it("disables every write control while rectangle IDs are resolving", async () => {
     const controller = createController({
       selectionBusy: true,
       selectedAssetIds: new Set([1]),
@@ -355,54 +304,145 @@ describe("BulkActionsSidebar", () => {
     expect(
       screen.getByRole("button", { name: "Toggle favorites for selected items" })
     ).toBeDisabled();
-    expect(screen.getByLabelText("Media group key")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Remove from group" })).toBeDisabled();
     expect(screen.getByLabelText("Add tag")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Remove tag cat" })).toBeDisabled();
-  });
-
-  it("renders as a scrollable inspector with disabled editors for an empty selection", () => {
-    renderSolid(Sidebar, { controller: createController() });
-
-    const sidebar = screen.getByTestId("bulk-action-panel");
-    expect(sidebar).toHaveClass("bulk-inspector", "panel-scroll");
-    for (const panelId of ["bulk-header-panel", "bulk-group-panel", "bulk-tags-panel"]) {
-      expect(sidebar).toContainElement(screen.getByTestId(panelId));
-    }
-    expect(screen.getByText("Selected: 0")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Clear selection" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Esc clears selection")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Select all" })).not.toBeInTheDocument();
+    await openGroupTab();
     expect(screen.getByLabelText("Media group key")).toBeDisabled();
-    expect(screen.getByLabelText("Add tag")).toBeDisabled();
-    expect(screen.queryByTestId("bulk-group-order-list")).not.toBeInTheDocument();
-    expect(screen.getByTestId("bulk-tags-panel")).toHaveClass("min-h-0", "overflow-visible");
-    expect(screen.getByTestId("bulk-tag-list")).toHaveClass(
-      "panel-scroll",
-      "max-h-36",
-      "overflow-y-auto",
-      "p-2"
-    );
-    expect(screen.getByTestId("bulk-tag-list")).not.toHaveClass("p-1", "w-fit");
-    expect(screen.getByTestId("bulk-tag-list")).toHaveAttribute("data-ui", "tag-editor");
-    expect(screen.getByText("Select at least one item")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove from group" })).toBeDisabled();
   });
 
-  it("shows conflicts and offers sorting only in the modal without requesting inline thumbnails", async () => {
-    const controller = sortingController({ hasConflictingGroups: true });
-    renderSolid(Sidebar, { controller: controller });
-    expect(screen.getByRole("alert")).toHaveTextContent("Multiple group assignments");
-    expect(screen.getByTestId("bulk-group-order-panel")).toBeInTheDocument();
-    expect(screen.queryByTestId("bulk-group-order-list")).not.toBeInTheDocument();
-    expect(screen.queryByText("1.jpg")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("bulk-group-drag-handle-1")).not.toBeInTheDocument();
+  it("collapses to a chip for an empty selection and expands once items are selected", () => {
+    const { rerender } = renderSolid(Sidebar, { controller: createController() });
+    const dock = screen.getByTestId("bulk-action-panel");
+    expect(dock).toHaveClass("bulk-dock");
+    expect(dock).not.toHaveClass("bulk-dock--expanded");
+    expect(dock).toHaveAttribute("data-selected-count", "0");
+    expect(screen.getByTestId("bulk-dock-chip")).toHaveTextContent("Select items");
+    expect(screen.queryByLabelText("Add tag")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Most used tags" })).not.toBeInTheDocument();
+
+    rerender({ controller: createController({ selectedAssetIds: new Set([1, 2]), tagMode: "multiple" }) });
+    expect(dock).toHaveClass("bulk-dock--expanded");
+    expect(dock).not.toHaveClass("bulk-dock--tall");
+    expect(dock).toHaveAttribute("data-selected-count", "2");
+    expect(screen.queryByTestId("bulk-dock-chip")).not.toBeInTheDocument();
+    const header = screen.getByTestId("bulk-header-panel");
+    // The tag input comes first, then the heart and the clearing counter on the same row.
+    expect([...header.children].map((child) => child.getAttribute("data-testid") ?? child.tagName)).toEqual([
+      "bulk-tag-list",
+      "BUTTON",
+      "bulk-clear-selection"
+    ]);
+    expect(screen.getByLabelText("Add tag")).toBeEnabled();
+    expect(tagsTab()).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toBe(screen.getByTestId("bulk-tags-panel"));
+  });
+
+  it("clears the selection from the counter", async () => {
+    const controller = createController({ selectedAssetIds: new Set([1, 2, 3]) });
+    renderSolid(Sidebar, { controller });
+    const counter = screen.getByRole("button", { name: "Clear selection (3 selected)" });
+    expect(counter).toHaveTextContent("3");
+    await userEvent.click(counter);
+    expect(controller.onBulkSelectionInteraction).toHaveBeenCalledExactlyOnceWith({ type: "clear" });
+  });
+
+  it("switches tabs by click and arrow keys and makes the group tab tall", async () => {
+    renderSolid(Sidebar, { controller: createController({ selectedAssetIds: new Set([1]) }) });
+    const dock = screen.getByTestId("bulk-action-panel");
+    tagsTab().focus();
+    await userEvent.keyboard("{ArrowRight}");
+    const group = screen.getByRole("tab", { name: "Group & order" });
+    expect(group).toHaveFocus();
+    expect(group).toHaveAttribute("aria-selected", "true");
+    expect(group).toHaveAttribute("tabindex", "0");
+    expect(tagsTab()).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("tabpanel")).toBe(screen.getByTestId("bulk-group-panel"));
+    expect(dock).toHaveClass("bulk-dock--tall");
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(tagsTab()).toHaveFocus();
+    expect(screen.getByTestId("bulk-tags-panel")).toBeInTheDocument();
+    await openGroupTab();
+    expect(screen.getByLabelText("Media group key")).toBeEnabled();
+  });
+
+  it("returns to the tags tab when the selection is cleared", async () => {
+    const controller = createController({ selectedAssetIds: new Set([1]) });
+    const { rerender } = renderSolid(Sidebar, { controller });
+    await openGroupTab();
+    rerender({ controller: { ...controller, selectedAssetIds: new Set() } });
+    expect(screen.getByTestId("bulk-dock-chip")).toBeInTheDocument();
+    rerender({ controller });
+    expect(tagsTab()).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("keeps the dock open to show why an empty selection was cleared", () => {
+    renderSolid(Sidebar, { controller: createController({ selectionNotice: "rangeCleared" }) });
+    expect(screen.getByTestId("bulk-action-panel")).toHaveClass("bulk-dock--expanded");
+    expect(screen.getByTestId("bulk-selection-cleared")).toBeVisible();
+    expect(screen.getByLabelText("Add tag")).toBeDisabled();
+    expect(screen.getByTestId("bulk-clear-selection")).toBeDisabled();
+  });
+
+  it("sorts inline and applies the changed order with the group", async () => {
+    const controller = sortingController();
+    renderSolid(Sidebar, { controller });
     expect(thumbnailRequests()).toEqual([]);
+    await openGroupTab();
+    expect(screen.getByTestId("bulk-inline-order-grid")).toBeInTheDocument();
+    expect(thumbnailRequests()).toEqual([1, 2, 3]);
+    act(() => fireEvent.keyDown(screen.getByTestId("bulk-inline-order-handle-1"), { key: "ArrowRight" }));
+    expect(inlineOrder()).toEqual([2, 1, 3]);
+    await waitFor(() => expect(screen.getByTestId("bulk-inline-order-handle-1")).toHaveFocus());
+    expect(controller.onApplyGroup).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Apply group" }));
+    expect(controller.onApplyGroup).toHaveBeenCalledExactlyOnceWith([2, 1, 3]);
+  });
+
+  it("applies the controller's order when the inline order is unchanged", async () => {
+    const controller = sortingController();
+    renderSolid(Sidebar, { controller });
+    await openGroupTab();
+    await userEvent.click(screen.getByRole("button", { name: "Apply group" }));
+    expect(controller.onApplyGroup).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  it("opens the larger view from the inline draft and hides the inline board meanwhile", async () => {
+    const controller = sortingController();
+    renderSolid(Sidebar, { controller });
+    await openGroupTab();
+    act(() => fireEvent.keyDown(screen.getByTestId("bulk-inline-order-handle-3"), { key: "ArrowLeft" }));
+    expect(inlineOrder()).toEqual([1, 3, 2]);
     await userEvent.click(screen.getByRole("button", { name: "Sort in larger view" }));
     expect(screen.getByRole("dialog", { name: "Sort group order" })).toBeVisible();
-    expect(thumbnailRequests().length).toBeGreaterThan(0);
+    expect(modalOrder()).toEqual([1, 3, 2]);
+    expect(screen.queryByTestId("bulk-inline-order-grid")).not.toBeInTheDocument();
   });
 
-  it("does not expose group ordering until a group key is set", () => {
+  it("resets the inline draft when the group key changes", async () => {
+    const controller = sortingController();
+    const { rerender } = renderSolid(Sidebar, { controller });
+    await openGroupTab();
+    act(() => fireEvent.keyDown(screen.getByTestId("bulk-inline-order-handle-1"), { key: "ArrowRight" }));
+    expect(inlineOrder()).toEqual([2, 1, 3]);
+    rerender({ controller: { ...controller, groupKeyDraft: "other" } });
+    expect(inlineOrder()).toEqual([1, 2, 3]);
+  });
+
+  it("shows conflicts in the group tab and opens the larger sorting view", async () => {
+    const controller = sortingController({ hasConflictingGroups: true });
+    renderSolid(Sidebar, { controller: controller });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await openGroupTab();
+    expect(screen.getByRole("alert")).toHaveTextContent("Multiple group assignments");
+    expect(screen.getByTestId("bulk-group-order-panel")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Sort in larger view" }));
+    expect(screen.getByRole("dialog", { name: "Sort group order" })).toBeVisible();
+    expect(modalOrder()).toEqual([1, 2, 3]);
+  });
+
+  it("does not expose group ordering until a group key is set", async () => {
     const assets = [createAsset(1), createAsset(2)];
     renderSolid(Sidebar, {
       controller: createController({
@@ -413,6 +453,7 @@ describe("BulkActionsSidebar", () => {
         tagMode: "multiple"
       })
     });
+    await openGroupTab();
 
     expect(screen.queryByTestId("bulk-group-order-panel")).not.toBeInTheDocument();
     expect(screen.queryByTestId("bulk-group-drag-handle-1")).not.toBeInTheDocument();
@@ -434,9 +475,7 @@ describe("BulkActionsSidebar", () => {
       })
     });
 
-    expect(screen.getByTestId("bulk-action-panel")).toHaveClass("bulk-inspector");
     expect(screen.queryByTestId("bulk-group-order-panel")).not.toBeInTheDocument();
-    expect(screen.getByTestId("bulk-tags-panel")).toHaveClass("min-h-0", "overflow-visible");
     await userEvent.click(screen.getByRole("button", { name: "Remove tag cat" }));
     expect(onRemoveTag).toHaveBeenCalledWith("cat");
 
@@ -504,7 +543,7 @@ describe("BulkActionsSidebar", () => {
 
     const input = screen.getByLabelText("Add tag");
     await userEvent.type(input, "travel{Enter}");
-    await userEvent.click(screen.getByLabelText("Media group key"));
+    await userEvent.click(tagsTab());
     expect(input).not.toHaveFocus();
 
     await act(async () => {
@@ -579,7 +618,7 @@ describe("BulkActionsSidebar", () => {
   });
 });
 
-function sortingController(overrides: Partial<BulkSelectionController> = {}) {
+function sortingController(overrides: Partial<BulkSelectionController> = {}): BulkSelectionController {
   return createController({
     selectedAssetIds: new Set([1, 2, 3]),
     selectedAssets: [createAsset(1), createAsset(2), createAsset(3)],
@@ -591,9 +630,16 @@ function sortingController(overrides: Partial<BulkSelectionController> = {}) {
 
 async function openSorter(controller = sortingController()) {
   const view = renderSolid(Sidebar, { controller: controller });
+  await openGroupTab();
   const trigger = screen.getByRole("button", { name: "Sort in larger view" });
   await userEvent.click(trigger);
   return { ...view, trigger, controller };
+}
+
+function inlineOrder() {
+  return screen
+    .getAllByTestId(/^bulk-inline-order-tile-/)
+    .map((tile) => Number(tile.getAttribute("data-sort-asset")));
 }
 
 function modalOrder() {
@@ -704,8 +750,9 @@ describe("bulk group sorting modal", () => {
     expect(controller.onApplyGroup).not.toHaveBeenCalled();
   });
 
-  it("disables opening until selected metadata is ready", () => {
+  it("disables opening until selected metadata is ready", async () => {
     renderSolid(Sidebar, { controller: sortingController({ metadataLoading: true }) });
+    await openGroupTab();
     expect(screen.getByRole("button", { name: "Sort in larger view" })).toBeDisabled();
   });
 

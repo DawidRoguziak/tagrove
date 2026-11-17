@@ -74,7 +74,7 @@ async function recordIpc() {
 const ipc = () => browser.execute(() => window.gallery100kIpc.map(({ command, args }) => ({ command, args })));
 const clearIpc = () => browser.execute(() => { window.gallery100kIpc.length = 0; });
 async function count(expected) {
-  await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes(`Selected: ${expected}`), {
+  await browser.waitUntil(async () => (await $('[data-testid="bulk-action-panel"]').getAttribute("data-selected-count")) === String(expected), {
     timeout: 30000, timeoutMsg: `Expected ${expected} selected`
   });
 }
@@ -106,14 +106,14 @@ async function settled() {
 /** Native click (Shift optional); returns ms from the click to the bulk counter showing `expected`. */
 async function timedClick(index, expected, shift = false) {
   await browser.execute(target => {
-    const panel = document.querySelector('[data-testid="bulk-header-panel"]');
+    const panel = document.querySelector('[data-testid="bulk-action-panel"]');
     window.gallery100kClick = { clicked: 0, counted: 0 };
     const record = window.gallery100kClick;
     document.addEventListener("click", event => {
       if (event.target instanceof Element && event.target.closest(`button[data-asset-index="${target.index}"]`)) record.clicked = performance.now();
     }, { capture: true, once: true });
     const observer = new MutationObserver(() => {
-      if (!record.counted && panel.textContent.includes(`Selected: ${target.expected}`)) {
+      if (!record.counted && panel.getAttribute("data-selected-count") === String(target.expected)) {
         record.counted = performance.now();
         observer.disconnect();
       }

@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "已选择: {{count}}",
-      "clearSelection": "清除选择",
-      "clearSelectionHint": "Esc 清除选择",
       "addTag": "添加标签",
       "addGroup": "添加分组",
       "ariaLabel": "批量操作",
-      "heading": "批量操作",
       "groupHeading": "媒体组",
       "groupDescription": "为当前选择设置同一组，或清除组分配。",
       "groupConflictTitle": "存在多个组分配",
@@ -137,7 +134,6 @@
       "orderHeading": "组内顺序",
       "orderDescription": "拖动项目，或在其手柄上使用方向键来设置顺序。",
       "dragHandleAria": "拖动第 {{position}} 项或使用方向键调整顺序",
-      "mostUsedTags": "最常用的标签",
       "tagsHeading": "标签",
       "tagsMultipleDescription": "新标签会添加到所有选定项目，现有标签将保留。",
       "tagsSingleDescription": "为所选项目添加标签或移除当前标签。",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "至少有一个已选择项目已经具有媒体分组键/顺序。应用后将使用此分组和新顺序替换所有已选择项目。",
       "applyGroup": "应用分组",
       "applyInProgress": "正在应用..."
+    },
+    "dock": {
+      "tabTags": "标签",
+      "tabGroup": "分组与顺序",
+      "clearSelectionAria": "清除选择（已选 {{count}} 项）",
+      "collapsedHint": "选择"
     }
   },
   "lightbox": {

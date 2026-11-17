@@ -68,7 +68,7 @@ beforeEach(() => {
       offset: 0, items: rows.slice(0, 128)
     };
     if (command === "list_tags") return { items: [], total: 0 };
-    if (command === "list_scan_roots" || command === "get_startup_popular_tags") return [];
+    if (command === "list_scan_roots") return [];
     if (command === "get_video_tool_status") return { ffmpeg_available: true, ffprobe_available: true };
   });
 });

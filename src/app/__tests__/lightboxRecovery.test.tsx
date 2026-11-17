@@ -46,7 +46,7 @@ beforeEach(() => {
     if (command === "start_asset_query") return { status: "ready", session_id: 1, revision: 1, total: 2, offset: 0, items: [asset(1), asset(2)] };
     if (command === "get_asset_details") return { ...asset(args.assetId ?? 1), path: "/synthetic/image.png", size_bytes: 1, tags: [] };
     if (command === "list_tags") return { items: [], total: 0 };
-    if (command === "list_scan_roots" || command === "get_startup_popular_tags") return [];
+    if (command === "list_scan_roots") return [];
   });
 });
 

@@ -12,7 +12,7 @@ vi.mock("@solidjs/web", async (original) => original());
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke: vi.fn(async (command: string) => {
-    if (command === "get_startup_popular_tags" || command === "list_scan_roots") return [];
+    if (command === "list_scan_roots") return [];
     if (command === "scan_startup_roots") return null;
     if (command === "get_video_tool_status")
       return { ffmpeg_available: true, ffprobe_available: true };

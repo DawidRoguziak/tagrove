@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "Ausgewählt: {{count}}",
-      "clearSelection": "Auswahl aufheben",
-      "clearSelectionHint": "Esc hebt die Auswahl auf",
       "addTag": "Tag hinzufügen",
       "addGroup": "Gruppe hinzufügen",
       "ariaLabel": "Stapelaktionen",
-      "heading": "Stapelaktionen",
       "groupHeading": "Mediengruppe",
       "groupDescription": "Eine Gruppe für die Auswahl festlegen oder die Gruppenzuordnung entfernen.",
       "groupConflictTitle": "Mehrere Gruppenzuordnungen",
@@ -137,7 +134,6 @@
       "orderHeading": "Gruppenreihenfolge",
       "orderDescription": "Elemente ziehen oder die Pfeiltasten an ihren Griffen verwenden, um die Reihenfolge festzulegen.",
       "dragHandleAria": "Element {{position}} durch Ziehen oder mit den Pfeiltasten neu anordnen",
-      "mostUsedTags": "Meistverwendete Tags",
       "tagsHeading": "Tags",
       "tagsMultipleDescription": "Neue Tags werden allen ausgewählten Elementen hinzugefügt. Bestehende Tags bleiben erhalten.",
       "tagsSingleDescription": "Tags hinzufügen oder aktuelle Tags des ausgewählten Elements entfernen.",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "Mindestens ein ausgewähltes Element hat bereits einen Mediengruppenschlüssel oder eine Reihenfolge. Beim Anwenden werden alle ausgewählten Elemente durch diese Gruppe und neue Reihenfolge ersetzt.",
       "applyGroup": "Gruppe anwenden",
       "applyInProgress": "Wird angewendet..."
+    },
+    "dock": {
+      "tabTags": "Tags",
+      "tabGroup": "Gruppe & Reihenfolge",
+      "clearSelectionAria": "Auswahl aufheben ({{count}} ausgewählt)",
+      "collapsedHint": "Auswählen"
     }
   },
   "lightbox": {

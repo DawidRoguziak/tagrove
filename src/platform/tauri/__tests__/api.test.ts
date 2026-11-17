@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getStartupPopularTags, mergeAssetTagsBulk, setAssetTags } from "../tags";
+import { mergeAssetTagsBulk, setAssetTags } from "../tags";
 import { applySelectionMutation, getAssetQuerySections } from "../assets";
 import { startAssetQuery, getAssetSummariesByIds, getAssetQueryPosition, getAssetQueryIdRange, decodeAssetIdRange, setAssetsMediaGroupBulk, toMediaSrc, toggleAssetsFavoriteBulk } from "../assets";
 import { idRangeBuffer } from "../../../test/idRange";
@@ -26,11 +26,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 describe("api contract", () => {
-  it("reads the ordered startup tag snapshot without arguments", async () => {
-    coreMocks.invoke.mockResolvedValueOnce(["travel", "cat"]);
-    await expect(getStartupPopularTags()).resolves.toEqual(["travel", "cat"]);
-    expect(coreMocks.invoke).toHaveBeenCalledWith("get_startup_popular_tags");
-  });
   it.each([
     { status: "resolved", index: 201 },
     { status: "missing" },

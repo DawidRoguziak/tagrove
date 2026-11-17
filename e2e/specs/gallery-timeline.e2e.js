@@ -44,7 +44,7 @@ async function jump(key, index) {
   return Date.now() - started;
 }
 async function count(expected) {
-  await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes(`Selected: ${expected}`), {
+  await browser.waitUntil(async () => (await $('[data-testid="bulk-action-panel"]').getAttribute("data-selected-count")) === String(expected), {
     timeout: 30000,
     timeoutMsg: `Expected ${expected} selected`
   });

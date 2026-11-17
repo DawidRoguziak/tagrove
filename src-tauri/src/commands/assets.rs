@@ -16,13 +16,6 @@ use crate::adapter::events::TauriProgress;
 pub use media_tagger_core::usecases::assets::{AssetMetaFilterInput, BulkMediaGroupUpdateInput};
 
 #[tauri::command]
-pub fn get_startup_popular_tags(
-    state: State<'_, media_tagger_core::app::state::StartupPopularTags>,
-) -> Vec<String> {
-    state.tags().to_vec()
-}
-
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn start_asset_query(
     tags_and: Vec<String>,

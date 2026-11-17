@@ -42,6 +42,9 @@ interface Gesture {
   lastFrame: number;
 }
 const dragHoldDelayMs = 150;
+/** Holding a tile this long without moving opens it in the lightbox in bulk mode. */
+export const LONG_PRESS_MS = 500;
+const moveTolerancePx = 5;
 const editableSelector = 'input, textarea, select, [contenteditable="true"]';
 const interactiveSelector =
   'button:not([data-asset-id]), input, select, textarea, a, [role="button"]:not([data-asset-id]), [contenteditable="true"]';
@@ -53,11 +56,17 @@ export function createGridHandlers(options: Options) {
   let frame: number | null = null;
   let generation = 0;
   let suppressClick = false;
+  let longPress: ReturnType<typeof setTimeout> | undefined;
+  const stopLongPress = () => {
+    if (longPress !== undefined) clearTimeout(longPress);
+    longPress = undefined;
+  };
   const [preview, setPreview] = createSignal<Preview | null>(null);
   const [isDragSelecting, setIsDragSelecting] = createSignal(false);
   const release = () => {
     const active = gesture;
     gesture = null;
+    stopLongPress();
     if (frame !== null) cancelAnimationFrame(frame);
     frame = null;
     if (active?.element.hasPointerCapture(active.pointerId))
@@ -167,6 +176,14 @@ export function createGridHandlers(options: Options) {
     updatePreview(active);
     frame = requestAnimationFrame(tick);
   };
+  const assetFromTile = (tile: HTMLElement): AssetSummary | undefined => {
+    const assetId = Number(tile.dataset.assetId);
+    const assetIndex = Number(tile.dataset.assetIndex);
+    if (!Number.isInteger(assetId) || !Number.isInteger(assetIndex) || assetIndex < 0) return;
+    const asset =
+      options.getAssetAt?.(assetIndex) ?? options.assets.find((item) => item.id === assetId);
+    return asset?.id === assetId ? asset : undefined;
+  };
   const handlePointerDown = (event: PointerEvent & { currentTarget: HTMLElement }) => {
     if (event.button !== 0 || !event.isPrimary) return;
     // A new press must not consume click suppression left by an earlier drag.
@@ -196,6 +213,30 @@ export function createGridHandlers(options: Options) {
       dragging: false,
       lastFrame: 0
     };
+    // A long press on a tile opens it without touching the selection. Modifier presses are
+    // range and toggle gestures, so they never open the lightbox.
+    const tile =
+      event.target instanceof Element
+        ? event.target.closest<HTMLElement>("button[data-asset-id]")
+        : null;
+    if (tile && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+      const pressed = gesture;
+      // Grid slots are pooled: scrolling during the hold can re-index this element to another
+      // asset. Only the asset that was pressed may open.
+      const pressedId = tile.dataset.assetId;
+      const pressedIndex = tile.dataset.assetIndex;
+      longPress = setTimeout(() => {
+        longPress = undefined;
+        if (gesture !== pressed || pressed.dragging) return;
+        if (tile.dataset.assetId !== pressedId || tile.dataset.assetIndex !== pressedIndex) return;
+        const asset = assetFromTile(tile);
+        if (!asset) return;
+        cancel();
+        // The release after a long press must not toggle the tile.
+        suppressClick = true;
+        options.onSelect(asset);
+      }, LONG_PRESS_MS);
+    }
   };
   const handlePointerMove = (
     event: Pick<
@@ -206,10 +247,14 @@ export function createGridHandlers(options: Options) {
     const active = gesture;
     if (!active || active.pointerId !== event.pointerId) return;
     active.latest = { x: event.clientX, y: event.clientY };
+    const moved =
+      Math.hypot(event.clientX - active.origin.x, event.clientY - active.origin.y) >=
+      moveTolerancePx;
+    if (moved) stopLongPress();
     if (
       !active.dragging &&
       performance.now() - active.pressedAt >= dragHoldDelayMs &&
-      Math.hypot(event.clientX - active.origin.x, event.clientY - active.origin.y) >= 5
+      moved
     ) {
       active.dragging = true;
       active.element.setPointerCapture(active.pointerId);
@@ -299,13 +344,11 @@ export function createGridHandlers(options: Options) {
     }
   );
   const handleTileClick = (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {
-    const { assets, getAssetAt, onSelect, selectionModeEnabled, onBulkSelectionInteraction } =
-      options;
-    const assetId = Number(event.currentTarget.dataset.assetId);
+    const { onSelect, selectionModeEnabled, onBulkSelectionInteraction } = options;
+    const asset = assetFromTile(event.currentTarget);
+    if (!asset) return;
+    const assetId = asset.id;
     const assetIndex = Number(event.currentTarget.dataset.assetIndex);
-    if (!Number.isInteger(assetId) || !Number.isInteger(assetIndex) || assetIndex < 0) return;
-    const asset = getAssetAt?.(assetIndex) ?? assets.find((item) => item.id === assetId);
-    if (!asset || asset.id !== assetId) return;
     if (!selectionModeEnabled) {
       onSelect(asset);
       return;

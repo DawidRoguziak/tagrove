@@ -28,7 +28,7 @@ disconnects the observer and removes the listener. Vite HMR uses this disposer.
 `UiLayerProvider`. The runtime provider constructs one
 [`createAppRuntime`](../../src/app/createAppRuntime.ts) under the application owner.
 Context exposes those models without creating another state owner. `onSettled` calls the
-idempotent `runtime.start()`, which loads popular tags once, refreshes library data,
+idempotent `runtime.start()`, which refreshes library data,
 invokes startup scanning and refreshes scan roots. Backend startup-scan consumption remains
 a separate process-wide guarantee.
 
@@ -46,7 +46,7 @@ icon source. See [branding](../development/setup-and-build.md#branding-assets).
 | `src/features/gallery` | Own virtualizer (`gridGeometry`, `createVirtualGrid`), tiles, gesture geometry and selected IDs. |
 | `src/features/search` | Search drafts, applied descriptors, suggestions/worker and tag-list browser. |
 | `src/features/tagging` | Shared `TagEditor`, consumed by lightbox and bulk. |
-| `src/features/bulk` | Selected metadata, group drafts, sidebar and order dialog. |
+| `src/features/bulk` | Selected metadata, group drafts, the floating bulk dock, the order board and the order dialog. |
 | `src/features/lightbox` | Selected asset and navigation model, presentation, image controls and native video session. |
 | `src/features/settings` | Operation models, progress, section views and confirmations. |
 | `src/ui` | Reusable controls, DOM behavior and overlay ownership. It does not import feature or library code. |
@@ -74,7 +74,7 @@ boundary changes.
 | Known tags and suggestion worker | `createKnownTags` and runtime `SuggestionClient` | Application lifetime. The worker starts lazily, coalesces requests per editor and terminates on disposal. |
 | Thumbnail loading | Each `ThumbnailImage` (`thumb://` URL from `thumbnailUrl`) and WebKit's image cache | Per mounted image. No frontend queue or store; load, retry and failure state belong to the current `src`. |
 | Selected IDs and range anchor | `features/gallery/createSelection` | Survives view/query changes and page eviction. Query changes cancel ranges and clear the anchor; identity reset clears IDs. |
-| Bulk metadata and group drafts | `features/bulk/createBulk` | Application lifetime; drafts reset when the selected-ID set changes. The mounted sidebar owns tag input/focus and the order dialog. |
+| Bulk metadata and group drafts | `features/bulk/createBulk` | Application lifetime; drafts reset when the selected-ID set changes. The mounted dock owns tag input/focus, its tab, the inline order draft and the order dialog. |
 | Lightbox selection, navigation and save intents | `features/lightbox/createLightbox` | Application lifetime; close resets selection state, identity reset discards pending intents. |
 | Lightbox sidebar, activity, confirmation and image controls | `createLightboxPresentation.ts`, `LightboxModal`, `image/createImageControls` | Mounted presentation lifetime; survives asset navigation where appropriate, resets on close/reopen. |
 | Native playback | `video/createNativeVideoSession` | Active presentation session; logical close retires playback before the retained modal exits. |
@@ -115,7 +115,7 @@ The gallery and settings are mutually exclusive children of `<main>`. View switc
 unmounts DOM and local state while runtime models remain alive. Gallery owns a scroll
 element below its header; settings scrolls in `<main>`. Neither saves scroll position
 across remounts. Grid measurements and observers are recreated on return. Bulk selection
-survives even though its sidebar unmounts.
+survives even though its dock unmounts.
 
 `SettingsView` in `App.tsx` registers a nonmodal layer for Escape. Back and Escape call
 `runtime.closeSettings`. The empty-library first-folder action sets the scan highlight
@@ -123,7 +123,7 @@ before opening settings. Settings operations continue while the gallery is visib
 
 ## Lazy loading and delayed prefetch
 
-`AppGalleryView` eagerly imports gallery, search and the bulk sidebar. Settings view and
+`AppGalleryView` eagerly imports gallery, search and the bulk dock. Settings view and
 `LightboxModal` use Solid `lazy`; their models are already in the runtime. `Loading` provides
 a localized status for settings and a named loading dialog for lightbox. `LazyErrorBoundary`
 and `LightboxBoundary` use `Errored` for localized failure UI and reload/Back/Close actions.
@@ -205,7 +205,7 @@ theme choices transition background, border color, text color and shadow. Keyboa
 focus indicators remain immediate. DaisyUI button presses do not translate controls.
 
 Use `motion-enter` for an opacity-only entrance after the element's layout is ready.
-Positioned suggestion lists, bulk inspector sections and inline lightbox
+Positioned suggestion lists, the bulk dock and its tab panels and inline lightbox
 information/confirmation use it. Suggestions keep the same mounted
 list while typing, hiding it and pausing the fade while worker results are empty.
 Their fade starts only once results and viewport positioning are available.
@@ -309,9 +309,16 @@ The controls are omitted in browser previews. Window actions use Tauri's window 
 listeners are removed on view changes, including registration that resolves after owner disposal.
 Modal overlays keep their existing dismissal controls and keyboard behavior.
 
-Bulk editing occupies a 360px inspector at window widths of at least 1000px, and follows
-the gallery below that width. The inspector sticks to the gallery viewport's top and scrolls independently on desktop, with its maximum height supplied by the surrounding CSS size container. Its tag
-suggestions use the existing viewport portal so inspector overflow cannot clip them.
+Bulk editing uses a dock floating at the bottom centre of the gallery viewport
+(`.bulk-dock`, positioned in `.workspace-viewport`; [ADR 0035](../adr/0035-bulk-actions-floating-dock.md)).
+The gallery keeps its full width. The dock is a 100px chip until something is selected, then
+grows to `min(760px, 100% - 32px)`, and its Group & order tab gets a fixed tall height
+(`min(72cqh, 680px)`, from the viewport's CSS size container). The size changes instantly; only
+the content fades in (`motion-enter`), per the no-layout-animation rule. The dock is centred
+with auto margins rather than a transform. The order board's drag ghost is portaled to
+`document.body`, so it stays viewport-relative and the dock's stacking context (z-index 30, below
+the workspace header) cannot paint over it. Its tag suggestions open above the input through the existing viewport
+portal so dock overflow cannot clip them.
 
 Full-page settings uses 240px navigation beside mounted sections at widths of at least
 1000px, and wrapping navigation above the content below that width. Navigation focuses and
@@ -350,7 +357,7 @@ When the lightbox panel is collapsed, reopen and close controls float at the top
 
 GTK video controls are native widgets outside the DOM layer manager. Windowed Escape from those controls reaches `LightboxContent` through the session-checked video channel. The owner checks active/top-layer state and deletion/fullscreen locks, then dismisses confirmation before a narrow drawer or the preview. The event does not synthesize a DOM key or bypass layer ownership. WebView-focus Escape retains its normal DOM handling. Changes to video bounds, fullscreen, or sidebar visibility need desktop verification as well as DOM tests. See [native media presentation](../subsystems/lightbox.md#media-presentation).
 
-Bulk ordering lives only in the group-order modal. The sidebar retains its heading and opening button without inline previews, thumbnail requests, or drag listeners. Modal handles support ArrowLeft/ArrowRight for adjacent positions, with Up/Down moving by grid row. It uses the shared modal layer, keeps changes in a local draft until Save order, and restores the triggering button on close. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
+Bulk ordering uses one `GroupOrderBoard` in two places: inline in the dock's Group & order tab and in the larger group-order modal. Only one is mounted at a time (the inline board unmounts while the modal is open), and each registers its drag listeners only while active. The dock tabs are a `role="tablist"` with roving `tabindex` and ArrowLeft/ArrowRight/Home/End. Board handles support ArrowLeft/ArrowRight for adjacent positions, with Up/Down moving by grid row. The modal uses the shared modal layer, keeps changes in a local draft until Save order, and restores the triggering button on close. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
 
 ## Safe change checklist
 

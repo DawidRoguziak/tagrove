@@ -22,7 +22,7 @@ async function invoke(command, payload = {}) {
   return result.value;
 }
 async function count(expected) {
-  await browser.waitUntil(async () => Number((await $('[data-testid="bulk-header-panel"]').getText()).match(/Selected:\s*(\d+)/)?.[1]) === expected,
+  await browser.waitUntil(async () => Number(await $('[data-testid="bulk-action-panel"]').getAttribute("data-selected-count")) === expected,
     { timeout: 30000, timeoutMsg: `Expected ${expected} selected` });
 }
 async function scrollTo(index) {

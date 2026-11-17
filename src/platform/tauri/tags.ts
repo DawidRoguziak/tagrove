@@ -1,10 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SetAssetTagsSummary, BulkTagMergeSummary, TagListPage } from "./contracts/tags";
 
-export async function getStartupPopularTags(): Promise<string[]> {
-  return invoke<string[]>("get_startup_popular_tags");
-}
-
 export async function listTags(params: {
   query: string;
   offset: number;

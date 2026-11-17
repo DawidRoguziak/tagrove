@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "선택됨: {{count}}",
-      "clearSelection": "선택 해제",
-      "clearSelectionHint": "Esc로 선택 해제",
       "addTag": "태그 추가",
       "addGroup": "그룹 추가",
       "ariaLabel": "일괄 작업",
-      "heading": "일괄 작업",
       "groupHeading": "미디어 그룹",
       "groupDescription": "현재 선택 항목에 하나의 그룹을 설정하거나 그룹 지정을 해제합니다.",
       "groupConflictTitle": "여러 그룹 지정",
@@ -137,7 +134,6 @@
       "orderHeading": "그룹 순서",
       "orderDescription": "항목을 드래그하거나 핸들에서 화살표 키를 사용하여 순서를 설정하세요.",
       "dragHandleAria": "항목 {{position}}을 드래그하거나 화살표 키로 순서 변경",
-      "mostUsedTags": "가장 많이 사용된 태그",
       "tagsHeading": "태그",
       "tagsMultipleDescription": "새 태그가 선택한 모든 항목에 추가됩니다. 기존 태그는 유지됩니다.",
       "tagsSingleDescription": "선택 항목의 태그를 추가하거나 현재 태그를 제거합니다.",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "선택한 항목 중 최소 하나에 이미 미디어 그룹 키/순서가 있습니다. 적용하면 선택된 모든 항목이 이 그룹과 새 순서로 교체됩니다.",
       "applyGroup": "그룹 적용",
       "applyInProgress": "적용 중..."
+    },
+    "dock": {
+      "tabTags": "태그",
+      "tabGroup": "그룹 및 순서",
+      "clearSelectionAria": "선택 해제({{count}}개 선택됨)",
+      "collapsedHint": "선택"
     }
   },
   "lightbox": {

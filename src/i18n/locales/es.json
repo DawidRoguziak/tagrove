@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "Seleccionados: {{count}}",
-      "clearSelection": "Quitar selección",
-      "clearSelectionHint": "Esc quita la selección",
       "addTag": "Añadir etiqueta",
       "addGroup": "Añadir grupo",
       "ariaLabel": "Acciones masivas",
-      "heading": "Acciones masivas",
       "groupHeading": "Grupo de medios",
       "groupDescription": "Establece un grupo para la selección o elimina su asignación.",
       "groupConflictTitle": "Varias asignaciones de grupo",
@@ -137,7 +134,6 @@
       "orderHeading": "Orden del grupo",
       "orderDescription": "Arrastra los elementos o usa las flechas en sus asas para definir el orden.",
       "dragHandleAria": "Reordena el elemento {{position}} arrastrándolo o con las flechas",
-      "mostUsedTags": "Etiquetas más usadas",
       "tagsHeading": "Etiquetas",
       "tagsMultipleDescription": "Las nuevas etiquetas se añaden a todos los elementos seleccionados. Las existentes se conservan.",
       "tagsSingleDescription": "Añade etiquetas o elimina las actuales del elemento seleccionado.",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "Al menos un elemento seleccionado ya tiene clave/orden de grupo multimedia. Al aplicar, se reemplazarán todos los elementos seleccionados con este grupo y el nuevo orden.",
       "applyGroup": "Aplicar grupo",
       "applyInProgress": "Aplicando..."
+    },
+    "dock": {
+      "tabTags": "Etiquetas",
+      "tabGroup": "Grupo y orden",
+      "clearSelectionAria": "Borrar selección ({{count}} seleccionados)",
+      "collapsedHint": "Seleccionar"
     }
   },
   "lightbox": {

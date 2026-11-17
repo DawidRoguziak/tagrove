@@ -36,7 +36,6 @@ describe("Solid shell", () => {
       if (command === "start_asset_query")
         return { status: "ready", session_id: 1, revision: 1, total: 0, offset: 0, items: [] };
       if (command === "list_tags") return { items: [], total: 0 };
-      if (command === "get_startup_popular_tags") return [];
       if (command === "get_asset_query_sections")
         return { status: "ready", session_id: 1, total: 0, sections: [] };
     });

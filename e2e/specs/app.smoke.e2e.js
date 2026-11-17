@@ -257,6 +257,7 @@ describe("MediaTagger desktop smoke", () => {
     await selectVisibleAssets(2);
 
     const uniqueGroup = `group-e2e-${Date.now()}`;
+    await $('[data-testid="bulk-tab-group"]').click();
     const groupInput = await $("#bulk-group-key-input");
     await groupInput.waitForDisplayed({ timeout: 10000 });
     if ((await groupInput.getValue()) !== "") {
@@ -290,7 +291,7 @@ describe("MediaTagger desktop smoke", () => {
       timeout: 10000,
       timeoutMsg: "bulk media group key did not clear"
     });
-    const removeGroupButton = await $('[data-testid="bulk-group-panel"] > button');
+    const removeGroupButton = await $('[data-testid="bulk-apply-group"]');
     await removeGroupButton.waitForEnabled({ timeout: 10000 });
     const removeGroupLabel = await removeGroupButton.getText();
     if (removeGroupLabel !== "Remove from group" && removeGroupLabel !== "Remove from groups") {

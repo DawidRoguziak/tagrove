@@ -72,3 +72,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0032](0032-rusqlite-0-41-for-bundled-sqlite-3-54.md) | rusqlite 0.41 with bundled SQLite 3.54 for RUSTSEC-2026-0459 | Accepted | 2026-11-13 |
 | [0033](0033-feff-is-tag-whitespace-in-rust-and-legacy-rows-are-split-on-read.md) | U+FEFF is tag whitespace in Rust, and legacy rows that contain it are split on read, not migrated | Accepted | 2026-11-13 |
 | [0034](0034-tauri-independent-backend-core.md) | The backend core does not depend on Tauri; Tauri is an adapter | Accepted | 2026-11-14 |
+| [0035](0035-bulk-actions-floating-dock.md) | Bulk actions in a floating dock, and no startup popular tags | Accepted | 2026-11-15 |

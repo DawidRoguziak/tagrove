@@ -26,7 +26,7 @@ async function geometry() {
   });
 }
 async function count(expected) {
-  await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes(`Selected: ${expected}`), { timeout: 30000, timeoutMsg: `Expected ${expected} selected` });
+  await browser.waitUntil(async () => (await $('[data-testid="bulk-action-panel"]').getAttribute("data-selected-count")) === String(expected), { timeout: 30000, timeoutMsg: `Expected ${expected} selected` });
 }
 async function clear() {
   await browser.keys("Escape");
@@ -91,6 +91,28 @@ suite("gallery additive clicks and rectangle selection", function () {
     assert.equal(await $('[data-testid="gallery-selection-rectangle"]').isExisting(), false);
     await $('button[data-asset-index="0"]').click(); await count(2);
     await $('button[data-asset-index="0"]').click(); await count(1);
+  });
+  it("opens the lightbox on a long press and keeps the selection unchanged", async () => {
+    await $('button[aria-label="Enable bulk actions"]').click();
+    await $('button[data-asset-index="1"]').click();
+    await count(1);
+    const tile = await $('button[data-asset-index="0"]').getLocation();
+    const size = await $('button[data-asset-index="0"]').getSize();
+    const x = Math.round(tile.x + size.width / 2), y = Math.round(tile.y + size.height / 2);
+    await pointer([
+      { type: "pointerMove", duration: 0, x, y },
+      { type: "pointerDown", button: 0 },
+      { type: "pause", duration: 800 }
+    ]);
+    await $('[data-lightbox-kind]').waitForDisplayed({ timeout: 5000 });
+    await release();
+    await browser.saveScreenshot(path.join(output, "long-press-lightbox.png"));
+    await $('button[aria-label="Close preview"]').click();
+    await browser.waitUntil(() => browser.execute(() => !document.querySelector('[data-lightbox-kind]')));
+    await count(1);
+    assert.equal(await $('button[data-asset-index="1"]').getAttribute("aria-pressed"), "true");
+    assert.equal(await $('button[data-asset-index="0"]').getAttribute("aria-pressed"), "false");
+    assert.equal(await $('[aria-label="Disable bulk actions"]').isExisting(), true);
   });
   for (const omitTrailingClick of [false, true]) {
     it(`opens an image on the first click after leaving rectangle selection, omitted trailing click: ${omitTrailingClick}`, async () => {
@@ -200,7 +222,7 @@ suite("gallery additive clicks and rectangle selection", function () {
     await browser.waitUntil(() => browser.execute(() => document.querySelectorAll('button[data-asset-index]').length === 1));
     await $('button[aria-label="Enable bulk actions"]').click();
     await $('button[data-asset-index="0"]').click(); await count(1);
-    await $('#bulk-group-key-input').click(); await count(1);
+    await $('#bulk-tag-draft-input').click(); await count(1);
     await $('.filter-input').click(); await count(1);
     const g = await geometry();
     await pointer([{ type: "pointerMove", duration: 0, x: g.left + 20, y: g.selectionBottom - 25 },

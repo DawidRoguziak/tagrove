@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "選択中: {{count}}",
-      "clearSelection": "選択を解除",
-      "clearSelectionHint": "Escで選択を解除",
       "addTag": "タグを追加",
       "addGroup": "グループを追加",
       "ariaLabel": "一括操作",
-      "heading": "一括操作",
       "groupHeading": "メディアグループ",
       "groupDescription": "選択項目に同じグループを設定するか、グループ割り当てを解除します。",
       "groupConflictTitle": "複数のグループ割り当て",
@@ -137,7 +134,6 @@
       "orderHeading": "グループ内の順序",
       "orderDescription": "項目をドラッグするか、ハンドル上で矢印キーを使って順序を設定します。",
       "dragHandleAria": "項目 {{position}} をドラッグまたは矢印キーで並べ替え",
-      "mostUsedTags": "よく使われるタグ",
       "tagsHeading": "タグ",
       "tagsMultipleDescription": "新しいタグを選択したすべての項目に追加します。既存のタグは保持されます。",
       "tagsSingleDescription": "選択項目のタグを追加または削除します。",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "選択した項目の少なくとも 1 件に既にメディアグループキー/順序が設定されています。適用すると、選択したすべての項目がこのグループと新しい順序に置き換えられます。",
       "applyGroup": "グループを適用",
       "applyInProgress": "適用中..."
+    },
+    "dock": {
+      "tabTags": "タグ",
+      "tabGroup": "グループと順序",
+      "clearSelectionAria": "選択を解除（{{count}} 件選択中）",
+      "collapsedHint": "選択"
     }
   },
   "lightbox": {

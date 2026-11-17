@@ -21,6 +21,7 @@ interface TagEditorProps {
   loadingText?: string;
   onRemoveTag?: (tag: string) => void;
   getRemoveTagAriaLabel?: (tag: string) => string;
+  suggestionsPlacement?: "above" | "below";
 }
 
 export function TagEditor(props: TagEditorProps) {
@@ -114,6 +115,7 @@ export function TagEditor(props: TagEditorProps) {
         keepSuggestionsOpenOnPick
         autoSelectFirstSuggestion={false}
         suggestionsStrategy="viewport"
+        suggestionsPlacement={props.suggestionsPlacement}
         disabled={editingDisabled()}
       />
     </div>

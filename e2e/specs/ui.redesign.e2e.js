@@ -188,7 +188,7 @@ suite("UI redesign desktop review", function () {
     await galleryReady();
   });
 
-  it("shows corner badges, floating image controls and modal-only ordering in both themes", async () => {
+  it("shows corner badges, floating image controls and dock ordering in both themes", async () => {
     const page = await listAssetsForAssertions({ offset: 0, limit: 200, tagsAnd: [], tagsNot: [], favoritesOnly: false });
     const gifId = page.items.find(asset => asset.kind === "gif").id;
     for (const theme of ["light", "dark"]) {
@@ -249,8 +249,9 @@ suite("UI redesign desktop review", function () {
       const tiles = await $$('button[data-asset-id]');
       await tiles[0].click();
       await tiles[1].click();
+      await click('[data-testid="bulk-tab-group"]');
       await $('#bulk-group-key-input').setValue('ui-fixes');
-      assert.equal(await $('[data-testid="bulk-group-order-list"]').isExisting(), false);
+      await $('[data-testid="bulk-inline-order-grid"]').waitForDisplayed();
       await capture(`fixes-${theme}-bulk`);
       await click('[data-testid="bulk-open-order-modal"]');
       await $('[data-testid="bulk-order-modal"]').waitForDisplayed();
@@ -346,8 +347,14 @@ suite("UI redesign desktop review", function () {
         await click('button[aria-label="Enable bulk actions"]');
         await click(`button[data-asset-id="${imageId}"]`);
         await $('#bulk-tag-draft-input').waitForEnabled();
-        const inspectorWidth = await $('[data-testid="bulk-action-panel"]').getSize('width');
-        assert.equal(inspectorWidth, 360);
+        const dock = await browser.execute(() => {
+          const viewport = document.querySelector('.workspace-viewport').getBoundingClientRect();
+          const rect = document.querySelector('[data-testid="bulk-action-panel"]').getBoundingClientRect();
+          return { centre: rect.left + rect.width / 2 - (viewport.left + viewport.width / 2), bottomGap: viewport.bottom - rect.bottom, width: rect.width, viewportWidth: viewport.width };
+        });
+        assert.ok(Math.abs(dock.centre) <= 1, `dock is centred: ${JSON.stringify(dock)}`);
+        assert.ok(Math.abs(dock.bottomGap - 16) <= 1, `dock sits 16px above the bottom: ${JSON.stringify(dock)}`);
+        assert.ok(dock.width <= Math.min(760, dock.viewportWidth - 32) + 1);
         await capture(`${theme}-${width}-bulk`);
         await click('button[aria-label="Disable bulk actions"]');
         await click('button[aria-label="Open tag list"]');
@@ -456,7 +463,7 @@ suite("UI redesign desktop review", function () {
     await click('button[aria-label="Clear all search filters"]');
   });
 
-  it('fits Polish settings and stacks the bulk inspector below 1000px', async () => {
+  it('fits Polish settings and keeps the bulk dock floating below 1000px', async () => {
     for (const theme of ['dark', 'light']) {
       for (const [width, height] of [[1440, 900], [1000, 720]]) {
         await browser.setWindowSize(width, height);
@@ -484,15 +491,16 @@ suite("UI redesign desktop review", function () {
     }
     await browser.setWindowSize(900, 720);
     await click('button[aria-label="Enable bulk actions"]');
-    await $('[data-testid="bulk-action-panel"]').waitForExist();
+    await $('[data-testid="bulk-dock-chip"]').waitForDisplayed();
     const layout = await browser.execute(() => {
-      const gallery = document.querySelector('[data-testid="gallery-grid"]').getBoundingClientRect();
-      const inspector = document.querySelector('[data-testid="bulk-action-panel"]').getBoundingClientRect();
-      return { galleryBottom: gallery.bottom, inspectorTop: inspector.top, inspectorWidth: inspector.width };
+      const gallery = document.querySelector('.gallery-scroll').getBoundingClientRect();
+      const dock = document.querySelector('[data-testid="bulk-action-panel"]').getBoundingClientRect();
+      return { galleryWidth: gallery.width, galleryBottom: gallery.bottom, dockBottom: dock.bottom, dockWidth: dock.width };
     });
-    assert.ok(layout.inspectorTop >= layout.galleryBottom - 1);
-    assert.ok(layout.inspectorWidth > 800);
-    await capture('light-900-stacked-bulk');
+    // The collapsed chip floats over the gallery instead of taking a column or a row.
+    assert.ok(layout.dockWidth <= 101, `collapsed chip width ${layout.dockWidth}`);
+    assert.ok(layout.dockBottom <= layout.galleryBottom - 15);
+    await capture('light-900-collapsed-bulk');
     await click('button[aria-label="Disable bulk actions"]');
     await browser.setWindowSize(1440, 900);
   });

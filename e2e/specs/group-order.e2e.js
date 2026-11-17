@@ -32,7 +32,19 @@ async function visibleOrder() {
   );
 }
 
+/** The dock remounts with the gallery view, so reselect its group tab when needed. */
+async function openGroupTab() {
+  const tab = await $('[data-testid="bulk-tab-group"]');
+  if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+  await $("#bulk-group-key-input").waitForDisplayed();
+}
+
+async function selectedCount() {
+  return $('[data-testid="bulk-action-panel"]').getAttribute("data-selected-count");
+}
+
 async function openSorter() {
+  await openGroupTab();
   const trigger = await $('[data-testid="bulk-open-order-modal"]');
   await trigger.waitForEnabled();
   await trigger.click();
@@ -138,9 +150,8 @@ describe("large group order modal", function () {
     await browser.refresh();
     await $('button[data-asset-index="0"]').waitForDisplayed({ timeout: 20000 });
     await $('button[aria-label="Enable bulk actions"]').click();
-    // The lazy bulk panel changes the gallery width when it mounts. Wait for
-    // that layout before WebDriver sends pointer down/up at the first tile.
-    await $('[data-testid="bulk-header-panel"]').waitForDisplayed();
+    // Wait for a stable tile layout before WebDriver sends pointer down/up at the first tile.
+    await $('[data-testid="bulk-dock-chip"]').waitForDisplayed();
     await browser.waitUntil(() => browser.executeAsync(done => {
       const tile = document.querySelector('button[data-asset-index="0"]');
       const before = tile?.getBoundingClientRect();
@@ -152,7 +163,7 @@ describe("large group order modal", function () {
       }));
     }));
     await $('button[data-asset-index="0"]').click();
-    await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes("Selected: 1"));
+    await browser.waitUntil(async () => (await selectedCount()) === "1");
     await browser.execute(() => {
       const scroller = document.querySelector(".gallery-scroll");
       scroller.scrollTop = scroller.scrollHeight;
@@ -162,9 +173,8 @@ describe("large group order modal", function () {
     await browser.performActions([{ id: "range-selection", type: "key", actions: [{ type: "keyDown", value: "\uE008" }] }]);
     await last.click();
     await browser.releaseActions();
-    await browser.waitUntil(async () =>
-      (await $('[data-testid="bulk-header-panel"]').getText()).includes(`Selected: ${groupSize}`)
-    );
+    await browser.waitUntil(async () => (await selectedCount()) === String(groupSize));
+    await openGroupTab();
     await $("#bulk-group-key-input").setValue("sorting-proof");
   });
 
@@ -320,5 +330,28 @@ describe("large group order modal", function () {
       path.join(output, "persisted-order.json"),
       JSON.stringify({ initialSave: saved, afterEdgeDrag: scrolledSave }, null, 2)
     );
+  });
+
+  it("sorts inline in the dock and applies the order with the group", async () => {
+    await browser.setWindowSize(1440, 900);
+    await openGroupTab();
+    await $('[data-testid="bulk-inline-order-grid"]').waitForDisplayed();
+    const inlineOrder = () =>
+      browser.execute(() =>
+        [...document.querySelectorAll('[data-testid^="bulk-inline-order-tile-"]')].map((tile) =>
+          Number(tile.dataset.sortAsset)
+        )
+      );
+    const before = await persistedOrder();
+    assert.deepEqual((await inlineOrder()).slice(0, 2), before.slice(0, 2));
+    await $(`[data-testid="bulk-inline-order-handle-${before[0]}"]`).click();
+    await browser.keys("ArrowRight");
+    await browser.waitUntil(async () => (await inlineOrder())[0] === before[1]);
+    await browser.saveScreenshot(path.join(output, "inline-dock.png"));
+    await $('[data-testid="bulk-apply-group"]').click();
+    await browser.waitUntil(async () => (await persistedOrder())[0] === before[1], {
+      timeoutMsg: "Apply group did not save the inline order"
+    });
+    assert.deepEqual((await persistedOrder()).slice(0, 2), [before[1], before[0]]);
   });
 });

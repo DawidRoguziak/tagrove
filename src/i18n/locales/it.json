@@ -120,12 +120,9 @@
     },
     "panel": {
       "selectedItems": "Selezionati: {{count}}",
-      "clearSelection": "Deseleziona tutto",
-      "clearSelectionHint": "Esc annulla la selezione",
       "addTag": "Aggiungi tag",
       "addGroup": "Aggiungi gruppo",
       "ariaLabel": "Azioni multiple",
-      "heading": "Azioni multiple",
       "groupHeading": "Gruppo multimediale",
       "groupDescription": "Imposta un gruppo per la selezione o rimuovi l’assegnazione.",
       "groupConflictTitle": "Più assegnazioni di gruppo",
@@ -137,7 +134,6 @@
       "orderHeading": "Ordine del gruppo",
       "orderDescription": "Trascina gli elementi o usa i tasti freccia sulle maniglie per impostare l’ordine.",
       "dragHandleAria": "Riordina l’elemento {{position}} trascinandolo o con i tasti freccia",
-      "mostUsedTags": "Tag più usati",
       "tagsHeading": "Tag",
       "tagsMultipleDescription": "I nuovi tag vengono aggiunti a tutti gli elementi selezionati. I tag esistenti vengono mantenuti.",
       "tagsSingleDescription": "Aggiungi tag o rimuovi quelli correnti dall’elemento selezionato.",
@@ -177,6 +173,12 @@
       "overwriteWarningDescription": "Almeno un elemento selezionato ha già chiave/ordine di gruppo. Applicando verranno sostituiti con questo gruppo e il nuovo ordine.",
       "applyGroup": "Applica gruppo",
       "applyInProgress": "Applicazione..."
+    },
+    "dock": {
+      "tabTags": "Tag",
+      "tabGroup": "Gruppo e ordine",
+      "clearSelectionAria": "Cancella selezione ({{count}} selezionati)",
+      "collapsedHint": "Seleziona"
     }
   },
   "lightbox": {

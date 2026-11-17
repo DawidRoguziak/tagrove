@@ -90,7 +90,7 @@ flowchart TD
 ```
 
 Model state survives gallery/settings switching; DOM measurements, scroll elements and
-view-local drafts do not. Bulk sidebar code is eager with the gallery. Settings/lightbox
+view-local drafts do not. Bulk dock code is eager with the gallery. Settings/lightbox
 views prefetch after 1,500 ms, while their models already exist. Logical lightbox close
 releases modality and native playback before retained content finishes its exit. Bootstrap
 and each owner dispose their own registrations and reject late async publication. See
@@ -105,13 +105,13 @@ contracts and [testing](../development/testing.md) for their observed coverage.
 2. during `setup`, refuses a debug build unless its effective identifier is the established development or E2E identifier;
 3. resolves and creates the identifier-specific app-data directory;
 4. acquires and manages the profile's `InstanceLock` before opening the database;
-5. calls `bootstrap::open_storage`, which recovers any interrupted journaled database/thumbnail restore and then removes abandoned backup/restore temporaries from the profile directory (best effort) before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema on a FULL-sync startup connection, reconciles pending source-file operations, and captures popular tags and the scan-root settings before automatic scanning; `setup` manages them as `StartupPopularTags` and `StartupScanState`;
+5. calls `bootstrap::open_storage`, which recovers any interrupted journaled database/thumbnail restore and then removes abandoned backup/restore temporaries from the profile directory (best effort) before creating `thumbs/` or opening `media.db`, then initializes or migrates the schema on a FULL-sync startup connection, reconciles pending source-file operations, and captures the scan-root settings before automatic scanning; `setup` manages them as `StartupScanState`;
 6. resolves the resource directory and ffmpeg (`bootstrap::resolve_ffmpeg_path`), restores `LC_NUMERIC` to `C` after GTK initialization for libmpv, creates the process-wide `VideoPlayerService`, and installs the GTK video surface;
 7. calls `bootstrap::start_workers`, which creates the thumbnail scheduler, refuses startup if any worker failed to spawn, and builds `AppState`; managing that `AppState` is the last step of `setup`, and the startup connection closes when `setup` returns;
 8. registers every frontend-callable command; and
 9. runs the generated Tauri context until the application exits.
 
-Except for popular-tag calculation, which logs failures and stores an empty list, startup failure in any setup step prevents the windowed application from entering its normal event loop. `build.rs` only calls `tauri_build::build()`; compile-time application metadata and resources come from the effective Tauri configuration.
+Startup failure in any setup step prevents the windowed application from entering its normal event loop. `build.rs` only calls `tauri_build::build()`; compile-time application metadata and resources come from the effective Tauri configuration.
 
 ## Backend module boundaries
 
@@ -126,8 +126,8 @@ Both are workspace `members` and `default-members`, so `cargo build`, `cargo tes
 | --- | --- | --- |
 | `main.rs` | adapter | Native binary shim only. |
 | `lib.rs` | adapter | Composition only: builder, plugins, `thumb://` registration, profile safety guard, Tauri paths (`app_data_dir`, `resource_dir`), `InstanceLock`, the video phase, `manage()` of every state, command registration, and process launch. |
-| `app/bootstrap.rs` | core | Framework-free startup phases called by `lib.rs`: `open_storage` (restore recovery, sweep of backup temporaries, `thumbs/`, `media.db` and schema, pending file-operation recovery, popular-tag and scan-root snapshots), `resolve_ffmpeg_path` (bundled, executable-adjacent and system ffmpeg precedence), and `start_workers` (thumbnail scheduler and `AppState`). It returns values and never manages state. |
-| `app/state.rs` | core | Process-wide shared runtime state: `AppState` and `StartupPopularTags`. |
+| `app/bootstrap.rs` | core | Framework-free startup phases called by `lib.rs`: `open_storage` (restore recovery, sweep of backup temporaries, `thumbs/`, `media.db` and schema, pending file-operation recovery, scan-root snapshot), `resolve_ffmpeg_path` (bundled, executable-adjacent and system ffmpeg precedence), and `start_workers` (thumbnail scheduler and `AppState`). It returns values and never manages state. |
+| `app/state.rs` | core | Process-wide shared runtime state: `AppState`. |
 | `app/instance_lock.rs` | core | Per-profile interprocess ownership of the app-data directory. |
 | `app/locks.rs` | core | In-process workflow lock helpers and the canonical combined lock order. |
 | `app/profile.rs` | adapter | Debug/test-only allowlist of the development and E2E identifiers used by the profile guard. |
@@ -167,12 +167,6 @@ The core/adapter boundary ([ADR 0034](../adr/0034-tauri-independent-backend-core
 - atomics that enforce one bulk-thumbnail render, carry its cancellation request, guard thumbnail publication with a generation epoch, and preserve cancellation without database or workflow locks.
 
 `StartupScanState` (`adapter/startup_scan.rs`) is separately managed by Tauri. It is built from the scan-root settings (`db::list_scan_root_settings`) that `app::bootstrap::open_storage` captures after database initialization and recovery; only enabled roots are scanned. The first startup-scan invocation consumes that snapshot and starts one process-owned task. Concurrent invocations await the same task; later invocations replay its retained summary or error. A launch with no enabled roots returns null. Dropping a frontend observer does not cancel the task or lose its result. Preference changes apply to the next process. Startup scanning uses the normal blocking pool, scan lock, and progress pipeline: the adapter owns the waiting and the async task, and the scan itself is the core `scan_service::scan_roots` under `with_scan_lock`.
-
-`StartupPopularTags` is separately managed immutable state containing up to ten tag names
-ranked by library-wide assignment counts, then alphabetically. It is calculated once by `app::bootstrap::open_storage` after
-initialization and recovery. Its command reads only memory; frontend reloads, scans, imports,
-restore, and clearing cannot recalculate it. The shell loads it on mount for the bulk sidebar.
-Calculation or loading failures are logged and omit suggestions. See [popular-tag behavior](../subsystems/search-tags-and-media-groups.md#startup-popular-tags).
 
 The `InstanceLock` and `VideoPlayerService` are separately managed by Tauri so their lifetimes match the application. The player service owns one process-wide libmpv handle, one active session, a dedicated playback worker, and monotonically increasing request/session IDs. The worker owns libmpv commands and per-session event clients; GTK only enqueues playback commands, and its render handler never waits for libmpv's frame timing ([ADR 0012](../adr/0012-non-blocking-native-video-render.md)). `video/mpv_events.rs` checks native client creation and copies event information before the next poll invalidates it. Pending reservations can be cancelled before source resolution completes. It rejects stale controls and superseded opens, while retired-session closes are idempotent. `AppState.database` owns admission, the connection pool, and query state. One operation permit follows its connections and child workers. Idle connections retain no admission.
 

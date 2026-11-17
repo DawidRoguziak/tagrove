@@ -15,7 +15,7 @@ use std::{
 };
 
 use crate::{
-    app::state::{AppState, StartupPopularTags},
+    app::state::AppState,
     db,
     models::ScanRoot,
     services::{self, asset_mutation_service, thumb_scheduler::ThumbnailScheduler},
@@ -40,14 +40,13 @@ pub struct Storage {
 
 /// Launch snapshots taken after database initialization and recovery.
 pub struct StartupSnapshots {
-    pub popular_tags: StartupPopularTags,
     /// `db::list_scan_root_settings`; the adapter builds `StartupScanState`.
     pub scan_roots: Vec<ScanRoot>,
 }
 
 /// Restore recovery → abandoned backup temporaries (best effort, ADR 0016) →
 /// `thumbs/` → `media.db` + `init_schema` (FULL sync) → pending file-operation
-/// recovery → popular-tag and scan-root snapshots. The order is a startup
+/// recovery → scan-root snapshot. The order is a startup
 /// invariant: nothing opens `thumbs/` or `media.db` before restore recovery.
 pub fn open_storage(app_data_dir: &Path) -> BootstrapResult<(Storage, StartupSnapshots)> {
     services::backup_service::recover_interrupted_restore(app_data_dir)?;
@@ -61,10 +60,6 @@ pub fn open_storage(app_data_dir: &Path) -> BootstrapResult<(Storage, StartupSna
     db::init_schema(&conn)?;
     conn.pragma_update(None, "synchronous", "FULL")?;
     asset_mutation_service::recover_pending_file_operations(&conn)?;
-    let popular_tags = db::list_popular_tags(&conn).unwrap_or_else(|error| {
-        eprintln!("Failed to calculate startup popular tags: {error}");
-        Vec::new()
-    });
     let scan_roots = db::list_scan_root_settings(&conn)?;
 
     Ok((
@@ -73,10 +68,7 @@ pub fn open_storage(app_data_dir: &Path) -> BootstrapResult<(Storage, StartupSna
             thumbs_dir,
             connection: conn,
         },
-        StartupSnapshots {
-            popular_tags: StartupPopularTags::new(popular_tags),
-            scan_roots,
-        },
+        StartupSnapshots { scan_roots },
     ))
 }
 
@@ -329,7 +321,6 @@ mod tests {
                 (disabled_root.to_string_lossy().into_owned(), false),
             ]
         );
-        assert_eq!(snapshots.popular_tags.tags(), ["keep"]);
         assert!(profile.join("thumbs").is_dir());
         let synchronous: i64 = storage
             .connection
@@ -392,7 +383,6 @@ mod tests {
         let state = start_workers(&storage, "ffmpeg".into()).expect("start workers");
 
         assert!(snapshots.scan_roots.is_empty());
-        assert!(snapshots.popular_tags.tags().is_empty());
         assert_eq!(state.db_path, profile.join("media.db"));
         assert_eq!(state.thumbs_dir, profile.join("thumbs"));
         assert!(state.thumbs_dir.is_dir());

@@ -83,8 +83,13 @@ bun run app:control inspect "$control_session" '#tile-size'
 If WebKit does not report `ctrlKey` for the WebDriver wheel, use
 `native wheel <x> <y> <steps> ctrl` on screen coordinates from a screenshot.
 
-In bulk mode (`button[aria-label="Enable bulk actions"]`), `keys Control a` selects every result
-as one range; the bulk header shows `Selected: <total>`. Selections larger than 10,000 items are
+In bulk mode (`button[aria-label="Enable bulk actions"]`), a dock floats at the bottom centre of
+the gallery: a small chip (`[data-testid="bulk-dock-chip"]`) until something is selected, then the
+tag input, heart and a count button (`[data-testid="bulk-clear-selection"]`, clears the selection)
+with Tags / Group & order tabs (the tab button `[data-testid="bulk-tab-group"]` shows the panel
+`[data-testid="bulk-group-panel"]`, which holds `#bulk-group-key-input` and the inline order grid
+`[data-testid="bulk-inline-order-grid"]`). `keys Control a` selects every result as one
+range; the dock's `data-selected-count` attribute shows `<total>`. Selections larger than 10,000 items are
 cleared with a "Selection cleared" alert (`[data-testid="bulk-selection-cleared"]`) when the
 result changes (a new search, a scan, a regroup). The same alert says "The selection expired before
 it could be used" when the session was already gone at selection time or a refresh failed.
@@ -101,6 +106,8 @@ bun run app:control inspect "$control_session" '[data-testid="bulk-action-panel"
 ```
 
 Shift+click replaces the selection with a range, Ctrl+Shift+click adds one, Ctrl+click toggles.
+A long press (hold the tile at least 500 ms without moving, e.g. a WebDriver `pointerDown` plus
+a pause) opens the lightbox in bulk mode and leaves the selection unchanged.
 The rectangle needs at least 150 ms of hold and 5 px of movement, which `drag` provides;
 the rectangle element is `[data-testid="gallery-selection-rectangle"]` while dragging:
 
@@ -110,5 +117,6 @@ bun run app:control inspect "$control_session" '[data-testid="bulk-action-panel"
 bun run app:control keys "$control_session" Escape
 ```
 
-Require `Selected: N` in the panel; Escape clears the selection. Use `dblclick` when a recipe
+Require `data-selected-count="N"` on `[data-testid="bulk-action-panel"]`; Escape clears the
+selection and collapses the dock back to the chip. Use `dblclick` when a recipe
 needs a double click (for example excluding a tag in the tag list).

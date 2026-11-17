@@ -438,7 +438,8 @@ gallerySuite("gallery scrolling performance", function () {
       selected.forEach((id, index) => document.querySelector(`button[data-asset-id="${id}"]`)
         .dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: index > 0 })));
     }, ids);
-    await browser.waitUntil(async () => (await $('[data-testid="bulk-header-panel"]').getText()).includes("Selected: 3"));
+    await browser.waitUntil(async () => (await $('[data-testid="bulk-action-panel"]').getAttribute("data-selected-count")) === "3");
+    await $('[data-testid="bulk-tab-group"]').click();
     await $('#bulk-group-key-input').setValue("selection-proof");
     for (let index = PAGE_SIZE; index < IMAGE_COUNT; index += PAGE_SIZE) {
       await scrollToAsset(index);

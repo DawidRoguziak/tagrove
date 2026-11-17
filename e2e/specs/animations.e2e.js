@@ -92,7 +92,7 @@ async function sample(action) {
           frame[selector].outside = Math.max(0, -rect.left, -rect.top, rect.right - innerWidth, rect.bottom - innerHeight);
         }
       }
-      if (document.querySelector('.bulk-inspector [role="status"]')) probe.pendingBulkFrames.push(probe.frames.length);
+      if (document.querySelector('.bulk-dock [role="status"]')) probe.pendingBulkFrames.push(probe.frames.length);
       probe.frames.push(frame);
       if (probe.running) requestAnimationFrame(record);
     };
@@ -184,9 +184,8 @@ async function bottom() {
     return Boolean(document.querySelector('button[data-asset-index="191"]'));
   }), { timeout: 20000, timeoutMsg: "Wait for gallery resize anchoring and the final page before measuring" });
   await $('button[data-asset-index="191"]').waitForDisplayed({ timeout: 20000 });
-  // Below 1000px the inspector follows the gallery in the same scroll container.
   // Bring the last tile into view before sampling; WebDriver would otherwise scroll
-  // from the inspector to the tile as part of its click.
+  // to the tile as part of its click.
   await browser.execute(() => document.querySelector('button[data-asset-index="191"]').scrollIntoView({ block: "end" }));
   await browser.pause(300);
 }
@@ -309,9 +308,11 @@ async function exercise(theme, disabled) {
   // Column changes legitimately preserve a gallery anchor. Re-establish the bottom
   // before checking selection so navigation and animation are measured separately.
   await bottom();
+  // The expanded bulk dock floats over the bottom of the gallery once a tile is
+  // selected; centre the last tile so the deselect click is not intercepted by it.
+  await browser.execute(() => document.querySelector('button[data-asset-index="191"]').scrollIntoView({ block: "center" }));
+  await browser.pause(300);
   for (const name of ["select bottom tile", "deselect bottom tile"]) {
-    // Selection reveals existing bulk controls, which can increase content height
-    // in the stacked layout even when all animation is disabled.
     const selection = await check(name, async () => {
       await click(tile);
       if (name === "select bottom tile") await $('#bulk-tag-draft-input').waitForEnabled();

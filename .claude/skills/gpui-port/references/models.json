@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "note": "Role -> model and effort for the gpui-port-epic workflow. Override per run with /gpui-port <epic> --models role=model[:effort],... The workflow never names a model; it reads args.models[role].",
+  "models": [
+    "fable",
+    "opus",
+    "sonnet",
+    "haiku"
+  ],
+  "efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "roles": {
+    "implementer_hard": {
+      "model": "fable",
+      "effort": "high",
+      "use": "Implement step of epics with tier hard (architecture, virtual grid, models with races, data safety)"
+    },
+    "implementer": {
+      "model": "opus",
+      "effort": "high",
+      "use": "Implement step of standard epics"
+    },
+    "test_author": {
+      "model": "opus",
+      "effort": "high",
+      "use": "Tests step: ports the TypeScript behaviour cases to Rust tests, independent of the implementer"
+    },
+    "fixer_hard": {
+      "model": "fable",
+      "effort": "high",
+      "use": "check, parity, review and gate fixes in hard epics"
+    },
+    "fixer": {
+      "model": "opus",
+      "effort": "high",
+      "use": "check, parity, review and gate fixes in standard epics"
+    },
+    "clerk": {
+      "model": "sonnet",
+      "effort": "low",
+      "use": "runs job.py and collect_scope.py, reads logs, reports; never edits"
+    },
+    "parity_reviewer": {
+      "model": "opus",
+      "effort": "high",
+      "use": "compares Tauri and GPUI screenshots of one scenario set"
+    },
+    "lens": {
+      "model": "opus",
+      "effort": "high",
+      "use": "review-rust, review-gpui, review-performance, review-stability, review-frontend"
+    },
+    "lens_rules": {
+      "model": "sonnet",
+      "effort": "high",
+      "use": "review-conventions, review-tooling"
+    },
+    "verifier_high": {
+      "model": "fable",
+      "effort": "high",
+      "use": "review-verifier for P0/P1 candidates"
+    },
+    "verifier_low": {
+      "model": "sonnet",
+      "effort": "high",
+      "use": "review-verifier for P2/P3 candidates"
+    },
+    "scribe": {
+      "model": "sonnet",
+      "effort": "medium",
+      "use": "Record step: notes, open-findings report, status"
+    }
+  }
+}

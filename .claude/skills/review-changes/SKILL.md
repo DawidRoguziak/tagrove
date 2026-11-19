@@ -45,8 +45,9 @@ Use `suggested_lenses` from the scope JSON as the default:
 | Lens agent | Runs when |
 | --- | --- |
 | `review-conventions` | always (unless solo) |
-| `review-rust` | anything under `src-tauri/` changed |
+| `review-rust` | anything under `src-tauri/` or `src-gpui/` changed |
 | `review-frontend` | `src/` or `e2e/` changed |
+| `review-gpui` | anything under `src-gpui/` changed (the GPUI port workspace) |
 | `review-performance` | a hot path changed, or more than 300 app source lines |
 
 You may add a lens when the diff warrants it (for example, a tooling script that edits

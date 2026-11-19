@@ -1,0 +1,921 @@
+{
+  "schema": 1,
+  "note": "Source of truth for the GPUI port epics. Status changes go through .claude/skills/gpui-port/scripts/port_state.py set-status; the README table is rendered from this file.",
+  "plan": "docs/plans/gpui-port",
+  "steps": [
+    "implement",
+    "tests",
+    "stabilize",
+    "review",
+    "gate"
+  ],
+  "statuses": [
+    "todo",
+    "in progress",
+    "blocked",
+    "done",
+    "deferred"
+  ],
+  "checkSets": {
+    "base": [
+      "bun run rust:fmt",
+      "bun run rust:clippy",
+      "cargo test --manifest-path src-tauri/Cargo.toml --locked --test architecture_boundaries",
+      "cargo fmt --manifest-path src-gpui/Cargo.toml --all -- --check",
+      "cargo clippy --manifest-path src-gpui/Cargo.toml --all-targets --all-features --locked -- -D warnings",
+      "bun run gpui:lock-parity"
+    ],
+    "client": [
+      "cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client"
+    ],
+    "gpui": [
+      "cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui"
+    ],
+    "locales": [
+      "bun run locale:check"
+    ]
+  },
+  "scenarios": {
+    "shell-empty": "Pusta biblioteka, widok galerii (pusty stan), motyw ciemny.",
+    "shell-empty-light": "Jak wyżej, motyw jasny.",
+    "gallery-default": "Seed: obrazy PNG + 1 GIF + 2 wideo; domyślny rozmiar kafli; widoczny pasek przewijania i scrubber.",
+    "gallery-tiles-small": "Ten sam seed, najmniejszy rozmiar kafli.",
+    "gallery-tiles-large": "Ten sam seed, największy rozmiar kafli.",
+    "gallery-selection": "Trzy zaznaczone kafle (klik, Ctrl-klik, Shift-klik), widoczny dok.",
+    "search-suggestions": "Wpisany prefiks tagu, otwarta lista podpowiedzi z podświetleniem.",
+    "search-applied": "Zastosowany filtr tagu i rodzaju; licznik wyników.",
+    "tag-list-modal": "Otwarty modal listy tagów, dwa chipy wybrane.",
+    "bulk-dock-tags": "Dok, zakładka tagów, wiele zaznaczonych zasobów.",
+    "bulk-dock-group": "Dok, zakładka grupy i kolejności z planszą inline.",
+    "group-order-modal": "Plansza kolejności w modalu.",
+    "lightbox-image": "Lightbox z obrazem, panel boczny otwarty.",
+    "lightbox-image-zoomed": "Ten sam obraz po zoomie i przesunięciu.",
+    "lightbox-gif": "Lightbox z GIF-em (GPUI: zaślepka, D8).",
+    "lightbox-video": "Lightbox z wideo (GPUI: zaślepka, D8).",
+    "lightbox-delete-confirm": "Dialog potwierdzenia usunięcia z wpisanym słowem.",
+    "settings-scan": "Ustawienia, sekcja skanu z jednym rootem i statusem operacji.",
+    "settings-appearance-language": "Sekcje wyglądu i języka.",
+    "settings-danger-about": "Strefa zagrożeń i „o programie”.",
+    "settings-import-export": "Sekcja importu/eksportu.",
+    "settings-duplicates": "Sekcja duplikatów po skanie z wynikami.",
+    "duplicates-resolver": "Dialog rozstrzygania duplikatów z jedną grupą."
+  },
+  "epics": [
+    {
+      "id": "E00",
+      "slug": "spike-skeleton",
+      "title": "Spike stosu i osobny workspace GPUI",
+      "file": "E00-spike-skeleton.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src-tauri/Cargo.toml",
+        "src-tauri/crates/media_tagger_core/Cargo.toml",
+        "src-tauri/src/lib.rs",
+        "src-tauri/src/app/profile.rs",
+        "src-tauri/crates/media_tagger_core/src/app/bootstrap.rs",
+        "src-tauri/tests/architecture_boundaries.rs",
+        "e2e/build-e2e.js",
+        "e2e/display.js",
+        "packaging/flatpak/generate.py",
+        "scripts/privacy-check.py"
+      ],
+      "tests_sources": [],
+      "docs": [
+        "docs/architecture/system-overview.md",
+        "docs/adr/0034-tauri-independent-backend-core.md",
+        "docs/adr/README.md",
+        "docs/development/setup-and-build.md",
+        "docs/development/testing.md"
+      ],
+      "allowed_deps": [
+        "`gpui` i towarzyszące mu crate'y z `https://github.com/zed-industries/zed`, wszystkie z jednego przypiętego `rev`"
+      ],
+      "checks": [
+        "base",
+        "client",
+        "gpui",
+        "bun run test:packaging"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E01",
+      "slug": "compare-harness",
+      "title": "Harness porównawczy Tauri ↔ GPUI",
+      "file": "E01-compare-harness.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E00"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "e2e/control.js",
+        "e2e/control-support.js",
+        "e2e/control-native.py",
+        "e2e/display.js",
+        "e2e/build-e2e.js",
+        "e2e/fixtures.js",
+        ".claude/skills/verify-mediatagger/SKILL.md"
+      ],
+      "tests_sources": [
+        "e2e/build-e2e.test.js",
+        "e2e/display.test.js",
+        "e2e/control-support.test.js"
+      ],
+      "docs": [
+        "docs/development/testing.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "gpui",
+        "node --test e2e/compare"
+      ],
+      "parity": [
+        "shell-empty"
+      ]
+    },
+    {
+      "id": "E02",
+      "slug": "client-backend-port",
+      "title": "Port Backend, wykonawca i potok miniatur (crate klienta)",
+      "file": "E02-client-backend-port.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E00"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/platform/tauri",
+        "src-tauri/src/commands",
+        "src-tauri/src/adapter",
+        "src-tauri/crates/media_tagger_core/src/usecases",
+        "src-tauri/crates/media_tagger_core/src/services/progress.rs",
+        "src-tauri/crates/media_tagger_core/src/services/thumb_protocol.rs"
+      ],
+      "tests_sources": [
+        "src/platform/tauri/__tests__"
+      ],
+      "docs": [
+        "docs/architecture/ipc-contract.md",
+        "docs/architecture/system-overview.md",
+        "docs/subsystems/thumbnails.md",
+        ".claude/rules/backend-core.md",
+        ".claude/rules/thumbnails.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E03",
+      "slug": "client-i18n-theme-prefs",
+      "title": "i18n, tokeny motywu i preferencje UI",
+      "file": "E03-client-i18n-theme-prefs.md",
+      "size": "M",
+      "tier": "standard",
+      "deps": [
+        "E00"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/i18n",
+        "src/styles.css",
+        "src/ui/dom/theme.ts",
+        "scripts/validate-locales.mjs"
+      ],
+      "tests_sources": [
+        "src/i18n/__tests__",
+        "src/ui/dom/__tests__"
+      ],
+      "docs": [
+        "docs/development/localization.md",
+        ".claude/rules/localization.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "locales"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E04",
+      "slug": "text-input",
+      "title": "Pole tekstowe (własny element GPUI)",
+      "file": "E04-text-input.md",
+      "size": "M",
+      "tier": "hard",
+      "deps": [
+        "E03"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/search/SearchTagator.tsx",
+        "src/features/search/suggestions/inputService.ts",
+        "src/features/tagging/TagEditor.tsx",
+        "src/features/lightbox/LightboxDeleteConfirmDialog.tsx",
+        "src/features/lightbox/MediaGroupSetter.tsx"
+      ],
+      "tests_sources": [
+        "src/features/search/suggestions/__tests__",
+        "src/features/tagging/__tests__"
+      ],
+      "docs": [
+        "docs/frontend/architecture-and-ui-conventions.md"
+      ],
+      "allowed_deps": [
+        "unicode-segmentation"
+      ],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E05",
+      "slug": "gpui-primitives-overlays",
+      "title": "Prymitywy UI i warstwa nakładek (GPUI)",
+      "file": "E05-gpui-primitives-overlays.md",
+      "size": "L",
+      "tier": "standard",
+      "deps": [
+        "E03",
+        "E04"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/ui/controls",
+        "src/ui/overlays",
+        "src/ui/dom",
+        "src/styles.css"
+      ],
+      "tests_sources": [
+        "src/ui/controls/__tests__",
+        "src/ui/overlays/__tests__",
+        "src/ui/dom/__tests__"
+      ],
+      "docs": [
+        "docs/frontend/architecture-and-ui-conventions.md",
+        ".claude/rules/frontend.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E06",
+      "slug": "gpui-app-shell",
+      "title": "Runtime aplikacji, okno i powłoka",
+      "file": "E06-gpui-app-shell.md",
+      "size": "M",
+      "tier": "standard",
+      "deps": [
+        "E02",
+        "E05"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/app",
+        "src/platform/tauri/window.ts"
+      ],
+      "tests_sources": [
+        "src/app/__tests__"
+      ],
+      "docs": [
+        "docs/frontend/architecture-and-ui-conventions.md",
+        "docs/architecture/system-overview.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "shell-empty",
+        "shell-empty-light"
+      ]
+    },
+    {
+      "id": "E07",
+      "slug": "client-query-model",
+      "title": "Model zapytań i cache stron",
+      "file": "E07-client-query-model.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E02"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/library/query",
+        "src/library/createLibrary.ts",
+        "src/library/metadata/queryImpact.ts"
+      ],
+      "tests_sources": [
+        "src/library/query/__tests__",
+        "src/library/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/library-query-and-gallery.md",
+        ".claude/rules/gallery-query.md",
+        "docs/adr/0005-binary-id-ranges-and-anchored-refresh.md",
+        "docs/adr/0007-session-timeline-sections.md",
+        "docs/adr/0027-unfiltered-sections-unavailable-instead-of-stale.md",
+        "docs/adr/0029-range-selection-keeps-its-session-alive.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E08",
+      "slug": "client-metadata",
+      "title": "Szczegóły, stan tagów, mutacje i słownik",
+      "file": "E08-client-metadata.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E07"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/library/metadata",
+        "src/library/vocabulary",
+        "src/utils/media.ts",
+        "src-tauri/crates/media_tagger_core/src/utils/tags.rs"
+      ],
+      "tests_sources": [
+        "src/library/metadata/__tests__",
+        "src/library/vocabulary/__tests__",
+        "src/utils/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/search-tags-and-media-groups.md",
+        ".claude/rules/search-tags.md",
+        "docs/adr/0001-per-asset-metadata-write-queue.md",
+        "docs/adr/0033-feff-is-tag-whitespace-in-rust-and-legacy-rows-are-split-on-read.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E09",
+      "slug": "gpui-gallery-grid",
+      "title": "Wirtualna siatka galerii i miniatury",
+      "file": "E09-gpui-gallery-grid.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E06",
+        "E07"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/gallery/GalleryGrid.tsx",
+        "src/features/gallery/createVirtualGrid.ts",
+        "src/features/gallery/gridGeometry.ts",
+        "src/features/gallery/GalleryTile.tsx",
+        "src/features/gallery/GalleryEmptyState.tsx",
+        "src/features/gallery/GalleryStatusFooter.tsx",
+        "src/features/gallery/TileSizeSlider.tsx",
+        "src/features/gallery/tileSizeService.ts",
+        "src/ui/controls/ThumbnailImage.tsx",
+        "src/app/AppGalleryView.tsx"
+      ],
+      "tests_sources": [
+        "src/features/gallery/__tests__",
+        "src/ui/controls/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/library-query-and-gallery.md",
+        "docs/subsystems/thumbnails.md",
+        "docs/adr/0003-custom-gallery-virtualizer.md",
+        "docs/adr/0021-visible-tiles-drop-a-pending-prefetch.md",
+        "docs/adr/0024-thumbnail-retries-continue-while-the-tile-is-mounted.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui",
+        "python3 -m unittest discover -s .claude/skills/review-changes/scripts -p test_collect_scope.py"
+      ],
+      "parity": [
+        "gallery-default",
+        "gallery-tiles-small",
+        "gallery-tiles-large"
+      ]
+    },
+    {
+      "id": "E10",
+      "slug": "gpui-scrollbar-timeline",
+      "title": "Pasek przewijania i scrubber osi czasu",
+      "file": "E10-gpui-scrollbar-timeline.md",
+      "size": "M",
+      "tier": "standard",
+      "deps": [
+        "E09"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/gallery/GalleryScrollbar.tsx",
+        "src/features/gallery/GalleryTimelineScrubber.tsx",
+        "src/features/gallery/timeline.ts"
+      ],
+      "tests_sources": [
+        "src/features/gallery/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/library-query-and-gallery.md",
+        "docs/adr/0007-session-timeline-sections.md",
+        "docs/adr/0027-unfiltered-sections-unavailable-instead-of-stale.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "gallery-default"
+      ]
+    },
+    {
+      "id": "E11",
+      "slug": "selection",
+      "title": "Model zaznaczenia i gesty",
+      "file": "E11-selection.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E08",
+        "E09"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/gallery/createSelection.ts",
+        "src/features/gallery/selection.ts",
+        "src/features/gallery/createGridHandlers.ts",
+        "src/features/gallery/selectionGeometry.ts"
+      ],
+      "tests_sources": [
+        "src/features/gallery/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/search-tags-and-media-groups.md",
+        "docs/adr/0008-selection-spec-resolved-in-rust.md",
+        "docs/adr/0029-range-selection-keeps-its-session-alive.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "gallery-selection"
+      ]
+    },
+    {
+      "id": "E12",
+      "slug": "search",
+      "title": "Wyszukiwarka, gramatyka filtrów i podpowiedzi",
+      "file": "E12-search.md",
+      "size": "L",
+      "tier": "standard",
+      "deps": [
+        "E06",
+        "E08"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/search/SearchTagator.tsx",
+        "src/features/search/SearchTagatorWrapper.tsx",
+        "src/features/search/createSearch.ts",
+        "src/features/search/filterService.ts",
+        "src/features/search/suggestions",
+        "src/utils/media.ts",
+        "src/utils/searchTokens.ts"
+      ],
+      "tests_sources": [
+        "src/features/search/__tests__",
+        "src/features/search/suggestions/__tests__",
+        "src/utils/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/search-tags-and-media-groups.md",
+        ".claude/rules/search-tags.md"
+      ],
+      "allowed_deps": [
+        "nucleo-matcher (tylko jeśli własny matcher nie spełni testów)"
+      ],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "search-suggestions",
+        "search-applied"
+      ]
+    },
+    {
+      "id": "E13",
+      "slug": "tag-list-editor",
+      "title": "Modal listy tagów i wspólny TagEditor",
+      "file": "E13-tag-list-editor.md",
+      "size": "M",
+      "tier": "standard",
+      "deps": [
+        "E12"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/search/tag-list",
+        "src/features/tagging/TagEditor.tsx",
+        "src/ui/dom/createVirtualList.ts"
+      ],
+      "tests_sources": [
+        "src/features/search/tag-list/__tests__",
+        "src/features/tagging/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/search-tags-and-media-groups.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "tag-list-modal"
+      ]
+    },
+    {
+      "id": "E14",
+      "slug": "bulk-dock",
+      "title": "Dok akcji zbiorczych i kolejność grup",
+      "file": "E14-bulk-dock.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E11",
+        "E13"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/bulk",
+        "src/features/lightbox/parseMediaGroupOrder.ts"
+      ],
+      "tests_sources": [
+        "src/features/bulk/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/search-tags-and-media-groups.md",
+        "docs/adr/0035-bulk-actions-floating-dock.md",
+        "docs/adr/0026-set-based-ranged-group-write-with-index-rebuild.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "bulk-dock-tags",
+        "bulk-dock-group",
+        "group-order-modal"
+      ]
+    },
+    {
+      "id": "E15",
+      "slug": "client-lightbox-model",
+      "title": "Model lightboxa",
+      "file": "E15-client-lightbox-model.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E08"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/lightbox/createLightbox.ts",
+        "src/features/lightbox/createLightboxPresentation.ts",
+        "src/features/lightbox/types.ts",
+        "src/features/lightbox/parseMediaGroupOrder.ts"
+      ],
+      "tests_sources": [
+        "src/features/lightbox/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/lightbox.md",
+        ".claude/rules/lightbox-video.md",
+        "docs/adr/0022-lightbox-delete-fails-fast-during-a-scan.md",
+        "docs/adr/0014-single-asset-file-mutations-guarded-by-row-cas.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E16",
+      "slug": "gpui-lightbox",
+      "title": "Lightbox: UI, przeglądarka obrazów, zaślepki GIF i wideo",
+      "file": "E16-gpui-lightbox.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E09",
+        "E13",
+        "E15"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/lightbox",
+        "src/app/LightboxBoundary.tsx"
+      ],
+      "tests_sources": [
+        "src/features/lightbox/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/lightbox.md",
+        ".claude/rules/lightbox-video.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui",
+        "locales"
+      ],
+      "parity": [
+        "lightbox-image",
+        "lightbox-image-zoomed",
+        "lightbox-gif",
+        "lightbox-video",
+        "lightbox-delete-confirm"
+      ]
+    },
+    {
+      "id": "E17",
+      "slug": "settings-core",
+      "title": "Ustawienia: szkielet, skan, miniatury, wygląd, język, strefa zagrożeń, o programie",
+      "file": "E17-settings-core.md",
+      "size": "L",
+      "tier": "standard",
+      "deps": [
+        "E02",
+        "E06"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/settings/SettingsPanel.tsx",
+        "src/features/settings/SettingsNavigation.tsx",
+        "src/features/settings/createSettings.ts",
+        "src/features/settings/createSettingsOperationRunner.ts",
+        "src/features/settings/progressService.ts",
+        "src/features/settings/operationStateService.ts",
+        "src/features/settings/statusMessage.ts",
+        "src/features/settings/SectionOperationStatus.tsx",
+        "src/features/settings/createScanSettings.ts",
+        "src/features/settings/RemoveScanRootConfirmDialog.tsx",
+        "src/features/settings/createDangerZoneSettings.ts",
+        "src/features/settings/ClearLibraryConfirmDialog.tsx",
+        "src/features/settings/sections",
+        "src/app/AppSettingsView.tsx",
+        "src/platform/tauri/dialogs.ts"
+      ],
+      "tests_sources": [
+        "src/features/settings/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/settings-operations.md",
+        "docs/subsystems/scanning-and-indexing.md",
+        ".claude/rules/settings.md",
+        ".claude/rules/scanning.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "settings-scan",
+        "settings-appearance-language",
+        "settings-danger-about"
+      ]
+    },
+    {
+      "id": "E18",
+      "slug": "settings-data",
+      "title": "Ustawienia: import/eksport, przywracanie i duplikaty",
+      "file": "E18-settings-data.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E17"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "src/features/settings/createImportExportSettings.ts",
+        "src/features/settings/ImportDbOverwriteConfirmDialog.tsx",
+        "src/features/settings/createDuplicateSettings.ts",
+        "src/features/settings/createDuplicateResolver.ts",
+        "src/features/settings/duplicateValidationService.ts",
+        "src/features/settings/DuplicateResolverDialog.tsx",
+        "src/features/settings/DuplicateGroupCard.tsx",
+        "src/features/settings/DuplicateAssetCard.tsx",
+        "src/features/settings/DuplicateDeleteConfirmDialog.tsx",
+        "src/features/settings/sections/ImportExportSection.tsx",
+        "src/features/settings/sections/DuplicatesSection.tsx"
+      ],
+      "tests_sources": [
+        "src/features/settings/__tests__"
+      ],
+      "docs": [
+        "docs/subsystems/data-safety-and-portability.md",
+        "docs/subsystems/settings-operations.md",
+        ".claude/rules/data-safety.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui"
+      ],
+      "parity": [
+        "settings-import-export",
+        "settings-duplicates",
+        "duplicates-resolver"
+      ]
+    },
+    {
+      "id": "E19",
+      "slug": "acceptance",
+      "title": "Domknięcie: parytet, wydajność, klawiatura, dokumentacja",
+      "file": "E19-acceptance.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E10",
+        "E14",
+        "E16",
+        "E18"
+      ],
+      "status": "todo",
+      "updated": null,
+      "sources": [
+        "docs/plans/gpui-port/README.md",
+        "e2e/gallery-scale",
+        "src-tauri/tests/grid_baseline.rs"
+      ],
+      "tests_sources": [],
+      "docs": [
+        "docs/frontend/architecture-and-ui-conventions.md",
+        "docs/development/testing.md",
+        "docs/adr/README.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "client",
+        "gpui",
+        "python3 -m unittest discover -s .claude/skills/review-changes/scripts -p test_collect_scope.py"
+      ],
+      "parity": []
+    },
+    {
+      "id": "E20",
+      "slug": "gif-animation",
+      "title": "Animacja GIF w lightboxie",
+      "file": "E20-gif-animation.md",
+      "size": "M",
+      "tier": "standard",
+      "deps": [
+        "E16"
+      ],
+      "status": "deferred",
+      "updated": null,
+      "sources": [
+        "src/features/lightbox/LightboxMediaStage.tsx"
+      ],
+      "tests_sources": [],
+      "docs": [
+        "docs/subsystems/lightbox.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "gpui"
+      ],
+      "parity": [
+        "lightbox-gif"
+      ]
+    },
+    {
+      "id": "E21",
+      "slug": "native-video",
+      "title": "Natywne wideo (libmpv) w oknie GPUI",
+      "file": "E21-native-video.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E16"
+      ],
+      "status": "deferred",
+      "updated": null,
+      "sources": [
+        "src-tauri/src/video",
+        "src/features/lightbox/video"
+      ],
+      "tests_sources": [],
+      "docs": [
+        "docs/subsystems/lightbox.md",
+        "docs/adr/0012-non-blocking-native-video-render.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base",
+        "gpui"
+      ],
+      "parity": [
+        "lightbox-video"
+      ]
+    },
+    {
+      "id": "E22",
+      "slug": "cutover",
+      "title": "Przełączenie: identyfikator wydania, pakowanie, usunięcie Tauri",
+      "file": "E22-cutover.md",
+      "size": "L",
+      "tier": "hard",
+      "deps": [
+        "E19",
+        "E21"
+      ],
+      "status": "deferred",
+      "updated": null,
+      "sources": [
+        "packaging",
+        "src-tauri/tauri.conf.json"
+      ],
+      "tests_sources": [],
+      "docs": [
+        "docs/development/linux-packaging.md"
+      ],
+      "allowed_deps": [],
+      "checks": [
+        "base"
+      ],
+      "parity": []
+    }
+  ]
+}

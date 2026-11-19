@@ -103,7 +103,9 @@ def category(path):
         return "e2e"
     if path.startswith("src-tauri/tests/") or "/__tests__/" in path or re.search(r"\.(test|spec)\.[tj]sx?$", path):
         return "tests"
-    if path.startswith("src-tauri/") and path.endswith(".rs"):
+    if re.match(r"src-gpui/crates/[^/]+/tests/", path):
+        return "tests"
+    if path.startswith(("src-tauri/", "src-gpui/")) and path.endswith(".rs"):
         return "rust"
     if path.startswith("src/") or path == "index.html":
         return "frontend"
@@ -273,8 +275,10 @@ def collect(root, targets=(), base=None, staged=False):
             not any(f["rules"] for f in files) and "lockfile" not in cats
         if not solo:
             lenses.append("review-conventions")
-            if any(f["path"].startswith("src-tauri/") for f in files):
+            if any(f["path"].startswith(("src-tauri/", "src-gpui/")) for f in files):
                 lenses.append("review-rust")
+            if any(f["path"].startswith("src-gpui/") for f in files):
+                lenses.append("review-gpui")
             if cats & {"frontend", "locales", "e2e"} or any(
                     f["path"].startswith("src/") for f in files):
                 lenses.append("review-frontend")

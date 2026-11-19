@@ -83,6 +83,16 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(scope["suggested_lenses"],
                          ["review-conventions", "review-rust", "review-frontend", "review-performance"])
 
+    def test_gpui_workspace_is_rust_and_gets_the_gpui_lens(self):
+        self.git("checkout", "-qb", "feature")
+        self.write("src-gpui/crates/media_tagger_gpui/src/main.rs", "fn main() {}\n")
+        self.write("src-gpui/crates/media_tagger_client/tests/query.rs", "#[test]\nfn t() {}\n")
+        scope = collect(self.root)
+        files = self.paths(scope)
+        self.assertEqual(files["src-gpui/crates/media_tagger_gpui/src/main.rs"]["category"], "rust")
+        self.assertEqual(files["src-gpui/crates/media_tagger_client/tests/query.rs"]["category"], "tests")
+        self.assertEqual(scope["suggested_lenses"], ["review-conventions", "review-rust", "review-gpui"])
+
     def test_rename_and_delete(self):
         self.git("checkout", "-qb", "feature")
         self.git("mv", "src-tauri/crates/media_tagger_core/src/db/query.rs", "src-tauri/crates/media_tagger_core/src/db/queries.rs")

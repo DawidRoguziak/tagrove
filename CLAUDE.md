@@ -61,7 +61,7 @@ src-tauri/                Cargo workspace (Cargo.toml: members, [workspace.depen
     indexer.rs, thumbs.rs, models.rs, error.rs, utils/, test_support.rs (feature test-support)
   tests/                 Rust integration targets (adapter package; import media_tagger_core)
 src-gpui/                 second Cargo workspace: the GPUI port (own Cargo.toml, Cargo.lock, target/, target-e2e/; ADR 0036)
-  crates/media_tagger_client/   presentation logic without a GUI: i18n.rs, theme.rs, scenario.rs (comparison scenario catalogue), models (core only via models/error and, later, backend/core_backend.rs)
+  crates/media_tagger_client/   presentation logic without a GUI (ADR 0037): backend.rs + backend/ (the `Backend` port; core_backend.rs is the only file that names core use cases, every other file imports core models/error only), model.rs (model convention), exec/ (executors), progress.rs, startup_scan.rs, thumbs.rs (thumbnail pipeline), i18n.rs, theme.rs, scenario.rs (comparison scenario catalogue)
   crates/media_tagger_gpui/     GPUI adapter and binary `media_tagger_gpui`: lib.rs (run), cli.rs (strict arguments), profile.rs, scenario.rs (`--scenario` start states, E2E profile only), boot.rs (startup composition), window.rs, views/, build.rs (bakes the identifier)
 e2e/                     WebdriverIO desktop E2E (specs/), app:control driver (control.js)
   compare/               Tauri ↔ GPUI comparison harness: gpui-control.js, compare.js, scenarios/ (testing.md "Comparison harness")

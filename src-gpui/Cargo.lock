@@ -3066,8 +3066,10 @@ dependencies = [
 name = "media_tagger_client"
 version = "0.1.1"
 dependencies = [
+ "media_tagger_client",
  "media_tagger_core",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

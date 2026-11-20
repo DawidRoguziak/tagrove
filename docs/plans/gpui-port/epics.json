@@ -151,8 +151,8 @@
       "deps": [
         "E00"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-20",
       "sources": [
         "src/platform/tauri",
         "src-tauri/src/commands",

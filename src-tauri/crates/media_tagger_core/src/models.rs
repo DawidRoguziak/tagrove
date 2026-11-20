@@ -175,7 +175,7 @@ pub enum RenameAssetStatus {
     CleanupPending,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -195,7 +195,7 @@ pub enum DuplicateResolutionChangeInput {
     },
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DuplicateResolutionBatchInput {
     pub scan_revision: i64,
@@ -381,7 +381,7 @@ pub struct DbBundleImportSummary {
     pub restored_thumbnails: usize,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbRootMapping {
     pub source_root: String,

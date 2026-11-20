@@ -2,10 +2,28 @@
 //!
 //! `media_tagger_gpui` renders what this crate decides; this crate never depends on
 //! GPUI, wgpu or any other GUI runtime, and it reaches `media_tagger_core` only through
-//! its `Backend` port (`backend/core_backend.rs`, added by epic E02). Both rules are
-//! enforced by `src-tauri/tests/architecture_boundaries.rs`.
+//! its `Backend` port (`backend/core_backend.rs` is the one file that names the core's
+//! use cases). Both rules are enforced by `src-tauri/tests/architecture_boundaries.rs`.
+//!
+//! How the pieces fit (plan decisions D3 and D4):
+//!
+//! - [`backend`]: the `Backend` port, its adapter over the real core and a scriptable
+//!   fake.
+//! - [`model`]: the convention every model follows: input → state and effects, replies
+//!   and timers identified by tokens, a `Driver` that runs effects on an executor.
+//! - [`exec`]: the executor port with a thread pool for the application and a
+//!   deterministic executor for tests.
+//! - [`progress`], [`startup_scan`], [`thumbs`]: the progress stream, the single-flight
+//!   startup scan and the thumbnail pipeline, which the Tauri adapter implements with
+//!   its event, its async runtime and the `thumb://` scheme.
 
+pub mod backend;
+pub mod exec;
 pub mod hello;
 pub mod i18n;
+pub mod model;
+pub mod progress;
 pub mod scenario;
+pub mod startup_scan;
 pub mod theme;
+pub mod thumbs;

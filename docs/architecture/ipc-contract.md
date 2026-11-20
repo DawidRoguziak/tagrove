@@ -302,6 +302,19 @@ while a higher registered layer is active.
 
 Deserialization itself rejects missing required arguments, wrong JSON types, invalid tagged-union shapes, negative values sent to unsigned Rust parameters, and non-representable numbers before command logic runs. Frontend TypeScript types help normal callers but are not runtime validation for arbitrary IPC callers.
 
+## The same contract without IPC: the `Backend` port
+
+The GPUI port does not use IPC. Its client crate calls the same use cases through the trait `media_tagger_client::backend::Backend` (`src-gpui/crates/media_tagger_client/src/backend.rs`, [ADR 0037](../adr/0037-gpui-client-backend-port-and-model-convention.md), [system overview](system-overview.md#the-backend-port-and-the-model-convention)). Nothing on this page changes for the Tauri application; this section records where the port differs from the wire, so that a change to a command is also made there.
+
+- **Methods.** One per registered command of the asset, scan, thumbnail and import/export groups, with the command's name and the same `models` result type. The native video and window commands have no counterpart. A new command the GPUI interface needs gets a port method, an implementation in `backend/core_backend.rs`, a scripted method in `backend/fake.rs` and a test in `backend/core_tests.rs`.
+- **Arguments.** Typed values instead of camelCase JSON: `AssetQueryRequest` (with `MediaKind` and `MetaFilter`), `SelectionSpec`, `SelectionMutation`, `MediaGroupUpdate`, and the core's `DuplicateResolutionBatchInput` and `DbRootMapping`. Validation is still the use case's, with the same error texts.
+- **`get_asset_query_id_range`.** The port returns `AssetIdRange::Ready(Vec<i64>)` or `Stale`; its adapter decodes the [binary body](#binary-id-ranges) and refuses a malformed or incomplete one with the texts of `decodeAssetIdRange`.
+- **`start_asset_query`.** One call validates, admits the request token and builds the session. Two calls of one owner may run in either order on the executor; the generation check answers the older one `Superseded`, as on the wire.
+- **Errors.** `BackendError` carries the core's text unchanged, the locale key when the text is `i18n:<key>`, and a kind: `Rejected` (a use case), `WorkerFailed` (the call's task panicked or was dropped; the text has the form of the `... worker failed` errors above) or `NotReady` (`i18n:common.loading`, before the backend has its `AppState`). Models still never branch on wording.
+- **Progress.** `subscribe_progress` on a `ProgressHub` per backend replaces `process-progress`: the same `ScanProgress` payload and phases, shared by every subscriber, best effort and uncorrelated. A model subscribes before it starts the operation and drops the subscription after it has applied the result.
+- **Startup scan.** `scan_startup_roots` joins the same single flight (launch snapshot, shared completion, retained result) through `startup_scan::StartupScan`.
+- **Thumbnails.** `request_thumbnail` takes `{ asset_id, version, cached_only, prefetch, retry }` instead of a `thumb://` URL and answers `Ready { bytes, version }`, `NotFound`, `Unavailable` or `BadRequest` with the meaning of `200`, `404`, `503` and `400`. There are no cache or CORS headers: `version` tells the caller whether the bytes belong to the version it asked for.
+
 ## Known limitations
 
 - Rust and TypeScript payload types are maintained manually; there is no generated schema or compile-time cross-language parity check.
@@ -343,6 +356,7 @@ When changing IPC:
 - `src-tauri/tests/backend_integration.rs` and `backend_e2e.rs` cover file-backed cross-layer mutation/import workflows but do not exercise JavaScript serialization.
 - `src-tauri/tests/architecture_boundaries.rs` freezes the Rust side of the contract: the sorted `generate_handler!` list (and that each command is named in this document), the one deliberately unregistered command, every command's wire arguments and return type, the JSON shape of the response, input and video-channel DTOs, and the emitted event names. It does not check error texts (the validation texts above are pinned by use-case tests; other error texts are not) or `thumb://` responses.
 - `e2e/specs/*.e2e.js` exercises the registered commands through a real desktop WebView and is the strongest existing check for Rust/TypeScript integration.
+- `src-gpui/crates/media_tagger_client/src/backend/core_tests.rs` calls every method of the `Backend` port on the real core with a temporary profile; `backend/id_range.rs` covers the ID-range decoder (`bun run test:client`). These tests do not exercise the Tauri commands.
 
 ## System browser links
 

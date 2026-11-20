@@ -7,8 +7,21 @@ license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+# Test doubles and fixtures for this crate's tests and for the tests of
+# media_tagger_gpui: `FakeBackend`, `ManualExecutor` and `TempCore` (the real core
+# on a temporary profile). Never enabled in a normal build.
+test-support = ["dep:tempfile"]
+
 [dependencies]
-# Reached only through the Backend port (backend/core_backend.rs, epic E02); every other
+# Reached only through the Backend port (src/backend/core_backend.rs); every other
 # file may import `media_tagger_core::{models, error}` only (architecture_boundaries).
 media_tagger_core.workspace = true
 serde_json.workspace = true
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Turns `test-support` on for every test target of this crate, integration targets
+# in tests/ included.
+media_tagger_client = { path = ".", features = ["test-support"] }
+tempfile.workspace = true

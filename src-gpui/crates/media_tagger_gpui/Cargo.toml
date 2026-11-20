@@ -1,0 +1,31 @@
+[package]
+name = "media_tagger_gpui"
+description = "Tagrove GPUI adapter: startup composition, views and executor glue over media_tagger_client."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[lib]
+name = "media_tagger_gpui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "media_tagger_gpui"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+media_tagger_client.workspace = true
+# Startup composition only (src/boot.rs); see architecture_boundaries.
+media_tagger_core.workspace = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+gpui_platform = { workspace = true, features = ["test-support"] }
+tempfile.workspace = true

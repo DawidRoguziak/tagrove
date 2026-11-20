@@ -73,3 +73,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0033](0033-feff-is-tag-whitespace-in-rust-and-legacy-rows-are-split-on-read.md) | U+FEFF is tag whitespace in Rust, and legacy rows that contain it are split on read, not migrated | Accepted | 2026-11-13 |
 | [0034](0034-tauri-independent-backend-core.md) | The backend core does not depend on Tauri; Tauri is an adapter | Accepted | 2026-11-14 |
 | [0035](0035-bulk-actions-floating-dock.md) | Bulk actions in a floating dock, and no startup popular tags | Accepted | 2026-11-15 |
+| [0036](0036-gpui-second-adapter-in-its-own-workspace.md) | GPUI is a second UI adapter in its own Cargo workspace, taken from the Zed repository | Accepted | 2026-11-20 |

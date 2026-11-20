@@ -60,10 +60,13 @@ src-tauri/                Cargo workspace (Cargo.toml: members, [workspace.depen
     db.rs, db/           SQL: connections, schema, queries, mutations, scan_membership, thumbnails, query_revisions
     indexer.rs, thumbs.rs, models.rs, error.rs, utils/, test_support.rs (feature test-support)
   tests/                 Rust integration targets (adapter package; import media_tagger_core)
+src-gpui/                 second Cargo workspace: the GPUI port (own Cargo.toml, Cargo.lock, target/, target-e2e/; ADR 0036)
+  crates/media_tagger_client/   presentation logic without a GUI: i18n.rs, theme.rs, models (core only via models/error and, later, backend/core_backend.rs)
+  crates/media_tagger_gpui/     GPUI adapter and binary `media_tagger_gpui`: lib.rs (run), profile.rs, boot.rs (startup composition), window.rs, views/, build.rs (bakes the identifier)
 e2e/                     WebdriverIO desktop E2E (specs/), app:control driver (control.js)
 docs/                    owning documentation per subsystem (see index below)
   adr/                   Architecture Decision Records (NNNN-title.md, template.md)
-packaging/, scripts/     Linux packaging (Flatpak/AppImage/native), privacy and locale tooling
+packaging/, scripts/     Linux packaging (Flatpak/AppImage/native), privacy and locale tooling, GPUI lock guard and E2E build (gpui-*.{py,mjs})
 ```
 
 ## Architecture invariants (summary; details load from `.claude/rules/`)
@@ -110,6 +113,17 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_integrat
 #          grid_baseline, tag_save_benchmark, tag_vocabulary, thumbnail_bulk, thumbnail_clear
 # ignored diagnostics: add -- --ignored --nocapture --test-threads=1
 
+# GPUI port (workspace src-gpui/; needs no Vite and no display for tests; docs/development/testing.md "GPUI workspace")
+bun run gpui:dev                  # GPUI adapter on its dev profile ("Tagrove GPUI Dev")
+bun run gpui:build:e2e            # E2E-profile binary in src-gpui/target-e2e (guards identifier and target dir)
+bun run gpui:fmt && bun run gpui:clippy && bun run gpui:check
+bun run test:client               # media_tagger_client (no GUI stack)
+bun run test:gpui                 # media_tagger_gpui: unit tests + hello_window (TestAppContext, headless renderer) + startup (guards, binary exit)
+cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui <name>
+cargo tree --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client -e normal   # must list no gpui/wgpu/blade/tauri/gtk/webkit/libmpv
+bun run gpui:lock-parity          # core dependencies identical in both Cargo.lock files; only reviewed sources in src-gpui/Cargo.lock
+bun run test:gpui-tools && bun run audit:gpui
+
 # Desktop E2E (needs tauri-driver, WebKitWebDriver, Xvfb, dbus; see testing.md)
 bun run test:e2e:tauri --spec e2e/specs/app.smoke.e2e.js
 bun run test:e2e:tauri --spec <spec> --mochaOpts.grep '<case>'
@@ -134,6 +148,10 @@ dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
 | Release | `com.example.mediatagger` | Tagrove | `src-tauri/tauri.conf.json` |
 | Dev | `com.example.mediatagger.dev` | Tagrove Dev | `src-tauri/tauri.conf.dev.json` |
 | E2E | `com.example.mediatagger.e2e` | Tagrove E2E | `src-tauri/tauri.conf.e2e.json` (target `src-tauri/target-e2e`) |
+| GPUI dev | `com.example.mediatagger.gpui.dev` | Tagrove GPUI Dev | default of `src-gpui/crates/media_tagger_gpui/build.rs` (`bun run gpui:dev`) |
+| GPUI E2E | `com.example.mediatagger.gpui.e2e` | Tagrove GPUI E2E | `MEDIATAGGER_GPUI_IDENTIFIER` set by `bun run gpui:build:e2e` (target `src-gpui/target-e2e`) |
+
+The GPUI binary accepts only its two identifiers, in every build (`src-gpui/crates/media_tagger_gpui/src/profile.rs`); it has no release profile and never opens a Tauri profile.
 
 Each profile's data lives in `${XDG_DATA_HOME:-~/.local/share}/<identifier>/`: `media.db`, `thumbs/`, and `instance.lock`. The lock is per profile.
 

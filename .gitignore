@@ -7,6 +7,8 @@
 /src-tauri/target/
 /src-tauri/target-tests/
 /src-tauri/target-e2e/
+/src-gpui/target/
+/src-gpui/target-e2e/
 /.dist.root-stage[0-9][0-9]/
 /.node_modules.root-stage[0-9][0-9]/
 /src-tauri/.target-*-root-stage[0-9][0-9]/

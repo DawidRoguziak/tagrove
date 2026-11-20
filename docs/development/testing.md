@@ -41,8 +41,15 @@ Run commands from the repository root.
 | `bun run rust:check` | Runs locked Cargo check for all targets/features. |
 | `bun run audit:js` | Runs `bun audit --production --audit-level=high`. |
 | `bun run audit:rust` | Runs Cargo audit against the Rust lockfile with the advisory exclusions described below. Requires `cargo-audit`. |
-| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with the explicit advisory exclusions in `audit:rust`. |
-| `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, and desktop E2E. It stops at the first failed layer. |
+| `bun run test:client` | Runs the locked tests of `media_tagger_client` in the GPUI workspace (`src-gpui/Cargo.toml`). No GUI stack is compiled for it. |
+| `bun run test:gpui` | Runs the locked tests of `media_tagger_gpui`: unit tests and the integration targets `hello_window` and `startup`. Needs no display; see [GPUI workspace](#gpui-workspace). |
+| `bun run gpui:fmt` | Runs `cargo fmt --all -- --check` for the GPUI workspace. |
+| `bun run gpui:clippy` | Runs locked Clippy for all targets/features of the GPUI workspace, denying warnings. |
+| `bun run gpui:lock-parity` | Runs `scripts/gpui-lock-parity.py`: the core's dependencies are identical in `src-tauri/Cargo.lock` and `src-gpui/Cargo.lock`, and the GPUI lock has only reviewed sources. |
+| `bun run test:gpui-tools` | Runs the tests of the lock guard (`scripts/test_gpui_lock_parity.py`, synthetic locks plus the repository's own) and of the GPUI E2E build script (`scripts/gpui-build-e2e.test.mjs`, with a fake `cargo` in a disposable project). |
+| `bun run audit:gpui` | Runs Cargo audit against `src-gpui/Cargo.lock` with no advisory exclusions. Requires `cargo-audit`. |
+| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with the explicit advisory exclusions in `audit:rust`; then the GPUI workspace part: `gpui:fmt`, `gpui:clippy`, `gpui:lock-parity`, `test:gpui-tools` and `audit:gpui`. |
+| `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, the GPUI workspace tests (`test:client`, `test:gpui`), and desktop E2E. It stops at the first failed layer. |
 
 `bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It runs `bun run build` for the application before invoking Tauri. Its overlay disables the redundant `beforeBuildCommand`.
 
@@ -53,6 +60,9 @@ bun run test -- src/features/lightbox/__tests__/LightboxModal.test.tsx
 bun run test -- --maxWorkers=1
 cargo test --manifest-path src-tauri/Cargo.toml --locked module_or_test_name
 cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_integration test_name
+cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client test_name
+cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui --test hello_window
+cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui --test startup
 ```
 
 There is no numeric coverage threshold. Run the frontend and backend suites explicitly; they are not CI merge gates.
@@ -83,7 +93,7 @@ dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' \
 
 `.github/workflows/privacy.yml` is the only GitHub Actions workflow. It runs the `privacy` job on pull requests and pushes to `main`, using `ubuntu-24.04`. It fetches full history, installs checksum-pinned Gitleaks 8.30.1, scans publication data, and runs the privacy regression tests. It does not upload artifacts or use an Actions cache.
 
-Frontend checks, Rust checks, application tests, and Linux packaging are run explicitly with the commands documented here and in [Linux packaging](linux-packaging.md). The local `audit:rust` script excludes `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195` without recording a rationale; an excluded advisory is not proof of safety. Real desktop E2E uses the isolated `.e2e` profile on a configured Linux host. The Docker release build does not run tests.
+Frontend checks, Rust checks, application tests, and Linux packaging are run explicitly with the commands documented here and in [Linux packaging](linux-packaging.md). The local `audit:rust` script excludes `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195` without recording a rationale; an excluded advisory is not proof of safety. `audit:gpui` has no exclusions: `src-gpui/Cargo.lock` pins the `quick-xml` users of the GPUI tree at releases that fix both advisories, and it reports the remaining unmaintained and unsound notices as warnings. Real desktop E2E uses the isolated `.e2e` profile on a configured Linux host. The Docker release build does not run tests.
 
 ## Frontend tests and Vitest
 
@@ -143,6 +153,7 @@ The integration binaries belong to the adapter package and use the public `media
 
 - `backend_integration.rs` covers file-backed asset/tag queries, root-prefix deletion and distinct thumbnail paths, complete library clearing, bulk tag merge, bulk media-group replacement, and file-mutation journal recovery across a restart (root removed, library cleared, root unreachable, interrupted delete, and a bundle restored over a library with a committed delete awaiting cleanup).
 - `backend_e2e.rs` composes database and tag helpers into one backend workflow: export-shaped rows, CSV-style tag parsing/normalization/merge, filtering, group replacement, and library clearing. It does not invoke the CSV command parser itself.
+- `architecture_boundaries.rs` also scans the GPUI workspace `../src-gpui/crates` ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md)): `client_manifest_has_no_gui_dependencies` (the `GUI_CRATES` list plus `gpui*`, `wgpu*`, `blade*`), `client_reaches_the_core_only_through_its_backend_adapter` (outside `backend/core_backend.rs` only `media_tagger_core::{models, error}`; an alias, a glob import or a bare `use media_tagger_core` counts as a violation), `gpui_adapter_reaches_the_core_only_in_startup_composition` (outside `boot.rs` the same two modules and no use case; nowhere a `db::` path, lock helper, `Connection` or `admit`) and `gpui_port_dependency_direction`. `gpui_port_rules_flag_core_access_outside_the_allowed_files` and `scanner_finds_external_crate_modules` test the rules on synthetic sources.
 - `architecture_boundaries.rs` guards what the compiler does not ([ADR 0034](../adr/0034-tauri-independent-backend-core.md)) and freezes the IPC wire contract (commands, wire arguments, DTO JSON shapes, event names). `core_manifest_has_no_gui_dependencies` parses `crates/media_tagger_core/Cargo.toml` (std only, with a self-test on a synthetic manifest) and rejects any Tauri, GTK, WebKit or libmpv crate. A std-only tokenizer (comments and literals removed) scans both `src-tauri/src` and `src-tauri/crates/media_tagger_core/src`, telling the packages apart by root: the core's `db` does not reach `services`, `app` or `usecases`; the adapter's `video/` does not import `commands/`; `commands_do_not_touch_db_or_locks` rejects a `db::` path, `Connection`, `admit`, a `with_*lock` helper and any `locks` path in the adapter's `commands/`, so SQL and workflow locks are reached only through the core's `usecases/`; the core's `app/bootstrap.rs` does not reach `usecases` (`bootstrap_does_not_import_usecases`); and `app_state_is_managed_last_in_setup` requires `app.manage(bootstrap::start_workers(..)?)` to be the last step of `setup` in the adapter's `lib.rs` (the `thumb://` 503 window), with a self-test on synthetic sources. Tests of that logic therefore live in `src-tauri/crates/media_tagger_core/src/usecases/*`, not beside the handlers. Run it with `cargo test --manifest-path src-tauri/Cargo.toml --locked --test architecture_boundaries`.
 
 Ignored diagnostics require explicit opt-in. For example, run `cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_runtime metadata_scale_measurements -- --ignored --nocapture --test-threads=1` for isolated memory/timing measurements, or use the [tag-save benchmark command](#tag-save-performance-regressions). Discovering or building these targets in the default suite does not execute their ignored tests.
@@ -165,6 +176,50 @@ Two more real-libmpv tests build the player from the production option table wit
 Reference blocking ([ADR 0028](../adr/0028-media-tools-open-only-the-file-they-are-given.md)) has real-tool tests on both sides. `reference_fixtures` in `test_support.rs` (core test fixtures shared by the player tests in `video/player.rs` and by `thumbs.rs`) writes eleven text files named `*.mp4` (m3u, pls, HLS, EDL, DASH, `concat`, SDP) that point at a `127.0.0.1` listener bound to a free port, at a generated clip outside the fixture folder and at a sibling clip. The player test opens each through the worker with the production option table and requires an error event, no `metadata` event, no connection and no open of a named clip, then plays a generated clip on the same player. Opens are observed with an inotify watch (`OpenWatch`), because access times are not recorded on a `noatime` temp filesystem. A companion test sets `access-references=yes` and requires the playlist to reach the listener and play the outside clip, which shows that the fixtures and both detectors work. `video_tools_refuse_reference_content_and_still_read_real_containers` in `thumbs.rs` runs the same files through `probe_video_duration_ms` and `create_video_thumb` with the system `/usr/bin/ffmpeg` and `ffprobe`, then checks MP4, MKV, MOV and AVI clips. The listener never answers and is the only network endpoint these tests name.
 
 The same worker regression runs 30 cycles of all six speed choices, alternating same-file reopening and two-file replacement. It checks autoplay from the beginning, advancing time, retained rate and rejection of stale controls, close and failure events. Real-libmpv flag tests cover true/false values, property errors and guarded C-integer storage. Run these with `cargo test --manifest-path src-tauri/Cargo.toml video_ --lib`. The native lifecycle suites live in `src/features/lightbox/video/__tests__`, covering session races, labels, bounds acknowledgment, fullscreen, retry, keyboard ownership and disposal. The native bounds helper and its tests live beside the video model.
+
+## GPUI workspace
+
+The GPUI port ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md)) is tested in its own workspace; every command takes `--manifest-path src-gpui/Cargo.toml --locked`. None of these tests needs a display server, and none opens a real app-data directory: startup tests pass temporary directories to `boot::start` or a temporary `XDG_DATA_HOME` to `run_with`, the display check is tested against sockets in temporary directories, and the profile tests are pure.
+
+| Where | What it proves |
+| --- | --- |
+| `media_tagger_client` unit tests (`i18n.rs`, `theme.rs`, `hello.rs`) | Dotted locale keys resolve in the embedded `src/i18n/locales/en.json`; hex colour tokens are read from the named theme block of `src/styles.css`; the placeholder model carries the shared text and tokens. |
+| `media_tagger_gpui::profile` | Only `com.example.mediatagger.gpui.dev` and `.gpui.e2e` resolve; the three Tauri identifiers and publisher identifiers are refused with a message naming the identifier; the app-data directory follows `XDG_DATA_HOME`, then `HOME`. |
+| `media_tagger_gpui::boot` | `start` on a temporary profile creates `instance.lock`, `media.db` and `thumbs/`; a second start on the same directory is refused until the first is dropped; two profiles run side by side; a corrupt database stops the startup, stays unchanged and does not keep the lock. |
+| `media_tagger_gpui::window` | The display check: no `WAYLAND_DISPLAY` and no `DISPLAY` is an error instead of a headless start; a listening Wayland socket is found by absolute path and by name in `XDG_RUNTIME_DIR`; a socket file whose server is gone, a missing socket and a relative name without `XDG_RUNTIME_DIR` are refused; a dead `WAYLAND_DISPLAY` falls back to a live local X display and Wayland wins when both answer; an inherited `WAYLAND_SOCKET` and a non-local `DISPLAY` are not probed. The event loop: `a_window_that_cannot_open_ends_the_event_loop_with_its_error` runs GPUI's real Linux platform headless in a child process with an opener that fails, and requires the loop to end with `cannot open the main window: …` instead of running on without a window (the child is stopped after 30 s). |
+| `tests/startup.rs` | The startup guards in the order `run` promises, through `run_with` with an injected identifier and environment: an identifier off the allowlist is refused before the display check and before anything is written; no display, and a display that does not answer, stop before the app-data directory exists; a relative data home is refused; a profile held by another instance stops before the window. Where the check has to pass, a socket in a temporary directory stands in for the compositor. The built binary: `--identifier` prints an allowed identifier, and without a display or with one that does not answer it exits with status 1, the `Tagrove GPUI cannot start` message and no app data. |
+| `tests/hello_window.rs`, `#[gpui::test]` cases | GPUI's test platform (`TestAppContext`): the main window options carry the profile's title, application id and minimum size, and the shared text is laid out in the centre of the window. |
+| `tests/hello_window.rs`, `hello_window_renders_through_the_headless_renderer` | The real view rendered in-process by `HeadlessAppContext` with GPUI's wgpu renderer and the platform text system: the capture has the window's size, its corners have the theme's background colour and the text is drawn. |
+
+The headless test needs a wgpu adapter. A GPU works without a display, and so does Mesa's software rasterizer through EGL, which is what a sandbox without `/dev/dri` uses. With no adapter at all the test prints `skipped` and passes; set `MEDIATAGGER_GPUI_REQUIRE_RENDERER=1` to make that a failure. `MEDIATAGGER_GPUI_SCREENSHOT_DIR=<existing directory>` makes it write `hello-headless.png` there.
+
+### Screenshots of the GPUI window without a real display
+
+Two paths work on a machine whose only Vulkan driver is a hardware one, with no extra package:
+
+1. **In-process** (preferred for tests): `HeadlessAppContext::with_platform(text_system, assets, || gpui_platform::current_headless_renderer())`, open the window, `run_until_parked`, `capture_screenshot`. It needs the `test-support` feature of `gpui` and `gpui_platform`, which only the dev-dependencies enable, so it is available to test targets and not to the shipped binary. The capture is at the test platform's scale factor 2 (2880×1800 for the 1440×900 window).
+
+   ```bash
+   MEDIATAGGER_GPUI_SCREENSHOT_DIR="$(mktemp -d)" MEDIATAGGER_GPUI_REQUIRE_RENDERER=1 \
+     cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui --test hello_window \
+     hello_window_renders_through_the_headless_renderer -- --nocapture
+   ```
+
+2. **The real binary on a private Xvfb display**, captured with `import -window root` as `app:control` does for Tauri. Xvfb has no DRI3, so the hardware Vulkan driver cannot present there; GPUI falls back to EGL with Mesa's software rasterizer and the window is drawn correctly. Use scratch XDG directories (mode 700) so that the profile, the D-Bus session and the portal state stay out of the real session, and run one display-bound command at a time:
+
+   ```bash
+   unset WAYLAND_DISPLAY
+   dbus-run-session -- xvfb-run -a -s '-screen 0 1440x1100x24 -nolisten tcp' sh -c '
+     src-gpui/target-e2e/debug/media_tagger_gpui & pid=$!
+     # wait until a window titled "Tagrove GPUI E2E" is viewable, then:
+     import -display "$DISPLAY" -window root "$XDG_RUNTIME_DIR/gpui.png"
+     # ask the window to close (WM_DELETE_WINDOW) or stop the process you started:
+     kill -TERM "$pid"; wait "$pid"'
+   ```
+
+   The window's title is the profile title and its `WM_CLASS` is the identifier. Sending `WM_DELETE_WINDOW` closes the window and the process exits with status 0. Stop only the process ID you started, never by name.
+
+A real screen is never used for captures. The comparison harness of the port (a later epic) builds on these two paths.
 
 ## Packaging checks
 
@@ -623,7 +678,7 @@ remove a lock merely because a connection failed.
 
 ## Privacy and source packaging regressions
 
-`bun run test:privacy` runs `scripts/test_privacy.py` against temporary Git repositories with the real Gitleaks 8.30.1 executable on `PATH`. It verifies historical and staged secrets, private home paths, nested configuration/databases/keys, shallow-clone rejection and source archives that match a clean commit. `bun run privacy:check` scans this checkout and all reachable history; it is not a scan of ignored working materials.
+`bun run test:privacy` runs `scripts/test_privacy.py` against temporary Git repositories with the real Gitleaks 8.30.1 executable on `PATH`. It verifies historical and staged secrets, private home paths, nested configuration/databases/keys, tracked build output of either Cargo workspace (`src-tauri/target*`, `src-gpui/target*`), shallow-clone rejection and source archives that match a clean commit. `bun run privacy:check` scans this checkout and all reachable history; it is not a scan of ignored working materials.
 
 `bun run test:packaging` also requires Gitleaks because failure/rollback fixtures pass through actual source preparation before their simulated Docker failures. They assert that the intended Docker/export failure was reached. For the real bundle audit and prerequisites, see [release privacy checks](linux-packaging.md#privacy-gate-and-release-inputs).
 
@@ -690,6 +745,8 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 | Tauri command name/payload, serialization, event/channel, startup, profile, or app-data behavior | Rust test plus frontend API test | Desktop E2E to prove the real bridge and bootstrap |
 | Destructive UI confirmation, filesystem mutation, import/export/restore, or critical user journey | Lower-layer tests for edge cases | Isolated desktop E2E for the representative happy path and safety guard |
 | Packaging, native libraries, or release resources | Build and lower-layer tests | Build and smoke-test the Linux artifact; release scripts do not run application tests automatically |
+| GPUI port: client model, text or theme logic | Rust unit test in `media_tagger_client` | `#[gpui::test]` in `media_tagger_gpui` when layout or input handling is part of the claim |
+| GPUI port: view, window, profile or startup composition | Rust test in `media_tagger_gpui` (`TestAppContext`, temporary profile) | The headless renderer for pixels; the real binary on a private Xvfb display for the window manager side |
 
 ## Known limitations
 

@@ -101,6 +101,9 @@ Build and development entry points are listed below. [Testing and quality comman
 | `bun run tauri:build:e2e` | Runs `node ./e2e/build-e2e.js`, validates the E2E identifier/title/target, and creates an unbundled debug executable in `src-tauri/target-e2e/debug/`. It first builds the frontend into `dist/`. |
 | `bun run build:linux:docker` | Convenience wrapper for `scripts/build-linux-docker.sh`; requires Bun on the host, unlike invoking the shell script directly. |
 | `bun run tauri` | Exposes the local Tauri CLI directly for explicit subcommands. It does not select the safe development overlay on its own. |
+| `bun run gpui:dev` | Runs `cargo run --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui`: the GPUI adapter on its development profile. It needs no Vite server. See [GPUI adapter](#gpui-adapter). |
+| `bun run gpui:build:e2e` | Runs `node ./scripts/gpui-build-e2e.mjs`: checks the profile list and the target path, builds the GPUI adapter for the E2E identifier into `src-gpui/target-e2e/debug/`, and verifies the identifier the binary reports. |
+| `bun run gpui:check` | `cargo check` of every target of the GPUI workspace, with `--locked`. |
 
 ## Development modes
 
@@ -154,6 +157,22 @@ Use generated or copied synthetic media in an isolated profile for reproducible 
 
 Do not use an unqualified debug Tauri launch with the base configuration. In debug builds, `src-tauri/src/lib.rs` permits startup only with `com.example.mediatagger.dev` or `com.example.mediatagger.e2e`. This protects both the local release profile and future publisher identities. Use the established dev or E2E overlay; arbitrary custom identifiers are rejected.
 
+### GPUI adapter
+
+The GPUI port ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md)) is a second Cargo workspace, `src-gpui/`. Every Cargo command for it names the manifest and uses the committed lock:
+
+```bash
+bun run gpui:dev                  # window "Tagrove GPUI Dev", profile com.example.mediatagger.gpui.dev
+cargo check --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client
+cargo tree --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client -e normal   # no GUI crate
+```
+
+The first build fetches the pinned Zed commit and the repositories it pins into Cargo's Git cache and compiles about 450 crates. The build needs the development files of `libxkbcommon` (with its X11 part), `libxcb`, Wayland and Fontconfig/FreeType; at run time GPUI draws through Vulkan and falls back to EGL, so a Mesa or vendor driver for either is enough. The repository toolchain from `rust-toolchain.toml` builds it; no other toolchain is installed for the port.
+
+The identifier is part of the binary. `src-gpui/crates/media_tagger_gpui/build.rs` reads `MEDIATAGGER_GPUI_IDENTIFIER` at build time (default `com.example.mediatagger.gpui.dev`), and the binary refuses to start unless that value is one of the two GPUI profiles in the [profile table](../architecture/system-overview.md#profiles-identifiers-and-data-isolation). `bun run gpui:build:e2e` is the only supported way to build the E2E profile: it sets the variable and a separate target directory, so the development binary is never replaced. `media_tagger_gpui --identifier` prints what a binary was built for without starting it.
+
+The GPUI and Tauri applications use different identifiers, data directories and instance locks, so `bun run gpui:dev` and `bun run tauri:dev` can run at the same time. Before it opens the profile, the GPUI binary checks that the display server `WAYLAND_DISPLAY` or `DISPLAY` names answers; without one it exits with an error instead of starting headless, and when only the X display answers it starts on X11.
+
 ## Frontend build contract
 
 `bun run build` runs `bun run typecheck && vite build`:
@@ -191,6 +210,11 @@ Both standalone `bun run tauri:build:e2e` and `bun run test:e2e:tauri` use the s
 | `src-tauri/crates/media_tagger_core/Cargo.toml` | The core crate `media_tagger_core`: GUI-free dependencies, `publish = false`, and the `test-support` feature that only the adapter's dev-dependencies enable. |
 | `src-tauri/build.rs` | Calls `tauri_build::build()`; generated context, application metadata, and resources come from the effective Tauri configuration. |
 | `e2e/build-e2e.js` | E2E build safety assertions, isolated Cargo target directory, debug/no-bundle flags, and expected executable path. |
+| `src-gpui/Cargo.toml` / `Cargo.lock` | The GPUI workspace: members, shared dependency declarations, the pinned Zed `rev` of `gpui` and `gpui_platform`, the path dependency on the core, and the exact resolutions of the GPUI tree. Independent of `src-tauri/Cargo.lock` except for the core's dependencies, which `gpui:lock-parity` keeps identical. |
+| `src-gpui/crates/media_tagger_client/Cargo.toml` | The client crate: no GUI dependency (`architecture_boundaries`). |
+| `src-gpui/crates/media_tagger_gpui/Cargo.toml` / `build.rs` | The GPUI adapter crate and binary `media_tagger_gpui`; `build.rs` bakes `MEDIATAGGER_GPUI_IDENTIFIER` into it. |
+| `scripts/gpui-build-e2e.mjs` | GPUI E2E build safety assertions, the isolated target directory `src-gpui/target-e2e`, and the identifier check of the finished binary. |
+| `scripts/gpui-lock-parity.py` | The two lock-file guards: core parity between `src-tauri/Cargo.lock` and `src-gpui/Cargo.lock`, and the allowed package sources of the GPUI lock (`PINNED_BY_ZED`). |
 
 ## Native media dependencies
 
@@ -233,12 +257,26 @@ Keep dependency families aligned rather than updating one manifest in isolation:
 
 Run `bun install` for intentional JavaScript updates and an appropriate Cargo update for intentional Rust updates, then inspect `bun.lock` and `src-tauri/Cargo.lock`. Most manifest entries are semver ranges, so frozen/locked resolution and the pinned toolchains are both required. Neither lockfile pins rolling Linux system packages.
 
+There are two Cargo lock files, and `media_tagger_core` is compiled from both. After changing a dependency of the core, bring `src-gpui/Cargo.lock` to the same versions (`cargo update --manifest-path src-gpui/Cargo.toml -p <name> --precise <version>`) and run `bun run gpui:lock-parity`. Nothing else in `src-gpui/Cargo.lock` has to match the Tauri lock, and `src-tauri/Cargo.lock` never takes a package because the GPUI tree wants it.
+
+### Updating the pinned Zed commit
+
+GPUI has no semver and comes from a Git repository, so a bump is a reviewed change ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md)):
+
+1. Choose the commit of a stable Zed release tag (`git ls-remote --tags https://github.com/zed-industries/zed`; tags ending in `-pre` are previews) and set the same full SHA as `rev` of every Zed dependency in `src-gpui/Cargo.toml`.
+2. Resolve the lock starting from the lock file of that Zed commit, so the GPUI tree uses the versions Zed tested, and then align the core's dependencies with `src-tauri/Cargo.lock`. Keep deviations from Zed's lock to those the core closure, a RustSec advisory or a yanked release requires, and list them in the change.
+3. Read the Git dependencies of that commit (`Cargo.toml` of the Zed workspace and of `crates/gpui_linux`) and update `PINNED_BY_ZED` in `scripts/gpui-lock-parity.py`. Repeat an entry of Zed's `[patch.crates-io]` only when the build or a test needs it, and say why.
+4. List the packages that are in neither lock yet with their licences (`cargo metadata --manifest-path src-gpui/Cargo.toml --locked --format-version 1`), and run `bun run audit:gpui`. A new audit exception needs the owner's approval.
+5. Fetch with the network (`cargo fetch --manifest-path src-gpui/Cargo.toml --locked`), then make the first build of the new dependencies offline in a sandbox that sees only the repository (read-only, with `src-gpui/target` writable), the Cargo home and the toolchain: `bwrap --unshare-all` with `cargo build --manifest-path src-gpui/Cargo.toml --locked --offline`. Build scripts and procedural macros of new crates run there first.
+6. Run `bun run gpui:lock-parity`, `bun run gpui:clippy`, `bun run test:client`, `bun run test:gpui`, and check that the build still works on the toolchain of `rust-toolchain.toml`.
+
 ## Known limitations
 
 - only Linux x86-64 packaging is configured;
 - the rolling `archlinux:base-devel` image and system packages are not digest/version pinned, so a later clean container build can use newer native dependencies;
 - compatible-range manifests mean lockfiles must be preserved for repeatable resolution;
 - the debug guard permits only the established dev/E2E identifiers; custom debug profiles require an explicit isolation review and allowlist change;
+- the GPUI adapter builds only as a development or E2E binary; it is not packaged and has no release profile;
 - Vite-only development cannot validate native IPC, dialogs, asset-protocol loading, app-data paths, or packaged resource layout;
 - unbundled E2E builds do not prove the release artifact's exact shared-library environment.
 
@@ -267,6 +305,10 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **The app appears to have an empty library.** Check the selected identifier/profile before changing files. Release, dev, and E2E intentionally use different app-data directories.
 
+**The GPUI binary refuses its identifier or reports no display server.** `media_tagger_gpui --identifier` shows what the binary was built for; only the two GPUI profiles start, so rebuild with `bun run gpui:dev` or `bun run gpui:build:e2e` rather than setting `MEDIATAGGER_GPUI_IDENTIFIER` by hand. The binary needs `WAYLAND_DISPLAY` or `DISPLAY`, and a server that answers there: "does not answer" means the variable is left over from a session, a compositor or an Xvfb that no longer runs (a relative `WAYLAND_DISPLAY` also needs `XDG_RUNTIME_DIR`).
+
+**`cargo` reports that `src-gpui/Cargo.lock` needs to be updated.** A manifest of the GPUI workspace or of the core changed without its lock. Update the lock intentionally (see [dependency updates](#dependency-updates)) instead of dropping `--locked`.
+
 **`tauri:build:e2e` fails before compiling Rust.** Check the frontend build output. The build helper produces fresh frontend assets before invoking Tauri; the overlay disables the redundant Tauri `beforeBuildCommand`.
 
 **Video probing or thumbnails fail while images still work.** Confirm `ffmpeg` and `ffprobe` are on `PATH`. Startup resolves ffmpeg once (`resolve_ffmpeg_path` in `src-tauri/crates/media_tagger_core/src/app/bootstrap.rs`): an executable copy in the resource directory or beside the executable wins over `/usr/bin/ffmpeg` and `PATH`; see [tool discovery](../subsystems/thumbnails.md#ffmpeg-and-ffprobe-discovery). Application startup succeeding does not prove that both tools were found.
@@ -275,4 +317,4 @@ For an Arch Linux x86-64 release without host build dependencies:
 
 **The Docker command cannot connect to `/var/run/docker.sock`.** Confirm the current login session has access to the Docker daemon. The build script deliberately does not elevate through `sudo`.
 
-**A dependency resolves differently on another machine.** Confirm both machines use the committed `bun.lock` and `src-tauri/Cargo.lock`, use frozen/locked install modes, and match `.nvmrc`, `packageManager`, and `rust-toolchain.toml`. Compare external system package versions when the pinned language toolchains match.
+**A dependency resolves differently on another machine.** Confirm both machines use the committed `bun.lock`, `src-tauri/Cargo.lock` and `src-gpui/Cargo.lock`, use frozen/locked install modes, and match `.nvmrc`, `packageManager`, and `rust-toolchain.toml`. Compare external system package versions when the pinned language toolchains match.

@@ -8,6 +8,12 @@
 //! `db` does not reach upper core layers, `video/` does not import `commands/`
 //! and command handlers do not touch SQLite or the workflow locks.
 //!
+//! The GPUI port (ADR 0036) lives in its own workspace, `../src-gpui`, and is
+//! scanned from here as well: `media_tagger_client` names no GUI crate and
+//! reaches the core beyond `models` and `error` only in
+//! `backend/core_backend.rs`; `media_tagger_gpui` reaches it only in `boot.rs`
+//! and never touches SQLite or the workflow locks.
+//!
 //! `wire_snapshot` freezes the registered commands, their wire arguments, the
 //! JSON shape of the response and input DTOs and the emitted event names. An
 //! intended IPC change updates this snapshot in the same change
@@ -237,50 +243,89 @@ fn crate_root_refs(toks: &[Token]) -> Vec<(usize, String)> {
             i += 1;
             continue;
         };
-        match toks.get(start) {
-            Some(t) if t.is("{") => {
-                let mut depth = 0usize;
-                let mut expect_segment = true;
-                let mut k = start;
-                while k < toks.len() {
-                    let t = &toks[k];
-                    if t.is("{") {
-                        depth += 1;
-                        expect_segment = depth == 1;
-                    } else if t.is("}") {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    } else if depth == 1 && t.is(",") {
-                        expect_segment = true;
-                    } else if depth == 1 && expect_segment && t.is_ident() {
-                        refs.push((t.line, t.text.clone()));
-                        expect_segment = false;
-                    } else {
-                        expect_segment = false;
+        i = path_heads(toks, start, &mut refs);
+    }
+    refs
+}
+
+/// Pushes the first segment of the path that continues at `start` (the token
+/// after a `root::`): the identifier itself, or the first segment of every
+/// member of a `{…}` group. Returns the index to continue scanning from.
+fn path_heads(toks: &[Token], start: usize, refs: &mut Vec<(usize, String)>) -> usize {
+    match toks.get(start) {
+        Some(t) if t.is("{") => {
+            let mut depth = 0usize;
+            let mut expect_segment = true;
+            let mut k = start;
+            while k < toks.len() {
+                let t = &toks[k];
+                if t.is("{") {
+                    depth += 1;
+                    expect_segment = depth == 1;
+                } else if t.is("}") {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
                     }
-                    k += 1;
+                } else if depth == 1 && t.is(",") {
+                    expect_segment = true;
+                } else if depth == 1 && expect_segment && t.is_ident() {
+                    refs.push((t.line, t.text.clone()));
+                    expect_segment = false;
+                } else {
+                    expect_segment = false;
                 }
-                i = k;
+                k += 1;
             }
-            Some(t) if t.is_ident() => {
-                refs.push((t.line, t.text.clone()));
-                i = start + 1;
+            k
+        }
+        Some(t) if t.is_ident() => {
+            refs.push((t.line, t.text.clone()));
+            start + 1
+        }
+        _ => start,
+    }
+}
+
+/// Top-level modules of the external crate `krate` a file refers to:
+/// `krate::X` and the members of `krate::{X::…, Y}`. Access that hides the
+/// module (`use krate;`, `use krate as k;`, `extern crate krate;`,
+/// `krate::*`) is reported as `*`.
+fn extern_crate_refs(toks: &[Token], krate: &str) -> Vec<(usize, String)> {
+    let mut refs = Vec::new();
+    let mut i = 0;
+    while i < toks.len() {
+        if !toks[i].is(krate) {
+            i += 1;
+            continue;
+        }
+        let line = toks[i].line;
+        if toks.get(i + 1).is_some_and(|t| t.is("::")) {
+            let before = refs.len();
+            i = path_heads(toks, i + 2, &mut refs);
+            if refs.len() == before {
+                refs.push((line, "*".into()));
             }
-            _ => i = start,
+        } else {
+            refs.push((line, "*".into()));
+            i += 1;
         }
     }
     refs
 }
 
-/// The two packages of the backend workspace.
+/// The packages whose sources this test scans: the two of the backend
+/// workspace and the two of the GPUI workspace `../src-gpui` (ADR 0036).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Root {
     /// `media_tagger_core`: storage, queries, use cases, bootstrap.
     Core,
     /// `media_tagger`: the Tauri adapter (commands, events, `thumb://`, video).
     Adapter,
+    /// `media_tagger_client`: presentation logic of the GPUI port, no GUI.
+    Client,
+    /// `media_tagger_gpui`: the GPUI adapter (views, executor glue, startup).
+    GpuiAdapter,
 }
 
 impl Root {
@@ -289,6 +334,8 @@ impl Root {
         match self {
             Root::Core => "crates/media_tagger_core/src",
             Root::Adapter => "src",
+            Root::Client => "../src-gpui/crates/media_tagger_client/src",
+            Root::GpuiAdapter => "../src-gpui/crates/media_tagger_gpui/src",
         }
     }
 }
@@ -343,6 +390,22 @@ fn collect_rs(dir: &Path, root: Root, root_dir: &Path, out: &mut Vec<SourceFile>
 fn source_files() -> Vec<SourceFile> {
     let mut files = Vec::new();
     for (root, dir) in source_roots() {
+        collect_rs(&dir, root, &dir, &mut files);
+        assert!(
+            files.iter().any(|f| f.root == root && f.rel == "lib.rs"),
+            "source scan found no lib.rs in {}",
+            root.dir()
+        );
+    }
+    files
+}
+
+/// Sources of the two crates of the GPUI workspace (`../src-gpui/crates`).
+fn gpui_port_files() -> Vec<SourceFile> {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    for root in [Root::Client, Root::GpuiAdapter] {
+        let dir = manifest_dir.join(root.dir());
         collect_rs(&dir, root, &dir, &mut files);
         assert!(
             files.iter().any(|f| f.root == root && f.rel == "lib.rs"),
@@ -633,6 +696,16 @@ fn video_does_not_import_commands() {
     );
 }
 
+/// A token that reaches SQLite or the workflow locks directly (rule 4 and the
+/// GPUI adapter rule): a `db::` path, a `with_*lock` helper, `Connection`,
+/// `admit` or any `locks` path.
+fn is_db_or_lock_token(toks: &[Token], index: usize) -> bool {
+    let t = &toks[index];
+    let db_path = t.is("db") && toks.get(index + 1).is_some_and(|n| n.is("::"));
+    let lock_helper = t.text.starts_with("with_") && t.text.ends_with("lock");
+    db_path || lock_helper || t.is("Connection") || t.is("admit") || t.is("locks")
+}
+
 /// Rule 4: command handlers are thin and reach SQLite and the workflow locks
 /// only through use cases (`usecases/`). Flags a `db::` path, a `with_*lock`
 /// helper, `Connection`, `admit` (the operation permit that hands out a
@@ -648,9 +721,7 @@ fn commands_do_not_touch_db_or_locks() {
     {
         let toks = tokens(&strip(&file.text, Literals::Blank));
         for (index, t) in toks.iter().enumerate() {
-            let db_path = t.is("db") && toks.get(index + 1).is_some_and(|n| n.is("::"));
-            let lock_helper = t.text.starts_with("with_") && t.text.ends_with("lock");
-            if db_path || lock_helper || t.is("Connection") || t.is("admit") || t.is("locks") {
+            if is_db_or_lock_token(&toks, index) {
                 violations.push(format!(
                     "{}:{}: rule 4: `{}`",
                     file.display(),
@@ -799,6 +870,298 @@ fn app_state_is_managed_last_in_setup() {
         "Keep `app.manage(bootstrap::start_workers(..)?)` as the last step of setup, followed only \
          by Ok(()); thumb:// answers 503 until then (ADR 0006)",
         &app_state_manage_violations(&read_source("lib.rs")),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// GPUI port: the client and adapter crates of `../src-gpui` (ADR 0036)
+// ---------------------------------------------------------------------------
+
+const CORE_CRATE: &str = "media_tagger_core";
+/// Core modules every file of the GPUI port may name.
+const PORT_SHARED_CORE_MODULES: &[&str] = &["models", "error"];
+/// The one client file that reaches the core's use cases, services and state:
+/// the adapter of the client's `Backend` port.
+const CLIENT_CORE_BACKEND: &str = "backend/core_backend.rs";
+/// Startup composition of the GPUI adapter.
+const GPUI_STARTUP_COMPOSITION: &str = "boot.rs";
+
+/// The client names none of the Tauri-side GUI crates and none of the GPUI
+/// stack (`gpui*`, `wgpu*`, `blade*`), nor the adapter built on top of it.
+fn is_port_gui_crate(name: &str) -> bool {
+    is_gui_crate(name)
+        || name == "media_tagger_gpui"
+        || ["gpui", "wgpu", "blade"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+}
+
+fn read_manifest(rel: &str) -> Vec<String> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(rel);
+    let manifest =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    manifest_dependencies(&manifest)
+}
+
+/// References to core modules other than `models` and `error`.
+fn core_reach_violations(file: &SourceFile, rule: &str) -> Vec<String> {
+    extern_crate_refs(&tokens(&strip(&file.text, Literals::Blank)), CORE_CRATE)
+        .into_iter()
+        .filter(|(_, module)| !PORT_SHARED_CORE_MODULES.contains(&module.as_str()))
+        .map(|(line, module)| {
+            format!(
+                "{}:{line}: {rule}: `{CORE_CRATE}::{module}`",
+                file.display()
+            )
+        })
+        .collect()
+}
+
+/// Client rule: outside `backend/core_backend.rs` the client uses only the
+/// core's `models` and `error`.
+fn client_violations(file: &SourceFile) -> Vec<String> {
+    if file.rel == CLIENT_CORE_BACKEND {
+        return Vec::new();
+    }
+    core_reach_violations(file, "client rule")
+}
+
+/// GPUI adapter rule: outside `boot.rs` the adapter uses only the core's
+/// `models` and `error` and names no use case; no file, `boot.rs` included,
+/// touches SQLite or the workflow locks.
+fn gpui_adapter_violations(file: &SourceFile) -> Vec<String> {
+    let startup = file.rel == GPUI_STARTUP_COMPOSITION;
+    let mut violations = if startup {
+        Vec::new()
+    } else {
+        core_reach_violations(file, "gpui rule")
+    };
+    let toks = tokens(&strip(&file.text, Literals::Blank));
+    for (index, t) in toks.iter().enumerate() {
+        if is_db_or_lock_token(&toks, index) || (!startup && t.is("usecases")) {
+            violations.push(format!(
+                "{}:{}: gpui rule: `{}`",
+                file.display(),
+                t.line,
+                t.text
+            ));
+        }
+    }
+    violations
+}
+
+#[test]
+fn scanner_finds_external_crate_modules() {
+    let src = "use media_tagger_core::{\n    error::AppError,\n    models::{ScanRoot, Tag},\n};\n\
+               fn f() { media_tagger_core::usecases::scan::run(); }\n\
+               use media_tagger_core as core;\n\
+               use media_tagger_core::*;\n\
+               // media_tagger_core::db in a comment\n\
+               const NAME: &str = \"media_tagger_core::services\";\n\
+               use media_tagger_core_extras::db;";
+    let refs = extern_crate_refs(&tokens(&strip(src, Literals::Blank)), CORE_CRATE);
+    assert_eq!(
+        refs,
+        [
+            (2, "error".to_string()),
+            (3, "models".to_string()),
+            (5, "usecases".to_string()),
+            (6, "*".to_string()),
+            (7, "*".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn gpui_port_rules_flag_core_access_outside_the_allowed_files() {
+    let file = |root, rel: &str, text: &str| SourceFile {
+        root,
+        rel: rel.into(),
+        text: text.into(),
+    };
+    let shared = "use media_tagger_core::{error::AppError, models::ScanRoot};\n\
+                  fn f(_: media_tagger_core::error::AppResult<()>) {}";
+    let reaching = "use media_tagger_core::{models, usecases::assets};\n\
+                    use media_tagger_core::app::state::AppState;\n\
+                    use media_tagger_core as core;";
+
+    assert!(client_violations(&file(Root::Client, "library/query.rs", shared)).is_empty());
+    assert!(client_violations(&file(Root::Client, CLIENT_CORE_BACKEND, reaching)).is_empty());
+    assert_eq!(
+        client_violations(&file(Root::Client, "library/query.rs", reaching)),
+        [
+            "../src-gpui/crates/media_tagger_client/src/library/query.rs:1: client rule: `media_tagger_core::usecases`",
+            "../src-gpui/crates/media_tagger_client/src/library/query.rs:2: client rule: `media_tagger_core::app`",
+            "../src-gpui/crates/media_tagger_client/src/library/query.rs:3: client rule: `media_tagger_core::*`",
+        ]
+    );
+
+    assert!(gpui_adapter_violations(&file(Root::GpuiAdapter, "views/shell.rs", shared)).is_empty());
+    let startup = "use media_tagger_core::app::{bootstrap, instance_lock::InstanceLock};\n\
+                   use media_tagger_core::usecases::scan;";
+    assert!(
+        gpui_adapter_violations(&file(Root::GpuiAdapter, GPUI_STARTUP_COMPOSITION, startup))
+            .is_empty()
+    );
+    assert_eq!(
+        gpui_adapter_violations(&file(Root::GpuiAdapter, "views/shell.rs", startup)),
+        [
+            "../src-gpui/crates/media_tagger_gpui/src/views/shell.rs:1: gpui rule: `media_tagger_core::app`",
+            "../src-gpui/crates/media_tagger_gpui/src/views/shell.rs:2: gpui rule: `media_tagger_core::usecases`",
+            "../src-gpui/crates/media_tagger_gpui/src/views/shell.rs:2: gpui rule: `usecases`",
+        ]
+    );
+    let storage = "use media_tagger_core::app::locks::with_scan_and_thumb_lock;\n\
+                   fn f(c: &rusqlite::Connection) { db::list_tags(c); state.database.admit(); }";
+    let flagged: Vec<String> =
+        gpui_adapter_violations(&file(Root::GpuiAdapter, GPUI_STARTUP_COMPOSITION, storage))
+            .into_iter()
+            .map(|violation| violation.rsplit(": ").next().unwrap().to_string())
+            .collect();
+    assert_eq!(
+        flagged,
+        [
+            "`locks`",
+            "`with_scan_and_thumb_lock`",
+            "`Connection`",
+            "`db`",
+            "`admit`"
+        ]
+    );
+}
+
+#[test]
+fn client_manifest_has_no_gui_dependencies() {
+    for name in [
+        "gpui",
+        "gpui_platform",
+        "gpui-component",
+        "wgpu",
+        "wgpu-core",
+        "blade-graphics",
+        "media_tagger_gpui",
+        "tauri",
+        "gtk",
+    ] {
+        assert!(is_port_gui_crate(name), "{name} is a GUI crate");
+    }
+    for name in ["serde_json", "media_tagger_core", "media_tagger_client"] {
+        assert!(!is_port_gui_crate(name), "{name} is not a GUI crate");
+    }
+
+    let names = read_manifest("../src-gpui/crates/media_tagger_client/Cargo.toml");
+    assert!(
+        names.iter().any(|name| name == CORE_CRATE),
+        "manifest parser found no core dependency in the client manifest: {names:?}"
+    );
+    let gui: Vec<&String> = names
+        .iter()
+        .filter(|name| is_port_gui_crate(name))
+        .collect();
+    assert!(
+        gui.is_empty(),
+        "media_tagger_client depends on a GUI runtime: {gui:?}. Views and executor glue belong \
+         in media_tagger_gpui (ADR 0036)."
+    );
+}
+
+/// Dependency direction of the port: `media_tagger_gpui` → `media_tagger_client`
+/// → `media_tagger_core`; the core names neither of them nor the GPUI stack.
+#[test]
+fn gpui_port_dependency_direction() {
+    let adapter = read_manifest("../src-gpui/crates/media_tagger_gpui/Cargo.toml");
+    for required in ["gpui", "media_tagger_client"] {
+        assert!(
+            adapter.iter().any(|name| name == required),
+            "media_tagger_gpui does not depend on {required}: {adapter:?}"
+        );
+    }
+    let core = read_manifest("crates/media_tagger_core/Cargo.toml");
+    let upward: Vec<&String> = core
+        .iter()
+        .filter(|name| is_port_gui_crate(name) || *name == "media_tagger_client")
+        .collect();
+    assert!(
+        upward.is_empty(),
+        "media_tagger_core depends on the GPUI port: {upward:?} (ADR 0034, ADR 0036)"
+    );
+}
+
+/// The Tauri workspace never gains the GPUI port (ADR 0036): no manifest of
+/// `src-tauri` names a crate of the port or of the GPUI stack, and
+/// `src-tauri/Cargo.lock` holds no git source and no GPUI package.
+#[test]
+fn tauri_workspace_has_no_gpui_or_git_dependency() {
+    let is_port_crate = |name: &str| {
+        name == "media_tagger_client"
+            || name == "media_tagger_gpui"
+            || ["gpui", "wgpu", "blade"]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
+    };
+    for rel in ["Cargo.toml", "crates/media_tagger_core/Cargo.toml"] {
+        let names = read_manifest(rel);
+        assert!(!names.is_empty(), "manifest parser found nothing in {rel}");
+        let port: Vec<&String> = names.iter().filter(|name| is_port_crate(name)).collect();
+        assert!(
+            port.is_empty(),
+            "src-tauri/{rel} depends on the GPUI port: {port:?}"
+        );
+    }
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock");
+    let lock = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let mut packages = 0;
+    let mut violations = Vec::new();
+    for line in lock.lines().map(str::trim) {
+        if let Some(name) = line.strip_prefix("name = ") {
+            packages += 1;
+            let name = name.trim_matches('"');
+            if is_port_crate(name) {
+                violations.push(format!("package {name}"));
+            }
+        } else if line.starts_with("source = \"git+") {
+            violations.push(line.to_string());
+        }
+    }
+    assert!(packages > 100, "lock parser found {packages} packages");
+    assert!(
+        violations.is_empty(),
+        "src-tauri/Cargo.lock gained the GPUI port or a git source: {violations:?}"
+    );
+}
+
+/// Client rule over the real sources.
+#[test]
+fn client_reaches_the_core_only_through_its_backend_adapter() {
+    let violations: Vec<String> = gpui_port_files()
+        .iter()
+        .filter(|f| f.root == Root::Client)
+        .flat_map(client_violations)
+        .collect();
+    assert!(
+        violations.is_empty(),
+        "The client crate reaches the core outside its Backend adapter:\n{}\n\nOnly \
+         backend/core_backend.rs may import media_tagger_core::{{usecases, services, app, …}}; \
+         every other file uses models, error and the Backend port (ADR 0036).",
+        violations.join("\n")
+    );
+}
+
+/// GPUI adapter rule over the real sources.
+#[test]
+fn gpui_adapter_reaches_the_core_only_in_startup_composition() {
+    let violations: Vec<String> = gpui_port_files()
+        .iter()
+        .filter(|f| f.root == Root::GpuiAdapter)
+        .flat_map(gpui_adapter_violations)
+        .collect();
+    assert!(
+        violations.is_empty(),
+        "The GPUI adapter reaches the core outside startup composition:\n{}\n\nViews go through \
+         media_tagger_client; only boot.rs composes the core's startup phases, and nothing in \
+         the adapter touches SQLite or the workflow locks (ADR 0036).",
+        violations.join("\n")
     );
 }
 

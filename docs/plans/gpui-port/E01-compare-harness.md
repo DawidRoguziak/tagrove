@@ -83,3 +83,9 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-20 — implementer E00
+
+- Z epiku E00: zrzuty okna GPUI działają bez realnego ekranu dwiema ścieżkami i bez `vulkan-swrast`: (A) w procesie przez `gpui::HeadlessAppContext` + `gpui_platform::current_headless_renderer()` (tylko z cechą `test-support`, czyli w celach testowych; zrzut w skali 2), (B) prawdziwa binarka na prywatnym Xvfb + `import -window root` (GPUI przechodzi tam z Vulkana na EGL/llvmpipe). Komendy i czasy: notatki E00 i `docs/development/testing.md` („Screenshots of the GPUI window without a real display”).
+- Z epiku E00: binarkę E2E buduje `bun run gpui:build:e2e` (`scripts/gpui-build-e2e.mjs` eksportuje `gpuiE2eBinaryPath`, `gpuiE2eIdentifier`, `gpuiE2eWindowTitle`); `media_tagger_gpui --identifier` wypisuje wkompilowany identyfikator bez startu. Okno ma tytuł „Tagrove GPUI E2E” i `WM_CLASS` równy identyfikatorowi; `WM_DELETE_WINDOW` kończy proces kodem 0. Dane profilu leżą w `$XDG_DATA_HOME/com.example.mediatagger.gpui.e2e/`; sprzątanie tego katalogu (wzorem `e2e/wdio.conf.js`) należy do harnessu.
+- Z epiku E00: bez `WAYLAND_DISPLAY` i `DISPLAY` binarka kończy się błędem zamiast startować headless; pod Xvfb trzeba usunąć `WAYLAND_DISPLAY` z otoczenia.

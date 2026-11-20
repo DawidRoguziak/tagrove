@@ -75,3 +75,8 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-20 — implementer E00
+
+- Z epiku E00: `window.rs` otwiera okno z domyślnymi dekoracjami serwera i widokiem-zaślepką `views/hello.rs` (model `media_tagger_client::hello`); dekoracje po stronie klienta (D14) i właściwa powłoka należą do tego epiku, a `hello` można wtedy usunąć razem z testami `tests/hello_window.rs`. Rozmiar 1440×900 i minimum 1000×720 są przeniesione z `src-tauri/tauri.conf.json`; tytuł i `app_id` pochodzą z profilu (`profile.rs`).
+- Z epiku E00: `Boot` (AppState + blokada instancji) żyje w `media_tagger_gpui::run` do powrotu z pętli zdarzeń; `startup_scan_roots` czeka na single-flight skanu startowego.

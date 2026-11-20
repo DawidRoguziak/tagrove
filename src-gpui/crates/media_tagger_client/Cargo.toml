@@ -1,0 +1,14 @@
+[package]
+name = "media_tagger_client"
+description = "Tagrove presentation logic without a GUI: texts, theme tokens and models for the GPUI adapter."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Reached only through the Backend port (backend/core_backend.rs, epic E02); every other
+# file may import `media_tagger_core::{models, error}` only (architecture_boundaries).
+media_tagger_core.workspace = true
+serde_json.workspace = true

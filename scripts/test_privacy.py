@@ -62,6 +62,19 @@ class PrivacyTests(unittest.TestCase):
                 self.git('reset', '-q', 'HEAD', '--', name)
                 (self.root / name).unlink()
 
+    def test_build_output_of_both_cargo_workspaces(self):
+        for name in ['src-tauri/target/debug/media_tagger', 'src-tauri/target-e2e/debug/media_tagger',
+                     'src-gpui/target/debug/media_tagger_gpui', 'src-gpui/target-e2e/debug/media_tagger_gpui']:
+            with self.subTest(name=name):
+                self.write(name, 'synthetic build output')
+                self.assertEqual(self.git('check-ignore', name), name)
+                self.git('add', '-f', name)
+                result = self.check()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Forbidden tracked filename', result.stderr)
+                self.git('reset', '-q', 'HEAD', '--', name)
+                (self.root / name).unlink()
+
     def test_full_historical_secret_on_other_branch(self):
         branch = self.git('branch', '--show-current')
         self.git('checkout', '-qb', 'historical')

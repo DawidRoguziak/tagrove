@@ -1,6 +1,6 @@
 # System overview
 
-Implementation entry points: [Tauri bootstrap](../../src-tauri/src/lib.rs), [core startup phases](../../src-tauri/crates/media_tagger_core/src/app/bootstrap.rs), [workflow locks](../../src-tauri/crates/media_tagger_core/src/app/locks.rs), [application state](../../src-tauri/crates/media_tagger_core/src/app/state.rs).
+Implementation entry points: [Tauri bootstrap](../../src-tauri/src/lib.rs), [core startup phases](../../src-tauri/crates/media_tagger_core/src/app/bootstrap.rs), [workflow locks](../../src-tauri/crates/media_tagger_core/src/app/locks.rs), [application state](../../src-tauri/crates/media_tagger_core/src/app/state.rs), [GPUI bootstrap](../../src-gpui/crates/media_tagger_gpui/src/lib.rs).
 
 This page describes the architecture that is implemented today. The source code and executable configuration are authoritative.
 
@@ -170,6 +170,32 @@ The core/adapter boundary ([ADR 0034](../adr/0034-tauri-independent-backend-core
 
 The `InstanceLock` and `VideoPlayerService` are separately managed by Tauri so their lifetimes match the application. The player service owns one process-wide libmpv handle, one active session, a dedicated playback worker, and monotonically increasing request/session IDs. The worker owns libmpv commands and per-session event clients; GTK only enqueues playback commands, and its render handler never waits for libmpv's frame timing ([ADR 0012](../adr/0012-non-blocking-native-video-render.md)). `video/mpv_events.rs` checks native client creation and copies event information before the next poll invalidates it. Pending reservations can be cancelled before source resolution completes. It rejects stale controls and superseded opens, while retired-session closes are idempotent. `AppState.database` owns admission, the connection pool, and query state. One operation permit follows its connections and child workers. Idle connections retain no admission.
 
+## GPUI port: a second adapter in its own workspace
+
+A second interface is being built on the same core ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md), plan in [docs/plans/gpui-port](../plans/gpui-port/README.md)). The Tauri application above is unchanged and stays the behaviour reference; what exists of the port today is a placeholder window, and each epic of the plan adds to it.
+
+`src-gpui/` is a separate Cargo workspace with its own `Cargo.lock` and its own target directories (`src-gpui/target`, `src-gpui/target-e2e`). Its commands take `--manifest-path src-gpui/Cargo.toml`. `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` do not know it exists.
+
+| Package | Location | Responsibility |
+| --- | --- | --- |
+| `media_tagger_client` | `src-gpui/crates/media_tagger_client` | Presentation logic without a GUI: texts from `src/i18n/locales` (`i18n.rs`), colour tokens from `src/styles.css` (`theme.rs`), and the models the views draw (`hello.rs` for now). Both shared sources are embedded with `include_str!`, so the two interfaces cannot drift apart in copy or colour. |
+| `media_tagger_gpui` | `src-gpui/crates/media_tagger_gpui` | The GPUI adapter and the binary `media_tagger_gpui`: `profile.rs` (identifier allowlist, app-data directory), `boot.rs` (startup composition), `window.rs` (main window and event loop), `views/`. |
+
+Dependency direction: `media_tagger_gpui` → `media_tagger_client` → `media_tagger_core`. The core is the path dependency `../src-tauri/crates/media_tagger_core` and stays a member of the Tauri workspace, which is where its `*.workspace = true` keys resolve. GPUI itself (`gpui`, `gpui_platform`) comes only from the `zed-industries/zed` repository, pinned in `src-gpui/Cargo.toml` to the commit of a stable release tag.
+
+Startup of the GPUI binary (`media_tagger_gpui::run`): identifier guard → display check → app-data directory → `boot::start`, which runs the core phases in the Tauri order without the Tauri-only ones: `create_dir_all` → `InstanceLock::acquire` → `bootstrap::open_storage` → `bootstrap::resolve_ffmpeg_path` (resource directory: the executable's directory) → `bootstrap::start_workers`. The returned `Boot` owns `AppState`, the startup scan-root snapshot and the instance lock. Closing the last window ends the event loop (`QuitMode::LastWindowClosed`); `Boot` is dropped afterwards, which closes the database pool and then releases the instance lock, and the process exits with status 0. A main window that cannot open (no usable GPU adapter, for example) ends the event loop too: the quit is requested from a task inside the loop, because GPUI's Linux loop forgets a quit requested from the launch callback, and `run` returns `cannot open the main window: …` after `Boot` has been dropped (exit status 1). Dropping `Boot` does not stop the thumbnail workers: the core's scheduler has no shutdown, so its threads end with the process. `media_tagger_gpui --identifier` prints the baked identifier and exits without touching a display or the disk.
+
+The display check (`window::require_display`) runs before the profile is opened because GPUI only looks at whether the variables are set: with neither `WAYLAND_DISPLAY` nor `DISPLAY` it would start headless and never show a window to close, and with `WAYLAND_DISPLAY` set it never tries X11 and panics when no compositor answers. The check probes each named server with one socket connection, in GPUI's order (Wayland, then X11), and starts GPUI on the first that answers, so a stale `WAYLAND_DISPLAY` next to a live `DISPLAY` opens the window on X11. No variable, or no answer, is a startup error with exit status 1 and no app data touched. A server it cannot probe counts as answering: a compositor inherited through `WAYLAND_SOCKET`, and a `DISPLAY` that is not a local `:N`.
+
+Boundaries that the compiler cannot see are checked by `src-tauri/tests/architecture_boundaries.rs`, which scans `../src-gpui/crates`:
+
+- the manifest of `media_tagger_client` names no GUI crate (the `GUI_CRATES` list plus `gpui*`, `wgpu*`, `blade*` and `media_tagger_gpui`);
+- outside `backend/core_backend.rs` (the adapter of the client's `Backend` port, which a later epic adds) the client names only `media_tagger_core::{models, error}`;
+- outside `boot.rs` the GPUI adapter names only `media_tagger_core::{models, error}` and no use case, and no file of it, `boot.rs` included, contains a `db::` path, a lock helper, `Connection` or `admit`;
+- the core manifest names neither new crate.
+
+The two lock files are kept honest by `bun run gpui:lock-parity`: every package of the core's dependency closure that both locks contain has the same version, source and checksum in both, and every package of `src-gpui/Cargo.lock` comes from crates.io, from Zed at the pinned `rev`, or from a repository that Zed commit pins itself.
+
 ## Profiles, identifiers, and data isolation
 
 The effective Tauri identifier determines `app.path().app_data_dir()`, so it is the boundary for `media.db`, `thumbs/`, restore staging, and `instance.lock`.
@@ -186,6 +212,15 @@ All three window configurations set `decorations: false`. Profile overlays repea
 setting because their `windows` arrays replace the base array. Native window titles use the
 profile names above for task switchers and the E2E identity guard. The frontend headers own
 window controls and drag regions; see [frontend window controls](../frontend/architecture-and-ui-conventions.md#light-and-dark-visual-system).
+
+The GPUI port adds two profiles of its own and shares none with Tauri ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md)). The directory layout is the same: `${XDG_DATA_HOME:-~/.local/share}/<identifier>/` with `media.db`, `thumbs/` and `instance.lock`.
+
+| Profile | How it is selected | Window title | Identifier | Isolation behavior |
+| --- | --- | --- | --- | --- |
+| GPUI development | `bun run gpui:dev` (the default of `build.rs`) | `Tagrove GPUI Dev` | `com.example.mediatagger.gpui.dev` | Separate app data and `src-gpui/target`. |
+| GPUI E2E | `bun run gpui:build:e2e`, which sets `MEDIATAGGER_GPUI_IDENTIFIER` for the build | `Tagrove GPUI E2E` | `com.example.mediatagger.gpui.e2e` | Separate app data and `src-gpui/target-e2e`. The build script checks the profile list and the target path first and asks the finished binary for its identifier. |
+
+The GPUI identifier is baked into the binary at build time, and `profile::resolve` (`src-gpui/crates/media_tagger_gpui/src/profile.rs`) accepts exactly these two identifiers, in debug and release builds alike: the port has no release identifier until its cutover epic. A binary built with any other identifier, including the three Tauri identifiers, exits before it creates a directory. The window's application id (`WM_CLASS` on X11, `app_id` on Wayland) is the identifier.
 
 These profiles may run at the same time because their identifiers resolve to different data directories and lock files. Isolation relies on always selecting the intended config overlay. The debug guard allows only `com.example.mediatagger.dev` and `com.example.mediatagger.e2e`, protecting both the local release ID and configurable publisher IDs. The E2E runner adds stronger path/title checks before its destructive cleanup and again verifies the live window title before tests.
 
@@ -251,6 +286,7 @@ This split is deliberate. Changing the Tauri identifier changes the app-data dir
 - Query supersession is shared by the application runtime. Another window or independent caller can supersede this window's query; frontend generations separately reject late responses. Thumbnail request generations belong to individual hooks and are not compared globally. See [IPC limits](ipc-contract.md#known-limitations).
 - Many progress emissions deliberately ignore delivery errors; completion of the underlying operation does not guarantee that every progress update reached the WebView.
 - Packaging supports Linux x86-64 only. Local Flatpak builds use the example-domain identifier; publication validation requires a supplied publisher identity.
+- The GPUI port is not packaged and has no release profile. `gpui:lock-parity` compares versions, sources and checksums of the core's dependencies, not the Cargo features each workspace enables on them; packages that only one closure contains are listed, not failed. The `InstanceLock` of the GPUI adapter is covered by a unit test of `boot::start`; that a GPUI and a Tauri process run side by side on a desktop is not automated.
 
 ## Safe-change checklist
 
@@ -264,6 +300,7 @@ Before merging an architectural change:
 - For database writes, use transactions where a workflow must be atomic, bump the library revision when query-visible state changes, and invalidate process caches/pools when replacing the database. Follow [database](../subsystems/database.md) and [data safety](../subsystems/data-safety-and-portability.md) guidance.
 - For file mutations, define failure ordering and rollback/repair behavior across the database, source file, thumbnail, WAL/SHM sidecars, and restore staging.
 - Never reuse the production identifier or app-data cleanup target for dev/E2E. Preserve the E2E identifier/title/target assertions when changing configuration.
+- A change to a dependency of `media_tagger_core` updates both lock files, `src-tauri/Cargo.lock` and `src-gpui/Cargo.lock`, to the same versions; `bun run gpui:lock-parity` fails otherwise. Code for the GPUI port goes into `src-gpui/` and follows its layer rules: logic in `media_tagger_client`, views in `media_tagger_gpui`, the core only through `boot.rs` and the client's `Backend` port.
 - When changing product, crate, or binary names, update packaging, icons, E2E paths, user-visible text, and data migration intentionally.
 - When changing media loading, assess CSP, capabilities, asset-protocol scope, and whether paths can be constrained to registered roots and profile thumbnails.
 - When changing native media dependencies, verify libmpv/GTK/OpenGL linkage and both ffmpeg tools in the Linux artifact.
@@ -278,7 +315,10 @@ Use [testing](../development/testing.md) for the full test workflow. The most re
 - `src-tauri/tests/backend_integration.rs`: file-backed SQLite query, tag/group mutation, deletion, and clear flows.
 - `src-tauri/tests/backend_e2e.rs`: a Rust-only end-to-end CSV merge/library-clear workflow; despite its name, it does not launch Tauri or validate profiles and packaging.
 - `src-tauri/tests/{backend_runtime,tag_vocabulary,thumbnail_bulk,thumbnail_clear}.rs`: runtime permits/locks, tag vocabulary, bulk thumbnail rendering, and thumbnail clearing; `tag_save_benchmark.rs` holds the ignored tag-save benchmark.
-- `src-tauri/tests/architecture_boundaries.rs`: the core manifest check, the import rules the compiler cannot see, the `manage(AppState)`-last check of `lib.rs` ([ADR 0034](../adr/0034-tauri-independent-backend-core.md)), and a frozen snapshot of the IPC wire contract (registered commands, wire arguments, DTO JSON shapes, event names).
+- `src-tauri/tests/architecture_boundaries.rs`: the core manifest check, the import rules the compiler cannot see, the `manage(AppState)`-last check of `lib.rs` ([ADR 0034](../adr/0034-tauri-independent-backend-core.md)), the rules for the two crates of the GPUI workspace ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md)), and a frozen snapshot of the IPC wire contract (registered commands, wire arguments, DTO JSON shapes, event names).
+- `cargo test --manifest-path src-gpui/Cargo.toml --locked`: the GPUI workspace. `media_tagger_client`: locale lookup, theme tokens, the placeholder model. `media_tagger_gpui`: the profile allowlist and app-data directory, the display check against sockets in temporary directories, startup composition on temporary profiles (instance lock, corrupt database, two profiles side by side), the order of the startup guards and the binary's exit status (`tests/startup.rs`), the main window in GPUI's test platform, and the same window through the in-process headless renderer.
+- `cargo tree --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client -e normal`: the client lists no `gpui`, `wgpu`, `blade`, `tauri`, `gtk`, `webkit` or `libmpv` package.
+- `bun run gpui:lock-parity` and `bun run test:gpui-tools`: the two lock files agree on the core's dependencies and `src-gpui/Cargo.lock` has only reviewed sources; the check's own tests show it failing after a drift.
 - `cargo build --manifest-path src-tauri/Cargo.toml --locked -p media_tagger_core` and `cargo tree --manifest-path src-tauri/Cargo.toml --locked -p media_tagger_core -e normal`: the core builds alone and lists no GUI crate.
 - `e2e/build-e2e.js` and `e2e/wdio.conf.js`: destructive-test isolation and real desktop build/driver setup.
 - `e2e/specs/*.e2e.js`: real-window smoke and workflows covering settings, filtering, roots, bulk edits, lightbox mutations, CSV, and DB bundles.

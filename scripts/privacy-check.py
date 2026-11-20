@@ -35,7 +35,7 @@ def forbidden(name):
     return (any(fnmatch.fnmatchcase(parts[-1].lower(), pattern) for pattern in FORBIDDEN)
             or bool(LOCAL_DIRECTORIES.intersection(parts))
             or parts[-1] == 'instance.lock'
-            or name.startswith(('src-tauri/target/', 'src-tauri/target-')))
+            or name.startswith(('src-tauri/target/', 'src-tauri/target-', 'src-gpui/target/', 'src-gpui/target-')))
 
 
 def private_paths(data, names=()):

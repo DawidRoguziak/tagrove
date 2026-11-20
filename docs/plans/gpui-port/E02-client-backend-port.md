@@ -83,3 +83,9 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-20 — implementer E00
+
+- Z epiku E00: zwolnienie `Boot` nie zatrzymuje wątków `ThumbnailScheduler` (rdzeń nie ma zamknięcia schedulera; wątki kończą się z procesem), więc render w toku może pisać do `thumbs/` po oddaniu blokady instancji. Jeśli potok miniatur tego epiku wymaga uporządkowanego zamknięcia, jest to addytywna zmiana rdzenia do nazwania w pliku epiku.
+- Z epiku E00: `media_tagger_gpui::boot::start` zwraca `Boot { state: AppState, startup_scan_roots, .. }`; z tego powstaje `CoreBackend`. Jedyny plik klienta, który może importować `media_tagger_core::{usecases, services, app, …}`, musi się nazywać `backend/core_backend.rs` (stała `CLIENT_CORE_BACKEND` w `src-tauri/tests/architecture_boundaries.rs`); reszta klienta: tylko `models` i `error`, a alias, glob albo gołe `use media_tagger_core` jest naruszeniem.
+- Z epiku E00: `[workspace.dependencies]` w `src-gpui/Cargo.toml` ma już `serde_json` i `tempfile` (wersje jak w locku Tauri). Każda nowa zależność rdzenia albo klienta, która trafia do domknięcia rdzenia, musi mieć w `src-gpui/Cargo.lock` wersję z `src-tauri/Cargo.lock` (`bun run gpui:lock-parity`).

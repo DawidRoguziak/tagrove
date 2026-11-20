@@ -69,8 +69,8 @@
       "size": "L",
       "tier": "hard",
       "deps": [],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-20",
       "sources": [
         "src-tauri/Cargo.toml",
         "src-tauri/crates/media_tagger_core/Cargo.toml",

@@ -77,3 +77,7 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-20 — implementer E00
+
+- Z epiku E00: klient ma minimalne `i18n::Catalog` (tylko `en.json`, zwykłe klucze z kropkami, bez liczby mnogiej i interpolacji) i `theme::css_color_token` (tylko kolory hex z bloków `@plugin "daisyui/theme"` w `src/styles.css`; tokeny pochodne z `var()`/`color-mix()` nie są rozwiązywane). Oba pliki są wczytywane przez `include_str!("../../../../src/…")`. E03 je zastępuje albo rozszerza; `hello.rs` korzysta z obu.

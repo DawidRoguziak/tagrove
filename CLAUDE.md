@@ -8,9 +8,9 @@ Tagrove is a Linux desktop app for browsing and tagging very large local collect
 ## Hard rules
 
 - **The repository is public.** Never commit secrets, tokens, keys, personal data, private paths, private media, local databases, or logs and screenshots that contain private information. Use synthetic fixtures and anonymized examples. Review the staged diff for private content before every commit. `bun run privacy:check` (Gitleaks plus a custom scanner over the full history) is a backstop, not a replacement for that review.
-- **App-data profiles are isolated by identifier.** Use `bun run tauri:dev` and never plain `tauri dev`: a debug build with the release identifier refuses to start (`src-tauri/src/lib.rs`, `src-tauri/src/app/profile.rs`). Never weaken the identifier, target-dir, title, or app-data cleanup guards in `e2e/build-e2e.js`, `e2e/wdio.conf.js`, or `e2e/control.js`.
+- **App-data profiles are isolated by identifier.** Use `bun run tauri:dev` and never plain `tauri dev`: a debug build with the release identifier refuses to start (`src-tauri/src/lib.rs`, `src-tauri/src/app/profile.rs`). Never weaken the identifier, target-dir, title, or app-data cleanup guards in `e2e/build-e2e.js`, `e2e/wdio.conf.js`, `e2e/control.js`, or the comparison harness (`e2e/compare/gpui-control.js`, `e2e/compare/gpui-control-support.js`, `scripts/gpui-build-e2e.mjs`).
 - **Destructive tests** (delete, clear, restore, duplicate resolution) index only fresh temporary media roots. Never use personal folders, the repo root, or real app data. Rust tests use `tempfile` or in-memory SQLite.
-- **Desktop E2E runs one at a time.** `bun run test:e2e:tauri`, `bun run tauri:build:e2e`, and `bun run app:control` share `dist/`, `src-tauri/target-e2e`, and ports 4444/4446/4447. Never kill processes by name, and never delete a lock just because a client cannot connect.
+- **Desktop E2E runs one at a time.** `bun run test:e2e:tauri`, `bun run tauri:build:e2e`, and `bun run app:control` share `dist/`, `src-tauri/target-e2e`, and ports 4444/4446/4447. `bun run gpui:control` and `bun run compare:ui` are display-bound as well (each starts its own private Xvfb) and join the same queue: `compare:ui` runs `app:control` sessions itself and then one `gpui:control` session (`src-gpui/target-e2e`, lock `artifacts/gpui-control/active.lock`). Both refuse to start beside an `app:control` lock, a running `test:e2e:tauri`, or a taken driver port, but the Tauri commands do not look for a GPUI session, so never start them while `artifacts/gpui-control/active.lock` exists. Never kill processes by name, and never delete a lock just because a client cannot connect.
 - **Lockfiles:** Cargo commands always use `--locked`. Don't rewrite `bun.lock` or `Cargo.lock` as a side effect, and use `bun install --frozen-lockfile` unless you are changing dependencies.
 - **Leave alone** the root-owned leftovers `.dist.root-stage*`, `.node_modules.root-stage*`, and `src-tauri/.target-*-root-stage*`, plus the ignored output folders `artifacts/`, `raports/`, and `output/`. They are not sources.
 - **Source wins over docs.** Source, executable config, and tests define current behavior; `docs/` explains it. When they disagree, fix the owning doc page in the same change. Keep intended conventions separate from what is enforced and what is tested.
@@ -61,9 +61,10 @@ src-tauri/                Cargo workspace (Cargo.toml: members, [workspace.depen
     indexer.rs, thumbs.rs, models.rs, error.rs, utils/, test_support.rs (feature test-support)
   tests/                 Rust integration targets (adapter package; import media_tagger_core)
 src-gpui/                 second Cargo workspace: the GPUI port (own Cargo.toml, Cargo.lock, target/, target-e2e/; ADR 0036)
-  crates/media_tagger_client/   presentation logic without a GUI: i18n.rs, theme.rs, models (core only via models/error and, later, backend/core_backend.rs)
-  crates/media_tagger_gpui/     GPUI adapter and binary `media_tagger_gpui`: lib.rs (run), profile.rs, boot.rs (startup composition), window.rs, views/, build.rs (bakes the identifier)
+  crates/media_tagger_client/   presentation logic without a GUI: i18n.rs, theme.rs, scenario.rs (comparison scenario catalogue), models (core only via models/error and, later, backend/core_backend.rs)
+  crates/media_tagger_gpui/     GPUI adapter and binary `media_tagger_gpui`: lib.rs (run), cli.rs (strict arguments), profile.rs, scenario.rs (`--scenario` start states, E2E profile only), boot.rs (startup composition), window.rs, views/, build.rs (bakes the identifier)
 e2e/                     WebdriverIO desktop E2E (specs/), app:control driver (control.js)
+  compare/               Tauri ↔ GPUI comparison harness: gpui-control.js, compare.js, scenarios/ (testing.md "Comparison harness")
 docs/                    owning documentation per subsystem (see index below)
   adr/                   Architecture Decision Records (NNNN-title.md, template.md)
 packaging/, scripts/     Linux packaging (Flatpak/AppImage/native), privacy and locale tooling, GPUI lock guard and E2E build (gpui-*.{py,mjs})
@@ -123,6 +124,13 @@ cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui <na
 cargo tree --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client -e normal   # must list no gpui/wgpu/blade/tauri/gtk/webkit/libmpv
 bun run gpui:lock-parity          # core dependencies identical in both Cargo.lock files; only reviewed sources in src-gpui/Cargo.lock
 bun run test:gpui-tools && bun run audit:gpui
+
+# Comparison harness Tauri ↔ GPUI (display-bound and serial like desktop E2E; needs Xvfb, xprop, ImageMagick; testing.md "Comparison harness")
+bun run test:compare              # harness unit tests (node --test e2e/compare); no display, part of quality
+bun run compare:ui --list         # known scenarios (e2e/compare/scenarios/, scenario.rs, epics.json stay in step)
+bun run compare:ui <scenario>...  # tauri.png, gpui.png, side-by-side.png, result.json in artifacts/gpui-compare/<scenario>/; about a minute per scenario
+bun run gpui:control start [--scenario <id>]   # GPUI E2E binary on a private Xvfb; prints READY with the session ID
+bun run gpui:control scenario|screenshot|doctor|logs|stop <session>
 
 # Desktop E2E (needs tauri-driver, WebKitWebDriver, Xvfb, dbus; see testing.md)
 bun run test:e2e:tauri --spec e2e/specs/app.smoke.e2e.js
@@ -195,7 +203,7 @@ Read only the pages relevant to the task. For work that crosses subsystems, also
 | Settings controllers, operation runner, progress, scan/thumbnail actions, duplicates, confirmations | `docs/subsystems/settings-operations.md` |
 | Destructive FS/DB operations, duplicates, CSV, backup format, restore staging, rollback | `docs/subsystems/data-safety-and-portability.md` |
 | Setup, dependencies, Vite/TS config, profiles, builds, diagnostics | `docs/development/setup-and-build.md` |
-| Test layers, commands, fixtures, E2E isolation, troubleshooting | `docs/development/testing.md` |
+| Test layers, commands, fixtures, E2E isolation, Tauri ↔ GPUI comparison harness, troubleshooting | `docs/development/testing.md` |
 | Staged multi-agent audit: stages, roles and models, QA safety, scenario catalog | `docs/development/audit/README.md` |
 | Languages, locale key/placeholder invariants, adding translations | `docs/development/localization.md` |
 | Flatpak/AppImage/native packaging, licenses | `docs/development/linux-packaging.md` |

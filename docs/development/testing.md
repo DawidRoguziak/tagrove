@@ -42,13 +42,16 @@ Run commands from the repository root.
 | `bun run audit:js` | Runs `bun audit --production --audit-level=high`. |
 | `bun run audit:rust` | Runs Cargo audit against the Rust lockfile with the advisory exclusions described below. Requires `cargo-audit`. |
 | `bun run test:client` | Runs the locked tests of `media_tagger_client` in the GPUI workspace (`src-gpui/Cargo.toml`). No GUI stack is compiled for it. |
-| `bun run test:gpui` | Runs the locked tests of `media_tagger_gpui`: unit tests and the integration targets `hello_window` and `startup`. Needs no display; see [GPUI workspace](#gpui-workspace). |
+| `bun run test:gpui` | Runs the locked tests of `media_tagger_gpui`: unit tests and the integration targets `hello_window`, `scenario`, `scenario_window` and `startup`. Needs no display; see [GPUI workspace](#gpui-workspace). |
 | `bun run gpui:fmt` | Runs `cargo fmt --all -- --check` for the GPUI workspace. |
 | `bun run gpui:clippy` | Runs locked Clippy for all targets/features of the GPUI workspace, denying warnings. |
 | `bun run gpui:lock-parity` | Runs `scripts/gpui-lock-parity.py`: the core's dependencies are identical in `src-tauri/Cargo.lock` and `src-gpui/Cargo.lock`, and the GPUI lock has only reviewed sources. |
 | `bun run test:gpui-tools` | Runs the tests of the lock guard (`scripts/test_gpui_lock_parity.py`, synthetic locks plus the repository's own) and of the GPUI E2E build script (`scripts/gpui-build-e2e.test.mjs`, with a fake `cargo` in a disposable project). |
 | `bun run audit:gpui` | Runs Cargo audit against `src-gpui/Cargo.lock` with no advisory exclusions. Requires `cargo-audit`. |
-| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with the explicit advisory exclusions in `audit:rust`; then the GPUI workspace part: `gpui:fmt`, `gpui:clippy`, `gpui:lock-parity`, `test:gpui-tools` and `audit:gpui`. |
+| `bun run gpui:control` | Keeps the GPUI E2E binary open on a private Xvfb display with scratch XDG directories: named start states and screenshots, no input. See [comparison harness](#comparison-harness-tauri-and-gpui). |
+| `bun run compare:ui` | Captures the named scenarios in the Tauri application (through `app:control`) and in the GPUI application (through `gpui:control`) and writes both screenshots, a side-by-side image and `result.json` to `artifacts/gpui-compare/<scenario>/`. Display-bound; never next to another desktop run. |
+| `bun run test:compare` | Runs `node --test e2e/compare`: the guards, catalogue and result tests of the comparison harness. Needs ffmpeg and no display. |
+| `bun run quality` | Runs locale validation/tests, application and Vite/Vitest type checks, Biome lint/format checks, rustfmt, locked Clippy with warnings denied, production Bun audit, and RustSec audit with the explicit advisory exclusions in `audit:rust`; then the GPUI workspace part: `gpui:fmt`, `gpui:clippy`, `gpui:lock-parity`, `test:gpui-tools`, `test:compare` and `audit:gpui`. |
 | `bun run test:all` | Sequentially runs `quality`, frontend Vitest, the complete locked Rust test suite, the GPUI workspace tests (`test:client`, `test:gpui`), and desktop E2E. It stops at the first failed layer. |
 
 `bun run tauri:build:e2e` is a test-support script rather than a test runner. It invokes `e2e/build-e2e.js` to create the isolated unbundled debug executable. It runs `bun run build` for the application before invoking Tauri. Its overlay disables the redundant `beforeBuildCommand`.
@@ -63,6 +66,9 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked --test backend_integrat
 cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client test_name
 cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui --test hello_window
 cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui --test startup
+cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui --test scenario
+cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui --test scenario_window
+node --test e2e/compare/scenarios.test.js
 ```
 
 There is no numeric coverage threshold. Run the frontend and backend suites explicitly; they are not CI merge gates.
@@ -184,14 +190,19 @@ The GPUI port ([ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.m
 | Where | What it proves |
 | --- | --- |
 | `media_tagger_client` unit tests (`i18n.rs`, `theme.rs`, `hello.rs`) | Dotted locale keys resolve in the embedded `src/i18n/locales/en.json`; hex colour tokens are read from the named theme block of `src/styles.css`; the placeholder model carries the shared text and tokens. |
+| `media_tagger_client::scenario` | Scenario ids are matched whole, are unique and are safe as file names; every scenario is in `scenarios` of `docs/plans/gpui-port/epics.json` and has its Tauri steps in `e2e/compare/scenarios/<id>.js`. |
+| `media_tagger_gpui::cli` | No argument starts the application; `--identifier` stands alone; `--scenario` takes exactly one id; every other argument is refused with its text. |
+| `media_tagger_gpui::scenario` | Without a scenario every profile starts in the default (dark) state; the E2E profile starts in every catalogued scenario; the dev profile refuses a scenario before looking it up; an unknown id is refused with the known ids. |
 | `media_tagger_gpui::profile` | Only `com.example.mediatagger.gpui.dev` and `.gpui.e2e` resolve; the three Tauri identifiers and publisher identifiers are refused with a message naming the identifier; the app-data directory follows `XDG_DATA_HOME`, then `HOME`. |
 | `media_tagger_gpui::boot` | `start` on a temporary profile creates `instance.lock`, `media.db` and `thumbs/`; a second start on the same directory is refused until the first is dropped; two profiles run side by side; a corrupt database stops the startup, stays unchanged and does not keep the lock. |
 | `media_tagger_gpui::window` | The display check: no `WAYLAND_DISPLAY` and no `DISPLAY` is an error instead of a headless start; a listening Wayland socket is found by absolute path and by name in `XDG_RUNTIME_DIR`; a socket file whose server is gone, a missing socket and a relative name without `XDG_RUNTIME_DIR` are refused; a dead `WAYLAND_DISPLAY` falls back to a live local X display and Wayland wins when both answer; an inherited `WAYLAND_SOCKET` and a non-local `DISPLAY` are not probed. The event loop: `a_window_that_cannot_open_ends_the_event_loop_with_its_error` runs GPUI's real Linux platform headless in a child process with an opener that fails, and requires the loop to end with `cannot open the main window: …` instead of running on without a window (the child is stopped after 30 s). |
 | `tests/startup.rs` | The startup guards in the order `run` promises, through `run_with` with an injected identifier and environment: an identifier off the allowlist is refused before the display check and before anything is written; no display, and a display that does not answer, stop before the app-data directory exists; a relative data home is refused; a profile held by another instance stops before the window. Where the check has to pass, a socket in a temporary directory stands in for the compositor. The built binary: `--identifier` prints an allowed identifier, and without a display or with one that does not answer it exits with status 1, the `Tagrove GPUI cannot start` message and no app data. |
+| `tests/scenario.rs` | Through `run_scenario_with`: the dev profile and an identifier off the allowlist refuse a scenario, and the E2E profile refuses an unknown one, before the display check and with no app data; a catalogued scenario on the E2E profile goes on to the display check. The built binary refuses `--scenario` unless it is the E2E build and refuses unknown or conflicting arguments, with status 1 and no app data. |
+| `tests/scenario_window.rs` | The window a scenario starts in, for every entry of `SCENARIOS` on the E2E profile: the screen is in English on the background token of the scenario's theme, and the light scenario does not draw the dark background. On GPUI's test platform (`TestAppContext`), opening a scenario twice gives the same text, viewport (the 1440×900 capture size) and text bounds, and the light scenario lays out like the dark one. `scenario_captures_repeat_and_show_their_theme` renders each scenario twice through the headless renderer and requires identical pixels and the scenario's background in every corner. Needs no display; the pixel case skips without a renderer, as described below. |
 | `tests/hello_window.rs`, `#[gpui::test]` cases | GPUI's test platform (`TestAppContext`): the main window options carry the profile's title, application id and minimum size, and the shared text is laid out in the centre of the window. |
 | `tests/hello_window.rs`, `hello_window_renders_through_the_headless_renderer` | The real view rendered in-process by `HeadlessAppContext` with GPUI's wgpu renderer and the platform text system: the capture has the window's size, its corners have the theme's background colour and the text is drawn. |
 
-The headless test needs a wgpu adapter. A GPU works without a display, and so does Mesa's software rasterizer through EGL, which is what a sandbox without `/dev/dri` uses. With no adapter at all the test prints `skipped` and passes; set `MEDIATAGGER_GPUI_REQUIRE_RENDERER=1` to make that a failure. `MEDIATAGGER_GPUI_SCREENSHOT_DIR=<existing directory>` makes it write `hello-headless.png` there.
+The two headless-renderer tests (`hello_window_renders_through_the_headless_renderer` and `scenario_captures_repeat_and_show_their_theme`) need a wgpu adapter. A GPU works without a display, and so does Mesa's software rasterizer through EGL, which is what a sandbox without `/dev/dri` uses. With no adapter at all each test prints `skipped` and passes; set `MEDIATAGGER_GPUI_REQUIRE_RENDERER=1` to make that a failure. `MEDIATAGGER_GPUI_SCREENSHOT_DIR=<existing directory>` makes the `hello_window` test write `hello-headless.png` there.
 
 ### Screenshots of the GPUI window without a real display
 
@@ -219,7 +230,54 @@ Two paths work on a machine whose only Vulkan driver is a hardware one, with no 
 
    The window's title is the profile title and its `WM_CLASS` is the identifier. Sending `WM_DELETE_WINDOW` closes the window and the process exits with status 0. Stop only the process ID you started, never by name.
 
-A real screen is never used for captures. The comparison harness of the port (a later epic) builds on these two paths.
+A real screen is never used for captures. The [comparison harness](#comparison-harness-tauri-and-gpui) uses the second path.
+
+### Comparison harness (Tauri and GPUI)
+
+`bun run compare:ui <scenario> [<scenario> ...]` captures the same named state of both applications on the same synthetic data, so that the screenshots can be compared by eye or by an agent (plan decision D10: layout, tokens and content, not pixels). `bun run compare:ui --list` prints the scenarios it knows. For each scenario it leaves, in the ignored `artifacts/gpui-compare/<scenario>/`:
+
+| File | Content |
+| --- | --- |
+| `tauri.png` | The private 1440×900 display with the Tauri window, taken through `app:control`. This is the reference. |
+| `gpui.png` | The private 1440×900 display with the GPUI window, taken through `gpui:control`. |
+| `side-by-side.png` | Both captures joined left to right (Tauri, then GPUI). |
+| `result.json` | Scenario id, description (from `docs/plans/gpui-port/epics.json`), theme, seed, and per side `ok`, file, size, window title and the pixel signature (`magick identify -format %#`), or the error. It holds no time and no absolute path, so two runs that draw the same pixels write the same file. In an error the checkout, the temporary directory and the home directory read `<checkout>`, `<tmp>` and `<home>`, and any other absolute path reads `<path>`; the console output of the run keeps the full text. An error still names its control session, so it can differ between two failed runs. |
+
+The scenario directory is emptied at the start of a run, so a rerun leaves the same set of files. When a Tauri step fails, the display at that moment is kept as `tauri-failed.png`, `result.json` records the error, no `side-by-side.png` is written, and the command exits with status 1 after the remaining scenarios.
+
+A **scenario** is one file `e2e/compare/scenarios/<id>.js` with `{ id, theme, seed, tauri }`, an entry in `SCENARIOS` of `src-gpui/crates/media_tagger_client/src/scenario.rs`, and an entry in `scenarios` of `docs/plans/gpui-port/epics.json`; `e2e/compare/scenarios.test.js` and the unit tests of `scenario.rs` keep the three in step, including the theme.
+
+- **Tauri side.** `app:control start` always begins in English with the dark theme and its own seed indexed (four PNGs, one GIF, two MP4s). `tauriSteps` in `e2e/compare/scenarios.js` turns the declared state into `app:control` commands: the light theme is chosen on the settings page, `seed: "empty"` removes the seeded scan root through the settings page, and a reload follows, so the capture shows what a fresh start on that profile shows. The scenario's own `tauri` steps come next (`[command, ...arguments]`, validated by `validateRequest` of `e2e/control-support.js`; only acting commands, `wait` and `refresh`), then `wait idle`. `e2e/control.js` itself is unchanged.
+- **GPUI side.** `media_tagger_gpui --scenario <id>` starts the application in the state of that id. Only the E2E build accepts it: `scenario::start_state` refuses a scenario on the dev profile and an unknown id before the display check, so nothing is written. There is no input driver for the GPUI window; a scenario is a start state.
+- **Seed.** `e2e/compare/seed.js` builds the media directory of a GPUI scenario from `e2e/fixtures.js` with the file names `app:control` uses (`control`), or leaves it empty (`empty`), in the session's scratch root. Its path is exported to the application as `MEDIATAGGER_GPUI_SCENARIO_MEDIA`. The first two scenarios (`shell-empty`, `shell-empty-light`) use the empty seed; indexing a seeded directory at startup arrives with the first scenario that needs a library.
+
+The two applications never run at the same time. Every Tauri capture uses its own `app:control` session (start, steps, screenshot, stop), because the steps change the profile; then one GPUI session serves all scenarios. Each `app:control start` rebuilds the frontend and relinks the E2E binary, so a scenario costs about a minute on the Tauri side.
+
+#### `bun run gpui:control`
+
+`e2e/compare/gpui-control.js` is the counterpart of `app:control` for the GPUI adapter, without input commands:
+
+```sh
+bun run gpui:control start [--scenario <id>]   # keep it running; prints BUILD, then READY with the session ID
+bun run gpui:control scenario <session> <id>   # restart the application in a named state
+bun run gpui:control screenshot <session>      # capture the private display
+bun run gpui:control doctor <session>
+bun run gpui:control logs <session>
+bun run gpui:control stop <session>
+```
+
+- **Guards.** `start` refuses before it builds or locks anything when `scripts/gpui-build-e2e.mjs` does not name the identifier `com.example.mediatagger.gpui.e2e`, the title `Tagrove GPUI E2E`, the target directory `src-gpui/target-e2e` and the binary inside it (`validateGpuiIdentity`). After `bun run gpui:build:e2e` it asks the binary for its baked identifier again. The doctor, which runs before `screenshot` and after `scenario`, requires the live window to carry that title, the identifier as its window class and the process ID of the application the session started, and the profile to be open inside the session's scratch root.
+- **One display-bound run at a time.** `start` and `compare:ui` refuse while `artifacts/app-control/active.lock` exists or while the wdio launcher of `bun run test:e2e:tauri` runs in this checkout (found in the process table: the `wdio` CLI with this checkout's `e2e/wdio.conf.js`, resolved against its working directory). `start` also refuses while a desktop driver port (4444, 4446, 4447) is taken, and checks all of this again once it holds its lock. The session's own lock is `artifacts/gpui-control/active.lock`; `compare:ui` refuses while it exists. A lock is only ever removed by the session that wrote it, and only while it still names that session; no process is signalled by name.
+- **Isolation.** Each session gets a new root `media-tagger-gpui-control-*` under `realpath(os.tmpdir())` with `data`, `config`, `cache`, `runtime` (mode 700) and `media`, and an authenticated Xvfb (`1440x900x24`, TCP disabled) on an explicit display from `:90` up, never `:0` or `:1`. The application runs with those XDG directories, without `WAYLAND_DISPLAY`, and with a D-Bus address inside the scratch root where no bus listens, so it does not reach the desktop portal of the user's session. No `dbus-run-session` is needed. `scenario` stops the application, removes only `<scratch>/data/com.example.mediatagger.gpui.e2e` and `<scratch>/media`, seeds, and starts it again.
+- **Readiness.** A launch waits until a window with the E2E title has its class and process ID set, then until two captures 200 ms apart have the same pixels and differ from the display before the launch. The window exists before its first frame is presented, so the title alone is not enough. Xvfb has no DRI3; GPUI draws through EGL with Mesa's software rasterizer there.
+- **Captures** go through `assertPrivateDisplay` of `e2e/display.js` with a display and authority file taken from the session manifest only.
+- **Stop.** `stop`, SIGINT, SIGTERM and SIGHUP stop the owned process groups, remove the marked scratch root and then the lock; once a stop has begun the session spawns nothing more, so an interrupted start does not retry its Xvfb or launch the application; evidence (`session.json`, `process.log`, `actions.jsonl`, screenshots) stays under `artifacts/gpui-control/<session>/`. A signalled `start` exits with 129, 130 or 143. `compare:ui` starts the session over an IPC channel, and the session stops itself the same way when that launcher disappears. `compare:ui` stops the session it started on every path, including a failed step and its own SIGINT/SIGTERM/SIGHUP (exit 129, 130 or 143). If owned processes cannot be stopped, the scratch root and the lock stay for inspection, as with `app:control`.
+
+Prerequisites beyond those of `app:control`: `xprop` and ImageMagick's `magick`.
+
+`bun run test:compare` (`node --test e2e/compare`, which loads every `*.test.js` of the directory through `e2e/compare/index.js`) needs no display. It covers the identity guards, the scratch and profile cleanup guards, the lock, the application and X-tool environments, the window identity parser, the launcher lookup against fake process tables, the scenario catalogue and its agreement with `epics.json` and the Rust catalogue, the generated Tauri steps, the seeds (ffmpeg), the result file (including that the error of a failed side reaches it without an absolute path), and `e2e/compare/guards.test.js`, which runs both commands in a disposable copy of the checkout with a fake `bun` and requires a refusal with nothing built, locked or started when an `app:control` lock, a GPUI lock or a running desktop E2E launcher is present, or when the build script names another identifier, title, target directory or binary. One case of that file lets `start` run up to its Xvfb with stand-ins for the build, the binary and the X tools (an `Xvfb` that never reports ready), interrupts it with SIGTERM and requires exit status 143, no second Xvfb, no process, no scratch root and no lock. `start` probes the machine's driver ports (4444, 4446, 4447) before its own lock, so that case and the GPUI-lock case report `skipped` while another program holds one of those ports.
+
+Not covered by an automated test: the session with the real tools (Xvfb, the built binary, capture, stop and signal cleanup after readiness), which needs a display and a build. It was verified by running `bun run compare:ui shell-empty shell-empty-light` twice (same files and the same four pixel signatures), by interrupting `gpui:control start` with SIGTERM, `compare:ui` with SIGTERM during its Tauri session and with SIGKILL during its GPUI session, and checking each time that no lock, scratch root, Xvfb or application process was left. A SIGKILL of `compare:ui` during its Tauri session leaves the `app:control` session running; stop it with `bun run app:control stop <session>`.
 
 ## Packaging checks
 
@@ -757,6 +815,7 @@ For documentation-only changes, verify local links/anchors, referenced commands 
 - Specs start in English/dark after the title guard; translated scenarios must switch language explicitly.
 - An `EPERM` during E2E app-data deletion leaves stale isolated data and does not fail fast.
 - Desktop runs share `dist/`, the E2E target and driver port. Run them serially, including standalone E2E builds.
+- `compare:ui` shows that both applications were captured in the named state; it does not compare pixels and has no threshold. Its GPUI session has no input commands, and no automated test starts a real session (see [comparison harness](#comparison-harness-tauri-and-gpui)).
 - Native video playback depends on libmpv, GTK, and OpenGL. WebDriver sees the native session container and backend snapshot attributes, but not decoded `GtkGLArea` pixels or the native GTK control overlay.
 - A private `XDG_RUNTIME_DIR` has no PipeWire or PulseAudio socket, so desktop runs that follow the documented recipe play video through libmpv's null audio output. No suite verifies audible output, and no suite measures frame pacing or A/V sync.
 - Backend fixtures cover many filesystem semantics but do not constitute exhaustive testing on every supported filesystem or operating system.

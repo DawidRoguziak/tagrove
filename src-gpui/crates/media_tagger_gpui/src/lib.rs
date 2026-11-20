@@ -7,31 +7,49 @@
 //! crate. `src-tauri/tests/architecture_boundaries.rs` enforces both.
 
 pub mod boot;
+pub mod cli;
 pub mod profile;
+pub mod scenario;
 pub mod views;
 pub mod window;
 
 use std::{error::Error, ffi::OsString};
 
-use media_tagger_client::{hello::HelloScreen, theme::ThemeName};
+use media_tagger_client::hello::HelloScreen;
 
 /// Starts the application and returns after its last window has closed.
 ///
-/// Order: identifier guard → display check (a named display server must answer) →
-/// app-data directory → `boot::start` (instance lock, storage, ffmpeg, workers) → window.
-/// Nothing touches the disk before the identifier guard has passed, and nothing opens
-/// the profile before a display server has answered.
-pub fn run() -> Result<(), Box<dyn Error>> {
-    run_with(profile::BUILT_IDENTIFIER, &|name| std::env::var_os(name))
+/// Order: identifier guard → scenario guard → display check (a named display server
+/// must answer) → app-data directory → `boot::start` (instance lock, storage, ffmpeg,
+/// workers) → window. Nothing touches the disk before the identifier and scenario
+/// guards have passed, and nothing opens the profile before a display server has
+/// answered.
+///
+/// `scenario` is the id given with `--scenario`; see [`scenario::start_state`].
+pub fn run(scenario: Option<&str>) -> Result<(), Box<dyn Error>> {
+    run_scenario_with(profile::BUILT_IDENTIFIER, scenario, &|name| {
+        std::env::var_os(name)
+    })
 }
 
-/// [`run`] with the identifier and the environment passed in, so tests can drive the
-/// startup guards without a baked identifier or the process environment.
+/// [`run`] without a scenario, with the identifier and the environment passed in, so
+/// tests can drive the startup guards without a baked identifier or the process
+/// environment.
 pub fn run_with(
     identifier: &str,
     env: &dyn Fn(&str) -> Option<OsString>,
 ) -> Result<(), Box<dyn Error>> {
+    run_scenario_with(identifier, None, env)
+}
+
+/// [`run`] with the identifier and the environment passed in.
+pub fn run_scenario_with(
+    identifier: &str,
+    scenario: Option<&str>,
+    env: &dyn Fn(&str) -> Option<OsString>,
+) -> Result<(), Box<dyn Error>> {
     let profile = profile::resolve(identifier)?;
+    let start = scenario::start_state(profile, scenario)?;
     let display = window::require_display(&window::DisplayEnvironment {
         wayland_display: env("WAYLAND_DISPLAY"),
         wayland_socket: env("WAYLAND_SOCKET"),
@@ -43,7 +61,7 @@ pub fn run_with(
         env("XDG_DATA_HOME").as_deref(),
         env("HOME").as_deref(),
     )?;
-    let screen = HelloScreen::load(ThemeName::default())?;
+    let screen = HelloScreen::load(start.theme)?;
 
     // Held until the event loop has returned. Dropping it closes the database pool and
     // then releases the profile's instance lock. It does not stop the thumbnail workers:

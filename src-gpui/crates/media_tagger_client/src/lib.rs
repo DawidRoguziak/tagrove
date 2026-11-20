@@ -7,4 +7,5 @@
 
 pub mod hello;
 pub mod i18n;
+pub mod scenario;
 pub mod theme;

@@ -117,7 +117,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | Epik | Nazwa | Rozmiar | Poziom | Zależy od | Status |
 | --- | --- | --- | --- | --- | --- |
 | E00 | [Spike stosu i osobny workspace GPUI](E00-spike-skeleton.md) | L | trudny | — | done 2026-11-20 |
-| E01 | [Harness porównawczy Tauri ↔ GPUI](E01-compare-harness.md) | L | trudny | E00 | todo |
+| E01 | [Harness porównawczy Tauri ↔ GPUI](E01-compare-harness.md) | L | trudny | E00 | done 2026-11-20 |
 | E02 | [Port Backend, wykonawca i potok miniatur (crate klienta)](E02-client-backend-port.md) | L | trudny | E00 | todo |
 | E03 | [i18n, tokeny motywu i preferencje UI](E03-client-i18n-theme-prefs.md) | M | standardowy | E00 | todo |
 | E04 | [Pole tekstowe (własny element GPUI)](E04-text-input.md) | M | trudny | E03 | todo |
@@ -175,6 +175,13 @@ Skill: [`.claude/skills/gpui-port/SKILL.md`](../../../.claude/skills/gpui-port/S
 ## Scenariusze porównania
 
 Katalog jest w [epics.json](epics.json) (`scenarios`). Scenariusz to nazwany, deterministyczny stan obu aplikacji na tym samym syntetycznym seedzie. E01 buduje harness i pierwsze dwa scenariusze; każdy epik UI dopisuje kroki swoich scenariuszy po stronie Tauri (`e2e/compare/scenarios/`) i stan startowy po stronie GPUI.
+
+Dodanie scenariusza (harness z E01, opis w [testing.md](../../development/testing.md#comparison-harness-tauri-and-gpui)):
+
+1. wpis w `scenarios` w [epics.json](epics.json) (jeśli go jeszcze nie ma) i w `parity` epiku;
+2. plik `e2e/compare/scenarios/<id>.js` z polami `id`, `theme`, `seed` (`empty` albo `control`) i `tauri` (komendy `app:control`, które doprowadzają aplikację Tauri do tego stanu po zastosowaniu motywu i seeda);
+3. wpis w `SCENARIOS` w `src-gpui/crates/media_tagger_client/src/scenario.rs` ze stanem startowym GPUI (`media_tagger_gpui --scenario <id>`, tylko profil `.gpui.e2e`);
+4. `bun run test:compare` i `bun run test:client` pilnują zgodności tych trzech miejsc; `bun run compare:ui <id>` robi zrzuty do `artifacts/gpui-compare/<id>/`.
 
 Agent parytetu traktuje zrzut Tauri jako wzorzec i zgłasza różnice widoczne dla użytkownika: brakujące albo nadmiarowe elementy, kolejność, wyrównanie, token koloru, odstępy, tekst, stan. Pomija rasteryzację fontów, przesunięcia subpikselowe i zaślepki z D8.
 

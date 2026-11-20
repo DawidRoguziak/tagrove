@@ -104,6 +104,8 @@ Build and development entry points are listed below. [Testing and quality comman
 | `bun run gpui:dev` | Runs `cargo run --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui`: the GPUI adapter on its development profile. It needs no Vite server. See [GPUI adapter](#gpui-adapter). |
 | `bun run gpui:build:e2e` | Runs `node ./scripts/gpui-build-e2e.mjs`: checks the profile list and the target path, builds the GPUI adapter for the E2E identifier into `src-gpui/target-e2e/debug/`, and verifies the identifier the binary reports. |
 | `bun run gpui:check` | `cargo check` of every target of the GPUI workspace, with `--locked`. |
+| `bun run gpui:control` | Runs `node ./e2e/compare/gpui-control.js`: builds the GPUI E2E binary and keeps it open on a private Xvfb display with scratch XDG directories. See [comparison harness](testing.md#comparison-harness-tauri-and-gpui). |
+| `bun run compare:ui` | Runs `node ./e2e/compare/compare.js <scenario...>`: screenshots of the same named state in the Tauri and the GPUI application under `artifacts/gpui-compare/`. It builds both E2E binaries. |
 
 ## Development modes
 
@@ -169,7 +171,7 @@ cargo tree --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client -
 
 The first build fetches the pinned Zed commit and the repositories it pins into Cargo's Git cache and compiles about 450 crates. The build needs the development files of `libxkbcommon` (with its X11 part), `libxcb`, Wayland and Fontconfig/FreeType; at run time GPUI draws through Vulkan and falls back to EGL, so a Mesa or vendor driver for either is enough. The repository toolchain from `rust-toolchain.toml` builds it; no other toolchain is installed for the port.
 
-The identifier is part of the binary. `src-gpui/crates/media_tagger_gpui/build.rs` reads `MEDIATAGGER_GPUI_IDENTIFIER` at build time (default `com.example.mediatagger.gpui.dev`), and the binary refuses to start unless that value is one of the two GPUI profiles in the [profile table](../architecture/system-overview.md#profiles-identifiers-and-data-isolation). `bun run gpui:build:e2e` is the only supported way to build the E2E profile: it sets the variable and a separate target directory, so the development binary is never replaced. `media_tagger_gpui --identifier` prints what a binary was built for without starting it.
+The identifier is part of the binary. `src-gpui/crates/media_tagger_gpui/build.rs` reads `MEDIATAGGER_GPUI_IDENTIFIER` at build time (default `com.example.mediatagger.gpui.dev`), and the binary refuses to start unless that value is one of the two GPUI profiles in the [profile table](../architecture/system-overview.md#profiles-identifiers-and-data-isolation). `bun run gpui:build:e2e` is the only supported way to build the E2E profile: it sets the variable and a separate target directory, so the development binary is never replaced. `media_tagger_gpui --identifier` prints what a binary was built for without starting it. `media_tagger_gpui --scenario <id>` starts the E2E build in a named state of the [comparison harness](testing.md#comparison-harness-tauri-and-gpui); the development build refuses it, and every argument other than these two is an error.
 
 The GPUI and Tauri applications use different identifiers, data directories and instance locks, so `bun run gpui:dev` and `bun run tauri:dev` can run at the same time. Before it opens the profile, the GPUI binary checks that the display server `WAYLAND_DISPLAY` or `DISPLAY` names answers; without one it exits with an error instead of starting headless, and when only the X display answers it starts on X11.
 
@@ -214,6 +216,7 @@ Both standalone `bun run tauri:build:e2e` and `bun run test:e2e:tauri` use the s
 | `src-gpui/crates/media_tagger_client/Cargo.toml` | The client crate: no GUI dependency (`architecture_boundaries`). |
 | `src-gpui/crates/media_tagger_gpui/Cargo.toml` / `build.rs` | The GPUI adapter crate and binary `media_tagger_gpui`; `build.rs` bakes `MEDIATAGGER_GPUI_IDENTIFIER` into it. |
 | `scripts/gpui-build-e2e.mjs` | GPUI E2E build safety assertions, the isolated target directory `src-gpui/target-e2e`, and the identifier check of the finished binary. |
+| `e2e/compare/scenarios/*.js` | One comparison scenario per file: theme, seed and the `app:control` steps of the Tauri side. The GPUI start state of the same id is in `src-gpui/crates/media_tagger_client/src/scenario.rs`. |
 | `scripts/gpui-lock-parity.py` | The two lock-file guards: core parity between `src-tauri/Cargo.lock` and `src-gpui/Cargo.lock`, and the allowed package sources of the GPUI lock (`PINNED_BY_ZED`). |
 
 ## Native media dependencies

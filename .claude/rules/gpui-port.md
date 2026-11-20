@@ -8,6 +8,7 @@ paths:
   - "src-gpui/crates/media_tagger_gpui/**"
   - "scripts/gpui-lock-parity.py"
   - "scripts/gpui-build-e2e.mjs"
+  - "e2e/compare/**"
 ---
 
 # GPUI port
@@ -21,6 +22,8 @@ Read `docs/plans/gpui-port/README.md` (decisions D1 to D15, agent rules, epic fl
 - `docs/plans/gpui-port/epics.json` is the source of truth for epics. Change statuses only with `port_state.py set-status`, and run `port_state.py validate` and `render` after editing the manifest.
 - The workflow `gpui-port-epic` never commits and never names a model: roles come from `.claude/skills/gpui-port/references/models.json`. Agents that write run one at a time; no worktrees.
 - Long or display-bound commands go through `.claude/skills/gpui-port/scripts/job.py`. Check commands must pass `command_problem` in `port_state.py` (cargo with `--locked`, no shell syntax, no `test:all`).
+- Comparison harness (`e2e/compare/`, decision D10): `bun run compare:ui <scenario>` and `bun run gpui:control` are display-bound and serial with desktop E2E and `app:control`; never start one while `artifacts/app-control/active.lock` or `artifacts/gpui-control/active.lock` exists, and never delete those locks. Workflow agents run `compare:ui` only through `job.py start <EPIC> compare --scenario <id>`. `bun run test:compare` needs no display.
+- A comparison scenario lives in three places that tests keep in step: `e2e/compare/scenarios/<id>.js`, `SCENARIOS` in `media_tagger_client/src/scenario.rs`, and `scenarios` in `epics.json`. `media_tagger_gpui --scenario <id>` is accepted by the E2E profile only. Details: `docs/development/testing.md` ("Comparison harness (Tauri and GPUI)").
 - Run state lives in the ignored `docs/review/gpui-port/`. Tracked notes and reports carry no private paths.
 - Cargo commands for the port take `--manifest-path src-gpui/Cargo.toml --locked`. `src-gpui/Cargo.lock` changes only with an intended dependency change; after a change to a core dependency run `bun run gpui:lock-parity`. A Zed rev bump follows `docs/development/setup-and-build.md` ("Updating the pinned Zed commit").
 - Profiles are `com.example.mediatagger.gpui.dev` and `.gpui.e2e` only (`src-gpui/crates/media_tagger_gpui/src/profile.rs`); the identifier is baked in by `build.rs`. Never add a Tauri identifier or a release identifier to that list (cutover epic E22).

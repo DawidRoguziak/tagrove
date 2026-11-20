@@ -266,7 +266,7 @@ fn run_application(
 mod tests {
     use std::{
         ffi::OsString,
-        os::unix::net::UnixListener,
+        os::unix::net::{UnixDatagram, UnixListener},
         path::{Path, PathBuf},
     };
 
@@ -292,6 +292,21 @@ mod tests {
         let socket = dir.path().join(name);
         let listener = UnixListener::bind(&socket).expect("bind the display socket");
         (dir, socket, listener)
+    }
+
+    /// A directory for display sockets and, at `name` in it, the socket file a server
+    /// that is gone left behind: nothing accepts a connection there.
+    ///
+    /// The file comes from a datagram socket, which never accepts one. Closing a
+    /// listening socket would not do: a child process another test starts at that moment
+    /// holds a copy of the listener from its fork until its exec, and connections
+    /// succeed for that long.
+    fn stale(name: &str) -> (TempDir, PathBuf) {
+        let dir = tempdir().expect("tempdir");
+        let socket = dir.path().join(name);
+        drop(UnixDatagram::bind(&socket).expect("bind the stale socket"));
+        assert!(socket.exists(), "the socket file is left behind");
+        (dir, socket)
     }
 
     fn x11_socket_name() -> String {
@@ -342,9 +357,8 @@ mod tests {
 
     #[test]
     fn a_wayland_display_that_does_not_answer_is_refused() {
-        let (dir, socket, listener) = listening("wayland-test");
         // The compositor is gone and its socket file is left behind.
-        drop(listener);
+        let (dir, socket) = stale("wayland-test");
         let stale = DisplayEnvironment {
             wayland_display: os(&socket),
             ..Default::default()
@@ -406,7 +420,7 @@ mod tests {
 
     #[test]
     fn a_local_x11_display_must_answer() {
-        let (dir, _socket, listener) = listening(&x11_socket_name());
+        let (dir, _socket, _listener) = listening(&x11_socket_name());
         let with_screen = format!("{X11_DISPLAY}.0");
 
         for display in [X11_DISPLAY, with_screen.as_str()] {
@@ -422,13 +436,13 @@ mod tests {
         }
 
         // The X server is gone and its socket file is left behind.
-        drop(listener);
+        let (stale_dir, _stale_socket) = stale(&x11_socket_name());
         let environment = DisplayEnvironment {
             x11_display: os(X11_DISPLAY),
             ..Default::default()
         };
         assert_eq!(
-            select_display(&environment, dir.path()),
+            select_display(&environment, stale_dir.path()),
             Err(NoDisplay::Unreachable)
         );
         assert_eq!(

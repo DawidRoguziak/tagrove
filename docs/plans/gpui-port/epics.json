@@ -112,8 +112,8 @@
       "deps": [
         "E00"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-20",
       "sources": [
         "e2e/control.js",
         "e2e/control-support.js",

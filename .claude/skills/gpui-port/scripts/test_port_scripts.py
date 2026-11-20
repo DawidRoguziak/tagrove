@@ -84,8 +84,10 @@ class TempRepo(unittest.TestCase):
         (self.root / "package.json").write_text('{"scripts": {}}')
         (self.root / ".gitignore").write_text("/docs/review/\n")
         manifest = port.load_manifest(self.root)
-        for epic in manifest["epics"]:  # the temp tree has no sources
+        for epic in manifest["epics"]:  # the temp tree has no sources, and no epic has run in it
             epic["sources"], epic["tests_sources"], epic["docs"] = [], [], []
+            if epic["status"] != "deferred":
+                epic["status"] = "todo"
         port.write_json(self.root / port.PLAN / "epics.json", manifest)
         for command in (["init", "-q", "-b", "feature/x"], ["add", "-A"],
                         ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "init"]):

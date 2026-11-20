@@ -51,6 +51,15 @@ async function openSorter() {
   await $('[data-testid="bulk-order-grid"]').waitForDisplayed();
 }
 
+// A keyboard move reorders the tiles, which can drop DOM focus; the board puts it back on the
+// moved handle in the next animation frame. Wait for that before the next key or assertion.
+async function moveWithKey(id, key) {
+  await browser.keys(key);
+  await browser.waitUntil(async () => $(`[data-sort-handle="${id}"]`).isFocused(), {
+    timeoutMsg: `Handle ${id} did not regain focus after ${key}`
+  });
+}
+
 async function waitForGone(selector) {
   // Query existence directly: creating a WebDriver handle races with modal unmount.
   await browser.waitUntil(
@@ -199,14 +208,13 @@ describe("large group order modal", function () {
     const second = initial[1];
     const firstHandle = await $(`[data-sort-handle="${first}"]`);
     await firstHandle.click();
-    await browser.keys("ArrowRight");
+    await moveWithKey(first, "ArrowRight");
     assert.deepEqual((await visibleOrder()).slice(0, 2), [second, first]);
-    await browser.keys("ArrowLeft");
+    await moveWithKey(first, "ArrowLeft");
     assert.deepEqual(await visibleOrder(), initial);
-    await browser.keys("ArrowDown");
+    await moveWithKey(first, "ArrowDown");
     assert.ok((await visibleOrder()).indexOf(first) > 1);
-    assert.equal(await $(`[data-sort-handle="${first}"]`).isFocused(), true);
-    await browser.keys("ArrowUp");
+    await moveWithKey(first, "ArrowUp");
     assert.deepEqual(await visibleOrder(), initial);
     await dragWithInsertionLine(first, second, "after");
     await browser.waitUntil(async () => (await visibleOrder())[0] === second, {

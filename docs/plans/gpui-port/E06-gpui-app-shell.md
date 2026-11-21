@@ -80,3 +80,9 @@ Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
 
 - Z epiku E00: `window.rs` otwiera okno z domyślnymi dekoracjami serwera i widokiem-zaślepką `views/hello.rs` (model `media_tagger_client::hello`); dekoracje po stronie klienta (D14) i właściwa powłoka należą do tego epiku, a `hello` można wtedy usunąć razem z testami `tests/hello_window.rs`. Rozmiar 1440×900 i minimum 1000×720 są przeniesione z `src-tauri/tauri.conf.json`; tytuł i `app_id` pochodzą z profilu (`profile.rs`).
 - Z epiku E00: `Boot` (AppState + blokada instancji) żyje w `media_tagger_gpui::run` do powrotu z pętli zdarzeń; `startup_scan_roots` czeka na single-flight skanu startowego.
+
+### 2026-11-21 — implementer E04
+
+- Z epiku E04: rejestr skrótów musi trzymać zasady z ADR 0038 (`docs/frontend/architecture-and-ui-conventions.md`, „GPUI port: keys and text fields”): każdy skrót w kontekście klawiszy powłoki albo głębszym, nigdy bez kontekstu; skróty na klawiszach wpisujących znak przez `text_input::outside_text_input(kontekst)`. Ctrl+K wiązany w kontekście powłoki działa także z fokusem w polu (pole go nie używa), jak w Tauri. Wzorzec testu: `tests/text_input.rs` (`shell_bindings`).
+- Z epiku E04: wyłączenie pola, które ma fokus (`TextInput::set_disabled`), zdejmuje fokus z okna; bez sfokusowanego elementu w ścieżce nie ma żadnego kontekstu klawiszy i skróty powłoki nie pasują. Powłoka powinna odzyskać fokus w `cx.on_focus_lost(window, …)` (tak robi Workspace w Zed) i mieć własny `FocusHandle` na korzeniu.
+- Z epiku E04: `ui::init(cx)` jest już wołane w `window::run_until_closed` przed otwarciem okna; testy na `TestAppContext` wołają je same.

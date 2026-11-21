@@ -80,3 +80,9 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E04
+
+- Z epiku E04: API pola dla wyszukiwarki (`ui::text_input::TextInput`): tekst trzyma pole, właściciel słucha `TextInputEvent::Changed` i `SelectionChanged` (`cx.subscribe`) i czyta `text()` oraz `cursor()`. Offsety to bajty UTF-8, nie jednostki UTF-16 jak `selectionStart` w `SearchTagator.tsx`: `readActiveToken` i `applySuggestionToValue` po stronie Rust liczą w bajtach. Uzupełnienie tokenu: `replace_range(start..end, tekst, cx)` (jeden krok cofania, kursor za wstawionym tekstem); wyczyszczenie albo podmiana wartości: `set_text` (kursor na koniec, historia cofania wyczyszczona, ten sam tekst nic nie zmienia).
+- Z epiku E04: klawisze listy podpowiedzi: góra/dół to akcje `text_input::actions::Up`/`Down`; właściciel przejmuje je w fazie capture (`capture_action` + `cx.stop_propagation()`) tylko gdy lista jest otwarta, inaczej pole przesuwa kursor na początek/koniec. Enter i Escape to `actions::Confirm`/`Cancel` obsługiwane przez `on_action` na elemencie wokół pola; Escape przy zamkniętej liście: `cx.propagate()`, wtedy trafia do powiązania `escape` dalej (modal). Podczas kompozycji IME pole samo połyka Enter/Escape (odpowiednik `isComposing`).
+- Z epiku E04: fokus: `cx.on_focus_in`/`on_focus_out` na `input.focus_handle(cx)` zastępują `focusin`/`focusout`; Ctrl+K fokusuje przez `focus_handle.focus(window, cx)`.

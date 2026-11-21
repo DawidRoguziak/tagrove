@@ -78,3 +78,8 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E04
+
+- Z epiku E04: klawisze lightboxa `f`, `0`, `+`, `=`, `-` wpisują znaki: wiąż je przez `text_input::outside_text_input("…")`, inaczej nie da się ich wpisać w polu tagów ani klucza grupy. Strzałki ←/→ wiązane w kontekście lightboxa nie odpalą się z fokusem w polu, bo pole wiąże je głębiej (kursor), jak w Tauri.
+- Z epiku E04: słowo potwierdzenia usunięcia i klucz grupy to zwykłe `TextInput`; kolejność w grupie: `set_accept(Some(f))` z odpowiednikiem `parseMediaGroupOrder` odrzuca wpis i wklejenie, po których wartość nie byłaby poprawna (zachowanie `onInput`/`onPaste` z `MediaGroupSetter.tsx`), `set_text` nie jest filtrowane. Porównanie słowa (trim, NFC, małe litery) należy do modelu tego epiku, pole go nie normalizuje. `disabled={isSubmitting}`: `set_disabled` zdejmuje fokus z okna, więc po zakończeniu trzeba go przywrócić (w Tauri robi to `restoreFocusId`).

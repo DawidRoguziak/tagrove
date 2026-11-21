@@ -222,8 +222,8 @@
       "deps": [
         "E03"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-21",
       "sources": [
         "src/features/search/SearchTagator.tsx",
         "src/features/search/suggestions/inputService.ts",

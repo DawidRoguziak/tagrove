@@ -231,6 +231,7 @@ pub fn run_until_closed(
     display: DisplayServer,
 ) -> Result<(), Box<dyn Error>> {
     run_application(application(display), move |cx| {
+        crate::ui::init(cx);
         open_main_window(profile, &screen, cx).map(|_| ())
     })
 }

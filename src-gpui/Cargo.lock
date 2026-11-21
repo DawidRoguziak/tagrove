@@ -3070,6 +3070,7 @@ dependencies = [
  "media_tagger_core",
  "serde_json",
  "tempfile",
+ "unicode-segmentation",
 ]
 
 [[package]]

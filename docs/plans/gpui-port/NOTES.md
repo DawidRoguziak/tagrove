@@ -14,3 +14,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-20 | E02 | workflow | done | E02 ukończony: port Backend, wykonawca i potok miniatur w crate klienta, przegląd czysty, bramka zielona. | [E02](E02-client-backend-port.md)
 2026-11-21 | E03 | orkiestrator | in progress | workflow start od kroku implement | [E03](E03-client-i18n-theme-prefs.md)
 2026-11-21 | E03 | workflow | done | Epik E03 zakończony: i18n, tokeny motywu i preferencje UI gotowe, przegląd czysty, brama zielona. | [E03](E03-client-i18n-theme-prefs.md)
+2026-11-21 | E04 | orkiestrator | in progress | workflow start od kroku implement | [E04](E04-text-input.md)
+2026-11-21 | E04 | workflow | done | E04 gotowy: pole tekstowe (model w crate klienta i element GPUI) z testami, przegląd czysty po 3 rundach, bramka test:all zaliczona. | [E04](E04-text-input.md)

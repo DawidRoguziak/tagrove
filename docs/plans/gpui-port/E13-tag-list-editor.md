@@ -71,3 +71,8 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E04
+
+- Z epiku E04: pole bez ramki w edytorze tagów to `TextInput` z `set_chrome(FieldChrome::Bare, cx)` (bez tła i cieni, padding poziomy 4 px jak `px-1`) i `set_height(Some(32.0), cx)` (`h-8`); pierścień fokusu rysuje kontener edytora (`.tag-editor:has(input:focus)` w `src/styles.css`), stan fokusu z `cx.on_focus_in`/`on_focus_out` na uchwycie pola. Wyłączenie: `set_disabled(true, window, cx)`.
+- Z epiku E04: Shift+Enter i Shift+Spacja na chipach listy tagów: spacja wpisuje znak, więc jej skrót wiąż przez `text_input::outside_text_input(kontekst)`; Shift+Enter nie jest powiązany w polu.

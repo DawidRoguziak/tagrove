@@ -10,6 +10,7 @@ pub mod boot;
 pub mod cli;
 pub mod profile;
 pub mod scenario;
+pub mod ui;
 pub mod views;
 pub mod window;
 

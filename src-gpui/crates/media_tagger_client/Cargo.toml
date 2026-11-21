@@ -19,6 +19,7 @@ test-support = ["dep:tempfile"]
 media_tagger_core.workspace = true
 serde_json.workspace = true
 tempfile = { workspace = true, optional = true }
+unicode-segmentation.workspace = true
 
 [dev-dependencies]
 # Turns `test-support` on for every test target of this crate, integration targets

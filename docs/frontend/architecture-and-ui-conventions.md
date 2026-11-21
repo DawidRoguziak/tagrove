@@ -207,6 +207,21 @@ Global styles establish full-height roots, typography, field treatment, visible 
 
 The GPUI port carries the tokens of `src/styles.css` as Rust constants in `media_tagger_client::theme` (`theme/tokens.rs`): the colours of both theme blocks with the `:root` aliases resolved (`--bg-*`, `--surface-*`, `--window-chrome-bg`, the `color-mix()` tokens), radii, shadows, motion timings and the type scale (`text-xs` and `text-xl` and every line height are Tailwind defaults that `styles.css` does not override). `theme/parity_tests.rs` parses the stylesheet and fails when a value differs on either side or when a theme block, `[data-theme]` block or `:root` gains a custom property the constants do not carry; change a token in both places in one change.
 
+### GPUI port: the text field
+
+GPUI has no text field, so the port has one of its own ([ADR 0038](../adr/0038-gpui-text-field-own-element-and-key-context.md)), in two layers:
+
+- `media_tagger_client::text` is the editing model without a GUI. `LineEditor` holds the text, the selection (anchor and head, UTF-8 byte offsets), the text an input method is composing and the undo history. The caret moves by extended grapheme clusters and by words (UAX #29, `text/boundary.rs`); `text/utf16.rs` converts to and from the UTF-16 offsets of the platform's input protocol, and every entry point moves an offset to a character boundary before it is used. `KEYMAP` is the table of keys, `scroll_to_reveal` the horizontal shift that keeps the caret visible, and `field_visuals` the colours, focus ring and padding of the `input` rules of `src/styles.css` (its tests fail when those rules change).
+- `media_tagger_gpui::ui::text_input` draws it. `TextInput` is an entity that owns one `LineEditor`: it shapes the line, paints selection, text and caret clipped to the field, shows the placeholder while the text is empty, and connects keys, pointer (click, Shift+click, drag, double click for a word, triple click for everything), clipboard and GPUI's input handler to the model. `FieldChrome::Bare` drops the frame for a field inside a container that draws its own, as the tag editor does. A disabled field is dimmed, takes no input and cannot be focused.
+
+The field is the only holder of the text being edited. Its owner listens for `TextInputEvent::Changed` and `SelectionChanged` and reads `text()` and `cursor()`; it writes with `set_text` (caret to the end, history dropped, no change when the text is the same) and `replace_range` (one undo step, caret behind the inserted text: how a suggestion completes a token). `set_accept` restricts what can be entered, which the group order uses for digits.
+
+Inserted text is one line (`text::single_line`): line breaks at the end are dropped, every other line break becomes one space, with `\r\n` counting once, a tab becomes a space, and other control characters are dropped. This applies to typing, paste, composition and `set_text`. WebKit treats pasted line breaks the same way; it keeps a pasted tab.
+
+Undo steps: consecutive typing is one step, a word typed after whitespace starts the next; a run of Backspace presses is one step, and so is a run of Delete presses; paste, cut, word deletion, typing over a selection and a finished composition are steps of their own; moving the caret closes the current step. A field keeps 100 steps.
+
+Not built: a multi-line field, a blinking caret, middle-click paste of the primary selection, auto-scroll while a drag is held outside the field, and select-all on Tab focus.
+
 ## Motion
 
 `src/styles.css` owns the shared motion tokens: `--motion-feedback` is 100 ms,
@@ -370,6 +385,30 @@ GTK video controls are native widgets outside the DOM layer manager. Windowed Es
 
 Bulk ordering uses one `GroupOrderBoard` in two places: inline in the dock's Group & order tab and in the larger group-order modal. Only one is mounted at a time (the inline board unmounts while the modal is open), and each registers its drag listeners only while active. The dock tabs are a `role="tablist"` with roving `tabindex` and ArrowLeft/ArrowRight/Home/End. Board handles support ArrowLeft/ArrowRight for adjacent positions, with Up/Down moving by grid row. The modal uses the shared modal layer, keeps changes in a local draft until Save order, and restores the triggering button on close. `UiProgressBar` uses its supplied label as its accessible name. Component tests cover selected roles and focus transitions; they do not establish full screen-reader, contrast, zoom, or keyboard-only accessibility.
 
+### GPUI port: keys and text fields
+
+A DOM key handler asks whether the event target is editable. GPUI has no such check: key bindings run before text input, and a binding is chosen by how deep its key context sits in the ancestry of the focused element. The port's [text field](#gpui-port-the-text-field) binds its keys (`media_tagger_client::text::KEYMAP`) in the key context `TextInput`, so with the focus in a field they are the deepest match and a shortcut bound further out does not fire for a key the field handles. That holds only when every shortcut follows two rules ([ADR 0038](../adr/0038-gpui-text-field-own-element-and-key-context.md)):
+
+- A shortcut is never bound without a key context. A binding without one counts as deep as the focused element and, registered after the field's, would take Enter, Escape or Ctrl+A away from it.
+- A shortcut on a key that types a character (a letter, a digit, Space, with or without Shift) is bound with `text_input::outside_text_input(context)`, which is `(context) && !TextInput`. The field cannot claim such a key itself.
+
+A shortcut on a key the field does not use, such as Ctrl+K, fires with the focus in a field, as in the Tauri interface.
+
+| Key in a field | What happens |
+| --- | --- |
+| Left, Right, Home, End, with Shift to select and Ctrl for words | The caret moves by grapheme cluster or word. Left and Right collapse a selection to its end on that side. |
+| Up, Down | `actions::Up` and `Down`: the owner may take them in the capture phase (`capture_action`) to walk a list; otherwise the caret goes to the start or the end. Shift+Up and Shift+Down select to there. |
+| Backspace, Delete, with Ctrl for a word | Deletes the selection, else one grapheme cluster or word. |
+| Ctrl+A, Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y | Select all, undo, redo. |
+| Ctrl+C, Ctrl+X, Ctrl+V (also Ctrl+Insert, Shift+Delete, Shift+Insert) | Clipboard. Copy and cut do nothing without a selection. |
+| Enter, Escape | `actions::Confirm` and `Cancel`, which the field leaves to its owner: an element around the field handles them with `on_action`. An owner that has nothing to do calls `cx.propagate()`, and the keystroke falls through to the next binding further out (the Escape of a dialog). While an input method is composing, they end the composition and go no further. |
+
+Disabling a field that has the focus removes the focus from the window. The application shell has to take it back (`on_focus_lost`), because without a focused element no key context is in the dispatch path and no shortcut matches.
+
+The field sets the accessibility role `TextInput` and the label given with `set_label`.
+
+The candidate window of an input method is placed from the caret's bounds, and GPUI's Linux backends get them in two ways. Between compositions the field calls `Window::invalidate_character_coordinates` in every frame in which the caret can have moved (the field took the focus, the text or the selection changed, the line moved or scrolled), and GPUI hands the bounds over after that frame; the backends ignore them while a composition runs. During a composition they ask `bounds_for_range` right after changing the text, before the frame with that text is drawn. The field then answers from the line of the last frame: offsets inside the text both have in common are exact, and anything behind it is placed at its end, which is where the composition starts. Composition was tested through GPUI's input handler in that order of calls; a real input method on X11 or Wayland has not been driven.
+
 ## Safe change checklist
 
 1. Choose an owner and state whether values survive view switching, close/reopen and restart.
@@ -391,6 +430,11 @@ Bulk ordering uses one `GroupOrderBoard` in two places: inline in the dock's Gro
   `ui/dom/createVirtualList.ts` with controlled DOM geometry.
 - `src/ui/**/__tests__` covers modal presence, nested dismissal, focus, inertness,
   controls and thumbnail images. Mount `UiLayerProvider` when asserting layer behavior.
+- GPUI port: `src-gpui/crates/media_tagger_client/src/text/` and
+  `src-gpui/crates/media_tagger_client/tests/text_editor.rs` cover the editing model of the
+  text field, `src-gpui/crates/media_tagger_gpui/tests/text_input.rs` the field itself and
+  `tests/text_input_owner.rs` the field inside an owner, both on GPUI's test platform
+  ([GPUI workspace](../development/testing.md#gpui-workspace)).
 
 Use direct inputs/outputs for pure helpers, owned `renderHook` for models and Testing
 Library for components. `src/test/renderSolid.tsx` changes props under the same owner;

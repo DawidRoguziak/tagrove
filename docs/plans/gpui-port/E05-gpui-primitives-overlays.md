@@ -77,3 +77,10 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E04
+
+- Z epiku E04: pole tekstowe to `media_tagger_gpui::ui::text_input::TextInput` (encja; model edycji w `media_tagger_client::text`, ADR 0038). Jest już ostylowane tokenami `input` z `src/styles.css` przez `text::field_visuals` (tło, obwódka i pierścień fokusu jako cienie, placeholder, zaznaczenie, przezroczystość 0,55 dla wyłączonego); `FieldChrome::Bare` zdejmuje ramkę (pole w edytorze tagów), `set_height` daje stałą wysokość (`h-8`, `h-10`). Motyw dostaje dziś w konstruktorze (`TextInput::new(theme, window, cx)`) i przez `set_theme`: global motywu z tego epiku powinien to zastąpić albo wołać `set_theme` przy zmianie.
+- Z epiku E04: pole dziedziczy font, rozmiar i interlinię ze stylu tekstu rodzica (`window.text_style()`); bez rejestracji fontów rysuje fontem systemowym. Kursor nie mruga (stabilne zrzuty).
+- Z epiku E04: `ui::init(cx)` rejestruje skróty klocków z `ui/` przy starcie (`window::run_until_closed`); nowe kontrolki dopisują tam swoje. Zasady skrótów z ADR 0038 obowiązują każdy skrót: nigdy bez kontekstu klawiszy, a skrót na klawiszu wpisującym znak (litera, cyfra, spacja, także z Shift) z kontekstem `text_input::outside_text_input(kontekst)`. Skrót bez kontekstu zarejestrowany po `ui::init` odebrałby polu Enter, Escape i Ctrl+A.
+- Z epiku E04: Escape modala: pole wysyła `text_input::actions::Cancel` (i `Confirm` dla Enter), których samo nie obsługuje. Nieobsłużony przez właściciela Escape spada do następnego powiązania klawisza `escape` w płytszym kontekście, więc Escape górnej warstwy wystarczy powiązać w kontekście modala. Tab nie jest powiązany w polu; uchwyt fokusu pola jest przystankiem tabulacji (`tab_stop(true)`), wyłączone pole nim nie jest.

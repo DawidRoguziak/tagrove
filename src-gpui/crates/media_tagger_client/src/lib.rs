@@ -18,6 +18,8 @@
 //!   its event, its async runtime and the `thumb://` scheme.
 //! - [`i18n`], [`theme`], [`prefs`]: texts of the shared locale files, the theme
 //!   tokens of `src/styles.css` as constants, and the stored theme and language.
+//! - [`text`]: the editing model of the single-line text field, which GPUI does not
+//!   ship: buffer, selection, input-method composition, undo, keys.
 
 pub mod backend;
 pub mod exec;
@@ -28,5 +30,6 @@ pub mod prefs;
 pub mod progress;
 pub mod scenario;
 pub mod startup_scan;
+pub mod text;
 pub mod theme;
 pub mod thumbs;

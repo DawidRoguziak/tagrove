@@ -66,6 +66,20 @@ Persistence across launches requires a successful write.
 
 `changeAppLanguage` awaits `i18n.changeLanguage`. The Solid binding exposes this same async function as `setLanguage`; event handlers may intentionally discard its promise. i18next falls back to English for a key absent from the active resource.
 
+## GPUI port
+
+The GPUI port (`docs/plans/gpui-port/`) reads the same eleven resource files. `media_tagger_client::i18n` (`src-gpui/crates/media_tagger_client/src/i18n.rs` and `i18n/`) embeds them with `include_str!`, so `bun run locale:check` guards both interfaces, and resolves them with its own engine for the part of i18next Tagrove uses:
+
+- dotted keys into the nested tree; a key the active language lacks falls back to English, and a key no language has shows the key itself, as i18next does;
+- plural keys chosen by `count`: per language `<key>_zero` (count 0 only), then `<key>_<category>`, then `<key>`, before English is tried. The CLDR cardinal rules of the eleven languages are written by hand in `i18n/plural.rs` and pinned by tests against `Intl.PluralRules` output (every count from 0 to 120, the vector 0, 1, 2, 5, 12, 21, 22, 101, millions and fractions);
+- `{{placeholder}}` interpolation without escaping; a placeholder without a value keeps its text, and inserted values are not interpolated again;
+- `formattedCount` from `format_count`, which reproduces `Intl.NumberFormat(language).format` for whole counts (group separator and CLDR minimum grouping digits per language: Polish, Spanish and Italian leave four-digit counts ungrouped, `1234`, and group from five digits, with a no-break space in Polish, `12 345`, and a dot in Spanish and Italian, `12.345`);
+- `translate_backend_text`, the counterpart of `backendText.ts` (`i18n:<key>`, `{"key","params"}` JSON, a known dotted key, else the text unchanged). A numeric `count` in the JSON params selects the plural.
+
+Nesting (`$t(...)`), contexts, ordinal plurals, namespaces and format functions are not implemented; no resource uses them. A key that names a group resolves like a missing key.
+
+`Language` mirrors `APP_LANGUAGES` and `APP_LANGUAGE_NATIVE_LABELS`; its tests parse `languages.ts` and `core.ts` and compare the set of locale files. `Language::normalize` is `normalizeLanguage` (prefix matching). The starting language is the stored preference, then the system locale in POSIX precedence (`LC_ALL`, `LC_MESSAGES`, `LANG`; the first one that is set and not empty decides, and an unsupported value such as `C` gives English rather than falling through), then English. WebKitGTK derives `navigator.language` from the same variables. The preference is stored in the profile directory, not in `localStorage` ([architecture and UI conventions](../frontend/architecture-and-ui-conventions.md#runtime-appearance-and-language-effects)).
+
 ## Translation contract
 
 Treat `src/i18n/locales/en.json` as the canonical tree. For every other resource:
@@ -99,7 +113,8 @@ Changing these words changes what a user must type. Verify the displayed prompt 
 4. Import the JSON and add `{ translation: <import> }` under the same code in the `resources` object in `src/i18n/core.ts`.
 5. Choose and test `lightbox.deleteConfirm.confirmWord`, `typeYesLabel`, and `typeYesPlaceholder` explicitly.
 6. Extend the ordered selector checks in `src/app/__tests__/shell.test.tsx` to select the new value. Add runtime coverage for normalization/persistence if the new code introduces a region or script concern.
-7. Run parity, focused tests, a build, and the manual selector/reload checklist. Updating `scripts/generate-locales.mjs` is a separate decision and does not replace any of the preceding registration steps.
+7. Register it in the GPUI client as well: a `Language` variant in `i18n/language.rs` (code and label), its file in `locale_source` (`i18n.rs`), its plural rule in `i18n/plural.rs` and its digit grouping in `i18n/number.rs`, each pinned with vectors taken from `Intl.PluralRules` and `Intl.NumberFormat`. `cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client i18n` fails until the languages, labels and locale files agree.
+8. Run parity, focused tests, a build, and the manual selector/reload checklist. Updating `scripts/generate-locales.mjs` is a separate decision and does not replace any of the preceding registration steps.
 
 ## Automated locale contract
 

@@ -6,7 +6,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::{
     i18n::Catalog,
-    theme::{color_token, Rgb, ThemeName},
+    theme::{color_token, Rgba, ThemeName},
 };
 
 /// Locale key of the placeholder text.
@@ -19,8 +19,8 @@ pub const FOREGROUND_TOKEN: &str = "--color-base-content";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HelloScreen {
     pub text: String,
-    pub background: Rgb,
-    pub foreground: Rgb,
+    pub background: Rgba,
+    pub foreground: Rgba,
 }
 
 /// A shared source file misses what the placeholder window needs.
@@ -62,29 +62,15 @@ impl HelloScreen {
 #[cfg(test)]
 mod tests {
     use super::HelloScreen;
-    use crate::theme::{Rgb, ThemeName};
+    use crate::theme::{Rgba, ThemeName};
 
     #[test]
     fn dark_screen_uses_the_shared_text_and_tokens() {
         let screen = HelloScreen::load(ThemeName::Dark).expect("shared sources are complete");
 
         assert_eq!(screen.text, "Loading...");
-        assert_eq!(
-            screen.background,
-            Rgb {
-                r: 0x14,
-                g: 0x16,
-                b: 0x18
-            }
-        );
-        assert_eq!(
-            screen.foreground,
-            Rgb {
-                r: 0xf4,
-                g: 0xf6,
-                b: 0xf5
-            }
-        );
+        assert_eq!(screen.background, Rgba::hex(0x141618));
+        assert_eq!(screen.foreground, Rgba::hex(0xf4f6f5));
     }
 
     #[test]

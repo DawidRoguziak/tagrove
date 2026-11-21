@@ -1,6 +1,6 @@
 //! The placeholder view of epic E00.
 
-use gpui::{div, prelude::*, rgb, Context, SharedString, Window};
+use gpui::{div, prelude::*, rgba, Context, SharedString, Window};
 use media_tagger_client::hello::HelloScreen;
 
 /// Debug selector of the text element (`VisualTestContext::debug_bounds`).
@@ -16,8 +16,8 @@ impl HelloView {
     pub fn new(screen: &HelloScreen) -> Self {
         Self {
             text: screen.text.clone().into(),
-            background: screen.background.to_u32(),
-            foreground: screen.foreground.to_u32(),
+            background: screen.background.to_rgba_u32(),
+            foreground: screen.foreground.to_rgba_u32(),
         }
     }
 
@@ -33,8 +33,8 @@ impl Render for HelloView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgb(self.background))
-            .text_color(rgb(self.foreground))
+            .bg(rgba(self.background))
+            .text_color(rgba(self.foreground))
             .child(
                 div()
                     .debug_selector(|| HELLO_TEXT_SELECTOR.into())

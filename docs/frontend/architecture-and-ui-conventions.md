@@ -177,6 +177,15 @@ use these same owners without additional storage guards.
 Extend these owners for preference changes rather than reading storage in leaf components.
 The [localization guide](../development/localization.md) owns resource invariants.
 
+The GPUI port keeps the same two preferences in `ui-preferences.json` in its profile
+directory (`{"theme":"light","language":"pl"}`), behind the `PrefsStore` port of
+`media_tagger_client::prefs` (plan decision D6). `FilePrefsStore` writes a staging file
+`.mediatagger-ui-preferences-<pid>-<n>.pending`, flushes it, renames it over the old file
+and flushes the directory. Reading never fails: a missing, unreadable or damaged file
+reads as nothing stored, and each member is read on its own like the two storage keys
+(a theme other than exactly `light` or `dark` is ignored, a language is normalized).
+The defaults are the ones above: dark, then system language, then English.
+
 ## UI primitives and styling
 
 Reusable controls live in [`src/ui/controls`](../../src/ui/controls); modal primitives live in [`src/ui/overlays`](../../src/ui/overlays):
@@ -195,6 +204,8 @@ Reusable controls live in [`src/ui/controls`](../../src/ui/controls); modal prim
 Prefer semantic DaisyUI colors (`primary`, `base-*`, `error`, and similar) and the app tokens for surfaces, borders, radii, shadows, fields, and window chrome. Reuse `--surface-*`, `--border-*`, `--radius-*`, and `--shadow-*` rather than adding isolated literal values for the same role. Keep theme differences in the theme blocks, not conditional class lists in components. Pass `className` for layout or a deliberate contextual adjustment; shared visual behavior belongs in the primitive.
 
 Global styles establish full-height roots, typography, field treatment, visible keyboard focus for buttons, links, inputs, and selects, and themed scrollbars. Preserve native elements where possible so keyboard and accessibility behavior come for free.
+
+The GPUI port carries the tokens of `src/styles.css` as Rust constants in `media_tagger_client::theme` (`theme/tokens.rs`): the colours of both theme blocks with the `:root` aliases resolved (`--bg-*`, `--surface-*`, `--window-chrome-bg`, the `color-mix()` tokens), radii, shadows, motion timings and the type scale (`text-xs` and `text-xl` and every line height are Tailwind defaults that `styles.css` does not override). `theme/parity_tests.rs` parses the stylesheet and fails when a value differs on either side or when a theme block, `[data-theme]` block or `:root` gains a custom property the constants do not carry; change a token in both places in one change.
 
 ## Motion
 

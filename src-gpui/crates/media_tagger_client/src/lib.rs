@@ -16,12 +16,15 @@
 //! - [`progress`], [`startup_scan`], [`thumbs`]: the progress stream, the single-flight
 //!   startup scan and the thumbnail pipeline, which the Tauri adapter implements with
 //!   its event, its async runtime and the `thumb://` scheme.
+//! - [`i18n`], [`theme`], [`prefs`]: texts of the shared locale files, the theme
+//!   tokens of `src/styles.css` as constants, and the stored theme and language.
 
 pub mod backend;
 pub mod exec;
 pub mod hello;
 pub mod i18n;
 pub mod model;
+pub mod prefs;
 pub mod progress;
 pub mod scenario;
 pub mod startup_scan;

@@ -119,7 +119,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | E00 | [Spike stosu i osobny workspace GPUI](E00-spike-skeleton.md) | L | trudny | — | done 2026-11-20 |
 | E01 | [Harness porównawczy Tauri ↔ GPUI](E01-compare-harness.md) | L | trudny | E00 | done 2026-11-20 |
 | E02 | [Port Backend, wykonawca i potok miniatur (crate klienta)](E02-client-backend-port.md) | L | trudny | E00 | done 2026-11-20 |
-| E03 | [i18n, tokeny motywu i preferencje UI](E03-client-i18n-theme-prefs.md) | M | standardowy | E00 | todo |
+| E03 | [i18n, tokeny motywu i preferencje UI](E03-client-i18n-theme-prefs.md) | M | standardowy | E00 | done 2026-11-21 |
 | E04 | [Pole tekstowe (własny element GPUI)](E04-text-input.md) | M | trudny | E03 | todo |
 | E05 | [Prymitywy UI i warstwa nakładek (GPUI)](E05-gpui-primitives-overlays.md) | L | standardowy | E03, E04 | todo |
 | E06 | [Runtime aplikacji, okno i powłoka](E06-gpui-app-shell.md) | M | standardowy | E02, E05 | todo |

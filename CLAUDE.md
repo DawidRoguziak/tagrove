@@ -119,7 +119,7 @@ bun run gpui:dev                  # GPUI adapter on its dev profile ("Tagrove GP
 bun run gpui:build:e2e            # E2E-profile binary in src-gpui/target-e2e (guards identifier and target dir)
 bun run gpui:fmt && bun run gpui:clippy && bun run gpui:check
 bun run test:client               # media_tagger_client (no GUI stack)
-bun run test:gpui                 # media_tagger_gpui: unit tests + hello_window (TestAppContext, headless renderer) + startup (guards, binary exit)
+bun run test:gpui                 # media_tagger_gpui: unit tests + shell_window/shell_ported (TestAppContext, headless renderer) + startup (guards, binary exit)
 cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui <name>
 cargo tree --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client -e normal   # must list no gpui/wgpu/blade/tauri/gtk/webkit/libmpv
 bun run gpui:lock-parity          # core dependencies identical in both Cargo.lock files; only reviewed sources in src-gpui/Cargo.lock

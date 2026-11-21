@@ -36,6 +36,60 @@ The gallery header uses `public/tagrove.svg` as its accessible app identity; the
 wordmark is hidden from assistive technology. The same SVG supplies the favicon and native
 icon source. See [branding](../development/setup-and-build.md#branding-assets).
 
+### GPUI port: runtime, window and shell
+
+The GPUI port has the same split between an application-lifetime runtime and views that
+come and go:
+
+- `media_tagger_client::runtime::AppRuntime` is `createAppRuntime` as a model: the view
+  (`gallery` or `settings`), the scan-section highlight of "Add first folder", the theme,
+  the language, the tile size (`clamp_tile_size`, `next_tile_size_by_wheel`), the
+  library's total, the scan roots and the startup scan. `RuntimeInput::Start` runs once
+  (later starts are ignored): it refreshes the library, joins the startup scan and lists
+  the scan roots at once, and stores the start theme and language as the Solid bootstrap
+  does. The startup scan is requested once; while it runs, `maintenance_loading` is set.
+  When it found work or failed, the library and the roots are refreshed again and the scan
+  is finished only after both answered; a launch without work refreshes nothing. A failed
+  scan is kept as its outcome and never blocks the window. Library refreshes are
+  generations and root listings are request tokens, so a late answer changes nothing.
+  Preferences are saved one at a time through the `PrefsStore`: a change while a save
+  runs is saved after it with the values current then, and a failed save keeps the change
+  for the session. Until the query model of epic E07 exists, the runtime's library refresh
+  is one unfiltered query whose `total` feeds the header count.
+- `media_tagger_gpui::runtime::Runtime` is the entity around that model. Backend calls
+  run on the executor it is given (the application's `ThreadExecutor`); a reply raises a
+  `WakeSignal`, and a task on GPUI's foreground executor pumps the model's inbox on the UI
+  thread and notifies the observers. The runtime sets the active theme global on every
+  change, so a theme switch redraws every window at once; views read the language from
+  the runtime (`Runtime::i18n`) and redraw when it notifies.
+- `views::shell::ShellView` is `App.tsx`: it owns the runtime, the focus handle of the
+  settings button and the settings page's layer, and shows `GalleryView` or
+  `SettingsView`, making the view anew whenever the runtime's view changes. A view keeps
+  only state it may lose (the tile-size slider entity, a drag gesture). The settings page
+  registers a non-modal layer while it is shown, so Escape closes it, and its release
+  gives the focus back to the settings button of the new gallery view.
+- The window draws its own decorations (plan decision D14) like the frameless Tauri
+  window: `WindowDecorations::Client`, the three window buttons in both headers (32 px
+  ghost buttons, close turns red under the pointer, the middle one restores a maximised
+  window; each is a tab stop with the focus ring that Enter and Space press), eight resize grips while the window is neither maximised nor fullscreen (4 px
+  edges, 8 px corners, `start_window_resize`), and a drag surface on each header row: a
+  press and a move with the primary button start `start_window_move`, a double click
+  maximises or restores, and presses on buttons stop before they reach it. The decisions
+  are `media_tagger_client::window_chrome`. The buttons are drawn whatever decorations
+  the platform granted; on X11 without a compositor GPUI falls back to server-side
+  decorations, and a window manager that keeps its own title bar then shows both.
+- The gallery header has the identity (`public/tagrove.svg`, drawn in its own colours,
+  and the product name), the settings button, the window buttons, the item count
+  (`workspace.itemCount` with the language's plural and digit grouping) and the
+  tile-size slider. The search field with its toolbar (epics E12, E13) and the
+  bulk-actions toggle (E11, E14) have empty slots. Below the header the gallery shows the
+  empty state of `GalleryEmptyState` (no folders, or no results) until the grid of epic
+  E09 exists. The settings header has Back, the logo, the heading and the window buttons;
+  its sections are epics E17 and E18. Measures and texts are in
+  `media_tagger_client::shell`.
+- Start: the stored theme and language (else dark and the system's language); a
+  comparison scenario starts in its own theme and in English.
+
 ## Directory ownership and dependency direction
 
 | Directory | Responsibility |
@@ -229,7 +283,7 @@ A field made with `TextInput::themed` draws with the active theme and follows it
 The port's counterparts of `src/ui/controls` and `src/ui/overlays` ([ADR 0039](../adr/0039-gpui-overlay-layers-and-controls.md)) are split like the text field:
 
 - `media_tagger_client::controls` resolves each control's looks from the theme tokens and the Tailwind and DaisyUI classes of the Solid control (`button_visuals`, `icon_button_visuals`, `chip_visuals`, `alert_visuals`, `progress_visuals`, `slider_visuals`, `segmented_visuals`, `switch_visuals` for `toggle toggle-sm toggle-primary`, `spinner_visuals`) and holds what needs no GUI: `SliderRange` (step snapping, the keys of a range input: arrows by a step, Page keys by a tenth of the range, Home, End), `SegmentedKey` (arrows wrap), `HighlightTrack` (a port of `measureSegmentedHighlight`: a new selection slides, a changed layout or label snaps) and `DelayedReveal` (`.thumbnail-loader`: 300 ms invisible, then a 150 ms ease-out fade). Their tests read `src/styles.css` and the control sources and fail when a copied class changes. `media_tagger_client::icons` names the 22 icons of `UiIcon`; `media_tagger_client::overlay` holds the layer stack and the modal presence.
-- `media_tagger_gpui::ui` draws them. `theme` keeps the active theme as a GPUI global (`set_active` redraws every window) and converts tokens; every control reads the active theme unless given one with `.theme(..)`. `fonts::register` adds Inter and JetBrains Mono from `public/fonts`. `assets::Assets` serves the icon files in `src-gpui/crates/media_tagger_gpui/assets/icons/` (one SVG per icon, the stroke style of `UiIcon`; the filled variant is derived on load, and a test compares every file with `UiIcon.tsx`). Controls: `Button` (`Button::new` for `UiButton`, `Button::icon` for `UiIconButton` with `active` and `danger`), `Chip`, `Alert` (role `Alert`), `ProgressBar`, `Slider`, `SegmentedControl`, `Switch`, `Spinner`, `Icon`.
+- `media_tagger_gpui::ui` draws them. `theme` keeps the active theme as a GPUI global (`set_active` redraws every window) and converts tokens; every control reads the active theme unless given one with `.theme(..)`. `fonts::register` adds Inter and JetBrains Mono from `public/fonts`; `window::init_application` calls it before the first window, and `ui::theme::app_root` gives every window's root the sans family. At the pinned Zed commit GPUI draws a variable font only at its default instance and has no letter spacing: a weight other than 400 comes from a static Inter face installed on the system when there is one, and otherwise draws at 400, and `letter-spacing` tokens are not applied. `assets::Assets` serves the icon files in `src-gpui/crates/media_tagger_gpui/assets/icons/` (one SVG per icon, the stroke style of `UiIcon`; the filled variant is derived on load, and a test compares every file with `UiIcon.tsx`). Controls: `Button` (`Button::new` for `UiButton`, `Button::icon` for `UiIconButton` with `active` and `danger`), `Chip`, `Alert` (role `Alert`), `ProgressBar`, `Slider`, `SegmentedControl`, `Switch`, `Spinner`, `Icon`.
 
 The slider and the segmented control are entities and are controlled: they emit `SliderEvent::Input` and `SegmentedEvent::Change` and draw the value their owner sets, so an owner that refuses a value keeps the old one on screen. A segmented group is one tab stop (the selected segment), the arrow keys move the focus around it and ask for the segment they land on, and the highlight slides only by position and size, never by layout. A click or Space asks only for a segment that is not selected. A switch asks with `on_change` and shows `checked` as given. Buttons, switches and segments are tab stops while enabled and draw the `:focus-visible` outline (a ring outside the element at the rule's offset) only after keyboard input. Enter and Space activate a focused button or switch (GPUI's keyboard click).
 
@@ -429,7 +483,9 @@ A shortcut on a key the field does not use, such as Ctrl+K, fires with the focus
 | Ctrl+C, Ctrl+X, Ctrl+V (also Ctrl+Insert, Shift+Delete, Shift+Insert) | Clipboard. Copy and cut do nothing without a selection. |
 | Enter, Escape | `actions::Confirm` and `Cancel`, which the field leaves to its owner: an element around the field handles them with `on_action`. An owner that has nothing to do calls `cx.propagate()`, and the keystroke falls through to the next binding further out (the Escape of a dialog). While an input method is composing, they end the composition and go no further. |
 
-Disabling a field that has the focus removes the focus from the window. The application shell has to take it back (`on_focus_lost`), because without a focused element no key context is in the dispatch path and no shortcut matches.
+Disabling a field that has the focus removes the focus from the window. The application shell has to take it back (`on_focus_lost`), because without a focused element no key context is in the dispatch path and no shortcut matches. The shell does: it focuses the layer stack's root when the window opens and whenever the focus is lost.
+
+The application's key contexts are `media_tagger_client::shortcuts::KeyContext`: `Shell`, which sits on the window's root next to `UiLayers` (the root holds the focus when nothing else does, so a `Shell` binding is always on the path), and `Gallery` and `Settings` on the two views. `SHORTCUTS` is the registry of application shortcuts; it is still empty, because the Tauri shell binds no key besides the layer stack's Escape, and the epics that bring the search (Ctrl+K), the gallery and the lightbox add theirs there under the two rules above (`types_a_character` tells which keys need `outside_text_input`). There are no context menus, as in Tauri.
 
 The field sets the accessibility role `TextInput` and the label given with `set_label`.
 
@@ -456,6 +512,13 @@ The candidate window of an input method is placed from the caret's bounds, and G
   `ui/dom/createVirtualList.ts` with controlled DOM geometry.
 - `src/ui/**/__tests__` covers modal presence, nested dismissal, focus, inertness,
   controls and thumbnail images. Mount `UiLayerProvider` when asserting layer behavior.
+- GPUI port: `src-gpui/crates/media_tagger_client/src/runtime/tests.rs` covers the
+  application runtime (start once, startup scan outcomes, late replies, preference
+  saves, tile size), `window_chrome.rs` and `shell.rs` the decorations and the header,
+  and `src-gpui/crates/media_tagger_gpui/tests/shell_window.rs` the shell on GPUI's test
+  platform (view switch keeps the runtime and remakes the view, Escape and focus return,
+  a failed startup scan, live theme and language, the bundled fonts on the real text
+  system) and through the headless renderer.
 - GPUI port: `src-gpui/crates/media_tagger_client/src/text/` and
   `src-gpui/crates/media_tagger_client/tests/text_editor.rs` cover the editing model of the
   text field, `src-gpui/crates/media_tagger_gpui/tests/text_input.rs` the field itself and

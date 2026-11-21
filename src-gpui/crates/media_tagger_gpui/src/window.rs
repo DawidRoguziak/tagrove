@@ -12,22 +12,23 @@ use std::{
 };
 
 use gpui::{
-    px, size, App, AppContext as _, Application, Bounds, Pixels, QuitMode, Size, TitlebarOptions,
-    WindowBounds, WindowHandle, WindowOptions,
+    point, px, size, App, AppContext as _, Application, Bounds, Pixels, QuitMode, Size,
+    TitlebarOptions, WindowBounds, WindowDecorations, WindowHandle, WindowOptions,
 };
-use media_tagger_client::{hello::HelloScreen, theme::ThemeName};
+use media_tagger_client::{runtime::RuntimeInput, theme::ThemeName};
 
 use crate::{
     profile::Profile,
+    runtime::{Runtime, RuntimeParts},
     ui,
-    views::{hello::HelloView, kit::KitView},
+    views::{kit::KitView, shell::ShellView},
 };
 
 /// What the main window shows.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum MainScreen {
-    /// The placeholder of epic E00 in the start theme.
-    Hello(HelloScreen),
+    /// The application: the shell over the runtime made of these parts.
+    Shell(RuntimeParts),
     /// The board of every shared control (`--scenario kit`).
     Kit,
 }
@@ -191,32 +192,65 @@ fn abstract_socket_answers(_name: &Path) -> bool {
     false
 }
 
+/// How far GPUI's X11 backend moves a new window right of the origin it was asked for:
+/// it creates every window at `x + 2` (`gpui_linux` `X11Window::new`). Uncorrected, a
+/// window as wide as the screen leaves a 2 px strip of the root window at its left edge
+/// and loses its last 2 px past the right one. The shift is in device pixels and the
+/// scale factor is not known before the window exists, so on a scaled X11 screen the
+/// correction is off by the difference (the window starts a pixel or two left of centre).
+pub const X11_CREATE_SHIFT: f32 = 2.0;
+
+/// The bounds the main window asks for: centred on the primary display, as the Tauri
+/// window (`"center": true`), with GPUI's X11 shift taken back. `compositor` is
+/// [`App::compositor_name`]; other servers place the window themselves and keep the
+/// centred bounds.
+pub fn main_window_bounds(centered: Bounds<Pixels>, compositor: &str) -> Bounds<Pixels> {
+    if compositor != "X11" {
+        return centered;
+    }
+    Bounds::new(
+        point(centered.origin.x - px(X11_CREATE_SHIFT), centered.origin.y),
+        centered.size,
+    )
+}
+
 /// Title and application id come from the profile, so the two profiles and the Tauri
-/// application stay distinguishable on screen and to the window manager.
+/// application stay distinguishable on screen and to the window manager. The window
+/// draws its own decorations (plan decision D14), as the frameless Tauri window does;
+/// the title still names it to the window manager.
 pub fn main_window_options(profile: Profile, cx: &App) -> WindowOptions {
     WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-            None,
-            pixels(WINDOW_SIZE),
-            cx,
+        window_bounds: Some(WindowBounds::Windowed(main_window_bounds(
+            Bounds::centered(None, pixels(WINDOW_SIZE), cx),
+            cx.compositor_name(),
         ))),
         titlebar: Some(TitlebarOptions {
             title: Some(profile.window_title.into()),
+            appears_transparent: true,
             ..Default::default()
         }),
         app_id: Some(profile.identifier.to_owned()),
         window_min_size: Some(pixels(WINDOW_MIN_SIZE)),
+        window_decorations: Some(WindowDecorations::Client),
         ..Default::default()
     }
 }
 
+/// Opens the main window: the shell over a runtime made of `parts`, which starts once
+/// the window is open (`onSettled(runtime.start)`). The runtime lives as long as the
+/// window.
 pub fn open_main_window(
     profile: Profile,
-    screen: &HelloScreen,
+    parts: RuntimeParts,
     cx: &mut App,
-) -> gpui::Result<WindowHandle<HelloView>> {
+) -> gpui::Result<WindowHandle<ShellView>> {
     let options = main_window_options(profile, cx);
-    cx.open_window(options, |_, cx| cx.new(|_| HelloView::new(screen)))
+    let runtime = cx.new(|cx| Runtime::new(parts, cx));
+    let window = cx.open_window(options, |window, cx| {
+        cx.new(|cx| ShellView::new(runtime.clone(), window, cx))
+    })?;
+    runtime.update(cx, |runtime, cx| runtime.send(RuntimeInput::Start, cx));
+    Ok(window)
 }
 
 /// Opens the `kit` board.
@@ -262,7 +296,7 @@ pub fn run_until_closed(
     run_application(application(display), move |cx| {
         init_application(theme, cx)?;
         match screen {
-            MainScreen::Hello(screen) => open_main_window(profile, &screen, cx).map(|_| ()),
+            MainScreen::Shell(parts) => open_main_window(profile, parts, cx).map(|_| ()),
             MainScreen::Kit => open_kit_window(profile, cx).map(|_| ()),
         }
     })
@@ -305,9 +339,11 @@ mod tests {
 
     use tempfile::{tempdir, TempDir};
 
+    use gpui::{point, px, size, Bounds};
+
     use super::{
-        local_x11_display, require_display, select_display, DisplayEnvironment, DisplayServer,
-        NoDisplay,
+        local_x11_display, main_window_bounds, require_display, select_display, DisplayEnvironment,
+        DisplayServer, NoDisplay, X11_CREATE_SHIFT,
     };
 
     /// A display number without a TCP port (6000 + N does not fit), so only the sockets
@@ -506,6 +542,24 @@ mod tests {
                 select_display(&environment, dir.path()),
                 Ok(DisplayServer::X11),
                 "{display}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_x11_create_shift_is_taken_back_and_nothing_else_moves() {
+        let centered = Bounds::new(point(px(0.0), px(0.0)), size(px(1440.0), px(900.0)));
+
+        let x11 = main_window_bounds(centered, "X11");
+        assert_eq!(x11.origin, point(px(-X11_CREATE_SHIFT), px(0.0)));
+        assert_eq!(x11.size, centered.size);
+        // GPUI adds the shift back when it creates the window: the left edge lands on 0.
+        assert_eq!(x11.origin.x + px(X11_CREATE_SHIFT), centered.origin.x);
+        for compositor in ["Wayland", ""] {
+            assert_eq!(
+                main_window_bounds(centered, compositor),
+                centered,
+                "{compositor:?}"
             );
         }
     }

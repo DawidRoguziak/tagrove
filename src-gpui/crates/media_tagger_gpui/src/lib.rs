@@ -9,14 +9,22 @@
 pub mod boot;
 pub mod cli;
 pub mod profile;
+pub mod runtime;
 pub mod scenario;
 pub mod ui;
 pub mod views;
 pub mod window;
 
-use std::{error::Error, ffi::OsString};
+use std::{error::Error, ffi::OsString, sync::Arc};
 
-use media_tagger_client::hello::HelloScreen;
+use media_tagger_client::{
+    backend::CoreBackend,
+    exec::ThreadExecutor,
+    i18n::{Language, LocaleEnvironment},
+    prefs::{FilePrefsStore, PrefsStore},
+    runtime::RuntimeConfig,
+};
+use runtime::RuntimeParts;
 use scenario::StartScreen;
 use window::MainScreen;
 
@@ -24,9 +32,14 @@ use window::MainScreen;
 ///
 /// Order: identifier guard → scenario guard → display check (a named display server
 /// must answer) → app-data directory → `boot::start` (instance lock, storage, ffmpeg,
-/// workers) → window. Nothing touches the disk before the identifier and scenario
-/// guards have passed, and nothing opens the profile before a display server has
-/// answered.
+/// workers) → preferences → backend → window, whose runtime then starts (library,
+/// startup scan, scan roots). Nothing touches the disk before the identifier and
+/// scenario guards have passed, and nothing opens the profile before a display server
+/// has answered.
+///
+/// The start theme and language are the stored preferences (else dark, and the
+/// system's language). A scenario starts in its own theme and in English, as the
+/// Tauri E2E specs start.
 ///
 /// `scenario` is the id given with `--scenario`; see [`scenario::start_state`].
 pub fn run(scenario: Option<&str>) -> Result<(), Box<dyn Error>> {
@@ -64,16 +77,47 @@ pub fn run_scenario_with(
         env("XDG_DATA_HOME").as_deref(),
         env("HOME").as_deref(),
     )?;
-    let screen = match start.screen {
-        StartScreen::Main => MainScreen::Hello(HelloScreen::load(start.theme)?),
-        StartScreen::Kit => MainScreen::Kit,
+
+    // Held until the event loop has returned; dropping it releases the profile's
+    // instance lock. It does not stop the thumbnail workers: the core's scheduler has
+    // no shutdown, so its idle threads end with the process.
+    let mut boot = boot::start(&data_dir, &boot::resource_dir()?)?;
+    // Backend calls run here, never on the UI thread; replies wake the UI thread.
+    let executor = Arc::new(ThreadExecutor::new());
+    let (theme, screen) = match start.screen {
+        StartScreen::Main => {
+            let prefs = Arc::new(FilePrefsStore::new(&data_dir));
+            let config = if scenario.is_some() {
+                RuntimeConfig {
+                    theme: start.theme,
+                    language: Language::En,
+                }
+            } else {
+                let stored = prefs.load();
+                RuntimeConfig {
+                    theme: stored.theme_or_default(),
+                    language: stored.language_or_system(&LocaleEnvironment::read(env)),
+                }
+            };
+            let backend = CoreBackend::new(
+                Arc::clone(&boot.state),
+                std::mem::take(&mut boot.startup_scan_roots),
+            )?;
+            let parts = RuntimeParts {
+                config,
+                backend: Arc::new(backend),
+                prefs,
+                executor: executor.clone(),
+            };
+            (config.theme, MainScreen::Shell(parts))
+        }
+        StartScreen::Kit => (start.theme, MainScreen::Kit),
     };
 
-    // Held until the event loop has returned. Dropping it closes the database pool and
-    // then releases the profile's instance lock. It does not stop the thumbnail workers:
-    // the core's scheduler has no shutdown, so its idle threads end with the process.
-    let boot = boot::start(&data_dir, &boot::resource_dir()?)?;
-    let outcome = window::run_until_closed(profile, start.theme, screen, display);
+    let outcome = window::run_until_closed(profile, theme, screen, display);
+    // Queued backend calls are dropped; one still running ends with the process, as a
+    // command of the Tauri application does when its window closes.
+    executor.shutdown();
     drop(boot);
     outcome
 }

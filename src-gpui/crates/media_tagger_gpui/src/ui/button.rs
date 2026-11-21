@@ -43,6 +43,8 @@ pub struct Button {
     theme: Option<ThemeName>,
     focus_handle: Option<FocusHandle>,
     aria_label: Option<SharedString>,
+    leading_icon: Option<(IconName, f32)>,
+    debug_selector: Option<&'static str>,
     on_click: Option<ClickHandler>,
 }
 
@@ -57,6 +59,8 @@ impl Button {
             theme: None,
             focus_handle: None,
             aria_label: None,
+            leading_icon: None,
+            debug_selector: None,
             on_click: None,
         }
     }
@@ -121,6 +125,20 @@ impl Button {
     /// The focus handle of the button, for an owner that moves the focus to it.
     pub fn track_focus(mut self, focus_handle: &FocusHandle) -> Self {
         self.focus_handle = Some(focus_handle.clone());
+        self
+    }
+
+    /// An icon of `size` CSS pixels before the label of a text button (`<UiIcon>` as the
+    /// first child of `UiButton`), in the label's colour.
+    pub fn leading_icon(mut self, icon: IconName, size: f32) -> Self {
+        self.leading_icon = Some((icon, size));
+        self
+    }
+
+    /// A debug selector for tests (`VisualTestContext::debug_bounds`); a no-op outside
+    /// test builds.
+    pub fn debug_selector(mut self, selector: &'static str) -> Self {
+        self.debug_selector = Some(selector);
         self
     }
 
@@ -194,11 +212,18 @@ impl RenderOnce for Button {
             .when_some(self.aria_label.clone(), |button, label| {
                 button.aria_label(label)
             })
+            .when_some(self.debug_selector, |button, selector| {
+                button.debug_selector(move || selector.to_owned())
+            })
             .when(focus_visible, |button| {
                 button.child(focus_ring(rest.focus_ring, rest.radius))
             });
         let button = match self.content {
-            Content::Label(label) => button.child(label),
+            Content::Label(label) => button
+                .when_some(self.leading_icon, |button, (icon, size)| {
+                    button.child(Icon::new(icon).size(size).color(color(rest.text)))
+                })
+                .child(label),
             Content::Icon { icon, kind } => button.w(px(ICON_BUTTON_SIZE)).child(
                 Icon::new(icon)
                     .size(ICON_BUTTON_ICON_SIZE)

@@ -295,8 +295,8 @@
         "E02",
         "E05"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-21",
       "sources": [
         "src/app",
         "src/platform/tauri/window.ts"

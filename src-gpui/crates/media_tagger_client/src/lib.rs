@@ -24,11 +24,14 @@
 //!   (their looks from the theme tokens, the slider and segmented-control keys), the
 //!   icon catalogue, and the overlay layer: the layer stack behind Escape and focus
 //!   restore, and the fading presence of a modal.
+//! - [`runtime`], [`shell`], [`window_chrome`], [`shortcuts`]: the application runtime
+//!   (models for the application's lifetime, the view, the start sequence), what the
+//!   shell draws around the views, the window's own decorations and the registry of
+//!   key contexts and shortcuts.
 
 pub mod backend;
 pub mod controls;
 pub mod exec;
-pub mod hello;
 pub mod i18n;
 pub mod icons;
 pub mod kit;
@@ -36,8 +39,12 @@ pub mod model;
 pub mod overlay;
 pub mod prefs;
 pub mod progress;
+pub mod runtime;
 pub mod scenario;
+pub mod shell;
+pub mod shortcuts;
 pub mod startup_scan;
 pub mod text;
 pub mod theme;
 pub mod thumbs;
+pub mod window_chrome;

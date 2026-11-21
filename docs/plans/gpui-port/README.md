@@ -122,7 +122,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | E03 | [i18n, tokeny motywu i preferencje UI](E03-client-i18n-theme-prefs.md) | M | standardowy | E00 | done 2026-11-21 |
 | E04 | [Pole tekstowe (własny element GPUI)](E04-text-input.md) | M | trudny | E03 | done 2026-11-21 |
 | E05 | [Prymitywy UI i warstwa nakładek (GPUI)](E05-gpui-primitives-overlays.md) | L | standardowy | E03, E04 | done 2026-11-21 |
-| E06 | [Runtime aplikacji, okno i powłoka](E06-gpui-app-shell.md) | M | standardowy | E02, E05 | todo |
+| E06 | [Runtime aplikacji, okno i powłoka](E06-gpui-app-shell.md) | M | standardowy | E02, E05 | done 2026-11-21 |
 | E07 | [Model zapytań i cache stron](E07-client-query-model.md) | L | trudny | E02 | todo |
 | E08 | [Szczegóły, stan tagów, mutacje i słownik](E08-client-metadata.md) | L | trudny | E07 | todo |
 | E09 | [Wirtualna siatka galerii i miniatury](E09-gpui-gallery-grid.md) | L | trudny | E06, E07 | todo |

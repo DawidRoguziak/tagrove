@@ -9,6 +9,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use media_tagger_core::{
@@ -21,11 +22,13 @@ use media_tagger_core::{
 };
 
 /// The running backend of one profile. Fields drop in declaration order, so the
-/// database pool closes before the instance lock is released. Dropping it does not stop
-/// the thumbnail workers: `ThumbnailScheduler` has no shutdown, and its threads wait
-/// for jobs until the process exits.
+/// database pool closes before the instance lock is released, unless the backend
+/// built on `state` still holds it (the GPUI adapter's `CoreBackend` and its
+/// thumbnail publisher do until the process exits). Dropping it does not stop the
+/// thumbnail workers: `ThumbnailScheduler` has no shutdown, and its threads wait for
+/// jobs until the process exits.
 pub struct Boot {
-    pub state: AppState,
+    pub state: Arc<AppState>,
     /// Scan roots as stored at launch; the startup scan (a later epic) reads them.
     pub startup_scan_roots: Vec<ScanRoot>,
     _instance_lock: InstanceLock,
@@ -41,7 +44,7 @@ pub fn start(data_dir: &Path, resource_dir: &Path) -> BootstrapResult<Boot> {
     let ffmpeg_path = bootstrap::resolve_ffmpeg_path(resource_dir);
     let state = bootstrap::start_workers(&storage, ffmpeg_path)?;
     Ok(Boot {
-        state,
+        state: Arc::new(state),
         startup_scan_roots: snapshots.scan_roots,
         _instance_lock: instance_lock,
     })

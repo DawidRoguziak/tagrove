@@ -66,3 +66,7 @@ deferred
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — agent naprawczy luk E06
+
+- Z epiku E06: GPUI przypiętego commitu rysuje zmienny font tylko w jego domyślnej instancji (waga 400) i nie ma odstępów liter. Dołączony `public/fonts/Inter.ttf` jest zmienny, więc w pakiecie albo na systemie bez zainstalowanego Inter wszystkie wagi inne niż 400 (nagłówki 650, logotyp i przyciski 600) rysują się jako 400; z systemowym Inter wagi biorą najbliższą statyczną twarz. Przed przełączeniem potrzebna decyzja: statyczne instancje Inter jako zasoby GPUI albo nowsza rewizja GPUI z obsługą wariacji. Szczegóły: `reports/E06-review-open.md` (font-2, font-3).

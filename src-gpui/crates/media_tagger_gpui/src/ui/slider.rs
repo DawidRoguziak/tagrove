@@ -103,6 +103,11 @@ impl Slider {
         self.value
     }
 
+    /// The accessible name.
+    pub fn label(&self) -> &SharedString {
+        &self.label
+    }
+
     pub fn range(&self) -> SliderRange {
         self.range
     }

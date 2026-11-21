@@ -4,7 +4,7 @@
 //!   and the icon files.
 //! - Controls of `src/ui/controls`: [`button`] (with icon buttons), [`chip`],
 //!   [`alert`], [`progress`], [`slider`], [`segmented`], [`switch`], [`spinner`],
-//!   [`icon`], and the text field of epic E04, [`text_input`].
+//!   [`icon`], and the text field of epic E04, [`text_input`]; the Tagrove [`logo`].
 //! - The overlay layer of `src/ui/overlays`: [`layers`] (Escape, Tab, focus restore)
 //!   and [`modal`].
 
@@ -15,6 +15,7 @@ pub mod chip;
 pub mod fonts;
 pub mod icon;
 pub mod layers;
+pub mod logo;
 pub mod modal;
 pub mod progress;
 pub mod segmented;

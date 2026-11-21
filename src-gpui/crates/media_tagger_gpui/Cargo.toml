@@ -27,5 +27,7 @@ media_tagger_core.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+# FakeBackend, ManualExecutor and MemoryPrefsStore for the shell's tests.
+media_tagger_client = { workspace = true, features = ["test-support"] }
 gpui_platform = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true

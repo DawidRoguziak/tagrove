@@ -18,3 +18,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-21 | E04 | workflow | done | E04 gotowy: pole tekstowe (model w crate klienta i element GPUI) z testami, przegląd czysty po 3 rundach, bramka test:all zaliczona. | [E04](E04-text-input.md)
 2026-11-21 | E05 | orkiestrator | in progress | workflow start od kroku implement | [E05](E05-gpui-primitives-overlays.md)
 2026-11-21 | E05 | workflow | done | E05 zakończony: prymitywy UI i warstwa nakładek w GPUI gotowe, przegląd czysty po 2 rundach, bramka zaliczona. | [E05](E05-gpui-primitives-overlays.md)
+2026-11-21 | E06 | orkiestrator | in progress | workflow start od kroku implement | [E06](E06-gpui-app-shell.md)
+2026-11-21 | E06 | workflow | done | Epik E06 ukończony: runtime, okno i powłoka gotowe, przegląd czysty, brama test:all zaliczona; nie sprawdzono na prawdziwym ekranie. | [E06](E06-gpui-app-shell.md)

@@ -15,6 +15,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import job  # noqa: E402
 import port_state as port  # noqa: E402
+import review_scope  # noqa: E402
 
 REPO = port.repo_root()
 WORKFLOW = (REPO / ".claude/workflows/gpui-port-epic.js").read_text(encoding="utf-8")
@@ -64,7 +65,7 @@ def run_in_node(body: str, hard: bool = False):
     core = re.search(r"^const CORE_LENSES = .+;$", WORKFLOW, re.M).group(0)
     script = "\n".join([
         f"const hard = {json.dumps(hard)};", core, "const log = () => {};",
-        workflow_function("scopeProblem"), workflow_function("pickLenses"),
+        workflow_function("scopeProblem"), workflow_function("betterScope"), workflow_function("pickLenses"),
         f"console.log(JSON.stringify({body}));",
     ])
     done = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
@@ -125,11 +126,85 @@ class ReviewLenses(unittest.TestCase):
         self.assertIn("missing", self.problem({"files": [], "file_count": 30}))
         self.assertEqual(self.problem({"files": files, "file_count": 30}), "the file list has 2 of 30 files")
 
+    def test_a_second_relay_never_costs_what_the_first_one_had(self):
+        # Epic E09, round 1: the first relay had the suggestions but no files, the second neither.
+        first = {"ok": True, "empty": False, "files": [], "file_count": 39,
+                 "suggested_lenses": ["review-conventions", "review-rust", "review-gpui", "review-frontend"]}
+        again = {"ok": True, "empty": False, "files": [], "file_count": 39}
+        call = f"betterScope({json.dumps(first)}, {json.dumps(again)})"
+        self.assertEqual(run_in_node(call)["suggested_lenses"], first["suggested_lenses"])
+        full = {"ok": True, "empty": False, "file_count": 2, "untracked": ["src-gpui/a.rs"],
+                "files": [{"path": "src-gpui/a.rs"}, {"path": "e2e/compare/b.js"}]}
+        merged = run_in_node(f"betterScope({json.dumps(first)}, {json.dumps(full)})")
+        self.assertEqual([entry["path"] for entry in merged["files"]], ["src-gpui/a.rs", "e2e/compare/b.js"])
+        self.assertEqual(merged["suggested_lenses"], first["suggested_lenses"])
+        self.assertEqual(merged["untracked"], ["src-gpui/a.rs"])
+        self.assertEqual(run_in_node(f"scopeProblem(betterScope({json.dumps(first)}, {json.dumps(full)}))"), "")
+        self.assertEqual(run_in_node(f"betterScope({json.dumps(full)}, {json.dumps(again)})")["files"], full["files"])
+        for unusable in ("null", json.dumps({"ok": False, "empty": False, "error": "x"}),
+                         json.dumps({"ok": True, "empty": True})):
+            self.assertEqual(run_in_node(f"betterScope({json.dumps(first)}, {unusable})"), first)
+
     def test_the_review_loop_checks_the_scope_and_reports_what_is_left(self):
         review = workflow_function("review")
         self.assertIn("scopeProblem(scope)", review)
         self.assertIn("scopePrompt(problem)", review)
+        self.assertIn("betterScope(scope, again)", review)
         self.assertIn("review.gaps.push(`round ${round}: review scope incomplete", review)
+
+
+class ReviewScopeRelay(unittest.TestCase):
+    """review_scope.py prints the object the clerk relays, with the fields of the workflow's SCOPE schema."""
+
+    COLLECTED = {
+        "empty": False, "base": "abc", "target": "worktree", "diff_command": "git diff -M abc",
+        "totals": {"files": 2, "changed_lines": 12, "app_source_lines": 9},
+        "suggested_lenses": ["review-conventions", "review-rust", "review-gpui"],
+        "rules": [{"rule": ".claude/rules/gpui-port.md", "files": ["src-gpui/a.rs"]}],
+        "docs": ["docs/development/testing.md"], "notes": [],
+        "files": [
+            {"path": "src-gpui/a.rs", "status": "A?", "old_path": None, "category": "rust", "added": 9,
+             "removed": 0, "binary": False, "hot_path": True, "rules": [".claude/rules/gpui-port.md"]},
+            {"path": "docs/development/testing.md", "status": "M", "old_path": None, "category": "docs",
+             "added": 2, "removed": 1, "binary": False, "hot_path": False, "rules": []},
+        ],
+    }
+
+    def test_the_relay_keeps_every_file_and_names_the_untracked_ones(self):
+        relay = review_scope.reduce(self.COLLECTED)
+        self.assertEqual(relay["files"], [
+            {"path": "src-gpui/a.rs", "category": "rust", "hot_path": True},
+            {"path": "docs/development/testing.md", "category": "docs", "hot_path": False}])
+        self.assertEqual((relay["file_count"], relay["untracked"]), (2, ["src-gpui/a.rs"]))
+        self.assertEqual((relay["changed_lines"], relay["app_source_lines"]), (12, 9))
+        self.assertEqual(relay["suggested_lenses"], self.COLLECTED["suggested_lenses"])
+        self.assertEqual(relay["rules"], [".claude/rules/gpui-port.md"])
+        self.assertEqual((relay["ok"], relay["empty"]), (True, False))
+
+    def test_the_relay_has_exactly_the_fields_of_the_workflow_schema(self):
+        schema = WORKFLOW[WORKFLOW.index("const SCOPE = obj({"):]
+        schema = schema[:schema.index('}, ["ok", "empty"]')]
+        schema = re.sub(r"list\(\{[^}]*\}[^)]*\)", "list", schema)  # the fields of one file entry are not top-level
+        fields = set(re.findall(r"\b(\w+): (?:bool|str|strs|int|list)\b", schema))
+        self.assertEqual(set(review_scope.reduce(self.COLLECTED)) | {"error"}, fields)
+        self.assertLessEqual(set(review_scope.failure("boom")), fields)
+
+    def test_the_workflow_asks_for_the_relay_and_the_real_tree_gives_one(self):
+        self.assertIn("review_scope.py --base", workflow_function("scopePrompt"))
+        done = subprocess.run([sys.executable, str(HERE / "review_scope.py"), "--base", "HEAD"],
+                              capture_output=True, text=True, check=False, cwd=REPO)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        relay = json.loads(done.stdout)
+        self.assertEqual(relay["file_count"], len(relay["files"]))
+        self.assertEqual(len(done.stdout.strip().splitlines()), 1, "one compact line, easy to copy whole")
+
+    def test_a_failing_collection_is_reported_as_an_object(self):
+        done = subprocess.run([sys.executable, str(HERE / "review_scope.py"), "--base", "no-such-revision"],
+                              capture_output=True, text=True, check=False, cwd=REPO)
+        self.assertEqual(done.returncode, 1)
+        relay = json.loads(done.stdout)
+        self.assertEqual((relay["ok"], relay["empty"]), (False, False))
+        self.assertTrue(relay["error"])
 
 
 class Commands(unittest.TestCase):

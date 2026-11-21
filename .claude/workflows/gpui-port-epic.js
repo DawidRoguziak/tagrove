@@ -249,10 +249,10 @@ function parityFixPrompt(diffs, round) {
 function scopePrompt(problem) {
   return [
     "Collect the review scope. Do not edit anything.",
-    ...(problem ? [`An earlier answer to this request could not be used: ${problem}. Copy the whole file list this time.`] : []),
-    `Run exactly: \`python3 .claude/skills/review-changes/scripts/collect_scope.py --base ${base}\``,
-    "From its JSON output return: ok=true, empty, base, target, diff_command, untracked (the paths whose status is \"A?\"), files (path, category and hot_path of every file; the list has exactly totals.files entries, never shortened or left out), file_count (totals.files), changed_lines (totals.changed_lines), app_source_lines (totals.app_source_lines), suggested_lenses, rules (the rule paths), docs.",
-    "If the command fails return ok=false, empty=false and error with its stderr."
+    ...(problem ? [`An earlier answer to this request could not be used: ${problem}. Copy the whole object this time.`] : []),
+    `Run exactly: \`python3 ${S}/review_scope.py --base ${base}\` and read its complete output (print all of it; do not load it into a variable and look at a part).`,
+    "It prints one JSON object. Return exactly that object as your structured output: every field, and every entry of files, untracked, suggested_lenses, rules and docs. Do not summarise, shorten, reorder or leave out anything; files has file_count entries.",
+    "If the command fails it prints an object with ok=false and error: return that object."
   ].join("\n");
 }
 
@@ -356,6 +356,20 @@ function scopeProblem(scope) {
     return `the file list has ${files.length} of ${scope.file_count} files`;
   }
   return "";
+}
+
+// The fuller of two relays of the same scope. A list the fuller one lost is taken from the other, so a
+// second answer never costs what the first one had (the lenses the scope script suggested, for one).
+function betterScope(first, again) {
+  if (!again?.ok || again.empty) return first;
+  const count = (scope) => (scope.files ?? []).length;
+  const [full, other] = count(again) > count(first) ? [again, first] : [first, again];
+  const merged = { ...full };
+  for (const key of ["suggested_lenses", "untracked", "rules", "docs"]) {
+    if (!merged[key]?.length && other[key]?.length) merged[key] = other[key];
+  }
+  if (!Number.isInteger(merged.file_count) && Number.isInteger(other.file_count)) merged.file_count = other.file_count;
+  return merged;
 }
 
 function pickLenses(scope, round, lastByLens) {
@@ -463,10 +477,8 @@ async function review(state) {
     if (problem) {
       log(`${epic.id}: review round ${round}: ${problem}; collecting the scope once more`);
       const again = await ask("clerk", scopePrompt(problem), SCOPE, { label: `scope r${round} retry`, phase: "Review" });
-      if (again?.ok && !again.empty && (again.files ?? []).length >= (scope.files ?? []).length) {
-        scope = again;
-        problem = scopeProblem(scope);
-      }
+      scope = betterScope(scope, again);
+      problem = scopeProblem(scope);
     }
     if (problem) review.gaps.push(`round ${round}: review scope incomplete (${problem}); the lenses were picked without it`);
     const lenses = pickLenses(scope, round, lastByLens);

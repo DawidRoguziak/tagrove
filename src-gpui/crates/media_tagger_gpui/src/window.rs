@@ -15,9 +15,22 @@ use gpui::{
     px, size, App, AppContext as _, Application, Bounds, Pixels, QuitMode, Size, TitlebarOptions,
     WindowBounds, WindowHandle, WindowOptions,
 };
-use media_tagger_client::hello::HelloScreen;
+use media_tagger_client::{hello::HelloScreen, theme::ThemeName};
 
-use crate::{profile::Profile, views::hello::HelloView};
+use crate::{
+    profile::Profile,
+    ui,
+    views::{hello::HelloView, kit::KitView},
+};
+
+/// What the main window shows.
+#[derive(Debug, Clone)]
+pub enum MainScreen {
+    /// The placeholder of epic E00 in the start theme.
+    Hello(HelloScreen),
+    /// The board of every shared control (`--scenario kit`).
+    Kit,
+}
 
 /// Initial and minimum size of the main window, as in `src-tauri/tauri.conf.json`.
 pub const WINDOW_SIZE: (f32, f32) = (1440.0, 900.0);
@@ -206,33 +219,52 @@ pub fn open_main_window(
     cx.open_window(options, |_, cx| cx.new(|_| HelloView::new(screen)))
 }
 
+/// Opens the `kit` board.
+pub fn open_kit_window(profile: Profile, cx: &mut App) -> gpui::Result<WindowHandle<KitView>> {
+    let options = main_window_options(profile, cx);
+    cx.open_window(options, |window, cx| cx.new(|cx| KitView::new(window, cx)))
+}
+
 /// A GPUI application allowed to use only `display`: it never falls back to headless
-/// mode, and never picks a display server that [`require_display`] found silent.
+/// mode, and never picks a display server that [`require_display`] found silent. Its
+/// assets are the icons of `ui::assets`.
 fn application(display: DisplayServer) -> Application {
     #[cfg(target_os = "linux")]
-    {
-        gpui_platform::linux(match display {
-            DisplayServer::Wayland => gpui::WindowingModes::WAYLAND,
-            DisplayServer::X11 => gpui::WindowingModes::X11,
-        })
-    }
+    let application = gpui_platform::linux(match display {
+        DisplayServer::Wayland => gpui::WindowingModes::WAYLAND,
+        DisplayServer::X11 => gpui::WindowingModes::X11,
+    });
     #[cfg(not(target_os = "linux"))]
-    {
+    let application = {
         let _ = display;
         gpui_platform::application()
-    }
+    };
+    application.with_assets(ui::assets::Assets)
+}
+
+/// Prepares the application before its first window: fonts, the building blocks of
+/// `ui` and the start theme.
+pub fn init_application(theme: ThemeName, cx: &mut App) -> gpui::Result<()> {
+    ui::fonts::register(cx)?;
+    ui::init(cx);
+    ui::theme::set_active(theme, cx);
+    Ok(())
 }
 
 /// Opens the main window on `display` and runs the event loop until the last window has
 /// closed.
 pub fn run_until_closed(
     profile: Profile,
-    screen: HelloScreen,
+    theme: ThemeName,
+    screen: MainScreen,
     display: DisplayServer,
 ) -> Result<(), Box<dyn Error>> {
     run_application(application(display), move |cx| {
-        crate::ui::init(cx);
-        open_main_window(profile, &screen, cx).map(|_| ())
+        init_application(theme, cx)?;
+        match screen {
+            MainScreen::Hello(screen) => open_main_window(profile, &screen, cx).map(|_| ()),
+            MainScreen::Kit => open_kit_window(profile, cx).map(|_| ()),
+        }
     })
 }
 

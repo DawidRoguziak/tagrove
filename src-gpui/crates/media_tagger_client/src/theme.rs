@@ -412,6 +412,53 @@ pub struct CubicBezier {
     pub y2: f32,
 }
 
+impl CubicBezier {
+    /// CSS `linear`.
+    pub const LINEAR: Self = Self {
+        x1: 0.0,
+        y1: 0.0,
+        x2: 1.0,
+        y2: 1.0,
+    };
+    /// CSS `ease-out`.
+    pub const EASE_OUT: Self = Self {
+        x1: 0.0,
+        y1: 0.0,
+        x2: 0.58,
+        y2: 1.0,
+    };
+
+    /// The eased progress at `progress` (the x of the curve, clamped to 0..=1), as a
+    /// browser computes a transition: the curve is solved for x and y is returned.
+    pub fn sample(self, progress: f32) -> f32 {
+        let x = progress.clamp(0.0, 1.0);
+        if x == 0.0 || x == 1.0 {
+            return x;
+        }
+        // B(t) = 3(1-t)²t·p1 + 3(1-t)t²·p2 + t³ for one coordinate.
+        let curve = |t: f32, p1: f32, p2: f32| {
+            let inverse = 1.0 - t;
+            3.0 * inverse * inverse * t * p1 + 3.0 * inverse * t * t * p2 + t * t * t
+        };
+        // x(t) is monotonic for 0 <= x1, x2 <= 1, so bisection finds t.
+        let (mut low, mut high) = (0.0_f32, 1.0_f32);
+        let mut t = x;
+        for _ in 0..32 {
+            let at = curve(t, self.x1, self.x2);
+            if (at - x).abs() < 1e-6 {
+                break;
+            }
+            if at < x {
+                low = t;
+            } else {
+                high = t;
+            }
+            t = (low + high) / 2.0;
+        }
+        curve(t, self.y1, self.y2)
+    }
+}
+
 /// Animation timing. Motion never animates geometry, only opacity and colours
 /// (docs/frontend/architecture-and-ui-conventions.md).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -552,6 +599,28 @@ mod tests {
         );
         assert_eq!(color_token(ThemeName::Dark, "--color-base"), None);
         assert_eq!(color_token(ThemeName::Dark, ""), None);
+    }
+
+    #[test]
+    fn easing_curves_start_at_zero_end_at_one_and_follow_their_shape() {
+        use super::{CubicBezier, MOTION};
+
+        for curve in [CubicBezier::LINEAR, CubicBezier::EASE_OUT, MOTION.ease] {
+            assert_eq!(curve.sample(0.0), 0.0);
+            assert_eq!(curve.sample(1.0), 1.0);
+            assert_eq!(curve.sample(-1.0), 0.0);
+            assert_eq!(curve.sample(2.0), 1.0);
+        }
+        assert!((CubicBezier::LINEAR.sample(0.3) - 0.3).abs() < 1e-4);
+        // ease-out and the app's cubic-bezier(0.2, 0, 0, 1) run ahead of linear.
+        assert!(CubicBezier::EASE_OUT.sample(0.5) > 0.5);
+        assert!(MOTION.ease.sample(0.5) > 0.8);
+        let mut previous = 0.0;
+        for step in 1..=20 {
+            let value = MOTION.ease.sample(step as f32 / 20.0);
+            assert!(value >= previous, "monotonic at {step}");
+            previous = value;
+        }
     }
 
     #[test]

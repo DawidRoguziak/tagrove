@@ -90,3 +90,7 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E05
+
+- Z epiku E05: spinner kafla to `ui::spinner::Spinner::new(id, SpinnerSize::Tile).reveal(THUMBNAIL_LOADER)` (300 ms niewidoczny, potem 150 ms ease-out, `media_tagger_client::controls`); animacja startuje przy pierwszym narysowaniu elementu o danym id. Chip rodzaju mediów: `ui::chip::Chip` z `ChipTone::Video`/`Gif`. Suwak rozmiaru kafli: encja `ui::slider::Slider` (kontrolowana, `SliderEvent::Input`).

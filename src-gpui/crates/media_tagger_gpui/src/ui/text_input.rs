@@ -181,6 +181,8 @@ pub struct TextInput {
     drag: Option<Drag>,
     platform_notice: Option<PlatformNotice>,
     _focus_subscriptions: [Subscription; 2],
+    /// Set for a field that follows the active theme ([`TextInput::themed`]).
+    _theme_subscription: Option<Subscription>,
 }
 
 impl EventEmitter<TextInputEvent> for TextInput {}
@@ -213,7 +215,22 @@ impl TextInput {
             drag: None,
             platform_notice: None,
             _focus_subscriptions: focus_subscriptions,
+            _theme_subscription: None,
         }
+    }
+
+    /// An empty field drawn with the active theme (`ui::theme`), which it follows when
+    /// the theme changes. [`Self::new`] keeps the theme it is given.
+    pub fn themed(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut input = Self::new(crate::ui::theme::active(cx), window, cx);
+        input._theme_subscription = Some(cx.observe_global_in::<crate::ui::theme::ActiveTheme>(
+            window,
+            |input, _, cx| {
+                let theme = crate::ui::theme::active(cx);
+                input.set_theme(theme, cx);
+            },
+        ));
+        input
     }
 
     pub fn text(&self) -> &str {
@@ -232,6 +249,11 @@ impl TextInput {
     /// An input method is composing text in the field.
     pub fn is_composing(&self) -> bool {
         self.editor.is_composing()
+    }
+
+    /// The theme the field draws with.
+    pub fn theme(&self) -> ThemeName {
+        self.theme
     }
 
     pub fn is_disabled(&self) -> bool {

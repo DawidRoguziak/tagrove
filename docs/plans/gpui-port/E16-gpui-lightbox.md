@@ -83,3 +83,7 @@ Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
 
 - Z epiku E04: klawisze lightboxa `f`, `0`, `+`, `=`, `-` wpisują znaki: wiąż je przez `text_input::outside_text_input("…")`, inaczej nie da się ich wpisać w polu tagów ani klucza grupy. Strzałki ←/→ wiązane w kontekście lightboxa nie odpalą się z fokusem w polu, bo pole wiąże je głębiej (kursor), jak w Tauri.
 - Z epiku E04: słowo potwierdzenia usunięcia i klucz grupy to zwykłe `TextInput`; kolejność w grupie: `set_accept(Some(f))` z odpowiednikiem `parseMediaGroupOrder` odrzuca wpis i wklejenie, po których wartość nie byłaby poprawna (zachowanie `onInput`/`onPaste` z `MediaGroupSetter.tsx`), `set_text` nie jest filtrowane. Porównanie słowa (trim, NFC, małe litery) należy do modelu tego epiku, pole go nie normalizuje. `disabled={isSubmitting}`: `set_disabled` zdejmuje fokus z okna, więc po zakończeniu trzeba go przywrócić (w Tauri robi to `restoreFocusId`).
+
+### 2026-11-21 — implementer E05
+
+- Z epiku E05: modal lightboxa to `ui::modal::ModalState::with_motion(ModalMotion::LIGHTBOX, cx)` (75/50 ms zamiast 150/100) z elementem `Modal`; Escape i tło emitują `ModalEvent::Dismiss`, właściciel zamyka. Pełnoekranowy modal lightboxa ma własny układ, więc może potrzebować wariantu `Modal` bez powierzchni dialogu (dziś `Modal` zawsze rysuje `modal_surface` o szerokości z `ModalSize`). Przywrócenie fokusu na kafel: `ModalState::set_restore_focus`.

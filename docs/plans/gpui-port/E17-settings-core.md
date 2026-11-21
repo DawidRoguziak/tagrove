@@ -90,3 +90,7 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E05
+
+- Z epiku E05: przełącznik „Scan on app startup” to `ui::switch::Switch` (`toggle toggle-sm toggle-primary`, kontrolowany przez `on_change`), status operacji: `ui::spinner::Spinner` z `SpinnerSize::ExtraSmall` i `ui::progress::ProgressBar`, dialogi potwierdzeń: `ui::modal`. Karty wyboru motywu (`.theme-choice`, `.theme-preview--*`) i `.theme-select` z `--select-chevron` nie powstały w E05. Strona ustawień rejestruje warstwę niemodalną (`ui::layers`), patrz notatka E05 w E06.

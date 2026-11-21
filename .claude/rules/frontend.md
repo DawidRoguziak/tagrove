@@ -16,4 +16,5 @@ Read `docs/frontend/architecture-and-ui-conventions.md`.
 - Overlays register with `UiLayerProvider` and use `UiModal`. Keep modal owners mounted when `open` becomes false. Don't add standalone global Escape listeners.
 - Styling: prefer semantic DaisyUI colors and the app tokens (`--surface-*`, `--border-*`, `--radius-*`, `--shadow-*`). Never animate dimensions, spacing, or layout. Use `motion-enter` for opacity-only entrances.
 - Only theme and language are persisted (localStorage `media-tagger.theme` / `media-tagger.language`).
+- GPUI port counterparts (`src-gpui/`): controls and overlays in `media_tagger_gpui::ui` over `media_tagger_client::{controls, overlay}`; every window's content goes inside `ui::layers::root`, overlays register with `ui::layers` or use `ModalState`, and controls are controlled (ADR 0039).
 - This is Solid 2, not React: no hooks or rerender model. Use owned `renderHook` for models and Testing Library for components (`src/test/renderSolid.tsx`, `settle.ts`).

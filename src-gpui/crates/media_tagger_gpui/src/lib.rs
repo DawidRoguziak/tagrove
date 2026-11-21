@@ -17,6 +17,8 @@ pub mod window;
 use std::{error::Error, ffi::OsString};
 
 use media_tagger_client::hello::HelloScreen;
+use scenario::StartScreen;
+use window::MainScreen;
 
 /// Starts the application and returns after its last window has closed.
 ///
@@ -62,13 +64,16 @@ pub fn run_scenario_with(
         env("XDG_DATA_HOME").as_deref(),
         env("HOME").as_deref(),
     )?;
-    let screen = HelloScreen::load(start.theme)?;
+    let screen = match start.screen {
+        StartScreen::Main => MainScreen::Hello(HelloScreen::load(start.theme)?),
+        StartScreen::Kit => MainScreen::Kit,
+    };
 
     // Held until the event loop has returned. Dropping it closes the database pool and
     // then releases the profile's instance lock. It does not stop the thumbnail workers:
     // the core's scheduler has no shutdown, so its idle threads end with the process.
     let boot = boot::start(&data_dir, &boot::resource_dir()?)?;
-    let outcome = window::run_until_closed(profile, screen, display);
+    let outcome = window::run_until_closed(profile, start.theme, screen, display);
     drop(boot);
     outcome
 }

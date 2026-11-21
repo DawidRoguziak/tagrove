@@ -290,7 +290,14 @@ fn every_key_of_the_model_becomes_a_binding_in_the_field_context(cx: &mut TestAp
     assert_eq!(bindings.len(), KEYMAP.len());
     cx.update(|cx| {
         ui::init(cx);
-        assert_eq!(cx.key_bindings().borrow().bindings().count(), KEYMAP.len());
+        // ui::init also binds the layer stack and the controls of epic E05.
+        let others = ui::layers::key_bindings().len()
+            + ui::slider::key_bindings().len()
+            + ui::segmented::key_bindings().len();
+        assert_eq!(
+            cx.key_bindings().borrow().bindings().count(),
+            KEYMAP.len() + others
+        );
     });
     assert_eq!(text_input::KEY_CONTEXT, "TextInput");
     assert_eq!(outside_text_input("Lightbox"), "(Lightbox) && !TextInput");

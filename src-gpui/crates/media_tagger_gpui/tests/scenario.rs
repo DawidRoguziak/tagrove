@@ -89,7 +89,7 @@ fn the_e2e_profile_refuses_an_unknown_scenario_before_the_display_check() {
 
     assert_eq!(
         error,
-        "unknown scenario \"no-such-scenario\"; known: shell-empty, shell-empty-light"
+        "unknown scenario \"no-such-scenario\"; known: shell-empty, shell-empty-light, kit"
     );
     assert!(
         is_empty_dir(tmp.path()),

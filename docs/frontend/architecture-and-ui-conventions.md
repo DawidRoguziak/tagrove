@@ -222,6 +222,21 @@ Undo steps: consecutive typing is one step, a word typed after whitespace starts
 
 Not built: a multi-line field, a blinking caret, middle-click paste of the primary selection, auto-scroll while a drag is held outside the field, and select-all on Tab focus.
 
+A field made with `TextInput::themed` draws with the active theme and follows it when it changes; `TextInput::new` keeps the theme it is given.
+
+### GPUI port: theme, controls and overlays
+
+The port's counterparts of `src/ui/controls` and `src/ui/overlays` ([ADR 0039](../adr/0039-gpui-overlay-layers-and-controls.md)) are split like the text field:
+
+- `media_tagger_client::controls` resolves each control's looks from the theme tokens and the Tailwind and DaisyUI classes of the Solid control (`button_visuals`, `icon_button_visuals`, `chip_visuals`, `alert_visuals`, `progress_visuals`, `slider_visuals`, `segmented_visuals`, `switch_visuals` for `toggle toggle-sm toggle-primary`, `spinner_visuals`) and holds what needs no GUI: `SliderRange` (step snapping, the keys of a range input: arrows by a step, Page keys by a tenth of the range, Home, End), `SegmentedKey` (arrows wrap), `HighlightTrack` (a port of `measureSegmentedHighlight`: a new selection slides, a changed layout or label snaps) and `DelayedReveal` (`.thumbnail-loader`: 300 ms invisible, then a 150 ms ease-out fade). Their tests read `src/styles.css` and the control sources and fail when a copied class changes. `media_tagger_client::icons` names the 22 icons of `UiIcon`; `media_tagger_client::overlay` holds the layer stack and the modal presence.
+- `media_tagger_gpui::ui` draws them. `theme` keeps the active theme as a GPUI global (`set_active` redraws every window) and converts tokens; every control reads the active theme unless given one with `.theme(..)`. `fonts::register` adds Inter and JetBrains Mono from `public/fonts`. `assets::Assets` serves the icon files in `src-gpui/crates/media_tagger_gpui/assets/icons/` (one SVG per icon, the stroke style of `UiIcon`; the filled variant is derived on load, and a test compares every file with `UiIcon.tsx`). Controls: `Button` (`Button::new` for `UiButton`, `Button::icon` for `UiIconButton` with `active` and `danger`), `Chip`, `Alert` (role `Alert`), `ProgressBar`, `Slider`, `SegmentedControl`, `Switch`, `Spinner`, `Icon`.
+
+The slider and the segmented control are entities and are controlled: they emit `SliderEvent::Input` and `SegmentedEvent::Change` and draw the value their owner sets, so an owner that refuses a value keeps the old one on screen. A segmented group is one tab stop (the selected segment), the arrow keys move the focus around it and ask for the segment they land on, and the highlight slides only by position and size, never by layout. A click or Space asks only for a segment that is not selected. A switch asks with `on_change` and shows `checked` as given. Buttons, switches and segments are tab stops while enabled and draw the `:focus-visible` outline (a ring outside the element at the rule's offset) only after keyboard input. Enter and Space activate a focused button or switch (GPUI's keyboard click).
+
+GPUI draws an outer box shadow beneath the whole element, where CSS draws it only outside the border box, so a button whose fill lets the background through (an active icon button, a disabled button) draws without its outer `--shadow-control` (`ui::theme::shadows_beneath`); its colour inside matches the browser's. The segmented highlight is measured while a frame is prepainted, where a notify does not redraw the window, so a new position is drawn with the next frame.
+
+Not built in GPUI: letter spacing (`tracking-[-0.01em]` of buttons), the multi-turn dash animation of DaisyUI's `loading-spinner` (the arc turns at a fixed length), and the virtual list of `ui/dom/createVirtualList` (epic E13).
+
 ## Motion
 
 `src/styles.css` owns the shared motion tokens: `--motion-feedback` is 100 ms,
@@ -372,6 +387,17 @@ pill-shaped buttons. Native video controls retain their contrast gradient over t
 - `UiModal` requires exactly one of `ariaLabel` or `labelledBy` in its props and renders `role="dialog"` with `aria-modal="true"`. It supports four width presets and independently configurable Escape/backdrop closing.
 
 Provide translated names and explicit close actions. Register new overlays with the shared manager instead of adding independent global Escape listeners. Lightbox image/native fullscreen and inline confirmation still have specialized key handling, described in [lightbox](../subsystems/lightbox.md#fullscreen-and-keyboard-behavior).
+
+### GPUI port: layers and modals
+
+`media_tagger_client::overlay::LayerStack` makes the decisions of `UiLayerProvider` above (top layer only for Escape, initial focus of a modal still on top one frame later, the restore rules on release) and `media_tagger_gpui::ui::layers` applies them ([ADR 0039](../adr/0039-gpui-overlay-layers-and-controls.md)):
+
+- Every window's content goes inside `layers::root(cx)`, which binds Escape, Tab and Shift+Tab in the key context `UiLayers` and tracks the root focus handle. The window focuses the root when it opens and from `on_focus_lost` (`layers::focus_root`): GPUI sends keys along the focused element's path, and with nothing focused no binding of the application matches. A click on an empty part of the window focuses the root, as a click on the body does in a browser.
+- An overlay registers with `layers::register` (`LayerOptions::modal` or `nonmodal`) and releases with `layers::release`, optionally naming where the focus goes back (`getRestoreFocus`). Escape that closes nothing propagates.
+- Tab inside a top modal wraps from its last tab stop to its first and back, and comes back into it from anywhere; a modal without a tab stop keeps the focus on its container.
+- `ModalState` plus `Modal` is `UiModal`: the owner keeps the state and renders the element every frame with its content. Escape (top layer, unless `set_close_on_escape(false)`) and a press on the backdrop (open, top layer, unless `set_close_on_overlay_click(false)`) emit `ModalEvent::Dismiss`; the owner closes. The dialog draws over the whole window in the four width presets of `ModalSize`, with role `Dialog` and the given label while open. It fades in over 150 ms and out over 100 ms by opacity only (`ModalMotion::LIGHTBOX` has 75 ms and 50 ms), stays drawn and blocks the pointer while it fades out, and takes no input then (a focus inside it moves to the window's root at once, as a browser moves it off `inert` content); `ModalSnapshot` keeps the values it showed open. With GPUI's reduced motion the fades end at once.
+
+Not modelled in GPUI: `inert`/`aria-hidden` on the background and body scroll locking; a modal occludes the pointer and traps Tab instead.
 
 ## Keyboard and accessibility
 

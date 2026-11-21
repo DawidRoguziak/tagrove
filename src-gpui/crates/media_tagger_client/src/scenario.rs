@@ -39,6 +39,12 @@ pub fn find(id: &str) -> Option<Scenario> {
     SCENARIOS.into_iter().find(|scenario| scenario.id == id)
 }
 
+/// The board of every shared control in both themes (epic E05, [`crate::kit`]). It
+/// has no Tauri counterpart, so it is no comparison scenario: it is not in
+/// [`SCENARIOS`], the catalogue of `epics.json` or `e2e/compare/scenarios`. The E2E
+/// build starts on it with `--scenario kit` for review.
+pub const KIT: &str = "kit";
+
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeSet, path::PathBuf};
@@ -169,6 +175,17 @@ mod tests {
             seen += 1;
         }
         assert!(seen >= SCENARIOS.len(), "only {seen} Tauri scenario files");
+    }
+
+    #[test]
+    fn the_kit_board_is_no_comparison_scenario() {
+        assert_eq!(find(super::KIT), None);
+        let steps = repository_root().join("e2e/compare/scenarios");
+        assert!(!steps.join(format!("{}.js", super::KIT)).exists());
+        let manifest = repository_root().join("docs/plans/gpui-port/epics.json");
+        let text = std::fs::read_to_string(&manifest).expect("read epics.json");
+        let json: serde_json::Value = serde_json::from_str(&text).expect("epics.json is JSON");
+        assert!(json["scenarios"].get(super::KIT).is_none());
     }
 
     #[test]

@@ -20,12 +20,20 @@
 //!   tokens of `src/styles.css` as constants, and the stored theme and language.
 //! - [`text`]: the editing model of the single-line text field, which GPUI does not
 //!   ship: buffer, selection, input-method composition, undo, keys.
+//! - [`controls`], [`icons`], [`overlay`]: the shared controls of `src/ui/controls`
+//!   (their looks from the theme tokens, the slider and segmented-control keys), the
+//!   icon catalogue, and the overlay layer: the layer stack behind Escape and focus
+//!   restore, and the fading presence of a modal.
 
 pub mod backend;
+pub mod controls;
 pub mod exec;
 pub mod hello;
 pub mod i18n;
+pub mod icons;
+pub mod kit;
 pub mod model;
+pub mod overlay;
 pub mod prefs;
 pub mod progress;
 pub mod scenario;

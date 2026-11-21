@@ -259,8 +259,8 @@
         "E03",
         "E04"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-21",
       "sources": [
         "src/ui/controls",
         "src/ui/overlays",

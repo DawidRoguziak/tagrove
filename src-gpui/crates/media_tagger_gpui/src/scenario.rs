@@ -20,12 +20,24 @@ use crate::profile::{self, Profile};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct StartState {
     pub theme: ThemeName,
+    pub screen: StartScreen,
+}
+
+/// The view of the main window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StartScreen {
+    /// The application's own start.
+    #[default]
+    Main,
+    /// The board of every shared control in both themes (`--scenario kit`).
+    Kit,
 }
 
 impl From<Scenario> for StartState {
     fn from(scenario: Scenario) -> Self {
         Self {
             theme: scenario.theme,
+            screen: StartScreen::Main,
         }
     }
 }
@@ -49,7 +61,11 @@ impl Display for ScenarioError {
                 profile::E2E.identifier
             ),
             Self::Unknown(id) => {
-                let known: Vec<_> = scenario::SCENARIOS.iter().map(|s| s.id).collect();
+                let known: Vec<_> = scenario::SCENARIOS
+                    .iter()
+                    .map(|s| s.id)
+                    .chain([scenario::KIT])
+                    .collect();
                 write!(f, "unknown scenario {id:?}; known: {}", known.join(", "))
             }
         }
@@ -70,6 +86,12 @@ pub fn start_state(profile: Profile, scenario: Option<&str>) -> Result<StartStat
             identifier: profile.identifier,
         });
     }
+    if id == scenario::KIT {
+        return Ok(StartState {
+            theme: ThemeName::default(),
+            screen: StartScreen::Kit,
+        });
+    }
     scenario::find(id)
         .map(StartState::from)
         .ok_or_else(|| ScenarioError::Unknown(id.to_owned()))
@@ -79,7 +101,7 @@ pub fn start_state(profile: Profile, scenario: Option<&str>) -> Result<StartStat
 mod tests {
     use media_tagger_client::{scenario::SCENARIOS, theme::ThemeName};
 
-    use super::{start_state, ScenarioError, StartState};
+    use super::{start_state, ScenarioError, StartScreen, StartState};
     use crate::profile::{DEV, E2E};
 
     #[test]
@@ -96,7 +118,8 @@ mod tests {
             assert_eq!(
                 start_state(E2E, Some(scenario.id)),
                 Ok(StartState {
-                    theme: scenario.theme
+                    theme: scenario.theme,
+                    screen: StartScreen::Main,
                 }),
                 "{}",
                 scenario.id
@@ -109,8 +132,17 @@ mod tests {
     }
 
     #[test]
+    fn the_e2e_profile_starts_on_the_kit_board() {
+        assert_eq!(
+            start_state(E2E, Some("kit")).map(|state| state.screen),
+            Ok(StartScreen::Kit)
+        );
+        assert_eq!(StartState::default().screen, StartScreen::Main);
+    }
+
+    #[test]
     fn the_dev_profile_refuses_every_scenario_before_looking_it_up() {
-        for id in ["shell-empty", "no-such-scenario"] {
+        for id in ["shell-empty", "kit", "no-such-scenario"] {
             let error = start_state(DEV, Some(id)).expect_err("refused");
 
             assert_eq!(
@@ -138,7 +170,7 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("\"no-such-scenario\""), "{message}");
         assert!(
-            message.contains("shell-empty, shell-empty-light"),
+            message.contains("shell-empty, shell-empty-light, kit"),
             "{message}"
         );
     }

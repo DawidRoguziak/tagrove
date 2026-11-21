@@ -2,3 +2,4 @@
 //! their own.
 
 pub mod hello;
+pub mod kit;

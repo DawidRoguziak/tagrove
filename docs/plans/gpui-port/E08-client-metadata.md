@@ -79,3 +79,9 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E07
+
+- Z epiku E07: model zapytań to `media_tagger_client::library::AssetQuery`, osadzony w `AppRuntime` (`RuntimeInput::Query`, `RuntimeEffect::Query`, runner przez `run_query_effect(backend, effect, dispatch, wrap)`; ADR 0040). Modele tego epiku osadzaj tak samo, obok zapytania. Nie ma callbacku `onQueryChanged`: cache szczegółów czyści się, gdy zmieni się `query.query_epoch()` (porównaj po każdym wejściu przekazanym do zapytania).
+- Z epiku E07: `patchAssets` to `QueryInput::PatchAssets(AssetPatch)`: `AssetPatch::Update(Vec<(id, SummaryPatch)>)` z polami `is_favorite`, `media_group_key`, `media_group_order` (bez tagów, jak w Solid) i `AssetPatch::Remove(ids)`. Nowe pole podsumowania w łatce dopisz w `library/page_cache.rs` (`SummaryPatch::apply`). Odświeżenie po mutacji to `QueryInput::Refresh`; reguły są gotowe w `library::tag_mutation_requires_refresh` i `favorite_mutation_requires_refresh` (filtry z `query.filters()`).
+- Z epiku E07: `createLibrary` jest przeniesione tylko w części zapytania (filtry, zakres, kotwica). `refreshLibrary` (zapytanie + słownik), `handleLibraryCleared` (`QueryInput::Reset`, potem `QueryInput::SetViewport(None)`, reset słownika i tożsamości), `handleImportDbRestored` (`QueryInput::Reset` bez zmiany zakresu) i `runMaintenance` (bariera mutacji) należą do tego epiku; przypadek „clears assets and tags on library reset” z `createLibrary.test.ts` da się domknąć dopiero ze słownikiem.

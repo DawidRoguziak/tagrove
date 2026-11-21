@@ -156,7 +156,7 @@ impl EmptyState {
 /// of epic E09). Like the Solid gallery it decides from the result's `total` and the
 /// scan roots known so far.
 pub fn empty_state(runtime: &AppRuntime) -> Option<EmptyState> {
-    if runtime.library().total > 0 {
+    if runtime.query().total() > 0 {
         return None;
     }
     Some(if runtime.has_scan_roots() {
@@ -183,8 +183,9 @@ mod tests {
     use crate::{
         i18n::{I18n, Language, Params},
         icons::IconName,
+        library::QueryInput,
         model::Model,
-        runtime::{AppRuntime, RuntimeConfig, RuntimeInput},
+        runtime::{AppRuntime, RuntimeConfig, RuntimeEffect, RuntimeInput},
         theme::ThemeName,
     };
     use media_tagger_core::models::{ScanRoot, StartAssetQueryResult};
@@ -220,7 +221,7 @@ mod tests {
 
         let effects = runtime.handle(RuntimeInput::RefreshScanRoots);
         let token = match &effects[..] {
-            [crate::runtime::RuntimeEffect::ListScanRoots(token)] => *token,
+            [RuntimeEffect::ListScanRoots(token)] => *token,
             other => panic!("unexpected effects {other:?}"),
         };
         runtime.handle(RuntimeInput::ScanRootsLoaded {
@@ -233,9 +234,15 @@ mod tests {
         assert_eq!(empty_state(&runtime), Some(EmptyState::NoResults));
         assert_eq!(EmptyState::NoResults.action_key(), None);
 
-        runtime.handle(RuntimeInput::RefreshLibrary);
-        runtime.handle(RuntimeInput::LibraryLoaded {
-            generation: 1,
+        let effects = runtime.handle(RuntimeInput::RefreshLibrary);
+        let generation = match &effects[..] {
+            [RuntimeEffect::Query(crate::library::QueryEffect::Start(request))] => {
+                request.generation
+            }
+            other => panic!("unexpected effects {other:?}"),
+        };
+        runtime.handle(RuntimeInput::Query(QueryInput::Started {
+            generation,
             result: Ok(StartAssetQueryResult::Ready {
                 session_id: 1,
                 revision: 1,
@@ -243,7 +250,7 @@ mod tests {
                 offset: 0,
                 items: Vec::new(),
             }),
-        });
+        }));
         assert_eq!(empty_state(&runtime), None);
     }
 

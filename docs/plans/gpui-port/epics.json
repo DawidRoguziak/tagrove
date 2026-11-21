@@ -329,8 +329,8 @@
       "deps": [
         "E02"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-21",
       "sources": [
         "src/library/query",
         "src/library/createLibrary.ts",

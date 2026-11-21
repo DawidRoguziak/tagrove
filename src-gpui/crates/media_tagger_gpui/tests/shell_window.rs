@@ -314,7 +314,7 @@ fn the_startup_scan_refreshes_the_count_when_it_found_work(cx: &mut TestAppConte
     let (window, mut cx) = open(&fixture, ThemeName::Dark, cx);
     settle(&fixture, &mut cx);
 
-    let total = runtime(&window, &cx).read_with(&cx, |runtime, _| runtime.model().library().total);
+    let total = runtime(&window, &cx).read_with(&cx, |runtime, _| runtime.model().query().total());
     assert_eq!(total, 4);
     assert!(
         cx.debug_bounds(gallery::EMPTY_STATE_SELECTOR).is_none(),

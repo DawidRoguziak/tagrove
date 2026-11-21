@@ -99,7 +99,7 @@ impl Fixture {
     }
 
     fn total(&self) -> usize {
-        self.runtime().library().total
+        self.runtime().query().total()
     }
 }
 
@@ -160,7 +160,7 @@ fn a_startup_scan_with_work_publishes_the_rows_it_added_for_any_initial_library(
             "{count}: the scan still waits"
         );
         assert_eq!(fx.total(), count, "{count}");
-        assert!(fx.runtime().library().loaded);
+        assert!(fx.runtime().query().session_id().is_some());
         assert!(!fx.runtime().library_loading());
         assert!(fx.runtime().maintenance_loading(), "{count}");
         assert!(matches!(
@@ -284,8 +284,7 @@ fn a_second_runtime_of_the_same_launch_replays_the_startup_scan_on_the_real_core
         other => panic!("unexpected outcome {other:?}"),
     }
     assert!(!second.runtime().maintenance_loading());
-    // One runtime per application owns the library query (`LIBRARY_OWNER_ID`), so the
-    // library is read here by an owner of its own.
+    // Read by an owner of its own, apart from both runtimes' query models.
     match core
         .backend()
         .start_asset_query(AssetQueryRequest::new("replay-check", 1))
@@ -310,7 +309,7 @@ fn an_empty_real_profile_starts_into_the_first_folder_state() {
     fx.send(RuntimeInput::Start);
     fx.settle();
 
-    assert!(fx.runtime().library().loaded);
+    assert!(fx.runtime().query().session_id().is_some());
     assert_eq!(fx.total(), 0);
     assert!(!fx.runtime().has_scan_roots());
     assert!(matches!(
@@ -429,7 +428,7 @@ fn unusable_preference_storage_starts_on_defaults_and_still_changes_for_the_sess
     fx.send(RuntimeInput::Start);
     fx.settle();
     assert!(
-        fx.runtime().library().loaded,
+        fx.runtime().query().session_id().is_some(),
         "the window starts all the same"
     );
     assert!(fx.runtime().prefs_error().is_some());
@@ -586,7 +585,7 @@ fn the_runtime_starts_on_the_production_executor_and_the_real_core() {
         Some(StartupScanOutcome::Scanned(summary)) => assert_eq!(summary.indexed, 2),
         other => panic!("unexpected outcome {other:?}"),
     }
-    assert_eq!(driver.model().library().total, 2);
+    assert_eq!(driver.model().query().total(), 2);
     assert_eq!(driver.model().scan_roots().len(), 1);
     assert!(!driver.model().maintenance_loading());
     assert_eq!(driver.model().prefs_error(), None);

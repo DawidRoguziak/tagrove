@@ -94,3 +94,8 @@ Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
 ### 2026-11-21 — implementer E05
 
 - Z epiku E05: spinner kafla to `ui::spinner::Spinner::new(id, SpinnerSize::Tile).reveal(THUMBNAIL_LOADER)` (300 ms niewidoczny, potem 150 ms ease-out, `media_tagger_client::controls`); animacja startuje przy pierwszym narysowaniu elementu o danym id. Chip rodzaju mediów: `ui::chip::Chip` z `ChipTone::Video`/`Gif`. Suwak rozmiaru kafli: encja `ui::slider::Slider` (kontrolowana, `SliderEvent::Input`).
+
+### 2026-11-21 — implementer E07
+
+- Z epiku E07: siatka czyta wiersze przez `runtime.model().query()`: `total()` to liczba pozycji do rozłożenia, `asset_at(indeks)` zwraca wiersz z cache albo wiersz zastępczy po odświeżeniu (tylko do rysowania), `version()` rośnie przy każdej zmianie cache. Nie indeksuj `assets()` jak listy wyników (to tylko wiersze z cache, najwyżej 24 strony).
+- Z epiku E07: zakres zgłaszaj przez `RuntimeInput::Query(QueryInput::SetViewport(Some(Viewport { start_index, end_index, visible_start_index, visible_end_index, paused })))`, a przy zniknięciu galerii `SetViewport(None)`. `start..=end` to widoczne wiersze z overscanem, nigdy cały wynik: model żąda każdej strony zakresu (strony po 128) i nie ogranicza liczby żądań. `paused: true` (szybkie przewijanie) zapamiętuje zakres i nie żąda stron; wznowienie to ten sam zakres z `paused: false`. `visible_start_index` jest kotwicą następnego odświeżenia. Retry banera błędu to `QueryInput::RetryLoad`; stan błędu: `load_error()` i `page_failure_epoch()`.

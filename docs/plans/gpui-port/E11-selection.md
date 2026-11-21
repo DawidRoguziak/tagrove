@@ -74,3 +74,8 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E07
+
+- Z epiku E07: odczyty zaznaczenia idą przez wejścia modelu zapytań z biletem (`library::Ticket`, wybiera go pytający): `QueryInput::ReadIdRange { ticket, start, end }` (całość albo błąd `QueryError::Cancelled`/`IncompleteRange`/`Backend`, nigdy część zakresu) i `QueryInput::KeepSessionAlive { ticket, session_id }` (`KeepAlive::Ready | Stale | Skipped`). Odpowiedź przychodzi dokładnie raz jako `QueryEvent` w `AppRuntime::take_query_events()`; model zaznaczenia osadź w `AppRuntime` obok zapytania i przekazuj mu te zdarzenia po każdym wejściu zapytania (ADR 0040). Odczyt wyprzedzony przez refresh/reset dostaje odpowiedź od razu (zakres: `Cancelled`, keepalive: `Skipped`).
+- Z epiku E07: epoki i sesja jak w Solid: `query.query_epoch()`, `query.session_id()` (brak sesji podczas odświeżania i po nieudanym starcie), `query.page_failure_epoch()`, `query.navigation_snapshot().total`. Timer keepalive (60 s) należy do modelu zaznaczenia jako jego efekt.

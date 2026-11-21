@@ -77,3 +77,7 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-21 — implementer E07
+
+- Z epiku E07: lightbox czyta przez wejścia modelu zapytań z biletem (`library::Ticket`): `QueryInput::ReadAsset { ticket, index }` (`getAssetAtAsync`), `QueryInput::RetryAsset { ticket, index }` (`retryAssetAt`) i `QueryInput::ResolvePosition { ticket, asset_id }` (`getAssetPosition`; bez sesji `QueryError::Unavailable`). Odpowiedzi to `QueryEvent::AssetRead` i `QueryEvent::PositionResolved` z `AppRuntime::take_query_events()`, dokładnie jedna na bilet; odczyt wyprzedzony przez refresh/reset dostaje ją od razu (brak wiersza albo `Stale`). Synchroniczny stan nawigacji: `query.navigation_snapshot()` (`epoch`, `pending`, `total`); indeks zasobu z cache: `query.asset_index(id)` (wiersze zastępcze nie mają indeksu). Model osadź w `AppRuntime` obok zapytania (ADR 0040).

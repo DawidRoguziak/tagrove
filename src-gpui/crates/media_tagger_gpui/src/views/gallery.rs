@@ -206,7 +206,7 @@ impl GalleryView {
                     .rounded_full()
                     .bg(color(colors.primary)),
             )
-            .child(item_count(i18n, model.library().total));
+            .child(item_count(i18n, model.query().total()));
 
         let tile_size = div()
             .flex()

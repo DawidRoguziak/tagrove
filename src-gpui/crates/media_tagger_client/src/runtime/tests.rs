@@ -6,13 +6,14 @@ use media_tagger_core::models::{ScanCompletion, ScanRoot, ScanSummary, StartAsse
 
 use super::{
     clamp_tile_size, next_tile_size_by_wheel, AppRuntime, RuntimeConfig, RuntimeInput,
-    RuntimeRunner, StartupScanOutcome, StartupScanPhase, View, DEFAULT_TILE_SIZE, LIBRARY_OWNER_ID,
-    TILE_SIZE_MAX, TILE_SIZE_MIN,
+    RuntimeRunner, StartupScanOutcome, StartupScanPhase, View, DEFAULT_TILE_SIZE, TILE_SIZE_MAX,
+    TILE_SIZE_MIN,
 };
 use crate::{
     backend::{fake::sequence, BackendError, FakeBackend},
     exec::{Executor, ManualExecutor},
     i18n::Language,
+    library::QueryError,
     model::Driver,
     prefs::{MemoryPrefsStore, Prefs, PrefsStore},
     theme::ThemeName,
@@ -120,7 +121,7 @@ fn the_start_sequence_runs_once_and_stores_the_start_preferences() {
     let mut fx = Fixture::new();
     fx.backend
         .on_start_asset_query(|request| {
-            assert_eq!(request.owner_id, LIBRARY_OWNER_ID);
+            assert_eq!(request.generation, 1);
             Ok(ready(7))
         })
         .on_scan_startup_roots(|| Ok(None))
@@ -134,8 +135,8 @@ fn the_start_sequence_runs_once_and_stores_the_start_preferences() {
     assert_eq!(fx.calls("start_asset_query"), 1);
     assert_eq!(fx.calls("scan_startup_roots"), 1);
     assert_eq!(fx.calls("list_scan_roots"), 1);
-    assert_eq!(fx.runtime().library().total, 7);
-    assert!(fx.runtime().library().loaded);
+    assert_eq!(fx.runtime().query().total(), 7);
+    assert_eq!(fx.runtime().query().session_id(), Some(1));
     assert!(fx.runtime().has_scan_roots());
     assert!(matches!(
         fx.runtime().startup_scan().outcome(),
@@ -186,10 +187,18 @@ fn the_scan_stays_running_until_both_refreshes_answered() {
         StartupScanPhase::Refreshing(_)
     ));
 
+    // The first refresh also asked for the timeline sections of its session; the
+    // refresh after the scan made that read obsolete.
+    assert_eq!(fx.executor.pending(), 3);
+    assert!(fx.executor.run_next());
+    fx.driver.pump();
+    assert!(fx.runtime().maintenance_loading());
+
     // The library answers first; the roots are still out.
     assert!(fx.executor.run_next());
     fx.driver.pump();
     assert!(fx.runtime().maintenance_loading());
+    assert!(!fx.runtime().library_loading());
 
     assert!(fx.executor.run_next());
     fx.driver.pump();
@@ -217,7 +226,7 @@ fn a_failed_startup_scan_does_not_stop_the_runtime_and_is_kept() {
     // Library and roots were refreshed again after the failure, as Solid does.
     assert_eq!(fx.calls("start_asset_query"), 2);
     assert_eq!(fx.calls("list_scan_roots"), 2);
-    assert_eq!(fx.runtime().library().total, 2);
+    assert_eq!(fx.runtime().query().total(), 2);
 
     fx.send(RuntimeInput::OpenSettings);
     assert_eq!(fx.runtime().view(), View::Settings);
@@ -238,7 +247,7 @@ fn a_late_library_reply_is_dropped() {
     assert!(fx.executor.run_next());
     fx.driver.pump();
 
-    assert_eq!(fx.runtime().library().total, 5);
+    assert_eq!(fx.runtime().query().total(), 5);
     assert!(!fx.runtime().library_loading());
 }
 
@@ -251,14 +260,14 @@ fn a_failed_refresh_keeps_what_was_published() {
     fx.send(RuntimeInput::RefreshLibrary);
     fx.settle();
 
-    assert_eq!(fx.runtime().library().total, 3);
+    // The rows published before stay; the failed refresh leaves no session.
+    assert_eq!(fx.runtime().query().total(), 3);
+    assert_eq!(fx.runtime().query().session_id(), None);
     assert_eq!(
-        fx.runtime()
-            .library()
-            .error
-            .as_ref()
-            .map(|error| error.text()),
-        Some("synthetic query failure")
+        fx.runtime().query().load_error(),
+        Some(&QueryError::Backend(BackendError::rejected(
+            "synthetic query failure"
+        )))
     );
 }
 
@@ -366,4 +375,96 @@ fn a_late_scan_root_listing_is_dropped() {
     // The newer listing ran first and got the first scripted answer; the older one,
     // answering last, is late.
     assert_eq!(fx.runtime().scan_roots(), [root("/old")]);
+}
+
+/// E07 through the runtime: the gallery's viewport, a ticketed read and the stale
+/// debounce timer of the embedded query model travel as `RuntimeInput::Query` and
+/// reach the backend through the runtime's runner.
+#[test]
+fn the_embedded_query_model_loads_pages_answers_reads_and_runs_its_stale_timer() {
+    use media_tagger_core::models::{AssetQueryPageResult, AssetSummary};
+
+    use crate::library::{QueryEvent, QueryInput, Ticket, Viewport, STALE_REFRESH_DELAY};
+
+    fn row(id: i64) -> AssetSummary {
+        AssetSummary {
+            id,
+            file_name: format!("{id}.jpg"),
+            preview_path: None,
+            kind: "image".into(),
+            modified_at: 0,
+            width: Some(10),
+            height: Some(10),
+            duration_ms: None,
+            thumb_version: "0123456789abcdef".into(),
+            is_favorite: false,
+            media_group_key: None,
+            media_group_order: None,
+        }
+    }
+    let mut fx = Fixture::new();
+    fx.backend
+        .on_start_asset_query(|request| {
+            let first = request.page_size as i64;
+            Ok(StartAssetQueryResult::Ready {
+                session_id: 1,
+                revision: 1,
+                total: 300,
+                offset: 0,
+                items: (1..=first).map(row).collect(),
+            })
+        })
+        .on_get_asset_query_page(|session_id, offset, limit| {
+            Ok(if offset >= 256 {
+                AssetQueryPageResult::Stale
+            } else {
+                AssetQueryPageResult::Ready {
+                    session_id,
+                    revision: 1,
+                    total: 300,
+                    offset,
+                    items: (offset..offset + limit)
+                        .map(|i| row(i as i64 + 1))
+                        .collect(),
+                }
+            })
+        });
+    fx.send(RuntimeInput::RefreshLibrary);
+    fx.settle();
+    assert_eq!(fx.runtime().query().total(), 300);
+    assert_eq!(fx.runtime().query().page_size(), 128);
+
+    fx.send(RuntimeInput::Query(QueryInput::SetViewport(Some(
+        Viewport {
+            start_index: 130,
+            end_index: 140,
+            visible_start_index: 130,
+            visible_end_index: 140,
+            paused: false,
+        },
+    ))));
+    fx.settle();
+    assert_eq!(fx.calls("get_asset_query_page"), 1);
+    assert_eq!(fx.runtime().query().asset_at(130).map(|a| a.id), Some(131));
+
+    fx.send(RuntimeInput::Query(QueryInput::ReadAsset {
+        ticket: Ticket(1),
+        index: 290,
+    }));
+    fx.settle();
+    let events = fx.driver.model_mut().take_query_events();
+    assert_eq!(
+        events,
+        [QueryEvent::AssetRead {
+            ticket: Ticket(1),
+            result: Ok(None)
+        }],
+        "a stale page is a hole"
+    );
+    assert_eq!(fx.calls("start_asset_query"), 1);
+
+    fx.executor.advance(STALE_REFRESH_DELAY);
+    fx.settle();
+    assert_eq!(fx.calls("start_asset_query"), 2, "the stale refresh ran");
+    assert!(!fx.runtime().library_loading());
 }

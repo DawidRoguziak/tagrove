@@ -77,3 +77,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0037](0037-gpui-client-backend-port-and-model-convention.md) | The GPUI client reaches the core through a blocking `Backend` port run on an executor, and models are state machines | Accepted | 2026-11-20 |
 | [0038](0038-gpui-text-field-own-element-and-key-context.md) | The GPUI port has its own text field over a GUI-free editing model, and its keys live in a key context | Accepted | 2026-11-21 |
 | [0039](0039-gpui-overlay-layers-and-controls.md) | GPUI overlays route Escape and Tab through a layer stack at the window root, and controls are controlled | Accepted | 2026-11-21 |
+| [0040](0040-gpui-query-model-tickets-and-timer-throttle.md) | The GPUI query model answers reads by ticket, throttles stale refreshes with two timers, and is embedded in the runtime | Accepted | 2026-11-21 |

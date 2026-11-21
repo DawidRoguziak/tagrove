@@ -44,18 +44,23 @@ come and go:
 - `media_tagger_client::runtime::AppRuntime` is `createAppRuntime` as a model: the view
   (`gallery` or `settings`), the scan-section highlight of "Add first folder", the theme,
   the language, the tile size (`clamp_tile_size`, `next_tile_size_by_wheel`), the
-  library's total, the scan roots and the startup scan. `RuntimeInput::Start` runs once
+  library's query model, the scan roots and the startup scan. `RuntimeInput::Start` runs once
   (later starts are ignored): it refreshes the library, joins the startup scan and lists
   the scan roots at once, and stores the start theme and language as the Solid bootstrap
   does. The startup scan is requested once; while it runs, `maintenance_loading` is set.
   When it found work or failed, the library and the roots are refreshed again and the scan
   is finished only after both answered; a launch without work refreshes nothing. A failed
   scan is kept as its outcome and never blocks the window. Library refreshes are
-  generations and root listings are request tokens, so a late answer changes nothing.
+  generations of the query model and root listings are request tokens, so a late answer
+  changes nothing.
   Preferences are saved one at a time through the `PrefsStore`: a change while a save
   runs is saved after it with the values current then, and a failed save keeps the change
-  for the session. Until the query model of epic E07 exists, the runtime's library refresh
-  is one unfiltered query whose `total` feeds the header count.
+  for the session. The library is the embedded query model
+  (`media_tagger_client::library::AssetQuery`, [library query and gallery](../subsystems/library-query-and-gallery.md#gpui-port-the-query-model)):
+  its inputs travel as `RuntimeInput::Query` and its effects as `RuntimeEffect::Query`,
+  `RuntimeInput::RefreshLibrary` is its refresh, and the header count reads its `total()`.
+  A model added next to it is embedded the same way: a wrapping input and effect variant,
+  and a `run_*_effect` function that takes the wrapping function.
 - `media_tagger_gpui::runtime::Runtime` is the entity around that model. Backend calls
   run on the executor it is given (the application's `ThreadExecutor`); a reply raises a
   `WakeSignal`, and a task on GPUI's foreground executor pumps the model's inbox on the UI

@@ -309,6 +309,83 @@ An invoke or database error rejects the corresponding promise and records `loadE
 
 Inclusive range reads capture one session and generation, checking them after every awaited range chunk. Refresh, library reset, and unmount invalidate pending reads. A changed session rejects the entire range before callers can apply a partial selection. `keepSessionAlive(sessionId)` is the selection's keepalive: one `0..=0` range read of that session, skipped when it is no longer the current one (resolves `"skipped"`); a `stale` reply schedules the debounced refresh and resolves `"stale"`, so the selection can drop ranges whose first read found the session already gone, and its errors stay with the caller ([ADR 0029](../adr/0029-range-selection-keeps-its-session-alive.md)). Query loading counts are separate from settings-operation loading.
 
+## GPUI port: the query model
+
+The GPUI port has the same query behaviour in its client crate, without a GUI
+([ADR 0037](../adr/0037-gpui-client-backend-port-and-model-convention.md),
+[ADR 0040](../adr/0040-gpui-query-model-tickets-and-timer-throttle.md)). The Tauri path
+above is unchanged.
+
+| Solid | GPUI client (`src-gpui/crates/media_tagger_client/src/library/`) |
+| --- | --- |
+| `createAssetQuery`, and the range and filter handling of `createLibrary` | `query.rs`: the model `AssetQuery` with `QueryInput`, `QueryEffect`, `QueryEvent` and `QueryRunner` |
+| `pages`, `assetsById`, `lru`, the refresh fallback | `page_cache.rs`: `PageCache` |
+| `LibraryFilters` | `filters.rs` |
+| `metadata/queryImpact.ts` | `query_impact.rs` |
+
+`AssetQuery` is a state machine: a command or a backend reply is an input, a backend call
+or a timer is an effect, and nothing waits. It is embedded in the application runtime
+(`runtime::AppRuntime`): inputs travel as `RuntimeInput::Query`, effects as
+`RuntimeEffect::Query`, and `RuntimeInput::RefreshLibrary` is the query's refresh. The
+constants are the same: pages of 128 (`DEFAULT_QUERY_PAGE_SIZE`; a configured size is kept
+within the backend's 1–256), at most 24 cached pages (`MAX_CACHED_PAGES`), a 250 ms stale
+debounce and a 1 s minimum interval (`STALE_REFRESH_DELAY`, `STALE_REFRESH_MIN_INTERVAL`),
+ID-range chunks of 1,000,000 (`ID_RANGE_CHUNK`).
+
+What is the same as described above:
+
+- **Generation and owner.** Every refresh, reset and disposal starts a new generation; only a
+  `Ready` start of the current generation replaces the cache, and a still-current
+  `Superseded` is a load error with Retry that keeps the rows on screen. Page, section,
+  position and range replies carry a request token that a generation change forgets.
+- **Cache.** Summaries are stored as they came. `total()` is the result count and the count a
+  grid lays out; `assets()` lists cached rows only. The demanded range protects its first 24
+  pages from eviction, the exact bound wins, and a page that arrives never restarts demand.
+  `version()` counts every change of what a reader can see.
+- **Refresh.** The first visible index of the latest viewport (also a paused one) is the
+  `anchor_offset`; the other cached pages of the demanded range stay as render-only fallback
+  (`asset_at` only). A paused viewport is remembered and requests nothing.
+- **Failures.** A failed page is not requested again until `RetryLoad` (failed pages of the
+  demanded range) or `RetryAsset` (one page). A failed start leaves no session and advances
+  `page_failure_epoch`.
+- **Patches.** `PatchAssets` keeps positions (a removal leaves a hole), and a start or page
+  reply that a patch crossed is read again from the returned session before it is merged.
+- **Sections.** Read once per session; `Ready` without sections keeps the session
+  ([ADR 0027](../adr/0027-unfiltered-sections-unavailable-instead-of-stale.md)); a failed read
+  hides the timeline.
+
+What differs, because there are no promises and no reactive owner:
+
+- **Ticketed reads.** `getAssetAtAsync`, `retryAssetAt`, `getAssetPosition`,
+  `getIdsRangeAsync` and `keepSessionAlive` are the inputs `ReadAsset`, `RetryAsset`,
+  `ResolvePosition`, `ReadIdRange` and `KeepSessionAlive`. Each carries a `Ticket` chosen by
+  the caller and is answered exactly once by a `QueryEvent` (`take_events`). A read overtaken
+  by a refresh, a reset or the disposal is answered at that moment instead of when the
+  backend replies: a page read with no row, a position with `Stale`, an ID range with
+  `QueryError::Cancelled`, a keepalive with `Skipped`.
+- **Viewport inside the model.** `SetViewport` is `handleVirtualRangeChange`; the model
+  demands the range when it changes and when the query epoch changes, as the effect in
+  `createLibrary` does. `ApplyFilters` stores the filters and refreshes.
+- **No clock.** The stale debounce is one timer effect; the minimum interval is a second
+  timer started when a stale-driven refresh runs. A scheduled refresh runs once both have
+  fired, which is the same moment as `max(250 ms, last + 1 s - now)`.
+- **Owner ID.** A process-wide counter (`gpui-asset-query-<n>`) instead of a random UUID:
+  the backend that compares the generations of an owner lives in the same process.
+- **Order of `assets()`.** Index order (page offset, then position) instead of insertion
+  order.
+- **Errors are values.** `QueryError` (`Superseded`, `Unavailable`, `Cancelled`,
+  `IncompleteRange`, `Backend`). The model keeps a failed start or page read in
+  `load_error()` (`Superseded` or `Backend`). No view reads it yet: showing
+  `gallery.loadError` for it belongs to the gallery grid (epic E09).
+- **Query changes.** There is no `onQueryChanged` callback: a model that keeps data per
+  query compares `query_epoch()`.
+
+Tests: `library/query/tests.rs`, `library/page_cache.rs`, `library/query_impact.rs` and
+`library/filters.rs`, on `FakeBackend` and `ManualExecutor` with replies run in a chosen
+order, and in three cases on `ThreadExecutor` against the real core through `TempCore`
+(background reads, a session made stale by a scan, an anchored refresh;
+[testing](../development/testing.md#gpui-workspace)).
+
 ## Known limitations
 
 - Backend supersession, TTL, and the four-session LRU are process-wide. Another window or independent caller can supersede an uncached start or evict this window's session. Without a range selection nothing keeps the current session alive: the first page read after more than five idle minutes is `stale` and rebuilds it (the old rows stay visible as fallback until the new pages arrive).
@@ -339,6 +416,7 @@ Inclusive range reads capture one session and generation, checking them after ev
 - `src-tauri/crates/media_tagger_core/src/services/asset_query_service.rs` has a focused unit-test module covering equal-key session reuse, inverted admission, independent owner generations, capacity rejection/recovery, revision-stale pages, LRU/TTL eviction, the TTL restart by one-ID keepalive reads of a selected session, clear semantics, and snapshot starts.
 - `src/library/query/__tests__/createAssetQuery.test.ts` covers first-page replacement, current supersession error/retry and obsolete-response rejection, start/page failure error state with retry recovery, debounced stale-triggered restarts, page-failure epoch signaling, late-generation response rejection, `version` notification of in-place merges, the page bound, render-only refresh fallback, and the session keepalive read (current session only, `stale` → debounced refresh).
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, selection specs resolved on a session (`selection_spec`), and in `sections_during_a_scan` the session policy of timeline sections across a real scan: a session kept through an unbumped batch commit, then stale after the scan's final bump and replaced by one with sections.
+- `src-gpui/crates/media_tagger_client/src/library/` (`query/tests.rs`, `page_cache.rs`, `query_impact.rs`, `filters.rs`) covers the same model behaviour for the [GPUI port](#gpui-port-the-query-model) on a deterministic executor, and in three cases on the real core.
 - `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate range-demand suppression, shared in-flight indexed page lookup, the paused-range hold, and clear-library reset.
 - `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews, per-asset thumbnail DOM isolation, loaded tiles kept through a fast jump and through a refresh deep in the list, one-slot recycling with constant DOM and row order, per-row backplates and the windowed scrollbar. `gridGeometry.test.ts` covers layout, ranges, anchors and window bases at 10k/26k/1M slots; `createVirtualGrid.test.tsx` covers ranges, anchors, the windowed mode, the pause and disposal; `GalleryScrollbar.test.tsx` covers its accessibility, pointer and keyboard input. `timeline.test.ts` and `GalleryTimelineScrubber.test.tsx` cover month merging, position mapping, keys, ARIA, the focus taken on a press and the per-frame drag with held demand; `GalleryGrid.test.tsx` covers the timeline beside the windowed bar and the right padding that clears its rail; `query_sections.rs` and `asset_query_service.rs` tests cover section boundaries, groups, no-date rows, splits, filters and staleness, and that an unbumped scan commit keeps the session without sections until the next bump (also `backend_integration`, `sections_during_a_scan`, with a real scan). `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior, including a released read and its Retry surviving window blur.
 - `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers one element across source changes, hiding until the current source loads, async decoding, fade readiness for delayed/cached loads, failures, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail checks](../development/testing.md#gallery-thumbnail-fade) require immediate full opacity during filtering and scrolling in both themes and with reduced motion.

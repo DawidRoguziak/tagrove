@@ -93,6 +93,40 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(files["src-gpui/crates/media_tagger_client/tests/query.rs"]["category"], "tests")
         self.assertEqual(scope["suggested_lenses"], ["review-conventions", "review-rust", "review-gpui"])
 
+    def test_gpui_gallery_grid_and_thumbnails_are_hot_paths(self):
+        self.git("checkout", "-qb", "feature")
+        hot = [
+            "src-gpui/crates/media_tagger_client/src/gallery.rs",
+            "src-gpui/crates/media_tagger_client/src/gallery/virtual_grid.rs",
+            "src-gpui/crates/media_tagger_client/src/gallery/picture_cache.rs",
+            "src-gpui/crates/media_tagger_client/src/thumbs.rs",
+            "src-gpui/crates/media_tagger_gpui/src/thumbs.rs",
+            "src-gpui/crates/media_tagger_gpui/src/views/gallery.rs",
+            "src-gpui/crates/media_tagger_gpui/src/views/gallery/grid.rs",
+        ]
+        cold = [
+            "src-gpui/crates/media_tagger_client/src/prefs.rs",
+            "src-gpui/crates/media_tagger_gpui/src/views/settings.rs",
+            "src-gpui/crates/media_tagger_gpui/src/ui/button.rs",
+        ]
+        for path in hot + cold:
+            self.write(path, "pub fn f() {}\n")
+        scope = collect(self.root)
+        files = self.paths(scope)
+        for path in hot:
+            self.assertTrue(files[path]["hot_path"], path)
+        for path in cold:
+            self.assertFalse(files[path]["hot_path"], path)
+        self.assertEqual(scope["suggested_lenses"],
+                         ["review-conventions", "review-rust", "review-gpui", "review-performance"])
+
+    def test_a_gpui_change_off_the_hot_paths_gets_no_performance_lens(self):
+        self.git("checkout", "-qb", "feature")
+        self.write("src-gpui/crates/media_tagger_gpui/src/views/settings.rs", "pub fn f() {}\n")
+        scope = collect(self.root)
+        self.assertFalse(self.paths(scope)["src-gpui/crates/media_tagger_gpui/src/views/settings.rs"]["hot_path"])
+        self.assertNotIn("review-performance", scope["suggested_lenses"])
+
     def test_rename_and_delete(self):
         self.git("checkout", "-qb", "feature")
         self.git("mv", "src-tauri/crates/media_tagger_core/src/db/query.rs", "src-tauri/crates/media_tagger_core/src/db/queries.rs")

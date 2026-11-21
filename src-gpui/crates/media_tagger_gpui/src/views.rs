@@ -12,3 +12,10 @@ pub mod gallery;
 pub mod kit;
 pub mod settings;
 pub mod shell;
+
+use gpui::App;
+
+/// Binds the keys of the views. Call once at startup, after `ui::init`.
+pub fn init(cx: &mut App) {
+    gallery::init(cx);
+}

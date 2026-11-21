@@ -79,3 +79,4 @@ Plans in `docs/plans/` describe staged work. When a plan stage makes a decision 
 | [0039](0039-gpui-overlay-layers-and-controls.md) | GPUI overlays route Escape and Tab through a layer stack at the window root, and controls are controlled | Accepted | 2026-11-21 |
 | [0040](0040-gpui-query-model-tickets-and-timer-throttle.md) | The GPUI query model answers reads by ticket, throttles stale refreshes with two timers, and is embedded in the runtime | Accepted | 2026-11-21 |
 | [0041](0041-gpui-library-model-queued-writes-as-data.md) | The GPUI library model sends metadata writes as queued data, puts maintenance behind a begin/end barrier, and refuses a tag edit without the complete tag list | Accepted | 2026-11-21 |
+| [0042](0042-gpui-gallery-grid-logical-offset-and-bounded-pictures.md) | The GPUI gallery grid scrolls one logical `f64` offset, draws only the rows in range, and bounds its decoded pictures in bytes | Accepted | 2026-11-21 |

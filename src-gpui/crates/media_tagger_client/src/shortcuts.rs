@@ -16,9 +16,11 @@
 //! `text_input::outside_text_input(context)`. There are no context menus: the Tauri
 //! application suppresses its webview's, and the GPUI one draws none.
 //!
-//! The table is empty in the shell itself: the Tauri shell binds no key of its own
-//! besides Escape, which belongs to the layer stack. The epics that bring the search
-//! (Ctrl+K), the gallery and the lightbox add their shortcuts here.
+//! The shell itself binds nothing: the Tauri shell has no key of its own besides
+//! Escape, which belongs to the layer stack. The gallery binds the keys that scroll
+//! its grid, which a webview's scroller handles natively (Home, End, Page Up, Page
+//! Down, Up, Down). The epics that bring the search (Ctrl+K) and the lightbox add
+//! their shortcuts here.
 
 /// A key context of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -55,7 +57,17 @@ impl KeyContext {
 
 /// What a shortcut asks for. Every command is handled in the context it is bound in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ShortcutCommand {}
+pub enum ShortcutCommand {
+    /// Scrolls the gallery grid to its start or end.
+    GalleryScrollStart,
+    GalleryScrollEnd,
+    /// Scrolls the gallery grid by most of a viewport.
+    GalleryPageUp,
+    GalleryPageDown,
+    /// Scrolls the gallery grid by a short step.
+    GalleryLineUp,
+    GalleryLineDown,
+}
 
 /// One key binding of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,7 +79,38 @@ pub struct Shortcut {
 }
 
 /// Every application shortcut.
-pub const SHORTCUTS: &[Shortcut] = &[];
+pub const SHORTCUTS: &[Shortcut] = &[
+    Shortcut {
+        keystroke: "home",
+        command: ShortcutCommand::GalleryScrollStart,
+        context: KeyContext::Gallery,
+    },
+    Shortcut {
+        keystroke: "end",
+        command: ShortcutCommand::GalleryScrollEnd,
+        context: KeyContext::Gallery,
+    },
+    Shortcut {
+        keystroke: "pageup",
+        command: ShortcutCommand::GalleryPageUp,
+        context: KeyContext::Gallery,
+    },
+    Shortcut {
+        keystroke: "pagedown",
+        command: ShortcutCommand::GalleryPageDown,
+        context: KeyContext::Gallery,
+    },
+    Shortcut {
+        keystroke: "up",
+        command: ShortcutCommand::GalleryLineUp,
+        context: KeyContext::Gallery,
+    },
+    Shortcut {
+        keystroke: "down",
+        command: ShortcutCommand::GalleryLineDown,
+        context: KeyContext::Gallery,
+    },
+];
 
 /// Whether `keystroke` types a character in a text field: one printable key, or
 /// Space, with no modifier other than Shift.

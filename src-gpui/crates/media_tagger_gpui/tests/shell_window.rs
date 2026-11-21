@@ -182,12 +182,14 @@ fn the_shell_starts_once_and_shows_the_empty_gallery(cx: &mut TestAppContext) {
         let grip = chrome::grip_selector(direction);
         assert!(cx.debug_bounds(Box::leak(grip.into_boxed_str())).is_some());
     }
-    // The header sits above the empty state, which is centred horizontally.
+    // The header sits above the empty state, which is centred in the gallery section:
+    // 20 px of padding on the left and 34 px on the right (the timeline rail's
+    // clearance), so 7 px left of the window's centre, as in the Tauri window.
     let header = cx.debug_bounds(gallery::HEADER_SELECTOR).unwrap();
     let empty = cx.debug_bounds(gallery::EMPTY_STATE_SELECTOR).unwrap();
     assert!(empty.top() >= header.bottom());
     let off_center = f32::from(empty.center().x) - WINDOW_SIZE.0 / 2.0;
-    assert!(off_center.abs() <= 1.0, "{empty:?}");
+    assert!((off_center + 7.0).abs() <= 1.0, "{empty:?}");
     // The start preferences are stored, as the Solid frontend stores them at boot.
     assert_eq!(
         fixture.prefs.load(),

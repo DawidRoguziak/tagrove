@@ -15,20 +15,24 @@ use gpui::{
     point, px, size, App, AppContext as _, Application, Bounds, Pixels, QuitMode, Size,
     TitlebarOptions, WindowBounds, WindowDecorations, WindowHandle, WindowOptions,
 };
-use media_tagger_client::{runtime::RuntimeInput, theme::ThemeName};
+use media_tagger_client::{
+    runtime::{RuntimeInput, DEFAULT_TILE_SIZE},
+    theme::ThemeName,
+};
 
 use crate::{
     profile::Profile,
     runtime::{Runtime, RuntimeParts},
     ui,
-    views::{kit::KitView, shell::ShellView},
+    views::{self, kit::KitView, shell::ShellView},
 };
 
 /// What the main window shows.
 #[derive(Clone)]
 pub enum MainScreen {
-    /// The application: the shell over the runtime made of these parts.
-    Shell(RuntimeParts),
+    /// The application: the shell over the runtime made of these parts, with the tile
+    /// size the gallery starts with.
+    Shell(RuntimeParts, u32),
     /// The board of every shared control (`--scenario kit`).
     Kit,
 }
@@ -244,8 +248,22 @@ pub fn open_main_window(
     parts: RuntimeParts,
     cx: &mut App,
 ) -> gpui::Result<WindowHandle<ShellView>> {
+    open_main_window_sized(profile, parts, DEFAULT_TILE_SIZE, cx)
+}
+
+/// [`open_main_window`] with the tile size the gallery starts with (a comparison
+/// scenario's; the tile size is not a stored preference).
+pub fn open_main_window_sized(
+    profile: Profile,
+    parts: RuntimeParts,
+    tile_size: u32,
+    cx: &mut App,
+) -> gpui::Result<WindowHandle<ShellView>> {
     let options = main_window_options(profile, cx);
     let runtime = cx.new(|cx| Runtime::new(parts, cx));
+    runtime.update(cx, |runtime, cx| {
+        runtime.send(RuntimeInput::SetTileSize(f64::from(tile_size)), cx)
+    });
     let window = cx.open_window(options, |window, cx| {
         cx.new(|cx| ShellView::new(runtime.clone(), window, cx))
     })?;
@@ -281,6 +299,7 @@ fn application(display: DisplayServer) -> Application {
 pub fn init_application(theme: ThemeName, cx: &mut App) -> gpui::Result<()> {
     ui::fonts::register(cx)?;
     ui::init(cx);
+    views::init(cx);
     ui::theme::set_active(theme, cx);
     Ok(())
 }
@@ -296,7 +315,9 @@ pub fn run_until_closed(
     run_application(application(display), move |cx| {
         init_application(theme, cx)?;
         match screen {
-            MainScreen::Shell(parts) => open_main_window(profile, parts, cx).map(|_| ()),
+            MainScreen::Shell(parts, tile_size) => {
+                open_main_window_sized(profile, parts, tile_size, cx).map(|_| ())
+            }
             MainScreen::Kit => open_kit_window(profile, cx).map(|_| ()),
         }
     })

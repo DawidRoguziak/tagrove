@@ -256,7 +256,7 @@ test("unknown scenarios are refused before a session exists", (t) => {
 
   const started = f.control("start", "--scenario", "no-such-state");
   assert.equal(started.status, 1);
-  assert.match(started.stderr, /Unknown scenario no-such-state; known: shell-empty, shell-empty-light/);
+  assert.match(started.stderr, /Unknown scenario no-such-state; known: .*shell-empty, shell-empty-light/);
   assert.equal(f.exists(gpuiControlLock), false);
 
   const compared = f.compare("shell-empty", "no-such-state");
@@ -267,6 +267,9 @@ test("unknown scenarios are refused before a session exists", (t) => {
   const listed = f.compare("--list");
   assert.equal(listed.status, 0, listed.stderr);
   assert.deepEqual(listed.stdout.trim().split("\n"), [
+    "gallery-default\ttheme=dark\tseed=control",
+    "gallery-tiles-large\ttheme=dark\tseed=control",
+    "gallery-tiles-small\ttheme=dark\tseed=control",
     "shell-empty\ttheme=dark\tseed=empty",
     "shell-empty-light\ttheme=light\tseed=empty"
   ]);

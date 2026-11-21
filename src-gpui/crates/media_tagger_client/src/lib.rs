@@ -22,6 +22,9 @@
 //!   metadata: the complete tag list per asset, the per-asset write queue and the
 //!   maintenance barrier, the details cache, the writes that publish only what the
 //!   backend acknowledged, and the known tags.
+//! - [`gallery`]: the gallery grid: the square-tile geometry, the scroll state with
+//!   its logical `f64` offset and fast-scroll pause, which thumbnail each tile asks
+//!   for, the bounded cache of decoded pictures, and the measures of tile and footer.
 //! - [`i18n`], [`theme`], [`prefs`]: texts of the shared locale files, the theme
 //!   tokens of `src/styles.css` as constants, and the stored theme and language.
 //! - [`text`]: the editing model of the single-line text field, which GPUI does not
@@ -38,6 +41,7 @@
 pub mod backend;
 pub mod controls;
 pub mod exec;
+pub mod gallery;
 pub mod i18n;
 pub mod icons;
 pub mod kit;

@@ -42,6 +42,13 @@ HOT_PATHS = (
     "src-tauri/crates/media_tagger_core/src/thumbs.rs",
     "src-tauri/crates/media_tagger_core/src/indexer.rs",
     "src-tauri/src/adapter/thumb_scheme.rs",
+    # GPUI port: the gallery grid and its thumbnails (epic E09).
+    "src-gpui/crates/media_tagger_client/src/gallery.rs",
+    "src-gpui/crates/media_tagger_client/src/gallery/**",
+    "src-gpui/crates/media_tagger_client/src/thumbs.rs",
+    "src-gpui/crates/media_tagger_gpui/src/thumbs.rs",
+    "src-gpui/crates/media_tagger_gpui/src/views/gallery.rs",
+    "src-gpui/crates/media_tagger_gpui/src/views/gallery/**",
 )
 
 # A change larger than this (in Rust/frontend source lines) also gets the

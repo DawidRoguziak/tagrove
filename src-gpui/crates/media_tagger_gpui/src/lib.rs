@@ -11,6 +11,7 @@ pub mod cli;
 pub mod profile;
 pub mod runtime;
 pub mod scenario;
+pub mod thumbs;
 pub mod ui;
 pub mod views;
 pub mod window;
@@ -39,7 +40,8 @@ use window::MainScreen;
 ///
 /// The start theme and language are the stored preferences (else dark, and the
 /// system's language). A scenario starts in its own theme and in English, as the
-/// Tauri E2E specs start.
+/// Tauri E2E specs start, with its own tile size and, when it has media, with the
+/// directory its harness seeded indexed as the one scan root.
 ///
 /// `scenario` is the id given with `--scenario`; see [`scenario::start_state`].
 pub fn run(scenario: Option<&str>) -> Result<(), Box<dyn Error>> {
@@ -103,13 +105,20 @@ pub fn run_scenario_with(
                 Arc::clone(&boot.state),
                 std::mem::take(&mut boot.startup_scan_roots),
             )?;
+            // A scenario with media indexes the directory its harness seeded, before
+            // any window exists.
+            scenario::seed_library(
+                start.seed,
+                env(media_tagger_client::scenario::SCENARIO_MEDIA_VARIABLE),
+                &backend,
+            )?;
             let parts = RuntimeParts {
                 config,
                 backend: Arc::new(backend),
                 prefs,
                 executor: executor.clone(),
             };
-            (config.theme, MainScreen::Shell(parts))
+            (config.theme, MainScreen::Shell(parts, start.tile_size))
         }
         StartScreen::Kit => (start.theme, MainScreen::Kit),
     };

@@ -379,8 +379,8 @@ What differs, because there are no promises and no reactive owner:
   order.
 - **Errors are values.** `QueryError` (`Superseded`, `Unavailable`, `Cancelled`,
   `IncompleteRange`, `Backend`). The model keeps a failed start or page read in
-  `load_error()` (`Superseded` or `Backend`). No view reads it yet: showing
-  `gallery.loadError` for it belongs to the gallery grid (epic E09).
+  `load_error()` (`Superseded` or `Backend`). The [gallery grid](#gpui-port-the-gallery-grid)
+  shows `gallery.loadError` with Retry for it.
 - **Query changes.** There is no `onQueryChanged` callback: a model that keeps data per
   query compares `query_epoch()`. The library model does so after every input it hands to
   the query, and empties its details cache when the epoch moved.
@@ -390,6 +390,77 @@ Tests: `library/query/tests.rs`, `library/page_cache.rs`, `library/query_impact.
 order, and in three cases on `ThreadExecutor` against the real core through `TempCore`
 (background reads, a session made stale by a scan, an anchored refresh;
 [testing](../development/testing.md#gpui-workspace)).
+
+## GPUI port: the gallery grid
+
+The GPUI gallery draws the same grid with the same demand rules
+([ADR 0042](../adr/0042-gpui-gallery-grid-logical-offset-and-bounded-pictures.md)). The
+Tauri path above is unchanged.
+
+| Solid | GPUI |
+| --- | --- |
+| `gridGeometry.ts` | `media_tagger_client::gallery::geometry` (`grid_layout`, `row_range`, `to_library_range`, `pool_rows`, `anchor_for_resize`), in `f64` |
+| `createVirtualGrid.ts` | `gallery::virtual_grid::VirtualGrid`: a model with `GridInput` and `GridEffect` |
+| `GalleryTile.tsx` (what a tile asks for) | `gallery::thumbnail_demand::ThumbnailDemand` ([thumbnails](thumbnails.md#gpui-port-tiles-decoding-and-the-picture-cache)) |
+| measures of `GalleryGrid.tsx`, `GalleryTile.tsx`, `GalleryStatusFooter.tsx` | `gallery::layout` |
+| `GalleryGrid.tsx`, `GalleryTile.tsx`, `GalleryStatusFooter.tsx`, the gallery part of `AppGalleryView.tsx` | `media_tagger_gpui::views::gallery` (`gallery.rs`, `gallery/grid.rs`) |
+
+What is the same:
+
+- **Layout.** Square tiles fill the width: as many columns as fit at the tile size, then
+  stretched; a 12 px gap; four overscan rows on each side. The tile area is the viewport
+  minus 20 px on the left and 34 px on the right (the timeline rail's clearance), so a
+  1440 px window shows six columns of 221 px at the default size of 188. The tile size is
+  the runtime's (140 to 340 in steps of 8, the slider and Ctrl with the wheel).
+- **Range and demand.** The rows in view plus overscan become the `Viewport` the query
+  model is told (`QueryInput::SetViewport`), again when `page_failure_epoch` changes, and
+  `None` when the gallery view goes away. Only that range is ever demanded.
+- **Fast-scroll pause.** One step of half a viewport, or a whole viewport within 100 ms,
+  pauses demand; every further step keeps it paused, and 150 ms without a step ends it.
+  A paused viewport requests no page; slots without a row are still (no pulse), and
+  assets first shown then ask for cached thumbnails only.
+- **Resize anchor.** A change of columns or tile size keeps the first visible index at
+  the top; a change of the margin above the grid alone (the load error banner) keeps the
+  scroll position; above the grid top the position stays as it is.
+- **What is drawn.** A tile per loaded row with its thumbnail, a delayed loader and the
+  chip of a video or a GIF; a pulsing slot for a row that is not loaded; a backplate
+  behind adjacent tiles of one media group; the status footer after the last row, at the
+  bottom of the viewport when the result is shorter than it; the empty state without
+  results; the `gallery.loadError` banner with Retry (`QueryInput::RetryLoad`). Retry is
+  a tab stop that Enter and Space press; pressing it puts the focus on the grid, since
+  the banner and its button leave while the load runs.
+
+What differs:
+
+- **One logical offset, no physical window.** The scroll position is a single `f64`
+  relative to the grid top. `MAX_GRID_HEIGHT`, `windowHeight`, the base and its rebase
+  exist for WebKit's 2^24 px limit and have no counterpart. GPUI's `Pixels` is `f32`, so
+  the view converts only `row top - offset` of the rows in range.
+- **No native scroller.** The view handles the wheel (a line is 20 px) and binds the keys
+  a webview scrolls with: Home, End, Page Up and Page Down (7/8 of the viewport), Up and
+  Down (40 px), in the `Gallery` key context (`media_tagger_client::shortcuts`). There
+  is no smoothing or momentum beyond what the platform reports.
+- **No row pool.** The rows in range are built every frame; nothing is recycled, and
+  `pool_rows` is only the bound of how many there can be.
+- **Measured after layout.** The viewport's size is read in the frame's prepaint and
+  applied after it, so a resize takes effect one frame later and the first frame of a
+  gallery view draws no tile. Rendering never changes state: a scroll step, a
+  measurement, the runtime's news and the idle timer all go through
+  `GalleryView::refresh`.
+- **Activation.** A click on a tile emits `GalleryEvent::OpenAsset { asset_id, index }`;
+  nothing handles it yet (the lightbox, epic E16). Tiles are not tab stops yet.
+- **Not there yet.** The position bar and the timeline scrubber (epic E10; the model
+  already takes `ScrollTo`, `JumpToIndex`, `HoldDemand` and `ResumeDemand` for them),
+  selection with its ring, mark and rectangle (epic E11), and the scroll keys while the
+  focus is on the window root (epic E19).
+
+Tests: `gallery/geometry.rs`, `gallery/virtual_grid.rs` (including the range-to-pages
+mapping at 1,000,000 results and a quarter-pixel step at 600,000,000 px) and
+`gallery/layout.rs` in the client crate; `tests/gallery_grid.rs` in the adapter, on GPUI's
+test platform with `FakeBackend` and `ManualExecutor`
+([testing](../development/testing.md#gpui-workspace)). A frame while scrolling through
+100,000 synthetic results is measured by the ignored case
+`frame_time_while_scrolling_a_large_library` of that target.
 
 ## Known limitations
 
@@ -422,6 +493,7 @@ order, and in three cases on `ThreadExecutor` against the real core through `Tem
 - `src/library/query/__tests__/createAssetQuery.test.ts` covers first-page replacement, current supersession error/retry and obsolete-response rejection, start/page failure error state with retry recovery, debounced stale-triggered restarts, page-failure epoch signaling, late-generation response rejection, `version` notification of in-place merges, the page bound, render-only refresh fallback, and the session keepalive read (current session only, `stale` → debounced refresh).
 - `src-tauri/tests/backend_integration.rs` covers file-backed asset/tag/query flows, selection specs resolved on a session (`selection_spec`), and in `sections_during_a_scan` the session policy of timeline sections across a real scan: a session kept through an unbumped batch commit, then stale after the scan's final bump and replaced by one with sections.
 - `src-gpui/crates/media_tagger_client/src/library/` (`query/tests.rs`, `page_cache.rs`, `query_impact.rs`, `filters.rs`) covers the same model behaviour for the [GPUI port](#gpui-port-the-query-model) on a deterministic executor, and in three cases on the real core.
+- `src-gpui/crates/media_tagger_client/src/gallery/` (`geometry.rs`, `virtual_grid.rs`, `layout.rs`) and `src-gpui/crates/media_tagger_gpui/tests/gallery_grid.rs` cover the [GPUI gallery grid](#gpui-port-the-gallery-grid): layout at 10k, 26k and 1M slots, the range and the pages it names, the pause, the resize anchor, where tiles, footer and banner are drawn, wheel and keys, and the viewport given up when the view goes away.
 - `src/library/__tests__/createLibrary.test.ts` covers first-page replacement, filter forwarding, duplicate range-demand suppression, shared in-flight indexed page lookup, the paused-range hold, and clear-library reset.
 - `src/features/gallery/__tests__/GalleryGrid.test.tsx` covers sparse-slot replacement, bounded DOM across cache eviction/reload, explicit page retry, static GIF previews, per-asset thumbnail DOM isolation, loaded tiles kept through a fast jump and through a refresh deep in the list, one-slot recycling with constant DOM and row order, per-row backplates and the windowed scrollbar. `gridGeometry.test.ts` covers layout, ranges, anchors and window bases at 10k/26k/1M slots; `createVirtualGrid.test.tsx` covers ranges, anchors, the windowed mode, the pause and disposal; `GalleryScrollbar.test.tsx` covers its accessibility, pointer and keyboard input. `timeline.test.ts` and `GalleryTimelineScrubber.test.tsx` cover month merging, position mapping, keys, ARIA, the focus taken on a press and the per-frame drag with held demand; `GalleryGrid.test.tsx` covers the timeline beside the windowed bar and the right padding that clears its rail; `query_sections.rs` and `asset_query_service.rs` tests cover section boundaries, groups, no-date rows, splits, filters and staleness, and that an unbumped scan commit keeps the session without sections until the next bump (also `backend_integration`, `sections_during_a_scan`, with a real scan). `createGridHandlers.test.tsx` covers pointer/modifier and cancellation behavior, including a released read and its Retry surviving window blur.
 - `src/ui/controls/__tests__/ThumbnailImage.test.tsx` covers one element across source changes, hiding until the current source loads, async decoding, fade readiness for delayed/cached loads, failures, unchanged-source rerenders, and previews with fading disabled. The opt-in [desktop thumbnail checks](../development/testing.md#gallery-thumbnail-fade) require immediate full opacity during filtering and scrolling in both themes and with reduced motion.

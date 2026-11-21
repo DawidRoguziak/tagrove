@@ -11,7 +11,36 @@
 //! This module only describes the states. Whether a process may start in one is decided
 //! by the adapter: only the isolated E2E profile accepts a scenario.
 
-use crate::theme::ThemeName;
+use crate::{
+    runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
+    theme::ThemeName,
+};
+
+/// The synthetic media a scenario starts with (`seed` of its file in
+/// `e2e/compare/scenarios`, `e2e/compare/seed.js`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Seed {
+    /// No scan root and no asset.
+    Empty,
+    /// The media `app:control` indexes for the Tauri application: four PNGs, one GIF
+    /// and two MP4s in one scan root. The harness writes them into a fresh directory
+    /// and names it in [`SCENARIO_MEDIA_VARIABLE`].
+    Control,
+}
+
+impl Seed {
+    /// The name in the scenario files.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::Control => "control",
+        }
+    }
+}
+
+/// The environment variable that names the seeded media directory of the running
+/// scenario (`SCENARIO_MEDIA_VARIABLE` of `e2e/compare/gpui-control-support.js`).
+pub const SCENARIO_MEDIA_VARIABLE: &str = "MEDIATAGGER_GPUI_SCENARIO_MEDIA";
 
 /// One named start state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,18 +48,42 @@ pub struct Scenario {
     /// The id of the catalogue, for example `shell-empty`.
     pub id: &'static str,
     pub theme: ThemeName,
+    pub seed: Seed,
+    /// The tile size the gallery starts with.
+    pub tile_size: u32,
 }
 
-/// Every scenario the GPUI interface can start in. All of them start on an empty
-/// profile: no scan roots and no assets.
-pub const SCENARIOS: [Scenario; 2] = [
+/// Every scenario the GPUI interface can start in, on a fresh profile.
+pub const SCENARIOS: [Scenario; 5] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
+        seed: Seed::Empty,
+        tile_size: DEFAULT_TILE_SIZE,
     },
     Scenario {
         id: "shell-empty-light",
         theme: ThemeName::Light,
+        seed: Seed::Empty,
+        tile_size: DEFAULT_TILE_SIZE,
+    },
+    Scenario {
+        id: "gallery-default",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+    },
+    Scenario {
+        id: "gallery-tiles-small",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: TILE_SIZE_MIN,
+    },
+    Scenario {
+        id: "gallery-tiles-large",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: TILE_SIZE_MAX,
     },
 ];
 
@@ -49,8 +102,11 @@ pub const KIT: &str = "kit";
 mod tests {
     use std::{collections::BTreeSet, path::PathBuf};
 
-    use super::{find, SCENARIOS};
-    use crate::theme::ThemeName;
+    use super::{find, Seed, SCENARIOS};
+    use crate::{
+        runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
+        theme::ThemeName,
+    };
 
     fn repository_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
@@ -150,7 +206,37 @@ mod tests {
                 "{}: theme of the Tauri side",
                 scenario.id
             );
+            assert_eq!(
+                js_string_field(&source, "seed").as_deref(),
+                Some(scenario.seed.name()),
+                "{}: seed of the Tauri side",
+                scenario.id
+            );
         }
+    }
+
+    #[test]
+    fn the_gallery_scenarios_show_the_control_seed_at_three_tile_sizes() {
+        // Parity scenarios of E09.
+        for (id, tile_size) in [
+            ("gallery-default", DEFAULT_TILE_SIZE),
+            ("gallery-tiles-small", TILE_SIZE_MIN),
+            ("gallery-tiles-large", TILE_SIZE_MAX),
+        ] {
+            let scenario = find(id).unwrap_or_else(|| panic!("{id} is a scenario"));
+            assert_eq!(scenario.seed, Seed::Control, "{id}");
+            assert_eq!(scenario.tile_size, tile_size, "{id}");
+            assert_eq!(scenario.theme, ThemeName::Dark, "{id}");
+        }
+        for scenario in SCENARIOS {
+            if scenario.seed == Seed::Empty {
+                assert_eq!(scenario.tile_size, DEFAULT_TILE_SIZE, "{}", scenario.id);
+            }
+        }
+        assert_eq!(
+            super::SCENARIO_MEDIA_VARIABLE,
+            "MEDIATAGGER_GPUI_SCENARIO_MEDIA"
+        );
     }
 
     #[test]

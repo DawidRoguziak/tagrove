@@ -96,12 +96,18 @@ come and go:
   (`workspace.itemCount` with the language's plural and digit grouping) and the
   tile-size slider. The search field with its toolbar (epics E12, E13) and the
   bulk-actions toggle (E11, E14) have empty slots. Below the header the gallery shows the
-  empty state of `GalleryEmptyState` (no folders, or no results) until the grid of epic
-  E09 exists. The settings header has Back, the logo, the heading and the window buttons;
+  [virtual grid](../subsystems/library-query-and-gallery.md#gpui-port-the-gallery-grid)
+  with its status footer, or the empty state of `GalleryEmptyState` (no folders, or no
+  results), each inside the gallery section's paddings (20 px left, 34 px right), and the
+  load error banner with Retry above either. The runtime entity also owns the gallery's
+  thumbnails (`thumbs::Thumbnails`), so decoded pictures survive a visit to the settings
+  page while the grid's scroll position does not, as in the Solid view. The settings
+  header has Back, the logo, the heading and the window buttons;
   its sections are epics E17 and E18. Measures and texts are in
   `media_tagger_client::shell`.
 - Start: the stored theme and language (else dark and the system's language); a
-  comparison scenario starts in its own theme and in English.
+  comparison scenario starts in its own theme and in English, with its own tile size
+  and, when it has media, with the seeded directory indexed.
 
 ## Directory ownership and dependency direction
 
@@ -498,7 +504,7 @@ A shortcut on a key the field does not use, such as Ctrl+K, fires with the focus
 
 Disabling a field that has the focus removes the focus from the window. The application shell has to take it back (`on_focus_lost`), because without a focused element no key context is in the dispatch path and no shortcut matches. The shell does: it focuses the layer stack's root when the window opens and whenever the focus is lost.
 
-The application's key contexts are `media_tagger_client::shortcuts::KeyContext`: `Shell`, which sits on the window's root next to `UiLayers` (the root holds the focus when nothing else does, so a `Shell` binding is always on the path), and `Gallery` and `Settings` on the two views. `SHORTCUTS` is the registry of application shortcuts; it is still empty, because the Tauri shell binds no key besides the layer stack's Escape, and the epics that bring the search (Ctrl+K), the gallery and the lightbox add theirs there under the two rules above (`types_a_character` tells which keys need `outside_text_input`). There are no context menus, as in Tauri.
+The application's key contexts are `media_tagger_client::shortcuts::KeyContext`: `Shell`, which sits on the window's root next to `UiLayers` (the root holds the focus when nothing else does, so a `Shell` binding is always on the path), and `Gallery` and `Settings` on the two views. `SHORTCUTS` is the registry of application shortcuts. The shell binds none, because the Tauri shell binds no key besides the layer stack's Escape. The gallery binds the keys that scroll its grid, which a webview's scroller handles natively (Home, End, Page Up, Page Down, Up, Down, in `Gallery`; `views::gallery::key_bindings` turns the entries into GPUI bindings and `views::init` registers them). They act while the focus is inside the gallery view, where a text field, the slider or the segmented control bind the same keys deeper and win; with the focus on the window root no `Gallery` binding is on the path. The epics that bring the search (Ctrl+K) and the lightbox add theirs under the two rules above (`types_a_character` tells which keys need `outside_text_input`). There are no context menus, as in Tauri.
 
 The field sets the accessibility role `TextInput` and the label given with `set_label`.
 

@@ -103,7 +103,7 @@ pub enum ThumbnailMode {
     Visible,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ThumbnailInput {
     /// The view wants this picture. Repeating it is harmless.
     Request {

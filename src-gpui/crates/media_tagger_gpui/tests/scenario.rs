@@ -89,7 +89,8 @@ fn the_e2e_profile_refuses_an_unknown_scenario_before_the_display_check() {
 
     assert_eq!(
         error,
-        "unknown scenario \"no-such-scenario\"; known: shell-empty, shell-empty-light, kit"
+        "unknown scenario \"no-such-scenario\"; known: shell-empty, shell-empty-light, \
+         gallery-default, gallery-tiles-small, gallery-tiles-large, kit"
     );
     assert!(
         is_empty_dir(tmp.path()),
@@ -103,7 +104,16 @@ fn the_e2e_profile_accepts_its_scenarios_and_goes_on_to_the_display_check() {
     let data_home = OsString::from(tmp.path());
     let env = env_of(&[("XDG_DATA_HOME", &data_home)]);
 
-    for scenario in [None, Some("shell-empty"), Some("shell-empty-light")] {
+    // A scenario with media gets as far as well: its seed is indexed only after a
+    // display has answered and the profile is open.
+    for scenario in [
+        None,
+        Some("shell-empty"),
+        Some("shell-empty-light"),
+        Some("gallery-default"),
+        Some("gallery-tiles-small"),
+        Some("gallery-tiles-large"),
+    ] {
         let error = error_of(run_scenario_with(profile::E2E.identifier, scenario, &env));
 
         assert_eq!(error, NO_DISPLAY, "{scenario:?}");

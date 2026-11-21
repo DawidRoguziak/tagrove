@@ -17,7 +17,7 @@ use std::{
     task::{Context as TaskContext, Poll, Waker},
 };
 
-use gpui::{App, Context, Task};
+use gpui::{App, AppContext as _, Context, Entity, Task};
 use media_tagger_client::{
     backend::Backend,
     exec::Executor,
@@ -27,7 +27,7 @@ use media_tagger_client::{
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
 };
 
-use crate::ui;
+use crate::{thumbs::Thumbnails, ui};
 
 /// A wake-up for one waiting task, raised from any thread. Raising it while nobody
 /// waits is remembered until the next wait.
@@ -101,6 +101,8 @@ pub struct RuntimeParts {
 /// The runtime entity.
 pub struct Runtime {
     driver: Driver<AppRuntime, RuntimeRunner>,
+    /// The gallery's thumbnails; they outlive the gallery view.
+    thumbnails: Entity<Thumbnails>,
     _pump: Task<()>,
 }
 
@@ -110,6 +112,11 @@ impl Runtime {
     pub fn new(parts: RuntimeParts, cx: &mut Context<Self>) -> Self {
         let signal = WakeSignal::new();
         let wake = signal.clone();
+        let thumbnails = {
+            let backend = parts.backend.clone();
+            let executor = parts.executor.clone();
+            cx.new(|cx| Thumbnails::new(backend, executor, cx))
+        };
         let driver = Driver::with_wake(
             AppRuntime::new(parts.config),
             RuntimeRunner::new(parts.backend, parts.prefs),
@@ -125,12 +132,18 @@ impl Runtime {
         ui::theme::set_active(parts.config.theme, cx);
         Self {
             driver,
+            thumbnails,
             _pump: pump,
         }
     }
 
     pub fn model(&self) -> &AppRuntime {
         self.driver.model()
+    }
+
+    /// The thumbnails of the gallery's tiles.
+    pub fn thumbnails(&self) -> &Entity<Thumbnails> {
+        &self.thumbnails
     }
 
     /// Texts in the runtime's language.

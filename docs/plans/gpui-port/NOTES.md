@@ -24,3 +24,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-21 | E07 | workflow | done | E07 zakończony: model zapytań i cache stron w kliencie, testy i bramka zielone, przegląd czysty. | [E07](E07-client-query-model.md)
 2026-11-21 | E08 | orkiestrator | in progress | workflow start od kroku implement | [E08](E08-client-metadata.md)
 2026-11-21 | E08 | workflow | done | E08 ukończony: model biblioteki, stan tagów, mutacje i słownik w kliencie, przegląd czysty, bramka zaliczona. | [E08](E08-client-metadata.md)
+2026-11-21 | E09 | orkiestrator | in progress | workflow start od kroku implement | [E09](E09-gpui-gallery-grid.md)
+2026-11-21 | E09 | workflow | done | E09 ukończony: siatka galerii i miniatury gotowe, przegląd czysty, bramka test:all przeszła. | [E09](E09-gpui-gallery-grid.md)

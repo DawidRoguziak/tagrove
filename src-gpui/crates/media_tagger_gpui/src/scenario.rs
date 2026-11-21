@@ -6,21 +6,49 @@
 //! harness that asks for one always runs the E2E build on a private display with
 //! scratch app data. The guard runs before the display check, so a refused scenario
 //! touches neither a display nor the disk.
+//!
+//! A scenario with media ([`Seed::Control`]) indexes the directory the harness seeded
+//! and named in `MEDIATAGGER_GPUI_SCENARIO_MEDIA`, as `app:control start` indexes the
+//! same files for the Tauri application: [`seed_library`] adds it as the one scan root
+//! and scans it before the window opens, so the first query already lists the assets.
 
-use std::fmt::{Display, Formatter};
+use std::{
+    ffi::OsString,
+    fmt::{Display, Formatter},
+    path::Path,
+};
 
 use media_tagger_client::{
-    scenario::{self, Scenario},
+    backend::Backend,
+    runtime::DEFAULT_TILE_SIZE,
+    scenario::{self, Scenario, Seed, SCENARIO_MEDIA_VARIABLE},
     theme::ThemeName,
 };
 
 use crate::profile::{self, Profile};
 
 /// What the main window shows first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StartState {
     pub theme: ThemeName,
     pub screen: StartScreen,
+    /// The media the library starts with.
+    pub seed: Seed,
+    /// The tile size of the gallery.
+    pub tile_size: u32,
+}
+
+impl Default for StartState {
+    /// The application's own start: the stored theme decides, the library is what the
+    /// profile holds, and tiles have their default size.
+    fn default() -> Self {
+        Self {
+            theme: ThemeName::default(),
+            screen: StartScreen::default(),
+            seed: Seed::Empty,
+            tile_size: DEFAULT_TILE_SIZE,
+        }
+    }
 }
 
 /// The view of the main window.
@@ -38,6 +66,8 @@ impl From<Scenario> for StartState {
         Self {
             theme: scenario.theme,
             screen: StartScreen::Main,
+            seed: scenario.seed,
+            tile_size: scenario.tile_size,
         }
     }
 }
@@ -49,6 +79,12 @@ pub enum ScenarioError {
         identifier: &'static str,
     },
     Unknown(String),
+    /// A scenario with media was started without the seeded directory.
+    MediaUnset,
+    /// The seeded directory is not one, or its path is not UTF-8.
+    MediaInvalid,
+    /// The backend refused to index the seeded directory.
+    SeedFailed(String),
 }
 
 impl Display for ScenarioError {
@@ -67,6 +103,17 @@ impl Display for ScenarioError {
                     .chain([scenario::KIT])
                     .collect();
                 write!(f, "unknown scenario {id:?}; known: {}", known.join(", "))
+            }
+            Self::MediaUnset => write!(
+                f,
+                "this scenario needs seeded media: {SCENARIO_MEDIA_VARIABLE} is not set"
+            ),
+            Self::MediaInvalid => write!(
+                f,
+                "{SCENARIO_MEDIA_VARIABLE} does not name a directory with a UTF-8 path"
+            ),
+            Self::SeedFailed(reason) => {
+                write!(f, "cannot index the scenario's media: {reason}")
             }
         }
     }
@@ -88,8 +135,8 @@ pub fn start_state(profile: Profile, scenario: Option<&str>) -> Result<StartStat
     }
     if id == scenario::KIT {
         return Ok(StartState {
-            theme: ThemeName::default(),
             screen: StartScreen::Kit,
+            ..StartState::default()
         });
     }
     scenario::find(id)
@@ -97,12 +144,61 @@ pub fn start_state(profile: Profile, scenario: Option<&str>) -> Result<StartStat
         .ok_or_else(|| ScenarioError::Unknown(id.to_owned()))
 }
 
+/// Gives the library the media of `seed` before the window opens. `media` is the
+/// value of [`SCENARIO_MEDIA_VARIABLE`]: the directory the harness seeded. It becomes
+/// the library's one scan root and is scanned, as `app:control start` does for the
+/// Tauri application. [`Seed::Empty`] touches nothing.
+///
+/// Only a start state of the E2E profile carries a seed ([`start_state`]), and this
+/// runs before the event loop exists, so the scan blocks no UI thread.
+pub fn seed_library(
+    seed: Seed,
+    media: Option<OsString>,
+    backend: &dyn Backend,
+) -> Result<(), ScenarioError> {
+    match seed {
+        Seed::Empty => Ok(()),
+        Seed::Control => {
+            let media = media
+                .filter(|media| !media.is_empty())
+                .ok_or(ScenarioError::MediaUnset)?;
+            if !Path::new(&media).is_dir() {
+                return Err(ScenarioError::MediaInvalid);
+            }
+            let media = media
+                .into_string()
+                .map_err(|_| ScenarioError::MediaInvalid)?;
+            backend
+                .scan_folder(media)
+                .map(|_| ())
+                .map_err(|error| ScenarioError::SeedFailed(error.text().to_owned()))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use media_tagger_client::{scenario::SCENARIOS, theme::ThemeName};
+    use std::ffi::OsString;
 
-    use super::{start_state, ScenarioError, StartScreen, StartState};
+    use media_tagger_client::{
+        backend::{fake::Call, BackendError, FakeBackend},
+        runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
+        scenario::{Seed, SCENARIOS},
+        theme::ThemeName,
+    };
+    use media_tagger_core::models::{ScanCompletion, ScanSummary};
+
+    use super::{seed_library, start_state, ScenarioError, StartScreen, StartState};
     use crate::profile::{DEV, E2E};
+
+    fn scanned() -> ScanSummary {
+        ScanSummary {
+            completion: ScanCompletion::Complete,
+            indexed: 7,
+            removed: 0,
+            failed: 0,
+        }
+    }
 
     #[test]
     fn without_a_scenario_every_profile_starts_in_the_default_state() {
@@ -120,6 +216,8 @@ mod tests {
                 Ok(StartState {
                     theme: scenario.theme,
                     screen: StartScreen::Main,
+                    seed: scenario.seed,
+                    tile_size: scenario.tile_size,
                 }),
                 "{}",
                 scenario.id
@@ -170,8 +268,93 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("\"no-such-scenario\""), "{message}");
         assert!(
-            message.contains("shell-empty, shell-empty-light, kit"),
+            message.contains("shell-empty, shell-empty-light, gallery-default"),
             "{message}"
+        );
+        assert!(message.ends_with(", kit"), "{message}");
+    }
+
+    #[test]
+    fn the_gallery_scenarios_start_with_the_control_seed_at_their_tile_size() {
+        for (id, tile_size) in [
+            ("gallery-default", DEFAULT_TILE_SIZE),
+            ("gallery-tiles-small", TILE_SIZE_MIN),
+            ("gallery-tiles-large", TILE_SIZE_MAX),
+        ] {
+            let start = start_state(E2E, Some(id)).expect("a scenario of the E2E profile");
+            assert_eq!(start.seed, Seed::Control, "{id}");
+            assert_eq!(start.tile_size, tile_size, "{id}");
+            assert_eq!(start.screen, StartScreen::Main, "{id}");
+        }
+        let default = StartState::default();
+        assert_eq!(
+            (default.seed, default.tile_size),
+            (Seed::Empty, DEFAULT_TILE_SIZE)
+        );
+    }
+
+    #[test]
+    fn the_control_seed_scans_the_seeded_directory_as_the_one_root() {
+        let media = tempfile::tempdir().expect("tempdir");
+        let backend = FakeBackend::new();
+        backend.on_scan_folder(|_| Ok(scanned()));
+
+        seed_library(Seed::Control, Some(OsString::from(media.path())), &backend).expect("seeded");
+
+        assert_eq!(
+            backend.calls(),
+            [Call::ScanFolder {
+                path: media.path().to_str().expect("UTF-8").to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn the_empty_seed_touches_nothing() {
+        let backend = FakeBackend::new();
+
+        seed_library(Seed::Empty, None, &backend).expect("nothing to do");
+        seed_library(Seed::Empty, Some(OsString::from("/nowhere")), &backend)
+            .expect("nothing to do");
+
+        assert!(backend.calls().is_empty());
+    }
+
+    #[test]
+    fn a_seed_without_its_directory_is_refused_before_the_backend_is_called() {
+        let backend = FakeBackend::new();
+        let missing = tempfile::tempdir().expect("tempdir").path().join("gone");
+
+        assert_eq!(
+            seed_library(Seed::Control, None, &backend),
+            Err(ScenarioError::MediaUnset)
+        );
+        assert_eq!(
+            seed_library(Seed::Control, Some(OsString::new()), &backend),
+            Err(ScenarioError::MediaUnset)
+        );
+        assert_eq!(
+            seed_library(Seed::Control, Some(missing.into_os_string()), &backend),
+            Err(ScenarioError::MediaInvalid)
+        );
+        assert!(backend.calls().is_empty());
+        assert!(ScenarioError::MediaUnset
+            .to_string()
+            .contains("MEDIATAGGER_GPUI_SCENARIO_MEDIA"));
+    }
+
+    #[test]
+    fn a_refused_scan_fails_the_start() {
+        let media = tempfile::tempdir().expect("tempdir");
+        let backend = FakeBackend::new();
+        backend.on_scan_folder(|_| Err(BackendError::rejected("i18n:common.libraryBusy")));
+
+        let error = seed_library(Seed::Control, Some(OsString::from(media.path())), &backend)
+            .expect_err("refused");
+
+        assert_eq!(
+            error,
+            ScenarioError::SeedFailed("i18n:common.libraryBusy".to_owned())
         );
     }
 }

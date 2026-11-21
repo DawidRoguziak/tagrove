@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +17,7 @@ import job  # noqa: E402
 import port_state as port  # noqa: E402
 
 REPO = port.repo_root()
+WORKFLOW = (REPO / ".claude/workflows/gpui-port-epic.js").read_text(encoding="utf-8")
 
 
 def options(**overrides) -> argparse.Namespace:
@@ -47,6 +50,86 @@ class RealManifest(unittest.TestCase):
         for role in ("implementer", "implementer_hard", "test_author", "fixer", "fixer_hard", "clerk",
                      "parity_reviewer", "lens", "lens_rules", "verifier_high", "verifier_low", "scribe"):
             self.assertIn(role, roles)
+
+
+
+def workflow_function(name: str) -> str:
+    """The source of one top-level function of the workflow script."""
+    start = WORKFLOW.index(f"function {name}(")
+    return WORKFLOW[start:WORKFLOW.index("\n}\n", start) + 3]
+
+
+def run_in_node(body: str, hard: bool = False):
+    """Evaluate `body` (a JavaScript expression) next to the workflow's lens functions and return its value."""
+    core = re.search(r"^const CORE_LENSES = .+;$", WORKFLOW, re.M).group(0)
+    script = "\n".join([
+        f"const hard = {json.dumps(hard)};", core, "const log = () => {};",
+        workflow_function("scopeProblem"), workflow_function("pickLenses"),
+        f"console.log(JSON.stringify({body}));",
+    ])
+    done = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
+    if done.returncode != 0:
+        raise AssertionError(done.stderr)
+    return json.loads(done.stdout)
+
+
+class ReviewLenses(unittest.TestCase):
+    """Which lenses a review round runs. The scope reaches the workflow through an agent, so it can be incomplete."""
+
+    def lenses(self, scope: dict, review_round: int = 1, hard: bool = False, last: dict | None = None) -> list[str]:
+        call = f"pickLenses({json.dumps(scope)}, {review_round}, {json.dumps(last or {})}).map((lens) => lens.agent)"
+        return run_in_node(call, hard)
+
+    def problem(self, scope: dict) -> str:
+        return run_in_node(f"scopeProblem({json.dumps(scope)})")
+
+    def test_lenses_follow_the_changed_paths(self):
+        scope = {"files": [{"path": "src-gpui/crates/media_tagger_client/src/lib.rs", "category": "rust"},
+                           {"path": "docs/development/testing.md", "category": "docs"}]}
+        self.assertEqual(self.lenses(scope), ["review-conventions", "review-rust", "review-gpui"])
+        self.assertEqual(self.lenses(scope, hard=True),
+                         ["review-conventions", "review-rust", "review-gpui", "review-stability"])
+
+    def test_a_docs_only_change_gets_no_code_lens(self):
+        scope = {"files": [{"path": "docs/development/testing.md", "category": "docs"}],
+                 "suggested_lenses": ["review-conventions"]}
+        self.assertEqual(self.lenses(scope), ["review-conventions"])
+
+    def test_a_lost_file_list_still_runs_the_suggested_lenses(self):
+        # What the scope step of epic E08 returned: no file list, the lenses of collect_scope.py intact.
+        scope = {"ok": True, "empty": False, "changed_lines": 6515, "app_source_lines": 6274,
+                 "suggested_lenses": ["review-conventions", "review-rust", "review-gpui", "review-performance"]}
+        self.assertEqual(self.lenses(scope, hard=True),
+                         ["review-conventions", "review-rust", "review-gpui", "review-performance", "review-stability"])
+
+    def test_a_short_file_list_is_completed_by_the_suggested_lenses(self):
+        scope = {"files": [{"path": "docs/plans/gpui-port/NOTES.md", "category": "docs"}],
+                 "suggested_lenses": ["review-conventions", "review-rust", "review-gpui", "review-frontend"]}
+        self.assertEqual(self.lenses(scope), ["review-conventions", "review-rust", "review-gpui", "review-frontend"])
+
+    def test_without_paths_and_suggestions_the_core_lenses_run(self):
+        self.assertEqual(self.lenses({"ok": True, "empty": False}), ["review-conventions", "review-rust", "review-gpui"])
+
+    def test_later_rounds_keep_the_core_lenses(self):
+        scope = {"suggested_lenses": ["review-conventions", "review-rust", "review-gpui", "review-performance"]}
+        self.assertEqual(self.lenses(scope, review_round=3, hard=True),
+                         ["review-conventions", "review-rust", "review-gpui"])
+        self.assertEqual(self.lenses(scope, review_round=3, hard=True, last={"review-stability": 1}),
+                         ["review-conventions", "review-rust", "review-gpui", "review-stability"])
+
+    def test_an_incomplete_scope_is_named(self):
+        files = [{"path": "src-gpui/Cargo.toml"}, {"path": "docs/adr/README.md"}]
+        self.assertEqual(self.problem({"files": files, "file_count": 2}), "")
+        self.assertEqual(self.problem({"files": files}), "")
+        self.assertIn("missing", self.problem({"empty": False}))
+        self.assertIn("missing", self.problem({"files": [], "file_count": 30}))
+        self.assertEqual(self.problem({"files": files, "file_count": 30}), "the file list has 2 of 30 files")
+
+    def test_the_review_loop_checks_the_scope_and_reports_what_is_left(self):
+        review = workflow_function("review")
+        self.assertIn("scopeProblem(scope)", review)
+        self.assertIn("scopePrompt(problem)", review)
+        self.assertIn("review.gaps.push(`round ${round}: review scope incomplete", review)
 
 
 class Commands(unittest.TestCase):

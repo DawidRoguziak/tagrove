@@ -77,7 +77,7 @@ const PARITY = obj({
 const SCOPE = obj({
   ok: bool, empty: bool, base: str, target: str, diff_command: str, untracked: strs,
   files: list({ path: str, category: str, hot_path: bool }, ["path"]),
-  changed_lines: int, app_source_lines: int, suggested_lenses: strs, rules: strs, docs: strs, error: str
+  file_count: int, changed_lines: int, app_source_lines: int, suggested_lenses: strs, rules: strs, docs: strs, error: str
 }, ["ok", "empty"]);
 const FINDING = {
   id: str, lens: str, path: str, line: int, title: str, priority: PRIORITY,
@@ -246,11 +246,12 @@ function parityFixPrompt(diffs, round) {
   ].join("\n");
 }
 
-function scopePrompt() {
+function scopePrompt(problem) {
   return [
     "Collect the review scope. Do not edit anything.",
+    ...(problem ? [`An earlier answer to this request could not be used: ${problem}. Copy the whole file list this time.`] : []),
     `Run exactly: \`python3 .claude/skills/review-changes/scripts/collect_scope.py --base ${base}\``,
-    "From its JSON output return: ok=true, empty, base, target, diff_command, untracked (the paths whose status is \"A?\"), files (path, category and hot_path of every file), changed_lines (totals.changed_lines), app_source_lines (totals.app_source_lines), suggested_lenses, rules (the rule paths), docs.",
+    "From its JSON output return: ok=true, empty, base, target, diff_command, untracked (the paths whose status is \"A?\"), files (path, category and hot_path of every file; the list has exactly totals.files entries, never shortened or left out), file_count (totals.files), changed_lines (totals.changed_lines), app_source_lines (totals.app_source_lines), suggested_lenses, rules (the rule paths), docs.",
     "If the command fails return ok=false, empty=false and error with its stderr."
   ].join("\n");
 }
@@ -261,7 +262,7 @@ function brief(scope) {
     "Repository root: the current working directory. Read-only review; do not edit, build or run tests.",
     `Intent: GPUI port epic ${epic.id} "${epic.title}". A second UI adapter (workspace src-gpui/: crates media_tagger_client and media_tagger_gpui) is built next to the Tauri/Solid app, which must keep its behaviour and wire contract. Binding decisions and agent rules: ${plan}/README.md; epic scope and acceptance criteria: ${epicFile}.`,
     `Scope: worktree, base ${(scope.base ?? base ?? "").slice(0, 12)}, target working tree; ${(scope.files ?? []).length} files.`,
-    `Diff: \`${scope.diff_command ?? "git diff -M " + base}\` (plus untracked: ${names(scope.untracked)})`,
+    `Diff: \`${scope.diff_command ?? "git diff -M " + base}\` (plus untracked files, which the diff does not show: ${names(scope.untracked)}; \`git status --short\` lists them all)`,
     "Your files: all",
     `Rules to read: ${names(scope.rules)}   Docs to read: ${names(docs)}`,
     "User concerns: none",
@@ -346,14 +347,29 @@ function recordPrompt(state) {
 const keyOf = (finding) =>
   `${finding.path}|${String(finding.title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 80)}`;
 
+// What the clerk relayed from collect_scope.py is unusable when it lost the file list: the lens brief and the
+// path rules below need it. Returns the reason, or "" when the scope can be used.
+function scopeProblem(scope) {
+  const files = scope.files ?? [];
+  if (!files.length) return "the file list is missing although the scope is not empty";
+  if (Number.isInteger(scope.file_count) && scope.file_count !== files.length) {
+    return `the file list has ${files.length} of ${scope.file_count} files`;
+  }
+  return "";
+}
+
 function pickLenses(scope, round, lastByLens) {
   const files = scope.files ?? [];
   const paths = files.map((file) => file.path);
   const any = (pattern) => paths.some((path) => pattern.test(path));
+  // The file list passes through an agent and can come back short or empty. A lens the scope script
+  // suggested still runs, and without any path every core lens runs: a skipped lens is a silent review gap.
+  const suggested = new Set(scope.suggested_lenses ?? []);
+  const wanted = (lens, pattern) => suggested.has(lens) || any(pattern);
   const all = [{ agent: "review-conventions", role: "lens_rules" }];
-  if (any(/^(src-tauri|src-gpui)\//)) all.push({ agent: "review-rust", role: "lens" });
-  if (any(/^src-gpui\//)) all.push({ agent: "review-gpui", role: "lens" });
-  if (any(/^(src|e2e)\//)) all.push({ agent: "review-frontend", role: "lens" });
+  if (!paths.length || wanted("review-rust", /^(src-tauri|src-gpui)\//)) all.push({ agent: "review-rust", role: "lens" });
+  if (!paths.length || wanted("review-gpui", /^src-gpui\//)) all.push({ agent: "review-gpui", role: "lens" });
+  if (wanted("review-frontend", /^(src|e2e)\//)) all.push({ agent: "review-frontend", role: "lens" });
   if ((scope.suggested_lenses ?? []).includes("review-performance") || files.some((file) => file.hot_path)) {
     all.push({ agent: "review-performance", role: "lens" });
   }
@@ -433,7 +449,7 @@ async function review(state) {
   const review = state.review;
   for (let round = 1; round <= MAX_REVIEW; round++) {
     review.rounds = round;
-    const scope = await ask("clerk", scopePrompt(), SCOPE, { label: `scope r${round}`, phase: "Review" });
+    let scope = await ask("clerk", scopePrompt(), SCOPE, { label: `scope r${round}`, phase: "Review" });
     if (!scope?.ok) {
       review.error = `scope collection failed: ${scope?.error ?? "no result"}`;
       break;
@@ -443,6 +459,16 @@ async function review(state) {
       review.clean = true;
       break;
     }
+    let problem = DRY ? "" : scopeProblem(scope);
+    if (problem) {
+      log(`${epic.id}: review round ${round}: ${problem}; collecting the scope once more`);
+      const again = await ask("clerk", scopePrompt(problem), SCOPE, { label: `scope r${round} retry`, phase: "Review" });
+      if (again?.ok && !again.empty && (again.files ?? []).length >= (scope.files ?? []).length) {
+        scope = again;
+        problem = scopeProblem(scope);
+      }
+    }
+    if (problem) review.gaps.push(`round ${round}: review scope incomplete (${problem}); the lenses were picked without it`);
     const lenses = pickLenses(scope, round, lastByLens);
     const reviewBrief = brief(scope);
     const results = await parallel(lenses.map((lens) => async () => {

@@ -86,7 +86,7 @@ tree (the review base is `HEAD`).
 
 `python3 $S/port_state.py args <EPIC> --dry-run > ARGS`, then the Workflow as above. Every agent is
 replaced by a trivial one that returns an empty valid result, so the run exercises the control
-flow and schemas with about seven small agents. It changes no tracked file and no status.
+flow and schemas with about ten small agents. It changes no tracked file and no status.
 Expect `status: "done"` in the returned state.
 
 ## Models

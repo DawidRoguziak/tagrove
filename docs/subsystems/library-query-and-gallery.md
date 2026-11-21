@@ -324,9 +324,13 @@ above is unchanged.
 | `metadata/queryImpact.ts` | `query_impact.rs` |
 
 `AssetQuery` is a state machine: a command or a backend reply is an input, a backend call
-or a timer is an effect, and nothing waits. It is embedded in the application runtime
-(`runtime::AppRuntime`): inputs travel as `RuntimeInput::Query`, effects as
-`RuntimeEffect::Query`, and `RuntimeInput::RefreshLibrary` is the query's refresh. The
+or a timer is an effect, and nothing waits. It is owned by the library model
+(`library::Library`,
+[metadata, mutations and the vocabulary](search-tags-and-media-groups.md#gpui-port-metadata-mutations-and-the-vocabulary)),
+which is embedded in the application runtime (`runtime::AppRuntime`): the query's inputs
+travel as `RuntimeInput::Query` and its effects as `RuntimeEffect::Query`, and
+`RuntimeInput::RefreshLibrary` is the query's refresh together with a pass over the known
+tags ([ADR 0041](../adr/0041-gpui-library-model-queued-writes-as-data.md)). The
 constants are the same: pages of 128 (`DEFAULT_QUERY_PAGE_SIZE`; a configured size is kept
 within the backend's 1–256), at most 24 cached pages (`MAX_CACHED_PAGES`), a 250 ms stale
 debounce and a 1 s minimum interval (`STALE_REFRESH_DELAY`, `STALE_REFRESH_MIN_INTERVAL`),
@@ -378,7 +382,8 @@ What differs, because there are no promises and no reactive owner:
   `load_error()` (`Superseded` or `Backend`). No view reads it yet: showing
   `gallery.loadError` for it belongs to the gallery grid (epic E09).
 - **Query changes.** There is no `onQueryChanged` callback: a model that keeps data per
-  query compares `query_epoch()`.
+  query compares `query_epoch()`. The library model does so after every input it hands to
+  the query, and empties its details cache when the epoch moved.
 
 Tests: `library/query/tests.rs`, `library/page_cache.rs`, `library/query_impact.rs` and
 `library/filters.rs`, on `FakeBackend` and `ManualExecutor` with replies run in a chosen

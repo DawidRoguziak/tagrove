@@ -52,6 +52,26 @@ use crate::{
 
 const _: () = assert!(super::THUMB_VERSION_LEN == media_tagger_core::thumbs::THUMB_VERSION_LEN);
 
+/// The core's tag rule (`media_tagger_core::utils::tags`) for
+/// [`crate::library::tags`], so the client has no second implementation of it:
+/// what is trimmed, how a tag is lowercased, which characters a tag cannot hold.
+/// Pure functions; they touch no state and take no lock.
+pub(crate) mod tag_rules {
+    use media_tagger_core::utils::tags;
+
+    /// Trimmed, lowercased and deduplicated in first-seen order; blank tags go.
+    /// Tags with a character the rule forbids are kept.
+    pub(crate) fn normalize(tags: Vec<String>) -> Vec<String> {
+        tags::normalize_tags(tags)
+    }
+
+    /// [`normalize`], or `None` when a tag holds whitespace, a comma, a semicolon
+    /// or a control character.
+    pub(crate) fn normalize_valid(tags: Vec<String>) -> Option<Vec<String>> {
+        tags::normalize_and_validate_tags(tags).ok()
+    }
+}
+
 /// Most finished renders published in one transaction, as in the `thumb://`
 /// publisher of the core.
 const PUBLISH_BATCH: usize = 64;

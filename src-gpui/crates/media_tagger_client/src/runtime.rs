@@ -4,15 +4,22 @@
 //! Views come and go: switching between the gallery and the settings page drops the
 //! view that is left and every bit of state local to it (scroll position, focus,
 //! hover). What must survive lives here: the current view, the theme and the
-//! language, the tile size, the library's query model ([`AssetQuery`]: the session,
-//! its page cache and the applied filters), the startup sequence and what it learned
+//! language, the tile size, the library model ([`Library`]: the query with its
+//! session, page cache and applied filters, the canonical tags, the details cache,
+//! the known tags and the metadata writes), the startup sequence and what it learned
 //! (the scan roots, the outcome of the startup scan). Later epics hang their models
 //! (selection, lightbox, settings) next to these.
 //!
-//! The query model is a model of its own, embedded here: its inputs travel as
-//! [`RuntimeInput::Query`] and its effects as [`RuntimeEffect::Query`], which the
-//! runner hands to [`run_query_effect`]. A view sends `RuntimeInput::Query` (the
-//! gallery's viewport, Retry) and reads the rows through [`AppRuntime::query`].
+//! The library is a model of its own, embedded here. The inputs of its query model
+//! travel as [`RuntimeInput::Query`] and the query's effects as
+//! [`RuntimeEffect::Query`], which the runner hands to [`run_query_effect`]; every
+//! other input of the library travels as [`RuntimeInput::Library`] and its other
+//! effects as [`RuntimeEffect::Library`] ([`run_library_effect`]). Both kinds of
+//! input pass through the library, which empties its details cache when the query
+//! epoch changes. A view sends `RuntimeInput::Query` (the gallery's viewport, Retry)
+//! and reads the rows through [`AppRuntime::query`]; an editor sends
+//! `RuntimeInput::Library` (details, pins, writes) and reads tags and details
+//! through [`AppRuntime::library`].
 //!
 //! [`AppRuntime`] is a model in the convention of [`crate::model`]: an input gives a new
 //! state and effects, replies come back as inputs with the token they were started
@@ -24,7 +31,8 @@
 //!
 //! [`RuntimeInput::Start`] runs once per runtime (later starts are ignored), as
 //! `createAppRuntime().start` does: it refreshes the library (the query model's
-//! refresh, with its own owner ID and generations), joins the startup scan
+//! refresh, with its own owner ID and generations, and the known tags), joins the
+//! startup scan
 //! and lists the scan roots, all at once, and stores the start theme and language
 //! (the Solid frontend writes both to `localStorage` when it boots). The startup scan is
 //! single-flight in the backend as well (`scan_startup_roots` joins the one scan of the
@@ -40,7 +48,10 @@ use media_tagger_core::models::{ScanRoot, ScanSummary};
 use crate::{
     backend::{Backend, BackendError, BackendResult},
     i18n::Language,
-    library::{run_query_effect, AssetQuery, QueryConfig, QueryEffect, QueryEvent, QueryInput},
+    library::{
+        run_library_effect, run_query_effect, AssetQuery, Library, LibraryEffect, LibraryEvent,
+        LibraryInput, QueryConfig, QueryEffect, QueryEvent, QueryInput,
+    },
     model::{Dispatch, Model, RequestSlot, RequestToken, Runner, Tokens},
     prefs::{Prefs, PrefsStore},
     theme::ThemeName,
@@ -149,11 +160,17 @@ pub enum RuntimeInput {
     SetTileSize(f64),
     /// Ctrl and the wheel over the gallery (`zoom`), with the wheel's `deltaY`.
     Zoom(f64),
-    /// Asks the backend for the library again with the applied filters
-    /// ([`QueryInput::Refresh`]); an earlier refresh still running is superseded.
+    /// Asks the backend for the library again with the applied filters and for the
+    /// known tags ([`LibraryInput::Refresh`]); an earlier query refresh still running
+    /// is superseded.
     RefreshLibrary,
     /// A command, a backend reply or a timer of the library's query model.
     Query(QueryInput),
+    /// Any other command or backend reply of the library model: details, tag pins,
+    /// metadata writes, the known tags, maintenance ([`RuntimeInput::library`]). Boxed:
+    /// a reply with details or a bulk summary is several times the size of every
+    /// other input.
+    Library(Box<LibraryInput>),
     /// Lists the scan roots again; an earlier listing still running is superseded.
     RefreshScanRoots,
     ScanRootsLoaded {
@@ -169,11 +186,20 @@ pub enum RuntimeInput {
     },
 }
 
+impl RuntimeInput {
+    /// `input` for the library model.
+    pub fn library(input: LibraryInput) -> Self {
+        Self::Library(Box::new(input))
+    }
+}
+
 /// Work for the [`RuntimeRunner`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum RuntimeEffect {
     /// Work of the library's query model.
     Query(QueryEffect),
+    /// Other work of the library model; never a [`LibraryEffect::Query`].
+    Library(LibraryEffect),
     ListScanRoots(RequestToken),
     ScanStartupRoots,
     SavePrefs(Prefs),
@@ -189,7 +215,7 @@ pub struct AppRuntime {
     tile_size: u32,
     started: bool,
     tokens: Tokens,
-    query: AssetQuery,
+    library: Library,
     scan_roots: Vec<ScanRoot>,
     scan_roots_error: Option<BackendError>,
     scan_roots_request: RequestSlot,
@@ -209,7 +235,7 @@ impl AppRuntime {
             tile_size: DEFAULT_TILE_SIZE,
             started: false,
             tokens: Tokens::default(),
-            query: AssetQuery::new(QueryConfig::default()),
+            library: Library::new(QueryConfig::default()),
             scan_roots: Vec::new(),
             scan_roots_error: None,
             scan_roots_request: RequestSlot::default(),
@@ -249,18 +275,30 @@ impl AppRuntime {
     /// The library's query model: the result's `total`, the cached rows by global
     /// index, the session and its load state.
     pub fn query(&self) -> &AssetQuery {
-        &self.query
+        self.library.query()
+    }
+
+    /// The library model: the canonical tags and details of assets, the known tags,
+    /// and whether writes are pending.
+    pub fn library(&self) -> &Library {
+        &self.library
     }
 
     /// The answers to ticketed reads of the query model since the last call
     /// ([`AssetQuery::take_events`]).
     pub fn take_query_events(&mut self) -> Vec<QueryEvent> {
-        self.query.take_events()
+        self.library.take_query_events()
     }
 
-    /// Whether a library refresh is waiting for the backend.
+    /// The answers to ticketed library commands and the commits of writes since the
+    /// last call ([`Library::take_events`]).
+    pub fn take_library_events(&mut self) -> Vec<LibraryEvent> {
+        self.library.take_events()
+    }
+
+    /// Whether the query's refresh is waiting for the backend.
     pub fn library_loading(&self) -> bool {
-        self.query.query_pending()
+        self.library.query().query_pending()
     }
 
     /// The scan roots as the backend last listed them.
@@ -301,13 +339,16 @@ impl AppRuntime {
             .with_language(self.language)
     }
 
-    /// Hands `input` to the query model and wraps what it asks for.
-    fn query_input(&mut self, input: QueryInput) -> Vec<RuntimeEffect> {
+    /// Hands `input` to the library model and wraps what it asks for.
+    fn library_input(&mut self, input: LibraryInput) -> Vec<RuntimeEffect> {
         let effects = self
-            .query
+            .library
             .handle(input)
             .into_iter()
-            .map(RuntimeEffect::Query)
+            .map(|effect| match effect {
+                LibraryEffect::Query(effect) => RuntimeEffect::Query(effect),
+                effect => RuntimeEffect::Library(effect),
+            })
             .collect();
         // A reply may have been the library refresh the startup scan waits for.
         self.settle_startup_scan();
@@ -315,7 +356,7 @@ impl AppRuntime {
     }
 
     fn refresh_library(&mut self) -> Vec<RuntimeEffect> {
-        self.query_input(QueryInput::Refresh)
+        self.library_input(LibraryInput::Refresh { ticket: None })
     }
 
     fn refresh_scan_roots(&mut self) -> RuntimeEffect {
@@ -336,7 +377,7 @@ impl AppRuntime {
     /// Ends the startup scan once the refreshes it asked for have answered.
     fn settle_startup_scan(&mut self) {
         if !matches!(self.startup_scan, StartupScanPhase::Refreshing(_))
-            || self.query.query_pending()
+            || self.library.refreshing()
             || self.scan_roots_request.is_pending()
         {
             return;
@@ -402,7 +443,8 @@ impl Model for AppRuntime {
                 Vec::new()
             }
             RuntimeInput::RefreshLibrary => self.refresh_library(),
-            RuntimeInput::Query(input) => self.query_input(input),
+            RuntimeInput::Query(input) => self.library_input(LibraryInput::Query(input)),
+            RuntimeInput::Library(input) => self.library_input(*input),
             RuntimeInput::RefreshScanRoots => vec![self.refresh_scan_roots()],
             RuntimeInput::ScanRootsLoaded { token, result } => {
                 if !self.scan_roots_request.finish(token) {
@@ -465,6 +507,9 @@ impl Runner<AppRuntime> for RuntimeRunner {
         match effect {
             RuntimeEffect::Query(effect) => {
                 run_query_effect(&self.backend, effect, dispatch, RuntimeInput::Query);
+            }
+            RuntimeEffect::Library(effect) => {
+                run_library_effect(&self.backend, effect, dispatch, RuntimeInput::library);
             }
             RuntimeEffect::ListScanRoots(token) => {
                 let backend = Arc::clone(&self.backend);

@@ -1235,12 +1235,15 @@ impl Model for AssetQuery {
 /// Runs one effect of an [`AssetQuery`] through the backend port. `wrap` turns the
 /// query's inputs into the inputs of the model that owns the inbox: the identity for a
 /// query driven on its own, the wrapping variant for a parent model that embeds it.
-pub fn run_query_effect<I: Send + 'static>(
+pub fn run_query_effect<I, W>(
     backend: &Arc<dyn Backend>,
     effect: QueryEffect,
     dispatch: &Dispatch<I>,
-    wrap: fn(QueryInput) -> I,
-) {
+    wrap: W,
+) where
+    I: Send + 'static,
+    W: Fn(QueryInput) -> I + Send + 'static,
+{
     let backend = Arc::clone(backend);
     match effect {
         QueryEffect::Start(request) => {

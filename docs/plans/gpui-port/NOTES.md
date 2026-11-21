@@ -22,3 +22,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-21 | E06 | workflow | done | Epik E06 ukończony: runtime, okno i powłoka gotowe, przegląd czysty, brama test:all zaliczona; nie sprawdzono na prawdziwym ekranie. | [E06](E06-gpui-app-shell.md)
 2026-11-21 | E07 | orkiestrator | in progress | workflow start od kroku implement | [E07](E07-client-query-model.md)
 2026-11-21 | E07 | workflow | done | E07 zakończony: model zapytań i cache stron w kliencie, testy i bramka zielone, przegląd czysty. | [E07](E07-client-query-model.md)
+2026-11-21 | E08 | orkiestrator | in progress | workflow start od kroku implement | [E08](E08-client-metadata.md)
+2026-11-21 | E08 | workflow | done | E08 ukończony: model biblioteki, stan tagów, mutacje i słownik w kliencie, przegląd czysty, bramka zaliczona. | [E08](E08-client-metadata.md)

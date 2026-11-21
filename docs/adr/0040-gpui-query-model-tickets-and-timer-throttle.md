@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-11-21
 - Areas: GPUI port, library query, gallery
-- Related: [library query and gallery](../subsystems/library-query-and-gallery.md#gpui-port-the-query-model), [frontend conventions](../frontend/architecture-and-ui-conventions.md#gpui-port-runtime-window-and-shell), [GPUI port plan](../plans/gpui-port/README.md) (epic E07, decision D4), [ADR 0037](0037-gpui-client-backend-port-and-model-convention.md), [ADR 0005](0005-binary-id-ranges-and-anchored-refresh.md), [ADR 0029](0029-range-selection-keeps-its-session-alive.md)
+- Related: [library query and gallery](../subsystems/library-query-and-gallery.md#gpui-port-the-query-model), [frontend conventions](../frontend/architecture-and-ui-conventions.md#gpui-port-runtime-window-and-shell), [GPUI port plan](../plans/gpui-port/README.md) (epic E07, decision D4), [ADR 0037](0037-gpui-client-backend-port-and-model-convention.md), [ADR 0005](0005-binary-id-ranges-and-anchored-refresh.md), [ADR 0029](0029-range-selection-keeps-its-session-alive.md), [ADR 0041](0041-gpui-library-model-queued-writes-as-data.md) (the query is now embedded through the library model, and `RefreshLibrary` also reads the known tags)
 
 ## Context
 

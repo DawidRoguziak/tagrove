@@ -37,9 +37,9 @@ const DARK_EN: RuntimeConfig = RuntimeConfig {
     language: Language::En,
 };
 
-/// The index of `scan_startup_roots` among the jobs `Start` queues: library, scan,
-/// roots, preference save.
-const SCAN_JOB: usize = 1;
+/// The jobs `Start` queues, in order: the library's query, its known tags, the startup
+/// scan, the scan roots, the preference save.
+const START_JOBS: usize = 5;
 
 struct Fixture {
     fake: Option<Arc<FakeBackend>>,
@@ -146,12 +146,18 @@ fn a_startup_scan_with_work_publishes_the_rows_it_added_for_any_initial_library(
 
         fx.send(RuntimeInput::Start);
         fx.send(RuntimeInput::Start);
-        assert_eq!(fx.executor.pending(), 4, "{count}: one start sequence");
-        // Everything but the scan answers first: the library (ahead of the scan),
-        // then the roots and the preference save (each now right behind the scan).
+        assert_eq!(
+            fx.executor.pending(),
+            START_JOBS,
+            "{count}: one start sequence"
+        );
+        // Everything but the scan answers first: the library's query and its known
+        // tags (both ahead of the scan), then the roots and the preference save (each
+        // now right behind the scan, which is the oldest job left).
         assert!(fx.executor.run_nth(0));
-        assert!(fx.executor.run_nth(SCAN_JOB));
-        assert!(fx.executor.run_nth(SCAN_JOB));
+        assert!(fx.executor.run_nth(0));
+        assert!(fx.executor.run_nth(1));
+        assert!(fx.executor.run_nth(1));
         assert_eq!(fx.executor.pending(), 1);
         fx.driver.pump();
         assert_eq!(

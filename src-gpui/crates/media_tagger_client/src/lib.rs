@@ -16,9 +16,12 @@
 //! - [`progress`], [`startup_scan`], [`thumbs`]: the progress stream, the single-flight
 //!   startup scan and the thumbnail pipeline, which the Tauri adapter implements with
 //!   its event, its async runtime and the `thumb://` scheme.
-//! - [`library`]: the query model: one backend query session read in pages into a
-//!   bounded sparse cache, with generations, stale recovery, ID ranges, timeline
-//!   sections and the rule for when a metadata write restarts the query.
+//! - [`library`]: the library model. The query: one backend query session read in
+//!   pages into a bounded sparse cache, with generations, stale recovery, ID ranges,
+//!   timeline sections and the rule for when a metadata write restarts the query. The
+//!   metadata: the complete tag list per asset, the per-asset write queue and the
+//!   maintenance barrier, the details cache, the writes that publish only what the
+//!   backend acknowledged, and the known tags.
 //! - [`i18n`], [`theme`], [`prefs`]: texts of the shared locale files, the theme
 //!   tokens of `src/styles.css` as constants, and the stored theme and language.
 //! - [`text`]: the editing model of the single-line text field, which GPUI does not

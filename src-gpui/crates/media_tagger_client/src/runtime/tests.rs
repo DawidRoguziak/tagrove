@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use media_tagger_core::models::{ScanCompletion, ScanRoot, ScanSummary, StartAssetQueryResult};
+use media_tagger_core::models::{
+    ScanCompletion, ScanRoot, ScanSummary, StartAssetQueryResult, TagListPage,
+};
 
 use super::{
     clamp_tile_size, next_tile_size_by_wheel, AppRuntime, RuntimeConfig, RuntimeInput,
@@ -178,9 +180,15 @@ fn the_scan_stays_running_until_both_refreshes_answered() {
         .on_start_asset_query(|_| Ok(ready(1)))
         .on_scan_startup_roots(|| Ok(Some(summary(1))))
         .on_list_scan_roots(|| Ok(Vec::new()));
+    fx.backend.on_list_tags(|_, _, _| {
+        Ok(TagListPage {
+            items: vec!["cat".into()],
+            total: 1,
+        })
+    });
     fx.send(RuntimeInput::Start);
-    // The three start calls and the preference save.
-    assert_eq!(fx.executor.run_all(), 4);
+    // The query, the known tags, the scan, the roots and the preference save.
+    assert_eq!(fx.executor.run_all(), 5);
     fx.driver.pump();
     assert!(matches!(
         fx.runtime().startup_scan(),
@@ -189,21 +197,28 @@ fn the_scan_stays_running_until_both_refreshes_answered() {
 
     // The first refresh also asked for the timeline sections of its session; the
     // refresh after the scan made that read obsolete.
-    assert_eq!(fx.executor.pending(), 3);
+    assert_eq!(fx.executor.pending(), 4);
     assert!(fx.executor.run_next());
     fx.driver.pump();
     assert!(fx.runtime().maintenance_loading());
 
-    // The library answers first; the roots are still out.
+    // The query answers first; the known tags and the roots are still out.
     assert!(fx.executor.run_next());
     fx.driver.pump();
     assert!(fx.runtime().maintenance_loading());
     assert!(!fx.runtime().library_loading());
 
+    // The known tags answer; the roots are still out.
+    assert!(fx.executor.run_next());
+    fx.driver.pump();
+    assert!(fx.runtime().maintenance_loading());
+    assert!(!fx.runtime().library().refreshing());
+
     assert!(fx.executor.run_next());
     fx.driver.pump();
     assert!(!fx.runtime().maintenance_loading());
     assert!(fx.runtime().startup_scan().outcome().is_some());
+    assert_eq!(**fx.runtime().library().known_tags(), ["cat"]);
 }
 
 #[test]
@@ -242,8 +257,11 @@ fn a_late_library_reply_is_dropped() {
 
     fx.send(RuntimeInput::RefreshLibrary);
     fx.send(RuntimeInput::RefreshLibrary);
+    // The first query start, the one pass over the known tags that both refreshes
+    // share, the second query start.
+    assert_eq!(fx.executor.pending(), 3);
     // The newer refresh answers first, then the older one.
-    assert!(fx.executor.run_nth(1));
+    assert!(fx.executor.run_nth(2));
     assert!(fx.executor.run_next());
     fx.driver.pump();
 
@@ -467,4 +485,213 @@ fn the_embedded_query_model_loads_pages_answers_reads_and_runs_its_stale_timer()
     fx.settle();
     assert_eq!(fx.calls("start_asset_query"), 2, "the stale refresh ran");
     assert!(!fx.runtime().library_loading());
+}
+
+/// E08 through the runtime: details, a tag pin and metadata writes of the embedded
+/// library model travel as `RuntimeInput::Library`, reach the backend through the
+/// runtime's runner, and a refresh of the query that passes through the runtime
+/// empties the library's details cache.
+#[test]
+fn the_embedded_library_model_loads_details_and_queues_writes_through_the_runtime() {
+    use media_tagger_core::models::{
+        AssetDetails, AssetSummary, SetAssetTagsSummary, TagQueryImpact,
+    };
+
+    use crate::library::{
+        LibraryEvent, LibraryInput, Mutation, MutationOutcome, QueryInput, TagEdit, Ticket,
+    };
+
+    fn details(id: i64) -> AssetDetails {
+        AssetDetails {
+            summary: AssetSummary {
+                id,
+                file_name: format!("{id}.jpg"),
+                preview_path: None,
+                kind: "image".into(),
+                modified_at: 0,
+                width: Some(10),
+                height: Some(10),
+                duration_ms: None,
+                thumb_version: "0123456789abcdef".into(),
+                is_favorite: false,
+                media_group_key: None,
+                media_group_order: None,
+            },
+            path: format!("/synthetic/{id}.jpg"),
+            size_bytes: 10,
+            thumb_path: None,
+            tags: vec!["cat".into()],
+        }
+    }
+    let mut fx = Fixture::new();
+    fx.backend
+        .on_start_asset_query(|_| Ok(ready(1)))
+        .on_list_tags(|_, _, _| {
+            Ok(TagListPage {
+                items: vec!["cat".into()],
+                total: 1,
+            })
+        })
+        .on_get_asset_details(|id| Ok(Some(details(id))))
+        .on_set_asset_favorite(|_, _| Ok(()))
+        .on_set_asset_tags(|asset_id, tags| {
+            Ok(SetAssetTagsSummary {
+                vocabulary_changed: true,
+                query_impact: TagQueryImpact::None,
+                asset_id,
+                changed: true,
+                tags,
+                revision: 2,
+            })
+        });
+    fx.send(RuntimeInput::RefreshLibrary);
+    fx.settle();
+    assert_eq!(**fx.runtime().library().known_tags(), ["cat"]);
+    assert!(!fx.runtime().library().can_edit_tags(7));
+
+    fx.send(RuntimeInput::library(LibraryInput::PinTags(7)));
+    fx.send(RuntimeInput::library(LibraryInput::LoadDetails {
+        ticket: Ticket(1),
+        asset_id: 7,
+    }));
+    fx.settle();
+    assert!(fx.runtime().library().can_edit_tags(7));
+    assert!(fx.runtime().library().cached_details(7).is_some());
+
+    // A tag edit and a favorite right behind it: one write at a time, in order.
+    fx.send(RuntimeInput::library(LibraryInput::Mutate {
+        ticket: Ticket(2),
+        mutation: Mutation::SaveTags {
+            asset_id: 7,
+            edit: TagEdit::Change {
+                add: vec!["dog".into()],
+                remove: Vec::new(),
+            },
+        },
+    }));
+    fx.send(RuntimeInput::library(LibraryInput::Mutate {
+        ticket: Ticket(3),
+        mutation: Mutation::SetFavorite {
+            asset_id: 7,
+            favorite: true,
+        },
+    }));
+    assert_eq!(fx.executor.pending(), 1);
+    assert_eq!(fx.runtime().library().pending_writes(), 2);
+    fx.settle();
+
+    let library = fx.runtime().library();
+    assert_eq!(
+        library.asset_tags(7).map(|known| known.tags.to_vec()),
+        Some(vec!["cat".to_owned(), "dog".to_owned()])
+    );
+    assert!(library.cached_details(7).unwrap().summary.is_favorite);
+    assert_eq!(library.pending_writes(), 0);
+    // The save changed the vocabulary: the known tags were read again.
+    assert_eq!(fx.calls("list_tags"), 2);
+    let events = fx.driver.model_mut().take_library_events();
+    let answered: Vec<u64> = events
+        .iter()
+        .filter_map(|event| match event {
+            LibraryEvent::DetailsLoaded { ticket, result } => {
+                assert!(matches!(result, Ok(Some(_))));
+                Some(ticket.0)
+            }
+            LibraryEvent::MutationSettled { ticket, result } => {
+                assert!(matches!(
+                    result,
+                    Ok(MutationOutcome::TagsSaved { .. } | MutationOutcome::FavoriteSet { .. })
+                ));
+                Some(ticket.0)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(answered, [1, 2, 3]);
+
+    // Details belong to one query epoch, whichever input changed it.
+    fx.send(RuntimeInput::Query(QueryInput::Refresh));
+    assert!(fx.runtime().library().cached_details(7).is_none());
+    assert!(fx.runtime().library().can_edit_tags(7), "the tags stay");
+}
+
+/// mutations.test.ts "keeps one library across Settings navigation and starts
+/// queries with 128-item pages": the library lives in the runtime, so leaving the
+/// gallery for the settings page and coming back keeps its rows, details, tags and
+/// known tags, and asks the backend for nothing.
+#[test]
+fn the_library_survives_settings_navigation_and_queries_in_pages_of_128() {
+    use media_tagger_core::models::{AssetDetails, AssetSummary};
+
+    use crate::{
+        backend::fake::Call,
+        library::{LibraryInput, Ticket},
+    };
+
+    let mut fx = Fixture::new();
+    fx.backend
+        .on_start_asset_query(|_| Ok(ready(1)))
+        .on_list_tags(|_, _, _| {
+            Ok(TagListPage {
+                items: vec!["cat".into()],
+                total: 1,
+            })
+        })
+        .on_get_asset_details(|id| {
+            Ok(Some(AssetDetails {
+                summary: AssetSummary {
+                    id,
+                    file_name: format!("{id}.jpg"),
+                    preview_path: None,
+                    kind: "image".into(),
+                    modified_at: 0,
+                    width: Some(10),
+                    height: Some(10),
+                    duration_ms: None,
+                    thumb_version: "0123456789abcdef".into(),
+                    is_favorite: false,
+                    media_group_key: None,
+                    media_group_order: None,
+                },
+                path: format!("/synthetic/{id}.jpg"),
+                size_bytes: 10,
+                thumb_path: None,
+                tags: vec!["cat".into()],
+            }))
+        });
+    fx.send(RuntimeInput::RefreshLibrary);
+    fx.settle();
+    fx.send(RuntimeInput::library(LibraryInput::LoadDetails {
+        ticket: Ticket(1),
+        asset_id: 1,
+    }));
+    fx.settle();
+    let calls = fx.backend.calls().len();
+
+    fx.send(RuntimeInput::OpenSettings);
+    assert_eq!(fx.runtime().view(), View::Settings);
+    fx.send(RuntimeInput::CloseSettings);
+    assert_eq!(fx.runtime().view(), View::Gallery);
+
+    let library = fx.runtime().library();
+    assert_eq!(library.query().total(), 1);
+    assert!(library.cached_details(1).is_some());
+    assert!(library.can_edit_tags(1));
+    assert_eq!(**library.known_tags(), ["cat"]);
+    assert_eq!(fx.executor.pending(), 0);
+    assert_eq!(
+        fx.backend.calls().len(),
+        calls,
+        "navigation asks for nothing"
+    );
+    let page_sizes: Vec<usize> = fx
+        .backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            Call::StartAssetQuery { request } => Some(request.page_size),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(page_sizes, [128]);
 }

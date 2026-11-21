@@ -227,6 +227,99 @@ Both single and bulk group actions await backend success before patching loaded 
 
 Revision behavior for tag, favorite, and group writes is defined in [database persistence](database.md#library-revision-and-query-sessions). Favorite and single-group setters bump even for a missing ID or a no-op, in the same transaction as the update. Tag replacement rejects missing IDs and bumps only for a change or invariant repair.
 
+## GPUI port: metadata, mutations and the vocabulary
+
+The GPUI port has the same metadata coordination in its client crate, without a GUI
+([ADR 0037](../adr/0037-gpui-client-backend-port-and-model-convention.md),
+[ADR 0041](../adr/0041-gpui-library-model-queued-writes-as-data.md)). The Tauri path above is
+unchanged. No view uses it yet: the tag editors, the bulk dock, the lightbox and the settings
+operations are later epics.
+
+| Solid | GPUI client (`src-gpui/crates/media_tagger_client/src/library/`) |
+| --- | --- |
+| `createLibrary`, `metadata/createMutations` | `library_model.rs`: the model `Library` with `LibraryInput`, `LibraryEffect`, `LibraryEvent` and `LibraryRunner`; `mutations.rs`: `Mutation`, `TagEdit`, `WriteRequest`, `WriteReply`, `MetadataPatch`, `MetadataCommit` |
+| `metadata/createAssetTagState` | `tag_state.rs`: `AssetTagState` |
+| `metadata/createDetailsCache` | `details.rs`: `DetailsCache` |
+| `vocabulary/createKnownTags` | `vocabulary.rs`: the model `KnownTags` |
+| `normalizeTags`, `isValidTag` of `utils/media.ts` | `tags.rs`, on the core's `utils/tags.rs` |
+
+`Library` is a state machine that owns the query model
+([library query and gallery](library-query-and-gallery.md#gpui-port-the-query-model)), the tag
+state, the details cache and the known tags. It is embedded in the application runtime: the
+query's inputs travel as `RuntimeInput::Query` and pass through the library, every other input
+as `RuntimeInput::Library`, and `RuntimeInput::RefreshLibrary` is `refreshLibrary` (the
+query's refresh and a pass over the known tags). The constants are the same: 256 cached
+details (`MAX_CACHED_DETAILS`), 512 inactive tag records (`MAX_INACTIVE_RECORDS`), tag pages
+of 200 (`VOCABULARY_PAGE_SIZE`).
+
+What is the same as described above:
+
+- **Queue.** A write is admitted behind every earlier write on any of its assets, all assets
+  linked at once; an idle write is sent in the same turn, a queued one when it reaches the
+  head of every queue, and a failed one releases its place. A write on several assets waits
+  for all of them and is sent once, for all of them. A write on a selection spec takes the
+  library-wide turn and drops every cached tag list and detail when it starts and when it
+  ends.
+- **Refusals.** Only maintenance, disposal, a deletion of the asset or an identity reset while
+  the write waited refuse a write; none of them reaches the backend.
+- **Backend first.** Nothing is published when a write is sent. From the backend's answer,
+  only the assets it acknowledges get their canonical values: the tag list (normalized), the
+  cached details as they were read when the write *started*, and the cached query rows
+  (favorite, group key and order; never tags). A partial bulk answer therefore publishes the
+  acknowledged IDs only and refreshes the query because assets went missing.
+- **Refresh rules.** `query_impact.rs` decides the query refresh after a tag write under the
+  filters applied when the write settles; removing a favorite refreshes a favorites-only
+  query; a group write and a deletion always refresh. `vocabulary_changed` drives the known
+  tags as `refreshKnownTagsAfterMutation` does.
+- **Clocks.** A details read publishes only under the generation it captured: not after a write
+  on the asset started or ended, a deletion (tombstone), an identity reset, or eviction of the
+  record. Details belong to one query epoch and one cache generation.
+- **Known tags.** One pass at a time, complete pagination, a refresh during a pass joins it
+  and makes the read start over, a failed later page publishes nothing and leaves the
+  snapshot dirty for the next save, and an unchanged result keeps the published list (the
+  same `Arc`).
+- **Resets.** `LibraryReset::Identity` is `resetIdentity`, `Restored` is
+  `handleImportDbRestored` (the known tags stay until the next refresh), `Cleared` is
+  `handleLibraryCleared`.
+
+What differs, because there are no promises, no closures in inputs and no reactive owner:
+
+- **Writes are data.** `LibraryInput::Mutate { ticket, mutation }` is answered exactly once
+  with `LibraryEvent::MutationSettled` (`MutationOutcome` with the backend's summary, or
+  `MutationError::{Refused, TagsNotLoaded, Backend}`). `subscribe` is the event
+  `LibraryEvent::Committed(MetadataCommit)`. A reply is always applied, also after a reset or
+  the disposal, because it releases the queue turn; it then publishes nothing.
+- **Tag edits.** `saveTags(id, tags)` is `TagEdit::Replace`; the function form is
+  `TagEdit::Change { add, remove }`, applied to the canonical tags when the write leaves the
+  queue, so a queued edit merges onto the write before it. `MutationOutcome::TagsSaved`
+  carries the list that was sent.
+- **Editing needs the complete tag list.** `Library::can_edit_tags` is true once a details read
+  or a write published the asset's tags. Until then both forms of a tag edit are refused with
+  `TagsNotLoaded` and nothing is sent. Solid keeps that guard for a plain replacement in the
+  lightbox and the bulk dock; here the model has it.
+- **Ticketed reads.** `details.load` is `LoadDetails`, answered with
+  `LibraryEvent::DetailsLoaded`; readers of one asset share one backend call. A read overtaken
+  by a new query epoch, a reset or the disposal is answered with nothing at that moment.
+  `refreshLibrary` with a ticket is answered with `Refreshed` once the query's start and the
+  vocabulary pass have ended, `waitForIdle` with `Idle`. A deletion is answered after the
+  query refresh and the vocabulary pass it started have ended; their failure does not fail it.
+- **Pins.** `pin` and its release are `PinTags` and `UnpinTags`, counted per asset.
+- **Maintenance.** `runWithMutationBarrier` is `BeginMaintenance { ticket }`,
+  `LibraryEvent::MaintenanceReady` (or `MaintenanceRejected` after disposal) and
+  `EndMaintenance { ticket, reset }`: the owner of the operation runs it between the grant and
+  the end, and the reset is applied before the barrier comes down, whether the operation
+  succeeded or not.
+- **Tag rule.** One implementation: `tags.rs` calls the core's `utils/tags.rs` and, like
+  `normalizeTags`, drops a tag that breaks the rule from a list instead of failing it. The
+  core trims U+0085 at a tag's edge, where JavaScript keeps it and then drops the tag; inside
+  a tag both reject it. The search grammar of `utils/media.ts` is not part of this module.
+
+Tests: `library/tag_state/tests.rs`, `library/vocabulary/tests.rs`,
+`library/library_model/tests.rs`, `library/mutations.rs` and `library/tags.rs`, on `FakeBackend`
+and `ManualExecutor` with replies run in a chosen order, and one case on `ThreadExecutor`
+against the real core through `TempCore`
+([testing](../development/testing.md#gpui-workspace)).
+
 ## Known limitations
 
 - Backend ordering and the locale-sensitive fallback ordering of the tag list can differ.

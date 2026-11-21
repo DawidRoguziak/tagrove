@@ -124,7 +124,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | E05 | [Prymitywy UI i warstwa nakładek (GPUI)](E05-gpui-primitives-overlays.md) | L | standardowy | E03, E04 | done 2026-11-21 |
 | E06 | [Runtime aplikacji, okno i powłoka](E06-gpui-app-shell.md) | M | standardowy | E02, E05 | done 2026-11-21 |
 | E07 | [Model zapytań i cache stron](E07-client-query-model.md) | L | trudny | E02 | done 2026-11-21 |
-| E08 | [Szczegóły, stan tagów, mutacje i słownik](E08-client-metadata.md) | L | trudny | E07 | todo |
+| E08 | [Szczegóły, stan tagów, mutacje i słownik](E08-client-metadata.md) | L | trudny | E07 | done 2026-11-21 |
 | E09 | [Wirtualna siatka galerii i miniatury](E09-gpui-gallery-grid.md) | L | trudny | E06, E07 | todo |
 | E10 | [Pasek przewijania i scrubber osi czasu](E10-gpui-scrollbar-timeline.md) | M | standardowy | E09 | todo |
 | E11 | [Model zaznaczenia i gesty](E11-selection.md) | L | trudny | E08, E09 | todo |

@@ -236,7 +236,8 @@ mod tests {
 
         let effects = runtime.handle(RuntimeInput::RefreshLibrary);
         let generation = match &effects[..] {
-            [RuntimeEffect::Query(crate::library::QueryEffect::Start(request))] => {
+            // The refresh also reads the known tags.
+            [RuntimeEffect::Query(crate::library::QueryEffect::Start(request)), RuntimeEffect::Library(_)] => {
                 request.generation
             }
             other => panic!("unexpected effects {other:?}"),

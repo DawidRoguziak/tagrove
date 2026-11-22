@@ -207,6 +207,80 @@ class ReviewScopeRelay(unittest.TestCase):
         self.assertTrue(relay["error"])
 
 
+class ScreenshotComparison(unittest.TestCase):
+    """The parity step: a comparison that gives no screenshots is repaired or reported, never passed over."""
+
+    FAILED = {"ok": False, "available": True, "error": "compare:ui failed for search-applied", "pairs": [],
+              "failures": [{"command": "bun run compare:ui search-applied", "summary": "timed out"}]}
+    PAIRS = {"ok": True, "available": True,
+             "pairs": [{"scenario": "search-applied", "tauri": "t.png", "gpui": "g.png"}]}
+    FIXED = {"ok": True, "summary": "fixed the scenario"}
+
+    def run_parity(self, answers: list, checks_ok: bool = True) -> dict:
+        script = "\n".join([
+            'const input = { parityAvailable: true, run: "docs/review/gpui-port/EXX" };',
+            'const epic = { id: "EXX", parity: ["search-suggestions", "search-applied"] };',
+            'const MAX_PARITY = 2, fixerRole = "fixer", COMPARED = {}, PARITY = {}, FIXED = {};',
+            "const log = () => {}, jobPrompt = () => '', parityPrompt = () => '', parityFixPrompt = () => '';",
+            "const compareFixPrompt = (compared, round) => String(round);",
+            f"const answers = {json.dumps(answers)}, calls = [];",
+            "const ask = async (role, prompt, schema, extra) => { calls.push(`${role}: ${extra.label}`); return answers.shift() ?? null; };",
+            f"const stabilize = async () => ({{ ok: {json.dumps(checks_ok)}, fixes: 0, failures: [] }});",
+            "async " + workflow_function("parity"),
+            "(async () => {",
+            "  const state = { parity: { rounds: 0, open: [], minor: [] }, checks: {}, blocked: null };",
+            "  const go_on = await parity(state);",
+            "  console.log(JSON.stringify({ go_on, parity: state.parity, blocked: state.blocked, calls, left: answers.length }));",
+            "})();",
+        ])
+        done = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
+        if done.returncode != 0:
+            raise AssertionError(done.stderr)
+        return json.loads(done.stdout)
+
+    def test_a_failed_comparison_is_repaired_and_then_assessed(self):
+        # Epic E12: the first comparison timed out on a scenario step; nobody looked at the screenshots.
+        result = self.run_parity([self.FAILED, self.FIXED, self.PAIRS, {"diffs": []}])
+        self.assertEqual(result["calls"], ["clerk: compare #1", "fixer: fix compare #1", "clerk: compare #2",
+                                           "parity_reviewer: parity #2"])
+        self.assertEqual((result["parity"]["rounds"], result["parity"]["error"], result["go_on"]), (2, None, True))
+
+    def test_a_comparison_that_never_runs_keeps_its_error(self):
+        result = self.run_parity([self.FAILED, self.FIXED, self.FAILED, self.FIXED, self.FAILED])
+        self.assertEqual(result["calls"], ["clerk: compare #1", "fixer: fix compare #1", "clerk: compare #2",
+                                           "fixer: fix compare #2", "clerk: compare #3"])
+        self.assertEqual(result["parity"]["rounds"], 0)
+        self.assertEqual(result["parity"]["error"], "compare:ui failed for search-applied")
+        self.assertTrue(result["go_on"])
+
+    def test_a_missing_harness_and_a_silent_clerk_are_told_apart(self):
+        missing = self.run_parity([{"ok": False, "available": False}])
+        self.assertEqual(missing["calls"], ["clerk: compare #1"])
+        self.assertEqual(missing["parity"]["error"], "comparison produced no screenshots")
+        silent = self.run_parity([None, self.FIXED, self.PAIRS, {"diffs": []}])
+        self.assertEqual(silent["calls"][1], "fixer: fix compare #1")
+        self.assertIsNone(silent["parity"]["error"])
+
+    def test_checks_that_fail_after_a_comparison_fix_block_the_epic(self):
+        result = self.run_parity([self.FAILED, self.FIXED], checks_ok=False)
+        self.assertEqual((result["go_on"], result["blocked"]), (False, "checks fail after comparison fixes"))
+
+    def test_differences_are_still_fixed_and_minor_ones_end_the_loop(self):
+        notable = {"diffs": [{"scenario": "search-applied", "severity": "notable", "where": "x"}]}
+        minor = {"diffs": [{"scenario": "search-applied", "severity": "minor", "where": "y"}]}
+        result = self.run_parity([self.PAIRS, notable, self.FIXED, self.PAIRS, minor])
+        self.assertEqual(result["calls"], ["clerk: compare #1", "parity_reviewer: parity #1", "fixer: fix parity #1",
+                                           "clerk: compare #2", "parity_reviewer: parity #2"])
+        self.assertEqual((result["parity"]["rounds"], result["parity"]["open"], len(result["parity"]["minor"])),
+                         (2, [], 1))
+
+    def test_the_result_of_the_epic_carries_the_comparison_error(self):
+        self.assertIn("error: state.parity.error ?? null", WORKFLOW)
+        self.assertIn("parity.error", workflow_function("recordPrompt"))
+        compared = WORKFLOW[WORKFLOW.index("const COMPARED = obj({"):]
+        self.assertIn("failures", compared[:compared.index('}, ["ok", "available"]')])
+
+
 class Commands(unittest.TestCase):
     def test_allowed(self):
         for command in ("cargo test --manifest-path src-tauri/Cargo.toml --locked -p media_tagger_client",

@@ -67,7 +67,8 @@ const FIXED = obj({
 }, ["ok", "summary"]);
 const COMPARED = obj({
   ok: bool, available: { type: "boolean", description: "false when the comparison harness does not exist yet" },
-  pairs: list({ scenario: str, tauri: str, gpui: str }, ["scenario", "tauri", "gpui"]), error: str
+  pairs: list({ scenario: str, tauri: str, gpui: str }, ["scenario", "tauri", "gpui"]), error: str,
+  failures: list({ command: str, summary: str }, ["command", "summary"]), log: str
 }, ["ok", "available"]);
 const PARITY = obj({
   diffs: list({
@@ -231,6 +232,21 @@ function parityPrompt(pairs) {
   ].join("\n");
 }
 
+function compareFixPrompt(compared, round) {
+  return [
+    header(),
+    "",
+    `The screenshot comparison of this epic produced no screenshots (attempt ${round}), so the parity criterion of the epic cannot be assessed. Scenarios: ${names(epic.parity)}.`,
+    json({ error: compared?.error ?? "the comparison returned nothing", failures: compared?.failures ?? [], log: compared?.log ?? `${input.run}/jobs/compare.log` }),
+    `Find the cause in that log and in the session logs it names under artifacts/. A scenario is three things that stay in step: e2e/compare/scenarios/<id>.js (the steps that bring the Tauri application to the state), SCENARIOS in src-gpui/crates/media_tagger_client/src/scenario.rs, and the start state the GPUI binary builds for --scenario <id>. docs/development/testing.md ("Comparison harness (Tauri and GPUI)") describes the harness.`,
+    "Fix what this epic owns: its own scenario files and its GPUI code. Do not change the Tauri application, a guard of the harness or a scenario of another epic. Do not run the comparison yourself: the workflow runs it again after you. If the cause lies outside the epic (the harness itself, a busy display, a missing tool), change nothing and list it under unresolved.",
+    "",
+    RULES,
+    "",
+    "Return ok, summary, files, unresolved [{item, reason}]."
+  ].join("\n");
+}
+
 function parityFixPrompt(diffs, round) {
   return [
     header(),
@@ -334,7 +350,7 @@ function recordPrompt(state) {
     `   ### ${date} — workflow gpui-port-epic`,
     "   - Zrobione: ... (from implement.summary, tests.summary, decisions)",
     "   - Odkryte: ... (decisions, deferred scope, skipped test cases with reasons, parity differences left open, anything a later epic must know; path:line where the data has it)",
-    "   - Zostało: ... (blocked reason, unresolved failures, open review findings with the report path, gate result)",
+    "   - Zostało: ... (blocked reason, unresolved failures, a screenshot comparison that never ran (parity.error: say that the parity criterion is not assessed), open review findings with the report path, gate result)",
     "   - Testy: one line per check and for test:all, with pass/fail",
     "   Never write an absolute path that contains a home directory or a user name.",
     `2. If review.open, review.disputed, review.preExisting or review.uncertain has entries: write ${plan}/reports/${epic.id}-review-open.md in English. Start with the epic, the date, the review base and the number of rounds; then a table (id, priority, path:line, title, status) and, per finding, trigger, impact, suggested fix and evidence. Statuses: fixed-unreviewed (fixed after the last round, not re-reviewed), disputed (the fixer disagreed, with its reason), pre-existing, needs-runtime-check (with the missing fact). If none of the four lists has entries, do not create or delete any report.`,
@@ -431,13 +447,25 @@ async function parity(state) {
   for (let round = 1; round <= MAX_PARITY + 1; round++) {
     const compared = await ask("clerk", [
       jobPrompt("compare", scenarioArgs, "the comparison builds and starts both apps."),
-      `5. On success also return available=true and pairs: for each scenario of ${epic.parity.join(", ")} the paths artifacts/gpui-compare/<scenario>/tauri.png and gpui.png that exist. If start reports that compare:ui does not exist, return ok=false, available=false.`
+      `5. On success also return available=true and pairs: for each scenario of ${epic.parity.join(", ")} the paths artifacts/gpui-compare/<scenario>/tauri.png and gpui.png that exist. If start reports that compare:ui does not exist, return ok=false, available=false. On any other failure return available=true, error (one line naming the scenario that failed), failures and log as in step 4.`
     ].join("\n"), COMPARED, { label: `compare #${round}`, phase: "Stabilize" });
     if (!compared?.ok || !compared.pairs?.length) {
       state.parity.error = compared?.error ?? "comparison produced no screenshots";
       log(`${epic.id}: screenshot comparison failed: ${state.parity.error}`);
-      return true;
+      // A harness that does not exist cannot be fixed here. A comparison that does not run can: a scenario
+      // that never reaches its state or a start state that fails belongs to the epic. Without screenshots
+      // the parity criterion is not assessed, so the error stays in the result until a comparison succeeds.
+      if (compared?.available === false || round > MAX_PARITY) return true;
+      await ask(fixerRole, compareFixPrompt(compared, round), FIXED, { label: `fix compare #${round}`, phase: "Stabilize" });
+      const repaired = await stabilize(`after compare fix ${round}`, 2, "Stabilize");
+      if (!repaired.ok) {
+        state.blocked = "checks fail after comparison fixes";
+        state.checks.failures = repaired.failures;
+        return false;
+      }
+      continue;
     }
+    state.parity.error = null;
     const reviewed = await ask("parity_reviewer", parityPrompt(compared.pairs), PARITY, { label: `parity #${round}`, phase: "Stabilize" });
     const diffs = reviewed?.diffs ?? [];
     const actionable = diffs.filter((diff) => diff.severity !== "minor");
@@ -686,7 +714,8 @@ async function main() {
   const summary = {
     epic: epic.id, status: state.status, blocked: state.blocked, recorded: state.recorded, report: state.report,
     checks: { ok: state.checks.ok, fixes: state.checks.fixes },
-    parity: { rounds: state.parity.rounds, open: state.parity.open.length },
+    // error: the comparison never produced screenshots, so nothing was assessed (rounds stays 0).
+    parity: { rounds: state.parity.rounds, open: state.parity.open.length, scenarios: (epic.parity ?? []).length, error: state.parity.error ?? null },
     review: {
       rounds: state.review.rounds, clean: state.review.clean, confirmed: state.review.confirmed, fixed: state.review.fixed,
       open: state.review.open.length, disputed: state.review.disputed.length, preExisting: state.review.preExisting.length,

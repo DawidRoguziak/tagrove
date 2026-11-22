@@ -473,9 +473,83 @@ the draft/applied split and the suggestion rules above; the code lives in
   tag list's button is a filled box one pixel wide, since GPUI draws no left border on a
   box only that wide.
 - **Not ported yet.** The `title` tooltips of the field (`search.syntaxHint`) and of the
-  favourites button wait for a tooltip primitive; the tag list launcher after the
-  divider is epic E13. The list does not fade in; it is drawn only with items, which is
-  what the Solid list shows.
+  favourites button wait for a tooltip primitive. The list does not fade in; it is drawn
+  only with items, which is what the Solid list shows.
+
+## GPUI port: tag list and tag editor
+
+Epic E13 ports the tag list dialog and the shared tag editor. The rules of
+[known tags and the tag-list browser](#known-tags-and-the-tag-list-browser) above are kept; the code lives in
+`media_tagger_client::search::tag_list` and `media_tagger_client::tagging`, the views in
+`media_tagger_gpui::views::{tag_list, tag_editor}`.
+
+- **One model in the runtime.** `TagList` is `createTagList` plus the state of
+  `TagListModal` (open, filter, choices, the click timer, Apply). It is embedded in
+  `AppRuntime` (`RuntimeInput::TagList`); its pages (`list_tags`, 100 per page) and its
+  220 ms click timer run on the executor (`RuntimeEffect::TagList`). The runtime hands it
+  the known tags after every library input; the fallback is deduplicated and sorted only
+  while the list is open. A late page, one that a new filter, a new vocabulary or closing
+  overtook, changes nothing. The gallery view drops the dialog with its launcher, so a
+  list left open is closed then, as the Solid launcher keeps `open` locally.
+- **Apply.** `TagListEffect::ApplySearch` never reaches the runner: the runtime writes the
+  filter text into the search draft and submits it (`SearchCommand::ApplyInput`) and
+  answers `ApplySettled` once the query it started is no longer pending, `ok` unless the
+  query failed to start. An invalid filter is shown under the header and counts as
+  applied, as the Solid submit resolves. While Apply runs, the filter, the choices,
+  Escape, the backdrop and both close buttons are refused.
+- **Pagination.** The view reports the list's scroll metrics after layout
+  (`ListMetrics`; the model forgets them whenever the page changes). A scroll within
+  120 pixels of the end loads the next page; content no more than 120 pixels taller than
+  the list loads on its own until a failed page adds nothing from the fallback.
+- **Choices.** A click waits 220 ms; a click on another tag applies the waiting one, a
+  double click (GPUI's click count 2), Shift+Enter or Shift+Space cancels it and toggles
+  exclusion (bound in the chip's key context `TagListChip`; with Shift GPUI makes no
+  keyboard click). The filter text sorts included, then excluded tags with
+  `compare_tags`, an approximation of `Intl.Collator` with base sensitivity: case and the
+  diacritics of Latin letters are ignored, punctuation sorts before digits and digits
+  before letters.
+- **Focus.** The dialog is a `UiModal` layer: its filter takes the focus one frame after
+  it opens (`data-initial-focus`), and the launcher gets it back when it closes
+  (`ModalState::set_restore_focus`). The dialog is drawn from the search header, inside
+  the gallery's key context, so the gallery's scroll and select-all keys do nothing while
+  a modal layer is open. On a tag button the list takes those keys itself, as the browser
+  scrolls the Solid list's overflow box: the arrows move it 40 pixels, Page Up and Page
+  Down 87.5 % of its height, Home and End to its edges (`layout::key_scroll_top`). A
+  button that gets the keyboard focus is scrolled into view with the least movement
+  (`layout::reveal_scroll_top`); either scroll reports the list's metrics, so reaching the
+  end by keyboard loads the next page.
+- **Drawn rows.** GPUI builds and lays out every drawn element again in every frame (a
+  wheel step, a hover), so the view does not draw every loaded tag as the Solid list
+  does. It packs the buttons into rows as `flex flex-wrap gap-1.5` does
+  (`tag_list::rows::ChipRows`), from each tag's text width measured once per page and
+  the list's width, and draws only the rows that reach into the visible part with three
+  rows of overscan on each side, plus the row of the focused button and the rows next to
+  it, so the focus, Tab, Shift+Tab and the scroll keys work wherever the list is
+  scrolled. The rows not drawn take their height as margin, so the content height and
+  the 120-pixel pagination are those of the whole list. Before the list's first layout
+  its width is unknown: that frame draws the buttons in one flex-wrap and the next packs
+  them, as does a change of width. Measured on the test platform in a release build, a
+  frame costs about 2 ms with 1,000, 5,000 or 20,000 loaded tags (before: 11, 57 and
+  406 ms; [E13 report](../plans/gpui-port/reports/E13-review-open.md)). The loaded tags
+  themselves still grow without bound until a new filter, a new vocabulary or closing,
+  about 330 bytes each with their buttons' state.
+- **Tag editor.** `TagEditor` takes `TagEditorProps` from its owner (tags, texts,
+  disabled, loading, remove label, placement) and emits `TagEditorEvent::{DraftChanged,
+  AddTag, RemoveTag}`; it writes nothing itself. Its field is a `Combobox` with
+  `TAG_EDITOR_COMBOBOX` (no active item before an arrow key, picks to the owner, the list
+  stays open) whose exclusions are the assigned tags. A press on the frame's blank space
+  focuses the field; a disabled or loading editor refuses focus, typing, Enter and
+  removal and closes its list. The list is drawn over the window next to the field
+  (`tagging::list_placement`, the `viewport` strategy), so the frame's scrolling never
+  clips it; while the field has the focus, the frame keeps it in view when the tags or
+  the draft change, and an unfocused editor keeps its scroll position (`revealInput`). No view
+  uses it yet: the bulk dock (E14) and the lightbox (E16) are its owners.
+- **Filter field.** The tag list's filter is a `TextInput` with `FieldChrome::Outlined`
+  (`text/visuals.rs`): the Solid input's `px-3 py-2.5`, a 1px `border-base-content/12`
+  border on `bg-base-100` and `--shadow-surface` at rest, with `border-primary/40` and
+  `--field-shadow-focus` when focused.
+- **Not ported yet.** The `title` tooltips of the tag buttons wait for a tooltip
+  primitive.
 
 ## Known limitations
 

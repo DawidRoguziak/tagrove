@@ -22,7 +22,8 @@ use media_tagger_client::{
     backend::{AssetQueryRequest, Backend},
     runtime::DEFAULT_TILE_SIZE,
     scenario::{
-        self, Scenario, ScenarioClick, ScenarioSearch, ScenarioTags, Seed, SCENARIO_MEDIA_VARIABLE,
+        self, Scenario, ScenarioClick, ScenarioSearch, ScenarioTagList, ScenarioTags, Seed,
+        SCENARIO_MEDIA_VARIABLE,
     },
     theme::ThemeName,
 };
@@ -46,6 +47,8 @@ pub struct StartState {
     pub tags: &'static [ScenarioTags],
     /// The search header the gallery starts with.
     pub search: Option<ScenarioSearch>,
+    /// The tag list, open with its choices.
+    pub tag_list: Option<ScenarioTagList>,
 }
 
 impl Default for StartState {
@@ -60,6 +63,7 @@ impl Default for StartState {
             selection: &[],
             tags: &[],
             search: None,
+            tag_list: None,
         }
     }
 }
@@ -84,6 +88,7 @@ impl From<Scenario> for StartState {
             selection: scenario.selection,
             tags: scenario.tags,
             search: scenario.search,
+            tag_list: scenario.tag_list,
         }
     }
 }
@@ -273,6 +278,7 @@ mod tests {
                     selection: scenario.selection,
                     tags: scenario.tags,
                     search: scenario.search,
+                    tag_list: scenario.tag_list,
                 }),
                 "{}",
                 scenario.id

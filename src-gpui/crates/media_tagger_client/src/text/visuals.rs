@@ -16,6 +16,11 @@ pub enum FieldChrome {
     /// A field inside a container that draws the frame and the focus ring itself, as
     /// the tag editor does (`border-0 bg-transparent px-1 shadow-none`).
     Bare,
+    /// A field whose utility classes replace the frame of `input` with a border on the
+    /// dialog's own background, as the tag list's filter does (`border
+    /// border-base-content/12 bg-base-100 px-3 py-2.5 shadow-[var(--shadow-surface)]
+    /// focus-visible:border-primary/40 focus-visible:shadow-[var(--field-shadow-focus)]`).
+    Outlined,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -29,6 +34,10 @@ pub struct FieldState {
 pub struct FieldVisuals {
     /// `background` of `input`; transparent for [`FieldChrome::Bare`].
     pub background: Rgba,
+    /// A 1px border, drawn inside the field's bounds; only [`FieldChrome::Outlined`]
+    /// has one. With a border, the inset shadows lie inside it (in the padding box), as
+    /// CSS draws them.
+    pub border: Option<Rgba>,
     pub text: Rgba,
     /// `input::placeholder`
     pub placeholder: Rgba,
@@ -38,7 +47,8 @@ pub struct FieldVisuals {
     pub selection_background: Rgba,
     pub selection_text: Rgba,
     /// The border and the focus ring, which the stylesheet draws as box shadows
-    /// (`--field-shadow`, `--field-shadow-focus`). Empty for [`FieldChrome::Bare`].
+    /// (`--field-shadow`, `--field-shadow-focus`). Empty for [`FieldChrome::Bare`];
+    /// [`FieldChrome::Outlined`] has `--shadow-surface` at rest.
     pub shadows: &'static [Shadow],
     pub radius: f32,
     pub padding_x: f32,
@@ -52,31 +62,64 @@ const PADDING_Y: f32 = 8.0;
 const PADDING_X: f32 = 10.0;
 /// Tailwind `px-1`, the horizontal padding of the tag editor's inner field.
 const BARE_PADDING_X: f32 = 4.0;
+/// Tailwind `px-3 py-2.5` of an outlined field.
+const OUTLINED_PADDING_X: f32 = 12.0;
+const OUTLINED_PADDING_Y: f32 = 10.0;
+/// `border-base-content/12` and `focus-visible:border-primary/40`.
+const OUTLINE_PERCENT: u8 = 12;
+const OUTLINE_FOCUS_PERCENT: u8 = 40;
 /// `opacity` of `input:disabled`.
 const DISABLED_OPACITY: f32 = 0.55;
 
 pub fn field_visuals(tokens: &ThemeTokens, chrome: FieldChrome, state: FieldState) -> FieldVisuals {
     let colors = &tokens.colors;
-    let boxed = chrome == FieldChrome::Boxed;
+    let focused = state.focused && !state.disabled;
+    let (background, border, shadows, padding_x, padding_y) = match chrome {
+        FieldChrome::Boxed => (
+            colors.surface_raised,
+            None,
+            if focused {
+                tokens.shadows.field_focus
+            } else {
+                tokens.shadows.field
+            },
+            PADDING_X,
+            PADDING_Y,
+        ),
+        FieldChrome::Bare => (Rgba::TRANSPARENT, None, &[][..], BARE_PADDING_X, PADDING_Y),
+        FieldChrome::Outlined => {
+            let (border, shadows) = if focused {
+                (
+                    colors.primary.with_alpha_percent(OUTLINE_FOCUS_PERCENT),
+                    tokens.shadows.field_focus,
+                )
+            } else {
+                (
+                    colors.base_content.with_alpha_percent(OUTLINE_PERCENT),
+                    tokens.shadows.surface,
+                )
+            };
+            (
+                colors.base_100,
+                Some(border),
+                shadows,
+                OUTLINED_PADDING_X,
+                OUTLINED_PADDING_Y,
+            )
+        }
+    };
     FieldVisuals {
-        background: if boxed {
-            colors.surface_raised
-        } else {
-            Rgba::TRANSPARENT
-        },
+        background,
+        border,
         text: colors.base_content,
         placeholder: colors.text_muted,
         caret: colors.base_content,
         selection_background: colors.primary,
         selection_text: colors.primary_content,
-        shadows: match (boxed, state.focused && !state.disabled) {
-            (false, _) => &[],
-            (true, false) => tokens.shadows.field,
-            (true, true) => tokens.shadows.field_focus,
-        },
+        shadows,
         radius: RADII.control,
-        padding_x: if boxed { PADDING_X } else { BARE_PADDING_X },
-        padding_y: PADDING_Y,
+        padding_x,
+        padding_y,
         opacity: if state.disabled {
             DISABLED_OPACITY
         } else {
@@ -163,6 +206,52 @@ mod tests {
 
             assert_eq!(visuals.opacity, 0.55);
             assert_eq!(visuals.shadows, LIGHT.shadows.field);
+        }
+    }
+
+    #[test]
+    fn the_tag_list_filter_still_has_the_classes_of_an_outlined_field() {
+        const TAG_LIST_MODAL: &str =
+            include_str!("../../../../../src/features/search/tag-list/TagListModal.tsx");
+        for class in [
+            " border border-base-content/12 bg-base-100 px-3 py-2.5 ",
+            " shadow-[var(--shadow-surface)] ",
+            " focus-visible:border-primary/40 ",
+            " focus-visible:shadow-[var(--field-shadow-focus)]",
+        ] {
+            assert!(
+                TAG_LIST_MODAL.contains(class),
+                "TagListModal.tsx lost: {class}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_outlined_field_has_a_border_on_the_base_background() {
+        for theme in ThemeName::ALL {
+            let tokens = theme.tokens();
+            let colors = &tokens.colors;
+            let rest = field_visuals(tokens, FieldChrome::Outlined, FieldState::default());
+
+            assert_eq!(rest.background, colors.base_100);
+            assert_eq!(
+                rest.border,
+                Some(colors.base_content.with_alpha_percent(12))
+            );
+            assert_eq!(rest.shadows, tokens.shadows.surface);
+            assert_eq!(rest.placeholder, colors.text_muted);
+            assert_eq!(
+                (rest.radius, rest.padding_x, rest.padding_y),
+                (6.0, 12.0, 10.0)
+            );
+
+            let focused = field_visuals(tokens, FieldChrome::Outlined, FOCUSED);
+            assert_eq!(focused.border, Some(colors.primary.with_alpha_percent(40)));
+            assert_eq!(focused.shadows, tokens.shadows.field_focus);
+
+            let disabled = field_visuals(tokens, FieldChrome::Outlined, DISABLED);
+            assert_eq!(disabled.border, rest.border);
+            assert_eq!(disabled.opacity, 0.55);
         }
     }
 

@@ -6,6 +6,8 @@
 //! - [`gallery`], [`settings`]: the two views the runtime switches between.
 //! - [`search`]: the search header of the gallery: field, suggestions, media kind,
 //!   favourites.
+//! - [`tag_list`]: the tag list's launcher and dialog; [`tag_editor`]: the tag editor
+//!   of the lightbox and the bulk dock.
 //! - [`chrome`]: the window's own decorations (buttons, grips, drag surface).
 //! - [`kit`]: the board of every shared control (`--scenario kit`).
 
@@ -15,6 +17,8 @@ pub mod kit;
 pub mod search;
 pub mod settings;
 pub mod shell;
+pub mod tag_editor;
+pub mod tag_list;
 
 use gpui::App;
 
@@ -22,4 +26,5 @@ use gpui::App;
 pub fn init(cx: &mut App) {
     gallery::init(cx);
     search::init(cx);
+    tag_list::init(cx);
 }

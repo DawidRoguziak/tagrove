@@ -25,7 +25,7 @@ use media_tagger_client::{
     model::Driver,
     prefs::PrefsStore,
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
-    scenario::{self, ScenarioClick, ScenarioSearch},
+    scenario::{self, ScenarioClick, ScenarioSearch, ScenarioTagList},
 };
 
 use crate::{thumbs::Thumbnails, ui};
@@ -108,6 +108,8 @@ pub struct Runtime {
     scripted_selection: &'static [ScenarioClick],
     /// A comparison scenario asks for the focus in the search field.
     scripted_search_focus: bool,
+    /// The tag whose button a comparison scenario's tag list starts focused.
+    scripted_tag_list_focus: Option<&'static str>,
     _pump: Task<()>,
 }
 
@@ -140,6 +142,7 @@ impl Runtime {
             thumbnails,
             scripted_selection: &[],
             scripted_search_focus: false,
+            scripted_tag_list_focus: None,
             _pump: pump,
         }
     }
@@ -161,6 +164,22 @@ impl Runtime {
         }
         self.scripted_search_focus = search.focus;
         self.publish(cx);
+    }
+
+    /// Opens the tag list with the choices of a comparison scenario. The gallery's
+    /// dialog follows the open list as soon as it is made, and gives the focus to the
+    /// button of the last tag clicked ([`Self::take_tag_list_focus`]).
+    pub fn script_tag_list(&mut self, tag_list: ScenarioTagList, cx: &mut Context<Self>) {
+        for input in tag_list.inputs() {
+            self.driver.handle(RuntimeInput::TagList(input));
+        }
+        self.scripted_tag_list_focus = tag_list.focused();
+        self.publish(cx);
+    }
+
+    /// The tag whose button a scenario's tag list starts focused; answers once.
+    pub fn take_tag_list_focus(&mut self) -> Option<&'static str> {
+        self.scripted_tag_list_focus.take()
     }
 
     /// Whether a scenario asked for the focus in the search field; answers `true`

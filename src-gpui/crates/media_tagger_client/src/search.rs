@@ -16,7 +16,9 @@
 //! - [`combobox`]: one suggesting text field (`SearchTagator` with
 //!   `createSuggestions`): when it asks for suggestions, which it shows, the keys of
 //!   its list, picking and Retry;
-//! - [`layout`]: the measures of the search field, its tools and the list.
+//! - [`layout`]: the measures of the search field, its tools and the list;
+//! - [`tag_list`]: the tag list dialog (`src/features/search/tag-list`): the library's
+//!   tags in pages, the include and exclude choices, and Apply.
 //!
 //! See `docs/subsystems/search-tags-and-media-groups.md`, "GPUI port: search".
 
@@ -28,6 +30,7 @@ pub mod layout;
 pub mod matcher;
 pub mod model;
 pub mod suggestions;
+pub mod tag_list;
 pub mod text;
 pub mod tokens;
 

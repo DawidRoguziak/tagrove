@@ -127,6 +127,7 @@ pub fn run_scenario_with(
                         tile_size: start.tile_size,
                         selection: start.selection,
                         search: start.search,
+                        tag_list: start.tag_list,
                     },
                 ),
             )

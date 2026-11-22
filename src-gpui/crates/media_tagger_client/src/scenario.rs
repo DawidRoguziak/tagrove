@@ -16,7 +16,7 @@ use crate::{
     gallery::{Interaction, SelectionInput},
     library::AssetQuery,
     runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
-    search::SearchCommand,
+    search::{tag_list::TagListInput, SearchCommand},
     theme::ThemeName,
 };
 
@@ -88,6 +88,49 @@ impl ScenarioSearch {
     }
 }
 
+/// The tag list a scenario opens, with tags included and excluded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenarioTagList {
+    /// Tags included: the Tauri steps click them once.
+    pub include: &'static [&'static str],
+    /// Tags excluded: the Tauri steps double-click them.
+    pub exclude: &'static [&'static str],
+}
+
+impl ScenarioTagList {
+    /// The inputs that open the list and make the choices. A double click excludes an
+    /// inactive tag and a second one includes it, so no click waits for its timer.
+    pub fn inputs(&self) -> Vec<TagListInput> {
+        let mut inputs = vec![TagListInput::Open];
+        for tag in self.include {
+            for _ in 0..2 {
+                inputs.push(TagListInput::DoubleClick {
+                    tag: (*tag).to_owned(),
+                });
+            }
+        }
+        for tag in self.exclude {
+            inputs.push(TagListInput::DoubleClick {
+                tag: (*tag).to_owned(),
+            });
+        }
+        inputs
+    }
+
+    /// The tag the last Tauri step clicks: a click gives its button the focus, so the
+    /// dialog starts with the focus there instead of in the filter.
+    pub fn focused(&self) -> Option<&'static str> {
+        self.exclude.last().or_else(|| self.include.last()).copied()
+    }
+}
+
+/// `tag-list-modal`: the tags of [`SEARCH_SUGGESTION_TAGS`], the tag list open with
+/// `camera` included and `cat` excluded.
+pub const TAG_LIST_MODAL: ScenarioTagList = ScenarioTagList {
+    include: &["camera"],
+    exclude: &["cat"],
+};
+
 /// `search-suggestions`: the first tile tagged `camera`, `car` and `cat`, and `ca`
 /// typed into the focused search field.
 pub const SEARCH_SUGGESTION_TAGS: [ScenarioTags; 1] = [ScenarioTags {
@@ -113,6 +156,8 @@ pub struct Scenario {
     pub tags: &'static [ScenarioTags],
     /// The search header, if the scenario sets one.
     pub search: Option<ScenarioSearch>,
+    /// The tag list, open with these choices, if the scenario opens it.
+    pub tag_list: Option<ScenarioTagList>,
 }
 
 /// `gallery-selection`: a click on the second tile, a Ctrl-click on the first and a
@@ -163,7 +208,7 @@ pub fn selection_inputs(
 }
 
 /// Every scenario the GPUI interface can start in, on a fresh profile.
-pub const SCENARIOS: [Scenario; 8] = [
+pub const SCENARIOS: [Scenario; 9] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
@@ -172,6 +217,7 @@ pub const SCENARIOS: [Scenario; 8] = [
         selection: &[],
         tags: &[],
         search: None,
+        tag_list: None,
     },
     Scenario {
         id: "shell-empty-light",
@@ -181,6 +227,7 @@ pub const SCENARIOS: [Scenario; 8] = [
         selection: &[],
         tags: &[],
         search: None,
+        tag_list: None,
     },
     Scenario {
         id: "gallery-default",
@@ -190,6 +237,7 @@ pub const SCENARIOS: [Scenario; 8] = [
         selection: &[],
         tags: &[],
         search: None,
+        tag_list: None,
     },
     Scenario {
         id: "gallery-tiles-small",
@@ -199,6 +247,7 @@ pub const SCENARIOS: [Scenario; 8] = [
         selection: &[],
         tags: &[],
         search: None,
+        tag_list: None,
     },
     Scenario {
         id: "gallery-tiles-large",
@@ -208,6 +257,7 @@ pub const SCENARIOS: [Scenario; 8] = [
         selection: &[],
         tags: &[],
         search: None,
+        tag_list: None,
     },
     Scenario {
         id: "gallery-selection",
@@ -217,6 +267,7 @@ pub const SCENARIOS: [Scenario; 8] = [
         selection: &GALLERY_SELECTION_CLICKS,
         tags: &[],
         search: None,
+        tag_list: None,
     },
     Scenario {
         id: "search-suggestions",
@@ -230,6 +281,7 @@ pub const SCENARIOS: [Scenario; 8] = [
             kind: None,
             focus: true,
         }),
+        tag_list: None,
     },
     Scenario {
         id: "search-applied",
@@ -243,6 +295,17 @@ pub const SCENARIOS: [Scenario; 8] = [
             kind: Some(MediaKind::Image),
             focus: false,
         }),
+        tag_list: None,
+    },
+    Scenario {
+        id: "tag-list-modal",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &SEARCH_SUGGESTION_TAGS,
+        search: None,
+        tag_list: Some(TAG_LIST_MODAL),
     },
 ];
 
@@ -556,11 +619,70 @@ mod tests {
         assert!(source.contains(r#"input[value="image"]"#));
         for scenario in SCENARIOS {
             if !scenario.id.starts_with("search-") {
-                assert!(
-                    scenario.search.is_none() && scenario.tags.is_empty(),
-                    "{}",
-                    scenario.id
-                );
+                assert!(scenario.search.is_none(), "{}", scenario.id);
+            }
+            if !scenario.id.starts_with("search-") && scenario.id != "tag-list-modal" {
+                assert!(scenario.tags.is_empty(), "{}", scenario.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_tag_list_scenario_makes_the_choices_of_its_tauri_steps() {
+        // Parity scenario of E13.
+        use crate::search::tag_list::{TagListInput, TagSelectionMode, TagSelections};
+        let scenario = find("tag-list-modal").expect("a scenario");
+        assert_eq!(scenario.seed, Seed::Control);
+        assert_eq!(scenario.tags, &super::SEARCH_SUGGESTION_TAGS[..]);
+        let tag_list = scenario.tag_list.expect("the tag list is open");
+        let inputs = tag_list.inputs();
+        assert!(matches!(inputs[0], TagListInput::Open));
+        let mut selections = TagSelections::new();
+        for input in &inputs[1..] {
+            let TagListInput::DoubleClick { tag } = input else {
+                panic!("{input:?}");
+            };
+            selections = selections.apply_double(tag);
+        }
+        assert_eq!(selections.mode("camera"), Some(TagSelectionMode::Include));
+        assert_eq!(selections.mode("cat"), Some(TagSelectionMode::Exclude));
+        assert_eq!(selections.included_count() + selections.excluded_count(), 2);
+        // The double click on cat is the last step: its button has the focus.
+        assert_eq!(tag_list.focused(), Some("cat"));
+
+        let source = std::fs::read_to_string(
+            repository_root().join("e2e/compare/scenarios/tag-list-modal.js"),
+        )
+        .expect("read the Tauri steps");
+        for tag in super::SEARCH_SUGGESTION_TAGS[0].tags {
+            assert!(
+                source.contains(&format!(r##"["fill", "#bulk-tag-draft-input", "{tag}"]"##)),
+                "{tag} is not added on the Tauri side"
+            );
+        }
+        for tag in tag_list.include {
+            assert!(source.contains(&format!(
+                r#"["click", 'button[aria-label="{tag}, state: inactive"]']"#
+            )));
+        }
+        for tag in tag_list.exclude {
+            assert!(source.contains(&format!(
+                r#"["dblclick", 'button[aria-label="{tag}, state: inactive"]']"#
+            )));
+        }
+        let focused = tag_list.focused().expect("a clicked tag");
+        let last_click = source
+            .rfind(r#"click", 'button[aria-label=""#)
+            .expect("a click on a tag");
+        assert!(
+            source[last_click..].starts_with(&format!(
+                r#"click", 'button[aria-label="{focused}, state: inactive"]'"#
+            )),
+            "the last Tauri click is not on {focused}"
+        );
+        for scenario in SCENARIOS {
+            if scenario.id != "tag-list-modal" {
+                assert!(scenario.tag_list.is_none(), "{}", scenario.id);
             }
         }
     }

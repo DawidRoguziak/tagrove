@@ -274,7 +274,8 @@ test("unknown scenarios are refused before a session exists", (t) => {
     "search-applied\ttheme=dark\tseed=control",
     "search-suggestions\ttheme=dark\tseed=control",
     "shell-empty\ttheme=dark\tseed=empty",
-    "shell-empty-light\ttheme=light\tseed=empty"
+    "shell-empty-light\ttheme=light\tseed=empty",
+    "tag-list-modal\ttheme=dark\tseed=control"
   ]);
 });
 

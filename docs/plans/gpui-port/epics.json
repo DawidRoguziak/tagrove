@@ -566,8 +566,8 @@
       "deps": [
         "E12"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-22",
       "sources": [
         "src/features/search/tag-list",
         "src/features/tagging/TagEditor.tsx",

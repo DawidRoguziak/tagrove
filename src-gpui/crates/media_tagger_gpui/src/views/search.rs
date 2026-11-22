@@ -13,10 +13,12 @@
 //! The view lives as long as the gallery view; its session state (focus, open list,
 //! active item) goes with it, the draft stays in the runtime.
 
+use std::{rc::Rc, sync::Arc};
+
 use gpui::{
     actions, deferred, div, point, prelude::*, px, relative, AnyElement, App, BoxShadow, Context,
-    Entity, FocusHandle, Focusable, FontWeight, HighlightStyle, KeyBinding, MouseButton,
-    StyledText, Subscription, Window,
+    Div, Entity, FocusHandle, Focusable, FontWeight, HighlightStyle, KeyBinding, MouseButton,
+    Stateful, StyledText, Subscription, Window,
 };
 use media_tagger_client::{
     controls::{AlertTone, ButtonVariant},
@@ -26,13 +28,14 @@ use media_tagger_client::{
     search::{
         layout::{self, field, highlight_runs, list, shortcut_hint, tools},
         media_kind_label_key, media_kind_value, parse_media_kind_value, Combobox, ComboboxConfig,
-        ComboboxEffect, ComboboxKey, EditorId, SearchCommand, MEDIA_KIND_OPTIONS,
+        ComboboxEffect, ComboboxKey, EditorId, SearchCommand, TagSuggestion, MEDIA_KIND_OPTIONS,
     },
     shortcuts::{ShortcutCommand, SHORTCUTS},
     text::FieldChrome,
     theme::{ThemeName, RADII, TYPOGRAPHY},
 };
 
+use super::tag_list::TagListModal;
 use crate::{
     runtime::Runtime,
     ui::{
@@ -98,6 +101,8 @@ pub struct SearchBar {
     runtime: Entity<Runtime>,
     input: Entity<TextInput>,
     kind: Entity<SegmentedControl>,
+    /// The tag list's launcher and dialog (epic E13).
+    tag_list: Entity<TagListModal>,
     combobox: Combobox,
     /// Tracked by the field's frame: its border is the primary colour while the
     /// focus is anywhere in it (`focus-within`).
@@ -145,6 +150,7 @@ impl SearchBar {
                 cx,
             )
         });
+        let tag_list = cx.new(|cx| TagListModal::new(runtime.clone(), window, cx));
         let mut combobox = Combobox::new(EditorId::next(), ComboboxConfig::SEARCH, vocabulary);
         // Nothing is focused or open yet, so this asks for nothing.
         let _ = combobox.set_value(&draft, draft.len());
@@ -212,6 +218,7 @@ impl SearchBar {
             runtime,
             input,
             kind,
+            tag_list,
             combobox,
             frame_focus: cx.focus_handle(),
             language,
@@ -237,6 +244,15 @@ impl SearchBar {
 
     pub fn kind_control(&self) -> &Entity<SegmentedControl> {
         &self.kind
+    }
+
+    pub fn runtime(&self) -> &Entity<Runtime> {
+        &self.runtime
+    }
+
+    /// The tag list's launcher and dialog.
+    pub fn tag_list(&self) -> &Entity<TagListModal> {
+        &self.tag_list
     }
 
     /// Ctrl+K: the focus goes into the field.
@@ -337,8 +353,8 @@ impl SearchBar {
         handled
     }
 
-    /// The media kind and favourites of the tools row, and the divider before the tag
-    /// list's button (epic E13).
+    /// The media kind and favourites of the tools row, the divider and the tag list's
+    /// launcher.
     pub fn tools(&self, i18n: &I18n<'_>, theme: ThemeName, cx: &App) -> Vec<AnyElement> {
         let favorites = self.runtime.read(cx).model().search().favorites_only();
         let runtime = self.runtime.downgrade();
@@ -372,6 +388,7 @@ impl SearchBar {
                 .h(px(tools::DIVIDER_HEIGHT))
                 .bg(color(theme.tokens().colors.border_strong))
                 .into_any_element(),
+            self.tag_list.read(cx).launcher(i18n).into_any_element(),
         ]
     }
 
@@ -392,97 +409,135 @@ impl SearchBar {
     }
 
     fn suggestion_list(&self, theme: ThemeName, window: &Window, cx: &Context<Self>) -> AnyElement {
-        let colors = &theme.tokens().colors;
-        let items = self.combobox.items().clone();
-        let active = self.combobox.active();
-        let highlight = HighlightStyle {
-            color: Some(color(colors.primary_text)),
-            font_weight: Some(FontWeight::BOLD),
-            ..HighlightStyle::default()
-        };
+        let this = cx.entity().downgrade();
         let max_height = list::max_height(f32::from(window.viewport_size().height));
-        let options = items.iter().enumerate().map(|(index, item)| {
-            let mut highlights = Vec::new();
-            let mut at = 0;
-            for (text, bold) in highlight_runs(&item.value, &item.ranges) {
-                if bold {
-                    highlights.push((at..at + text.len(), highlight));
-                }
-                at += text.len();
-            }
-            let is_active = active == Some(index);
-            div()
-                .id(("search-suggestion", index))
-                .debug_selector(move || option_selector(index))
-                .w_full()
-                .px(px(list::OPTION_PADDING_X))
-                .py(px(list::OPTION_PADDING_Y))
-                .rounded(px(RADII.control))
-                .text_color(color(colors.base_content))
-                .cursor_pointer()
-                .map(|option| {
-                    if is_active {
-                        option
-                            .bg(color(colors.tagator_suggestion_active_bg))
-                            .shadow(vec![BoxShadow {
-                                color: color(colors.tagator_suggestion_active_ring),
-                                offset: point(px(0.), px(0.)),
-                                blur_radius: px(0.),
-                                spread_radius: px(list::ACTIVE_RING_WIDTH),
-                                inset: true,
-                            }])
-                    } else {
-                        option.hover(|style| {
-                            style.bg(color(
-                                colors
-                                    .base_content
-                                    .with_alpha_percent(list::HOVER_FILL_PERCENT),
-                            ))
-                        })
-                    }
+        let body = suggestion_list_body(
+            SuggestionListIds {
+                list: LIST_SELECTOR,
+                option: "search-suggestion",
+                option_selector,
+            },
+            self.combobox.items(),
+            self.combobox.active(),
+            theme,
+            Rc::new(move |index, window, cx| {
+                this.update(cx, |this, cx| {
+                    let effects = this.combobox.pick_at(index);
+                    this.run(effects, window, cx);
                 })
-                // A press picks at once and keeps the focus in the field (`mousedown`
-                // with `preventDefault`).
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _, window, cx| {
-                        window.prevent_default();
-                        cx.stop_propagation();
-                        let effects = this.combobox.pick_at(index);
-                        this.run(effects, window, cx);
-                    }),
-                )
-                .child(StyledText::new(item.value.clone()).with_highlights(highlights))
-        });
+                .ok();
+            }),
+        );
         deferred(
-            div()
-                .id(LIST_SELECTOR)
-                .debug_selector(|| LIST_SELECTOR.to_owned())
-                .occlude()
-                // The options use the application's font; the mono font is the input's.
-                .font_family(fonts::SANS)
-                .text_size(px(TYPOGRAPHY.body_size))
-                .absolute()
+            body.absolute()
                 .left_0()
                 .right_0()
                 .top(relative(1.))
                 .mt(px(list::GAP))
-                .max_h(px(max_height))
-                .overflow_y_scroll()
-                .flex()
-                .flex_col()
-                .gap(px(list::ITEM_GAP))
-                .p(px(list::PADDING))
-                .rounded(px(RADII.control))
-                .border_1()
-                .border_color(color(colors.border_soft))
-                .bg(color(colors.surface_raised))
-                .shadow(theme::box_shadows(theme.tokens().shadows.popover))
-                .children(options),
+                .max_h(px(max_height)),
         )
         .with_priority(1)
         .into_any_element()
     }
+}
+
+/// What a press on the option at an index does.
+pub(crate) type PickHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// The ids of a suggestion list and its options.
+pub(crate) struct SuggestionListIds {
+    /// The list's element id and debug selector.
+    pub list: &'static str,
+    /// The element id of the options, with their index.
+    pub option: &'static str,
+    /// The debug selector of the option at an index.
+    pub option_selector: fn(usize) -> String,
+}
+
+/// A suggestion list (`SearchSuggestionsList` with its options) without its place: the
+/// caller positions it and sets its height. A press on an option calls `on_pick` with
+/// its index and keeps the focus in the field (`mousedown` with `preventDefault`).
+pub(crate) fn suggestion_list_body(
+    ids: SuggestionListIds,
+    items: &Arc<[TagSuggestion]>,
+    active: Option<usize>,
+    theme: ThemeName,
+    on_pick: PickHandler,
+) -> Stateful<Div> {
+    let colors = &theme.tokens().colors;
+    let highlight = HighlightStyle {
+        color: Some(color(colors.primary_text)),
+        font_weight: Some(FontWeight::BOLD),
+        ..HighlightStyle::default()
+    };
+    let option_selector = ids.option_selector;
+    let options = items.iter().enumerate().map(|(index, item)| {
+        let mut highlights = Vec::new();
+        let mut at = 0;
+        for (text, bold) in highlight_runs(&item.value, &item.ranges) {
+            if bold {
+                highlights.push((at..at + text.len(), highlight));
+            }
+            at += text.len();
+        }
+        let is_active = active == Some(index);
+        let on_pick = on_pick.clone();
+        div()
+            .id((ids.option, index))
+            .debug_selector(move || option_selector(index))
+            .w_full()
+            .px(px(list::OPTION_PADDING_X))
+            .py(px(list::OPTION_PADDING_Y))
+            .rounded(px(RADII.control))
+            .text_color(color(colors.base_content))
+            .cursor_pointer()
+            .map(|option| {
+                if is_active {
+                    option
+                        .bg(color(colors.tagator_suggestion_active_bg))
+                        .shadow(vec![BoxShadow {
+                            color: color(colors.tagator_suggestion_active_ring),
+                            offset: point(px(0.), px(0.)),
+                            blur_radius: px(0.),
+                            spread_radius: px(list::ACTIVE_RING_WIDTH),
+                            inset: true,
+                        }])
+                } else {
+                    option.hover(|style| {
+                        style.bg(color(
+                            colors
+                                .base_content
+                                .with_alpha_percent(list::HOVER_FILL_PERCENT),
+                        ))
+                    })
+                }
+            })
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.prevent_default();
+                cx.stop_propagation();
+                on_pick(index, window, cx);
+            })
+            .child(StyledText::new(item.value.clone()).with_highlights(highlights))
+    });
+    let list_selector = ids.list;
+    div()
+        .id(ids.list)
+        .debug_selector(move || list_selector.to_owned())
+        .occlude()
+        // The options use the application's font; the mono font is the input's.
+        .font_family(fonts::SANS)
+        .text_size(px(TYPOGRAPHY.body_size))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .gap(px(list::ITEM_GAP))
+        .p(px(list::PADDING))
+        .rounded(px(RADII.control))
+        .border_1()
+        .border_color(color(colors.border_soft))
+        .bg(color(colors.surface_raised))
+        .shadow(theme::box_shadows(theme.tokens().shadows.popover))
+        .children(options)
 }
 
 impl Render for SearchBar {
@@ -623,5 +678,7 @@ impl Render for SearchBar {
             .flex_1()
             .min_w_0()
             .child(frame)
+            // Draws itself over the window while open; nothing otherwise.
+            .child(self.tag_list.clone())
     }
 }

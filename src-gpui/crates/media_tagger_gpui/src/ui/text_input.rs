@@ -692,9 +692,19 @@ fn box_shadow(shadow: &Shadow) -> BoxShadow {
     }
 }
 
+/// The shadows of `shadows` that are inset, or those that are not.
+fn shadows(shadows: &[Shadow], inset: bool) -> Vec<BoxShadow> {
+    shadows
+        .iter()
+        .filter(|shadow| shadow.inset == inset)
+        .map(box_shadow)
+        .collect()
+}
+
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let visuals = self.visuals(self.focus_handle.is_focused(window));
+        let line = TextLine { input: cx.entity() };
         let field = div()
             .id("text-input")
             .role(Role::TextInput)
@@ -704,18 +714,45 @@ impl Render for TextInput {
             .w_full()
             .min_w_0()
             .overflow_hidden()
-            .px(px(visuals.padding_x))
             .rounded(px(visuals.radius))
             .bg(color(visuals.background))
             .text_color(color(visuals.text))
-            .shadow(visuals.shadows.iter().map(box_shadow).collect())
             .opacity(visuals.opacity)
             .map(|field| match self.height {
                 Some(height) => field.h(px(height)),
-                None => field.py(px(visuals.padding_y)),
+                None => field,
             })
-            .when_some(self.label.clone(), |field, label| field.aria_label(label))
-            .child(TextLine { input: cx.entity() });
+            .when_some(self.label.clone(), |field, label| field.aria_label(label));
+        let field = match visuals.border {
+            // GPUI draws inset shadows from the element's bounds and its border over
+            // them; CSS draws them inside the border. The padding box is therefore an
+            // element of its own that carries the inset shadows.
+            Some(border) => field
+                .border_1()
+                .border_color(color(border))
+                .shadow(shadows(visuals.shadows, false))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .size_full()
+                        .min_w_0()
+                        .px(px(visuals.padding_x))
+                        .when(self.height.is_none(), |inner| {
+                            inner.py(px(visuals.padding_y))
+                        })
+                        .rounded(px((visuals.radius - 1.0).max(0.0)))
+                        .shadow(shadows(visuals.shadows, true))
+                        .child(line),
+                ),
+            None => field
+                .px(px(visuals.padding_x))
+                .when(self.height.is_none(), |field| {
+                    field.py(px(visuals.padding_y))
+                })
+                .shadow(visuals.shadows.iter().map(box_shadow).collect())
+                .child(line),
+        };
         if self.disabled {
             return field.cursor(CursorStyle::OperationNotAllowed);
         }

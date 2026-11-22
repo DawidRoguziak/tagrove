@@ -968,23 +968,45 @@ impl Render for GalleryView {
             .flex()
             .flex_col()
             .overflow_hidden()
+            // A modal dialog drawn from the header (the tag list) leaves the grid alone:
+            // its keys do not scroll or select what lies under it.
             .on_action(cx.listener(|this, _: &ScrollStart, _, cx| {
-                this.scroll_to_edge(ScrollEdge::Start, cx)
+                if !layers::has_modal(cx) {
+                    this.scroll_to_edge(ScrollEdge::Start, cx)
+                }
             }))
-            .on_action(
-                cx.listener(|this, _: &ScrollEnd, _, cx| this.scroll_to_edge(ScrollEdge::End, cx)),
-            )
+            .on_action(cx.listener(|this, _: &ScrollEnd, _, cx| {
+                if !layers::has_modal(cx) {
+                    this.scroll_to_edge(ScrollEdge::End, cx)
+                }
+            }))
             .on_action(cx.listener(|this, _: &PageUp, _, cx| {
-                let page = this.page();
-                this.scroll_by(-page, cx)
+                if !layers::has_modal(cx) {
+                    let page = this.page();
+                    this.scroll_by(-page, cx)
+                }
             }))
             .on_action(cx.listener(|this, _: &PageDown, _, cx| {
-                let page = this.page();
-                this.scroll_by(page, cx)
+                if !layers::has_modal(cx) {
+                    let page = this.page();
+                    this.scroll_by(page, cx)
+                }
             }))
-            .on_action(cx.listener(|this, _: &LineUp, _, cx| this.scroll_by(-area::KEY_LINE, cx)))
-            .on_action(cx.listener(|this, _: &LineDown, _, cx| this.scroll_by(area::KEY_LINE, cx)))
-            .on_action(cx.listener(|this, _: &SelectAll, window, cx| this.select_all(window, cx)))
+            .on_action(cx.listener(|this, _: &LineUp, _, cx| {
+                if !layers::has_modal(cx) {
+                    this.scroll_by(-area::KEY_LINE, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &LineDown, _, cx| {
+                if !layers::has_modal(cx) {
+                    this.scroll_by(area::KEY_LINE, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SelectAll, window, cx| {
+                if !layers::has_modal(cx) {
+                    this.select_all(window, cx)
+                }
+            }))
             .child(header)
             .child(
                 div()

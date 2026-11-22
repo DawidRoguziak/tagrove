@@ -34,3 +34,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-22 | E11 | workflow | done | Epik ukończony: bramka test:all przeszła w 1 rundzie po wcześniejszej blokadzie. | [E11](E11-selection.md)
 2026-11-22 | E12 | orkiestrator | in progress | workflow start od kroku implement | [E12](E12-search.md)
 2026-11-22 | E12 | workflow | done | E12 zakończony: wyszukiwarka, gramatyka filtrów i podpowiedzi gotowe, przegląd czysty, gate zielony; parity compare:ui nieuruchomione poprawnie. | [E12](E12-search.md)
+2026-11-22 | E13 | orkiestrator | in progress | workflow start od kroku implement | [E13](E13-tag-list-editor.md)
+2026-11-22 | E13 | workflow | done | E13 gotowy: modal listy tagów i TagEditor w GPUI, testy, parytet i brama przeszły; zostały trzy niepewne uwagi wydajnościowe P3 do pomiaru. | [E13](E13-tag-list-editor.md)

@@ -1201,3 +1201,105 @@ fn suggestion_searches_run_on_the_executor_against_the_known_tags() {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn the_tag_list_loads_its_pages_through_the_backend_and_applies_after_the_query_answered() {
+    use crate::search::tag_list::{TagListInput, SINGLE_CLICK_DELAY};
+    let mut fx = Fixture::new();
+    fx.backend
+        .on_start_asset_query(|_| Ok(ready(3)))
+        .on_list_tags(|query, offset, limit| {
+            assert_eq!((query.as_str(), offset, limit), ("", 0, 100));
+            Ok(TagListPage {
+                items: vec!["cat".into(), "dog".into()],
+                total: 2,
+            })
+        });
+
+    fx.send(RuntimeInput::TagList(TagListInput::Open));
+    assert!(fx.runtime().tag_list().is_open());
+    fx.settle();
+    assert_eq!(fx.runtime().tag_list().page().items, ["cat", "dog"]);
+
+    // A click waits for its timer on the executor.
+    fx.send(RuntimeInput::TagList(TagListInput::Click {
+        tag: "cat".into(),
+        count: 1,
+    }));
+    fx.settle();
+    assert!(fx.runtime().tag_list().selections().is_empty());
+    fx.executor.advance_and_run(SINGLE_CLICK_DELAY);
+    fx.settle();
+    assert_eq!(fx.runtime().tag_list().selections().filter_input(), "cat");
+    fx.send(RuntimeInput::TagList(TagListInput::DoubleClick {
+        tag: "dog".into(),
+    }));
+
+    let queries = fx.calls("start_asset_query");
+    fx.send(RuntimeInput::TagList(TagListInput::Apply));
+    assert_eq!(fx.runtime().search().filter_input(), "cat -dog");
+    assert!(fx.runtime().tag_list().applying());
+    assert!(
+        fx.runtime().tag_list().is_open(),
+        "open until the query answered"
+    );
+    fx.settle();
+    assert_eq!(fx.calls("start_asset_query"), queries + 1);
+    assert!(!fx.runtime().tag_list().is_open());
+    assert!(!fx.runtime().tag_list().applying());
+    assert_eq!(fx.runtime().search().applied().include, ["cat"]);
+}
+
+#[test]
+fn a_failed_query_keeps_the_tag_list_open_with_its_choices() {
+    use crate::search::tag_list::TagListInput;
+    let mut fx = Fixture::new();
+    fx.backend
+        .on_start_asset_query(|_| Err(BackendError::rejected("offline")))
+        .on_list_tags(|_, _, _| {
+            Ok(TagListPage {
+                items: vec!["cat".into()],
+                total: 1,
+            })
+        });
+    fx.send(RuntimeInput::TagList(TagListInput::Open));
+    fx.settle();
+    fx.send(RuntimeInput::TagList(TagListInput::DoubleClick {
+        tag: "cat".into(),
+    }));
+    fx.send(RuntimeInput::TagList(TagListInput::Apply));
+    fx.settle();
+
+    let tag_list = fx.runtime().tag_list();
+    assert!(tag_list.is_open() && !tag_list.applying());
+    assert_eq!(tag_list.selections().filter_input(), "-cat");
+    assert_eq!(fx.runtime().search().filter_input(), "-cat");
+}
+
+#[test]
+fn the_tag_list_falls_back_to_the_known_tags_of_the_library() {
+    use crate::search::tag_list::TagListInput;
+    let mut fx = Fixture::new();
+    fx.backend
+        .on_start_asset_query(|_| Ok(ready(0)))
+        .on_scan_startup_roots(|| Ok(None))
+        .on_list_scan_roots(|| Ok(Vec::new()))
+        .on_list_tags({
+            let mut next = sequence(vec![
+                Ok(TagListPage {
+                    items: vec!["beta".into(), "alpha".into()],
+                    total: 2,
+                }),
+                Err(BackendError::rejected("offline")),
+            ]);
+            move |_, _, _| next()
+        });
+    fx.send(RuntimeInput::Start);
+    fx.settle();
+    assert_eq!(fx.runtime().library().known_tags().len(), 2);
+
+    fx.send(RuntimeInput::TagList(TagListInput::Open));
+    assert_eq!(fx.runtime().tag_list().page().items, ["alpha", "beta"]);
+    fx.settle();
+    assert_eq!(fx.runtime().tag_list().page().items, ["alpha", "beta"]);
+}

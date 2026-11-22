@@ -129,7 +129,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | E10 | [Pasek przewijania i scrubber osi czasu](E10-gpui-scrollbar-timeline.md) | M | standardowy | E09 | done 2026-11-22 |
 | E11 | [Model zaznaczenia i gesty](E11-selection.md) | L | trudny | E08, E09 | done 2026-11-22 |
 | E12 | [Wyszukiwarka, gramatyka filtrów i podpowiedzi](E12-search.md) | L | standardowy | E06, E08 | done 2026-11-22 |
-| E13 | [Modal listy tagów i wspólny TagEditor](E13-tag-list-editor.md) | M | standardowy | E12 | todo |
+| E13 | [Modal listy tagów i wspólny TagEditor](E13-tag-list-editor.md) | M | standardowy | E12 | done 2026-11-22 |
 | E14 | [Dok akcji zbiorczych i kolejność grup](E14-bulk-dock.md) | L | trudny | E11, E13 | todo |
 | E15 | [Model lightboxa](E15-client-lightbox-model.md) | L | trudny | E08 | todo |
 | E16 | [Lightbox: UI, przeglądarka obrazów, zaślepki GIF i wideo](E16-gpui-lightbox.md) | L | trudny | E09, E13, E15 | todo |

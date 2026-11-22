@@ -36,7 +36,8 @@
 //!   icon catalogue, and the overlay layer: the layer stack behind Escape and focus
 //!   restore, and the fading presence of a modal.
 //! - [`search`]: the search header: the grammar of the search field, the draft and the
-//!   applied filters, and the tag suggestions matched in the background.
+//!   applied filters, the tag suggestions matched in the background, and the tag list.
+//! - [`tagging`]: the shared tag editor of the lightbox and the bulk dock.
 //! - [`runtime`], [`shell`], [`window_chrome`], [`shortcuts`]: the application runtime
 //!   (models for the application's lifetime, the view, the start sequence), what the
 //!   shell draws around the views, the window's own decorations and the registry of
@@ -60,6 +61,7 @@ pub mod search;
 pub mod shell;
 pub mod shortcuts;
 pub mod startup_scan;
+pub mod tagging;
 pub mod text;
 pub mod theme;
 pub mod thumbs;

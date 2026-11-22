@@ -73,8 +73,11 @@ use crate::{
     model::{Dispatch, Model, RequestSlot, RequestToken, Runner, Tokens},
     prefs::{Prefs, PrefsStore},
     search::{
-        run_suggestion_effect, suggestions::SuggestionIndexCache, EditorId, Search, SearchCommand,
-        SuggestionClient, SuggestionEffect, SuggestionEvent, SuggestionInput,
+        run_suggestion_effect,
+        suggestions::SuggestionIndexCache,
+        tag_list::{TagList, TagListEffect, TagListInput},
+        EditorId, Search, SearchCommand, SuggestionClient, SuggestionEffect, SuggestionEvent,
+        SuggestionInput,
     },
     theme::ThemeName,
 };
@@ -201,6 +204,10 @@ pub enum RuntimeInput {
     Search(SearchCommand),
     /// A request or answer of the suggestion client.
     Suggestions(SuggestionInput),
+    /// A command, page or timer of the tag list. Its Apply replaces the search
+    /// field's text and submits it; the tag list hears back once the query that
+    /// started has answered.
+    TagList(TagListInput),
     /// Lists the scan roots again; an earlier listing still running is superseded.
     RefreshScanRoots,
     ScanRootsLoaded {
@@ -232,6 +239,9 @@ pub enum RuntimeEffect {
     Library(LibraryEffect),
     /// A search of the suggestion client.
     Suggest(SuggestionEffect),
+    /// A page or the click timer of the tag list; never its
+    /// [`TagListEffect::ApplySearch`], which the runtime runs itself.
+    TagList(TagListEffect),
     /// Send [`SelectionInput::KeepAliveDue`] with this token after `delay`.
     SelectionKeepAlive {
         token: RequestToken,
@@ -256,6 +266,9 @@ pub struct AppRuntime {
     selection: Selection,
     search: Search,
     suggestions: SuggestionClient,
+    tag_list: TagList,
+    /// The tag list's Apply waits for the query it started.
+    tag_list_apply: bool,
     /// The answers to ticketed query reads of other callers than the selection.
     query_events: Vec<QueryEvent>,
     scan_roots: Vec<ScanRoot>,
@@ -283,6 +296,8 @@ impl AppRuntime {
             selection,
             search: Search::new(),
             suggestions: SuggestionClient::new(),
+            tag_list: TagList::new(),
+            tag_list_apply: false,
             query_events: Vec::new(),
             scan_roots: Vec::new(),
             scan_roots_error: None,
@@ -346,6 +361,12 @@ impl AppRuntime {
     /// The suggestion client shared by every suggesting field.
     pub fn suggestions(&self) -> &SuggestionClient {
         &self.suggestions
+    }
+
+    /// The tag list: whether it is open, its pages, the choices and whether Apply
+    /// runs.
+    pub fn tag_list(&self) -> &TagList {
+        &self.tag_list
     }
 
     /// The answers of the suggestion client to `editor` since the last call.
@@ -490,7 +511,48 @@ impl AppRuntime {
         self.drive_selection(Vec::new(), &mut effects);
         // A reply may have been the library refresh the startup scan waits for.
         self.settle_startup_scan();
+        self.sync_tag_list(&mut effects);
         effects
+    }
+
+    /// Hands `input` to the tag list and runs what it asks for: its Apply here, its
+    /// pages and timer through the runner.
+    fn feed_tag_list(&mut self, input: TagListInput, effects: &mut Vec<RuntimeEffect>) {
+        for effect in self.tag_list.handle(input) {
+            match effect {
+                TagListEffect::ApplySearch(filter_input) => {
+                    self.apply_tag_list_search(filter_input, effects);
+                }
+                effect => effects.push(RuntimeEffect::TagList(effect)),
+            }
+        }
+    }
+
+    /// `onApplySearch` of the tag list: `search.applyInput`. A valid input starts the
+    /// query and the tag list waits for it; an invalid one is shown under the header
+    /// and counts as applied, as the Solid submit returns without an error.
+    fn apply_tag_list_search(&mut self, filter_input: String, effects: &mut Vec<RuntimeEffect>) {
+        match self.search.handle(SearchCommand::ApplyInput(filter_input)) {
+            Some(filters) => {
+                self.tag_list_apply = true;
+                effects.extend(
+                    self.library_input(LibraryInput::Query(QueryInput::ApplyFilters(filters))),
+                );
+            }
+            None => self.feed_tag_list(TagListInput::ApplySettled { ok: true }, effects),
+        }
+    }
+
+    /// Gives the tag list the current known tags, and answers its Apply once the query
+    /// is no longer pending: ok unless the query failed to start.
+    fn sync_tag_list(&mut self, effects: &mut Vec<RuntimeEffect>) {
+        let known_tags = self.library.known_tags().clone();
+        self.feed_tag_list(TagListInput::SetVocabulary(known_tags), effects);
+        if self.tag_list_apply && !self.library.query().query_pending() {
+            self.tag_list_apply = false;
+            let ok = self.library.query().load_error().is_none();
+            self.feed_tag_list(TagListInput::ApplySettled { ok }, effects);
+        }
     }
 
     fn refresh_library(&mut self) -> Vec<RuntimeEffect> {
@@ -602,6 +664,13 @@ impl Model for AppRuntime {
                 .into_iter()
                 .map(RuntimeEffect::Suggest)
                 .collect(),
+            RuntimeInput::TagList(input) => {
+                let mut effects = Vec::new();
+                let known_tags = self.library.known_tags().clone();
+                self.feed_tag_list(TagListInput::SetVocabulary(known_tags), &mut effects);
+                self.feed_tag_list(input, &mut effects);
+                effects
+            }
             RuntimeInput::RefreshScanRoots => vec![self.refresh_scan_roots()],
             RuntimeInput::ScanRootsLoaded { token, result } => {
                 if !self.scan_roots_request.finish(token) {
@@ -695,6 +764,31 @@ impl Runner<AppRuntime> for RuntimeRunner {
                     RuntimeInput::Suggestions,
                 );
             }
+            RuntimeEffect::TagList(effect) => match effect {
+                TagListEffect::LoadPage {
+                    token,
+                    query,
+                    offset,
+                    limit,
+                } => {
+                    let backend = Arc::clone(&self.backend);
+                    dispatch.call(
+                        "list_tags",
+                        move || backend.list_tags(query, offset, limit),
+                        move |result| {
+                            RuntimeInput::TagList(TagListInput::PageLoaded { token, result })
+                        },
+                    );
+                }
+                TagListEffect::ClickTimer { token, delay } => {
+                    dispatch.after(
+                        delay,
+                        RuntimeInput::TagList(TagListInput::ClickTimerFired(token)),
+                    );
+                }
+                // The runtime applies the search itself (`AppRuntime::feed_tag_list`).
+                TagListEffect::ApplySearch(_) => {}
+            },
             RuntimeEffect::SelectionKeepAlive { token, delay } => {
                 dispatch.after(
                     delay,

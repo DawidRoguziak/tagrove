@@ -38,12 +38,16 @@
 //! - [`search`]: the search header: the grammar of the search field, the draft and the
 //!   applied filters, the tag suggestions matched in the background, and the tag list.
 //! - [`tagging`]: the shared tag editor of the lightbox and the bulk dock.
+//! - [`bulk`]: the bulk dock: the model of its drafts and writes, the records of the
+//!   selected assets, the tag and group services, the dock's own state and the order
+//!   board's geometry and drag.
 //! - [`runtime`], [`shell`], [`window_chrome`], [`shortcuts`]: the application runtime
 //!   (models for the application's lifetime, the view, the start sequence), what the
 //!   shell draws around the views, the window's own decorations and the registry of
 //!   key contexts and shortcuts.
 
 pub mod backend;
+pub mod bulk;
 pub mod controls;
 pub mod exec;
 pub mod gallery;

@@ -17,7 +17,7 @@ use gpui::{
 };
 use media_tagger_client::{
     runtime::{RuntimeInput, DEFAULT_TILE_SIZE},
-    scenario::{ScenarioClick, ScenarioSearch, ScenarioTagList},
+    scenario::{ScenarioClick, ScenarioDock, ScenarioSearch, ScenarioTagList},
     theme::ThemeName,
 };
 
@@ -40,6 +40,8 @@ pub struct ShellStart {
     pub search: Option<ScenarioSearch>,
     /// The tag list, open with its choices (`Scenario::tag_list`).
     pub tag_list: Option<ScenarioTagList>,
+    /// What happens in the bulk dock once the clicks are made (`Scenario::dock`).
+    pub dock: Option<ScenarioDock>,
 }
 
 impl Default for ShellStart {
@@ -50,6 +52,7 @@ impl Default for ShellStart {
             selection: &[],
             search: None,
             tag_list: None,
+            dock: None,
         }
     }
 }
@@ -296,6 +299,9 @@ pub fn open_main_window_started(
         }
         if let Some(tag_list) = start.tag_list {
             runtime.script_tag_list(tag_list, cx);
+        }
+        if let Some(dock) = start.dock {
+            runtime.script_dock(dock, cx);
         }
     });
     let window = cx.open_window(options, |window, cx| {

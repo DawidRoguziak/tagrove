@@ -87,3 +87,8 @@ Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
 ### 2026-11-21 — implementer E05
 
 - Z epiku E05: modal lightboxa to `ui::modal::ModalState::with_motion(ModalMotion::LIGHTBOX, cx)` (75/50 ms zamiast 150/100) z elementem `Modal`; Escape i tło emitują `ModalEvent::Dismiss`, właściciel zamyka. Pełnoekranowy modal lightboxa ma własny układ, więc może potrzebować wariantu `Modal` bez powierzchni dialogu (dziś `Modal` zawsze rysuje `modal_surface` o szerokości z `ModalSize`). Przywrócenie fokusu na kafel: `ModalState::set_restore_focus`.
+
+### 2026-11-22 — implementer E14
+
+- Z epiku E14: `views::tag_editor::TagEditor` ma pierwszego właściciela (`views::bulk_dock::BulkDock`): wzorzec to znacznik propsów (przebudowa `TagEditorProps` tylko po zmianie tagów, stanu ładowania, blokady albo języka), szkic pchany do edytora tylko wtedy, gdy zmienił go właściciel, i fokus po zapisie klatkę później. Pole edytora dziedziczy teraz krój otoczenia (`font: inherit` w Tauri), monospace mają tylko chipy. `Modal` ma `height(px)` (stała wysokość dialogu, `h-[90vh]`), `Alert` przyjmuje dzieci (przycisk Retry) i `debug_selector`, `Button` z `size` i `height` naraz ma szerokość `size` i wysokość `height`. Element `Modal` zamkniętego dialogu jest pustym `div`: w kolumnie flex z `gap` trzeba go trzymać w pudełku `absolute().size_0()`, inaczej zostawia odstęp.
+- Z epiku E14: miniatury poza siatką galerii (plansza kolejności) zgłasza się przez `Thumbnails::sync_board(Vec<TileRequest>)`; to jeden dodatkowy zestaw kafli, więc lightbox potrzebuje własnego albo uogólnienia tego kanału.

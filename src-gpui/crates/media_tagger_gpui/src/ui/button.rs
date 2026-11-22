@@ -216,7 +216,8 @@ impl Button {
             Content::Label(_) => button_visuals(theme.tokens(), self.variant, state),
             Content::Icon { kind, .. } => icon_button_visuals(theme.tokens(), kind, state),
         };
-        if let Some(height) = self.size.or(self.height) {
+        // An icon button with both is `size` wide and `height` tall (`h-[50px]! w-10!`).
+        if let Some(height) = self.height.or(self.size) {
             visuals.height = height;
         }
         if let Some(size) = self.text_size {

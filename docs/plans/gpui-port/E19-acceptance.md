@@ -78,3 +78,11 @@ todo
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-22 — implementer E14
+
+- Z epiku E14: nieprzeniesione szczegóły doku do oceny przy domknięciu: ogłoszenie przesunięcia kafla dla czytników ekranu (`bulk.orderModal.moved`, w Solid `aria-live`), podpowiedzi `title` (serce, licznik, nazwa pliku na kaflu planszy), mały spinner kafla planszy (użyty spinner kafla siatki), grubość kreski ikony zamknięcia w liczniku (2.4 w Tauri, 1.8 w zasobie ikony). Klik w puste miejsce doku nie zdejmuje fokusu z pola (w przeglądarce fokus wraca na `body`).
+
+### 2026-11-22 — poprawki E14 (audyt orkiestratora)
+
+- Z epiku E14: lista sugestii pól tagów (`views::search::suggestion_list_body`, wspólna dla nagłówka wyszukiwarki i `TagEditor`) nie ma roli ani nazwy dostępnej, a `TagEditorProps` nie ma na nią pola. W Solid to `role="listbox"` z `aria-label` (`listboxAriaLabel`; w doku `bulk.tagModal.suggestions`), po której test „removes and automatically adds tags for a single selected asset” znajduje listę. Port tego testu (`tests/bulk_dock_ported.rs`) znajduje listę po selektorze; nazwa listy jest do oceny przy domknięciu dostępności.

@@ -25,7 +25,7 @@ use media_tagger_client::{
     model::Driver,
     prefs::PrefsStore,
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
-    scenario::{self, ScenarioClick, ScenarioSearch, ScenarioTagList},
+    scenario::{self, ScenarioClick, ScenarioDock, ScenarioSearch, ScenarioTagList},
 };
 
 use crate::{thumbs::Thumbnails, ui};
@@ -110,6 +110,8 @@ pub struct Runtime {
     scripted_search_focus: bool,
     /// The tag whose button a comparison scenario's tag list starts focused.
     scripted_tag_list_focus: Option<&'static str>,
+    /// What a comparison scenario does in the bulk dock once its clicks are made.
+    scripted_dock: Option<ScenarioDock>,
     _pump: Task<()>,
 }
 
@@ -143,6 +145,7 @@ impl Runtime {
             scripted_selection: &[],
             scripted_search_focus: false,
             scripted_tag_list_focus: None,
+            scripted_dock: None,
             _pump: pump,
         }
     }
@@ -175,6 +178,28 @@ impl Runtime {
         }
         self.scripted_tag_list_focus = tag_list.focused();
         self.publish(cx);
+    }
+
+    /// What a comparison scenario does in the bulk dock after its clicks
+    /// (`Scenario::dock`); the dock takes it with [`Self::take_scripted_dock`].
+    pub fn script_dock(&mut self, dock: ScenarioDock, cx: &mut Context<Self>) {
+        self.scripted_dock = Some(dock);
+        self.publish(cx);
+    }
+
+    /// The dock steps of a scenario, once its clicks are made and their range is read:
+    /// the selection the steps act on is there. Answers once.
+    pub fn take_scripted_dock(&mut self) -> Option<ScenarioDock> {
+        let selection = self.driver.model().selection();
+        if !self.scripted_selection.is_empty() || selection.busy() || selection.count() == 0 {
+            return None;
+        }
+        self.scripted_dock.take()
+    }
+
+    /// The answers of the bulk model to the dock's commands since the last call.
+    pub fn take_bulk_events(&mut self) -> Vec<media_tagger_client::bulk::BulkEvent> {
+        self.driver.model_mut().take_bulk_events()
     }
 
     /// The tag whose button a scenario's tag list starts focused; answers once.
@@ -247,6 +272,10 @@ impl Runtime {
 
     fn publish(&mut self, cx: &mut Context<Self>) {
         self.run_scripted_selection();
+        // No view reads the library's answers and commits yet (the lightbox will:
+        // E15, E16); the bulk model gets its own from the runtime. Dropped here so
+        // they do not pile up with every write.
+        self.driver.model_mut().take_library_events();
         ui::theme::set_active(self.model().theme(), cx);
         cx.notify();
     }

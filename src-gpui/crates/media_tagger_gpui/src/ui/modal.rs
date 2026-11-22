@@ -216,6 +216,7 @@ pub struct Modal {
     state: Entity<ModalState>,
     label: Option<SharedString>,
     size: ModalSize,
+    height: Option<f32>,
     theme: Option<ThemeName>,
     children: Vec<AnyElement>,
 }
@@ -227,6 +228,7 @@ impl Modal {
             state: state.clone(),
             label: None,
             size: ModalSize::default(),
+            height: None,
             theme: None,
             children: Vec::new(),
         }
@@ -245,6 +247,13 @@ impl Modal {
 
     pub fn theme(mut self, theme: ThemeName) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// A fixed height of the dialog, padding included, in place of its content's
+    /// (`h-[90vh]` in `contentClassName`).
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = Some(height);
         self
     }
 }
@@ -275,6 +284,7 @@ impl RenderOnce for Modal {
             .id((self.id.clone(), "dialog"))
             .relative()
             .w(px(self.size.width(width)))
+            .when_some(self.height, |content, height| content.h(px(height)))
             .key_context(KEY_CONTEXT)
             .track_focus(&focus_handle)
             // A press inside the dialog never reaches the backdrop.

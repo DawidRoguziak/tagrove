@@ -402,6 +402,17 @@ impl AssetTagState {
         }
     }
 
+    /// [`capture_generation`](Self::capture_generation) for a reader that only looks:
+    /// the asset's clock as it is, `None` when the asset has none yet (nothing read
+    /// or wrote it since it was last evicted).
+    pub fn peek_generation(&self, asset_id: i64) -> Option<TagToken> {
+        self.clocks.get(&asset_id).map(|clock| TagToken {
+            asset_id,
+            epoch: self.epoch,
+            generation: clock.generation,
+        })
+    }
+
     /// Publishes the tags of a detail read that started under `token`. `false`: the
     /// read is obsolete (another identity, a write since, a deletion) and nothing
     /// was published.

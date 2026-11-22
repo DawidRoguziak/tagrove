@@ -128,6 +128,7 @@ pub fn run_scenario_with(
                         selection: start.selection,
                         search: start.search,
                         tag_list: start.tag_list,
+                        dock: start.dock,
                     },
                 ),
             )

@@ -601,8 +601,8 @@
         "E11",
         "E13"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-22",
       "sources": [
         "src/features/bulk",
         "src/features/lightbox/parseMediaGroupOrder.ts"

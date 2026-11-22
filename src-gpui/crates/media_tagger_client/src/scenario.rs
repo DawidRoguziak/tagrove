@@ -13,6 +13,7 @@
 
 use crate::{
     backend::MediaKind,
+    bulk::DockTab,
     gallery::{Interaction, SelectionInput},
     library::AssetQuery,
     runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
@@ -124,6 +125,44 @@ impl ScenarioTagList {
     }
 }
 
+/// What a scenario does in the bulk dock once its clicks are made, as its Tauri steps
+/// do: a tag added with Enter, a tab chosen, a group key typed, the larger order view
+/// opened. No field gets the focus by it: a capture of the Tauri window on its private
+/// display shows neither a caret nor a focus ring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenarioDock {
+    /// Typed into the tag field and added with Enter.
+    pub tag: Option<&'static str>,
+    pub tab: DockTab,
+    /// Typed into the group key field.
+    pub group_key: Option<&'static str>,
+    /// "Sort in larger view" is pressed once the inline board is there.
+    pub order_modal: bool,
+}
+
+/// `bulk-dock-tags`: `holiday` added to the three selected tiles.
+pub const BULK_DOCK_TAGS: ScenarioDock = ScenarioDock {
+    tag: Some("holiday"),
+    tab: DockTab::Tags,
+    group_key: None,
+    order_modal: false,
+};
+
+/// `bulk-dock-group`: the group tab with the key `trip` typed, which shows the inline
+/// order board of the three selected tiles.
+pub const BULK_DOCK_GROUP: ScenarioDock = ScenarioDock {
+    tag: None,
+    tab: DockTab::Group,
+    group_key: Some("trip"),
+    order_modal: false,
+};
+
+/// `group-order-modal`: [`BULK_DOCK_GROUP`] with the larger order view open.
+pub const GROUP_ORDER_MODAL: ScenarioDock = ScenarioDock {
+    order_modal: true,
+    ..BULK_DOCK_GROUP
+};
+
 /// `tag-list-modal`: the tags of [`SEARCH_SUGGESTION_TAGS`], the tag list open with
 /// `camera` included and `cat` excluded.
 pub const TAG_LIST_MODAL: ScenarioTagList = ScenarioTagList {
@@ -158,6 +197,8 @@ pub struct Scenario {
     pub search: Option<ScenarioSearch>,
     /// The tag list, open with these choices, if the scenario opens it.
     pub tag_list: Option<ScenarioTagList>,
+    /// What the scenario does in the bulk dock after its clicks.
+    pub dock: Option<ScenarioDock>,
 }
 
 /// `gallery-selection`: a click on the second tile, a Ctrl-click on the first and a
@@ -208,7 +249,7 @@ pub fn selection_inputs(
 }
 
 /// Every scenario the GPUI interface can start in, on a fresh profile.
-pub const SCENARIOS: [Scenario; 9] = [
+pub const SCENARIOS: [Scenario; 12] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
@@ -218,6 +259,7 @@ pub const SCENARIOS: [Scenario; 9] = [
         tags: &[],
         search: None,
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "shell-empty-light",
@@ -228,6 +270,7 @@ pub const SCENARIOS: [Scenario; 9] = [
         tags: &[],
         search: None,
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "gallery-default",
@@ -238,6 +281,7 @@ pub const SCENARIOS: [Scenario; 9] = [
         tags: &[],
         search: None,
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "gallery-tiles-small",
@@ -248,6 +292,7 @@ pub const SCENARIOS: [Scenario; 9] = [
         tags: &[],
         search: None,
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "gallery-tiles-large",
@@ -258,6 +303,7 @@ pub const SCENARIOS: [Scenario; 9] = [
         tags: &[],
         search: None,
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "gallery-selection",
@@ -268,6 +314,7 @@ pub const SCENARIOS: [Scenario; 9] = [
         tags: &[],
         search: None,
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "search-suggestions",
@@ -282,6 +329,7 @@ pub const SCENARIOS: [Scenario; 9] = [
             focus: true,
         }),
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "search-applied",
@@ -296,6 +344,7 @@ pub const SCENARIOS: [Scenario; 9] = [
             focus: false,
         }),
         tag_list: None,
+        dock: None,
     },
     Scenario {
         id: "tag-list-modal",
@@ -306,6 +355,40 @@ pub const SCENARIOS: [Scenario; 9] = [
         tags: &SEARCH_SUGGESTION_TAGS,
         search: None,
         tag_list: Some(TAG_LIST_MODAL),
+        dock: None,
+    },
+    Scenario {
+        id: "bulk-dock-tags",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &GALLERY_SELECTION_CLICKS,
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: Some(BULK_DOCK_TAGS),
+    },
+    Scenario {
+        id: "bulk-dock-group",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &GALLERY_SELECTION_CLICKS,
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: Some(BULK_DOCK_GROUP),
+    },
+    Scenario {
+        id: "group-order-modal",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &GALLERY_SELECTION_CLICKS,
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: Some(GROUP_ORDER_MODAL),
     },
 ];
 
@@ -472,10 +555,18 @@ mod tests {
         let (last, earlier) = scenario.selection.split_last().expect("clicks");
         assert!(last.shift && earlier.iter().all(|click| !click.shift));
 
-        let file = repository_root().join("e2e/compare/scenarios/gallery-selection.js");
-        let source = std::fs::read_to_string(&file).expect("read the Tauri steps");
+        assert_steps_in_order("gallery-selection", &selection_steps(scenario.selection));
+        for scenario in SCENARIOS {
+            if scenario.id != "gallery-selection" && scenario.dock.is_none() {
+                assert!(scenario.selection.is_empty(), "{}", scenario.id);
+            }
+        }
+    }
+
+    /// The Tauri steps that turn selection mode on and make `clicks`.
+    fn selection_steps(clicks: &[super::ScenarioClick]) -> Vec<String> {
         let mut steps = vec![r#"["click", 'button[aria-label="Enable bulk actions"]']"#.to_owned()];
-        for click in scenario.selection {
+        for click in clicks {
             let tile = format!(r#"'button[data-asset-index="{}"]'"#, click.index);
             steps.push(match (click.ctrl, click.shift) {
                 (false, false) => format!(r#"["click", {tile}]"#),
@@ -484,16 +575,81 @@ mod tests {
                 (true, true) => format!(r#"["modclick", "Control+Shift", {tile}]"#),
             });
         }
+        steps
+    }
+
+    /// Every step is in the Tauri steps of scenario `id`, in this order.
+    fn assert_steps_in_order(id: &str, steps: &[String]) {
+        let file = repository_root().join(format!("e2e/compare/scenarios/{id}.js"));
+        let source = std::fs::read_to_string(&file).expect("read the Tauri steps");
         let mut from = 0;
-        for step in &steps {
+        for step in steps {
             let at = source[from..].find(step.as_str()).unwrap_or_else(|| {
-                panic!("{step} is missing, or out of order, in the Tauri steps")
+                panic!("{id}: {step} is missing, or out of order, in the Tauri steps")
             });
             from += at + step.len();
         }
+    }
+
+    #[test]
+    fn the_dock_scenarios_do_in_the_dock_what_their_tauri_steps_do() {
+        // Parity scenarios of E14.
+        use crate::bulk::DockTab;
+        for (id, tag, tab, group_key, order_modal) in [
+            (
+                "bulk-dock-tags",
+                Some("holiday"),
+                DockTab::Tags,
+                None,
+                false,
+            ),
+            ("bulk-dock-group", None, DockTab::Group, Some("trip"), false),
+            (
+                "group-order-modal",
+                None,
+                DockTab::Group,
+                Some("trip"),
+                true,
+            ),
+        ] {
+            let scenario = find(id).unwrap_or_else(|| panic!("{id} is a scenario"));
+            assert_eq!(scenario.seed, Seed::Control, "{id}");
+            assert_eq!(
+                scenario.selection,
+                &super::GALLERY_SELECTION_CLICKS[..],
+                "{id}"
+            );
+            let dock = scenario
+                .dock
+                .unwrap_or_else(|| panic!("{id} uses the dock"));
+            assert_eq!(
+                (dock.tag, dock.tab, dock.group_key, dock.order_modal),
+                (tag, tab, group_key, order_modal),
+                "{id}"
+            );
+
+            // The clicks, then the dock's steps, in the order the GPUI side makes them.
+            let mut steps = selection_steps(scenario.selection);
+            if let Some(tag) = dock.tag {
+                steps.push(format!(r##"["fill", "#bulk-tag-draft-input", "{tag}"]"##));
+                steps.push(r#"["keys", "Enter"]"#.to_owned());
+            }
+            if dock.tab == DockTab::Group {
+                steps.push(r#"["click", '[data-testid="bulk-tab-group"]']"#.to_owned());
+            }
+            if let Some(key) = dock.group_key {
+                steps.push(format!(r##"["fill", "#bulk-group-key-input", "{key}"]"##));
+                steps.push(r#"["wait", '[data-testid="bulk-inline-order-grid"]']"#.to_owned());
+            }
+            if dock.order_modal {
+                steps.push(r#"["click", '[data-testid="bulk-open-order-modal"]']"#.to_owned());
+                steps.push(r#"["wait", '[data-testid="bulk-order-modal"]']"#.to_owned());
+            }
+            assert_steps_in_order(id, &steps);
+        }
         for scenario in SCENARIOS {
-            if scenario.id != "gallery-selection" {
-                assert!(scenario.selection.is_empty(), "{}", scenario.id);
+            if !["bulk-dock-tags", "bulk-dock-group", "group-order-modal"].contains(&scenario.id) {
+                assert!(scenario.dock.is_none(), "{}", scenario.id);
             }
         }
     }

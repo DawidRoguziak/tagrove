@@ -91,7 +91,8 @@ fn the_e2e_profile_refuses_an_unknown_scenario_before_the_display_check() {
         error,
         "unknown scenario \"no-such-scenario\"; known: shell-empty, shell-empty-light, \
          gallery-default, gallery-tiles-small, gallery-tiles-large, gallery-selection, \
-         search-suggestions, search-applied, tag-list-modal, kit"
+         search-suggestions, search-applied, tag-list-modal, bulk-dock-tags, bulk-dock-group, \
+         group-order-modal, kit"
     );
     assert!(
         is_empty_dir(tmp.path()),

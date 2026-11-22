@@ -232,8 +232,8 @@ Revision behavior for tag, favorite, and group writes is defined in [database pe
 The GPUI port has the same metadata coordination in its client crate, without a GUI
 ([ADR 0037](../adr/0037-gpui-client-backend-port-and-model-convention.md),
 [ADR 0041](../adr/0041-gpui-library-model-queued-writes-as-data.md)). The Tauri path above is
-unchanged. No view uses it yet: the tag editors, the bulk dock, the lightbox and the settings
-operations are later epics.
+unchanged. The bulk dock is its first user ([below](#gpui-port-bulk-dock-and-group-order)); the
+lightbox and the settings operations are later epics.
 
 | Solid | GPUI client (`src-gpui/crates/media_tagger_client/src/library/`) |
 | --- | --- |
@@ -325,8 +325,7 @@ against the real core through `TempCore`
 The GPUI port has the bulk selection described [above](#bulk-selection) with the same rules, split
 between its two crates ([ADR 0043](../adr/0043-gpui-selection-synced-by-the-runtime-and-gestures-as-a-state-machine.md)).
 The Tauri path is unchanged. The bulk dock, which shows the count and the
-notices and sends the writes, is a later epic (E14): until then the selection is visible on the
-tiles only.
+notices and sends the writes, is described [below](#gpui-port-bulk-dock-and-group-order).
 
 **Model** (`media_tagger_client::gallery::selection`, the port of `createSelection.ts`).
 `Selection` is a state machine in the convention of the client crate: `SelectionInput` in,
@@ -363,7 +362,7 @@ are the constants of the Solid model.
   which the library model sends through the port's `apply_selection_mutation` on its library-wide
   turn. A `Stale` answer writes nothing and refreshes the query, whose new session clears the
   selection. It answers `None` while a gesture or a range read is pending and for a selection of
-  IDs, which is written through the ID commands (the dock, E14).
+  IDs, which the bulk model writes through the ID commands.
 - **One difference.** Adding no range at all to a selection that holds a range and an ID whose
   position is unknown (an additive rectangle over empty space) leaves the selection as it is. The
   Solid model fails there with a retryable error, because it reads the first of zero new ranges.
@@ -542,14 +541,121 @@ Epic E13 ports the tag list dialog and the shared tag editor. The rules of
   removal and closes its list. The list is drawn over the window next to the field
   (`tagging::list_placement`, the `viewport` strategy), so the frame's scrolling never
   clips it; while the field has the focus, the frame keeps it in view when the tags or
-  the draft change, and an unfocused editor keeps its scroll position (`revealInput`). No view
-  uses it yet: the bulk dock (E14) and the lightbox (E16) are its owners.
+  the draft change, and an unfocused editor keeps its scroll position (`revealInput`). The
+  bulk dock owns one; the lightbox (E16) will own the other.
 - **Filter field.** The tag list's filter is a `TextInput` with `FieldChrome::Outlined`
   (`text/visuals.rs`): the Solid input's `px-3 py-2.5`, a 1px `border-base-content/12`
   border on `bg-base-100` and `--shadow-surface` at rest, with `border-primary/40` and
   `--field-shadow-focus` when focused.
 - **Not ported yet.** The `title` tooltips of the tag buttons wait for a tooltip
   primitive.
+
+## GPUI port: bulk dock and group order
+
+Epic E14 ports the bulk dock of [workspace presentation](#workspace-presentation) with the rules
+of [tag mutations](#tag-mutations) and [favorites and media groups](#favorites-and-media-groups)
+([ADR 0035](../adr/0035-bulk-actions-floating-dock.md),
+[ADR 0044](../adr/0044-gpui-bulk-model-reads-its-neighbours-and-the-dock-state-belongs-to-the-view.md)).
+The Tauri path is unchanged. The code lives in `media_tagger_client::bulk`, the views in
+`media_tagger_gpui::views::bulk_dock`.
+
+| Solid (`src/features/bulk`) | GPUI client (`src-gpui/crates/media_tagger_client/src/bulk/`) |
+| --- | --- |
+| `bulkTagMergeService.ts` | `tag_merge.rs`: `normalize_bulk_tag`, `normalize_bulk_tag_list`, `merge_tag_lists` |
+| `bulkGroupOrderService.ts`, `lightbox/parseMediaGroupOrder.ts` | `group_order.rs`: `normalize_group_key`, `unique_ordered_asset_ids`, `build_bulk_media_group_assignments`, `derive_bulk_group_selection_state`, `reorder_asset_ids_by_drop`, `parse_media_group_order` |
+| `createSelectedSummaries.ts` | `selected_summaries.rs`: `SelectedSummaries` |
+| `createBulk.ts` | `model.rs`: `Bulk` with `BulkCommand`, `BulkInput`, `BulkEffect`, `BulkEvent` and the read view `BulkView` |
+| the signals of `BulkDock.tsx` and `GroupOrderModal.tsx` | `dock.rs`: `Dock` with `DockEffect` |
+| the geometry and the drag of `GroupOrderBoard.tsx` | `board.rs`: `BoardLayout`, `BoardDrag` |
+| `.bulk-dock*` of `src/styles.css` and the components' classes | `layout.rs` |
+
+- **Model in the runtime.** `Bulk` is embedded in `AppRuntime` next to the library and the
+  selection (`RuntimeInput::Bulk`, `AppRuntime::bulk`), so its drafts survive the settings page.
+  It reads both neighbours as they are, through the `BulkEnv` the runtime lends it with every
+  input, and changes neither: a write is `LibraryInput::Mutate`, a tag read
+  `LibraryInput::LoadDetails`, the pin of the single asset `PinTags`/`UnpinTags`, a pruned ID
+  `SelectionInput::Remove`, all applied by the runtime in the same turn. After every input of any
+  model the runtime sends `BulkInput::Sync`, which runs what the Solid model's effects run, and
+  hands the model the library's answers to its own tickets (`BULK_TICKET_BASE`, 2^61, up to the
+  selection's 2^62) and every `MetadataCommit`. Every other library answer stays for
+  `AppRuntime::take_library_events`; a new reader of ticketed library commands keeps its tickets
+  below 2^61.
+- **Selected summaries.** For a selection of IDs the model keeps the summaries of exactly the
+  selected assets: from the query's cached rows when the selection changes, else from
+  `get_asset_summaries_by_ids` in batches of 256 with at most four reads on the executor
+  (`RuntimeEffect::BulkSummaries`). An answer of a replaced selection or another identity epoch
+  is dropped; an asset the backend did not return, a failed read and a deleted asset mark the
+  selection as failed until Retry. What a write published since is laid over an older answer.
+  A range selection is never materialized: no summaries, no order board.
+- **Drafts.** A new selection key or identity epoch empties the group draft, the feedback and
+  the added-tags list. Once every summary is there, the group key and the order are derived
+  once per selection (`derive_bulk_group_selection_state`); a key the user typed meanwhile
+  stays.
+- **Tags.** One asset held by ID: its tag record is pinned, its complete tag list is read
+  (up to three attempts when a write or a query refresh discarded the read; an unchanged read
+  that published nothing is a failure with Retry). The library answers a discarded read the
+  moment the query epoch changes, at the start of a refresh and again at its end, so the next
+  attempt waits for the refresh on its way and then for the writes (`waitForIdle`): the refresh
+  costs one attempt, as it does in Solid, where the reader hears of it when the backend
+  answers. An edit is
+  `Mutation::SaveTags` with `TagEdit::Change`, resolved on the canonical list at the head of
+  the asset's queue. A tag the asset already has is saved without a write. Several assets:
+  `Mutation::MergeTags`, add-only. A range: `MergeTagsInSelection` through
+  `SelectionCapture::spec_mutation`, where `Stale` counts as failed.
+- **Partial answers.** The library publishes canonical values only for the assets the backend
+  acknowledged. The model keeps the counts (`partial_result`: processed of requested), adds the
+  tag to the added-tags list when at least one asset took it, and reports a merge that reached
+  none as failed. A favorite toggle unselects the IDs the backend did not acknowledge. A group
+  write that reached fewer assets answers `GroupSaveResult::Partial`.
+- **Obsolete answers.** Every write remembers the selection key and the identity epoch it was
+  started for. Feedback (failure flags, counts, the saved order and key) is applied only while
+  both are current; the answer to the dock says `saved` only while the identity is.
+- **Groups.** `Mutation::SetMediaGroups` with orders 1..n in the model's order, or in the
+  explicit order of a board, which must name exactly the selected IDs once each (else
+  `Ignored`, nothing sent). One asset that stays in its group keeps its order. An empty key
+  clears the groups. A range is grouped in gallery order through its spec and takes no explicit
+  order.
+- **Dock state.** `Dock` belongs to the view and goes with the gallery view, as the Solid
+  component's signals do: the tab (back to Tags when the selection becomes empty; a tab picked
+  while a notice keeps the dock open with nothing selected stays), the tag draft with
+  its validation message, the focus that returns to the tag field one frame after a save unless
+  the selection changed, the inline order draft (restarted for every selection, key and saved
+  order) and the larger view with its own draft. Apply sends the inline order only when it
+  differs from the model's. The larger view starts from the inline draft, closes when everything
+  was saved and keeps its draft after a failed or partial save; it closes without saving when
+  the selection or the key changes, and the answer to a save of an earlier opening is not its
+  own. While it is open the inline board is not drawn. Request ids are unique in the process,
+  so a dock made after a visit to the settings page never takes an older dock's answer.
+- **Generated key.** "Generate UUID" writes a version 4 UUID into the group draft
+  (`dock::uuid_v4` over `dock::random_bits`: the standard library's randomly seeded hasher
+  over the time and a counter). It is a key nobody else chose, not a secret.
+- **View.** `BulkDock` is made by the gallery view while selection mode is on and floats at the
+  bottom centre of its viewport, 16 pixels above the edge: a 100-pixel chip without a
+  selection, else up to 760 pixels wide, and on the group tab `min(72 %, 680px)` of the
+  viewport tall. A press or the wheel on it never reaches the grid, and with the focus inside
+  it the gallery's scroll keys do nothing. The tablist has one tab stop, the selected tab;
+  Left and Right wrap, Home and End jump, and the focus follows (key context `BulkDockTab`).
+  The key row of the group tab is the Solid grid: the field, a 40-pixel track with the
+  36-pixel "Generate UUID" button at its start, and Apply, 8 pixels apart
+  (`layout::group::KEY_BUTTON_TRACK`). Escape in the tag field closes its suggestion list
+  while that shows items; any other Escape in the tag field or the group key field reaches the
+  gallery's selection layer, which clears the selection and keeps selection mode on.
+- **Order board.** `BoardLayout` is the grid of `GroupOrderBoard`: as many columns as fit
+  tiles of at least 150 pixels inline and 280 in the larger view, rows of the preview height
+  plus 56 pixels, and only the rows that reach into the list plus two on each side are drawn.
+  A press on a tile that moves 5 pixels becomes a drag (`BoardDrag`); the drop lands on the
+  tile under the pointer or the nearest drawn one, the insertion line lies after a later
+  target and before an earlier one, and the list scrolls up to 18 pixels a frame while the
+  pointer is within 56 pixels of its top or bottom edge. Moves and the release are window-wide
+  listeners, the release in the capture phase; a move without the button, a locked board or a
+  window that lost its activation ends the press. The arrow keys on a grip (key context
+  `GroupOrderHandle`) move the tile one place sideways or one row up or down and scroll its row
+  into view. A grip's focus handle is kept by asset ID, so the focus stays on the grip while
+  its tile moves. The board's thumbnails are asked for next to the grid's
+  (`Thumbnails::sync_board`) and only for the drawn tiles.
+- **Not ported.** The live-region announcement of a move (`bulk.orderModal.moved`), the
+  `title` tooltips, and the dedicated small spinner of an order tile (the tile loader of the
+  grid is used).
 
 ## Known limitations
 

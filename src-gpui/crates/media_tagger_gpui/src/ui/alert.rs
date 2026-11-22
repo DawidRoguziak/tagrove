@@ -1,6 +1,6 @@
 //! `UiAlert`: a message with an optional title, announced as an alert.
 
-use gpui::{div, prelude::*, px, App, ElementId, Role, SharedString, Window};
+use gpui::{div, prelude::*, px, AnyElement, App, ElementId, Role, SharedString, Window};
 use media_tagger_client::{
     controls::{alert_visuals, AlertTone},
     theme::ThemeName,
@@ -15,6 +15,15 @@ pub struct Alert {
     title: Option<SharedString>,
     message: SharedString,
     theme: Option<ThemeName>,
+    debug_selector: Option<&'static str>,
+    /// What follows the message inside the alert (a Retry button).
+    children: Vec<AnyElement>,
+}
+
+impl ParentElement for Alert {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.children.extend(elements);
+    }
 }
 
 impl Alert {
@@ -25,6 +34,8 @@ impl Alert {
             title: None,
             message: message.into(),
             theme: None,
+            debug_selector: None,
+            children: Vec::new(),
         }
     }
 
@@ -42,6 +53,12 @@ impl Alert {
         self.theme = Some(theme);
         self
     }
+
+    /// A debug selector for tests (`data-testid`); a no-op outside test builds.
+    pub fn debug_selector(mut self, selector: &'static str) -> Self {
+        self.debug_selector = Some(selector);
+        self
+    }
 }
 
 impl RenderOnce for Alert {
@@ -49,9 +66,14 @@ impl RenderOnce for Alert {
         let theme = self.theme.unwrap_or_else(|| theme::active(cx));
         let visuals = alert_visuals(theme.tokens(), self.tone);
         let has_title = self.title.is_some();
+        let has_message = !self.message.is_empty();
+        let has_children = !self.children.is_empty();
         div()
             .id(self.id)
             .role(Role::Alert)
+            .when_some(self.debug_selector, |alert, selector| {
+                alert.debug_selector(move || selector.to_owned())
+            })
             .flex()
             .flex_col()
             .rounded(px(visuals.radius))
@@ -70,11 +92,18 @@ impl RenderOnce for Alert {
                         .child(title),
                 )
             })
-            .child(
-                div()
-                    .text_color(color(visuals.body))
-                    .when(has_title, |body| body.mt(px(visuals.title_gap)))
-                    .child(self.message),
-            )
+            .when(has_message || has_children, |alert| {
+                alert.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .gap(px(8.0))
+                        .text_color(color(visuals.body))
+                        .when(has_title, |body| body.mt(px(visuals.title_gap)))
+                        .when(has_message, |body| body.child(self.message))
+                        .children(self.children),
+                )
+            })
     }
 }

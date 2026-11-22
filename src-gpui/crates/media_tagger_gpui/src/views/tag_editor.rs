@@ -484,7 +484,8 @@ impl Render for TagEditor {
             .flex_shrink_1()
             .flex_basis(px(layout::INPUT_BASIS))
             .max_w_full()
-            .font_family(fonts::MONO)
+            // The input inherits the font of its surroundings (`font: inherit`); only
+            // the chips are monospaced.
             .text_size(px(TYPOGRAPHY.base.size))
             .on_action(cx.listener(|this, _: &field_actions::Confirm, window, cx| {
                 if !this.key(ComboboxKey::Enter, window, cx) {

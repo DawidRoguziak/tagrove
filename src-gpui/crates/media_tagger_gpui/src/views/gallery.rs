@@ -26,6 +26,10 @@
 //! and moved draws a rectangle (`selection.rs`). What is selected lives in the
 //! runtime and survives the view; the gesture, its preview and the mode's layer in
 //! the layer stack are the view's.
+//!
+//! While the mode is on, the bulk dock floats at the bottom centre of the viewport
+//! (`bulk_dock.rs`, ADR 0035). It is made when the mode turns on and dropped when it
+//! turns off or the view goes; a press or the wheel on it never reaches the grid.
 
 mod grid;
 mod position;
@@ -77,6 +81,7 @@ pub use position::{
 pub use selection::BULK_TOGGLE_ID;
 
 use super::{
+    bulk_dock::BulkDock,
     chrome::{self, drag_surface, no_drag},
     search::SearchBar,
 };
@@ -158,6 +163,8 @@ pub struct GalleryView {
     control_pressed: Rc<Cell<bool>>,
     /// The layer of selection mode in the window's layer stack, while the mode is on.
     selection_layer: Option<LayerId>,
+    /// The bulk dock, while selection mode is on.
+    dock: Option<Entity<BulkDock>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -213,6 +220,7 @@ impl GalleryView {
                     slider.set_label(label, cx);
                 });
                 this.sync_selection_layer(window, cx);
+                this.sync_dock(window, cx);
                 this.refresh(cx);
             }),
             // A picture arrived or failed: the tiles are drawn again.
@@ -289,12 +297,39 @@ impl GalleryView {
             viewport_origin: Rc::default(),
             control_pressed: Rc::default(),
             selection_layer: None,
+            dock: None,
             _subscriptions: subscriptions,
         };
         // Selection mode outlives the view: one made while it is on (back from the
-        // settings page) takes its layer at once.
+        // settings page) takes its layer at once, and shows its dock.
         view.sync_selection_layer(window, cx);
+        view.sync_dock(window, cx);
         view
+    }
+
+    /// The bulk dock, while selection mode is on.
+    pub fn dock(&self) -> Option<&Entity<BulkDock>> {
+        self.dock.as_ref()
+    }
+
+    /// Shows the bulk dock exactly while selection mode is on
+    /// (`selection.enabled ? <BulkDock/> : null`).
+    fn sync_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match (self.selection_enabled(cx), self.dock.is_some()) {
+            (true, false) => {
+                let runtime = self.runtime.clone();
+                let viewport = self.viewport_size;
+                self.dock = Some(cx.new(|cx| {
+                    let mut dock = BulkDock::new(runtime, window, cx);
+                    if let Some(size) = viewport {
+                        dock.set_viewport(size, cx);
+                    }
+                    dock
+                }));
+            }
+            (false, true) => self.dock = None,
+            _ => {}
+        }
     }
 
     /// The search header.
@@ -470,6 +505,9 @@ impl GalleryView {
     fn measured(&mut self, size: Size<Pixels>, cx: &mut Context<Self>) {
         if self.viewport_size != Some(size) {
             self.viewport_size = Some(size);
+            if let Some(dock) = &self.dock {
+                dock.update(cx, |dock, cx| dock.set_viewport(size, cx));
+            }
             self.refresh(cx);
         }
     }
@@ -1029,7 +1067,19 @@ impl Render for GalleryView {
                     .when(drag_selecting, |viewport| viewport.cursor_crosshair())
                     .child(measure)
                     .child(self.selection_listeners(cx))
-                    .children(body),
+                    .children(body)
+                    // The dock, centred above the viewport's bottom edge. The strip
+                    // around it takes no input: only the dock itself covers the grid.
+                    .children(self.dock.clone().map(|dock| {
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .bottom(px(media_tagger_client::bulk::layout::dock::MARGIN))
+                            .flex()
+                            .justify_center()
+                            .child(dock)
+                    })),
             )
     }
 }

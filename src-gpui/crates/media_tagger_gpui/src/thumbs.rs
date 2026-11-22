@@ -52,6 +52,9 @@ pub struct Thumbnails {
     /// tile asks for syncs them again.
     tiles: Vec<TileRequest>,
     paused: bool,
+    /// The tiles of the order board of the bulk dock, which shows selected assets
+    /// wherever the grid is scrolled.
+    board: Vec<TileRequest>,
     /// Pictures the cache dropped whose textures are still in the atlas.
     retired: Vec<Picture>,
     decoding: usize,
@@ -98,6 +101,7 @@ impl Thumbnails {
             pictures: PictureCache::new(budget),
             tiles: Vec::new(),
             paused: false,
+            board: Vec::new(),
             retired: Vec::new(),
             decoding: 0,
             _pump: pump,
@@ -113,11 +117,37 @@ impl Thumbnails {
         self.apply();
     }
 
+    /// The tiles the order board of the bulk dock renders now; none when no board is
+    /// shown. They are asked for next to the grid's tiles and keep their pictures
+    /// while the board shows them.
+    pub fn sync_board(&mut self, tiles: Vec<TileRequest>) {
+        if self.board == tiles {
+            return;
+        }
+        self.board = tiles;
+        self.apply();
+    }
+
     fn apply(&mut self) {
         let pictures = &self.pictures;
+        let merged;
+        let tiles = if self.board.is_empty() {
+            &self.tiles
+        } else {
+            // A tile both show is asked for once, as the grid asks for it.
+            let mut all = self.tiles.clone();
+            all.extend(
+                self.board
+                    .iter()
+                    .filter(|tile| !self.tiles.iter().any(|other| other.key == tile.key))
+                    .cloned(),
+            );
+            merged = all;
+            &merged
+        };
         let inputs = self
             .demand
-            .sync(&self.tiles, self.paused, |key| pictures.contains(key));
+            .sync(tiles, self.paused, |key| pictures.contains(key));
         for input in inputs {
             self.driver.handle(input);
         }

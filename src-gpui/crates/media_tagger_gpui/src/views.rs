@@ -8,9 +8,12 @@
 //!   favourites.
 //! - [`tag_list`]: the tag list's launcher and dialog; [`tag_editor`]: the tag editor
 //!   of the lightbox and the bulk dock.
+//! - [`bulk_dock`]: the floating dock of selection mode with its order boards and the
+//!   larger order view.
 //! - [`chrome`]: the window's own decorations (buttons, grips, drag surface).
 //! - [`kit`]: the board of every shared control (`--scenario kit`).
 
+pub mod bulk_dock;
 pub mod chrome;
 pub mod gallery;
 pub mod kit;
@@ -27,4 +30,5 @@ pub fn init(cx: &mut App) {
     gallery::init(cx);
     search::init(cx);
     tag_list::init(cx);
+    bulk_dock::init(cx);
 }

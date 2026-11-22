@@ -765,3 +765,182 @@ mod segmented_highlight {
         );
     }
 }
+
+/// `UiAlert` lays its message out as a block that fills the alert, so a long message
+/// wraps inside it. The alert's body is a column that keeps its children at their own
+/// width (a Retry button under the message); the message must still wrap at the alert's
+/// inner width in every place an alert is used: as the child of a plain box (the search
+/// header's validation message), in a column with a gap (the kit, the dock and the
+/// larger order view), and with a title and a button (the dock's failed tag read).
+mod alert_layout {
+    use gpui::{
+        div, prelude::*, px, Bounds, Context, Pixels, TestAppContext, VisualTestContext, Window,
+    };
+    use media_tagger_client::{
+        controls::{alert_visuals, AlertTone},
+        theme::ThemeName,
+    };
+    use media_tagger_gpui::ui::{self, alert::Alert, button::Button, layers, theme::app_root};
+
+    const WIDTH: f32 = 220.0;
+    const MESSAGE: &str = "The selection expired before it could be used, so nothing was \
+                           written; select the items again and repeat the last step.";
+
+    struct Alerts;
+
+    impl Render for Alerts {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let theme = ThemeName::Dark;
+            let visuals = alert_visuals(theme.tokens(), AlertTone::Error);
+            app_root(layers::root(cx), theme)
+                .flex()
+                .flex_col()
+                .items_start()
+                .gap_4()
+                .child(
+                    div().w(px(WIDTH)).child(
+                        Alert::new("in-a-box", MESSAGE)
+                            .tone(AlertTone::Error)
+                            .theme(theme)
+                            .debug_selector("in-a-box"),
+                    ),
+                )
+                .child(
+                    div()
+                        .w(px(WIDTH))
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(
+                            Alert::new("in-a-column", MESSAGE)
+                                .tone(AlertTone::Error)
+                                .theme(theme)
+                                .debug_selector("in-a-column"),
+                        )
+                        .child(
+                            Alert::new("with-a-button", MESSAGE)
+                                .tone(AlertTone::Error)
+                                .title("Title")
+                                .theme(theme)
+                                .debug_selector("with-a-button")
+                                .child(Button::new("retry", "Retry").debug_selector("retry")),
+                        ),
+                )
+                // The message alone, in a box as wide as the alert's content.
+                .child(
+                    div()
+                        .debug_selector(|| "reference".into())
+                        .w(px(WIDTH - 2. * visuals.padding_x - 2.))
+                        .text_size(px(visuals.font_size))
+                        .line_height(px(visuals.line_height))
+                        .child(MESSAGE),
+                )
+        }
+    }
+
+    fn bounds(selector: &'static str, cx: &mut VisualTestContext) -> Bounds<Pixels> {
+        cx.debug_bounds(selector)
+            .unwrap_or_else(|| panic!("no bounds for {selector}"))
+    }
+
+    #[gpui::test]
+    fn a_long_message_wraps_at_the_inner_width_of_a_narrow_alert(cx: &mut TestAppContext) {
+        cx.update(ui::init);
+        let window = cx.add_window(|_, _| Alerts);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.run_until_parked();
+
+        let visuals = alert_visuals(ThemeName::Dark.tokens(), AlertTone::Error);
+        let frame = 2. * visuals.padding_y + 2.;
+        let message = f32::from(bounds("reference", &mut cx).size.height);
+        assert!(
+            message >= 3. * visuals.line_height,
+            "the message needs several lines at this width: {message}"
+        );
+
+        for selector in ["in-a-box", "in-a-column"] {
+            let alert = bounds(selector, &mut cx);
+            assert_eq!(f32::from(alert.size.width), WIDTH, "{selector}");
+            assert_eq!(f32::from(alert.size.height), message + frame, "{selector}");
+        }
+
+        let alert = bounds("with-a-button", &mut cx);
+        let retry = bounds("retry", &mut cx);
+        assert_eq!(f32::from(alert.size.width), WIDTH);
+        // The title's line, the gap under it, the message, the gap, the button.
+        assert_eq!(
+            f32::from(alert.size.height),
+            visuals.line_height
+                + visuals.title_gap
+                + message
+                + 8.
+                + f32::from(retry.size.height)
+                + frame
+        );
+        // The button keeps its own width at the start of the body, inside the alert.
+        assert_eq!(
+            f32::from(retry.left() - alert.left()),
+            visuals.padding_x + 1.
+        );
+        assert!(retry.size.width < px(WIDTH / 2.), "{retry:?}");
+        assert!(retry.bottom() <= alert.bottom() - px(visuals.padding_y));
+    }
+}
+
+/// The three ways a button's box is set: `size` alone (a square icon button: the tag
+/// editor's remove control, the search header's heart and clear button, the tag list
+/// launcher), `height` alone (a text button: the search header's submit) and both (the
+/// dock's heart, `h-[50px]! w-10!`: `size` wide and `height` tall).
+mod button_sizes {
+    use gpui::{div, prelude::*, Context, Pixels, Size, TestAppContext, VisualTestContext, Window};
+    use media_tagger_client::{controls::ICON_BUTTON_SIZE, icons::IconName, theme::ThemeName};
+    use media_tagger_gpui::ui::{self, button::Button, layers, theme::app_root};
+
+    struct Buttons;
+
+    impl Render for Buttons {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            app_root(layers::root(cx), ThemeName::Dark).child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap_4()
+                    .child(Button::icon("plain", IconName::Reset, "Plain").debug_selector("plain"))
+                    .child(
+                        Button::icon("square", IconName::Close, "Square")
+                            .size(20.)
+                            .debug_selector("square"),
+                    )
+                    .child(
+                        Button::icon("both", IconName::Heart, "Both")
+                            .size(40.)
+                            .height(50.)
+                            .debug_selector("both"),
+                    )
+                    .child(
+                        Button::new("text", "Text")
+                            .height(28.)
+                            .debug_selector("text"),
+                    ),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn size_is_the_width_and_the_height_unless_a_height_is_given(cx: &mut TestAppContext) {
+        cx.update(ui::init);
+        let window = cx.add_window(|_, _| Buttons);
+        let mut cx = VisualTestContext::from_window(window.into(), cx);
+        cx.run_until_parked();
+        let mut size = |selector: &'static str| -> Size<Pixels> {
+            cx.debug_bounds(selector)
+                .unwrap_or_else(|| panic!("no bounds for {selector}"))
+                .size
+        };
+        let of = |size: Size<Pixels>| (f32::from(size.width), f32::from(size.height));
+        assert_eq!(of(size("plain")), (ICON_BUTTON_SIZE, ICON_BUTTON_SIZE));
+        assert_eq!(of(size("square")), (20., 20.));
+        assert_eq!(of(size("both")), (40., 50.));
+        assert_eq!(f32::from(size("text").height), 28.);
+    }
+}

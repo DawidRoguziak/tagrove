@@ -38,6 +38,16 @@
 //! [`AppRuntime::take_query_events`]. Its keepalive timer is the only selection
 //! effect that reaches the runner ([`RuntimeEffect::SelectionKeepAlive`]).
 //!
+//! The bulk model ([`Bulk`]: the drafts and writes of the bulk dock) is embedded as
+//! well. Its commands travel as [`RuntimeInput::Bulk`]. It reads the library and the
+//! selection as they are and changes neither: what it asks of them is applied by the
+//! runtime in the same turn, and after every input the runtime tells it to look again
+//! ([`BulkInput::Sync`]) and hands it the answers to its own library tickets
+//! ([`Bulk::owns`]) and every commit of a write. Only its reads of selected summaries
+//! reach the runner ([`RuntimeEffect::BulkSummaries`]). The dock reads everything
+//! through [`AppRuntime::bulk`] and the answers to its commands with
+//! [`AppRuntime::take_bulk_events`].
+//!
 //! [`AppRuntime`] is a model in the convention of [`crate::model`]: an input gives a new
 //! state and effects, replies come back as inputs with the token they were started
 //! with, and a reply that has been superseded changes nothing. State coming from
@@ -64,6 +74,7 @@ use media_tagger_core::models::{ScanRoot, ScanSummary};
 
 use crate::{
     backend::{Backend, BackendError, BackendResult},
+    bulk::{Bulk, BulkCommand, BulkEffect, BulkEnv, BulkEvent, BulkInput, BulkView, SummaryLoad},
     gallery::selection::{QuerySnapshot, Selection, SelectionEffect, SelectionInput},
     i18n::Language,
     library::{
@@ -199,6 +210,9 @@ pub enum RuntimeInput {
     /// A command or the keepalive timer of the bulk selection. The query's state and
     /// the answers to the selection's reads are passed on by the runtime itself.
     Selection(SelectionInput),
+    /// A command of the bulk dock, or the answer to a read of selected summaries. The
+    /// answers to the bulk model's library tickets are passed on by the runtime itself.
+    Bulk(BulkInput),
     /// A command of the search header; a valid submit applies its filters to the
     /// query.
     Search(SearchCommand),
@@ -228,6 +242,11 @@ impl RuntimeInput {
     pub fn library(input: LibraryInput) -> Self {
         Self::Library(Box::new(input))
     }
+
+    /// A command of the bulk dock.
+    pub fn bulk(command: BulkCommand) -> Self {
+        Self::Bulk(BulkInput::Command(command))
+    }
 }
 
 /// Work for the [`RuntimeRunner`].
@@ -247,6 +266,9 @@ pub enum RuntimeEffect {
         token: RequestToken,
         delay: Duration,
     },
+    /// `get_asset_summaries_by_ids` for the bulk model; answered with
+    /// [`BulkInput::SummariesLoaded`].
+    BulkSummaries(SummaryLoad),
     ListScanRoots(RequestToken),
     ScanStartupRoots,
     SavePrefs(Prefs),
@@ -264,6 +286,9 @@ pub struct AppRuntime {
     tokens: Tokens,
     library: Library,
     selection: Selection,
+    bulk: Bulk,
+    /// The library's answers and commits that are not the bulk model's own.
+    library_events: Vec<LibraryEvent>,
     search: Search,
     suggestions: SuggestionClient,
     tag_list: TagList,
@@ -284,6 +309,11 @@ impl AppRuntime {
     pub fn new(config: RuntimeConfig) -> Self {
         let library = Library::new(QueryConfig::default());
         let selection = Selection::new(query_snapshot(&library));
+        let bulk = Bulk::new(BulkEnv {
+            library: &library,
+            selection: &selection,
+            settings_open: false,
+        });
         Self {
             view: View::default(),
             highlight_scan: false,
@@ -294,6 +324,8 @@ impl AppRuntime {
             tokens: Tokens::default(),
             library,
             selection,
+            bulk,
+            library_events: Vec::new(),
             search: Search::new(),
             suggestions: SuggestionClient::new(),
             tag_list: TagList::new(),
@@ -353,6 +385,21 @@ impl AppRuntime {
         &self.selection
     }
 
+    /// Everything the bulk dock shows: the bulk model together with the library and
+    /// the selection it reads.
+    pub fn bulk(&self) -> BulkView<'_> {
+        BulkView {
+            bulk: &self.bulk,
+            library: &self.library,
+            selection: &self.selection,
+        }
+    }
+
+    /// The answers to the bulk dock's commands since the last call.
+    pub fn take_bulk_events(&mut self) -> Vec<BulkEvent> {
+        self.bulk.take_events()
+    }
+
     /// The search header: the draft, the applied filters and the validation error.
     pub fn search(&self) -> &Search {
         &self.search
@@ -390,9 +437,12 @@ impl AppRuntime {
     }
 
     /// The answers to ticketed library commands and the commits of writes since the
-    /// last call ([`Library::take_events`]).
+    /// last call ([`Library::take_events`]), without the answers to the bulk model's
+    /// own commands (tickets from [`BULK_TICKET_BASE`](crate::bulk::BULK_TICKET_BASE)
+    /// up). Whoever owns the runtime takes them after every input: nothing else
+    /// empties the list.
     pub fn take_library_events(&mut self) -> Vec<LibraryEvent> {
-        self.library.take_events()
+        std::mem::take(&mut self.library_events)
     }
 
     /// Whether the query's refresh is waiting for the backend.
@@ -507,12 +557,76 @@ impl AppRuntime {
     /// Hands `input` to the library model, then to the selection what changed for it.
     fn library_input(&mut self, input: LibraryInput) -> Vec<RuntimeEffect> {
         let mut effects = Vec::new();
-        self.feed_library(input, &mut effects);
-        self.drive_selection(Vec::new(), &mut effects);
+        self.library_step(input, &mut effects);
+        effects
+    }
+
+    /// [`Self::library_input`] into effects that are being collected.
+    fn library_step(&mut self, input: LibraryInput, effects: &mut Vec<RuntimeEffect>) {
+        self.feed_library(input, effects);
+        self.drive_selection(Vec::new(), effects);
         // A reply may have been the library refresh the startup scan waits for.
         self.settle_startup_scan();
-        self.sync_tag_list(&mut effects);
-        effects
+        self.sync_tag_list(effects);
+    }
+
+    fn feed_bulk(&mut self, input: BulkInput) -> Vec<BulkEffect> {
+        let env = BulkEnv {
+            library: &self.library,
+            selection: &self.selection,
+            settings_open: self.view == View::Settings,
+        };
+        self.bulk.handle(input, env)
+    }
+
+    /// Runs what the bulk model asked for and brings it in line with the library and
+    /// the selection, until it asks for nothing more: its commands for the library
+    /// and the selection are applied in this turn, it gets the answers to its own
+    /// tickets and every commit in the order they were published, and then it looks
+    /// at its neighbours again. The library's other answers are kept for
+    /// [`Self::take_library_events`].
+    fn drive_bulk(&mut self, mut pending: Vec<BulkEffect>, effects: &mut Vec<RuntimeEffect>) {
+        loop {
+            for effect in std::mem::take(&mut pending) {
+                match effect {
+                    BulkEffect::Library(input) => self.library_step(*input, effects),
+                    BulkEffect::Selection(input) => {
+                        let asked = self.selection.handle(input);
+                        self.drive_selection(asked, effects);
+                    }
+                    BulkEffect::LoadSummaries(load) => {
+                        effects.push(RuntimeEffect::BulkSummaries(load));
+                    }
+                }
+            }
+            if self.library.is_disposed() {
+                self.feed_bulk(BulkInput::Dispose);
+            }
+            for event in self.library.take_events() {
+                let ticket = match &event {
+                    LibraryEvent::DetailsLoaded { ticket, .. }
+                    | LibraryEvent::MutationSettled { ticket, .. }
+                    | LibraryEvent::Refreshed { ticket, .. }
+                    | LibraryEvent::VocabularySettled { ticket, .. }
+                    | LibraryEvent::Idle { ticket }
+                    | LibraryEvent::MaintenanceReady { ticket }
+                    | LibraryEvent::MaintenanceRejected { ticket, .. } => Some(*ticket),
+                    LibraryEvent::Committed(_) => None,
+                };
+                if ticket.is_some_and(Bulk::owns) {
+                    pending.extend(self.feed_bulk(BulkInput::Library(event)));
+                    continue;
+                }
+                if let LibraryEvent::Committed(commit) = &event {
+                    pending.extend(self.feed_bulk(BulkInput::Committed(commit.clone())));
+                }
+                self.library_events.push(event);
+            }
+            pending.extend(self.feed_bulk(BulkInput::Sync));
+            if pending.is_empty() {
+                break;
+            }
+        }
     }
 
     /// Hands `input` to the tag list and runs what it asks for: its Apply here, its
@@ -593,7 +707,22 @@ impl Model for AppRuntime {
     type Effect = RuntimeEffect;
 
     fn handle(&mut self, input: RuntimeInput) -> Vec<RuntimeEffect> {
+        let (mut effects, asked) = match input {
+            RuntimeInput::Bulk(input) => (Vec::new(), self.feed_bulk(input)),
+            input => (self.apply(input), Vec::new()),
+        };
+        // Whatever the input changed, the bulk model looks at it in the same turn.
+        self.drive_bulk(asked, &mut effects);
+        effects
+    }
+}
+
+impl AppRuntime {
+    /// Applies every input except the bulk model's own.
+    fn apply(&mut self, input: RuntimeInput) -> Vec<RuntimeEffect> {
         match input {
+            // Handled by `Model::handle`.
+            RuntimeInput::Bulk(_) => Vec::new(),
             RuntimeInput::Start => {
                 if self.started {
                     return Vec::new();
@@ -793,6 +922,15 @@ impl Runner<AppRuntime> for RuntimeRunner {
                 dispatch.after(
                     delay,
                     RuntimeInput::Selection(SelectionInput::KeepAliveDue(token)),
+                );
+            }
+            RuntimeEffect::BulkSummaries(load) => {
+                let backend = Arc::clone(&self.backend);
+                let ids = load.ids.clone();
+                dispatch.call(
+                    "get_asset_summaries_by_ids",
+                    move || backend.get_asset_summaries_by_ids(ids),
+                    move |result| RuntimeInput::Bulk(BulkInput::SummariesLoaded { load, result }),
                 );
             }
             RuntimeEffect::ListScanRoots(token) => {

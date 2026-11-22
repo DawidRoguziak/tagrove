@@ -267,10 +267,13 @@ test("unknown scenarios are refused before a session exists", (t) => {
   const listed = f.compare("--list");
   assert.equal(listed.status, 0, listed.stderr);
   assert.deepEqual(listed.stdout.trim().split("\n"), [
+    "bulk-dock-group\ttheme=dark\tseed=control",
+    "bulk-dock-tags\ttheme=dark\tseed=control",
     "gallery-default\ttheme=dark\tseed=control",
     "gallery-selection\ttheme=dark\tseed=control",
     "gallery-tiles-large\ttheme=dark\tseed=control",
     "gallery-tiles-small\ttheme=dark\tseed=control",
+    "group-order-modal\ttheme=dark\tseed=control",
     "search-applied\ttheme=dark\tseed=control",
     "search-suggestions\ttheme=dark\tseed=control",
     "shell-empty\ttheme=dark\tseed=empty",

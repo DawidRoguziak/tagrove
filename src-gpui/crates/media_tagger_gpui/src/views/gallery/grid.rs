@@ -7,12 +7,17 @@
 //! demand). A tile is a button named after its file; videos and GIFs show their static
 //! thumbnail with a chip (plan decision D8).
 
+use std::{cell::Cell, rc::Rc};
+
 use gpui::{
     actions, div, img, prelude::*, px, Animation, AnimationExt as _, AnyElement, App, ClickEvent,
-    Div, ElementId, KeyBinding, ObjectFit, Role, SharedString, Stateful, Window,
+    Div, ElementId, KeyBinding, MouseButton, ObjectFit, Role, SharedString, Stateful, Toggled,
+    Window,
 };
 use media_tagger_client::{
-    controls::{button_visuals, ButtonState, ButtonVariant, SpinnerSize, THUMBNAIL_LOADER},
+    controls::{
+        button_visuals, ButtonState, ButtonVariant, FocusRing, SpinnerSize, THUMBNAIL_LOADER,
+    },
     gallery::layout::{
         error_banner, footer, placeholder_pulse_opacity, result_count, tile as tile_layout,
         MediaBadge, PLACEHOLDER_PULSE,
@@ -20,7 +25,7 @@ use media_tagger_client::{
     i18n::I18n,
     icons::IconName,
     shortcuts::{ShortcutCommand, SHORTCUTS},
-    theme::{ThemeName, RADII, TYPOGRAPHY},
+    theme::{Shadow, ThemeName, RADII, TYPOGRAPHY},
 };
 use media_tagger_core::models::AssetSummary;
 
@@ -32,7 +37,7 @@ use crate::{
         fonts,
         icon::Icon,
         spinner::Spinner,
-        theme::{box_shadows, color, focus_ring, weight},
+        theme::{box_shadow, box_shadows, color, focus_ring, weight},
     },
 };
 
@@ -41,6 +46,8 @@ pub const VIEWPORT_SELECTOR: &str = "gallery-scroll";
 pub const FOOTER_SELECTOR: &str = "gallery-end-state";
 pub const LOAD_ERROR_SELECTOR: &str = "gallery-load-error";
 pub const LOAD_RETRY_ID: &str = "gallery-load-retry";
+/// The rectangle of a drag selection (`data-testid="gallery-selection-rectangle"`).
+pub const SELECTION_RECTANGLE_SELECTOR: &str = "gallery-selection-rectangle";
 
 /// The debug selector of the tile at global index `index`.
 pub fn tile_selector(index: usize) -> String {
@@ -67,6 +74,12 @@ pub fn chip_selector(index: usize) -> String {
     format!("gallery-tile-chip-{index}")
 }
 
+/// The debug selector of the check mark on the selected tile at `index`
+/// (`.gallery-selection-mark`).
+pub fn selection_mark_selector(index: usize) -> String {
+    format!("gallery-selection-mark-{index}")
+}
+
 /// The debug selector of the media-group backplate whose first tile is at `index`.
 pub fn group_plate_selector(index: usize) -> String {
     format!("gallery-group-plate-{index}")
@@ -85,6 +98,8 @@ actions!(
         LineUp,
         /// Arrow down: a short step.
         LineDown,
+        /// Ctrl+A: every result of the query, in selection mode.
+        SelectAll,
     ]
 );
 
@@ -113,6 +128,9 @@ pub fn key_bindings() -> Vec<KeyBinding> {
                 ShortcutCommand::GalleryLineDown => {
                     KeyBinding::new(shortcut.keystroke, LineDown, context)
                 }
+                ShortcutCommand::GallerySelectAll => {
+                    KeyBinding::new(shortcut.keystroke, SelectAll, context)
+                }
             }
         })
         .collect()
@@ -126,18 +144,30 @@ pub fn init(cx: &mut App) {
 /// What the gallery asks of whoever shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GalleryEvent {
-    /// A tile was activated: open this asset in the lightbox (epic E16). `index` is
-    /// its global index in the result at that moment.
+    /// A tile was activated outside selection mode, or held for a long press in it:
+    /// open this asset in the lightbox (epic E16). `index` is its global index in the
+    /// result at that moment.
     OpenAsset { asset_id: i64, index: usize },
 }
 
-/// One tile: the thumbnail, the delayed loader while it is on its way, and the chip
-/// of a video or a GIF.
+/// The ring of a selected tile or slot: `0 0 0 2px var(--color-primary)`.
+fn selection_ring(theme: ThemeName) -> Shadow {
+    Shadow::ring(
+        false,
+        tile_layout::SELECTION_RING_WIDTH,
+        theme.tokens().colors.primary,
+    )
+}
+
+/// One tile: the thumbnail, the delayed loader while it is on its way, the chip of a
+/// video or a GIF and, when it is selected, the primary ring and the check mark.
+#[allow(clippy::too_many_arguments)]
 pub fn tile(
     asset: &AssetSummary,
     index: usize,
     size: f32,
     picture: TilePicture,
+    selected: bool,
     i18n: &I18n<'_>,
     theme: ThemeName,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -155,6 +185,12 @@ pub fn tile(
         .role(Role::Button)
         // The file name only: `preview_path` is the full source path of videos and GIFs.
         .aria_label(SharedString::from(asset.file_name.clone()))
+        // `aria-pressed`: whether the tile is selected.
+        .aria_toggled(if selected {
+            Toggled::True
+        } else {
+            Toggled::False
+        })
         .absolute()
         .size(px(size))
         .rounded(px(RADII.tile))
@@ -162,8 +198,17 @@ pub fn tile(
         .border_color(color(colors.border_soft))
         .bg(color(fill))
         .overflow_hidden()
-        .hover(move |style| style.shadow(hover_shadow.clone()))
         .on_click(on_click);
+    // A selected tile keeps the hover edge under its ring
+    // (`shadow-[0_0_0_2px_var(--color-primary),var(--shadow-tile-hover)]`); the ring is
+    // drawn last, so it lies on top.
+    let tile = if selected {
+        let mut shadows = hover_shadow;
+        shadows.push(box_shadow(&selection_ring(theme)));
+        tile.shadow(shadows)
+    } else {
+        tile.hover(move |style| style.shadow(hover_shadow.clone()))
+    };
     let tile = match picture {
         TilePicture::Ready(picture) => tile.child(
             img(picture)
@@ -208,6 +253,28 @@ pub fn tile(
         }
         TilePicture::Empty => tile,
     };
+    let tile = if selected {
+        tile.child(
+            div()
+                .debug_selector(|| selection_mark_selector(index))
+                .absolute()
+                .left(px(tile_layout::SELECTION_MARK_INSET))
+                .top(px(tile_layout::SELECTION_MARK_INSET))
+                .size(px(tile_layout::SELECTION_MARK_SIZE))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(RADII.tile))
+                .bg(color(colors.primary))
+                .child(
+                    Icon::new(IconName::CheckSquare)
+                        .size(tile_layout::SELECTION_MARK_ICON_SIZE)
+                        .color(color(colors.primary_content)),
+                ),
+        )
+    } else {
+        tile
+    };
     match MediaBadge::of_kind(&asset.kind) {
         Some(badge) => tile.child(
             div()
@@ -226,8 +293,15 @@ pub fn tile(
 }
 
 /// A slot whose asset is not loaded yet. It pulses unless fast scrolling paused
-/// demand, when nothing is on its way.
-pub fn placeholder(index: usize, size: f32, pulsing: bool, theme: ThemeName) -> AnyElement {
+/// demand, when nothing is on its way. Inside a selected range it has the ring of a
+/// selected tile (`ring-2 ring-primary`).
+pub fn placeholder(
+    index: usize,
+    size: f32,
+    pulsing: bool,
+    selected: bool,
+    theme: ThemeName,
+) -> AnyElement {
     let colors = &theme.tokens().colors;
     let slot = div()
         .debug_selector(|| placeholder_selector(index))
@@ -238,7 +312,19 @@ pub fn placeholder(index: usize, size: f32, pulsing: bool, theme: ThemeName) -> 
             colors
                 .base_300
                 .with_alpha_percent(tile_layout::PLACEHOLDER_FILL_PERCENT),
-        ));
+        ))
+        // A ring around the slot, not a shadow: GPUI draws a shadow beneath the whole
+        // element, and the slot's fill lets it through.
+        .when(selected, |slot| {
+            slot.child(focus_ring(
+                FocusRing {
+                    color: colors.primary,
+                    width: tile_layout::SELECTION_RING_WIDTH,
+                    offset: 0.0,
+                },
+                RADII.surface,
+            ))
+        });
     if pulsing {
         slot.with_animation(
             ("gallery-placeholder", index),
@@ -343,10 +429,29 @@ pub fn status_footer(total: usize, i18n: &I18n<'_>, theme: ThemeName) -> Div {
         )
 }
 
+/// The rectangle of a drag selection, `width` by `height`
+/// (`border border-primary bg-primary/20`). It takes no input.
+pub fn selection_rectangle(width: f32, height: f32, theme: ThemeName) -> Div {
+    let primary = theme.tokens().colors.primary;
+    div()
+        .debug_selector(|| SELECTION_RECTANGLE_SELECTOR.to_owned())
+        .absolute()
+        .w(px(width))
+        .h(px(height))
+        .border_1()
+        .border_color(color(primary))
+        .bg(color(primary.with_alpha_percent(
+            tile_layout::SELECTION_RECTANGLE_FILL_PERCENT,
+        )))
+}
+
 /// The banner of a failed load with its Retry button (`role="alert"`).
+/// `control_pressed` is set when a primary press lands on the button: the gallery
+/// starts no selection gesture from a press on a control.
 pub fn load_error_banner(
     i18n: &I18n<'_>,
     theme: ThemeName,
+    control_pressed: Rc<Cell<bool>>,
     on_retry: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let colors = &theme.tokens().colors;
@@ -376,6 +481,7 @@ pub fn load_error_banner(
         .child(RetryButton {
             label: SharedString::from(i18n.t("gallery.retry")),
             theme,
+            control_pressed,
             on_click: Box::new(on_retry),
         })
 }
@@ -389,6 +495,7 @@ type ClickHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 struct RetryButton {
     label: SharedString,
     theme: ThemeName,
+    control_pressed: Rc<Cell<bool>>,
     on_click: ClickHandler,
 }
 
@@ -421,6 +528,11 @@ impl RenderOnce for RetryButton {
             .font_weight(weight(TYPOGRAPHY.weight_semibold))
             .cursor_pointer()
             .hover(move |style| style.bg(color(content)).text_color(color(inverse)))
+            // Seen before the viewport's own press handler, which lies beneath.
+            .on_mouse_down(MouseButton::Left, {
+                let control_pressed = self.control_pressed;
+                move |_, _, _| control_pressed.set(true)
+            })
             .on_click(self.on_click)
             .when(focus_visible, |button| {
                 button.child(focus_ring(ring, RADII.field))

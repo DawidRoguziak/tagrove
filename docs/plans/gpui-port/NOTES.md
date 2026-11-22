@@ -28,3 +28,7 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-21 | E09 | workflow | done | E09 ukończony: siatka galerii i miniatury gotowe, przegląd czysty, bramka test:all przeszła. | [E09](E09-gpui-gallery-grid.md)
 2026-11-22 | E10 | orkiestrator | in progress | workflow start od kroku implement | [E10](E10-gpui-scrollbar-timeline.md)
 2026-11-22 | E10 | workflow | done | E10 gotowe: pasek pozycji i scrubber osi czasu w GPUI, przegląd czysty, bramka zielona; parytet gallery-default bez paska z powodu seeda. | [E10](E10-gpui-scrollbar-timeline.md)
+2026-11-22 | E11 | orkiestrator | in progress | workflow start od kroku implement | [E11](E11-selection.md)
+2026-11-22 | E11 | workflow | blocked | Zablokowany: test:all pada w audit:rust na RUSTSEC-2026-0592 (url), niezwiązanym z epikiem; do poprawy zostały 2 testy GPUI (RectangleCancel przy zamknięciu galerii). | [E11](E11-selection.md)
+2026-11-22 | E11 | orkiestrator | in progress | workflow start od kroku gate | [E11](E11-selection.md)
+2026-11-22 | E11 | workflow | done | Epik ukończony: bramka test:all przeszła w 1 rundzie po wcześniejszej blokadzie. | [E11](E11-selection.md)

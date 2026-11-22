@@ -695,3 +695,411 @@ fn the_library_survives_settings_navigation_and_queries_in_pages_of_128() {
         .collect();
     assert_eq!(page_sizes, [128]);
 }
+
+/// E11 through the runtime: the selection reads the embedded query model, follows its
+/// epochs, keeps its session alive with the runner's timer and writes through the
+/// library's selection mutations.
+mod selection {
+    use std::sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    };
+
+    use media_tagger_core::models::{SelectionMutationResult, StartAssetQueryResult};
+
+    use super::{Fixture, RuntimeInput};
+    use crate::{
+        backend::{fake::Call, AssetIdRange, BackendError, SelectionMutation, SelectionSpec},
+        gallery::{
+            Interaction, SelectionError, SelectionInput, SelectionNotice, SelectionWrite,
+            SESSION_KEEPALIVE,
+        },
+        library::{
+            LibraryEvent, LibraryInput, MutationOutcome, QueryError, QueryEvent, QueryInput, Ticket,
+        },
+    };
+
+    const TOTAL: usize = 50_000;
+
+    struct Script {
+        session: Arc<AtomicU64>,
+        fail_start: Arc<AtomicBool>,
+    }
+
+    /// A library of `TOTAL` results whose asset ID is index + 1, in the session
+    /// `Script::session` names at the time of each query start.
+    fn library(fx: &Fixture) -> Script {
+        let script = Script {
+            session: Arc::new(AtomicU64::new(1)),
+            fail_start: Arc::new(AtomicBool::new(false)),
+        };
+        let (session, fail_start) = (script.session.clone(), script.fail_start.clone());
+        fx.backend
+            .on_start_asset_query(move |_| {
+                if fail_start.load(Ordering::SeqCst) {
+                    return Err(BackendError::rejected("i18n:common.libraryBusy"));
+                }
+                Ok(StartAssetQueryResult::Ready {
+                    session_id: session.load(Ordering::SeqCst),
+                    revision: 1,
+                    total: TOTAL,
+                    offset: 0,
+                    items: Vec::new(),
+                })
+            })
+            .on_get_asset_query_id_range(|_, start, end| {
+                Ok(AssetIdRange::Ready(
+                    (start..=end).map(|index| index as i64 + 1).collect(),
+                ))
+            });
+        script
+    }
+
+    fn started(fx: &mut Fixture) -> Script {
+        let script = library(fx);
+        fx.send(RuntimeInput::RefreshLibrary);
+        fx.settle();
+        select(fx, SelectionInput::ToggleMode);
+        script
+    }
+
+    fn select(fx: &mut Fixture, input: SelectionInput) {
+        fx.send(RuntimeInput::Selection(input));
+    }
+
+    fn click(fx: &mut Fixture, index: usize, ctrl_like: bool, shift: bool) {
+        select(
+            fx,
+            SelectionInput::Interact(Interaction::Click {
+                asset_id: index as i64 + 1,
+                asset_index: index,
+                ctrl_like,
+                shift,
+            }),
+        );
+    }
+
+    fn id_range_reads(fx: &Fixture) -> Vec<(u64, usize, usize)> {
+        fx.backend
+            .calls()
+            .into_iter()
+            .filter_map(|call| match call {
+                Call::GetAssetQueryIdRange {
+                    session_id,
+                    start,
+                    end,
+                } => Some((session_id, start, end)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_shift_range_is_read_through_the_query_model_and_published_from_its_answer() {
+        let mut fx = Fixture::new();
+        started(&mut fx);
+
+        click(&mut fx, 0, false, false);
+        click(&mut fx, 2, false, true);
+        assert!(fx.runtime().selection().busy());
+        assert_eq!(
+            &*fx.runtime().selection().ids(),
+            [1],
+            "nothing before the answer"
+        );
+        fx.settle();
+
+        let selection = fx.runtime().selection();
+        assert_eq!(&*selection.ids(), [1, 2, 3]);
+        assert!(!selection.busy() && !selection.ranged());
+        assert_eq!(id_range_reads(&fx), [(1, 0, 2)]);
+        assert!(!fx.runtime().gallery_load_failed());
+        // The answer went to the selection, not to the other readers of the query.
+        assert!(fx.driver.model_mut().take_query_events().is_empty());
+
+        // Another caller's read is still answered through the query events.
+        fx.send(RuntimeInput::Query(QueryInput::ReadIdRange {
+            ticket: Ticket(7),
+            start: 0,
+            end: 1,
+        }));
+        fx.settle();
+        assert_eq!(
+            fx.driver.model_mut().take_query_events(),
+            [QueryEvent::IdRangeRead {
+                ticket: Ticket(7),
+                result: Ok(vec![1, 2])
+            }]
+        );
+        assert_eq!(&*fx.runtime().selection().ids(), [1, 2, 3]);
+    }
+
+    #[test]
+    fn a_failed_range_read_shows_the_gallery_error_and_retry_reads_again() {
+        let mut fx = Fixture::new();
+        started(&mut fx);
+        let fail = Arc::new(AtomicBool::new(true));
+        let failing = fail.clone();
+        fx.backend
+            .on_get_asset_query_id_range(move |_, start, end| {
+                if failing.load(Ordering::SeqCst) {
+                    return Err(BackendError::rejected("i18n:common.libraryBusy"));
+                }
+                Ok(AssetIdRange::Ready(
+                    (start..=end).map(|index| index as i64 + 1).collect(),
+                ))
+            });
+
+        click(&mut fx, 9, false, false);
+        select(
+            &mut fx,
+            SelectionInput::Interact(Interaction::RectangleCommit {
+                ranges: vec![[0, 2]],
+                additive: false,
+            }),
+        );
+        fx.settle();
+        assert!(fx.runtime().gallery_load_failed());
+        assert!(matches!(
+            fx.runtime().selection().error(),
+            Some(SelectionError::Read(QueryError::Backend(_)))
+        ));
+        assert_eq!(
+            &*fx.runtime().selection().ids(),
+            [10],
+            "the selection from before"
+        );
+
+        fail.store(false, Ordering::SeqCst);
+        fx.send(RuntimeInput::Query(QueryInput::RetryLoad));
+        select(&mut fx, SelectionInput::Retry);
+        fx.settle();
+        assert!(!fx.runtime().gallery_load_failed());
+        assert_eq!(&*fx.runtime().selection().ids(), [1, 2, 3]);
+    }
+
+    #[test]
+    fn a_refresh_that_overtakes_a_range_read_leaves_neither_a_selection_nor_an_error() {
+        let mut fx = Fixture::new();
+        started(&mut fx);
+
+        select(
+            &mut fx,
+            SelectionInput::Interact(Interaction::RectangleCommit {
+                ranges: vec![[0, 2]],
+                additive: false,
+            }),
+        );
+        assert!(fx.runtime().selection().busy());
+        fx.send(RuntimeInput::RefreshLibrary);
+        assert!(!fx.runtime().selection().busy());
+        assert_eq!(fx.runtime().selection().error(), None);
+        fx.settle();
+
+        let selection = fx.runtime().selection();
+        assert_eq!(selection.count(), 0);
+        assert_eq!(selection.error(), None);
+        assert!(fx.driver.model_mut().take_query_events().is_empty());
+    }
+
+    #[test]
+    fn the_selection_survives_a_refresh_by_the_query_epochs_and_a_failed_query_drops_its_ranges() {
+        let mut fx = Fixture::new();
+        let script = started(&mut fx);
+
+        // IDs held directly survive a new session and keep their identity.
+        click(&mut fx, 4, false, false);
+        let key = fx.runtime().selection().key();
+        script.session.store(2, Ordering::SeqCst);
+        fx.send(RuntimeInput::RefreshLibrary);
+        fx.settle();
+        assert_eq!(&*fx.runtime().selection().ids(), [5]);
+        assert_eq!(fx.runtime().selection().key(), key);
+        assert_eq!(fx.runtime().selection().notice(), None);
+
+        // Ranges survive a refresh that returns the same session (a cache hit).
+        select(&mut fx, SelectionInput::Interact(Interaction::SelectAll));
+        fx.settle();
+        assert!(fx.runtime().selection().ranged());
+        fx.send(RuntimeInput::RefreshLibrary);
+        assert!(
+            fx.runtime().selection().ranged(),
+            "a pending query changes nothing"
+        );
+        fx.settle();
+        assert_eq!(fx.runtime().selection().count(), TOTAL);
+        assert_eq!(fx.runtime().selection().notice(), None);
+
+        // Another session: the positions mean other assets.
+        script.session.store(3, Ordering::SeqCst);
+        fx.send(RuntimeInput::RefreshLibrary);
+        fx.settle();
+        let selection = fx.runtime().selection();
+        assert_eq!((selection.count(), selection.ranged()), (0, false));
+        assert_eq!(selection.notice(), Some(SelectionNotice::RangeCleared));
+        assert!(selection.enabled());
+
+        // A refresh that fails leaves the query without a session: ranges go with the
+        // expired notice, and nothing reads the old session any more.
+        select(&mut fx, SelectionInput::Interact(Interaction::SelectAll));
+        fx.settle();
+        assert!(fx.runtime().selection().ranged());
+        script.fail_start.store(true, Ordering::SeqCst);
+        fx.send(RuntimeInput::RefreshLibrary);
+        fx.settle();
+        let selection = fx.runtime().selection();
+        assert_eq!(selection.count(), 0);
+        assert_eq!(selection.notice(), Some(SelectionNotice::RangeExpired));
+        assert_eq!(selection.keepalive_session(), None);
+        assert_eq!(fx.runtime().selection().capture().spec, None);
+
+        // IDs held directly stay through a failed refresh.
+        click(&mut fx, 7, false, false);
+        fx.send(RuntimeInput::RefreshLibrary);
+        fx.settle();
+        assert_eq!(&*fx.runtime().selection().ids(), [8]);
+        assert_eq!(fx.runtime().selection().notice(), None);
+    }
+
+    #[test]
+    fn a_held_range_reads_one_id_of_its_session_at_once_and_then_every_minute() {
+        let mut fx = Fixture::new();
+        started(&mut fx);
+        fx.backend.take_calls();
+
+        select(&mut fx, SelectionInput::Interact(Interaction::SelectAll));
+        fx.settle();
+        assert_eq!(id_range_reads(&fx), [(1, 0, 0)]);
+        assert_eq!(fx.executor.pending_timers(), 1);
+
+        // Longer than the backend's five-minute session lifetime.
+        for _ in 0..6 {
+            fx.executor.advance_and_run(SESSION_KEEPALIVE);
+            fx.settle();
+        }
+        assert_eq!(id_range_reads(&fx), [(1, 0, 0); 7]);
+        assert!(fx.runtime().selection().ranged());
+        assert_eq!(fx.executor.pending_timers(), 1);
+
+        select(&mut fx, SelectionInput::Clear);
+        fx.executor.advance_and_run(SESSION_KEEPALIVE);
+        fx.settle();
+        fx.executor.advance_and_run(SESSION_KEEPALIVE);
+        fx.settle();
+        assert_eq!(id_range_reads(&fx).len(), 7);
+        assert_eq!(fx.executor.pending_timers(), 0);
+    }
+
+    #[test]
+    fn a_range_whose_session_is_already_gone_is_dropped_with_the_expired_notice() {
+        let mut fx = Fixture::new();
+        let script = started(&mut fx);
+        fx.backend
+            .on_get_asset_query_id_range(|_, _, _| Ok(AssetIdRange::Stale));
+
+        select(&mut fx, SelectionInput::Interact(Interaction::SelectAll));
+        assert!(fx.runtime().selection().ranged());
+        // The stale keepalive read schedules the query's refresh; its new session
+        // finds nothing left to clear.
+        script.session.store(2, Ordering::SeqCst);
+        fx.executor.run_all();
+        fx.driver.pump();
+        let selection = fx.runtime().selection();
+        assert_eq!(selection.count(), 0);
+        assert_eq!(selection.notice(), Some(SelectionNotice::RangeExpired));
+
+        fx.executor
+            .advance_and_run(crate::library::STALE_REFRESH_DELAY);
+        fx.settle();
+        assert_eq!(fx.runtime().query().session_id(), Some(2));
+        assert_eq!(
+            fx.runtime().selection().notice(),
+            Some(SelectionNotice::RangeExpired)
+        );
+    }
+
+    #[test]
+    fn a_range_selection_is_written_through_apply_selection_mutation_and_a_stale_write_clears_it() {
+        let mut fx = Fixture::new();
+        let script = started(&mut fx);
+        select(&mut fx, SelectionInput::Interact(Interaction::SelectAll));
+        click(&mut fx, 2, true, false);
+        fx.settle();
+        let spec = SelectionSpec {
+            session_id: 1,
+            ranges: vec![[0, TOTAL - 1]],
+            excluded: vec![3],
+            included: Vec::new(),
+        };
+        let capture = fx.runtime().selection().capture();
+        assert_eq!(capture.spec.as_ref(), Some(&spec));
+        assert_eq!(capture.count, TOTAL - 1);
+
+        // The backend finds the session gone: nothing is written.
+        fx.backend
+            .on_apply_selection_mutation(|_, _| Ok(SelectionMutationResult::Stale));
+        script.session.store(2, Ordering::SeqCst);
+        let mutation = capture
+            .spec_mutation(SelectionWrite::ToggleFavorites)
+            .expect("a range selection writes through its spec");
+        fx.backend.take_calls();
+        fx.send(RuntimeInput::library(LibraryInput::Mutate {
+            ticket: Ticket(1),
+            mutation,
+        }));
+        fx.settle();
+
+        let writes: Vec<_> = fx
+            .backend
+            .calls()
+            .into_iter()
+            .filter_map(|call| match call {
+                Call::ApplySelectionMutation {
+                    selection,
+                    mutation,
+                } => Some((selection, mutation)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(writes, [(spec, SelectionMutation::ToggleFavorite)]);
+        let settled = fx
+            .driver
+            .model_mut()
+            .take_library_events()
+            .into_iter()
+            .find_map(|event| match event {
+                LibraryEvent::MutationSettled { ticket, result } => Some((ticket, result)),
+                _ => None,
+            })
+            .expect("the write was answered");
+        assert_eq!(settled.0, Ticket(1));
+        assert!(matches!(
+            settled.1,
+            Ok(MutationOutcome::Selection(SelectionMutationResult::Stale))
+        ));
+        // The refresh the stale write asked for brought another session.
+        let selection = fx.runtime().selection();
+        assert_eq!(selection.count(), 0);
+        assert_eq!(selection.notice(), Some(SelectionNotice::RangeCleared));
+        assert_eq!(selection.keepalive_session(), None);
+    }
+
+    #[test]
+    fn an_identity_reset_clears_the_selection_and_keeps_selection_mode() {
+        use crate::library::LibraryReset;
+
+        let mut fx = Fixture::new();
+        started(&mut fx);
+        click(&mut fx, 0, false, false);
+        click(&mut fx, 1, false, false);
+        assert_eq!(fx.runtime().selection().count(), 2);
+
+        fx.send(RuntimeInput::library(LibraryInput::Reset(
+            LibraryReset::Identity,
+        )));
+        let selection = fx.runtime().selection();
+        assert_eq!(selection.count(), 0);
+        assert!(selection.enabled());
+        assert_eq!(selection.notice(), None);
+    }
+}

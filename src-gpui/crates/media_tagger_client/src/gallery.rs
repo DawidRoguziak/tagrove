@@ -17,6 +17,13 @@
 //!   thumb, press, drag and keys.
 //! - [`timeline`]: the month timeline (`timeline.ts`, `GalleryTimelineScrubber.tsx`):
 //!   months from the session's sections, keys, ticks and the rail's state.
+//! - [`selection`]: the bulk selection (`createSelection.ts`): ranges of the query
+//!   session plus included and excluded IDs, the query and identity epochs, the
+//!   session keepalive, and the spec a bulk write goes through.
+//! - [`selection_geometry`]: which tiles a rectangle covers
+//!   (`selectionGeometry.ts`), from global indexes only.
+//! - [`selection_gesture`]: the pointer gestures of selection mode
+//!   (`createGridHandlers.ts`): rectangle, long press, click suppression.
 //!
 //! Offsets are logical pixels relative to the top of the grid, as in the Solid
 //! frontend, and may be negative while the margin above the grid is in view. They
@@ -30,6 +37,9 @@ pub mod geometry;
 pub mod layout;
 pub mod picture_cache;
 pub mod scrollbar;
+pub mod selection;
+pub mod selection_geometry;
+pub mod selection_gesture;
 pub mod thumbnail_demand;
 pub mod timeline;
 pub mod virtual_grid;
@@ -42,6 +52,19 @@ pub use picture_cache::{PictureCache, PICTURE_CACHE_BUDGET};
 pub use scrollbar::{
     scrollbar_key_target, scrollbar_value_now, scrollbar_visible, ScrollbarDrag, ScrollbarKey,
     ScrollbarMetrics, ScrollbarTarget,
+};
+pub use selection::{
+    merge_ranges, ranges_contain, IndexRange, Interaction, QuerySnapshot, Selection,
+    SelectionCapture, SelectionEffect, SelectionError, SelectionInput, SelectionNotice,
+    SelectionWrite, MATERIALIZE_LIMIT, SELECTION_TICKET_BASE, SESSION_KEEPALIVE,
+};
+pub use selection_geometry::{
+    contains_index, edge_scroll_speed, intersected_ranges, rectangle_between, tile_index_at, Point,
+    SelectionGrid, SelectionRectangle,
+};
+pub use selection_gesture::{
+    GestureEffect, GestureFrame, GestureInput, PressedTile, Preview, SelectionGesture,
+    DRAG_HOLD_DELAY, LONG_PRESS, MOVE_TOLERANCE,
 };
 pub use thumbnail_demand::{ThumbnailDemand, TileRequest, TileThumbnail};
 pub use timeline::{

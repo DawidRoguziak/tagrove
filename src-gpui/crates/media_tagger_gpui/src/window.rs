@@ -17,6 +17,7 @@ use gpui::{
 };
 use media_tagger_client::{
     runtime::{RuntimeInput, DEFAULT_TILE_SIZE},
+    scenario::ScenarioClick,
     theme::ThemeName,
 };
 
@@ -27,12 +28,32 @@ use crate::{
     views::{self, kit::KitView, shell::ShellView},
 };
 
+/// What a comparison scenario presets in the shell; nothing of it is a stored
+/// preference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShellStart {
+    /// The tile size the gallery starts with.
+    pub tile_size: u32,
+    /// The clicks the gallery starts with, in selection mode (`Scenario::selection`).
+    pub selection: &'static [ScenarioClick],
+}
+
+impl Default for ShellStart {
+    /// The application's own start: the default tile size, selection mode off.
+    fn default() -> Self {
+        Self {
+            tile_size: DEFAULT_TILE_SIZE,
+            selection: &[],
+        }
+    }
+}
+
 /// What the main window shows.
 #[derive(Clone)]
 pub enum MainScreen {
-    /// The application: the shell over the runtime made of these parts, with the tile
-    /// size the gallery starts with.
-    Shell(RuntimeParts, u32),
+    /// The application: the shell over the runtime made of these parts, started as
+    /// the scenario asks.
+    Shell(RuntimeParts, ShellStart),
     /// The board of every shared control (`--scenario kit`).
     Kit,
 }
@@ -248,21 +269,22 @@ pub fn open_main_window(
     parts: RuntimeParts,
     cx: &mut App,
 ) -> gpui::Result<WindowHandle<ShellView>> {
-    open_main_window_sized(profile, parts, DEFAULT_TILE_SIZE, cx)
+    open_main_window_started(profile, parts, ShellStart::default(), cx)
 }
 
-/// [`open_main_window`] with the tile size the gallery starts with (a comparison
-/// scenario's; the tile size is not a stored preference).
-pub fn open_main_window_sized(
+/// [`open_main_window`] in the state a comparison scenario starts with: its tile
+/// size, and its selection once the tiles are loaded.
+pub fn open_main_window_started(
     profile: Profile,
     parts: RuntimeParts,
-    tile_size: u32,
+    start: ShellStart,
     cx: &mut App,
 ) -> gpui::Result<WindowHandle<ShellView>> {
     let options = main_window_options(profile, cx);
     let runtime = cx.new(|cx| Runtime::new(parts, cx));
     runtime.update(cx, |runtime, cx| {
-        runtime.send(RuntimeInput::SetTileSize(f64::from(tile_size)), cx)
+        runtime.send(RuntimeInput::SetTileSize(f64::from(start.tile_size)), cx);
+        runtime.script_selection(start.selection, cx);
     });
     let window = cx.open_window(options, |window, cx| {
         cx.new(|cx| ShellView::new(runtime.clone(), window, cx))
@@ -315,8 +337,8 @@ pub fn run_until_closed(
     run_application(application(display), move |cx| {
         init_application(theme, cx)?;
         match screen {
-            MainScreen::Shell(parts, tile_size) => {
-                open_main_window_sized(profile, parts, tile_size, cx).map(|_| ())
+            MainScreen::Shell(parts, start) => {
+                open_main_window_started(profile, parts, start, cx).map(|_| ())
             }
             MainScreen::Kit => open_kit_window(profile, cx).map(|_| ()),
         }

@@ -19,8 +19,10 @@
 //! The shell itself binds nothing: the Tauri shell has no key of its own besides
 //! Escape, which belongs to the layer stack. The gallery binds the keys that scroll
 //! its grid, which a webview's scroller handles natively (Home, End, Page Up, Page
-//! Down, Up, Down). The epics that bring the search (Ctrl+K) and the lightbox add
-//! their shortcuts here.
+//! Down, Up, Down), and Ctrl+A (or the platform key with A), which selects every
+//! result while selection mode is on and no layer lies above the gallery; a text
+//! field keeps its own Ctrl+A, since its context is deeper. The epics that bring the
+//! search (Ctrl+K) and the lightbox add their shortcuts here.
 
 /// A key context of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,6 +69,8 @@ pub enum ShortcutCommand {
     /// Scrolls the gallery grid by a short step.
     GalleryLineUp,
     GalleryLineDown,
+    /// Selects every result of the query, in selection mode only.
+    GallerySelectAll,
 }
 
 /// One key binding of the application.
@@ -108,6 +112,17 @@ pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         keystroke: "down",
         command: ShortcutCommand::GalleryLineDown,
+        context: KeyContext::Gallery,
+    },
+    Shortcut {
+        keystroke: "ctrl-a",
+        command: ShortcutCommand::GallerySelectAll,
+        context: KeyContext::Gallery,
+    },
+    // `event.ctrlKey || event.metaKey` of the Solid gallery.
+    Shortcut {
+        keystroke: "cmd-a",
+        command: ShortcutCommand::GallerySelectAll,
         context: KeyContext::Gallery,
     },
 ];

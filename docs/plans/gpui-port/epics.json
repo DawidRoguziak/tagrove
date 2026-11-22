@@ -486,8 +486,8 @@
         "E08",
         "E09"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-22",
       "sources": [
         "src/features/gallery/createSelection.ts",
         "src/features/gallery/selection.ts",

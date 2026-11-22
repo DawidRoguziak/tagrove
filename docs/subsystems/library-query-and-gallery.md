@@ -496,10 +496,15 @@ What differs:
   first children of the viewport, so the tab order is bar, rail, then the banner's
   Retry as in the Solid DOM; what reaches over the tiles (the month label, the year
   labels, the focus rings) is `deferred`, painted above them like the Solid `z-10`.
-- **Activation.** A click on a tile emits `GalleryEvent::OpenAsset { asset_id, index }`;
-  nothing handles it yet (the lightbox, epic E16). Tiles are not tab stops yet.
-- **Not there yet.** Selection with its ring, mark and rectangle (epic E11), and the
-  scroll keys while the focus is on the window root (epic E19).
+- **Activation.** A click on a tile outside selection mode, and a long press on one in it, emit
+  `GalleryEvent::OpenAsset { asset_id, index }`; nothing handles it yet (the lightbox, epic
+  E16). Tiles are not tab stops yet.
+- **Selection.** In selection mode a click toggles the tile, and a held press that moves draws a
+  rectangle; the ring, the check mark, the rectangle and the gestures are described in
+  [search, tags and media groups](search-tags-and-media-groups.md#gpui-port-selection-and-gestures).
+  The rectangle's edge scrolling is a `GridInput::ScrollBy` per animation frame.
+- **Not there yet.** The scroll keys and Ctrl+A while the focus is on the window root (epic
+  E19).
 
 Tests: `gallery/geometry.rs`, `gallery/virtual_grid.rs` (including the range-to-pages
 mapping at 1,000,000 results and a quarter-pixel step at 600,000,000 px),

@@ -21,7 +21,7 @@ use std::{
 use media_tagger_client::{
     backend::Backend,
     runtime::DEFAULT_TILE_SIZE,
-    scenario::{self, Scenario, Seed, SCENARIO_MEDIA_VARIABLE},
+    scenario::{self, Scenario, ScenarioClick, Seed, SCENARIO_MEDIA_VARIABLE},
     theme::ThemeName,
 };
 
@@ -36,6 +36,9 @@ pub struct StartState {
     pub seed: Seed,
     /// The tile size of the gallery.
     pub tile_size: u32,
+    /// The clicks the gallery starts with, in selection mode, once their tiles are
+    /// loaded; none: selection mode stays off.
+    pub selection: &'static [ScenarioClick],
 }
 
 impl Default for StartState {
@@ -47,6 +50,7 @@ impl Default for StartState {
             screen: StartScreen::default(),
             seed: Seed::Empty,
             tile_size: DEFAULT_TILE_SIZE,
+            selection: &[],
         }
     }
 }
@@ -68,6 +72,7 @@ impl From<Scenario> for StartState {
             screen: StartScreen::Main,
             seed: scenario.seed,
             tile_size: scenario.tile_size,
+            selection: scenario.selection,
         }
     }
 }
@@ -218,6 +223,7 @@ mod tests {
                     screen: StartScreen::Main,
                     seed: scenario.seed,
                     tile_size: scenario.tile_size,
+                    selection: scenario.selection,
                 }),
                 "{}",
                 scenario.id
@@ -291,6 +297,22 @@ mod tests {
             (default.seed, default.tile_size),
             (Seed::Empty, DEFAULT_TILE_SIZE)
         );
+    }
+
+    #[test]
+    fn the_selection_scenario_starts_with_its_clicks_and_every_other_start_without() {
+        let start = start_state(E2E, Some("gallery-selection")).expect("a scenario of E2E");
+        assert_eq!(start.seed, Seed::Control);
+        assert_eq!(start.tile_size, DEFAULT_TILE_SIZE);
+        assert_eq!(
+            start.selection,
+            &media_tagger_client::scenario::GALLERY_SELECTION_CLICKS[..]
+        );
+        assert!(StartState::default().selection.is_empty());
+        assert!(start_state(E2E, Some("gallery-default"))
+            .expect("a scenario of E2E")
+            .selection
+            .is_empty());
     }
 
     #[test]

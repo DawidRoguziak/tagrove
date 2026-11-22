@@ -24,7 +24,9 @@
 //!   backend acknowledged, and the known tags.
 //! - [`gallery`]: the gallery grid: the square-tile geometry, the scroll state with
 //!   its logical `f64` offset and fast-scroll pause, which thumbnail each tile asks
-//!   for, the bounded cache of decoded pictures, and the measures of tile and footer.
+//!   for, the bounded cache of decoded pictures, and the measures of tile and footer;
+//!   and the bulk selection: ranges of the query session plus included and excluded
+//!   IDs, resolved by the backend, with the pointer gestures of selection mode.
 //! - [`i18n`], [`theme`], [`prefs`]: texts of the shared locale files, the theme
 //!   tokens of `src/styles.css` as constants, and the stored theme and language.
 //! - [`text`]: the editing model of the single-line text field, which GPUI does not

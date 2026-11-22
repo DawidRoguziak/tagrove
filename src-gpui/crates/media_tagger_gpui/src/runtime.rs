@@ -25,6 +25,7 @@ use media_tagger_client::{
     model::Driver,
     prefs::PrefsStore,
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
+    scenario::{self, ScenarioClick},
 };
 
 use crate::{thumbs::Thumbnails, ui};
@@ -103,6 +104,8 @@ pub struct Runtime {
     driver: Driver<AppRuntime, RuntimeRunner>,
     /// The gallery's thumbnails; they outlive the gallery view.
     thumbnails: Entity<Thumbnails>,
+    /// The clicks of a comparison scenario that wait for their tiles' rows.
+    scripted_selection: &'static [ScenarioClick],
     _pump: Task<()>,
 }
 
@@ -133,7 +136,35 @@ impl Runtime {
         Self {
             driver,
             thumbnails,
+            scripted_selection: &[],
             _pump: pump,
+        }
+    }
+
+    /// Makes `clicks` in selection mode as soon as the rows of their tiles are loaded:
+    /// the selection a comparison scenario starts with (`Scenario::selection`).
+    pub fn script_selection(&mut self, clicks: &'static [ScenarioClick], cx: &mut Context<Self>) {
+        self.scripted_selection = clicks;
+        self.publish(cx);
+    }
+
+    /// Makes the scripted clicks once, when the query has their rows.
+    fn run_scripted_selection(&mut self) {
+        // Not before the startup scan and its refreshes have ended: a refresh would
+        // cancel the range read of a Shift click that is on its way.
+        let model = self.driver.model();
+        if self.scripted_selection.is_empty() || !model.is_started() || model.maintenance_loading()
+        {
+            return;
+        }
+        let Some(inputs) =
+            scenario::selection_inputs(self.scripted_selection, self.driver.model().query())
+        else {
+            return;
+        };
+        self.scripted_selection = &[];
+        for input in inputs {
+            self.driver.handle(RuntimeInput::Selection(input));
         }
     }
 
@@ -167,6 +198,7 @@ impl Runtime {
     }
 
     fn publish(&mut self, cx: &mut Context<Self>) {
+        self.run_scripted_selection();
         ui::theme::set_active(self.model().theme(), cx);
         cx.notify();
     }

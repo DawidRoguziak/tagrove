@@ -268,6 +268,7 @@ test("unknown scenarios are refused before a session exists", (t) => {
   assert.equal(listed.status, 0, listed.stderr);
   assert.deepEqual(listed.stdout.trim().split("\n"), [
     "gallery-default\ttheme=dark\tseed=control",
+    "gallery-selection\ttheme=dark\tseed=control",
     "gallery-tiles-large\ttheme=dark\tseed=control",
     "gallery-tiles-small\ttheme=dark\tseed=control",
     "shell-empty\ttheme=dark\tseed=empty",

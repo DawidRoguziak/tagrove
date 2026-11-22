@@ -8,7 +8,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, App, ClickEvent, ElementId, FocusHandle, Role, SharedString, Window,
+    div, prelude::*, px, App, ClickEvent, ElementId, FocusHandle, Role, SharedString, Toggled,
+    Window,
 };
 use media_tagger_client::{
     controls::{
@@ -44,6 +45,8 @@ pub struct Button {
     focus_handle: Option<FocusHandle>,
     aria_label: Option<SharedString>,
     leading_icon: Option<(IconName, f32)>,
+    gap: Option<f32>,
+    pressed: Option<bool>,
     debug_selector: Option<&'static str>,
     on_click: Option<ClickHandler>,
 }
@@ -60,6 +63,8 @@ impl Button {
             focus_handle: None,
             aria_label: None,
             leading_icon: None,
+            gap: None,
+            pressed: None,
             debug_selector: None,
             on_click: None,
         }
@@ -135,6 +140,19 @@ impl Button {
         self
     }
 
+    /// The space between the leading icon and the label, when it is not the
+    /// button's own (`gap-2` on a `UiButton`).
+    pub fn gap(mut self, gap: f32) -> Self {
+        self.gap = Some(gap);
+        self
+    }
+
+    /// A toggle button and whether it is on (`aria-pressed`).
+    pub fn pressed(mut self, pressed: bool) -> Self {
+        self.pressed = Some(pressed);
+        self
+    }
+
     /// A debug selector for tests (`VisualTestContext::debug_bounds`); a no-op outside
     /// test builds.
     pub fn debug_selector(mut self, selector: &'static str) -> Self {
@@ -196,7 +214,7 @@ impl RenderOnce for Button {
             .flex_none()
             .items_center()
             .justify_center()
-            .gap(px(rest.gap))
+            .gap(px(self.gap.unwrap_or(rest.gap)))
             .h(px(rest.height))
             .px(px(rest.padding_x))
             .rounded(px(rest.radius))
@@ -211,6 +229,13 @@ impl RenderOnce for Button {
             .opacity(rest.opacity)
             .when_some(self.aria_label.clone(), |button, label| {
                 button.aria_label(label)
+            })
+            .when_some(self.pressed, |button, pressed| {
+                button.aria_toggled(if pressed {
+                    Toggled::True
+                } else {
+                    Toggled::False
+                })
             })
             .when_some(self.debug_selector, |button, selector| {
                 button.debug_selector(move || selector.to_owned())

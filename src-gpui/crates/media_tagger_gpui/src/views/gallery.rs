@@ -18,9 +18,18 @@
 //! goes through [`GalleryView::refresh`], which lays the grid out again, tells the
 //! query model the viewport when it changed, tells the thumbnails the tiles in range
 //! and asks for a redraw.
+//!
+//! # Selection mode
+//!
+//! The bulk-actions toggle of the tools row turns selection mode on and off. In it a
+//! click on a tile toggles the tile instead of opening it, and a press that is held
+//! and moved draws a rectangle (`selection.rs`). What is selected lives in the
+//! runtime and survives the view; the gesture, its preview and the mode's layer in
+//! the layer stack are the view's.
 
 mod grid;
 mod position;
+mod selection;
 
 use std::{
     cell::Cell,
@@ -29,19 +38,22 @@ use std::{
 };
 
 use gpui::{
-    canvas, div, prelude::*, px, relative, AnyElement, Context, Entity, EventEmitter, FocusHandle,
-    MouseButton, Pixels, ScrollEvent, SharedString, Size, Subscription, Task, Window,
+    canvas, div, prelude::*, px, relative, AnyElement, ClickEvent, Context, Entity, EventEmitter,
+    FocusHandle, MouseButton, MouseDownEvent, Pixels, ScrollEvent, SharedString, Size,
+    Subscription, Task, Window,
 };
 use media_tagger_client::{
     controls::{ButtonVariant, SliderRange},
     gallery::{
-        layout::{self as gallery_layout, area, footer, group_plates, media_group, thumbnail_key},
+        layout::{self as gallery_layout, area, group_plates, media_group, thumbnail_key},
         scrollbar_visible, GridEffect, GridGeometry, GridInput, LibraryRange, ScrollEdge,
-        ScrollbarDrag, TileRequest, TimelineEffect, TimelineInput, TimelineScrubber, VirtualGrid,
+        ScrollbarDrag, SelectionGesture, SelectionInput, TileRequest, TimelineEffect,
+        TimelineInput, TimelineScrubber, VirtualGrid,
     },
     i18n::I18n,
     library::{QueryInput, Viewport},
     model::Model as _,
+    overlay::LayerId,
     runtime::{RuntimeInput, TILE_SIZE_MAX, TILE_SIZE_MIN, TILE_SIZE_STEP},
     shell::{
         count_chip, empty_state, identity, item_count, search_row, tools_row, EmptyState,
@@ -54,13 +66,15 @@ use media_tagger_client::{
 
 pub use grid::{
     chip_selector, group_plate_selector, init, key_bindings, loader_selector, picture_selector,
-    placeholder_selector, tile_selector, GalleryEvent, LineDown, LineUp, PageDown, PageUp,
-    ScrollEnd, ScrollStart, FOOTER_SELECTOR, LOAD_ERROR_SELECTOR, LOAD_RETRY_ID, VIEWPORT_SELECTOR,
+    placeholder_selector, selection_mark_selector, tile_selector, GalleryEvent, LineDown, LineUp,
+    PageDown, PageUp, ScrollEnd, ScrollStart, SelectAll, FOOTER_SELECTOR, LOAD_ERROR_SELECTOR,
+    LOAD_RETRY_ID, SELECTION_RECTANGLE_SELECTOR, VIEWPORT_SELECTOR,
 };
 pub use position::{
     timeline_tick_selector, SCROLLBAR_SELECTOR, SCROLLBAR_THUMB_SELECTOR, TIMELINE_LABEL_SELECTOR,
     TIMELINE_MARKER_SELECTOR, TIMELINE_SELECTOR,
 };
+pub use selection::BULK_TOGGLE_ID;
 
 use super::chrome::{self, drag_surface, no_drag};
 use crate::{
@@ -70,6 +84,7 @@ use crate::{
         button::Button,
         fonts,
         icon::Icon,
+        layers,
         logo::logo,
         slider::{Slider, SliderEvent},
         theme::{self, color, weight},
@@ -121,6 +136,21 @@ pub struct GalleryView {
     timeline_focus: FocusHandle,
     timeline_bounds: position::LastBounds,
     timeline_hovered: bool,
+    /// Selection mode: the pointer gesture on the grid, what it was last told of the
+    /// runtime and the layout, its long-press timer and whether its next animation
+    /// frame is scheduled.
+    gesture: SelectionGesture,
+    gesture_stamp: selection::GestureStamp,
+    long_press_timer: Option<Task<()>>,
+    gesture_frame_pending: bool,
+    /// Where the viewport was last laid out in the window: pointer positions of a
+    /// gesture are relative to it.
+    viewport_origin: Rc<Cell<Option<gpui::Point<Pixels>>>>,
+    /// Set by a primary press on a control inside the viewport (the banner's Retry),
+    /// which starts no gesture.
+    control_pressed: Rc<Cell<bool>>,
+    /// The layer of selection mode in the window's layer stack, while the mode is on.
+    selection_layer: Option<LayerId>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -162,7 +192,7 @@ impl GalleryView {
                     runtime.send(RuntimeInput::SetTileSize(value), cx)
                 });
             }),
-            cx.observe(&runtime, |this, runtime, cx| {
+            cx.observe_in(&runtime, window, |this, runtime, window, cx| {
                 let (size, label) = {
                     let runtime = runtime.read(cx);
                     (
@@ -174,13 +204,35 @@ impl GalleryView {
                     slider.set_value(f64::from(size), cx);
                     slider.set_label(label, cx);
                 });
+                this.sync_selection_layer(window, cx);
                 this.refresh(cx);
             }),
             // A picture arrived or failed: the tiles are drawn again.
             cx.observe(&thumbnails, |_, _, cx| cx.notify()),
             cx.observe_window_bounds(window, |_, _, cx| cx.notify()),
-            // A gallery that goes away wants no page and no thumbnail any more.
+            cx.observe_window_activation(window, |this, window, cx| {
+                if !window.is_window_active() {
+                    this.window_deactivated(cx);
+                }
+            }),
+            // A gallery that goes away wants no page and no thumbnail any more, holds
+            // no gesture and leaves no layer behind. Its selection work goes with it,
+            // held or released: a press, a range read on its way and a failed range
+            // with its Retry (the cleanup of `createGridHandlers`' effects sends
+            // `rectangle-cancel` on unmount whether a gesture is held or not). The
+            // selection itself stays; outside selection mode the model ignores this.
             cx.on_release(|this, cx| {
+                this.runtime.update(cx, |runtime, cx| {
+                    runtime.send(
+                        RuntimeInput::Selection(SelectionInput::Interact(
+                            media_tagger_client::gallery::Interaction::RectangleCancel,
+                        )),
+                        cx,
+                    )
+                });
+                if let Some(layer) = this.selection_layer.take() {
+                    layers::forget(layer, cx);
+                }
                 if this.published.0.is_some() {
                     this.runtime.update(cx, |runtime, cx| {
                         runtime.send(RuntimeInput::Query(QueryInput::SetViewport(None)), cx)
@@ -190,8 +242,18 @@ impl GalleryView {
                     .update(cx, |thumbnails, _| thumbnails.sync(Vec::new(), false));
             }),
         ];
-        let page_failure_epoch = runtime.read(cx).model().query().page_failure_epoch();
-        Self {
+        let (page_failure_epoch, gesture_stamp) = {
+            let model = runtime.read(cx).model();
+            (
+                model.query().page_failure_epoch(),
+                selection::GestureStamp {
+                    mode: model.selection().enabled(),
+                    query_epoch: model.query().query_epoch(),
+                    layout: None,
+                },
+            )
+        };
+        let mut view = Self {
             runtime,
             thumbnails,
             settings_opener,
@@ -211,8 +273,24 @@ impl GalleryView {
             timeline_focus: cx.focus_handle().tab_stop(true),
             timeline_bounds: Rc::default(),
             timeline_hovered: false,
+            gesture: SelectionGesture::new(),
+            gesture_stamp,
+            long_press_timer: None,
+            gesture_frame_pending: false,
+            viewport_origin: Rc::default(),
+            control_pressed: Rc::default(),
+            selection_layer: None,
             _subscriptions: subscriptions,
-        }
+        };
+        // Selection mode outlives the view: one made while it is on (back from the
+        // settings page) takes its layer at once.
+        view.sync_selection_layer(window, cx);
+        view
+    }
+
+    /// The pointer gesture of selection mode.
+    pub fn gesture(&self) -> &SelectionGesture {
+        &self.gesture
     }
 
     pub fn tile_size_slider(&self) -> &Entity<Slider> {
@@ -254,13 +332,14 @@ impl GalleryView {
     /// query model and the thumbnails what changed for them, and asks for a redraw.
     /// Everything that changes what the grid shows ends here; rendering only reads.
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        let (total, tile_size, load_failed, page_failure_epoch, version) = {
+        let (total, tile_size, load_failed, selection_mode, page_failure_epoch, version) = {
             let model = self.runtime.read(cx).model();
             let query = model.query();
             (
                 query.total(),
                 model.tile_size(),
-                query.load_error().is_some(),
+                model.gallery_load_failed(),
+                model.selection().enabled(),
                 query.page_failure_epoch(),
                 query.version(),
             )
@@ -272,11 +351,7 @@ impl GalleryView {
                     width: f64::from(width),
                     viewport: f64::from(f32::from(size.height)),
                     lead: f64::from(gallery_layout::lead(load_failed)),
-                    trail: if total > 0 {
-                        f64::from(footer::HEIGHT)
-                    } else {
-                        0.0
-                    },
+                    trail: f64::from(gallery_layout::trail(total > 0, selection_mode)),
                 },
                 count: total,
                 tile_size: f64::from(tile_size),
@@ -320,6 +395,7 @@ impl GalleryView {
         ) {
             self.scrollbar_drag = None;
         }
+        self.sync_gesture(cx);
 
         let viewport = self.grid.viewport();
         if self.published != (viewport, page_failure_epoch) {
@@ -545,7 +621,7 @@ impl GalleryView {
                     .flex()
                     .items_center()
                     .gap(px(tools_row::SIZING_GAP))
-                    // The bulk-actions toggle goes here (E11, E14).
+                    .child(self.bulk_toggle(i18n, cx))
                     .child(tile_size),
             );
 
@@ -674,11 +750,15 @@ impl GalleryView {
     fn load_error(&self, i18n: &I18n<'_>, theme: ThemeName) -> gpui::Stateful<gpui::Div> {
         let runtime = self.runtime.downgrade();
         let grid_focus = self.grid_focus.clone();
-        grid::load_error_banner(i18n, theme, move |_, window, cx| {
+        let control_pressed = self.control_pressed.clone();
+        grid::load_error_banner(i18n, theme, control_pressed, move |_, window, cx| {
             // The banner leaves with the retry and its button with it: the focus goes
             // to the grid instead of nowhere, so the scroll keys work at once.
             window.focus(&grid_focus, cx);
-            runtime::send(&runtime, RuntimeInput::Query(QueryInput::RetryLoad), cx)
+            // The failed pages of the query, then the range the selection could not
+            // read (`library.query.retryLoad(); selection.retry()`).
+            runtime::send(&runtime, RuntimeInput::Query(QueryInput::RetryLoad), cx);
+            runtime::send(&runtime, RuntimeInput::Selection(SelectionInput::Retry), cx)
         })
     }
 
@@ -693,6 +773,16 @@ impl GalleryView {
     ) -> Vec<AnyElement> {
         let model = self.runtime.read(cx).model();
         let query = model.query();
+        let selection = model.selection();
+        let selection_mode = selection.enabled();
+        // What a tile shows while a rectangle is dragged over it, and what is
+        // selected otherwise; a slot without an asset follows the ranges only.
+        let selected = |index: usize, asset_id: Option<i64>| {
+            selection_mode
+                && self
+                    .gesture
+                    .is_preview_selected(index, selection.is_selected(index, asset_id))
+        };
         let thumbnails = self.thumbnails.read(cx);
         let layout = *self.grid.layout();
         let size = layout.size as f32;
@@ -733,10 +823,11 @@ impl GalleryView {
                                 index,
                                 size,
                                 thumbnails.picture(&thumbnail_key(asset)),
+                                selected(index, Some(asset_id)),
                                 i18n,
                                 theme,
-                                cx.listener(move |_, _, _, cx| {
-                                    cx.emit(GalleryEvent::OpenAsset { asset_id, index })
+                                cx.listener(move |this, event: &ClickEvent, window, cx| {
+                                    this.tile_clicked(asset_id, index, event, window, cx)
                                 }),
                             )
                             .left(px(x))
@@ -748,7 +839,13 @@ impl GalleryView {
                             .left(px(x))
                             .top(px(y))
                             .size(px(size))
-                            .child(grid::placeholder(index, size, !paused, theme))
+                            .child(grid::placeholder(
+                                index,
+                                size,
+                                !paused,
+                                selected(index, None),
+                                theme,
+                            ))
                             .into_any_element(),
                     });
                 }
@@ -776,6 +873,16 @@ impl GalleryView {
                 .top(px(self.grid.trail_y() as f32))
                 .into_any_element(),
         );
+        // The rectangle of a drag selection, above everything of the grid.
+        if let Some(preview) = self.gesture.preview() {
+            let rectangle = preview.rectangle;
+            elements.push(
+                grid::selection_rectangle(rectangle.width as f32, rectangle.height as f32, theme)
+                    .left(px(rectangle.left as f32))
+                    .top(px(rectangle.top as f32))
+                    .into_any_element(),
+            );
+        }
         elements
     }
 }
@@ -788,7 +895,7 @@ impl Render for GalleryView {
             (
                 runtime.i18n(),
                 empty_state(runtime.model()),
-                runtime.model().query().load_error().is_some(),
+                runtime.model().gallery_load_failed(),
             )
         };
         // Textures of pictures the cache dropped since the last frame.
@@ -810,13 +917,16 @@ impl Render for GalleryView {
                 body
             }
         };
+        let drag_selecting = self.gesture.dragging();
         // Reports the viewport's size after layout. A new size is applied after this
         // frame, since nothing may change state while a frame is drawn.
         let measure = {
             let view = cx.entity().downgrade();
             let known = self.viewport_size;
+            let origin = self.viewport_origin.clone();
             canvas(
                 move |bounds, window, cx| {
+                    origin.set(Some(bounds.origin));
                     if known != Some(bounds.size) {
                         let size = bounds.size;
                         window.defer(cx, move |_, cx| {
@@ -853,6 +963,7 @@ impl Render for GalleryView {
             }))
             .on_action(cx.listener(|this, _: &LineUp, _, cx| this.scroll_by(-area::KEY_LINE, cx)))
             .on_action(cx.listener(|this, _: &LineDown, _, cx| this.scroll_by(area::KEY_LINE, cx)))
+            .on_action(cx.listener(|this, _: &SelectAll, window, cx| this.select_all(window, cx)))
             .child(header)
             .child(
                 div()
@@ -866,9 +977,15 @@ impl Render for GalleryView {
                     .on_scroll(cx.listener(Self::on_wheel))
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(|this, _, window, cx| window.focus(&this.grid_focus, cx)),
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            window.focus(&this.grid_focus, cx);
+                            this.selection_press(event, window, cx);
+                        }),
                     )
+                    // `cursor-crosshair` while a rectangle is dragged.
+                    .when(drag_selecting, |viewport| viewport.cursor_crosshair())
                     .child(measure)
+                    .child(self.selection_listeners(cx))
                     .children(body),
             )
     }

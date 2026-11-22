@@ -6,9 +6,9 @@
 //! hover). What must survive lives here: the current view, the theme and the
 //! language, the tile size, the library model ([`Library`]: the query with its
 //! session, page cache and applied filters, the canonical tags, the details cache,
-//! the known tags and the metadata writes), the startup sequence and what it learned
-//! (the scan roots, the outcome of the startup scan). Later epics hang their models
-//! (selection, lightbox, settings) next to these.
+//! the known tags and the metadata writes), the bulk selection ([`Selection`]), the
+//! startup sequence and what it learned (the scan roots, the outcome of the startup
+//! scan). Later epics hang their models (lightbox, settings) next to these.
 //!
 //! The library is a model of its own, embedded here. The inputs of its query model
 //! travel as [`RuntimeInput::Query`] and the query's effects as
@@ -20,6 +20,15 @@
 //! and reads the rows through [`AppRuntime::query`]; an editor sends
 //! `RuntimeInput::Library` (details, pins, writes) and reads tags and details
 //! through [`AppRuntime::library`].
+//!
+//! The selection is embedded the same way: its inputs travel as
+//! [`RuntimeInput::Selection`]. It reads the query model through ticketed reads,
+//! which the runtime hands to the query in the same turn, and it is told the query's
+//! epochs and session after every input the library took, before it gets the answers
+//! to its reads; so a read that a refresh overtook is forgotten, not reported as a
+//! failure. The answers to its tickets ([`Selection::owns`]) never show up in
+//! [`AppRuntime::take_query_events`]. Its keepalive timer is the only selection
+//! effect that reaches the runner ([`RuntimeEffect::SelectionKeepAlive`]).
 //!
 //! [`AppRuntime`] is a model in the convention of [`crate::model`]: an input gives a new
 //! state and effects, replies come back as inputs with the token they were started
@@ -41,12 +50,13 @@
 //! the library and the scan roots are refreshed again, and only after both answered
 //! is the scan [`StartupScanPhase::Finished`]. A launch without work refreshes nothing.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use media_tagger_core::models::{ScanRoot, ScanSummary};
 
 use crate::{
     backend::{Backend, BackendError, BackendResult},
+    gallery::selection::{QuerySnapshot, Selection, SelectionEffect, SelectionInput},
     i18n::Language,
     library::{
         run_library_effect, run_query_effect, AssetQuery, Library, LibraryEffect, LibraryEvent,
@@ -171,6 +181,9 @@ pub enum RuntimeInput {
     /// a reply with details or a bulk summary is several times the size of every
     /// other input.
     Library(Box<LibraryInput>),
+    /// A command or the keepalive timer of the bulk selection. The query's state and
+    /// the answers to the selection's reads are passed on by the runtime itself.
+    Selection(SelectionInput),
     /// Lists the scan roots again; an earlier listing still running is superseded.
     RefreshScanRoots,
     ScanRootsLoaded {
@@ -200,6 +213,11 @@ pub enum RuntimeEffect {
     Query(QueryEffect),
     /// Other work of the library model; never a [`LibraryEffect::Query`].
     Library(LibraryEffect),
+    /// Send [`SelectionInput::KeepAliveDue`] with this token after `delay`.
+    SelectionKeepAlive {
+        token: RequestToken,
+        delay: Duration,
+    },
     ListScanRoots(RequestToken),
     ScanStartupRoots,
     SavePrefs(Prefs),
@@ -216,6 +234,9 @@ pub struct AppRuntime {
     started: bool,
     tokens: Tokens,
     library: Library,
+    selection: Selection,
+    /// The answers to ticketed query reads of other callers than the selection.
+    query_events: Vec<QueryEvent>,
     scan_roots: Vec<ScanRoot>,
     scan_roots_error: Option<BackendError>,
     scan_roots_request: RequestSlot,
@@ -227,6 +248,8 @@ pub struct AppRuntime {
 
 impl AppRuntime {
     pub fn new(config: RuntimeConfig) -> Self {
+        let library = Library::new(QueryConfig::default());
+        let selection = Selection::new(query_snapshot(&library));
         Self {
             view: View::default(),
             highlight_scan: false,
@@ -235,7 +258,9 @@ impl AppRuntime {
             tile_size: DEFAULT_TILE_SIZE,
             started: false,
             tokens: Tokens::default(),
-            library: Library::new(QueryConfig::default()),
+            library,
+            selection,
+            query_events: Vec::new(),
             scan_roots: Vec::new(),
             scan_roots_error: None,
             scan_roots_request: RequestSlot::default(),
@@ -284,10 +309,25 @@ impl AppRuntime {
         &self.library
     }
 
+    /// The bulk selection of the gallery: selection mode, what is selected, and
+    /// whether a range is being read.
+    pub fn selection(&self) -> &Selection {
+        &self.selection
+    }
+
+    /// Whether the gallery shows its load error banner (`selection.error ??
+    /// library.query.loadError`): a range of the selection could not be read, or the
+    /// query or one of its pages failed. Retry sends [`QueryInput::RetryLoad`] and
+    /// then [`SelectionInput::Retry`].
+    pub fn gallery_load_failed(&self) -> bool {
+        self.selection.error().is_some() || self.library.query().load_error().is_some()
+    }
+
     /// The answers to ticketed reads of the query model since the last call
-    /// ([`AssetQuery::take_events`]).
+    /// ([`AssetQuery::take_events`]), without the answers to the selection's own reads
+    /// (tickets from `SELECTION_TICKET_BASE` up).
     pub fn take_query_events(&mut self) -> Vec<QueryEvent> {
-        self.library.take_query_events()
+        std::mem::take(&mut self.query_events)
     }
 
     /// The answers to ticketed library commands and the commits of writes since the
@@ -340,16 +380,76 @@ impl AppRuntime {
     }
 
     /// Hands `input` to the library model and wraps what it asks for.
+    fn feed_library(&mut self, input: LibraryInput, effects: &mut Vec<RuntimeEffect>) {
+        effects.extend(
+            self.library
+                .handle(input)
+                .into_iter()
+                .map(|effect| match effect {
+                    LibraryEffect::Query(effect) => RuntimeEffect::Query(effect),
+                    effect => RuntimeEffect::Library(effect),
+                }),
+        );
+    }
+
+    /// Runs what the selection asked for and brings it in line with the library: its
+    /// reads go to the query model in this turn, it is told the query's state before
+    /// it gets the answers that came with it, and whatever that makes it ask for is
+    /// run as well.
+    fn drive_selection(
+        &mut self,
+        mut pending: Vec<SelectionEffect>,
+        effects: &mut Vec<RuntimeEffect>,
+    ) {
+        loop {
+            for effect in std::mem::take(&mut pending) {
+                let read = match effect {
+                    SelectionEffect::ReadIdRange { ticket, start, end } => {
+                        QueryInput::ReadIdRange { ticket, start, end }
+                    }
+                    SelectionEffect::KeepSessionAlive { ticket, session_id } => {
+                        QueryInput::KeepSessionAlive { ticket, session_id }
+                    }
+                    SelectionEffect::KeepAliveTimer { token, delay } => {
+                        effects.push(RuntimeEffect::SelectionKeepAlive { token, delay });
+                        continue;
+                    }
+                };
+                self.feed_library(LibraryInput::Query(read), effects);
+            }
+            if self.library.is_disposed() {
+                self.selection.handle(SelectionInput::Dispose);
+            }
+            // The epochs first: an answer that a refresh overtook belongs to a read
+            // the selection has forgotten by then.
+            let snapshot = query_snapshot(&self.library);
+            pending.extend(self.selection.handle(SelectionInput::Sync(snapshot)));
+            for event in self.library.take_query_events() {
+                let input = match event {
+                    QueryEvent::IdRangeRead { ticket, result } if Selection::owns(ticket) => {
+                        SelectionInput::IdRangeRead { ticket, result }
+                    }
+                    QueryEvent::SessionKeptAlive { ticket, result } if Selection::owns(ticket) => {
+                        SelectionInput::SessionKeptAlive { ticket, result }
+                    }
+                    other => {
+                        self.query_events.push(other);
+                        continue;
+                    }
+                };
+                pending.extend(self.selection.handle(input));
+            }
+            if pending.is_empty() {
+                break;
+            }
+        }
+    }
+
+    /// Hands `input` to the library model, then to the selection what changed for it.
     fn library_input(&mut self, input: LibraryInput) -> Vec<RuntimeEffect> {
-        let effects = self
-            .library
-            .handle(input)
-            .into_iter()
-            .map(|effect| match effect {
-                LibraryEffect::Query(effect) => RuntimeEffect::Query(effect),
-                effect => RuntimeEffect::Library(effect),
-            })
-            .collect();
+        let mut effects = Vec::new();
+        self.feed_library(input, &mut effects);
+        self.drive_selection(Vec::new(), &mut effects);
         // A reply may have been the library refresh the startup scan waits for.
         self.settle_startup_scan();
         effects
@@ -445,6 +545,13 @@ impl Model for AppRuntime {
             RuntimeInput::RefreshLibrary => self.refresh_library(),
             RuntimeInput::Query(input) => self.library_input(LibraryInput::Query(input)),
             RuntimeInput::Library(input) => self.library_input(*input),
+            RuntimeInput::Selection(input) => {
+                let pending = self.selection.handle(input);
+                let mut effects = Vec::new();
+                self.drive_selection(pending, &mut effects);
+                self.settle_startup_scan();
+                effects
+            }
             RuntimeInput::RefreshScanRoots => vec![self.refresh_scan_roots()],
             RuntimeInput::ScanRootsLoaded { token, result } => {
                 if !self.scan_roots_request.finish(token) {
@@ -490,6 +597,19 @@ impl Model for AppRuntime {
     }
 }
 
+/// What the selection is told of the library: the query's epochs, session and total,
+/// and the identity epoch of the tag state.
+fn query_snapshot(library: &Library) -> QuerySnapshot {
+    let query = library.query();
+    QuerySnapshot {
+        query_epoch: query.query_epoch(),
+        identity_epoch: library.tags().epoch(),
+        failure_epoch: query.page_failure_epoch(),
+        session_id: query.session_id(),
+        total: query.total(),
+    }
+}
+
 /// Runs the runtime's effects through the backend port and the preference store.
 pub struct RuntimeRunner {
     backend: Arc<dyn Backend>,
@@ -510,6 +630,12 @@ impl Runner<AppRuntime> for RuntimeRunner {
             }
             RuntimeEffect::Library(effect) => {
                 run_library_effect(&self.backend, effect, dispatch, RuntimeInput::library);
+            }
+            RuntimeEffect::SelectionKeepAlive { token, delay } => {
+                dispatch.after(
+                    delay,
+                    RuntimeInput::Selection(SelectionInput::KeepAliveDue(token)),
+                );
             }
             RuntimeEffect::ListScanRoots(token) => {
                 let backend = Arc::clone(&self.backend);

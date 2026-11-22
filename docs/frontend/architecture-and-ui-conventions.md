@@ -44,7 +44,9 @@ come and go:
 - `media_tagger_client::runtime::AppRuntime` is `createAppRuntime` as a model: the view
   (`gallery` or `settings`), the scan-section highlight of "Add first folder", the theme,
   the language, the tile size (`clamp_tile_size`, `next_tile_size_by_wheel`), the
-  library model, the scan roots and the startup scan. `RuntimeInput::Start` runs once
+  library model, the bulk selection
+  ([selection](../subsystems/search-tags-and-media-groups.md#gpui-port-selection-and-gestures)),
+  the scan roots and the startup scan. `RuntimeInput::Start` runs once
   (later starts are ignored): it refreshes the library (the query and the known tags), joins
   the startup scan and lists the scan roots at once, and stores the start theme and language
   as the Solid bootstrap does. The startup scan is requested once; while it runs,
@@ -94,8 +96,10 @@ come and go:
 - The gallery header has the identity (`public/tagrove.svg`, drawn in its own colours,
   and the product name), the settings button, the window buttons, the item count
   (`workspace.itemCount` with the language's plural and digit grouping) and the
-  tile-size slider. The search field with its toolbar (epics E12, E13) and the
-  bulk-actions toggle (E11, E14) have empty slots. Below the header the gallery shows the
+  tile-size slider, with the bulk-actions toggle before it, which turns
+  [selection mode](../subsystems/search-tags-and-media-groups.md#gpui-port-selection-and-gestures)
+  on and off (the dock it opens in the Tauri interface is epic E14). The search field with its
+  toolbar (epics E12, E13) has an empty slot. Below the header the gallery shows the
   [virtual grid](../subsystems/library-query-and-gallery.md#gpui-port-the-gallery-grid)
   with its status footer, or the empty state of `GalleryEmptyState` (no folders, or no
   results), each inside the gallery section's paddings (20 px left, 34 px right), and the
@@ -504,7 +508,7 @@ A shortcut on a key the field does not use, such as Ctrl+K, fires with the focus
 
 Disabling a field that has the focus removes the focus from the window. The application shell has to take it back (`on_focus_lost`), because without a focused element no key context is in the dispatch path and no shortcut matches. The shell does: it focuses the layer stack's root when the window opens and whenever the focus is lost.
 
-The application's key contexts are `media_tagger_client::shortcuts::KeyContext`: `Shell`, which sits on the window's root next to `UiLayers` (the root holds the focus when nothing else does, so a `Shell` binding is always on the path), and `Gallery` and `Settings` on the two views. `SHORTCUTS` is the registry of application shortcuts. The shell binds none, because the Tauri shell binds no key besides the layer stack's Escape. The gallery binds the keys that scroll its grid, which a webview's scroller handles natively (Home, End, Page Up, Page Down, Up, Down, in `Gallery`; `views::gallery::key_bindings` turns the entries into GPUI bindings and `views::init` registers them). They act while the focus is inside the gallery view, where a text field, the slider or the segmented control bind the same keys deeper and win; the gallery's position bar and month timeline bind nothing but handle the same actions themselves while focused (rows and pages, or months and years), since GPUI gives an action to the deepest listener on the focus path; with the focus on the window root no `Gallery` binding is on the path. The epics that bring the search (Ctrl+K) and the lightbox add theirs under the two rules above (`types_a_character` tells which keys need `outside_text_input`). There are no context menus, as in Tauri.
+The application's key contexts are `media_tagger_client::shortcuts::KeyContext`: `Shell`, which sits on the window's root next to `UiLayers` (the root holds the focus when nothing else does, so a `Shell` binding is always on the path), and `Gallery` and `Settings` on the two views. `SHORTCUTS` is the registry of application shortcuts. The shell binds none, because the Tauri shell binds no key besides the layer stack's Escape. The gallery binds the keys that scroll its grid, which a webview's scroller handles natively (Home, End, Page Up, Page Down, Up, Down, in `Gallery`; `views::gallery::key_bindings` turns the entries into GPUI bindings and `views::init` registers them), and Ctrl+A with its platform-key twin, which select every result while selection mode is on and the gallery's own layer is the top one (otherwise the key goes on; [selection](../subsystems/search-tags-and-media-groups.md#gpui-port-selection-and-gestures)). They act while the focus is inside the gallery view, where a text field, the slider or the segmented control bind the same keys deeper and win; the gallery's position bar and month timeline bind nothing but handle the same actions themselves while focused (rows and pages, or months and years), since GPUI gives an action to the deepest listener on the focus path; with the focus on the window root no `Gallery` binding is on the path. The epics that bring the search (Ctrl+K) and the lightbox add theirs under the two rules above (`types_a_character` tells which keys need `outside_text_input`). There are no context menus, as in Tauri.
 
 The field sets the accessibility role `TextInput` and the label given with `set_label`.
 

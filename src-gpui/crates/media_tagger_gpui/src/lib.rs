@@ -27,7 +27,7 @@ use media_tagger_client::{
 };
 use runtime::RuntimeParts;
 use scenario::StartScreen;
-use window::MainScreen;
+use window::{MainScreen, ShellStart};
 
 /// Starts the application and returns after its last window has closed.
 ///
@@ -118,7 +118,16 @@ pub fn run_scenario_with(
                 prefs,
                 executor: executor.clone(),
             };
-            (config.theme, MainScreen::Shell(parts, start.tile_size))
+            (
+                config.theme,
+                MainScreen::Shell(
+                    parts,
+                    ShellStart {
+                        tile_size: start.tile_size,
+                        selection: start.selection,
+                    },
+                ),
+            )
         }
         StartScreen::Kit => (start.theme, MainScreen::Kit),
     };

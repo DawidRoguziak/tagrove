@@ -12,6 +12,8 @@
 //! by the adapter: only the isolated E2E profile accepts a scenario.
 
 use crate::{
+    gallery::{Interaction, SelectionInput},
+    library::AssetQuery,
     runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
     theme::ThemeName,
 };
@@ -42,6 +44,18 @@ impl Seed {
 /// scenario (`SCENARIO_MEDIA_VARIABLE` of `e2e/compare/gpui-control-support.js`).
 pub const SCENARIO_MEDIA_VARIABLE: &str = "MEDIATAGGER_GPUI_SCENARIO_MEDIA";
 
+/// One click on a tile in selection mode, as a scenario's Tauri steps make it
+/// (`click` and `modclick` on `button[data-asset-index="<index>"]`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenarioClick {
+    /// The global index of the tile.
+    pub index: usize,
+    /// Control is held.
+    pub ctrl: bool,
+    /// Shift is held.
+    pub shift: bool,
+}
+
 /// One named start state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scenario {
@@ -51,39 +65,103 @@ pub struct Scenario {
     pub seed: Seed,
     /// The tile size the gallery starts with.
     pub tile_size: u32,
+    /// The clicks the gallery starts with, in selection mode; without clicks
+    /// selection mode stays off. They are made once their tiles are loaded
+    /// ([`selection_inputs`]). A Shift click reads its range in the background, so
+    /// only the last click may be one.
+    pub selection: &'static [ScenarioClick],
+}
+
+/// `gallery-selection`: a click on the second tile, a Ctrl-click on the first and a
+/// Shift-click on the third, which selects the range from the first (the anchor of
+/// the Ctrl-click): the first three tiles.
+pub const GALLERY_SELECTION_CLICKS: [ScenarioClick; 3] = [
+    ScenarioClick {
+        index: 1,
+        ctrl: false,
+        shift: false,
+    },
+    ScenarioClick {
+        index: 0,
+        ctrl: true,
+        shift: false,
+    },
+    ScenarioClick {
+        index: 2,
+        ctrl: false,
+        shift: true,
+    },
+];
+
+/// The inputs that make `clicks` in selection mode: the mode toggle, then one click
+/// per entry on the asset its tile shows. `None` until the query has a session and
+/// the row of every clicked tile is loaded. No clicks: no inputs.
+pub fn selection_inputs(
+    clicks: &[ScenarioClick],
+    query: &AssetQuery,
+) -> Option<Vec<SelectionInput>> {
+    if clicks.is_empty() {
+        return Some(Vec::new());
+    }
+    if query.session_id().is_none() || query.query_pending() {
+        return None;
+    }
+    let mut inputs = vec![SelectionInput::ToggleMode];
+    for click in clicks {
+        let asset = query.asset_at(click.index)?;
+        inputs.push(SelectionInput::Interact(Interaction::Click {
+            asset_id: asset.id,
+            asset_index: click.index,
+            ctrl_like: click.ctrl,
+            shift: click.shift,
+        }));
+    }
+    Some(inputs)
 }
 
 /// Every scenario the GPUI interface can start in, on a fresh profile.
-pub const SCENARIOS: [Scenario; 5] = [
+pub const SCENARIOS: [Scenario; 6] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
         seed: Seed::Empty,
         tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
     },
     Scenario {
         id: "shell-empty-light",
         theme: ThemeName::Light,
         seed: Seed::Empty,
         tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
     },
     Scenario {
         id: "gallery-default",
         theme: ThemeName::Dark,
         seed: Seed::Control,
         tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
     },
     Scenario {
         id: "gallery-tiles-small",
         theme: ThemeName::Dark,
         seed: Seed::Control,
         tile_size: TILE_SIZE_MIN,
+        selection: &[],
     },
     Scenario {
         id: "gallery-tiles-large",
         theme: ThemeName::Dark,
         seed: Seed::Control,
         tile_size: TILE_SIZE_MAX,
+        selection: &[],
+    },
+    Scenario {
+        id: "gallery-selection",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &GALLERY_SELECTION_CLICKS,
     },
 ];
 
@@ -236,6 +314,127 @@ mod tests {
         assert_eq!(
             super::SCENARIO_MEDIA_VARIABLE,
             "MEDIATAGGER_GPUI_SCENARIO_MEDIA"
+        );
+    }
+
+    #[test]
+    fn the_selection_scenario_makes_the_clicks_of_its_tauri_steps() {
+        // Parity scenario of E11.
+        let scenario = find("gallery-selection").expect("gallery-selection is a scenario");
+        assert_eq!(scenario.seed, Seed::Control);
+        assert_eq!(scenario.tile_size, DEFAULT_TILE_SIZE);
+        assert_eq!(scenario.selection.len(), 3);
+        // Only the last click may read a range.
+        let (last, earlier) = scenario.selection.split_last().expect("clicks");
+        assert!(last.shift && earlier.iter().all(|click| !click.shift));
+
+        let file = repository_root().join("e2e/compare/scenarios/gallery-selection.js");
+        let source = std::fs::read_to_string(&file).expect("read the Tauri steps");
+        let mut steps = vec![r#"["click", 'button[aria-label="Enable bulk actions"]']"#.to_owned()];
+        for click in scenario.selection {
+            let tile = format!(r#"'button[data-asset-index="{}"]'"#, click.index);
+            steps.push(match (click.ctrl, click.shift) {
+                (false, false) => format!(r#"["click", {tile}]"#),
+                (true, false) => format!(r#"["modclick", "Control", {tile}]"#),
+                (false, true) => format!(r#"["modclick", "Shift", {tile}]"#),
+                (true, true) => format!(r#"["modclick", "Control+Shift", {tile}]"#),
+            });
+        }
+        let mut from = 0;
+        for step in &steps {
+            let at = source[from..].find(step.as_str()).unwrap_or_else(|| {
+                panic!("{step} is missing, or out of order, in the Tauri steps")
+            });
+            from += at + step.len();
+        }
+        for scenario in SCENARIOS {
+            if scenario.id != "gallery-selection" {
+                assert!(scenario.selection.is_empty(), "{}", scenario.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_selection_clicks_wait_for_the_rows_of_their_tiles() {
+        use std::sync::Arc;
+
+        use media_tagger_core::models::{AssetSummary, StartAssetQueryResult};
+
+        use crate::{
+            backend::{Backend, FakeBackend},
+            exec::{Executor, ManualExecutor},
+            gallery::{Interaction, SelectionInput},
+            library::{AssetQuery, QueryConfig, QueryInput, QueryRunner},
+            model::Driver,
+        };
+
+        fn row(id: i64) -> AssetSummary {
+            AssetSummary {
+                id,
+                file_name: format!("{id}.png"),
+                preview_path: None,
+                kind: "image".into(),
+                modified_at: 0,
+                width: None,
+                height: None,
+                duration_ms: None,
+                thumb_version: format!("{id:016x}"),
+                is_favorite: false,
+                media_group_key: None,
+                media_group_order: None,
+            }
+        }
+        let backend = Arc::new(FakeBackend::new());
+        backend.on_start_asset_query(|_| {
+            Ok(StartAssetQueryResult::Ready {
+                session_id: 1,
+                revision: 1,
+                total: 7,
+                offset: 0,
+                // The IDs are not the indexes plus one.
+                items: [40, 10, 30, 20, 50, 60, 70].into_iter().map(row).collect(),
+            })
+        });
+        let executor = Arc::new(ManualExecutor::new());
+        let mut driver = Driver::new(
+            AssetQuery::new(QueryConfig::default()),
+            QueryRunner::new(backend as Arc<dyn Backend>),
+            executor.clone() as Arc<dyn Executor>,
+        );
+        let clicks = &super::GALLERY_SELECTION_CLICKS;
+
+        assert_eq!(
+            super::selection_inputs(&[], driver.model()),
+            Some(Vec::new())
+        );
+        assert!(super::selection_inputs(clicks, driver.model()).is_none());
+        driver.handle(QueryInput::Refresh);
+        assert!(super::selection_inputs(clicks, driver.model()).is_none());
+        executor.run_all();
+        driver.pump();
+
+        let inputs = super::selection_inputs(clicks, driver.model()).expect("the rows are loaded");
+        let clicked: Vec<_> = inputs
+            .iter()
+            .map(|input| match input {
+                SelectionInput::ToggleMode => None,
+                SelectionInput::Interact(Interaction::Click {
+                    asset_id,
+                    asset_index,
+                    ctrl_like,
+                    shift,
+                }) => Some((*asset_id, *asset_index, *ctrl_like, *shift)),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            clicked,
+            [
+                None,
+                Some((10, 1, false, false)),
+                Some((40, 0, true, false)),
+                Some((30, 2, false, true))
+            ]
         );
     }
 

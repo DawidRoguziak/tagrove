@@ -4,9 +4,9 @@
 //! the CSS pixels of `src/styles.css` and the Tailwind classes of those components.
 //!
 //! The header has slots that later epics fill: the search field and its toolbar
-//! (media kind, favourites, tag list; E12, E13), and the bulk-actions toggle (E11,
-//! E14). The shell draws the identity, the settings button, the window controls, the
-//! item count and the tile-size slider.
+//! (media kind, favourites, tag list; E12, E13). The shell draws the identity, the
+//! settings button, the window controls, the item count, the bulk-actions toggle and
+//! the tile-size slider.
 
 use crate::{
     i18n::{I18n, Params},
@@ -52,6 +52,24 @@ pub mod tools_row {
     pub const TILE_SIZE_PADDING_LEFT: f32 = 16.0;
     pub const SLIDER_WIDTH: f32 = 112.0;
     pub const SLIDER_PADDING_Y: f32 = 12.0;
+    /// The bulk-actions toggle: `gap-2` between its icon and its label. The icon is
+    /// 20 px: the `h-4 w-4` the toggle gives `UiIcon` loses to the icon's own
+    /// `h-5 w-5`, which comes later in the stylesheet.
+    pub const BULK_TOGGLE_GAP: f32 = 8.0;
+    pub const BULK_TOGGLE_ICON_SIZE: f32 = 20.0;
+}
+
+/// The text of the bulk-actions toggle and its accessible name, which says what a
+/// click does (`TileSizeSlider.tsx`).
+pub fn bulk_toggle_keys(selection_mode: bool) -> (&'static str, &'static str) {
+    (
+        "controls.bulkActions",
+        if selection_mode {
+            "controls.disableBulkActions"
+        } else {
+            "controls.enableBulkActions"
+        },
+    )
 }
 
 /// `.workspace-count`: the item count chip.

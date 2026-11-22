@@ -31,6 +31,23 @@ pub mod area {
     /// What Page Up and Page Down keep in view of the page before: the viewport's
     /// height times this is the step.
     pub const PAGE_FRACTION: f64 = 0.875;
+    /// `.workspace-body--bulk { padding-bottom: 88px }`: in selection mode the result
+    /// ends this far above the viewport's bottom, where the bulk dock floats.
+    pub const BULK_PADDING_BOTTOM: f32 = 88.0;
+}
+
+/// What scrolls below the last row: the status footer of a result that has rows and,
+/// in selection mode, the room of the bulk dock.
+pub fn trail(has_rows: bool, selection_mode: bool) -> f32 {
+    if !has_rows {
+        return 0.0;
+    }
+    footer::HEIGHT
+        + if selection_mode {
+            area::BULK_PADDING_BOTTOM
+        } else {
+            0.0
+        }
 }
 
 /// `GalleryTile`.
@@ -45,6 +62,17 @@ pub mod tile {
     pub const PLACEHOLDER_FILL_PERCENT: u8 = 70;
     /// The backplate of a media group reaches this far beyond its tiles.
     pub const GROUP_PLATE_OUTSET: f32 = 4.0;
+    /// A selected tile: `shadow-[0_0_0_2px_var(--color-primary),…]`; a selected slot
+    /// without an asset: `ring-2 ring-primary`.
+    pub const SELECTION_RING_WIDTH: f32 = 2.0;
+    /// The check mark of a selected tile: `left-2 top-2 h-5 w-5`. Its icon fills it:
+    /// the `h-4 w-4` the tile gives `UiIcon` loses to the icon's own `h-5 w-5`, which
+    /// comes later in the stylesheet.
+    pub const SELECTION_MARK_INSET: f32 = 8.0;
+    pub const SELECTION_MARK_SIZE: f32 = 20.0;
+    pub const SELECTION_MARK_ICON_SIZE: f32 = 20.0;
+    /// The rectangle of a drag selection: `bg-primary/20`.
+    pub const SELECTION_RECTANGLE_FILL_PERCENT: u8 = 20;
 }
 
 /// `animate-pulse` of a slot whose asset is not loaded:
@@ -204,7 +232,7 @@ pub fn result_count(i18n: &I18n<'_>, total: usize) -> String {
 mod tests {
     use super::{
         error_banner, footer, group_plates, lead, placeholder_pulse_opacity, result_count,
-        tile_area_width, MediaBadge,
+        tile_area_width, trail, MediaBadge,
     };
     use crate::{
         controls::ChipTone,
@@ -230,6 +258,20 @@ mod tests {
         assert_eq!(lead(false), 20.0);
         assert_eq!(error_banner::HEIGHT, 42.0);
         assert_eq!(lead(true), 74.0);
+    }
+
+    #[test]
+    fn selection_mode_leaves_room_for_the_dock_below_the_footer() {
+        assert_eq!(trail(true, false), footer::HEIGHT);
+        assert_eq!(trail(true, true), footer::HEIGHT + 88.0);
+        // The empty state has no footer and nothing below it.
+        assert_eq!(trail(false, false), 0.0);
+        assert_eq!(trail(false, true), 0.0);
+        let styles = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/styles.css"),
+        )
+        .expect("read src/styles.css");
+        assert!(styles.contains(".workspace-body--bulk { padding-bottom: 88px; }"));
     }
 
     #[test]

@@ -320,6 +320,100 @@ and `ManualExecutor` with replies run in a chosen order, and one case on `Thread
 against the real core through `TempCore`
 ([testing](../development/testing.md#gpui-workspace)).
 
+## GPUI port: selection and gestures
+
+The GPUI port has the bulk selection described [above](#bulk-selection) with the same rules, split
+between its two crates ([ADR 0043](../adr/0043-gpui-selection-synced-by-the-runtime-and-gestures-as-a-state-machine.md)).
+The Tauri path is unchanged. The bulk dock, which shows the count and the
+notices and sends the writes, is a later epic (E14): until then the selection is visible on the
+tiles only.
+
+**Model** (`media_tagger_client::gallery::selection`, the port of `createSelection.ts`).
+`Selection` is a state machine in the convention of the client crate: `SelectionInput` in,
+`SelectionEffect` out. It holds the ranges of one query session, the `excluded` and `included` ID
+maps (in the order the IDs were selected), the Shift anchor, the pending range read with the ranges
+it resolves and their retry, the notice (`RangeCleared`, `RangeExpired`) and the error
+(`SelectionError`), and exposes `is_selected(index, id)`, `count`, `ids`, `key`, `busy` and
+`capture` with the `SelectionSpec`. `MATERIALIZE_LIMIT` (10,000) and `SESSION_KEEPALIVE` (60 s)
+are the constants of the Solid model.
+
+- **Embedded in the runtime.** `AppRuntime` owns it next to the library (`RuntimeInput::Selection`,
+  `AppRuntime::selection`), so it survives the settings page like the Solid model. It never calls
+  the query model: a range read and the keepalive read are effects, which the runtime hands to the
+  embedded query model in the same turn as `QueryInput::ReadIdRange` and
+  `QueryInput::KeepSessionAlive` with a ticket from the selection's own range
+  (`SELECTION_TICKET_BASE` and up; every other caller of ticketed query reads stays below it). The
+  answers go back to the selection and never appear in `AppRuntime::take_query_events`.
+- **Epochs.** What the Solid model reads through reactive getters arrives as
+  `SelectionInput::Sync(QuerySnapshot)` after every input the library took: the query epoch, the
+  session, the total, the page-failure epoch and the identity epoch of the tag state. The runtime
+  syncs before it passes on the answers that came with the same input, so a range read that a
+  refresh overtook is forgotten, not shown as a failure. A new query epoch cancels the pending read,
+  its retry and the anchor; another session drops ranges with `RangeCleared` and keeps IDs held
+  directly (without publishing, so `key` stays); the same session keeps the ranges. A failed query
+  (the failure epoch moves while the query has no session) drops ranges with `RangeExpired`; a
+  failed page keeps them. A new identity epoch clears the selection.
+- **Keepalive** ([ADR 0029](../adr/0029-range-selection-keeps-its-session-alive.md)). While ranges
+  are held, the model asks for one read of their session at once and re-arms a 60 s timer effect
+  (`RuntimeEffect::SelectionKeepAlive`, the only selection effect that reaches the runner), with
+  one read in flight at most. `Stale` on the first read drops the ranges with `RangeExpired`; a
+  later one is left to the query's own refresh.
+- **Writes.** `SelectionCapture::spec_mutation` turns a captured range selection into
+  `Mutation::MergeTagsInSelection`, `ToggleFavoritesInSelection` or `SetMediaGroupInSelection`,
+  which the library model sends through the port's `apply_selection_mutation` on its library-wide
+  turn. A `Stale` answer writes nothing and refreshes the query, whose new session clears the
+  selection. It answers `None` while a gesture or a range read is pending and for a selection of
+  IDs, which is written through the ID commands (the dock, E14).
+- **One difference.** Adding no range at all to a selection that holds a range and an ID whose
+  position is unknown (an additive rectangle over empty space) leaves the selection as it is. The
+  Solid model fails there with a retryable error, because it reads the first of zero new ranges.
+
+**Gestures** (`gallery::selection_gesture`, `gallery::selection_geometry`; the ports of
+`createGridHandlers.ts` and `selectionGeometry.ts`). `SelectionGesture` is the state machine of
+the press: the 150 ms hold and 5 px move before a rectangle, the rectangle from the pressed point
+(which scrolls with the grid) to the pointer clamped to the viewport, its tiles from global indexes
+(`intersected_ranges`), edge scrolling per animation frame (`edge_scroll_speed`, at most 32 ms a
+frame), the 500 ms long press that opens the pressed asset, and the one swallowed click after a
+rectangle or a long press. The view (`views/gallery/selection.rs`) gives it pointer positions
+relative to the viewport, the grid's place in it and times on the executor's clock, and runs its
+effects: commands for the selection, `GalleryEvent::OpenAsset`, the long-press timer, scrolling
+and frames.
+
+- A press starts a gesture on the grid and the space around its tiles: not on the position bar or
+  the timeline (their presses stop there), not on the banner's Retry button, not on the status
+  footer and not in the empty state.
+- Moves and the release are window-wide listeners registered in every frame. The release is taken
+  in the capture phase, because GPUI fires the click of the tile under the pointer in the bubble
+  phase of the same event and the gesture has to end first, as `pointerup` precedes `click`. A
+  move without the button down ends a held gesture (the release happened outside the window), and
+  so does the window losing its activation.
+- The preview of a released rectangle stays until the model is no longer busy with its ranges.
+- A change of selection mode or of the query epoch ends a held gesture; for a released one only
+  the preview goes, since the model cancels its own read on both changes. A change of the grid's
+  measures (columns, tile size, count, the error banner, the viewport's size) ends a held gesture
+  and hides a released preview without touching the read or its retry.
+- A gallery view that goes away (the settings page takes its place) takes its selection work with
+  it, held or released, as the unmount of the Solid grid does: the press, a range read on its way
+  and a failed range with its Retry are cancelled. The selection and the mode stay.
+- While selection mode is on, the gallery view holds a layer of the window's layer stack that is
+  not modal: Escape clears the selection and keeps the mode, unless a modal is above. Ctrl+A (and
+  the platform key with A) is bound in the `Gallery` key context and selects every result only in
+  selection mode and while that layer is the top one; a text field keeps its own Ctrl+A. As with
+  the scroll keys, the binding is not reached while the focus is on the window's root.
+- The bulk-actions toggle is in the tools row (`controls.bulkActions`, primary while on, its
+  accessible name says what a click does). In selection mode the result ends 88 px above the
+  viewport's bottom (`.workspace-body--bulk`), the room the dock floats in. A selected tile has the 2 px primary ring over its
+  hover edge and the check mark at its top left; a selected slot without a loaded asset has the
+  ring only. Tiles under a rectangle are drawn selected while it is dragged; a rectangle with
+  Ctrl held at the press keeps what was selected. The rectangle is a primary border with a 20%
+  fill, clipped to the viewport. The load error banner also shows for a selection range that
+  could not be read, and its Retry repeats the failed pages and that range.
+
+Tests: `gallery/selection/tests.rs`, `gallery/selection_geometry.rs`,
+`gallery/selection_gesture.rs` and the `selection` cases of `runtime/tests.rs` in the client
+crate; `tests/gallery_selection.rs` in `media_tagger_gpui`
+([testing](../development/testing.md#gpui-workspace)).
+
 ## Known limitations
 
 - Backend ordering and the locale-sensitive fallback ordering of the tag list can differ.

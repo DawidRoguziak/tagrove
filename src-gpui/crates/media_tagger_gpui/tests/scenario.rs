@@ -90,7 +90,7 @@ fn the_e2e_profile_refuses_an_unknown_scenario_before_the_display_check() {
     assert_eq!(
         error,
         "unknown scenario \"no-such-scenario\"; known: shell-empty, shell-empty-light, \
-         gallery-default, gallery-tiles-small, gallery-tiles-large, kit"
+         gallery-default, gallery-tiles-small, gallery-tiles-large, gallery-selection, kit"
     );
     assert!(
         is_empty_dir(tmp.path()),
@@ -113,6 +113,7 @@ fn the_e2e_profile_accepts_its_scenarios_and_goes_on_to_the_display_check() {
         Some("gallery-default"),
         Some("gallery-tiles-small"),
         Some("gallery-tiles-large"),
+        Some("gallery-selection"),
     ] {
         let error = error_of(run_scenario_with(profile::E2E.identifier, scenario, &env));
 

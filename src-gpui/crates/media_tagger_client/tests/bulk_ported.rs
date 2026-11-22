@@ -38,8 +38,9 @@ use media_tagger_client::{
 };
 use media_tagger_core::models::{
     AssetDetails, AssetQueryPageResult, AssetSummary, AssetTagResult, BulkFavoriteSummary,
-    BulkMediaGroupSummary, BulkTagMergeSummary, SelectionMutationResult, SetAssetTagsSummary,
-    StartAssetQueryResult, TagListPage, TagQueryImpact,
+    BulkMediaGroupSummary, BulkTagMergeSummary, DeleteAssetSummary, DeleteSourceStatus,
+    SelectionMutationResult, SetAssetTagsSummary, StartAssetQueryResult, TagListPage,
+    TagQueryImpact,
 };
 
 /// Rows of the first page the scripted query answers with.
@@ -1336,6 +1337,44 @@ fn clears_the_selection_and_the_single_tags_on_identity_reset() {
     fx.settle();
     assert_eq!(fx.runtime().selection().count(), 0);
     assert!(fx.single_tags().is_empty());
+}
+
+/// "ignores details completed after deletion and clears selection on identity reset"
+/// (the deletion half, epic E15): the single selected asset is deleted while the
+/// retry of its details read still waits; the late answer publishes nothing.
+#[test]
+fn ignores_details_completed_after_deletion() {
+    let mut fx = Fx::new(2);
+    fx.backend
+        .on_get_asset_details(|_| Err(BackendError::rejected("read")))
+        .on_delete_asset(|_| {
+            Ok(DeleteAssetSummary {
+                removed_assets: 1,
+                removed_thumbnails: 0,
+                source_status: DeleteSourceStatus::Deleted,
+                revision: 2,
+                recovery_path: None,
+            })
+        });
+    fx.select(&[1]);
+    assert!(fx.runtime().bulk().tag_details_failed());
+
+    fx.backend
+        .on_get_asset_details(|id| Ok(Some(details(id, &["cat"]))));
+    fx.bulk(BulkCommand::RetryTagDetails);
+    assert!(fx.runtime().bulk().tag_details_loading());
+    let waiting = fx.executor.pending();
+    assert!(waiting >= 1, "the details read waits");
+
+    fx.external(9, Mutation::DeleteAsset { asset_id: 1 });
+    assert_eq!(fx.executor.pending(), waiting + 1);
+    // The deletion answers first, then the details read.
+    fx.answer(waiting);
+    assert_eq!(fx.count("delete_asset"), 1);
+    fx.settle();
+    let view = fx.runtime().bulk();
+    assert!(view.single_asset_tags().is_empty());
+    assert!(view.tag_details_failed());
 }
 
 /// "queues group saves behind another writer and repeated saves behind each other"

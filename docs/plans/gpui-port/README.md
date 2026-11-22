@@ -131,7 +131,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | E12 | [Wyszukiwarka, gramatyka filtrów i podpowiedzi](E12-search.md) | L | standardowy | E06, E08 | done 2026-11-22 |
 | E13 | [Modal listy tagów i wspólny TagEditor](E13-tag-list-editor.md) | M | standardowy | E12 | done 2026-11-22 |
 | E14 | [Dok akcji zbiorczych i kolejność grup](E14-bulk-dock.md) | L | trudny | E11, E13 | done 2026-11-22 |
-| E15 | [Model lightboxa](E15-client-lightbox-model.md) | L | trudny | E08 | todo |
+| E15 | [Model lightboxa](E15-client-lightbox-model.md) | L | trudny | E08 | done 2026-11-22 |
 | E16 | [Lightbox: UI, przeglądarka obrazów, zaślepki GIF i wideo](E16-gpui-lightbox.md) | L | trudny | E09, E13, E15 | todo |
 | E17 | [Ustawienia: szkielet, skan, miniatury, wygląd, język, strefa zagrożeń, o programie](E17-settings-core.md) | L | standardowy | E02, E06 | todo |
 | E18 | [Ustawienia: import/eksport, przywracanie i duplikaty](E18-settings-data.md) | L | trudny | E17 | todo |

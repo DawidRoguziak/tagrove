@@ -553,6 +553,13 @@ impl AssetQuery {
         self.cache.index_of(asset_id)
     }
 
+    /// The cached row of an asset of the current query, by ID
+    /// (`assets.find((asset) => asset.id === id)`); never a fallback row. Reading
+    /// requests and promotes nothing.
+    pub fn cached_asset(&self, asset_id: i64) -> Option<&AssetSummary> {
+        self.cache.get(asset_id)
+    }
+
     /// The answers to ticketed reads since the last call, oldest first.
     pub fn take_events(&mut self) -> Vec<QueryEvent> {
         self.events.drain(..).collect()

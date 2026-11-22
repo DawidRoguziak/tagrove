@@ -334,6 +334,109 @@ Clicking the outer backdrop closes an open narrow sidebar first, otherwise calls
 
 The inline delete confirmation is part of the sidebar, so while it is open a lightbox shortcut listener is disabled and Escape (from any focus in the lightbox) targets only the confirmation; its submitting guard prevents backdrop cancellation until deletion settles.
 
+## GPUI port: the lightbox model
+
+Epic E15 ports the selection lifecycle, navigation and edits described above to the client
+crate of the GPUI port, without a GUI
+([ADR 0037](../adr/0037-gpui-client-backend-port-and-model-convention.md),
+[ADR 0045](../adr/0045-gpui-lightbox-model-embedded-with-a-ticket-range-and-tag-saves-as-changes.md)).
+The lightbox view, the image stage and the GIF and video placeholders are epic E16. The
+Tauri path is unchanged.
+
+| Solid (`src/features/lightbox`) | GPUI client (`src-gpui/crates/media_tagger_client/src/lightbox/`) |
+| --- | --- |
+| `createLightbox.ts`, `types.ts` | `model.rs`: `Lightbox` with `LightboxCommand`, `LightboxInput`, `LightboxEffect`, `LightboxEvent`, the selection `SelectedAsset` and the read view `LightboxView` |
+| `TagIntent`, `rebase` and `createPendingWrites` of `createLightbox.ts` | `intents.rs` |
+| `createLightboxPresentation.ts` | `presentation.rs`: `Sidebar`, `Activity`, `GroupClipboard` |
+| `LightboxDeleteConfirmDialog.tsx` and the delete state of `LightboxModal.tsx` | `delete_confirm.rs`: `DeleteConfirm`, `DeleteNotice` |
+| `parseMediaGroupOrder.ts` | `bulk::parse_media_group_order` (ported with the bulk dock) |
+
+- **Model in the runtime.** `Lightbox` is embedded in `AppRuntime` next to the library
+  (`RuntimeInput::Lightbox(LightboxCommand)`, `AppRuntime::lightbox`), so the selection
+  survives every view. It reads the library through the `LightboxEnv` the runtime lends it
+  with every input and changes nothing itself: every effect is an input of the library model
+  (a details read, a tag pin, a write, a ticketed query read, a query refresh) that the runtime
+  applies in the same turn. Its tickets are `LIGHTBOX_TICKET_BASE` (2^60) up to the bulk
+  model's 2^61, for query reads and library commands alike; the runtime hands it the answers
+  with such a ticket and every `MetadataCommit`, and they show up in neither
+  `take_query_events` nor `take_library_events`. After the answers of a turn the runtime sends
+  `LightboxInput::Sync`, which runs what the Solid model's effects run, in their order: the
+  identity epoch, the query epoch and its pending flag, the tag revision, the cached row of
+  the selected asset.
+- **Requests.** Every `Select`, also `Close`, starts a new selection request, and so does every
+  details read; navigation and the position lookup count their own requests. An answer is
+  applied only for the request it was started as, the asset it was read for and the identity
+  and query epochs it was read under, so details of A never replace B and never reopen a
+  closed lightbox. The read itself is not cancelled.
+- **Details.** A cached record selects without a read. Otherwise the model reads through
+  `LibraryInput::LoadDetails`. An answer without details is a failure with Retry only when
+  the tag clock, the details generation and the query epoch are the ones the read started
+  under; a read that a write or a query refresh discarded waits for the refresh on its way,
+  then for the write queue (`waitForIdle`), and reads again. After eight discarded answers in a
+  row the read gives up and shows the failure with Retry; the Solid model has no such bound.
+  When the selected asset loses its complete tag list while its details are ready (a
+  selection-wide write), the model re-reads once the write queue is empty.
+- **Navigation.** `Previous` and `Next` step from the target of the last press, modulo the
+  query's `total`, through `QueryInput::ReadAsset`; only the answer of the latest press
+  selects. A row that cannot be read rolls the target back to the shown asset, keeps the
+  failed index and shows `lightbox.navigation.failed`; `RetryNavigation` reads that index again
+  with `QueryInput::RetryAsset`, or refreshes the query when the position was lost. Keys do
+  nothing while a refresh is pending or the index is unknown. After the details arrived, or
+  for a cached selection, the rows before and after the shown index are read and their
+  details loaded into the shared cache; a result of one row prefetches nothing.
+- **Position.** When the query epoch or its pending flag changes, the selected ID is looked up
+  in the cached rows of the new result and then with `QueryInput::ResolvePosition`:
+  `resolving`, then `ready`, `missing` (the lightbox stays open) or `failed`. A refresh that
+  fails ends in `failed` through the same lookup, which the query answers at once without a
+  session.
+- **Tags.** The model is the only owner of the lightbox's tag saves: one write per asset at a
+  time, and edits made while it runs are saved by one following write. A save is
+  `Mutation::SaveTags` with `TagEdit::Change`, the tags the editor added and removed relative
+  to the canonical list it was made on, which the library applies to the canonical tags of the
+  moment it sends. A writer queued ahead is therefore merged, not undone, and the editor shows
+  the same merge as soon as that writer's tags are published. The backend stores tags sorted,
+  so the order of the list sent can differ from the Solid request; the stored result is the
+  same. A refused or failed write keeps the wanted tags with Retry, also when the lightbox is
+  closed and reopened; a queued edit whose base a selection-wide write dropped fails instead of
+  looking saved, and its Retry merges it onto the re-read tags. An identity reset closes the
+  selection and forgets every intent, and the answer of a write from before publishes
+  nothing.
+- **Favorite and media group.** Pending state is counted per asset and identity epoch and is
+  taken over when the asset is selected again in that epoch; a repeated favorite toggle queues
+  behind the pending one and reverses it. Group drafts follow canonical values until the user
+  touches them; an order draft that is not a positive safe integer is refused whole.
+- **Delete.** `DeleteSelected { request }` sends `Mutation::DeleteAsset` through the library's
+  write queue to the core's use case and to nothing else; the model touches no file. A
+  committed deletion closes the selection when the library publishes it, and
+  `LightboxEvent::DeleteSettled` answers the command after the library's refreshes: the kind
+  of source outcome (`DeletedSource`) and the recovery path. A refusal, such as
+  `i18n:common.libraryBusy` while a scan holds the scan lock
+  ([ADR 0022](../adr/0022-lightbox-delete-fails-fast-during-a-scan.md)), answers with the
+  backend's error and leaves the asset selected. Every `DeleteSelected` gets exactly one
+  `DeleteSettled`: when the model is disposed with the library, a deletion that still waits is
+  answered at that moment with `MutationError::Refused(TagStateError::Unavailable)`, and so
+  is a command that comes later, which sends nothing. For the deletion that was already on
+  its way this answer does not say what the backend made of it; the Solid promise would still
+  resolve with the result, but nothing is left to show it.
+- **View-owned machines.** `Sidebar`, `Activity`, `GroupClipboard` and `DeleteConfirm` are
+  owned by the lightbox view and go with it, as the Solid owners do. They take the time as an
+  argument and name their next deadline, so they have no timers of their own.
+  `Sidebar::deadline(now)`, `Activity::deadline(now)` and `GroupClipboard::deadline(now)`
+  return a moment after `now` or nothing: once the moment has come the state has changed
+  (`occupied(now)`, `visible(now)` and `confirmed(now)` read the same clock) and no deadline
+  is left until a call starts a new one, so a view that draws, asks with the time of that
+  frame and arms one timer for the earliest answer cannot spin. The panel
+  follows the 767 px breakpoint until an explicit choice and keeps its column for 200 ms while
+  it closes (0 with reduced motion); the controls hide 3 s after the last pointer movement,
+  press, wheel, scroll or key and stay on a touch device; a copy of the group name is confirmed
+  for 1600 ms. `DeleteConfirm` compares the typed text with
+  `lightbox.deleteConfirm.confirmWord` trimmed and without regard to case; a running deletion
+  locks its exits, a refusal keeps it open with
+  `lightbox.deleteConfirm.failedMetadataPreserved` and the translated backend text, and
+  another selected asset starts it over. Its composition before the comparison covers vowels
+  with a grave or acute accent and Hangul syllables, which is what the confirmation words of
+  the eleven languages need, not all of NFC.
+
 ## Known limitations and maintenance hazards
 
 - The shared details cache (256-entry LRU, identity- and query-guarded) also validate metadata-generation stamps, rejecting cached snapshots made obsolete by favorite/group mutations. Full DB restore and library clear advance the shared identity epoch and clear the shared details cache, requests, and pending tag mutation state. Successful deletion creates a per-ID tombstone generation before refresh work, so an older detail response cannot repopulate a deleted or reused ID.
@@ -419,6 +522,29 @@ When changing lightbox behavior:
   focus/fullscreen ownership and 30 reopen cycles with decoded-frame comparisons. See
   [desktop opt-ins](../development/testing.md#solid-feature-verification) and
   [native setup](../development/testing.md#native-speed-menu-and-repeated-playback).
+- GPUI port: `src-gpui/crates/media_tagger_client/src/lightbox/` covers the model through
+  `AppRuntime` with the scripted backend on the deterministic executor
+  (`model/tests.rs`: late details after another selection and after close, prefetch and
+  cached reselection, coalesced saves, a save behind another writer, a save that does not
+  follow navigation, favorite queueing, wrap and rapid navigation, a failed page with Retry,
+  position recovery, missing and failed lookups, deletion and its refusal, the deletions a
+  disposed model answers, identity reset,
+  selection-wide writes, group drafts, the cached row), the intents and pending writes
+  (`intents.rs`), the presentation machines (`presentation.rs`) and the delete confirmation
+  with the confirmation word of every language (`delete_confirm.rs`).
+  `src-gpui/crates/media_tagger_client/tests/lightbox_ported.rs` ports the Solid model cases
+  on the same fakes: all of `createLightbox.test.ts` and `presentation.test.ts`, the delete
+  confirmation and group copy cases of `LightboxModal.test.tsx` and the order draft of
+  `MediaGroupSetter.test.tsx`. The DOM, focus and animation cases of those two component
+  suites, `keyboard.test.tsx` and `imageControls.test.tsx` wait for the lightbox view; the
+  list and the reasons are in
+  [testing.md](../development/testing.md#gpui-workspace).
+  `src-gpui/crates/media_tagger_client/tests/lightbox_core.rs` runs the model against the real
+  core on a temporary profile: details, tag, favorite and group saves, deleting a file and a
+  source that is already missing, and the busy-library refusal with the scan lock held by the
+  test (`TempCore::hold_scan_lock`): the answer is `i18n:common.libraryBusy`, the file and
+  the selection stay, and the deletion goes through after the lock is released. The core's
+  own test of that refusal is named above.
 
 Use deferred IPC for lifecycle changes and the shared query/details owners for cache and
 navigation changes. Desktop pixels, GTK focus and playback need the corresponding native

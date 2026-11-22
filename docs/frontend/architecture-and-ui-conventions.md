@@ -46,6 +46,8 @@ come and go:
   the language, the tile size (`clamp_tile_size`, `next_tile_size_by_wheel`), the
   library model, the bulk selection
   ([selection](../subsystems/search-tags-and-media-groups.md#gpui-port-selection-and-gestures)),
+  the lightbox model with the selected asset
+  ([lightbox](../subsystems/lightbox.md#gpui-port-the-lightbox-model)),
   the scan roots and the startup scan. `RuntimeInput::Start` runs once
   (later starts are ignored): it refreshes the library (the query and the known tags), joins
   the startup scan and lists the scan roots at once, and stores the start theme and language
@@ -68,7 +70,8 @@ come and go:
   (boxed; `RuntimeInput::library(input)`) and every other effect as
   `RuntimeEffect::Library`. `RuntimeInput::RefreshLibrary` is the library's refresh, the
   header count reads the query's `total()`, and answers to ticketed library commands are
-  taken with `take_library_events`. A model added next to it is embedded the same way: a
+  taken with `take_library_events` (the bulk model and the lightbox model get the answers to
+  their own ticket ranges from the runtime). A model added next to it is embedded the same way: a
   wrapping input and effect variant, and a `run_*_effect` function that takes the wrapping
   function.
 - `media_tagger_gpui::runtime::Runtime` is the entity around that model. Backend calls

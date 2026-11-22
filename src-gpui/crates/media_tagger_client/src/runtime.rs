@@ -7,8 +7,9 @@
 //! language, the tile size, the library model ([`Library`]: the query with its
 //! session, page cache and applied filters, the canonical tags, the details cache,
 //! the known tags and the metadata writes), the bulk selection ([`Selection`]), the
-//! startup sequence and what it learned (the scan roots, the outcome of the startup
-//! scan). Later epics hang their models (lightbox, settings) next to these.
+//! bulk model, the lightbox model ([`Lightbox`]: the selected asset), the startup
+//! sequence and what it learned (the scan roots, the outcome of the startup scan).
+//! Later epics hang their models (settings) next to these.
 //!
 //! The library is a model of its own, embedded here. The inputs of its query model
 //! travel as [`RuntimeInput::Query`] and the query's effects as
@@ -48,6 +49,16 @@
 //! through [`AppRuntime::bulk`] and the answers to its commands with
 //! [`AppRuntime::take_bulk_events`].
 //!
+//! The lightbox model ([`Lightbox`]: the selected asset, its place in the result and
+//! the edits made in the lightbox) is embedded the same way. Its commands travel as
+//! [`RuntimeInput::Lightbox`]. Everything it asks for is an input of the library,
+//! applied by the runtime in the same turn; the answers to its own tickets
+//! ([`Lightbox::owns`]), of the library and of the query, never show up in
+//! [`AppRuntime::take_library_events`] or [`AppRuntime::take_query_events`], and it
+//! gets every commit of a write and a [`LightboxInput::Sync`] after every input. The
+//! lightbox view reads it through [`AppRuntime::lightbox`] and the answers to its
+//! commands with [`AppRuntime::take_lightbox_events`].
+//!
 //! [`AppRuntime`] is a model in the convention of [`crate::model`]: an input gives a new
 //! state and effects, replies come back as inputs with the token they were started
 //! with, and a reply that has been superseded changes nothing. State coming from
@@ -80,6 +91,10 @@ use crate::{
     library::{
         run_library_effect, run_query_effect, AssetQuery, Library, LibraryEffect, LibraryEvent,
         LibraryInput, QueryConfig, QueryEffect, QueryEvent, QueryInput,
+    },
+    lightbox::{
+        Lightbox, LightboxCommand, LightboxEffect, LightboxEnv, LightboxEvent, LightboxInput,
+        LightboxView,
     },
     model::{Dispatch, Model, RequestSlot, RequestToken, Runner, Tokens},
     prefs::{Prefs, PrefsStore},
@@ -213,6 +228,9 @@ pub enum RuntimeInput {
     /// A command of the bulk dock, or the answer to a read of selected summaries. The
     /// answers to the bulk model's library tickets are passed on by the runtime itself.
     Bulk(BulkInput),
+    /// A command of the lightbox. The answers to the lightbox model's reads and
+    /// writes are passed on by the runtime itself.
+    Lightbox(LightboxCommand),
     /// A command of the search header; a valid submit applies its filters to the
     /// query.
     Search(SearchCommand),
@@ -246,6 +264,11 @@ impl RuntimeInput {
     /// A command of the bulk dock.
     pub fn bulk(command: BulkCommand) -> Self {
         Self::Bulk(BulkInput::Command(command))
+    }
+
+    /// A command of the lightbox.
+    pub fn lightbox(command: LightboxCommand) -> Self {
+        Self::Lightbox(command)
     }
 }
 
@@ -287,7 +310,8 @@ pub struct AppRuntime {
     library: Library,
     selection: Selection,
     bulk: Bulk,
-    /// The library's answers and commits that are not the bulk model's own.
+    lightbox: Lightbox,
+    /// The library's answers and commits that belong to no embedded model.
     library_events: Vec<LibraryEvent>,
     search: Search,
     suggestions: SuggestionClient,
@@ -314,6 +338,7 @@ impl AppRuntime {
             selection: &selection,
             settings_open: false,
         });
+        let lightbox = Lightbox::new(LightboxEnv { library: &library });
         Self {
             view: View::default(),
             highlight_scan: false,
@@ -325,6 +350,7 @@ impl AppRuntime {
             library,
             selection,
             bulk,
+            lightbox,
             library_events: Vec::new(),
             search: Search::new(),
             suggestions: SuggestionClient::new(),
@@ -400,6 +426,20 @@ impl AppRuntime {
         self.bulk.take_events()
     }
 
+    /// Everything the lightbox shows: the lightbox model together with the library
+    /// it reads. An asset is selected while the lightbox is open.
+    pub fn lightbox(&self) -> LightboxView<'_> {
+        LightboxView {
+            lightbox: &self.lightbox,
+            library: &self.library,
+        }
+    }
+
+    /// The answers to the lightbox's commands since the last call.
+    pub fn take_lightbox_events(&mut self) -> Vec<LightboxEvent> {
+        self.lightbox.take_events()
+    }
+
     /// The search header: the draft, the applied filters and the validation error.
     pub fn search(&self) -> &Search {
         &self.search
@@ -431,16 +471,20 @@ impl AppRuntime {
 
     /// The answers to ticketed reads of the query model since the last call
     /// ([`AssetQuery::take_events`]), without the answers to the selection's own reads
-    /// (tickets from `SELECTION_TICKET_BASE` up).
+    /// (tickets from `SELECTION_TICKET_BASE` up) and to the lightbox model's
+    /// ([`LIGHTBOX_TICKET_BASE`](crate::lightbox::LIGHTBOX_TICKET_BASE) up to the bulk
+    /// model's range).
     pub fn take_query_events(&mut self) -> Vec<QueryEvent> {
         std::mem::take(&mut self.query_events)
     }
 
     /// The answers to ticketed library commands and the commits of writes since the
-    /// last call ([`Library::take_events`]), without the answers to the bulk model's
-    /// own commands (tickets from [`BULK_TICKET_BASE`](crate::bulk::BULK_TICKET_BASE)
-    /// up). Whoever owns the runtime takes them after every input: nothing else
-    /// empties the list.
+    /// last call ([`Library::take_events`]), without the answers to the commands of
+    /// the embedded models: the lightbox model's (tickets from
+    /// [`LIGHTBOX_TICKET_BASE`](crate::lightbox::LIGHTBOX_TICKET_BASE) up) and the bulk
+    /// model's (from [`BULK_TICKET_BASE`](crate::bulk::BULK_TICKET_BASE) up). A caller
+    /// of its own ticketed commands chooses its tickets below both. Whoever owns the
+    /// runtime takes the list after every input: nothing else empties it.
     pub fn take_library_events(&mut self) -> Vec<LibraryEvent> {
         std::mem::take(&mut self.library_events)
     }
@@ -579,15 +623,30 @@ impl AppRuntime {
         self.bulk.handle(input, env)
     }
 
-    /// Runs what the bulk model asked for and brings it in line with the library and
-    /// the selection, until it asks for nothing more: its commands for the library
-    /// and the selection are applied in this turn, it gets the answers to its own
-    /// tickets and every commit in the order they were published, and then it looks
-    /// at its neighbours again. The library's other answers are kept for
-    /// [`Self::take_library_events`].
-    fn drive_bulk(&mut self, mut pending: Vec<BulkEffect>, effects: &mut Vec<RuntimeEffect>) {
+    fn feed_lightbox(&mut self, input: LightboxInput) -> Vec<LightboxEffect> {
+        self.lightbox.handle(
+            input,
+            LightboxEnv {
+                library: &self.library,
+            },
+        )
+    }
+
+    /// Runs what the bulk model and the lightbox model asked for and brings both in
+    /// line with the library and the selection, until neither asks for anything
+    /// more: their commands for the library and the selection are applied in this
+    /// turn, each gets the answers to its own tickets and every commit in the order
+    /// they were published, and then both look at their neighbours again. The
+    /// library's other answers are kept for [`Self::take_library_events`], the
+    /// query's for [`Self::take_query_events`].
+    fn drive_models(
+        &mut self,
+        mut bulk: Vec<BulkEffect>,
+        mut lightbox: Vec<LightboxEffect>,
+        effects: &mut Vec<RuntimeEffect>,
+    ) {
         loop {
-            for effect in std::mem::take(&mut pending) {
+            for effect in std::mem::take(&mut bulk) {
                 match effect {
                     BulkEffect::Library(input) => self.library_step(*input, effects),
                     BulkEffect::Selection(input) => {
@@ -599,8 +658,14 @@ impl AppRuntime {
                     }
                 }
             }
+            for effect in std::mem::take(&mut lightbox) {
+                match effect {
+                    LightboxEffect::Library(input) => self.library_step(*input, effects),
+                }
+            }
             if self.library.is_disposed() {
                 self.feed_bulk(BulkInput::Dispose);
+                self.feed_lightbox(LightboxInput::Dispose);
             }
             for event in self.library.take_events() {
                 let ticket = match &event {
@@ -614,16 +679,37 @@ impl AppRuntime {
                     LibraryEvent::Committed(_) => None,
                 };
                 if ticket.is_some_and(Bulk::owns) {
-                    pending.extend(self.feed_bulk(BulkInput::Library(event)));
+                    bulk.extend(self.feed_bulk(BulkInput::Library(event)));
+                    continue;
+                }
+                if ticket.is_some_and(Lightbox::owns) {
+                    lightbox.extend(self.feed_lightbox(LightboxInput::Library(event)));
                     continue;
                 }
                 if let LibraryEvent::Committed(commit) = &event {
-                    pending.extend(self.feed_bulk(BulkInput::Committed(commit.clone())));
+                    bulk.extend(self.feed_bulk(BulkInput::Committed(commit.clone())));
+                    lightbox.extend(self.feed_lightbox(LightboxInput::Committed(commit.clone())));
                 }
                 self.library_events.push(event);
             }
-            pending.extend(self.feed_bulk(BulkInput::Sync));
-            if pending.is_empty() {
+            // The selection took its own answers; the lightbox model's are among the
+            // rest.
+            for event in std::mem::take(&mut self.query_events) {
+                let ticket = match &event {
+                    QueryEvent::AssetRead { ticket, .. }
+                    | QueryEvent::PositionResolved { ticket, .. }
+                    | QueryEvent::IdRangeRead { ticket, .. }
+                    | QueryEvent::SessionKeptAlive { ticket, .. } => *ticket,
+                };
+                if Lightbox::owns(ticket) {
+                    lightbox.extend(self.feed_lightbox(LightboxInput::Query(event)));
+                } else {
+                    self.query_events.push(event);
+                }
+            }
+            bulk.extend(self.feed_bulk(BulkInput::Sync));
+            lightbox.extend(self.feed_lightbox(LightboxInput::Sync));
+            if bulk.is_empty() && lightbox.is_empty() {
                 break;
             }
         }
@@ -707,22 +793,28 @@ impl Model for AppRuntime {
     type Effect = RuntimeEffect;
 
     fn handle(&mut self, input: RuntimeInput) -> Vec<RuntimeEffect> {
-        let (mut effects, asked) = match input {
-            RuntimeInput::Bulk(input) => (Vec::new(), self.feed_bulk(input)),
-            input => (self.apply(input), Vec::new()),
+        let (mut effects, bulk, lightbox) = match input {
+            RuntimeInput::Bulk(input) => (Vec::new(), self.feed_bulk(input), Vec::new()),
+            RuntimeInput::Lightbox(command) => (
+                Vec::new(),
+                Vec::new(),
+                self.feed_lightbox(LightboxInput::Command(command)),
+            ),
+            input => (self.apply(input), Vec::new(), Vec::new()),
         };
-        // Whatever the input changed, the bulk model looks at it in the same turn.
-        self.drive_bulk(asked, &mut effects);
+        // Whatever the input changed, the bulk model and the lightbox model look at
+        // it in the same turn.
+        self.drive_models(bulk, lightbox, &mut effects);
         effects
     }
 }
 
 impl AppRuntime {
-    /// Applies every input except the bulk model's own.
+    /// Applies every input except the ones of the bulk model and the lightbox model.
     fn apply(&mut self, input: RuntimeInput) -> Vec<RuntimeEffect> {
         match input {
             // Handled by `Model::handle`.
-            RuntimeInput::Bulk(_) => Vec::new(),
+            RuntimeInput::Bulk(_) | RuntimeInput::Lightbox(_) => Vec::new(),
             RuntimeInput::Start => {
                 if self.started {
                     return Vec::new();

@@ -41,6 +41,10 @@
 //! - [`bulk`]: the bulk dock: the model of its drafts and writes, the records of the
 //!   selected assets, the tag and group services, the dock's own state and the order
 //!   board's geometry and drag.
+//! - [`lightbox`]: the lightbox: the model of the selected asset (selection requests,
+//!   navigation by global index, prefetch, tag, favorite, group and delete writes),
+//!   and what its view decides without a GUI: the side panel, the fading controls and
+//!   the delete confirmation.
 //! - [`runtime`], [`shell`], [`window_chrome`], [`shortcuts`]: the application runtime
 //!   (models for the application's lifetime, the view, the start sequence), what the
 //!   shell draws around the views, the window's own decorations and the registry of
@@ -55,6 +59,7 @@ pub mod i18n;
 pub mod icons;
 pub mod kit;
 pub mod library;
+pub mod lightbox;
 pub mod model;
 pub mod overlay;
 pub mod prefs;

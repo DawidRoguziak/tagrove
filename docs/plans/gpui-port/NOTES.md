@@ -38,3 +38,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-22 | E13 | workflow | done | E13 gotowy: modal listy tagów i TagEditor w GPUI, testy, parytet i brama przeszły; zostały trzy niepewne uwagi wydajnościowe P3 do pomiaru. | [E13](E13-tag-list-editor.md)
 2026-11-22 | E14 | orkiestrator | in progress | workflow start od kroku implement | [E14](E14-bulk-dock.md)
 2026-11-22 | E14 | workflow | done | E14 ukończony: dok akcji zbiorczych i kolejność grup, kontrola, recenzja i bramka zielone; otwarta tylko różnica rasteryzacji fontów w parytecie. | [E14](E14-bulk-dock.md)
+2026-11-22 | E15 | orkiestrator | in progress | workflow start od kroku implement | [E15](E15-client-lightbox-model.md)
+2026-11-22 | E15 | workflow | done | Model lightboxa gotowy i osadzony w AppRuntime, testy i bramka przechodzą, bez otwartych ustaleń przeglądu. | [E15](E15-client-lightbox-model.md)

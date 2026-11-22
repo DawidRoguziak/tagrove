@@ -7,7 +7,9 @@
 //! case → result, with the core's error text passed on unchanged. Validation, SQL
 //! and the workflow locks (maintenance gate → `scan_lock` → `thumb_lock`) stay in
 //! the use cases, which take and release them inside the one call; nothing here
-//! takes a lock or holds one for a caller.
+//! takes a lock or holds one for a caller. The one exception is not part of a
+//! normal build: `test_support::TempCore::hold_scan_lock` holds the scan lock for a
+//! test, as a running scan would.
 //!
 //! What the Tauri adapter owns outside the core is rebuilt here without a
 //! framework runtime: the `process-progress` event ([`ProgressHub`]), the
@@ -679,10 +681,11 @@ pub mod test_support {
     use std::{
         fs,
         path::{Path, PathBuf},
-        sync::Arc,
+        sync::{mpsc, Arc},
+        thread,
     };
 
-    use media_tagger_core::app::{bootstrap, state::AppState};
+    use media_tagger_core::app::{bootstrap, locks, state::AppState};
 
     use super::{AttachError, CoreBackend};
     use crate::backend::Backend;
@@ -821,6 +824,57 @@ pub mod test_support {
         /// `path` as the text the port takes.
         pub fn text(path: &Path) -> String {
             path.to_string_lossy().into_owned()
+        }
+
+        /// Holds the core's scan lock as a running scan does, until the returned
+        /// value is dropped: on a thread of its own, through the helper a scan
+        /// takes it with. Returns once the lock is held. Calls that must not wait
+        /// for a scan (a delete, ADR 0022) are refused meanwhile; a call that
+        /// waits for the scan lock waits until the drop, so a test makes none on
+        /// the thread that keeps the value.
+        ///
+        /// [`CoreBackend`] itself never holds a lock for a caller; this is the
+        /// test's stand-in for the scan that would.
+        ///
+        /// # Panics
+        ///
+        /// When the lock cannot be taken.
+        #[must_use = "the scan lock is released when the value is dropped"]
+        pub fn hold_scan_lock(&self) -> HeldScanLock {
+            let state = Arc::clone(&self.state);
+            let (held, is_held) = mpsc::channel();
+            let (release, released) = mpsc::channel::<()>();
+            let holder = thread::spawn(move || {
+                locks::with_scan_lock(&state, |_| {
+                    let _ = held.send(());
+                    // Ends when the sender is dropped.
+                    let _ = released.recv();
+                    Ok(())
+                })
+                .expect("take the scan lock");
+            });
+            is_held.recv().expect("the scan lock is held");
+            HeldScanLock {
+                release: Some(release),
+                holder: Some(holder),
+            }
+        }
+    }
+
+    /// The scan lock of a [`TempCore`], held until this value is dropped
+    /// ([`TempCore::hold_scan_lock`]).
+    pub struct HeldScanLock {
+        release: Option<mpsc::Sender<()>>,
+        holder: Option<thread::JoinHandle<()>>,
+    }
+
+    impl Drop for HeldScanLock {
+        fn drop(&mut self) {
+            drop(self.release.take());
+            if let Some(holder) = self.holder.take() {
+                // The lock is free again before the next call of the test.
+                let _ = holder.join();
+            }
         }
     }
 

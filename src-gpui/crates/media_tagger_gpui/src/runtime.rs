@@ -272,9 +272,10 @@ impl Runtime {
 
     fn publish(&mut self, cx: &mut Context<Self>) {
         self.run_scripted_selection();
-        // No view reads the library's answers and commits yet (the lightbox will:
-        // E15, E16); the bulk model gets its own from the runtime. Dropped here so
-        // they do not pile up with every write.
+        // The bulk model and the lightbox model get their answers and every commit
+        // from the client's runtime itself. What is left belongs to a caller with
+        // tickets of its own, and no view is one: dropped here so that it does not
+        // pile up with every write.
         self.driver.model_mut().take_library_events();
         ui::theme::set_active(self.model().theme(), cx);
         cx.notify();

@@ -577,9 +577,10 @@ The Tauri path is unchanged. The code lives in `media_tagger_client::bulk`, the 
   `SelectionInput::Remove`, all applied by the runtime in the same turn. After every input of any
   model the runtime sends `BulkInput::Sync`, which runs what the Solid model's effects run, and
   hands the model the library's answers to its own tickets (`BULK_TICKET_BASE`, 2^61, up to the
-  selection's 2^62) and every `MetadataCommit`. Every other library answer stays for
-  `AppRuntime::take_library_events`; a new reader of ticketed library commands keeps its tickets
-  below 2^61.
+  selection's 2^62) and every `MetadataCommit`. The lightbox model's tickets are the range below it, 2^60 up to
+  2^61 ([lightbox](lightbox.md#gpui-port-the-lightbox-model)). Every other library answer stays
+  for `AppRuntime::take_library_events`; a new reader of ticketed library commands keeps its
+  tickets below 2^60.
 - **Selected summaries.** For a selection of IDs the model keeps the summaries of exactly the
   selected assets: from the query's cached rows when the selection changes, else from
   `get_asset_summaries_by_ids` in batches of 256 with at most four reads on the executor

@@ -637,8 +637,8 @@
       "deps": [
         "E08"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-22",
       "sources": [
         "src/features/lightbox/createLightbox.ts",
         "src/features/lightbox/createLightboxPresentation.ts",

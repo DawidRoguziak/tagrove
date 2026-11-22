@@ -188,6 +188,11 @@ impl PageCache {
         self.fallback.get(&offset)?.get(index - offset)
     }
 
+    /// The cached row of an asset of the current query, by ID; never a fallback row.
+    pub fn get(&self, asset_id: i64) -> Option<&AssetSummary> {
+        self.assets_by_id.get(&asset_id)
+    }
+
     /// The global index of a cached asset of the current query.
     pub fn index_of(&self, asset_id: i64) -> Option<usize> {
         if !self.assets_by_id.contains_key(&asset_id) {

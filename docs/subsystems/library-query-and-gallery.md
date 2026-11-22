@@ -403,7 +403,9 @@ Tauri path above is unchanged.
 | `createVirtualGrid.ts` | `gallery::virtual_grid::VirtualGrid`: a model with `GridInput` and `GridEffect` |
 | `GalleryTile.tsx` (what a tile asks for) | `gallery::thumbnail_demand::ThumbnailDemand` ([thumbnails](thumbnails.md#gpui-port-tiles-decoding-and-the-picture-cache)) |
 | measures of `GalleryGrid.tsx`, `GalleryTile.tsx`, `GalleryStatusFooter.tsx` | `gallery::layout` |
-| `GalleryGrid.tsx`, `GalleryTile.tsx`, `GalleryStatusFooter.tsx`, the gallery part of `AppGalleryView.tsx` | `media_tagger_gpui::views::gallery` (`gallery.rs`, `gallery/grid.rs`) |
+| `GalleryScrollbar.tsx` | `gallery::scrollbar` (`ScrollbarMetrics`, `ScrollbarDrag`, `scrollbar_key_target`) |
+| `timeline.ts`, `GalleryTimelineScrubber.tsx` | `gallery::timeline` (`timeline_months`, `month_at`, `index_at_fraction`, `timeline_key_target`, `timeline_ticks`, `TimelineScrubber`: a model with `TimelineInput` and `TimelineEffect`); month labels from `i18n::format_year_month` |
+| `GalleryGrid.tsx`, `GalleryTile.tsx`, `GalleryStatusFooter.tsx`, `GalleryScrollbar.tsx`, `GalleryTimelineScrubber.tsx`, the gallery part of `AppGalleryView.tsx` | `media_tagger_gpui::views::gallery` (`gallery.rs`, `gallery/grid.rs`, `gallery/position.rs`) |
 
 What is the same:
 
@@ -429,6 +431,33 @@ What is the same:
   results; the `gallery.loadError` banner with Retry (`QueryInput::RetryLoad`). Retry is
   a tab stop that Enter and Space press; pressing it puts the focus on the grid, since
   the banner and its button leave while the load runs.
+- **Position bar.** `GalleryScrollbar`: a `ScrollBar` named `gallery.scrollbarLabel`,
+  10 px wide and 4 px from the right edge, 4 px from the top and the bottom of the
+  viewport, with a thumb of at least 32 px; its value is the first visible item (1 to the
+  count). A press beside the thumb moves the thumb's centre to the pointer and the drag
+  goes on from there, a press on the thumb drags it from where it was grabbed, both
+  clamped to the ends and counted as the user's scrolling (`GridInput::ScrollTo`, so a
+  fast drag pauses demand). A press does not move the focus. Focused, Up and Down
+  scroll by one row (tile plus gap), Page Up and Page Down by one viewport, Home and End
+  to the ends. It is a tab stop.
+- **Timeline.** `GalleryTimelineScrubber`: a vertical `Slider` named
+  `gallery.timelineLabel`, 10 px wide and 24 px from the right edge, beside the bar,
+  drawn when the result spans at least two months. Months come from the session's
+  sections (split months merged), read once per session by the query model; an empty
+  list (still loading, failed, stale, or unavailable for the snapshot, ADR 0027) hides
+  the rail, and a new session drops the old months with its sections. Its value is the
+  month of the first visible item, its value text the month label in the UI language
+  and UTC (`Intl.DateTimeFormat` reproduced for the eleven languages, `gallery.timelineNoDate`
+  for `t = 0`). The rail maps `index / total`; a jump shows the row of that index at
+  the top (`GridInput::JumpToIndex`). After a jump the rail reports and steps from its
+  own target until the grid moves for another reason, so a jump the end of the result
+  clamps still names the month it went to. A press focuses the rail; a drag holds page
+  and thumbnail demand (`HoldDemand`) at every pointer event, applies only the latest
+  target once per frame, and resumes demand on release (or 150 ms at rest). Up and Down
+  step a month, Page Up and Page Down a year (the start of the current month or year
+  first), Home and End go to the ends. Year ticks are thinned to 14 px; their years show
+  while the pointer is over the rail; the month label shows beside the rail while the
+  pointer hovers or drags, or while the rail has the focus.
 
 What differs:
 
@@ -447,20 +476,43 @@ What differs:
   gallery view draws no tile. Rendering never changes state: a scroll step, a
   measurement, the runtime's news and the idle timer all go through
   `GalleryView::refresh`.
+- **The bar is always the custom one.** Without a native scroller the GPUI gallery
+  draws `GalleryScrollbar` whenever the content scrolls, where the Tauri gallery shows
+  WebKitGTK's thin overlay bar until the grid outgrows its physical window. The bar
+  maps the whole scroll range, from the top of the margin above the grid to the footer's
+  end (`VirtualGrid::min_offset`..`max_offset`), not `offset / maxOffset` of the
+  rows alone.
+- **Keys of the bar and the rail.** They bind nothing of their own: focused, they
+  handle the gallery's scroll actions (Home, End, Page Up, Page Down, Up, Down in the
+  `Gallery` context), which GPUI gives to the deepest listener on the focus path.
+  Shift with an arrow, which the Solid rail also takes, does nothing. There is no
+  `aria-controls`: GPUI has no such relation.
+- **Frames and drags.** A drag's moves and its release are followed by window-wide
+  listeners (pointer capture) that the bar and the rail register in every frame and
+  that do nothing while no drag lasts. GPUI hands a mouse event to the listeners of the
+  last drawn frame, so listeners added only once a drag began would miss a release
+  that arrives before the next frame (a synthetic click), and the drag would outlive
+  the button. The rail's once-per-frame jump uses `Context::on_next_frame`. The bar and the rail are the
+  first children of the viewport, so the tab order is bar, rail, then the banner's
+  Retry as in the Solid DOM; what reaches over the tiles (the month label, the year
+  labels, the focus rings) is `deferred`, painted above them like the Solid `z-10`.
 - **Activation.** A click on a tile emits `GalleryEvent::OpenAsset { asset_id, index }`;
   nothing handles it yet (the lightbox, epic E16). Tiles are not tab stops yet.
-- **Not there yet.** The position bar and the timeline scrubber (epic E10; the model
-  already takes `ScrollTo`, `JumpToIndex`, `HoldDemand` and `ResumeDemand` for them),
-  selection with its ring, mark and rectangle (epic E11), and the scroll keys while the
-  focus is on the window root (epic E19).
+- **Not there yet.** Selection with its ring, mark and rectangle (epic E11), and the
+  scroll keys while the focus is on the window root (epic E19).
 
 Tests: `gallery/geometry.rs`, `gallery/virtual_grid.rs` (including the range-to-pages
-mapping at 1,000,000 results and a quarter-pixel step at 600,000,000 px) and
-`gallery/layout.rs` in the client crate; `tests/gallery_grid.rs` in the adapter, on GPUI's
-test platform with `FakeBackend` and `ManualExecutor`
-([testing](../development/testing.md#gpui-workspace)). A frame while scrolling through
+mapping at 1,000,000 results and a quarter-pixel step at 600,000,000 px),
+`gallery/layout.rs`, `gallery/scrollbar.rs` and `gallery/timeline.rs` (months, keys, ticks,
+the rail's state; `i18n/date.rs` holds the month labels to `Intl`'s output) in the client
+crate; `tests/gallery_grid.rs` and `tests/gallery_position.rs` (bar and rail: placement,
+press, drag, keys, hidden timeline) in the adapter, on GPUI's test platform with
+`FakeBackend` and `ManualExecutor`
+([testing](../development/testing.md#gpui-workspace)); `tests/gallery_position_render.rs`
+draws the bar and the rail through the headless renderer in both themes and checks their
+colours, the 26 px month label, the year labels on hover and the focus rings as pixels. A frame while scrolling through
 100,000 synthetic results is measured by the ignored case
-`frame_time_while_scrolling_a_large_library` of that target.
+`frame_time_while_scrolling_a_large_library` of `tests/gallery_grid.rs`.
 
 ## Known limitations
 

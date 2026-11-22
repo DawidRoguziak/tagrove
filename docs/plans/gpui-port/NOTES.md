@@ -26,3 +26,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-21 | E08 | workflow | done | E08 ukończony: model biblioteki, stan tagów, mutacje i słownik w kliencie, przegląd czysty, bramka zaliczona. | [E08](E08-client-metadata.md)
 2026-11-21 | E09 | orkiestrator | in progress | workflow start od kroku implement | [E09](E09-gpui-gallery-grid.md)
 2026-11-21 | E09 | workflow | done | E09 ukończony: siatka galerii i miniatury gotowe, przegląd czysty, bramka test:all przeszła. | [E09](E09-gpui-gallery-grid.md)
+2026-11-22 | E10 | orkiestrator | in progress | workflow start od kroku implement | [E10](E10-gpui-scrollbar-timeline.md)
+2026-11-22 | E10 | workflow | done | E10 gotowe: pasek pozycji i scrubber osi czasu w GPUI, przegląd czysty, bramka zielona; parytet gallery-default bez paska z powodu seeda. | [E10](E10-gpui-scrollbar-timeline.md)

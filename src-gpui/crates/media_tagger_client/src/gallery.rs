@@ -13,6 +13,10 @@
 //! - [`picture_cache`]: the bounded cache of decoded pictures.
 //! - [`layout`]: the measures and texts of the tile, the status footer and the load
 //!   error banner.
+//! - [`scrollbar`]: the position bar beside the grid (`GalleryScrollbar.tsx`): track,
+//!   thumb, press, drag and keys.
+//! - [`timeline`]: the month timeline (`timeline.ts`, `GalleryTimelineScrubber.tsx`):
+//!   months from the session's sections, keys, ticks and the rail's state.
 //!
 //! Offsets are logical pixels relative to the top of the grid, as in the Solid
 //! frontend, and may be negative while the margin above the grid is in view. They
@@ -25,7 +29,9 @@
 pub mod geometry;
 pub mod layout;
 pub mod picture_cache;
+pub mod scrollbar;
 pub mod thumbnail_demand;
+pub mod timeline;
 pub mod virtual_grid;
 
 pub use geometry::{
@@ -33,7 +39,26 @@ pub use geometry::{
     GridLayout, LibraryRange, RowRange, GRID_GAP, OVERSCAN_ROWS,
 };
 pub use picture_cache::{PictureCache, PICTURE_CACHE_BUDGET};
+pub use scrollbar::{
+    scrollbar_key_target, scrollbar_value_now, scrollbar_visible, ScrollbarDrag, ScrollbarKey,
+    ScrollbarMetrics, ScrollbarTarget,
+};
 pub use thumbnail_demand::{ThumbnailDemand, TileRequest, TileThumbnail};
+pub use timeline::{
+    format_timeline_month, index_at_fraction, month_at, timeline_key_target, timeline_months,
+    timeline_ticks, TimelineEffect, TimelineInput, TimelineKey, TimelineLabel, TimelineMonth,
+    TimelineScrubber, TimelineTick,
+};
 pub use virtual_grid::{
     GridEffect, GridGeometry, GridInput, ScrollEdge, VirtualGrid, IDLE_DELAY, MOTION_WINDOW,
 };
+
+/// Reads a Solid gallery source; tests check the classes copied from it are still
+/// there.
+#[cfg(test)]
+pub(crate) fn gallery_source(file: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../src/features/gallery")
+        .join(file);
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+}

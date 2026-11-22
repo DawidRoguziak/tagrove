@@ -20,6 +20,7 @@
 //! and asks for a redraw.
 
 mod grid;
+mod position;
 
 use std::{
     cell::Cell,
@@ -35,7 +36,8 @@ use media_tagger_client::{
     controls::{ButtonVariant, SliderRange},
     gallery::{
         layout::{self as gallery_layout, area, footer, group_plates, media_group, thumbnail_key},
-        GridEffect, GridGeometry, GridInput, LibraryRange, ScrollEdge, TileRequest, VirtualGrid,
+        scrollbar_visible, GridEffect, GridGeometry, GridInput, LibraryRange, ScrollEdge,
+        ScrollbarDrag, TileRequest, TimelineEffect, TimelineInput, TimelineScrubber, VirtualGrid,
     },
     i18n::I18n,
     library::{QueryInput, Viewport},
@@ -54,6 +56,10 @@ pub use grid::{
     chip_selector, group_plate_selector, init, key_bindings, loader_selector, picture_selector,
     placeholder_selector, tile_selector, GalleryEvent, LineDown, LineUp, PageDown, PageUp,
     ScrollEnd, ScrollStart, FOOTER_SELECTOR, LOAD_ERROR_SELECTOR, LOAD_RETRY_ID, VIEWPORT_SELECTOR,
+};
+pub use position::{
+    timeline_tick_selector, SCROLLBAR_SELECTOR, SCROLLBAR_THUMB_SELECTOR, TIMELINE_LABEL_SELECTOR,
+    TIMELINE_MARKER_SELECTOR, TIMELINE_SELECTOR,
 };
 
 use super::chrome::{self, drag_surface, no_drag};
@@ -105,6 +111,16 @@ pub struct GalleryView {
     demand: Option<DemandStamp>,
     /// The grid's focus: keys scroll while it, or anything else in the view, has it.
     grid_focus: FocusHandle,
+    /// The position bar: its focus, its drag and where it was last laid out.
+    scrollbar_focus: FocusHandle,
+    scrollbar_drag: Option<ScrollbarDrag>,
+    scrollbar_bounds: position::LastBounds,
+    /// The month timeline: its state, its focus, where it was last laid out and
+    /// whether the pointer is over it (the year labels show then).
+    timeline: TimelineScrubber,
+    timeline_focus: FocusHandle,
+    timeline_bounds: position::LastBounds,
+    timeline_hovered: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -188,6 +204,13 @@ impl GalleryView {
             published: (None, page_failure_epoch),
             demand: None,
             grid_focus: cx.focus_handle(),
+            scrollbar_focus: cx.focus_handle().tab_stop(true),
+            scrollbar_drag: None,
+            scrollbar_bounds: Rc::default(),
+            timeline: TimelineScrubber::new(),
+            timeline_focus: cx.focus_handle().tab_stop(true),
+            timeline_bounds: Rc::default(),
+            timeline_hovered: false,
             _subscriptions: subscriptions,
         }
     }
@@ -204,6 +227,21 @@ impl GalleryView {
     /// The focus handle of the grid's viewport.
     pub fn grid_focus(&self) -> &FocusHandle {
         &self.grid_focus
+    }
+
+    /// The focus handle of the position bar.
+    pub fn scrollbar_focus(&self) -> &FocusHandle {
+        &self.scrollbar_focus
+    }
+
+    /// The state of the month timeline.
+    pub fn timeline(&self) -> &TimelineScrubber {
+        &self.timeline
+    }
+
+    /// The focus handle of the month timeline.
+    pub fn timeline_focus(&self) -> &FocusHandle {
+        &self.timeline_focus
     }
 
     fn now(&self, cx: &App) -> Duration {
@@ -245,6 +283,44 @@ impl GalleryView {
             });
         }
 
+        // The timeline follows the session's sections and the grid's position.
+        let mut timeline_effects = Vec::new();
+        {
+            let sections = self.runtime.read(cx).model().query().sections();
+            if sections != self.timeline.sections() {
+                let sections = sections.to_vec();
+                timeline_effects.extend(self.timeline.handle(TimelineInput::Sections(sections)));
+            }
+        }
+        let first_visible = self
+            .grid
+            .range()
+            .map(|range| range.visible_start_index)
+            .unwrap_or(0);
+        timeline_effects.extend(self.timeline.handle(TimelineInput::View {
+            total,
+            viewport: self.grid.geometry().viewport,
+            first_visible,
+        }));
+        // A rail or bar that is no longer drawn gets no release and no pointer leave:
+        // what a drag or a hover on it held ends here (the timeline ends its own drag
+        // and asks to resume demand), as the Solid parts' cleanup does on unmount.
+        for effect in timeline_effects {
+            if effect == TimelineEffect::ResumeDemand {
+                self.grid_input(GridInput::ResumeDemand, cx);
+            }
+        }
+        if !self.timeline.visible() {
+            self.timeline_hovered = false;
+        }
+        if !scrollbar_visible(
+            self.grid.layout().count,
+            self.grid.min_offset(),
+            self.grid.max_offset(),
+        ) {
+            self.scrollbar_drag = None;
+        }
+
         let viewport = self.grid.viewport();
         if self.published != (viewport, page_failure_epoch) {
             self.published = (viewport, page_failure_epoch);
@@ -280,6 +356,13 @@ impl GalleryView {
 
     /// Applies a scroll input and starts the timer it asks for.
     fn scroll(&mut self, input: GridInput, cx: &mut Context<Self>) {
+        self.grid_input(input, cx);
+        self.refresh(cx);
+    }
+
+    /// Hands `input` to the grid and starts the timers it asks for, without a
+    /// refresh.
+    fn grid_input(&mut self, input: GridInput, cx: &mut Context<Self>) {
         for effect in self.grid.handle(input) {
             let GridEffect::IdleTimer { token, delay } = effect;
             self.idle_timer = Some(cx.spawn(async move |this, cx| {
@@ -291,7 +374,6 @@ impl GalleryView {
                 .ok();
             }));
         }
-        self.refresh(cx);
     }
 
     /// The viewport was laid out at `size`.
@@ -717,7 +799,16 @@ impl Render for GalleryView {
             Some(state) => {
                 vec![self.empty_body(state, load_failed, &i18n, theme, window)]
             }
-            None => self.grid_body(load_failed, &i18n, theme, cx),
+            None => {
+                // The position bar and the month timeline first: their tab stops come
+                // before the banner's Retry, as in the Solid DOM. Nothing of the grid
+                // lies under them (the tile area keeps clear of the right 34 px).
+                let mut body: Vec<AnyElement> = Vec::new();
+                body.extend(self.scrollbar(&i18n, theme, window, cx));
+                body.extend(self.timeline_rail(&i18n, theme, window, cx));
+                body.extend(self.grid_body(load_failed, &i18n, theme, cx));
+                body
+            }
         };
         // Reports the viewport's size after layout. A new size is applied after this
         // frame, since nothing may change state while a frame is drawn.

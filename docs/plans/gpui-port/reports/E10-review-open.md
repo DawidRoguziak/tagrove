@@ -1,0 +1,34 @@
+# E10: otwarte ustalenia przeglądu
+
+Zastępczy przebieg porównania wyglądu (agent naprawczy luk, 2026-11-22). Zamyka, na ile pozwala zakres epiku, lukę kryterium „Parytet `gallery-default` (scrubber widoczny)”: seed porównania (7 plików z jednego miesiąca) mieści się w oknie, więc ani Tauri, ani GPUI nie pokazują paska pozycji ani szyny osi czasu i nic nie porównało ich wyglądu z oryginałami Solid. Zastępstwo jak w E05 (plansza `kit`): render headless GPUI i pomiar pikseli względem klas Solid.
+
+## Co porównano i jak
+
+- Render: `HeadlessAppContext` z rendererem headless (wgpu na Mesa RADV, skala 2, okno 1440×900), okno główne z `FakeBackend`: 100 000 syntetycznych wyników w 60 miesiącach (grudzień 2024 – styczeń 2020) i ogon bez daty. Stany: spoczynek (kciuk na górze), kursor nad paskiem, kciuk w środku (klik w tor), kursor nad szyną (etykieta miesiąca, lata przy znacznikach), End na pasku z fokusem z klawiatury (kciuk na końcu, pierścień), Tab na szynę (pierścień, etykieta przy znaczniku), Home; oba motywy.
+- Wzorce: src/features/gallery/GalleryScrollbar.tsx:43, src/features/gallery/GalleryScrollbar.tsx:92, src/features/gallery/GalleryTimelineScrubber.tsx:190, src/features/gallery/GalleryTimelineScrubber.tsx:193, src/features/gallery/GalleryTimelineScrubber.tsx:202, src/features/gallery/GalleryTimelineScrubber.tsx:210, src/features/gallery/GalleryGrid.tsx:45; tokeny z modułu `theme` klienta (parytet z src/styles.css pilnują jego testy). Kolory z przezroczystością składane na `--bg-1` w sRGB.
+- Położenie (debug_bounds i piksele): szyna x 1406–1416, pasek 1426–1436, oba od 4 px pod górą widoku (y 101) do 4 px nad dołem (tor 795 px); kafle kończą się na x 1405. Zrzut `gallery-tiles-large` aplikacji Tauri pokazuje to samo: kafle do x 1405, nakładkowy pasek WebKitGTK przy samej krawędzi, bez rynny, więc `right-1` i `TIMELINE_RIGHT = 24` liczą się od krawędzi okna w obu programach.
+- Zmierzone zgodnie (różnica do 1 poziomu, ciemny / jasny): tor paska `base-content/5` (#1F2123 / #E9EBEA), tor pod kursorem `/10` (#2B2D2F / #DDE1DF), kciuk `--border-strong` (#2C2E31 / #CCD7D0) o wysokości 32 px na górze i na końcu, promień pełny; szyna w spoczynku bez tła, pod kursorem `base-content/5`; znacznik `primary/70` 10×4 px (#118862 / #4EA289); znaczniki lat 8×1 px `base-content/30` przy prawej krawędzi szyny, przerzedzone do 14 px; lata JetBrains Mono 10 px, `base-content/60`, prawa krawędź 12 px od prawej krawędzi szyny, tylko pod kursorem; etykieta miesiąca: prawa krawędź 20 px od prawej krawędzi szyny, `--surface-solid` z ramką 1 px `--border-strong`, promień 8 px, cień `--shadow-popover`, tekst `base-content`, nad kaflami; pierścień fokusu 2 px `primary` 2 px od paska i szyny (`outline-offset-2` wygrywa z globalnym `:focus-visible` 3 px, src/styles.css:180, bo narzędzia są w warstwie utilities), tylko po klawiaturze; brak przejść i przezroczystości w spoczynku w obu komponentach.
+
+## Potwierdzone ustalenia
+
+| ID | Priorytet | Ustalenie | Stan |
+| --- | --- | --- | --- |
+| e10-look-1 | P2 | Etykieta miesiąca szyny miała 11,5 px wysokości zamiast 26 px: widok używał `TYPOGRAPHY.xs.line_height` (stosunek 16/12) jako pikseli, więc linia miała 1,33 px, a tekst 12 px wystawał poza ramkę. To samo zaniżało połowę wysokości w centrowaniu, więc test położenia środka tego nie wykrył. | naprawione: src-gpui/crates/media_tagger_gpui/src/views/gallery/position.rs:393 i src-gpui/crates/media_tagger_gpui/src/views/gallery/position.rs:407, wysokość i linia z src-gpui/crates/media_tagger_client/src/gallery/timeline.rs:534 i src-gpui/crates/media_tagger_client/src/gallery/timeline.rs:540; testy src-gpui/crates/media_tagger_gpui/tests/gallery_position.rs:618 (bez poprawki: 11.5 zamiast 26), src-gpui/crates/media_tagger_gpui/tests/gallery_position_render.rs:405 (piksele ramki, bez poprawki pada), src-gpui/crates/media_tagger_client/src/gallery/timeline.rs:812 |
+
+Otwartych ustaleń P0–P2: brak. P0 ani P1 nie znaleziono.
+
+## Różnice świadome (nie są wadami)
+
+- Pasek GPUI jest zawsze własnym `GalleryScrollbar`, gdy treść się przewija; Tauri pokazuje cienki nakładkowy pasek WebKitGTK, dopóki siatka nie przerośnie fizycznego okna (src-gpui/crates/media_tagger_client/src/gallery/scrollbar.rs:5, docs/subsystems/library-query-and-gallery.md:479, ADR 0042). Scenariusz `gallery-tiles-large` pokaże tę różnicę.
+- Rasteryzacja fontów etykiet (Inter, JetBrains Mono) jest poza parytetem pikselowym (D10, docs/plans/gpui-port/README.md:82); brak `letter_spacing` i zmiennych wag w GPUI zapisano przy E06 (docs/plans/gpui-port/E06-gpui-app-shell.md:135). Etykiety szyny używają wagi 400 bez odstępów liter, więc tu nie powodują różnicy.
+- Pierścienie fokusu i etykieta mogą wyjść poza okno przy krawędzi (etykieta „No date” przy końcu szyny jest ucięta dołem okna); Solid liczy położenie tak samo (`top: y` z `-translate-y-1/2`), więc to nie różnica portu.
+
+## Otwarte
+
+- P3, niesprawdzone: porównanie zrzutów paska i szyny z działającą aplikacją Tauri. Kryterium „Parytet `gallery-default` (scrubber widoczny)” nie może zajść z obecnym seedem, a wygląd sprawdzono tylko względem klas Solid na renderze headless GPUI, nie obok prawdziwego WebKitGTK. Potrzebny seed wielomiesięczny w harnessie porównania, co dotyka e2e/compare/ i sterownika Tauri, więc wymaga decyzji planu (poza E10).
+- Propozycja seedu i scenariusza: seed `timeline` w harnessie (e2e/compare/ i `seed_library` po stronie GPUI) zapisuje około 120 syntetycznych PNG (jednolite kolory, bez prawdziwych mediów) z czasami modyfikacji rozłożonymi po około 30 miesiącach trzech lat, co najmniej dwa pliki na miesiąc, kilka plików bez daty (czas przed epoką Unix, ADR 0007) i jedną grupę mediów na granicy miesięcy (ustawianie czasów plików jak w e2e/specs/gallery-timeline.e2e.js, tylko mniejszy zestaw); 120 kafli przy domyślnym rozmiarze to ponad cztery ekrany 1440×900, więc szyna i pasek są widoczne, a wiele lat daje znaczniki. Scenariusz `gallery-timeline` (ciemny) i `gallery-timeline-light` czeka na bezczynność i robi zrzut w spoczynku; drugi krok najeżdża kursorem na szynę w 40% wysokości (etykieta miesiąca i lata), trzeci daje fokus szynie z klawiatury (Tab do szyny, pierścień i etykieta przy znaczniku). Porównanie obejmuje szynę, znaczniki, etykietę i pierścień; pasek pozycji zostaje różnicą świadomą (ADR 0042), dopóki Tauri nie przejdzie w tryb okienkowy. Wpis w `SCENARIOS` (src-gpui/crates/media_tagger_client/src/scenario.rs), w `scenarios` pliku epics.json i w e2e/compare/scenarios/ razem, jak wymaga reguła portu.
+- P3, niesprawdzone: najechanie i przeciąganie z prawdziwą myszą w działającym oknie GPUI (test headless wysyła zdarzenia przez `Window::dispatch_event`).
+
+## Stan
+
+Ustalenie e10-look-1 naprawione. Zostaje otwarte porównanie z działającą aplikacją Tauri (wymaga seedu wielomiesięcznego i decyzji planu).

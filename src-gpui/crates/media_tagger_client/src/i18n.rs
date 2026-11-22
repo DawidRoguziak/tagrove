@@ -9,7 +9,8 @@
 //! - plural keys `<key>_one|_few|_many|_other` chosen by a `count` with the CLDR rules
 //!   of the language ([`plural`]), `<key>_zero` first for a count of 0;
 //! - `{{placeholder}}` interpolation without HTML escaping ([`interpolate`]);
-//! - `formattedCount` values from [`format_count`] (`Intl.NumberFormat`).
+//! - `formattedCount` values from [`format_count`] (`Intl.NumberFormat`), and month
+//!   labels from [`format_year_month`] (`Intl.DateTimeFormat`).
 //!
 //! Not supported, because no locale file and no caller uses them: nesting (`$t(...)`),
 //! contexts, ordinal plurals, namespaces and format functions. A key that names a
@@ -17,6 +18,7 @@
 //! "object instead of string" notice).
 
 pub mod backend_text;
+pub mod date;
 pub mod interpolate;
 pub mod language;
 pub mod number;
@@ -27,6 +29,7 @@ use std::{borrow::Cow, sync::OnceLock};
 use serde_json::Value;
 
 pub use backend_text::translate_backend_text;
+pub use date::format_year_month;
 pub use language::{initial_language, Language, LocaleEnvironment, FALLBACK_LANGUAGE};
 pub use number::format_count;
 pub use plural::{plural_category, PluralCategory, PluralOperands};

@@ -45,6 +45,7 @@ import {
   validateSocketPath,
   withModifiers
 } from "./control-support.js";
+import { pinControlSeedOrder } from "./compare/seed.js";
 import { copyPngFixtures, createPlayableFixtures } from "./fixtures.js";
 
 const evidenceRoot = path.join(projectRoot, "artifacts", "app-control");
@@ -900,6 +901,8 @@ async function start() {
     await browser.execute(() => localStorage.setItem("media-tagger.language", "en"));
     await copyPngFixtures(manifest.media, "control", 4);
     await createPlayableFixtures(manifest.media, "control-playable");
+    // The gallery order the comparison harness shares with the GPUI side (e2e/compare/seed.js).
+    await pinControlSeedOrder(manifest.media);
     await invoke("add_scan_root", { path: manifest.media });
     await invoke("rescan_all_roots");
     await refresh();

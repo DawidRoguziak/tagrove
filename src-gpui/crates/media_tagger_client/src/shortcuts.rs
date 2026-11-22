@@ -21,8 +21,10 @@
 //! its grid, which a webview's scroller handles natively (Home, End, Page Up, Page
 //! Down, Up, Down), and Ctrl+A (or the platform key with A), which selects every
 //! result while selection mode is on and no layer lies above the gallery; a text
-//! field keeps its own Ctrl+A, since its context is deeper. The epics that bring the
-//! search (Ctrl+K) and the lightbox add their shortcuts here.
+//! field keeps its own Ctrl+A, since its context is deeper. The shell binds Ctrl+K (or
+//! the platform key with K), which focuses the search field of the gallery unless a
+//! modal layer is open; the field does not use the key, so it works with the focus
+//! in a field too. The epic that brings the lightbox adds its shortcuts here.
 
 /// A key context of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,6 +73,8 @@ pub enum ShortcutCommand {
     GalleryLineDown,
     /// Selects every result of the query, in selection mode only.
     GallerySelectAll,
+    /// Focuses the gallery's search field (`SearchTagatorWrapper`'s Ctrl/Meta+K).
+    FocusSearch,
 }
 
 /// One key binding of the application.
@@ -124,6 +128,18 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keystroke: "cmd-a",
         command: ShortcutCommand::GallerySelectAll,
         context: KeyContext::Gallery,
+    },
+    // Ctrl or Meta with K and no other modifier; a binding with Shift or Alt does not
+    // match, as `focusSearch` ignores those.
+    Shortcut {
+        keystroke: "ctrl-k",
+        command: ShortcutCommand::FocusSearch,
+        context: KeyContext::Shell,
+    },
+    Shortcut {
+        keystroke: "cmd-k",
+        command: ShortcutCommand::FocusSearch,
+        context: KeyContext::Shell,
     },
 ];
 

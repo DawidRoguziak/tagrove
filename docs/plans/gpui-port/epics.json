@@ -523,8 +523,8 @@
         "E06",
         "E08"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-22",
       "sources": [
         "src/features/search/SearchTagator.tsx",
         "src/features/search/SearchTagatorWrapper.tsx",

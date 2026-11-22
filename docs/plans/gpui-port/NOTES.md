@@ -32,3 +32,5 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-22 | E11 | workflow | blocked | Zablokowany: test:all pada w audit:rust na RUSTSEC-2026-0592 (url), niezwiązanym z epikiem; do poprawy zostały 2 testy GPUI (RectangleCancel przy zamknięciu galerii). | [E11](E11-selection.md)
 2026-11-22 | E11 | orkiestrator | in progress | workflow start od kroku gate | [E11](E11-selection.md)
 2026-11-22 | E11 | workflow | done | Epik ukończony: bramka test:all przeszła w 1 rundzie po wcześniejszej blokadzie. | [E11](E11-selection.md)
+2026-11-22 | E12 | orkiestrator | in progress | workflow start od kroku implement | [E12](E12-search.md)
+2026-11-22 | E12 | workflow | done | E12 zakończony: wyszukiwarka, gramatyka filtrów i podpowiedzi gotowe, przegląd czysty, gate zielony; parity compare:ui nieuruchomione poprawnie. | [E12](E12-search.md)

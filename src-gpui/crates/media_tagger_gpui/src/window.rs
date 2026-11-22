@@ -17,7 +17,7 @@ use gpui::{
 };
 use media_tagger_client::{
     runtime::{RuntimeInput, DEFAULT_TILE_SIZE},
-    scenario::ScenarioClick,
+    scenario::{ScenarioClick, ScenarioSearch},
     theme::ThemeName,
 };
 
@@ -36,6 +36,8 @@ pub struct ShellStart {
     pub tile_size: u32,
     /// The clicks the gallery starts with, in selection mode (`Scenario::selection`).
     pub selection: &'static [ScenarioClick],
+    /// The search header the gallery starts with (`Scenario::search`).
+    pub search: Option<ScenarioSearch>,
 }
 
 impl Default for ShellStart {
@@ -44,6 +46,7 @@ impl Default for ShellStart {
         Self {
             tile_size: DEFAULT_TILE_SIZE,
             selection: &[],
+            search: None,
         }
     }
 }
@@ -285,6 +288,9 @@ pub fn open_main_window_started(
     runtime.update(cx, |runtime, cx| {
         runtime.send(RuntimeInput::SetTileSize(f64::from(start.tile_size)), cx);
         runtime.script_selection(start.selection, cx);
+        if let Some(search) = start.search {
+            runtime.script_search(search, cx);
+        }
     });
     let window = cx.open_window(options, |window, cx| {
         cx.new(|cx| ShellView::new(runtime.clone(), window, cx))

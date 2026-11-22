@@ -390,7 +390,9 @@ fn fullscreen_removes_the_resize_grips_until_it_ends(cx: &mut TestAppContext) {
 fn secondary_presses_and_presses_on_header_controls_never_move_the_window(cx: &mut TestAppContext) {
     let fixture = Fixture::empty();
     let (window, mut cx) = open_settled(&fixture, cx);
-    let header = center(gallery::SEARCH_SLOT_SELECTOR, &mut cx);
+    // The search field is no drag surface (`data-tauri-drag-region="false"`); the
+    // identity beside it is.
+    let header = center(gallery::IDENTITY_SELECTOR, &mut cx);
     let away = Point::new(header.x + gpui::px(40.), header.y);
 
     // A secondary press and drag on the header and on a grip.
@@ -420,7 +422,9 @@ fn secondary_presses_and_presses_on_header_controls_never_move_the_window(cx: &m
 fn a_primary_drag_on_the_header_starts_a_window_move(cx: &mut TestAppContext) {
     let fixture = Fixture::empty();
     let (_window, mut cx) = open_settled(&fixture, cx);
-    let header = center(gallery::SEARCH_SLOT_SELECTOR, &mut cx);
+    // The search field is no drag surface (`data-tauri-drag-region="false"`); the
+    // identity beside it is.
+    let header = center(gallery::IDENTITY_SELECTOR, &mut cx);
 
     cx.simulate_mouse_down(header, MouseButton::Left, Modifiers::none());
     cx.simulate_mouse_move(
@@ -437,7 +441,9 @@ fn a_primary_drag_on_the_header_starts_a_window_move(cx: &mut TestAppContext) {
 fn a_double_click_on_the_header_toggles_maximize(cx: &mut TestAppContext) {
     let fixture = Fixture::empty();
     let (_window, mut cx) = open_settled(&fixture, cx);
-    let header = center(gallery::SEARCH_SLOT_SELECTOR, &mut cx);
+    // The search field is no drag surface (`data-tauri-drag-region="false"`); the
+    // identity beside it is.
+    let header = center(gallery::IDENTITY_SELECTOR, &mut cx);
 
     cx.simulate_event(gpui::MouseDownEvent {
         position: header,

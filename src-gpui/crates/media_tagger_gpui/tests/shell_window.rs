@@ -481,8 +481,9 @@ fn the_empty_shell_renders_through_the_headless_renderer() {
         let pixel = |x: f32, y: f32| image.get_pixel((x * scale) as u32, (y * scale) as u32).0;
         let chrome = colors.window_chrome_bg;
         let background = colors.bg_1;
+        // Above the search field, which fills the middle of the first row.
         assert_eq!(
-            pixel(600.0, 20.0),
+            pixel(600.0, 3.0),
             [chrome.r, chrome.g, chrome.b, 0xff],
             "{name}: the header"
         );

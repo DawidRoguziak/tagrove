@@ -271,6 +271,8 @@ test("unknown scenarios are refused before a session exists", (t) => {
     "gallery-selection\ttheme=dark\tseed=control",
     "gallery-tiles-large\ttheme=dark\tseed=control",
     "gallery-tiles-small\ttheme=dark\tseed=control",
+    "search-applied\ttheme=dark\tseed=control",
+    "search-suggestions\ttheme=dark\tseed=control",
     "shell-empty\ttheme=dark\tseed=empty",
     "shell-empty-light\ttheme=light\tseed=empty"
   ]);

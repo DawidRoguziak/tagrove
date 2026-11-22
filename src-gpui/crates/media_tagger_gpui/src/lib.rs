@@ -110,6 +110,7 @@ pub fn run_scenario_with(
             scenario::seed_library(
                 start.seed,
                 env(media_tagger_client::scenario::SCENARIO_MEDIA_VARIABLE),
+                start.tags,
                 &backend,
             )?;
             let parts = RuntimeParts {
@@ -125,6 +126,7 @@ pub fn run_scenario_with(
                     ShellStart {
                         tile_size: start.tile_size,
                         selection: start.selection,
+                        search: start.search,
                     },
                 ),
             )

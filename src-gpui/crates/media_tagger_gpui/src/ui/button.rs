@@ -48,6 +48,10 @@ pub struct Button {
     gap: Option<f32>,
     pressed: Option<bool>,
     debug_selector: Option<&'static str>,
+    size: Option<f32>,
+    height: Option<f32>,
+    text_size: Option<f32>,
+    transparent: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -66,6 +70,10 @@ impl Button {
             gap: None,
             pressed: None,
             debug_selector: None,
+            size: None,
+            height: None,
+            text_size: None,
+            transparent: false,
             on_click: None,
         }
     }
@@ -80,6 +88,31 @@ impl Button {
             aria_label: Some(label.into()),
             ..Self::new(id, SharedString::default())
         }
+    }
+
+    /// The side of a square icon button in place of `UiIconButton`'s 36 px (`h-8! w-8!`).
+    pub fn size(mut self, size: f32) -> Self {
+        self.size = Some(size);
+        self
+    }
+
+    /// The height of a text button in place of its 32 px (`h-7!`).
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = Some(height);
+        self
+    }
+
+    /// The font size of a text button (`text-xs`).
+    pub fn text_size(mut self, size: f32) -> Self {
+        self.text_size = Some(size);
+        self
+    }
+
+    /// No border and no background, also on hover (`border-transparent!
+    /// bg-transparent!`); the text colour still changes on hover.
+    pub fn transparent(mut self, transparent: bool) -> Self {
+        self.transparent = transparent;
+        self
     }
 
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
@@ -179,10 +212,22 @@ impl Button {
             hovered,
             disabled: self.disabled,
         };
-        match self.content {
+        let mut visuals = match self.content {
             Content::Label(_) => button_visuals(theme.tokens(), self.variant, state),
             Content::Icon { kind, .. } => icon_button_visuals(theme.tokens(), kind, state),
+        };
+        if let Some(height) = self.size.or(self.height) {
+            visuals.height = height;
         }
+        if let Some(size) = self.text_size {
+            visuals.font_size = size;
+        }
+        if self.transparent {
+            visuals.border = media_tagger_client::theme::Rgba::TRANSPARENT;
+            visuals.background = media_tagger_client::theme::Rgba::TRANSPARENT;
+            visuals.shadows = &[];
+        }
+        visuals
     }
 }
 
@@ -249,14 +294,17 @@ impl RenderOnce for Button {
                     button.child(Icon::new(icon).size(size).color(color(rest.text)))
                 })
                 .child(label),
-            Content::Icon { icon, kind } => button.w(px(ICON_BUTTON_SIZE)).child(
-                Icon::new(icon)
-                    .size(ICON_BUTTON_ICON_SIZE)
-                    .filled(
-                        icon == IconName::Heart && matches!(kind, IconButtonKind::Active { .. }),
-                    )
-                    .color(color(rest.text)),
-            ),
+            Content::Icon { icon, kind } => {
+                button.w(px(self.size.unwrap_or(ICON_BUTTON_SIZE))).child(
+                    Icon::new(icon)
+                        .size(ICON_BUTTON_ICON_SIZE)
+                        .filled(
+                            icon == IconName::Heart
+                                && matches!(kind, IconButtonKind::Active { .. }),
+                        )
+                        .color(color(rest.text)),
+                )
+            }
         };
         if self.disabled {
             return button.cursor_not_allowed();

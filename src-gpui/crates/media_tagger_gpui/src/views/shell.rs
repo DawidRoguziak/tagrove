@@ -8,14 +8,14 @@
 //! it is shown and dropped when it is left, so it loses its local state, as a Solid
 //! view loses its DOM state when it unmounts.
 
-use gpui::{div, prelude::*, Context, Entity, FocusHandle, Subscription, Window};
+use gpui::{div, prelude::*, Context, Entity, FocusHandle, Focusable, Subscription, Window};
 use media_tagger_client::{
     overlay::LayerId,
     runtime::{RuntimeInput, View},
     shortcuts::KeyContext,
 };
 
-use super::{chrome, gallery::GalleryView, settings::SettingsView};
+use super::{chrome, gallery::GalleryView, search::FocusSearch, settings::SettingsView};
 use crate::{
     runtime::{self, Runtime},
     ui::{
@@ -111,6 +111,19 @@ impl ShellView {
         &self.settings_opener
     }
 
+    /// Ctrl+K: the gallery's search field takes the focus, unless the gallery is not
+    /// shown or a modal layer is open (`focusSearch` of `SearchTagatorWrapper`).
+    fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if layers::has_modal(cx) {
+            return;
+        }
+        if let Some(gallery) = self.gallery() {
+            let search = gallery.read(cx).search().clone();
+            let handle = search.read(cx).input().focus_handle(cx);
+            window.focus(&handle, cx);
+        }
+    }
+
     /// Shows the view the runtime asks for, making it anew when it changes.
     fn sync_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let wanted = self.runtime.read(cx).model().view();
@@ -159,7 +172,11 @@ impl Render for ShellView {
         };
         // The shell's key context sits on the layer stack's root, which holds the
         // focus when nothing else does, so its bindings are always on the path.
-        let root = layers::root(cx).key_context(shell_key_context().as_str());
+        let root = layers::root(cx)
+            .key_context(shell_key_context().as_str())
+            .on_action(
+                cx.listener(|shell, _: &FocusSearch, window, cx| shell.focus_search(window, cx)),
+            );
         app_root(root, theme).child(
             div()
                 .relative()

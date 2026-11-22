@@ -107,9 +107,9 @@ actions!(
 pub fn key_bindings() -> Vec<KeyBinding> {
     SHORTCUTS
         .iter()
-        .map(|shortcut| {
+        .filter_map(|shortcut| {
             let context = Some(shortcut.context.name());
-            match shortcut.command {
+            Some(match shortcut.command {
                 ShortcutCommand::GalleryScrollStart => {
                     KeyBinding::new(shortcut.keystroke, ScrollStart, context)
                 }
@@ -131,7 +131,9 @@ pub fn key_bindings() -> Vec<KeyBinding> {
                 ShortcutCommand::GallerySelectAll => {
                     KeyBinding::new(shortcut.keystroke, SelectAll, context)
                 }
-            }
+                // The shell's (`views::search`).
+                ShortcutCommand::FocusSearch => return None,
+            })
         })
         .collect()
 }

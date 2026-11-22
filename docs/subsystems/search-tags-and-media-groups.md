@@ -414,6 +414,69 @@ Tests: `gallery/selection/tests.rs`, `gallery/selection_geometry.rs`,
 crate; `tests/gallery_selection.rs` in `media_tagger_gpui`
 ([testing](../development/testing.md#gpui-workspace)).
 
+## GPUI port: search
+
+The GPUI interface (`src-gpui/`, plan `docs/plans/gpui-port`, epic E12) keeps the grammar,
+the draft/applied split and the suggestion rules above; the code lives in
+`media_tagger_client::search` and the view in `media_tagger_gpui::views::search`.
+
+- **Grammar.** `search::grammar` (`parseSearchFilter`, `readGroupNameFilterValue`) and
+  `search::tokens` (`readTagToken`, `serializeTagToken`) split and trim with JavaScript's
+  whitespace set (`search::text`: U+FEFF is whitespace, U+0085 is not), match reserved
+  words without ASCII case, accept `tags:N` up to `Number.MAX_SAFE_INTEGER` and use the
+  core's tag rule through `library::is_valid_tag`. `search::filters` builds the normalized
+  descriptor; tags sort by UTF-16 code units as JavaScript's `sort` does.
+- **Draft and applied.** `Search` is owned by `AppRuntime`, so the draft survives the
+  gallery view. Every command (`SearchCommand`: change, submit, apply input, kind,
+  favourites, clear) goes through one submit; a valid one hands `LibraryFilters` to the
+  query (`QueryInput::ApplyFilters`) in the same turn and refreshes even when the
+  descriptor is unchanged; an invalid one keeps the applied filters and sets the
+  validation error, which the next change clears.
+- **Suggestions (D13).** `search::matcher` replaces the Fuse.js worker: an approximate
+  substring match scored like Fuse.js (`errors / query length + start / 100`, threshold
+  0.35, ties in vocabulary order), 20 matches considered and 8 shown, hard exclusions
+  removed before the limit, used tags dropped unless equal to the query, unquoted
+  positive operators suggest nothing. Highlights are the byte ranges of the characters
+  the best alignment matched; Fuse.js marks every query character in its window, so a
+  fuzzy match can highlight less here (the `search-suggestions` parity scenario shows
+  exact prefixes, where both agree). Offsets of the active token are UTF-8 byte offsets
+  of the field, not UTF-16 units.
+- **Off the UI thread.** `SuggestionClient` (one per runtime) runs one search at a time
+  as a `RuntimeEffect::Suggest` on the executor; each field (`EditorId`) keeps only its
+  latest request, a newer request stops its field's running search between tags, and
+  an answer for an older request or vocabulary is dropped. The runner keeps the search
+  index of the last vocabulary `Arc` and builds it again only for a new one (the
+  known tags keep their `Arc` when unchanged). With 100,000 tags a release build builds
+  the index in about 8 ms and searches in about 20 ms, both on the executor; the UI
+  thread only reads the token. A failed search (a panicked task) fails the client until
+  Retry, as the worker failure does.
+- **The field.** `search::Combobox` is the session of one suggesting field
+  (`SearchTagator` plus `createSuggestions`): open only while focused with a non-blank
+  value, results shown only for the current request and vocabulary, Up/Down wrap, Enter
+  picks the active item or submits, Escape closes an open list and is otherwise passed
+  on to the layer stack, a pick replaces the whole token (quoted when needed, its `-`
+  kept) in one undo step. A failure keeps its Retry button across blur until the
+  token, used tags, exclusions or vocabulary change. The tag editors of later epics
+  use it with `ComboboxConfig { auto_select_first: false, pick_to_owner: true, .. }`.
+- **Keys and focus.** Ctrl+K and Meta+K are bound in the shell's key context
+  (`shortcuts::ShortcutCommand::FocusSearch`) and focus the gallery's field unless a
+  modal layer is open. The field reports focus with GPUI's focus events, which arrive
+  only while the window is active; deactivating the window closes the list like a
+  browser blur. The frame's primary border also needs an active window, as WebKit's
+  `focus-within` does. The focus a comparison scenario scripts (`Scenario::search`)
+  opens the session at once even in an inactive window, because the harness's display
+  has no window manager to activate it, while WebKit sends `focusin` for that focus.
+- **Measures.** `search::layout` holds the Tauri values as rendered: the magnifier is
+  20 pixels (`UiIcon`'s `h-5 w-5` wins over the wrapper's `h-4 w-4`), so the input and
+  the list under it start 37 pixels into the field; the Ctrl K hint has the line height
+  `normal` of its `font` shorthand (14 pixels, 16 with padding); the divider before the
+  tag list's button is a filled box one pixel wide, since GPUI draws no left border on a
+  box only that wide.
+- **Not ported yet.** The `title` tooltips of the field (`search.syntaxHint`) and of the
+  favourites button wait for a tooltip primitive; the tag list launcher after the
+  divider is epic E13. The list does not fade in; it is drawn only with items, which is
+  what the Solid list shows.
+
 ## Known limitations
 
 - Backend ordering and the locale-sensitive fallback ordering of the tag list can differ.

@@ -1103,3 +1103,101 @@ mod selection {
         assert_eq!(selection.notice(), None);
     }
 }
+
+#[test]
+fn a_valid_search_submit_starts_the_query_with_its_filters_and_an_invalid_one_does_not() {
+    use crate::{
+        backend::{MediaKind, MetaFilter},
+        search::{SearchCommand, SearchFilterValidationError},
+    };
+    let mut fx = Fixture::new();
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = Arc::clone(&requests);
+    fx.backend.on_start_asset_query(move |request| {
+        seen.lock().unwrap().push(request.clone());
+        Ok(ready(2))
+    });
+
+    fx.send(RuntimeInput::Search(SearchCommand::Change(
+        "Cat -dog".into(),
+    )));
+    fx.settle();
+    assert_eq!(fx.calls("start_asset_query"), 0, "typing applies nothing");
+    fx.send(RuntimeInput::Search(SearchCommand::ApplyKind(Some(
+        MediaKind::Image,
+    ))));
+    fx.settle();
+    {
+        let requests = requests.lock().unwrap();
+        let request = requests.last().expect("a query");
+        assert_eq!(
+            (request.tags_and.clone(), request.tags_not.clone()),
+            (vec!["cat".to_owned()], vec!["dog".to_owned()])
+        );
+        assert_eq!(request.kind, Some(MediaKind::Image));
+    }
+    assert_eq!(fx.runtime().query().total(), 2);
+    assert_eq!(fx.runtime().query().filters().include, ["cat"]);
+
+    fx.send(RuntimeInput::Search(SearchCommand::ApplyInput(
+        "gN:".into(),
+    )));
+    fx.settle();
+    assert_eq!(fx.calls("start_asset_query"), 1);
+    assert_eq!(
+        fx.runtime().search().validation_error(),
+        Some(SearchFilterValidationError::GroupNameMissingValue)
+    );
+    fx.send(RuntimeInput::Search(SearchCommand::ApplyInput(
+        "tags:2".into(),
+    )));
+    fx.settle();
+    assert_eq!(fx.calls("start_asset_query"), 2);
+    assert_eq!(
+        requests.lock().unwrap().last().unwrap().meta_filter,
+        Some(MetaFilter::HasNoTags { tag_count: 2 })
+    );
+}
+
+#[test]
+fn suggestion_searches_run_on_the_executor_against_the_known_tags() {
+    use crate::search::{
+        read_active_token, EditorId, SuggestionContext, SuggestionEvent, SuggestionInput,
+        SuggestionRequest,
+    };
+    let mut fx = Fixture::new();
+    let editor = EditorId::next();
+    let vocabulary = Arc::new(vec!["cat".to_owned(), "car".to_owned(), "dog".to_owned()]);
+    fx.send(RuntimeInput::Suggestions(SuggestionInput::Search {
+        editor,
+        vocabulary,
+        request: SuggestionRequest {
+            context: SuggestionContext {
+                token: read_active_token("ca", 2),
+                ..SuggestionContext::default()
+            },
+            retry: 0,
+        },
+    }));
+    assert!(fx
+        .driver
+        .model_mut()
+        .take_suggestion_events_for(editor)
+        .is_empty());
+    assert_eq!(
+        fx.executor.pending(),
+        1,
+        "the search waits for the executor"
+    );
+    fx.settle();
+    let events = fx.driver.model_mut().take_suggestion_events_for(editor);
+    match &events[..] {
+        [SuggestionEvent::Settled {
+            result: Ok(items), ..
+        }] => {
+            let values: Vec<_> = items.iter().map(|item| item.value.as_str()).collect();
+            assert_eq!(values, ["cat", "car"]);
+        }
+        other => panic!("{other:?}"),
+    }
+}

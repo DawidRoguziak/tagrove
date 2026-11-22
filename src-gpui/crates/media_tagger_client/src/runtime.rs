@@ -21,6 +21,14 @@
 //! `RuntimeInput::Library` (details, pins, writes) and reads tags and details
 //! through [`AppRuntime::library`].
 //!
+//! The search header's model ([`Search`]: the draft and the applied filters) and the
+//! suggestion client ([`SuggestionClient`]) live here too, so a draft survives the
+//! gallery view. A valid submit ([`RuntimeInput::Search`]) hands its filters to the
+//! query ([`QueryInput::ApplyFilters`]) in the same turn. Suggestion searches are
+//! [`RuntimeEffect::Suggest`], run on the executor with the index of the known tags
+//! cached by the runner; a field reads its answers with
+//! [`AppRuntime::take_suggestion_events_for`].
+//!
 //! The selection is embedded the same way: its inputs travel as
 //! [`RuntimeInput::Selection`]. It reads the query model through ticketed reads,
 //! which the runtime hands to the query in the same turn, and it is told the query's
@@ -64,6 +72,10 @@ use crate::{
     },
     model::{Dispatch, Model, RequestSlot, RequestToken, Runner, Tokens},
     prefs::{Prefs, PrefsStore},
+    search::{
+        run_suggestion_effect, suggestions::SuggestionIndexCache, EditorId, Search, SearchCommand,
+        SuggestionClient, SuggestionEffect, SuggestionEvent, SuggestionInput,
+    },
     theme::ThemeName,
 };
 
@@ -184,6 +196,11 @@ pub enum RuntimeInput {
     /// A command or the keepalive timer of the bulk selection. The query's state and
     /// the answers to the selection's reads are passed on by the runtime itself.
     Selection(SelectionInput),
+    /// A command of the search header; a valid submit applies its filters to the
+    /// query.
+    Search(SearchCommand),
+    /// A request or answer of the suggestion client.
+    Suggestions(SuggestionInput),
     /// Lists the scan roots again; an earlier listing still running is superseded.
     RefreshScanRoots,
     ScanRootsLoaded {
@@ -213,6 +230,8 @@ pub enum RuntimeEffect {
     Query(QueryEffect),
     /// Other work of the library model; never a [`LibraryEffect::Query`].
     Library(LibraryEffect),
+    /// A search of the suggestion client.
+    Suggest(SuggestionEffect),
     /// Send [`SelectionInput::KeepAliveDue`] with this token after `delay`.
     SelectionKeepAlive {
         token: RequestToken,
@@ -235,6 +254,8 @@ pub struct AppRuntime {
     tokens: Tokens,
     library: Library,
     selection: Selection,
+    search: Search,
+    suggestions: SuggestionClient,
     /// The answers to ticketed query reads of other callers than the selection.
     query_events: Vec<QueryEvent>,
     scan_roots: Vec<ScanRoot>,
@@ -260,6 +281,8 @@ impl AppRuntime {
             tokens: Tokens::default(),
             library,
             selection,
+            search: Search::new(),
+            suggestions: SuggestionClient::new(),
             query_events: Vec::new(),
             scan_roots: Vec::new(),
             scan_roots_error: None,
@@ -313,6 +336,21 @@ impl AppRuntime {
     /// whether a range is being read.
     pub fn selection(&self) -> &Selection {
         &self.selection
+    }
+
+    /// The search header: the draft, the applied filters and the validation error.
+    pub fn search(&self) -> &Search {
+        &self.search
+    }
+
+    /// The suggestion client shared by every suggesting field.
+    pub fn suggestions(&self) -> &SuggestionClient {
+        &self.suggestions
+    }
+
+    /// The answers of the suggestion client to `editor` since the last call.
+    pub fn take_suggestion_events_for(&mut self, editor: EditorId) -> Vec<SuggestionEvent> {
+        self.suggestions.take_events_for(editor)
     }
 
     /// Whether the gallery shows its load error banner (`selection.error ??
@@ -552,6 +590,18 @@ impl Model for AppRuntime {
                 self.settle_startup_scan();
                 effects
             }
+            RuntimeInput::Search(command) => match self.search.handle(command) {
+                Some(filters) => {
+                    self.library_input(LibraryInput::Query(QueryInput::ApplyFilters(filters)))
+                }
+                None => Vec::new(),
+            },
+            RuntimeInput::Suggestions(input) => self
+                .suggestions
+                .handle(input)
+                .into_iter()
+                .map(RuntimeEffect::Suggest)
+                .collect(),
             RuntimeInput::RefreshScanRoots => vec![self.refresh_scan_roots()],
             RuntimeInput::ScanRootsLoaded { token, result } => {
                 if !self.scan_roots_request.finish(token) {
@@ -614,11 +664,17 @@ fn query_snapshot(library: &Library) -> QuerySnapshot {
 pub struct RuntimeRunner {
     backend: Arc<dyn Backend>,
     prefs: Arc<dyn PrefsStore>,
+    /// The search index of the known tags, built again only for a new vocabulary.
+    suggestion_index: Arc<SuggestionIndexCache>,
 }
 
 impl RuntimeRunner {
     pub fn new(backend: Arc<dyn Backend>, prefs: Arc<dyn PrefsStore>) -> Self {
-        Self { backend, prefs }
+        Self {
+            backend,
+            prefs,
+            suggestion_index: Arc::new(SuggestionIndexCache::new()),
+        }
     }
 }
 
@@ -630,6 +686,14 @@ impl Runner<AppRuntime> for RuntimeRunner {
             }
             RuntimeEffect::Library(effect) => {
                 run_library_effect(&self.backend, effect, dispatch, RuntimeInput::library);
+            }
+            RuntimeEffect::Suggest(effect) => {
+                run_suggestion_effect(
+                    &self.suggestion_index,
+                    effect,
+                    dispatch,
+                    RuntimeInput::Suggestions,
+                );
             }
             RuntimeEffect::SelectionKeepAlive { token, delay } => {
                 dispatch.after(

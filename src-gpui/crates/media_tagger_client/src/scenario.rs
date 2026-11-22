@@ -12,9 +12,11 @@
 //! by the adapter: only the isolated E2E profile accepts a scenario.
 
 use crate::{
+    backend::MediaKind,
     gallery::{Interaction, SelectionInput},
     library::AssetQuery,
     runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
+    search::SearchCommand,
     theme::ThemeName,
 };
 
@@ -56,6 +58,43 @@ pub struct ScenarioClick {
     pub shift: bool,
 }
 
+/// Tags a scenario gives the tile at `index` of the unfiltered library before the
+/// window opens; the Tauri steps add them through the bulk dock.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenarioTags {
+    pub index: usize,
+    pub tags: &'static [&'static str],
+}
+
+/// The search header a scenario starts with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenarioSearch {
+    /// The search field's text.
+    pub input: &'static str,
+    /// A media kind chosen in the segmented control; choosing one submits the draft.
+    pub kind: Option<MediaKind>,
+    /// The field has the focus, with the caret at the end: its suggestions open.
+    pub focus: bool,
+}
+
+impl ScenarioSearch {
+    /// The commands that make this header: the typed text, then the media kind.
+    pub fn commands(&self) -> Vec<SearchCommand> {
+        let mut commands = vec![SearchCommand::Change(self.input.to_owned())];
+        if let Some(kind) = self.kind {
+            commands.push(SearchCommand::ApplyKind(Some(kind)));
+        }
+        commands
+    }
+}
+
+/// `search-suggestions`: the first tile tagged `camera`, `car` and `cat`, and `ca`
+/// typed into the focused search field.
+pub const SEARCH_SUGGESTION_TAGS: [ScenarioTags; 1] = [ScenarioTags {
+    index: 0,
+    tags: &["camera", "car", "cat"],
+}];
+
 /// One named start state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scenario {
@@ -70,6 +109,10 @@ pub struct Scenario {
     /// ([`selection_inputs`]). A Shift click reads its range in the background, so
     /// only the last click may be one.
     pub selection: &'static [ScenarioClick],
+    /// Tags given to tiles before the window opens.
+    pub tags: &'static [ScenarioTags],
+    /// The search header, if the scenario sets one.
+    pub search: Option<ScenarioSearch>,
 }
 
 /// `gallery-selection`: a click on the second tile, a Ctrl-click on the first and a
@@ -120,13 +163,15 @@ pub fn selection_inputs(
 }
 
 /// Every scenario the GPUI interface can start in, on a fresh profile.
-pub const SCENARIOS: [Scenario; 6] = [
+pub const SCENARIOS: [Scenario; 8] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
         seed: Seed::Empty,
         tile_size: DEFAULT_TILE_SIZE,
         selection: &[],
+        tags: &[],
+        search: None,
     },
     Scenario {
         id: "shell-empty-light",
@@ -134,6 +179,8 @@ pub const SCENARIOS: [Scenario; 6] = [
         seed: Seed::Empty,
         tile_size: DEFAULT_TILE_SIZE,
         selection: &[],
+        tags: &[],
+        search: None,
     },
     Scenario {
         id: "gallery-default",
@@ -141,6 +188,8 @@ pub const SCENARIOS: [Scenario; 6] = [
         seed: Seed::Control,
         tile_size: DEFAULT_TILE_SIZE,
         selection: &[],
+        tags: &[],
+        search: None,
     },
     Scenario {
         id: "gallery-tiles-small",
@@ -148,6 +197,8 @@ pub const SCENARIOS: [Scenario; 6] = [
         seed: Seed::Control,
         tile_size: TILE_SIZE_MIN,
         selection: &[],
+        tags: &[],
+        search: None,
     },
     Scenario {
         id: "gallery-tiles-large",
@@ -155,6 +206,8 @@ pub const SCENARIOS: [Scenario; 6] = [
         seed: Seed::Control,
         tile_size: TILE_SIZE_MAX,
         selection: &[],
+        tags: &[],
+        search: None,
     },
     Scenario {
         id: "gallery-selection",
@@ -162,6 +215,34 @@ pub const SCENARIOS: [Scenario; 6] = [
         seed: Seed::Control,
         tile_size: DEFAULT_TILE_SIZE,
         selection: &GALLERY_SELECTION_CLICKS,
+        tags: &[],
+        search: None,
+    },
+    Scenario {
+        id: "search-suggestions",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &SEARCH_SUGGESTION_TAGS,
+        search: Some(ScenarioSearch {
+            input: "ca",
+            kind: None,
+            focus: true,
+        }),
+    },
+    Scenario {
+        id: "search-applied",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: Some(ScenarioSearch {
+            input: "-cat",
+            kind: Some(MediaKind::Image),
+            focus: false,
+        }),
     },
 ];
 
@@ -436,6 +517,52 @@ mod tests {
                 Some((30, 2, false, true))
             ]
         );
+    }
+
+    #[test]
+    fn the_search_scenarios_type_what_their_tauri_steps_type() {
+        // Parity scenarios of E12.
+        use crate::{backend::MediaKind, search::SearchCommand};
+        let suggestions = find("search-suggestions").expect("a scenario");
+        let search = suggestions.search.expect("a search header");
+        assert!(search.focus && search.kind.is_none());
+        assert_eq!(search.commands(), [SearchCommand::Change("ca".into())]);
+        assert_eq!(suggestions.tags, &super::SEARCH_SUGGESTION_TAGS[..]);
+        let applied = find("search-applied").expect("a scenario");
+        let search = applied.search.expect("a search header");
+        assert!(!search.focus && applied.tags.is_empty());
+        assert_eq!(
+            search.commands(),
+            [
+                SearchCommand::Change("-cat".into()),
+                SearchCommand::ApplyKind(Some(MediaKind::Image))
+            ]
+        );
+
+        let steps = repository_root().join("e2e/compare/scenarios");
+        let source = std::fs::read_to_string(steps.join("search-suggestions.js"))
+            .expect("read the Tauri steps");
+        for tag in super::SEARCH_SUGGESTION_TAGS[0].tags {
+            assert!(
+                source.contains(&format!(r##"["fill", "#bulk-tag-draft-input", "{tag}"]"##)),
+                "{tag} is not added on the Tauri side"
+            );
+        }
+        assert!(source.contains(r#"["click", 'button[data-asset-index="0"]']"#));
+        assert!(source.contains(r#"["fill", ".filter-input", "ca"]"#));
+        let source =
+            std::fs::read_to_string(steps.join("search-applied.js")).expect("read the Tauri steps");
+        assert!(source.contains(r#"["fill", ".filter-input", "-cat"]"#));
+        assert!(source.contains(r#"input[value="image"]"#));
+        for scenario in SCENARIOS {
+            if !scenario.id.starts_with("search-") {
+                assert!(
+                    scenario.search.is_none() && scenario.tags.is_empty(),
+                    "{}",
+                    scenario.id
+                );
+            }
+        }
     }
 
     #[test]

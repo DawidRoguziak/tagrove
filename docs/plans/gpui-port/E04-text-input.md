@@ -95,3 +95,7 @@ Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
   - `port_state.py validate`: pass
   - `bun run test:all` (bramka): pass
   - `bun run quality`, `privacy:check`: nie uruchomiono osobno przez agentów (poza bramką workflow)
+
+### 2026-11-22 — agent naprawczy luk E12
+
+- Z epiku E12: `TextInput` rysuje karetkę także w nieaktywnym oknie; pole Tauri (WebKit) w nieaktywnym oknie karetki nie pokazuje. Widać to w zrzucie porównania `search-suggestions` (okno harnessu nigdy nie jest aktywne). Różnica minor, nienaprawiona (docs/plans/gpui-port/reports/E12-review-open.md).

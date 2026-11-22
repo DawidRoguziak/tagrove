@@ -76,7 +76,10 @@ pub use position::{
 };
 pub use selection::BULK_TOGGLE_ID;
 
-use super::chrome::{self, drag_surface, no_drag};
+use super::{
+    chrome::{self, drag_surface, no_drag},
+    search::SearchBar,
+};
 use crate::{
     runtime::{self, Runtime},
     thumbs::Thumbnails,
@@ -96,6 +99,8 @@ pub const OPEN_SETTINGS_ID: &str = "open-settings-button";
 /// Debug selectors (`VisualTestContext::debug_bounds`).
 pub const HEADER_SELECTOR: &str = "workspace-header";
 pub const SEARCH_SLOT_SELECTOR: &str = "workspace-search-slot";
+/// The logo and product name: part of the header's drag surface.
+pub const IDENTITY_SELECTOR: &str = "workspace-identity";
 pub const COUNT_SELECTOR: &str = "workspace-count";
 pub const EMPTY_STATE_SELECTOR: &str = "gallery-empty-state";
 pub const ADD_FIRST_FOLDER_ID: &str = "gallery-add-first-folder";
@@ -107,6 +112,8 @@ type DemandStamp = (u64, Option<LibraryRange>, bool);
 pub struct GalleryView {
     runtime: Entity<Runtime>,
     thumbnails: Entity<Thumbnails>,
+    /// The search field and its tools; made and dropped with the view.
+    search: Entity<SearchBar>,
     settings_opener: FocusHandle,
     tile_size: Entity<Slider>,
     drag: Rc<Cell<DragSurface>>,
@@ -185,6 +192,7 @@ impl GalleryView {
             )
         });
         let thumbnails = runtime.read(cx).thumbnails().clone();
+        let search = cx.new(|cx| SearchBar::new(runtime.clone(), window, cx));
         let subscriptions = vec![
             cx.subscribe(&tile_size, |this, _, event, cx| {
                 let SliderEvent::Input(value) = *event;
@@ -256,6 +264,7 @@ impl GalleryView {
         let mut view = Self {
             runtime,
             thumbnails,
+            search,
             settings_opener,
             tile_size,
             drag: Rc::default(),
@@ -286,6 +295,11 @@ impl GalleryView {
         // settings page) takes its layer at once.
         view.sync_selection_layer(window, cx);
         view
+    }
+
+    /// The search header.
+    pub fn search(&self) -> &Entity<SearchBar> {
+        &self.search
     }
 
     /// The pointer gesture of selection mode.
@@ -498,6 +512,7 @@ impl GalleryView {
         let runtime = self.runtime.downgrade();
 
         let identity = div()
+            .debug_selector(|| IDENTITY_SELECTOR.to_owned())
             .flex()
             .flex_none()
             .w(px(search_row::IDENTITY_WIDTH))
@@ -531,12 +546,16 @@ impl GalleryView {
             &self.drag,
         )
         .child(identity)
-        // The search field and its toolbar are epic E12.
         .child(
-            div()
-                .debug_selector(|| SEARCH_SLOT_SELECTOR.to_owned())
-                .flex_1()
-                .min_w_0(),
+            no_drag(
+                div()
+                    .id("workspace-search-slot")
+                    .debug_selector(|| SEARCH_SLOT_SELECTOR.to_owned())
+                    .flex()
+                    .flex_1()
+                    .min_w_0(),
+            )
+            .child(self.search.clone()),
         )
         .child(
             div()
@@ -613,7 +632,8 @@ impl GalleryView {
             .px(px(tools_row::PADDING_X))
             .border_t_1()
             .border_color(color(colors.border_soft))
-            // Media kind, favourites and the tag list come first (E12, E13).
+            // Media kind and favourites, then the tag list's place (E13).
+            .children(self.search.read(cx).tools(i18n, theme, cx))
             .child(count)
             .child(
                 div()
@@ -634,6 +654,7 @@ impl GalleryView {
             .border_color(color(colors.border_strong))
             .child(search)
             .child(tools)
+            .children(self.search.read(cx).validation(i18n, cx))
             .into_any_element()
     }
 

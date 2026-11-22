@@ -25,7 +25,7 @@ use media_tagger_client::{
     model::Driver,
     prefs::PrefsStore,
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
-    scenario::{self, ScenarioClick},
+    scenario::{self, ScenarioClick, ScenarioSearch},
 };
 
 use crate::{thumbs::Thumbnails, ui};
@@ -106,6 +106,8 @@ pub struct Runtime {
     thumbnails: Entity<Thumbnails>,
     /// The clicks of a comparison scenario that wait for their tiles' rows.
     scripted_selection: &'static [ScenarioClick],
+    /// A comparison scenario asks for the focus in the search field.
+    scripted_search_focus: bool,
     _pump: Task<()>,
 }
 
@@ -137,6 +139,7 @@ impl Runtime {
             driver,
             thumbnails,
             scripted_selection: &[],
+            scripted_search_focus: false,
             _pump: pump,
         }
     }
@@ -146,6 +149,24 @@ impl Runtime {
     pub fn script_selection(&mut self, clicks: &'static [ScenarioClick], cx: &mut Context<Self>) {
         self.scripted_selection = clicks;
         self.publish(cx);
+    }
+
+    /// Gives the search header the state of a comparison scenario: its text typed, its
+    /// media kind chosen (which submits), and the focus in the field once the gallery
+    /// asks for it ([`Self::take_search_focus`]).
+    pub fn script_search(&mut self, search: ScenarioSearch, cx: &mut Context<Self>) {
+        for command in search.commands() {
+            self.driver
+                .handle(media_tagger_client::runtime::RuntimeInput::Search(command));
+        }
+        self.scripted_search_focus = search.focus;
+        self.publish(cx);
+    }
+
+    /// Whether a scenario asked for the focus in the search field; answers `true`
+    /// once.
+    pub fn take_search_focus(&mut self) -> bool {
+        std::mem::take(&mut self.scripted_search_focus)
     }
 
     /// Makes the scripted clicks once, when the query has their rows.
@@ -180,6 +201,14 @@ impl Runtime {
     /// Texts in the runtime's language.
     pub fn i18n(&self) -> I18n<'static> {
         I18n::new(self.model().language())
+    }
+
+    /// The suggestion client's answers to `editor` since the last call.
+    pub fn take_suggestion_events_for(
+        &mut self,
+        editor: media_tagger_client::search::EditorId,
+    ) -> Vec<media_tagger_client::search::SuggestionEvent> {
+        self.driver.model_mut().take_suggestion_events_for(editor)
     }
 
     /// Applies a command and starts what it asks for.

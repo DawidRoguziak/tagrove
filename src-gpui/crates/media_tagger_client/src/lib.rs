@@ -35,6 +35,8 @@
 //!   (their looks from the theme tokens, the slider and segmented-control keys), the
 //!   icon catalogue, and the overlay layer: the layer stack behind Escape and focus
 //!   restore, and the fading presence of a modal.
+//! - [`search`]: the search header: the grammar of the search field, the draft and the
+//!   applied filters, and the tag suggestions matched in the background.
 //! - [`runtime`], [`shell`], [`window_chrome`], [`shortcuts`]: the application runtime
 //!   (models for the application's lifetime, the view, the start sequence), what the
 //!   shell draws around the views, the window's own decorations and the registry of
@@ -54,6 +56,7 @@ pub mod prefs;
 pub mod progress;
 pub mod runtime;
 pub mod scenario;
+pub mod search;
 pub mod shell;
 pub mod shortcuts;
 pub mod startup_scan;

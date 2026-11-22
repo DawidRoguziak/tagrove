@@ -266,6 +266,12 @@ pub fn is_top(id: LayerId, cx: &App) -> bool {
         .is_some_and(|layers| layers.stack.is_top(id))
 }
 
+/// Whether a modal layer is open (`[role="dialog"][aria-modal="true"]` in the DOM).
+pub fn has_modal(cx: &App) -> bool {
+    cx.try_global::<UiLayers>()
+        .is_some_and(|layers| layers.stack.top_modal().is_some())
+}
+
 /// The registered layers from the bottom up.
 pub fn layer_ids(cx: &App) -> Vec<LayerId> {
     cx.try_global::<UiLayers>()

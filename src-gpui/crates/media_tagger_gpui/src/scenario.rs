@@ -19,11 +19,14 @@ use std::{
 };
 
 use media_tagger_client::{
-    backend::Backend,
+    backend::{AssetQueryRequest, Backend},
     runtime::DEFAULT_TILE_SIZE,
-    scenario::{self, Scenario, ScenarioClick, Seed, SCENARIO_MEDIA_VARIABLE},
+    scenario::{
+        self, Scenario, ScenarioClick, ScenarioSearch, ScenarioTags, Seed, SCENARIO_MEDIA_VARIABLE,
+    },
     theme::ThemeName,
 };
+use media_tagger_core::models::StartAssetQueryResult;
 
 use crate::profile::{self, Profile};
 
@@ -39,6 +42,10 @@ pub struct StartState {
     /// The clicks the gallery starts with, in selection mode, once their tiles are
     /// loaded; none: selection mode stays off.
     pub selection: &'static [ScenarioClick],
+    /// Tags given to tiles of the seeded library before the window opens.
+    pub tags: &'static [ScenarioTags],
+    /// The search header the gallery starts with.
+    pub search: Option<ScenarioSearch>,
 }
 
 impl Default for StartState {
@@ -51,6 +58,8 @@ impl Default for StartState {
             seed: Seed::Empty,
             tile_size: DEFAULT_TILE_SIZE,
             selection: &[],
+            tags: &[],
+            search: None,
         }
     }
 }
@@ -73,6 +82,8 @@ impl From<Scenario> for StartState {
             seed: scenario.seed,
             tile_size: scenario.tile_size,
             selection: scenario.selection,
+            tags: scenario.tags,
+            search: scenario.search,
         }
     }
 }
@@ -154,9 +165,45 @@ pub fn start_state(profile: Profile, scenario: Option<&str>) -> Result<StartStat
 /// the library's one scan root and is scanned, as `app:control start` does for the
 /// Tauri application. [`Seed::Empty`] touches nothing.
 ///
+/// Then `tags` are set on their tiles: the unfiltered library is read once and each
+/// entry's tile, by its index there, gets its tags (the Tauri steps add the same tags
+/// through the bulk dock).
+///
 /// Only a start state of the E2E profile carries a seed ([`start_state`]), and this
 /// runs before the event loop exists, so the scan blocks no UI thread.
 pub fn seed_library(
+    seed: Seed,
+    media: Option<OsString>,
+    tags: &[ScenarioTags],
+    backend: &dyn Backend,
+) -> Result<(), ScenarioError> {
+    seed_media(seed, media, backend)?;
+    if tags.is_empty() {
+        return Ok(());
+    }
+    let failed = |reason: String| ScenarioError::SeedFailed(reason);
+    let items = match backend
+        .start_asset_query(AssetQueryRequest::new("gpui-scenario-seed", 1))
+        .map_err(|error| failed(error.text().to_owned()))?
+    {
+        StartAssetQueryResult::Ready { items, .. } => items,
+        other => return Err(failed(format!("the library is not ready: {other:?}"))),
+    };
+    for entry in tags {
+        let asset = items
+            .get(entry.index)
+            .ok_or_else(|| failed(format!("no tile {} to tag", entry.index)))?;
+        backend
+            .set_asset_tags(
+                asset.id,
+                entry.tags.iter().map(|tag| (*tag).to_owned()).collect(),
+            )
+            .map_err(|error| failed(error.text().to_owned()))?;
+    }
+    Ok(())
+}
+
+fn seed_media(
     seed: Seed,
     media: Option<OsString>,
     backend: &dyn Backend,
@@ -224,6 +271,8 @@ mod tests {
                     seed: scenario.seed,
                     tile_size: scenario.tile_size,
                     selection: scenario.selection,
+                    tags: scenario.tags,
+                    search: scenario.search,
                 }),
                 "{}",
                 scenario.id
@@ -321,7 +370,13 @@ mod tests {
         let backend = FakeBackend::new();
         backend.on_scan_folder(|_| Ok(scanned()));
 
-        seed_library(Seed::Control, Some(OsString::from(media.path())), &backend).expect("seeded");
+        seed_library(
+            Seed::Control,
+            Some(OsString::from(media.path())),
+            &[],
+            &backend,
+        )
+        .expect("seeded");
 
         assert_eq!(
             backend.calls(),
@@ -332,11 +387,77 @@ mod tests {
     }
 
     #[test]
+    fn scenario_tags_go_to_the_tiles_of_the_unfiltered_library() {
+        use media_tagger_client::scenario::SEARCH_SUGGESTION_TAGS;
+        use media_tagger_core::models::{
+            AssetSummary, SetAssetTagsSummary, StartAssetQueryResult, TagQueryImpact,
+        };
+        let media = tempfile::tempdir().expect("tempdir");
+        let backend = FakeBackend::new();
+        let row = |id: i64| AssetSummary {
+            id,
+            file_name: format!("{id}.png"),
+            preview_path: None,
+            kind: "image".into(),
+            modified_at: 0,
+            width: None,
+            height: None,
+            duration_ms: None,
+            thumb_version: format!("{id:016x}"),
+            is_favorite: false,
+            media_group_key: None,
+            media_group_order: None,
+        };
+        backend
+            .on_scan_folder(|_| Ok(scanned()))
+            .on_start_asset_query(move |_| {
+                Ok(StartAssetQueryResult::Ready {
+                    session_id: 1,
+                    revision: 1,
+                    total: 2,
+                    offset: 0,
+                    items: vec![row(40), row(10)],
+                })
+            })
+            .on_set_asset_tags(|asset_id, tags| {
+                Ok(SetAssetTagsSummary {
+                    vocabulary_changed: true,
+                    query_impact: TagQueryImpact::None,
+                    asset_id,
+                    changed: true,
+                    tags,
+                    revision: 2,
+                })
+            });
+
+        seed_library(
+            Seed::Control,
+            Some(OsString::from(media.path())),
+            &SEARCH_SUGGESTION_TAGS,
+            &backend,
+        )
+        .expect("seeded");
+
+        let tagged: Vec<_> = backend
+            .calls()
+            .into_iter()
+            .filter_map(|call| match call {
+                Call::SetAssetTags { asset_id, tags } => Some((asset_id, tags)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            tagged,
+            [(40, vec!["camera".into(), "car".into(), "cat".into()])]
+        );
+    }
+
+    #[test]
     fn the_empty_seed_touches_nothing() {
         let backend = FakeBackend::new();
 
-        seed_library(Seed::Empty, None, &backend).expect("nothing to do");
-        seed_library(Seed::Empty, Some(OsString::from("/nowhere")), &backend)
+        seed_library(Seed::Empty, None, &[], &backend).expect("nothing to do");
+        seed_library(Seed::Empty, Some(OsString::from("/nowhere")), &[], &backend)
             .expect("nothing to do");
 
         assert!(backend.calls().is_empty());
@@ -348,15 +469,15 @@ mod tests {
         let missing = tempfile::tempdir().expect("tempdir").path().join("gone");
 
         assert_eq!(
-            seed_library(Seed::Control, None, &backend),
+            seed_library(Seed::Control, None, &[], &backend),
             Err(ScenarioError::MediaUnset)
         );
         assert_eq!(
-            seed_library(Seed::Control, Some(OsString::new()), &backend),
+            seed_library(Seed::Control, Some(OsString::new()), &[], &backend),
             Err(ScenarioError::MediaUnset)
         );
         assert_eq!(
-            seed_library(Seed::Control, Some(missing.into_os_string()), &backend),
+            seed_library(Seed::Control, Some(missing.into_os_string()), &[], &backend),
             Err(ScenarioError::MediaInvalid)
         );
         assert!(backend.calls().is_empty());
@@ -371,8 +492,13 @@ mod tests {
         let backend = FakeBackend::new();
         backend.on_scan_folder(|_| Err(BackendError::rejected("i18n:common.libraryBusy")));
 
-        let error = seed_library(Seed::Control, Some(OsString::from(media.path())), &backend)
-            .expect_err("refused");
+        let error = seed_library(
+            Seed::Control,
+            Some(OsString::from(media.path())),
+            &[],
+            &backend,
+        )
+        .expect_err("refused");
 
         assert_eq!(
             error,

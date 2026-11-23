@@ -262,6 +262,10 @@
       "video": "Impossible de lire la vidéo",
       "image": "Impossible d’afficher l’image"
     },
+    "placeholder": {
+      "videoUnavailable": "La lecture vidéo n’est pas disponible dans cette version.",
+      "gifStill": "L’animation GIF n’est pas disponible dans cette version. La première image est affichée."
+    },
     "tagSaving": "Enregistrement des tags...",
     "retryTagSave": "Réessayer",
     "tagDetailsLoading": "Chargement de la liste complète des tags...",

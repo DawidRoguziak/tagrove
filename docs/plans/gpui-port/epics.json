@@ -673,8 +673,8 @@
         "E13",
         "E15"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-23",
       "sources": [
         "src/features/lightbox",
         "src/app/LightboxBoundary.tsx"

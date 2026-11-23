@@ -113,6 +113,12 @@ impl ModalState {
         self.layer
     }
 
+    /// The fade in or out has not ended: the owner of a dialog that draws itself (the
+    /// lightbox) asks for another frame.
+    pub fn is_fading(&self, cx: &App) -> bool {
+        !self.presence.is_settled(self.now(cx))
+    }
+
     /// The opacity the backdrop and dialog are drawn with now.
     pub fn opacity(&self, cx: &App) -> f32 {
         self.presence.opacity(self.now(cx))

@@ -8,6 +8,7 @@
 
 pub mod boot;
 pub mod cli;
+pub mod media;
 pub mod profile;
 pub mod runtime;
 pub mod scenario;
@@ -129,6 +130,7 @@ pub fn run_scenario_with(
                         search: start.search,
                         tag_list: start.tag_list,
                         dock: start.dock,
+                        lightbox: start.lightbox,
                     },
                 ),
             )

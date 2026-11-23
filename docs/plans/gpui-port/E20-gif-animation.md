@@ -66,3 +66,7 @@ deferred
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-22 — implementer E16
+
+- Z epiku E16: lightbox pokazuje GIF jako pierwszą klatkę: `media_tagger_client::lightbox::gif_first_frame` obcina plik do nagłówka, globalnej palety, pierwszego obrazu i trailera, a `media_tagger_gpui::media::Originals` dekoduje to przez `gpui::Image::to_image_data` (ADR 0046). Animacja wymaga zastąpienia tego kroku ograniczonym buforem klatek (budżet `decode_refusal(wymiary, liczba_klatek)` już liczy klatki) i rysowania klatki o indeksie innym niż 0 w `views/lightbox/stage.rs` (`window.paint_image(..., frame_index, ...)`). Chip „GIF” na scenie (`GIF_CHIP_SELECTOR`, opis `lightbox.placeholder.gifStill`) jest zaślepką D8: po dodaniu animacji usuń chip i klucz albo zostaw chip bez opisu. Animowany WebP jest dziś dekodowany ze wszystkimi klatkami i rysowana jest pierwsza.

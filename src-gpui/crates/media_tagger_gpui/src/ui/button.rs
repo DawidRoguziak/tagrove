@@ -52,6 +52,9 @@ pub struct Button {
     height: Option<f32>,
     text_size: Option<f32>,
     transparent: bool,
+    icon_half_turn: bool,
+    full_width: bool,
+    inert: bool,
     on_click: Option<ClickHandler>,
 }
 
@@ -74,8 +77,31 @@ impl Button {
             height: None,
             text_size: None,
             transparent: false,
+            icon_half_turn: false,
+            full_width: false,
+            inert: false,
             on_click: None,
         }
+    }
+
+    /// Draws the button as it is and takes it out of the tab order and away from the
+    /// pointer: a control under a drawer or a scrim (the `inert` attribute).
+    pub fn inert(mut self, inert: bool) -> Self {
+        self.inert = inert;
+        self
+    }
+
+    /// A text button as wide as its container (`w-full justify-center`).
+    pub fn full_width(mut self, full_width: bool) -> Self {
+        self.full_width = full_width;
+        self
+    }
+
+    /// Draws the icon of an icon button turned by half a turn (`rotate-180` in
+    /// `iconClassName`).
+    pub fn icon_half_turn(mut self, half_turn: bool) -> Self {
+        self.icon_half_turn = half_turn;
+        self
     }
 
     /// An icon button (`UiIconButton`). `label` is its accessible name (`aria-label`).
@@ -273,6 +299,7 @@ impl RenderOnce for Button {
             .whitespace_nowrap()
             .shadow(shadows_beneath(rest.shadows, rest.background, rest.opacity))
             .opacity(rest.opacity)
+            .when(self.full_width, |button| button.w_full())
             .when_some(self.aria_label.clone(), |button, label| {
                 button.aria_label(label)
             })
@@ -303,12 +330,16 @@ impl RenderOnce for Button {
                             icon == IconName::Heart
                                 && matches!(kind, IconButtonKind::Active { .. }),
                         )
+                        .half_turn(self.icon_half_turn)
                         .color(color(rest.text)),
                 )
             }
         };
         if self.disabled {
             return button.cursor_not_allowed();
+        }
+        if self.inert {
+            return button;
         }
         let on_click = self.on_click;
         button

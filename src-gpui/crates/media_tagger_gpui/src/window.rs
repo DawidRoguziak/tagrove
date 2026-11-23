@@ -17,7 +17,7 @@ use gpui::{
 };
 use media_tagger_client::{
     runtime::{RuntimeInput, DEFAULT_TILE_SIZE},
-    scenario::{ScenarioClick, ScenarioDock, ScenarioSearch, ScenarioTagList},
+    scenario::{ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch, ScenarioTagList},
     theme::ThemeName,
 };
 
@@ -42,6 +42,8 @@ pub struct ShellStart {
     pub tag_list: Option<ScenarioTagList>,
     /// What happens in the bulk dock once the clicks are made (`Scenario::dock`).
     pub dock: Option<ScenarioDock>,
+    /// The lightbox, open on a tile (`Scenario::lightbox`).
+    pub lightbox: Option<ScenarioLightbox>,
 }
 
 impl Default for ShellStart {
@@ -53,12 +55,15 @@ impl Default for ShellStart {
             search: None,
             tag_list: None,
             dock: None,
+            lightbox: None,
         }
     }
 }
 
-/// What the main window shows.
+/// What the main window shows. Made once per process, so the size of the shell's
+/// start state does not matter.
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum MainScreen {
     /// The application: the shell over the runtime made of these parts, started as
     /// the scenario asks.
@@ -302,6 +307,9 @@ pub fn open_main_window_started(
         }
         if let Some(dock) = start.dock {
             runtime.script_dock(dock, cx);
+        }
+        if let Some(lightbox) = start.lightbox {
+            runtime.script_lightbox(lightbox, cx);
         }
     });
     let window = cx.open_window(options, |window, cx| {

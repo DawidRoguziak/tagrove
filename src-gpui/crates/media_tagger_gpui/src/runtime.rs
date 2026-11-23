@@ -25,7 +25,9 @@ use media_tagger_client::{
     model::Driver,
     prefs::PrefsStore,
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
-    scenario::{self, ScenarioClick, ScenarioDock, ScenarioSearch, ScenarioTagList},
+    scenario::{
+        self, ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch, ScenarioTagList,
+    },
 };
 
 use crate::{thumbs::Thumbnails, ui};
@@ -112,6 +114,8 @@ pub struct Runtime {
     scripted_tag_list_focus: Option<&'static str>,
     /// What a comparison scenario does in the bulk dock once its clicks are made.
     scripted_dock: Option<ScenarioDock>,
+    /// The lightbox a comparison scenario opens once the row of its tile is loaded.
+    scripted_lightbox: Option<ScenarioLightbox>,
     _pump: Task<()>,
 }
 
@@ -146,6 +150,7 @@ impl Runtime {
             scripted_search_focus: false,
             scripted_tag_list_focus: None,
             scripted_dock: None,
+            scripted_lightbox: None,
             _pump: pump,
         }
     }
@@ -195,6 +200,36 @@ impl Runtime {
             return None;
         }
         self.scripted_dock.take()
+    }
+
+    /// The lightbox a comparison scenario opens (`Scenario::lightbox`); the lightbox
+    /// view takes it with [`Self::take_scripted_lightbox`].
+    pub fn script_lightbox(&mut self, lightbox: ScenarioLightbox, cx: &mut Context<Self>) {
+        self.scripted_lightbox = Some(lightbox);
+        self.publish(cx);
+    }
+
+    /// The lightbox of a scenario, once the startup scan and its refreshes have ended
+    /// and the row of its tile is loaded: the click on that tile can be made. Answers
+    /// once.
+    pub fn take_scripted_lightbox(&mut self) -> Option<ScenarioLightbox> {
+        let model = self.driver.model();
+        let script = self.scripted_lightbox?;
+        if !model.is_started()
+            || model.maintenance_loading()
+            || model.query().session_id().is_none()
+            || model.query().query_pending()
+            || model.query().asset_at(script.index).is_none()
+        {
+            return None;
+        }
+        self.scripted_lightbox.take()
+    }
+
+    /// The answers of the lightbox model to the view's commands since the last call
+    /// (the settled deletions).
+    pub fn take_lightbox_events(&mut self) -> Vec<media_tagger_client::lightbox::LightboxEvent> {
+        self.driver.model_mut().take_lightbox_events()
     }
 
     /// The answers of the bulk model to the dock's commands since the last call.

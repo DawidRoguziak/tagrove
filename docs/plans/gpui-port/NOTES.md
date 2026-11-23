@@ -41,3 +41,6 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-22 | E15 | orkiestrator | in progress | workflow start od kroku implement | [E15](E15-client-lightbox-model.md)
 2026-11-22 | E15 | workflow | done | Model lightboxa gotowy i osadzony w AppRuntime, testy i bramka przechodzą, bez otwartych ustaleń przeglądu. | [E15](E15-client-lightbox-model.md)
 2026-11-22 | E14 | orkiestrator | done | Kolejność seeda `control` przypięta: `pinControlSeedOrder` w `e2e/compare/seed.js` nadaje plikom różne sekundy `mtime` według nazwy (wspólna reguła dla `seedMedia` i `app:control start`), więc galeria i plansza kolejności są takie same w Tauri i GPUI w każdym przebiegu. | [E14](E14-bulk-dock.md)
+2026-11-22 | E16 | orkiestrator | in progress | workflow start od kroku implement | [E16](E16-gpui-lightbox.md)
+2026-11-23 | E16 | workflow | blocked | Epik zablokowany: bramka test:all pada na audit:rust (RUSTSEC-2026-0594, cookie 0.18.2), niezwiązane z epikiem; przegląd czysty po 3 rundach. | [E16](E16-gpui-lightbox.md)
+2026-11-23 | E16 | orkiestrator | done | Lightbox GPUI gotowy: 6 rund przeglądu w dwóch przebiegach (16 ustaleń, wszystkie poprawione), braki z audytu zamknięte, checks, porównanie zrzutów i test:all przechodzą. | [E16](E16-gpui-lightbox.md)

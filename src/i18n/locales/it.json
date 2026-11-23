@@ -262,6 +262,10 @@
       "video": "Impossibile riprodurre il video",
       "image": "Impossibile visualizzare l’immagine"
     },
+    "placeholder": {
+      "videoUnavailable": "La riproduzione video non è disponibile in questa versione.",
+      "gifStill": "L’animazione GIF non è disponibile in questa versione. Viene mostrato il primo fotogramma."
+    },
     "tagSaving": "Salvataggio tag...",
     "retryTagSave": "Riprova",
     "tagDetailsLoading": "Caricamento dell’elenco completo dei tag...",

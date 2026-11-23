@@ -97,6 +97,10 @@ Treat `src/i18n/locales/en.json` as the canonical tree. For every other resource
 
 Changing these words changes what a user must type. Verify the displayed prompt and the accepted input in the corresponding language; do not assume machine-generated wording is safe for a destructive control.
 
+### Keys read only by the GPUI interface
+
+`lightbox.placeholder.videoUnavailable` and `lightbox.placeholder.gifStill` are read only by the GPUI interface, whose lightbox shows a video as a placeholder and a GIF as its first frame (plan decision D8 of `docs/plans/gpui-port`). The Solid frontend does not use them; they are in all eleven files like every other key, and `the_locale_keys_of_the_lightbox_exist_in_every_language` in `src-gpui/crates/media_tagger_client/src/lightbox.rs` checks them together with every other key the GPUI lightbox names.
+
 ## Adding translations
 
 ### Add or change a key

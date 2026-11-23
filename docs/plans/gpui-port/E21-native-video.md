@@ -68,3 +68,7 @@ deferred
 ## Notatki agentów
 
 Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
+
+### 2026-11-22 — implementer E16
+
+- Z epiku E16: wideo w lightboxie to zaślepka w `views/lightbox/stage.rs` (`StageContent::Video`): miniatura jako plakat (`Thumbnails::sync_poster`), chip „Video”, linie metadanych (`lightbox::video_placeholder_lines`) i `lightbox.placeholder.videoUnavailable`. `Originals` niczego dla wideo nie czyta. Miejsca przygotowane pod odtwarzacz: `Session::toggle_fullscreen` i klawisz `f` dla wideo są przyjmowane i nic nie robią (gałąź `kind.is_video()`), `Session::sync_fullscreen` wychodzi z pełnego ekranu obrazu po wybraniu wideo, kolumna mediów ma już rezerwę 44 px nad sceną (`layout::video::TOP_RESERVE`) i powierzchnię `#0b0b0b`, a komunikat o błędzie szczegółów stoi 88 px nad dołem sceny. Nie ma jeszcze: `nativePanelReady` (panel boczny czeka na potwierdzenie granic natywnej powierzchni), ukrywania kolumny mediów w wąskim oknie z otwartą szufladą, pełnego ekranu wideo ukrywającego panele ani klawiszy odtwarzacza. Po dodaniu odtwarzania usuń klucz `lightbox.placeholder.videoUnavailable` z 11 plików.

@@ -177,6 +177,62 @@ pub const SEARCH_SUGGESTION_TAGS: [ScenarioTags; 1] = [ScenarioTags {
     tags: &["camera", "car", "cat"],
 }];
 
+/// The lightbox a scenario opens, as its Tauri steps do: a click on a tile, then
+/// presses of `+`, a drag of the zoomed picture, or the delete button of the action
+/// rail with a word typed into the confirmation. Its controls never fade and none of
+/// its fields has the focus: the Tauri steps park the pointer on the action rail,
+/// which keeps the rail shown, and a capture of the window on the private display
+/// shows neither a caret nor a focus ring.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenarioLightbox {
+    /// The global index of the tile that is clicked.
+    pub index: usize,
+    /// How often `+` is pressed once the picture is shown.
+    pub zoom_in: u8,
+    /// The drag of the zoomed picture from its centre, in pixels.
+    pub drag: (i32, i32),
+    /// The delete confirmation is open with this text typed.
+    pub delete_confirm: Option<&'static str>,
+}
+
+impl ScenarioLightbox {
+    /// The lightbox open on the tile at `index` and nothing else.
+    pub const fn open(index: usize) -> Self {
+        Self {
+            index,
+            zoom_in: 0,
+            drag: (0, 0),
+            delete_confirm: None,
+        }
+    }
+}
+
+/// The tiles of the control seed the lightbox scenarios open
+/// (`CONTROL_SEED_ORDER` of `e2e/compare/seed.js`): the GIF comes first, then the four
+/// PNGs, then the two MP4s.
+pub const CONTROL_GIF_TILE: usize = 0;
+pub const CONTROL_IMAGE_TILE: usize = 1;
+pub const CONTROL_VIDEO_TILE: usize = 5;
+
+/// `lightbox-image`: the first PNG, the side panel open.
+pub const LIGHTBOX_IMAGE: ScenarioLightbox = ScenarioLightbox::open(CONTROL_IMAGE_TILE);
+/// `lightbox-image-zoomed`: the same picture after four presses of `+` and a drag.
+pub const LIGHTBOX_IMAGE_ZOOMED: ScenarioLightbox = ScenarioLightbox {
+    zoom_in: 4,
+    drag: (120, 60),
+    ..LIGHTBOX_IMAGE
+};
+/// `lightbox-gif`: the GIF, shown as its first frame with the chip.
+pub const LIGHTBOX_GIF: ScenarioLightbox = ScenarioLightbox::open(CONTROL_GIF_TILE);
+/// `lightbox-video`: the first MP4, shown as its placeholder.
+pub const LIGHTBOX_VIDEO: ScenarioLightbox = ScenarioLightbox::open(CONTROL_VIDEO_TILE);
+/// `lightbox-delete-confirm`: the confirmation open on the first PNG with the English
+/// confirmation word typed.
+pub const LIGHTBOX_DELETE_CONFIRM: ScenarioLightbox = ScenarioLightbox {
+    delete_confirm: Some("Yes"),
+    ..LIGHTBOX_IMAGE
+};
+
 /// One named start state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scenario {
@@ -199,6 +255,8 @@ pub struct Scenario {
     pub tag_list: Option<ScenarioTagList>,
     /// What the scenario does in the bulk dock after its clicks.
     pub dock: Option<ScenarioDock>,
+    /// The lightbox, open on a tile, if the scenario opens it.
+    pub lightbox: Option<ScenarioLightbox>,
 }
 
 /// `gallery-selection`: a click on the second tile, a Ctrl-click on the first and a
@@ -249,7 +307,7 @@ pub fn selection_inputs(
 }
 
 /// Every scenario the GPUI interface can start in, on a fresh profile.
-pub const SCENARIOS: [Scenario; 12] = [
+pub const SCENARIOS: [Scenario; 17] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
@@ -260,6 +318,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "shell-empty-light",
@@ -271,6 +330,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "gallery-default",
@@ -282,6 +342,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "gallery-tiles-small",
@@ -293,6 +354,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "gallery-tiles-large",
@@ -304,6 +366,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "gallery-selection",
@@ -315,6 +378,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "search-suggestions",
@@ -330,6 +394,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         }),
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "search-applied",
@@ -345,6 +410,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         }),
         tag_list: None,
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "tag-list-modal",
@@ -356,6 +422,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: Some(TAG_LIST_MODAL),
         dock: None,
+        lightbox: None,
     },
     Scenario {
         id: "bulk-dock-tags",
@@ -367,6 +434,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: Some(BULK_DOCK_TAGS),
+        lightbox: None,
     },
     Scenario {
         id: "bulk-dock-group",
@@ -378,6 +446,7 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: Some(BULK_DOCK_GROUP),
+        lightbox: None,
     },
     Scenario {
         id: "group-order-modal",
@@ -389,6 +458,67 @@ pub const SCENARIOS: [Scenario; 12] = [
         search: None,
         tag_list: None,
         dock: Some(GROUP_ORDER_MODAL),
+        lightbox: None,
+    },
+    Scenario {
+        id: "lightbox-image",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: Some(LIGHTBOX_IMAGE),
+    },
+    Scenario {
+        id: "lightbox-image-zoomed",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: Some(LIGHTBOX_IMAGE_ZOOMED),
+    },
+    Scenario {
+        id: "lightbox-gif",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: Some(LIGHTBOX_GIF),
+    },
+    Scenario {
+        id: "lightbox-video",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: Some(LIGHTBOX_VIDEO),
+    },
+    Scenario {
+        id: "lightbox-delete-confirm",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: Some(LIGHTBOX_DELETE_CONFIRM),
     },
 ];
 
@@ -839,6 +969,86 @@ mod tests {
         for scenario in SCENARIOS {
             if scenario.id != "tag-list-modal" {
                 assert!(scenario.tag_list.is_none(), "{}", scenario.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_lightbox_scenarios_open_what_their_tauri_steps_open() {
+        // Parity scenarios of E16.
+        use super::{ScenarioLightbox, CONTROL_GIF_TILE, CONTROL_IMAGE_TILE, CONTROL_VIDEO_TILE};
+        for (id, expected) in [
+            ("lightbox-image", ScenarioLightbox::open(CONTROL_IMAGE_TILE)),
+            (
+                "lightbox-image-zoomed",
+                ScenarioLightbox {
+                    zoom_in: 4,
+                    drag: (120, 60),
+                    ..ScenarioLightbox::open(CONTROL_IMAGE_TILE)
+                },
+            ),
+            ("lightbox-gif", ScenarioLightbox::open(CONTROL_GIF_TILE)),
+            ("lightbox-video", ScenarioLightbox::open(CONTROL_VIDEO_TILE)),
+            (
+                "lightbox-delete-confirm",
+                ScenarioLightbox {
+                    delete_confirm: Some("Yes"),
+                    ..ScenarioLightbox::open(CONTROL_IMAGE_TILE)
+                },
+            ),
+        ] {
+            let scenario = find(id).unwrap_or_else(|| panic!("{id} is a scenario"));
+            assert_eq!(scenario.seed, Seed::Control, "{id}");
+            assert_eq!(scenario.theme, ThemeName::Dark, "{id}");
+            assert_eq!(scenario.lightbox, Some(expected), "{id}");
+            assert!(
+                scenario.selection.is_empty() && scenario.dock.is_none(),
+                "{id}"
+            );
+
+            let mut steps = vec![format!(
+                r#"["click", 'button[data-asset-index="{}"]']"#,
+                expected.index
+            )];
+            for _ in 0..expected.zoom_in {
+                steps.push(r#"["keys", "+"]"#.to_owned());
+            }
+            if expected.drag != (0, 0) {
+                steps.push(format!(
+                    r#"["drag", '[data-testid="lightbox-image"]', "{:+},{:+}"]"#,
+                    expected.drag.0, expected.drag.1
+                ));
+            }
+            if let Some(word) = expected.delete_confirm {
+                steps.push(r##"["click", "#lightbox-delete-button"]"##.to_owned());
+                steps.push(format!(
+                    r##"["fill", "#lightbox-delete-confirm-input", "{word}"]"##
+                ));
+            }
+            // The pointer is parked on the rail's summary, which keeps the rail shown.
+            steps.push(r#"["click", ".lightbox-media-summary"]"#.to_owned());
+            assert_steps_in_order(id, &steps);
+        }
+        // The word typed is the English confirmation word: scenarios start in English.
+        let i18n = crate::i18n::I18n::new(crate::i18n::Language::En);
+        assert_eq!(i18n.t("lightbox.deleteConfirm.confirmWord"), "Yes");
+        // The tiles are the control seed's first GIF, PNG and MP4.
+        let seed = std::fs::read_to_string(repository_root().join("e2e/compare/seed.js"))
+            .expect("read the seed");
+        let order = seed
+            .find("CONTROL_SEED_ORDER = Object.freeze([")
+            .expect("the seed order");
+        let gif = seed[order..].find(".gif").expect("the GIF");
+        let png = seed[order..].find(".png").expect("the PNGs");
+        let mp4 = seed[order..].find(".mp4").expect("the MP4s");
+        assert!(gif < png && png < mp4, "the seed order changed");
+        assert_eq!(
+            (CONTROL_GIF_TILE, CONTROL_IMAGE_TILE, CONTROL_VIDEO_TILE),
+            (0, 1, 5)
+        );
+        for scenario in SCENARIOS {
+            if !scenario.id.starts_with("lightbox-") {
+                assert!(scenario.lightbox.is_none(), "{}", scenario.id);
             }
         }
     }

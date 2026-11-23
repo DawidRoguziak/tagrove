@@ -262,6 +262,10 @@
       "video": "動画を再生できませんでした",
       "image": "画像を表示できませんでした"
     },
+    "placeholder": {
+      "videoUnavailable": "このバージョンでは動画を再生できません。",
+      "gifStill": "このバージョンでは GIF アニメーションを再生できません。最初のフレームを表示しています。"
+    },
     "tagSaving": "タグを保存中...",
     "retryTagSave": "再試行",
     "tagDetailsLoading": "完全なタグ一覧を読み込んでいます...",

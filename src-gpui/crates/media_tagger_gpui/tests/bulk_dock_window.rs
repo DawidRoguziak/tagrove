@@ -995,6 +995,7 @@ fn open_scenario(
                     search: start.search,
                     tag_list: start.tag_list,
                     dock: start.dock,
+                    lightbox: start.lightbox,
                 },
                 cx,
             )

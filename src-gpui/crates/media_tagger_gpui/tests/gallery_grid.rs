@@ -1335,6 +1335,24 @@ mod ported {
 
         let position = tile(0, &mut cx).expect("the first tile").center();
         cx.simulate_click(position, Modifiers::none());
+        // The shell opens the lightbox on the tile's asset (epic E16); it is closed
+        // again before the grid is scrolled.
+        let runtime = runtime(&window, &cx);
+        assert_eq!(
+            runtime.read_with(&cx, |runtime, _| runtime
+                .model()
+                .lightbox()
+                .selected()
+                .map(|selected| selected.id())),
+            Some(1)
+        );
+        runtime.update(&mut cx, |runtime, cx| {
+            runtime.send(
+                RuntimeInput::lightbox(media_tagger_client::lightbox::LightboxCommand::Close),
+                cx,
+            )
+        });
+        rest(&fixture, &mut cx);
         scroll_to_index(&window, 1_000, &mut cx);
         rest(&fixture, &mut cx);
         let position = tile(1_000, &mut cx)

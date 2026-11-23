@@ -17,6 +17,9 @@ pub enum SpinnerSize {
     /// The tile loader: `h-[26px] w-[26px] rounded-full border-[3px]
     /// border-base-content/25 border-t-primary animate-spin`.
     Tile,
+    /// The loader of the lightbox's stage while the asset's details are read: the
+    /// tile's ring at `h-[34px] w-[34px]`.
+    Stage,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -41,6 +44,10 @@ pub fn spinner_visuals(tokens: &ThemeTokens, size: SpinnerSize) -> SpinnerVisual
             arc: None,
             // The mask's animateTransform turns once every 2s.
             period: Duration::from_secs(2),
+        },
+        SpinnerSize::Stage => SpinnerVisuals {
+            size: 34.0,
+            ..spinner_visuals(tokens, SpinnerSize::Tile)
         },
         SpinnerSize::Tile => SpinnerVisuals {
             size: 26.0,

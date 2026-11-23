@@ -131,8 +131,14 @@ pub fn key_bindings() -> Vec<KeyBinding> {
                 ShortcutCommand::GallerySelectAll => {
                     KeyBinding::new(shortcut.keystroke, SelectAll, context)
                 }
-                // The shell's (`views::search`).
-                ShortcutCommand::FocusSearch => return None,
+                // The shell's (`views::search`) and the lightbox's (`views::lightbox`).
+                ShortcutCommand::FocusSearch
+                | ShortcutCommand::LightboxPrevious
+                | ShortcutCommand::LightboxNext
+                | ShortcutCommand::LightboxToggleFullscreen
+                | ShortcutCommand::LightboxResetZoom
+                | ShortcutCommand::LightboxZoomIn
+                | ShortcutCommand::LightboxZoomOut => return None,
             })
         })
         .collect()

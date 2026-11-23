@@ -262,6 +262,10 @@
       "video": "Video konnte nicht wiedergegeben werden",
       "image": "Bild konnte nicht angezeigt werden"
     },
+    "placeholder": {
+      "videoUnavailable": "Die Videowiedergabe ist in dieser Version nicht verfügbar.",
+      "gifStill": "Die GIF-Animation ist in dieser Version nicht verfügbar. Das erste Bild wird angezeigt."
+    },
     "tagSaving": "Tags werden gespeichert...",
     "retryTagSave": "Erneut versuchen",
     "tagDetailsLoading": "Vollständige Tag-Liste wird geladen...",

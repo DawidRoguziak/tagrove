@@ -10,6 +10,8 @@
 //!   of the lightbox and the bulk dock.
 //! - [`bulk_dock`]: the floating dock of selection mode with its order boards and the
 //!   larger order view.
+//! - [`lightbox`]: the selected asset over the gallery: media stage, action rail and
+//!   side panel.
 //! - [`chrome`]: the window's own decorations (buttons, grips, drag surface).
 //! - [`kit`]: the board of every shared control (`--scenario kit`).
 
@@ -17,6 +19,7 @@ pub mod bulk_dock;
 pub mod chrome;
 pub mod gallery;
 pub mod kit;
+pub mod lightbox;
 pub mod search;
 pub mod settings;
 pub mod shell;
@@ -31,4 +34,5 @@ pub fn init(cx: &mut App) {
     search::init(cx);
     tag_list::init(cx);
     bulk_dock::init(cx);
+    lightbox::init(cx);
 }

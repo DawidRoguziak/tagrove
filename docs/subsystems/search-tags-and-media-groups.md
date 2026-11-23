@@ -542,7 +542,8 @@ Epic E13 ports the tag list dialog and the shared tag editor. The rules of
   (`tagging::list_placement`, the `viewport` strategy), so the frame's scrolling never
   clips it; while the field has the focus, the frame keeps it in view when the tags or
   the draft change, and an unfocused editor keeps its scroll position (`revealInput`). The
-  bulk dock owns one; the lightbox (E16) will own the other.
+  bulk dock and the lightbox (`views/lightbox.rs`,
+  [lightbox](lightbox.md#gpui-port-the-lightbox-view)) each own one.
 - **Filter field.** The tag list's filter is a `TextInput` with `FieldChrome::Outlined`
   (`text/visuals.rs`): the Solid input's `px-3 py-2.5`, a 1px `border-base-content/12`
   border on `bg-base-100` and `--shadow-surface` at rest, with `border-primary/40` and

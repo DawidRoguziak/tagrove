@@ -585,6 +585,35 @@ fn a_long_press_opens_the_tile_and_leaves_the_selection_alone(cx: &mut TestAppCo
     assert_eq!(ids(&window, &cx), [1]);
     assert!(!selection(&window, &cx, |selection| selection.busy()));
 
+    // The shell opened the lightbox on the pressed tile (epic E16); it is closed
+    // again before the grid is used.
+    let runtime = runtime(&window, &cx);
+    assert_eq!(
+        runtime.read_with(&cx, |runtime, _| runtime
+            .model()
+            .lightbox()
+            .selected()
+            .map(|selected| selected.id())),
+        Some(3)
+    );
+    runtime.update(&mut cx, |runtime, cx| {
+        runtime.send(
+            media_tagger_client::runtime::RuntimeInput::lightbox(
+                media_tagger_client::lightbox::LightboxCommand::Close,
+            ),
+            cx,
+        )
+    });
+    settle(&fixture, &mut cx);
+    // The closed lightbox blocks the pointer until it has faded out.
+    cx.executor().advance_clock(Duration::from_millis(100));
+    settle(&fixture, &mut cx);
+    assert_eq!(
+        ids(&window, &cx),
+        [1],
+        "closing the lightbox selects nothing"
+    );
+
     // A press with a modifier never opens.
     cx.simulate_mouse_down(third, MouseButton::Left, shift());
     cx.executor().advance_clock(LONG_PRESS * 2);

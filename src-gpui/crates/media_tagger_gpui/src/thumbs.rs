@@ -4,7 +4,9 @@
 //!
 //! [`Thumbnails`] is an entity the [`Runtime`](crate::runtime::Runtime) owns, so the
 //! pictures survive a visit to the settings page. The grid tells it the tiles it
-//! renders ([`Thumbnails::sync`]) and reads a picture or a loading state per tile.
+//! renders ([`Thumbnails::sync`]) and reads a picture or a loading state per tile; the
+//! order board of the bulk dock and the video placeholder of the lightbox add theirs
+//! ([`Thumbnails::sync_board`], [`Thumbnails::sync_poster`]).
 //! What happens in between never runs on the UI thread:
 //!
 //! - requests go to the backend through the pipeline's
@@ -55,6 +57,9 @@ pub struct Thumbnails {
     /// The tiles of the order board of the bulk dock, which shows selected assets
     /// wherever the grid is scrolled.
     board: Vec<TileRequest>,
+    /// The poster of the lightbox's video placeholder, which shows the selected asset
+    /// wherever the grid is scrolled.
+    poster: Vec<TileRequest>,
     /// Pictures the cache dropped whose textures are still in the atlas.
     retired: Vec<Picture>,
     decoding: usize,
@@ -102,6 +107,7 @@ impl Thumbnails {
             tiles: Vec::new(),
             paused: false,
             board: Vec::new(),
+            poster: Vec::new(),
             retired: Vec::new(),
             decoding: 0,
             _pump: pump,
@@ -128,20 +134,31 @@ impl Thumbnails {
         self.apply();
     }
 
+    /// The thumbnail the lightbox shows as the poster of a video; none when it shows
+    /// no placeholder. It is asked for next to the grid's tiles and kept while it is
+    /// shown.
+    pub fn sync_poster(&mut self, tile: Option<TileRequest>) {
+        let tiles: Vec<TileRequest> = tile.into_iter().collect();
+        if self.poster == tiles {
+            return;
+        }
+        self.poster = tiles;
+        self.apply();
+    }
+
     fn apply(&mut self) {
         let pictures = &self.pictures;
         let merged;
-        let tiles = if self.board.is_empty() {
+        let tiles = if self.board.is_empty() && self.poster.is_empty() {
             &self.tiles
         } else {
-            // A tile both show is asked for once, as the grid asks for it.
+            // A tile several show is asked for once, as the grid asks for it.
             let mut all = self.tiles.clone();
-            all.extend(
-                self.board
-                    .iter()
-                    .filter(|tile| !self.tiles.iter().any(|other| other.key == tile.key))
-                    .cloned(),
-            );
+            for tile in self.board.iter().chain(&self.poster) {
+                if !all.iter().any(|other| other.key == tile.key) {
+                    all.push(tile.clone());
+                }
+            }
             merged = all;
             &merged
         };

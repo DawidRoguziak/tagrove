@@ -22,8 +22,8 @@ use media_tagger_client::{
     backend::{AssetQueryRequest, Backend},
     runtime::DEFAULT_TILE_SIZE,
     scenario::{
-        self, Scenario, ScenarioClick, ScenarioDock, ScenarioSearch, ScenarioTagList, ScenarioTags,
-        Seed, SCENARIO_MEDIA_VARIABLE,
+        self, Scenario, ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch,
+        ScenarioTagList, ScenarioTags, Seed, SCENARIO_MEDIA_VARIABLE,
     },
     theme::ThemeName,
 };
@@ -51,6 +51,8 @@ pub struct StartState {
     pub tag_list: Option<ScenarioTagList>,
     /// What happens in the bulk dock once the clicks are made.
     pub dock: Option<ScenarioDock>,
+    /// The lightbox, open on a tile.
+    pub lightbox: Option<ScenarioLightbox>,
 }
 
 impl Default for StartState {
@@ -67,6 +69,7 @@ impl Default for StartState {
             search: None,
             tag_list: None,
             dock: None,
+            lightbox: None,
         }
     }
 }
@@ -93,6 +96,7 @@ impl From<Scenario> for StartState {
             search: scenario.search,
             tag_list: scenario.tag_list,
             dock: scenario.dock,
+            lightbox: scenario.lightbox,
         }
     }
 }
@@ -284,6 +288,7 @@ mod tests {
                     search: scenario.search,
                     tag_list: scenario.tag_list,
                     dock: scenario.dock,
+                    lightbox: scenario.lightbox,
                 }),
                 "{}",
                 scenario.id

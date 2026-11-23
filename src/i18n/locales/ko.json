@@ -262,6 +262,10 @@
       "video": "동영상을 재생할 수 없습니다",
       "image": "이미지를 표시할 수 없습니다"
     },
+    "placeholder": {
+      "videoUnavailable": "이 버전에서는 동영상을 재생할 수 없습니다.",
+      "gifStill": "이 버전에서는 GIF 애니메이션을 재생할 수 없습니다. 첫 프레임을 표시합니다."
+    },
     "tagSaving": "태그 저장 중...",
     "retryTagSave": "다시 시도",
     "tagDetailsLoading": "전체 태그 목록 불러오는 중...",

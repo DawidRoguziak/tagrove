@@ -24,7 +24,16 @@
 //! field keeps its own Ctrl+A, since its context is deeper. The shell binds Ctrl+K (or
 //! the platform key with K), which focuses the search field of the gallery unless a
 //! modal layer is open; the field does not use the key, so it works with the focus
-//! in a field too. The epic that brings the lightbox adds its shortcuts here.
+//! in a field too.
+//!
+//! The lightbox ([`KeyContext::Lightbox`]) is drawn by the shell over whatever view is
+//! shown, so its context is nested in the shell's and not in the gallery's: the
+//! gallery's scroll keys are not on its path. It binds the viewer's keys of
+//! `createImageControls.ts`: Arrow left and right for the previous and next asset,
+//! `f` (also with Shift) for fullscreen, `0` to reset the zoom, `+` and `=` to zoom
+//! in and `-` to zoom out. All but the arrows type a character and are bound outside
+//! a text field only; the arrows need no such rule, because a focused field binds
+//! them itself, deeper (they move its caret, as in the Tauri interface).
 
 /// A key context of the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -35,10 +44,12 @@ pub enum KeyContext {
     Gallery,
     /// The settings page.
     Settings,
+    /// The open lightbox, over either view.
+    Lightbox,
 }
 
 impl KeyContext {
-    pub const ALL: [Self; 3] = [Self::Shell, Self::Gallery, Self::Settings];
+    pub const ALL: [Self; 4] = [Self::Shell, Self::Gallery, Self::Settings, Self::Lightbox];
 
     /// The identifier GPUI's key dispatch matches.
     pub const fn name(self) -> &'static str {
@@ -46,6 +57,7 @@ impl KeyContext {
             Self::Shell => "Shell",
             Self::Gallery => "Gallery",
             Self::Settings => "Settings",
+            Self::Lightbox => "Lightbox",
         }
     }
 
@@ -54,7 +66,7 @@ impl KeyContext {
     pub const fn parent(self) -> Option<Self> {
         match self {
             Self::Shell => None,
-            Self::Gallery | Self::Settings => Some(Self::Shell),
+            Self::Gallery | Self::Settings | Self::Lightbox => Some(Self::Shell),
         }
     }
 }
@@ -75,6 +87,15 @@ pub enum ShortcutCommand {
     GallerySelectAll,
     /// Focuses the gallery's search field (`SearchTagatorWrapper`'s Ctrl/Meta+K).
     FocusSearch,
+    /// Selects the previous or the next asset of the result in the lightbox.
+    LightboxPrevious,
+    LightboxNext,
+    /// Toggles the lightbox's fullscreen.
+    LightboxToggleFullscreen,
+    /// Resets the zoom of the lightbox's picture, or changes it by one step.
+    LightboxResetZoom,
+    LightboxZoomIn,
+    LightboxZoomOut,
 }
 
 /// One key binding of the application.
@@ -140,6 +161,49 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keystroke: "cmd-k",
         command: ShortcutCommand::FocusSearch,
         context: KeyContext::Shell,
+    },
+    Shortcut {
+        keystroke: "left",
+        command: ShortcutCommand::LightboxPrevious,
+        context: KeyContext::Lightbox,
+    },
+    Shortcut {
+        keystroke: "right",
+        command: ShortcutCommand::LightboxNext,
+        context: KeyContext::Lightbox,
+    },
+    // `f` and `F` of the Solid key table.
+    Shortcut {
+        keystroke: "f",
+        command: ShortcutCommand::LightboxToggleFullscreen,
+        context: KeyContext::Lightbox,
+    },
+    Shortcut {
+        keystroke: "shift-f",
+        command: ShortcutCommand::LightboxToggleFullscreen,
+        context: KeyContext::Lightbox,
+    },
+    Shortcut {
+        keystroke: "0",
+        command: ShortcutCommand::LightboxResetZoom,
+        context: KeyContext::Lightbox,
+    },
+    // A key that types `+` with Shift held (Shift and `=` on a US layout) matches
+    // the binding of `+` by the character it types.
+    Shortcut {
+        keystroke: "+",
+        command: ShortcutCommand::LightboxZoomIn,
+        context: KeyContext::Lightbox,
+    },
+    Shortcut {
+        keystroke: "=",
+        command: ShortcutCommand::LightboxZoomIn,
+        context: KeyContext::Lightbox,
+    },
+    Shortcut {
+        keystroke: "-",
+        command: ShortcutCommand::LightboxZoomOut,
+        context: KeyContext::Lightbox,
     },
 ];
 

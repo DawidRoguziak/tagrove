@@ -497,8 +497,10 @@ What differs:
   Retry as in the Solid DOM; what reaches over the tiles (the month label, the year
   labels, the focus rings) is `deferred`, painted above them like the Solid `z-10`.
 - **Activation.** A click on a tile outside selection mode, and a long press on one in it, emit
-  `GalleryEvent::OpenAsset { asset_id, index }`; nothing handles it yet (the lightbox, epic
-  E16). Tiles are not tab stops yet.
+  `GalleryEvent::OpenAsset { asset_id, index }`. The shell (`views/shell.rs`) answers it by
+  sending `LightboxCommand::Select` with the row at that global index, or nothing when the
+  row no longer holds that asset
+  ([lightbox](lightbox.md#gpui-port-the-lightbox-view)). Tiles are not tab stops yet.
 - **Selection.** In selection mode a click toggles the tile, and a held press that moves draws a
   rectangle; the ring, the check mark, the rectangle and the gestures are described in
   [search, tags and media groups](search-tags-and-media-groups.md#gpui-port-selection-and-gestures).

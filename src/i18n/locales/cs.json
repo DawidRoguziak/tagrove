@@ -262,6 +262,10 @@
       "video": "Video nelze přehrát",
       "image": "Obrázek nelze zobrazit"
     },
+    "placeholder": {
+      "videoUnavailable": "Přehrávání videa není v této verzi dostupné.",
+      "gifStill": "Animace GIF není v této verzi dostupná. Zobrazuje se první snímek."
+    },
     "tagSaving": "Ukládání tagů...",
     "retryTagSave": "Zkusit znovu",
     "tagDetailsLoading": "Načítání úplného seznamu tagů...",

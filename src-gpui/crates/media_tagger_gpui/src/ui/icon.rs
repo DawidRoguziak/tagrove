@@ -1,6 +1,6 @@
 //! `UiIcon`: one of the 22 icons, drawn in the current text colour.
 
-use gpui::{prelude::*, px, svg, App, Hsla, Window};
+use gpui::{percentage, prelude::*, px, svg, App, Hsla, Transformation, Window};
 use media_tagger_client::icons::IconName;
 
 /// The default size: `h-5 w-5`.
@@ -12,6 +12,7 @@ pub struct Icon {
     filled: bool,
     size: f32,
     color: Option<Hsla>,
+    half_turn: bool,
 }
 
 impl Icon {
@@ -21,6 +22,7 @@ impl Icon {
             filled: false,
             size: ICON_SIZE,
             color: None,
+            half_turn: false,
         }
     }
 
@@ -41,6 +43,12 @@ impl Icon {
         self
     }
 
+    /// Draws the icon turned by half a turn (`rotate-180`): the left arrow points right.
+    pub fn half_turn(mut self, half_turn: bool) -> Self {
+        self.half_turn = half_turn;
+        self
+    }
+
     pub fn name(&self) -> IconName {
         self.name
     }
@@ -55,5 +63,8 @@ impl RenderOnce for Icon {
             .size(px(self.size))
             .flex_none()
             .text_color(color)
+            .when(self.half_turn, |icon| {
+                icon.with_transformation(Transformation::rotate(percentage(0.5)))
+            })
     }
 }

@@ -340,8 +340,8 @@ Epic E15 ports the selection lifecycle, navigation and edits described above to 
 crate of the GPUI port, without a GUI
 ([ADR 0037](../adr/0037-gpui-client-backend-port-and-model-convention.md),
 [ADR 0045](../adr/0045-gpui-lightbox-model-embedded-with-a-ticket-range-and-tag-saves-as-changes.md)).
-The lightbox view, the image stage and the GIF and video placeholders are epic E16. The
-Tauri path is unchanged.
+The lightbox view, the image stage and the GIF and video placeholders are epic E16
+([the next section](#gpui-port-the-lightbox-view)). The Tauri path is unchanged.
 
 | Solid (`src/features/lightbox`) | GPUI client (`src-gpui/crates/media_tagger_client/src/lightbox/`) |
 | --- | --- |
@@ -437,6 +437,129 @@ Tauri path is unchanged.
   with a grave or acute accent and Hangul syllables, which is what the confirmation words of
   the eleven languages need, not all of NFC.
 
+## GPUI port: the lightbox view
+
+Epic E16 draws the lightbox in the GPUI adapter and ports what the mounted Solid modal
+decides to the client crate
+([ADR 0046](../adr/0046-gpui-lightbox-reads-and-decodes-the-original-itself-within-a-budget.md)).
+GIFs are shown as their first frame and videos as a placeholder (plan decision D8; the
+animation is epic E20, native video epic E21). The Tauri path is unchanged.
+
+| Solid (`src/features/lightbox`) | GPUI |
+| --- | --- |
+| `LightboxModal.tsx` (`LightboxContent`'s signals and effects) | client `lightbox/session.rs`: `Session`, `Shown`, `Dismissal`, `KeyOutcome`, `AddTag`, `FocusTarget` |
+| `image/lightboxPanZoomService.ts` | client `lightbox/pan_zoom.rs` |
+| `image/createImageControls.ts` | client `lightbox/image_controls.rs`: `ImageControls`, `Fullscreen` |
+| `LightboxMediaStage.tsx` (what the stage shows) | client `lightbox/media.rs`: `StageContent`, `MediaSource`, the decode budget, `gif_first_frame` |
+| `formatBytes`, `formatDuration`, the rail summary and the Information rows | client `lightbox/info.rs` |
+| The Tailwind classes and `.lightbox-*` rules | client `lightbox/layout.rs` |
+| `LightboxModal.tsx`, `LightboxMediaStage.tsx`, `LightboxActionRail.tsx` | adapter `views/lightbox.rs`, `views/lightbox/stage.rs` |
+| `LightboxToolbar.tsx`, `MediaGroupSetter.tsx`, `LightboxTagPanel.tsx`, `LightboxInfoPanel.tsx`, `LightboxDeleteConfirmDialog.tsx` | adapter `views/lightbox/sidebar.rs` |
+| The webview's image loading | adapter `media.rs`: `Originals` |
+| `LightboxBoundary.tsx` | none: the adapter loads no view lazily, so there is no load failure to show |
+| `video/` | none: the placeholder of `stage.rs` (epic E21) |
+
+- **Ownership.** `LightboxView` lives as long as the shell, which draws it over whatever view
+  is shown and sends `LightboxCommand::Select` for the gallery's `GalleryEvent::OpenAsset`
+  (the row at the tile's global index, when it still holds that asset). The view draws
+  nothing while nothing is selected. A selected asset makes a `Session` and opens the
+  dialog's layer (`ModalState` with the lightbox's motion, 75 ms in and 50 ms out); a
+  deselected one deactivates the session and closes the layer, and the view keeps drawing
+  the last `Shown` values without taking input until the fade has ended, when the session,
+  the values and the picture are dropped. A collapsed side panel stays collapsed during that
+  fade. Reopening starts a new session, also before the fade has ended; the stage then
+  reports its bounds to the new session's viewer again.
+- **Session.** One `Session` holds the side panel, the activity, the copy confirmation, the
+  delete confirmation, the viewer and fullscreen, the Information flag and the tag draft.
+  Another selected asset resets what belongs to the asset (Information, confirmation, typed
+  word, draft, zoom and pan); a republished selection of the same asset resets nothing.
+  Escape leaves fullscreen, else closes the confirmation, else the drawer of a narrow window,
+  else the lightbox, and does nothing while a deletion runs. A press on the backdrop closes
+  the drawer or the lightbox unless a confirmation is open, a deletion runs, another layer
+  lies above, or a gesture on the picture has just ended (240 to 500 ms). The focus goes to
+  the collapse arrow or the confirmation's field when the panel opens, to the reopen button
+  (keyboard collapse) or the dialog when it closes, to the field once per opening of the
+  confirmation and again after a refusal, and to the delete button (the collapse arrow in a
+  narrow window) when the confirmation closes; the view applies it one frame later.
+  A panel that slides out takes no focus, as the closed `LightboxToolbar` is `inert`: its
+  controls are drawn until the slide has ended, and a focus that Tab brings into it goes
+  on to the reopen button. A lightbox that fades out takes none either: a focus that Tab
+  brings into the closing dialog goes back to the window's root. A focused control of the
+  dialog that is disabled or removed (the heart while its write runs, Apply, the
+  confirmation's field during a deletion) leaves GPUI's frame; the dialog takes the focus
+  then, not the window's root, which is outside the dialog's key context.
+- **Layout.** The dialog keeps 20 px to the window's edges up to 1920 x 1280 (`shell::size`).
+  At 768 px and wider the side panel is a 340 px column; below, it is a drawer over the
+  media with a scrim, closed until asked for. It slides out in 200 ms and keeps its place
+  until then; the action rail and the floating reopen and close buttons fade in 200 ms, three
+  seconds after the last pointer movement, press, wheel turn or key, and the rail stays
+  while the pointer rests on it. A key counts whether or not a binding takes it: the view
+  sees every keystroke of its window before it is dispatched (`intercept_keystrokes`).
+  Reduced motion makes all of it immediate. The faded floating buttons are out of the
+  pointer's reach, as with `pointer-events: none` in the Solid modal: a press that finds
+  them faded shows them and its click is not theirs (what lies under them still gets it),
+  while Enter and Space activate a focused one whether or not it is shown. The shown
+  buttons, the save-failure alerts, the navigation notice and the details notice keep a
+  press and a click to themselves (`block_mouse_except_scroll`): GPUI would otherwise give
+  them to the zoomed picture under them as well, which the DOM never does for a sibling.
+  A wheel turn over the shown buttons, the alerts or the navigation notice counts as
+  activity and goes no further, since the stage's wheel listener never hears a sibling;
+  over the details notice, which is a child of the stage in `LightboxMediaStage.tsx`, it
+  zooms the picture, as in the Solid lightbox.
+- **Viewer.** The picture is fitted into the stage (also enlarged) and drawn at
+  `ImageControls::image_rect`: zoom 1 to 12, the wheel anchored at the pointer
+  (`exp(-delta * 0.002)`, a delta of at most 100, a line counting 16), a click one step of
+  1.25 in at the pointer, a drag of a zoomed picture within its bounds, a re-clamped pan when
+  the stage is resized. A click right after a drag that moved does not zoom. Zoom and pan
+  reset for another asset or other stored dimensions; the decoded picture's own size replaces
+  the stored one. No double-click binding exists, as in the Solid modal.
+- **Keys.** `KeyContext::Lightbox` (inside the shell's, not the gallery's) binds Arrow left
+  and right, `f` and `F`, `0`, `+`, `=` and `-`. All but the arrows are bound outside a text
+  field only; a focused field binds the arrows itself. The keys are off while the
+  confirmation is open, a deletion runs, the drawer of a narrow window is open or another
+  layer lies above. `0`, `+`, `=` and `-` are an image's and a GIF's.
+- **Fullscreen.** `f` and the rail's button make the window fullscreen and lay the dialog out
+  over all of it; the Information panel closes on the way in. Leaving takes the window out
+  of fullscreen only when the lightbox put it there. A selected video, a closed lightbox and
+  Escape leave it. For a video the key and the button are taken and do nothing. A window can
+  only be toggled and answers later, and a second toggle before the answer takes the first
+  back on X11 but repeats it on Wayland. So the view never toggles a window whose answer is
+  still due (`WindowFullscreen`): it keeps what is wanted and toggles once more when the
+  window has answered and the other state is wanted by then, also after the lightbox closed.
+  A request the window has not answered within three seconds (`WINDOW_ANSWER_TIMEOUT`) was
+  not granted and is forgotten: a window the user makes fullscreen later is not taken for
+  its late answer and stays fullscreen.
+- **Picture.** `Originals` reads the file of `SelectedAsset::path` and decodes it on GPUI's
+  background executor, and drops a late answer by its generation. One load runs at a time: a
+  decode that has begun cannot be stopped, so a source shown meanwhile waits for it, the
+  running load gives up before its next step (reading, decoding) once its source is no longer
+  shown, and the sources passed in between (a held arrow key) are never read. A read
+  cannot be stopped and may never return (a mount that stopped answering): the read of the
+  shown source is waited for, with a spinner on the stage once it has taken a moment
+  (`lightbox-media-loading`), while the read of a source that is no longer shown is given up
+  after `READ_DEADLINE` (10 s), so the next picture is loaded. The reads given up are
+  bounded (`reads_allowed`: one background thread stays free, three reads at most); beyond
+  that the shown source waits for one of them to return. The
+  format comes from the content. Only a regular file is read (a link is followed; a device,
+  a pipe or a directory under an indexed path is refused), and never more than 512 MiB of
+  it, whatever length it reports. A file over 512 MiB, a side over 16 384 px and more than
+  192 megapixels (over the frames the decoder keeps) are refused before decoding; a refusal,
+  an unreadable file and a failed decode show `lightbox.mediaError.image`. Without a verified
+  path the stage shows the spinner, or the details notice with Retry.
+- **GIF and video.** A GIF is cut down to its first frame before it is decoded and drawn with
+  a chip (`gallery.gifChip`, described by `lightbox.placeholder.gifStill`). A video shows its
+  thumbnail as a poster, the Video label, dimensions, duration and size, and
+  `lightbox.placeholder.videoUnavailable`; nothing is opened or played.
+- **Deletion notice.** The notice of an accepted deletion (missing source, pending cleanup) is
+  the window's prompt with one Close button, in place of `window.alert`.
+- **Scenarios.** `lightbox-image`, `lightbox-image-zoomed`, `lightbox-gif`, `lightbox-video`
+  and `lightbox-delete-confirm` (`ScenarioLightbox`): the click on the tile is made once its
+  row is loaded, the zoom steps and the drag once the picture is on the stage, the
+  confirmation with its word after that. A scenario's controls never fade and the session
+  moves the focus nowhere (no field shows a caret; the dialog's first tab stop keeps the
+  focus the layer gave it, without a ring), since the Tauri steps park the pointer on the
+  rail and a capture shows no caret.
+
 ## Known limitations and maintenance hazards
 
 - The shared details cache (256-entry LRU, identity- and query-guarded) also validate metadata-generation stamps, rejecting cached snapshots made obsolete by favorite/group mutations. Full DB restore and library clear advance the shared identity epoch and clear the shared details cache, requests, and pending tag mutation state. Successful deletion creates a per-ID tombstone generation before refresh work, so an older detail response cannot repopulate a deleted or reused ID.
@@ -447,6 +570,7 @@ Tauri path is unchanged.
 - Final staged-delete cleanup can fail after DB commit; the UI reports the recovery path and the durable journal retries cleanup at startup.
 - Details and media failures have localized error UI; details also has Retry. Clipboard failure clears feedback, and some fullscreen shortcut failures are caught without an alert.
 - A video whose audio track cannot be played because no audio device opens plays silently, with no indication in the UI.
+- GPUI port: a picture over the decode budget shows the media error instead of a reduced picture; a strongly reduced picture is drawn without mipmaps; headings have no letter spacing, so a long heading can wrap where the webview's fits; the tab order puts the floating reopen and close buttons after the action rail (they are drawn above the stage); a touch-only pointer is not detected, so the controls always fade; a window manager that grants a fullscreen request more than three seconds late, after the lightbox has left fullscreen, keeps the window fullscreen until the user takes it out.
 
 ## Change checklist
 
@@ -536,8 +660,8 @@ When changing lightbox behavior:
   on the same fakes: all of `createLightbox.test.ts` and `presentation.test.ts`, the delete
   confirmation and group copy cases of `LightboxModal.test.tsx` and the order draft of
   `MediaGroupSetter.test.tsx`. The DOM, focus and animation cases of those two component
-  suites, `keyboard.test.tsx` and `imageControls.test.tsx` wait for the lightbox view; the
-  list and the reasons are in
+  suites, `keyboard.test.tsx` and `imageControls.test.tsx` are ported with the lightbox view
+  (the next entry); the list is in
   [testing.md](../development/testing.md#gpui-workspace).
   `src-gpui/crates/media_tagger_client/tests/lightbox_core.rs` runs the model against the real
   core on a temporary profile: details, tag, favorite and group saves, deleting a file and a
@@ -545,6 +669,45 @@ When changing lightbox behavior:
   test (`TempCore::hold_scan_lock`): the answer is `i18n:common.libraryBusy`, the file and
   the selection stay, and the deletion goes through after the lock is released. The core's
   own test of that refusal is named above.
+- GPUI port, the view (epic E16): the client modules test themselves without a window:
+  `pan_zoom.rs` (fit in both directions, the zoom limits, the pan's bounds),
+  `image_controls.rs` (keys, the wheel anchored at the pointer and its clamped delta, the
+  drag and its bounds, the click and close pauses after a gesture, another asset and a
+  republished one, a resized stage, a video, an inactive and a disposed viewer,
+  fullscreen that takes back only what it asked of the window, a window that is not
+  toggled again while its answer is due, and a request that is forgotten when the window
+  does not answer in time), `media.rs` (what the stage
+  shows, formats by content, header sizes of the five formats with both BMP header layouts,
+  the decode budget with the
+  frames of an animated WebP, the first frame of a GIF and a broken GIF), `info.rs` (bytes,
+  durations, the rail summary and the Information rows), `layout.rs` and `session.rs`
+  (selection-scoped state, adding and removing tags, Escape, a running deletion and a
+  refusal, the backdrop, the viewer's keys, fullscreen, the focus after the panel and the
+  confirmation, the rail under the pointer, the fades and the slide).
+  `src-gpui/crates/media_tagger_gpui/tests/lightbox_window.rs` opens the lightbox from a
+  tile in the main window with the scripted backend and synthetic picture files in a
+  temporary directory: the decoded picture fitted to the stage, the zoom and arrow keys, a
+  zooming click, fullscreen and the two Escapes, the fade-out that keeps the last values,
+  the confirmation with its focus, its Escape, the typed word and exactly one deletion
+  (answered by the fake), the drawer of a narrow window with its scrim, and the scripted
+  start of the `lightbox-` scenarios (the tile, the zoom and the drag, the confirmation
+  with its word typed).
+  The Solid suite's remaining cases are ported in two files, each test naming its TS case:
+  `src-gpui/crates/media_tagger_client/tests/lightbox_viewer_ported.rs` ports
+  `imageControls.test.tsx` (on `ImageControls`) and `keyboard.test.tsx` (on `Session`)
+  without a window, and `src-gpui/crates/media_tagger_gpui/tests/lightbox_ported.rs` ports
+  the view cases of `LightboxModal.test.tsx` and `MediaGroupSetter.test.tsx`, the window
+  halves of the keyboard and image-control cases and the `defaultPrevented` half of
+  `presentation.test.ts`; it also checks that `Originals` runs one load at a time, never
+  reads a source that was passed by, and gives up a read that does not return once another
+  picture waits for it (on a bare `Originals` and in the window, with a reader whose read
+  is a timer on the test clock), that a click on the reopen button or on the details
+  notice's Retry over a zoomed picture does not zoom it, that a wheel turn over a shown
+  floating button or a save-failure alert shows the controls without zooming, that the
+  picture and its texture are freed after navigation and after the fade-out
+  (`Originals::retired_pictures`), that the arrows stay in the group fields, that a
+  sliding drawer and a lightbox that fades out take no focus, and that the dialog keeps
+  the viewer's keys when its focused control is disabled.
 
 Use deferred IPC for lifecycle changes and the shared query/details owners for cache and
 navigation changes. Desktop pixels, GTK focus and playback need the corresponding native

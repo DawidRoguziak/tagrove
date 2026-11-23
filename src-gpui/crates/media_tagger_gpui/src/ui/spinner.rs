@@ -70,7 +70,7 @@ impl RenderOnce for Spinner {
         let arc = svg()
             .data(match self.size {
                 SpinnerSize::ExtraSmall => SMALL_ARC,
-                SpinnerSize::Tile => TILE_ARC,
+                SpinnerSize::Tile | SpinnerSize::Stage => TILE_ARC,
             })
             .absolute()
             .top_0()

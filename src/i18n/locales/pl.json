@@ -262,6 +262,10 @@
       "video": "Nie można odtworzyć video",
       "image": "Nie można wyświetlić obrazu"
     },
+    "placeholder": {
+      "videoUnavailable": "Odtwarzanie wideo nie jest dostępne w tej wersji.",
+      "gifStill": "Animacja GIF nie jest dostępna w tej wersji. Wyświetlana jest pierwsza klatka."
+    },
     "tagSaving": "Zapisywanie tagów...",
     "retryTagSave": "Ponów",
     "tagDetailsLoading": "Wczytywanie pełnej listy tagów...",

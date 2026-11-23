@@ -996,6 +996,7 @@ fn open_scenario(
                     tag_list: start.tag_list,
                     dock: start.dock,
                     lightbox: start.lightbox,
+                    settings: start.settings,
                 },
                 cx,
             )

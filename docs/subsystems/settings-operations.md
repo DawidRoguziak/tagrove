@@ -262,6 +262,87 @@ When changing settings behavior:
 9. Preserve localized visible messages, dialog names, disabled states, and progress accessibility. Test Escape/backdrop behavior when adding another nested layer.
 10. Run focused helper/model/component tests, the relevant `src/app/__tests__/runtimeIntegration.test.ts` cases, and a build for contract or composition changes.
 
+## GPUI port: settings
+
+The GPUI interface (`src-gpui/`, [ADR 0036](../adr/0036-gpui-second-adapter-in-its-own-workspace.md))
+keeps the same contract with its own types:
+
+- **Model.** `media_tagger_client::settings::Settings` is embedded in the runtime
+  (`AppRuntime::settings`) and lives as long as the application, like `createSettings`.
+  Commands travel as `RuntimeInput::Settings` (`RuntimeInput::settings(SettingsCommand)`).
+  The runner's lock is a field of the model: a command that starts an operation while
+  another runs is refused in the same turn, without a backend call and without changing a
+  status. Statuses are stored untranslated (`StatusMessage`) and resolved with the current
+  language each time they are drawn.
+- **Progress.** A call that reports progress (`SettingsCall::progress`: rescans, bulk
+  thumbnail renders, clear-library, and the startup scan) is subscribed through
+  `progress::forward` on the UI thread before the call is spawned; the subscription is
+  dropped when the call returns, before its reply is sent. A section accepts only the
+  phases of its operation (`PhaseFilter`) and only while that operation runs.
+- **Ends of operations.** Each operation ends after the refreshes the matrix below asks for
+  (library refreshes are `LibraryInput::Refresh` with a ticket of the settings range,
+  `SETTINGS_TICKET_BASE`; root listings are `list_scan_roots` calls whose canonical list
+  the runtime publishes). After a success a failed refresh becomes the operation's error;
+  after a failure the original error stays. The refreshes run concurrently rather than in
+  the Solid `await` order.
+- **Startup scan.** `RuntimeInput::Start` begins the startup scan as an operation of the
+  scan section (`Settings::begin_startup`): the scan line shows the pending text and the
+  scan's progress, and every other operation is refused until the scan and its refreshes
+  have answered. The runtime hands the scan's answer to the runner
+  (`Settings::startup_scanned`), which ends the operation as it ends a manual rescan: a
+  launch without work ends at once with an empty line and refreshes nothing; a scan that
+  found work reads the library and the roots again and then shows its summary, or, when
+  one of those refreshes failed, the rescan error prefix with the refresh's error; a failed
+  scan reads both again as well and keeps its own error whatever they answer
+  (`scanOnStartup` of `createScanSettings.ts`).
+- **Scan roots.** The runtime lists the roots at launch and publishes every canonical
+  list a settings operation read (`SettingsEffect::Roots`). A list an operation published
+  supersedes a listing of the runtime that is still on its way, as `rootsGeneration` does
+  in `createScanSettings.ts`: a launch without startup work releases the runner while the
+  launch's listing may still be out, and that listing, answering after folders were added,
+  does not replace their roots.
+- **Clear library.** Confirming closes the question, takes the runner's lock and puts up
+  the mutation barrier (`LibraryInput::BeginMaintenance`); `clear_library_data` runs once
+  the barrier is granted, and `LibraryInput::EndMaintenance` with `LibraryReset::Cleared`
+  follows whatever the result, before the roots (and, after a failure, the library) are
+  read again.
+- **Folder dialog and links.** "Choose folder" takes the lock and asks the adapter for the
+  folder dialog (`AppRuntime::take_folder_picker_request`); the GPUI runtime opens
+  `App::prompt_for_paths` (the XDG portal on Linux) and answers with
+  `SettingsInput::FoldersPicked`. A dialog that closes without an answer counts as
+  cancelled. The portal's dialog has its own title; GPUI does not take ours. The adding
+  itself is one background job: the roots before, `add_scan_root` for each chosen path,
+  the roots after. About's links call `App::open_url`, which reports no failure, so the
+  page never shows the manual-address fallback.
+- **Video tools.** Read once when the runtime starts, as the Solid scan settings read them
+  when the runtime is made; a failed read shows both tools missing.
+- **Page.** `media_tagger_gpui::views::settings::SettingsView` is made anew each time the
+  page opens and keeps only what the Solid page loses on unmount: the scroll position, the
+  expanded root list, the open language list and the open legal texts. Its scrolled
+  container's children are exactly the seven sections, so the scroll handle knows each
+  section's top; the navigation is drawn where the Tauri page's sticky navigation stays
+  (96 px from the top of the window) and marks the section whose top has passed 120 px, or
+  About at the end of the page (`settings::navigation`). A navigation link's icon is
+  20 px (`UiIcon` keeps its own `h-5 w-5` over the link's `h-4 w-4`), which makes a link
+  40 px high. Activating a link, by pointer or by keyboard, moves the focus to its section
+  (`SettingsView::activate_section`; the sections are focusable without being tab stops,
+  as `tabindex="-1"` in `SettingsPanel.tsx`), scrolls the section to 96 px from the top
+  and marks it until the page scrolls; the next Tab reaches the section's first control,
+  and the section draws the focus ring only while the keyboard is in use. Tab goes through
+  the header, the navigation links and then the sections' controls, the order of the Tauri
+  page's DOM: the navigation is drawn before the scrolled sections, and GPUI's tab order
+  is the drawing order. Below the last
+  section the page keeps 48 px (`pb-4` of the panel and `pb-8` of the page view). The
+  import/export and duplicate sections are empty anchors until epic E18. The two confirmations are `ModalState` dialogs
+  that follow the model's `remove_root_confirm` and `clear_confirm_open`; Escape and the
+  backdrop close them only while no operation runs.
+- **Tests.** `src-gpui/crates/media_tagger_client/tests/settings_core.rs` and
+  `settings_ported.rs`, `src-gpui/crates/media_tagger_gpui/tests/settings_window.rs` and
+  `settings_ported.rs`, and the comparison scenarios `settings-scan`,
+  `settings-appearance-language` and `settings-danger-about`. A scenario's navigation
+  click is made once the launch's work has ended and the page it left is laid out
+  (`Runtime::scripted_settings_section`), as the Tauri steps click on a settled page.
+
 ## Test map
 
 - `src/features/settings/__tests__/createSettingsActions.test.tsx` covers root add/remove/rescan, progress updates, cross-section exclusion, thumbnail summaries/cancel errors, clear-library, picker cancellation, duplicate scan/basic validation, CSV import, and bundle export.

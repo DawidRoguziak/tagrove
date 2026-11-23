@@ -44,3 +44,6 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-22 | E16 | orkiestrator | in progress | workflow start od kroku implement | [E16](E16-gpui-lightbox.md)
 2026-11-23 | E16 | workflow | blocked | Epik zablokowany: bramka test:all pada na audit:rust (RUSTSEC-2026-0594, cookie 0.18.2), niezwiązane z epikiem; przegląd czysty po 3 rundach. | [E16](E16-gpui-lightbox.md)
 2026-11-23 | E16 | orkiestrator | done | Lightbox GPUI gotowy: 6 rund przeglądu w dwóch przebiegach (16 ustaleń, wszystkie poprawione), braki z audytu zamknięte, checks, porównanie zrzutów i test:all przechodzą. | [E16](E16-gpui-lightbox.md)
+2026-11-23 | E17 | orkiestrator | in progress | workflow start od kroku implement | [E17](E17-settings-core.md)
+2026-11-23 | E17 | workflow | done | E17 gotowy: ustawienia (skan, miniatury, wygląd, język, strefa zagrożeń, o programie) zaimplementowane, testy i gate zielone, review czyste. | [E17](E17-settings-core.md)
+2026-11-23 | E17 | orkiestrator | done | Braki z audytu (G1–G9) zamknięte; checks, porównanie zrzutów i test:all przechodzą. | [E17](E17-settings-core.md)

@@ -280,8 +280,8 @@ fn the_window_is_drawn_and_usable_before_the_startup_scan_answers(cx: &mut TestA
     assert_eq!(cx.update(|_, cx| ui::theme::active(cx)), ThemeName::Light);
     assert_eq!(
         fixture.executor.pending(),
-        5,
-        "the library's query, its known tags, scan, roots, preferences"
+        6,
+        "the library's query, its known tags, scan, roots, preferences, video tools"
     );
     assert!(cx.debug_bounds(gallery::HEADER_SELECTOR).is_some());
     assert!(cx.debug_bounds(gallery::EMPTY_STATE_SELECTOR).is_some());
@@ -290,6 +290,7 @@ fn the_window_is_drawn_and_usable_before_the_startup_scan_answers(cx: &mut TestA
     // one left once the library's two have answered).
     assert!(fixture.executor.run_nth(0));
     assert!(fixture.executor.run_nth(0));
+    assert!(fixture.executor.run_nth(1));
     assert!(fixture.executor.run_nth(1));
     assert!(fixture.executor.run_nth(1));
     cx.run_until_parked();

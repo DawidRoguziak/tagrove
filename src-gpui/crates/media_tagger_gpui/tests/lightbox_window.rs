@@ -465,6 +465,7 @@ fn open_scripted(
                 fixture.parts(),
                 ShellStart {
                     lightbox: Some(lightbox),
+                    settings: None,
                     ..ShellStart::default()
                 },
                 cx,

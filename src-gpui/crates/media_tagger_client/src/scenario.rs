@@ -18,6 +18,7 @@ use crate::{
     library::AssetQuery,
     runtime::{DEFAULT_TILE_SIZE, TILE_SIZE_MAX, TILE_SIZE_MIN},
     search::{tag_list::TagListInput, SearchCommand},
+    settings::SettingsSection,
     theme::ThemeName,
 };
 
@@ -233,6 +234,35 @@ pub const LIGHTBOX_DELETE_CONFIRM: ScenarioLightbox = ScenarioLightbox {
     ..LIGHTBOX_IMAGE
 };
 
+/// The settings page a scenario opens, as its Tauri steps do: the page opened from the
+/// gallery header, then a click on a navigation link, or the startup-scan switch of the
+/// first root set once the roots are listed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScenarioSettings {
+    /// The navigation link clicked: its section is scrolled to the top and marked.
+    pub section: Option<SettingsSection>,
+    /// The startup-scan switch of the first root is set to this value.
+    pub first_root_auto_scan: Option<bool>,
+}
+
+/// `settings-scan`: the scan section with the one root's startup scan turned on (a new
+/// root starts with it off).
+pub const SETTINGS_SCAN: ScenarioSettings = ScenarioSettings {
+    section: None,
+    first_root_auto_scan: Some(true),
+};
+/// `settings-appearance-language`: the page scrolled to the appearance section.
+pub const SETTINGS_APPEARANCE_LANGUAGE: ScenarioSettings = ScenarioSettings {
+    section: Some(SettingsSection::Appearance),
+    first_root_auto_scan: None,
+};
+/// `settings-danger-about`: the page scrolled by the About link to its end, where the
+/// danger zone and the About section are.
+pub const SETTINGS_DANGER_ABOUT: ScenarioSettings = ScenarioSettings {
+    section: Some(SettingsSection::About),
+    first_root_auto_scan: None,
+};
+
 /// One named start state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Scenario {
@@ -257,6 +287,8 @@ pub struct Scenario {
     pub dock: Option<ScenarioDock>,
     /// The lightbox, open on a tile, if the scenario opens it.
     pub lightbox: Option<ScenarioLightbox>,
+    /// The settings page, open, if the scenario opens it.
+    pub settings: Option<ScenarioSettings>,
 }
 
 /// `gallery-selection`: a click on the second tile, a Ctrl-click on the first and a
@@ -307,7 +339,7 @@ pub fn selection_inputs(
 }
 
 /// Every scenario the GPUI interface can start in, on a fresh profile.
-pub const SCENARIOS: [Scenario; 17] = [
+pub const SCENARIOS: [Scenario; 20] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
@@ -319,6 +351,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "shell-empty-light",
@@ -331,6 +364,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "gallery-default",
@@ -343,6 +377,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "gallery-tiles-small",
@@ -355,6 +390,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "gallery-tiles-large",
@@ -367,6 +403,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "gallery-selection",
@@ -379,6 +416,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "search-suggestions",
@@ -395,6 +433,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "search-applied",
@@ -411,6 +450,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "tag-list-modal",
@@ -423,6 +463,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: Some(TAG_LIST_MODAL),
         dock: None,
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "bulk-dock-tags",
@@ -435,6 +476,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: Some(BULK_DOCK_TAGS),
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "bulk-dock-group",
@@ -447,6 +489,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: Some(BULK_DOCK_GROUP),
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "group-order-modal",
@@ -459,6 +502,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: Some(GROUP_ORDER_MODAL),
         lightbox: None,
+        settings: None,
     },
     Scenario {
         id: "lightbox-image",
@@ -471,6 +515,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: Some(LIGHTBOX_IMAGE),
+        settings: None,
     },
     Scenario {
         id: "lightbox-image-zoomed",
@@ -483,6 +528,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: Some(LIGHTBOX_IMAGE_ZOOMED),
+        settings: None,
     },
     Scenario {
         id: "lightbox-gif",
@@ -495,6 +541,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: Some(LIGHTBOX_GIF),
+        settings: None,
     },
     Scenario {
         id: "lightbox-video",
@@ -507,6 +554,7 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: Some(LIGHTBOX_VIDEO),
+        settings: None,
     },
     Scenario {
         id: "lightbox-delete-confirm",
@@ -519,6 +567,46 @@ pub const SCENARIOS: [Scenario; 17] = [
         tag_list: None,
         dock: None,
         lightbox: Some(LIGHTBOX_DELETE_CONFIRM),
+        settings: None,
+    },
+    Scenario {
+        id: "settings-scan",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: None,
+        settings: Some(SETTINGS_SCAN),
+    },
+    Scenario {
+        id: "settings-appearance-language",
+        theme: ThemeName::Light,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: None,
+        settings: Some(SETTINGS_APPEARANCE_LANGUAGE),
+    },
+    Scenario {
+        id: "settings-danger-about",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: None,
+        settings: Some(SETTINGS_DANGER_ABOUT),
     },
 ];
 
@@ -1049,6 +1137,53 @@ mod tests {
         for scenario in SCENARIOS {
             if !scenario.id.starts_with("lightbox-") {
                 assert!(scenario.lightbox.is_none(), "{}", scenario.id);
+            }
+        }
+    }
+
+    #[test]
+    fn the_settings_scenarios_do_on_the_page_what_their_tauri_steps_do() {
+        // Parity scenarios of E17.
+        use super::{SETTINGS_APPEARANCE_LANGUAGE, SETTINGS_DANGER_ABOUT, SETTINGS_SCAN};
+        for (id, theme, expected) in [
+            ("settings-scan", ThemeName::Dark, SETTINGS_SCAN),
+            (
+                "settings-appearance-language",
+                ThemeName::Light,
+                SETTINGS_APPEARANCE_LANGUAGE,
+            ),
+            (
+                "settings-danger-about",
+                ThemeName::Dark,
+                SETTINGS_DANGER_ABOUT,
+            ),
+        ] {
+            let scenario = find(id).unwrap_or_else(|| panic!("{id} is a scenario"));
+            assert_eq!(scenario.seed, Seed::Control, "{id}");
+            assert_eq!(scenario.theme, theme, "{id}");
+            assert_eq!(scenario.settings, Some(expected), "{id}");
+
+            let mut steps = vec![
+                r#"["click", 'button[aria-label="Open settings"]']"#.to_owned(),
+                r#"["wait", '[data-testid="scan-settings-section"]']"#.to_owned(),
+            ];
+            if let Some(section) = expected.section {
+                steps.push(format!(
+                    r##"["click", 'nav a[href="#settings-{}"]']"##,
+                    section.id()
+                ));
+            }
+            if expected.first_root_auto_scan.is_some() {
+                steps.push(
+                    r#"["click", '//*[@data-testid="scan-settings-section"]//li//input[@type="checkbox"]']"#
+                        .to_owned(),
+                );
+            }
+            assert_steps_in_order(id, &steps);
+        }
+        for scenario in SCENARIOS {
+            if !scenario.id.starts_with("settings-") {
+                assert!(scenario.settings.is_none(), "{}", scenario.id);
             }
         }
     }

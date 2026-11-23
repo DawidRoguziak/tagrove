@@ -35,4 +35,5 @@ pub fn init(cx: &mut App) {
     tag_list::init(cx);
     bulk_dock::init(cx);
     lightbox::init(cx);
+    settings::init(cx);
 }

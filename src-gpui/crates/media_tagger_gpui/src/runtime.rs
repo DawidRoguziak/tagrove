@@ -26,8 +26,10 @@ use media_tagger_client::{
     prefs::PrefsStore,
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
     scenario::{
-        self, ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch, ScenarioTagList,
+        self, ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch, ScenarioSettings,
+        ScenarioTagList,
     },
+    settings::{FolderPickerRequest, SettingsCommand, SettingsInput, SettingsSection},
 };
 
 use crate::{thumbs::Thumbnails, ui};
@@ -116,6 +118,12 @@ pub struct Runtime {
     scripted_dock: Option<ScenarioDock>,
     /// The lightbox a comparison scenario opens once the row of its tile is loaded.
     scripted_lightbox: Option<ScenarioLightbox>,
+    /// The settings section a comparison scenario scrolls to.
+    scripted_settings_section: Option<SettingsSection>,
+    /// The startup-scan switch a comparison scenario sets on the first root.
+    scripted_auto_scan: Option<bool>,
+    /// The folder dialog that is open; its answer goes to the operation that asked.
+    _folder_picker: Option<Task<()>>,
     _pump: Task<()>,
 }
 
@@ -151,6 +159,9 @@ impl Runtime {
             scripted_tag_list_focus: None,
             scripted_dock: None,
             scripted_lightbox: None,
+            scripted_settings_section: None,
+            scripted_auto_scan: None,
+            _folder_picker: None,
             _pump: pump,
         }
     }
@@ -224,6 +235,101 @@ impl Runtime {
             return None;
         }
         self.scripted_lightbox.take()
+    }
+
+    /// Opens the settings page of a comparison scenario: the page at once, its section
+    /// once the launch's work has ended and the page it left is laid out
+    /// ([`Self::take_scripted_settings_section`]), and the startup-scan switch of the
+    /// first root once the startup scan has ended and the roots are listed.
+    pub fn script_settings(&mut self, settings: ScenarioSettings, cx: &mut Context<Self>) {
+        self.driver.handle(RuntimeInput::OpenSettings);
+        self.scripted_settings_section = settings.section;
+        self.scripted_auto_scan = settings.first_root_auto_scan;
+        self.publish(cx);
+    }
+
+    /// The settings section a scenario scrolls to, without taking it, once its
+    /// navigation click can be made: the launch's work has ended (the startup scan with
+    /// its refreshes, the root listing, the read of the video tools) and no operation
+    /// runs, so the scan section above the target has the height it keeps. The Tauri
+    /// steps click on a page in that state; a click made earlier would leave the
+    /// section short of its place by what the scan section grows afterwards.
+    pub fn scripted_settings_section(&self) -> Option<SettingsSection> {
+        let model = self.driver.model();
+        let settings = model.settings();
+        if !model.is_started()
+            || model.maintenance_loading()
+            || model.scan_roots_loading()
+            || settings.is_locked()
+            || settings.video_tools().is_none()
+            || self.scripted_auto_scan.is_some()
+        {
+            return None;
+        }
+        self.scripted_settings_section
+    }
+
+    /// The settings section a scenario scrolls to, once its click can be made
+    /// ([`Self::scripted_settings_section`]); answers once.
+    pub fn take_scripted_settings_section(&mut self) -> Option<SettingsSection> {
+        let section = self.scripted_settings_section()?;
+        self.scripted_settings_section = None;
+        Some(section)
+    }
+
+    /// Sets the scripted startup-scan switch once nothing else runs and the roots are
+    /// there.
+    fn run_scripted_auto_scan(&mut self) {
+        let model = self.driver.model();
+        let Some(enabled) = self.scripted_auto_scan else {
+            return;
+        };
+        if !model.is_started() || model.maintenance_loading() || model.settings().is_locked() {
+            return;
+        }
+        let Some(root) = model.scan_roots().first() else {
+            return;
+        };
+        let path = root.path.clone();
+        self.scripted_auto_scan = None;
+        self.driver
+            .handle(RuntimeInput::settings(SettingsCommand::SetAutoScan {
+                path,
+                enabled,
+            }));
+    }
+
+    /// Opens the folder dialog a settings operation asked for (GPUI's dialog, the XDG
+    /// portal on Linux) and hands its answer to that operation. A dialog that could not
+    /// open answers with the platform's error; one that closed without an answer counts
+    /// as cancelled.
+    fn open_folder_picker(&mut self, request: FolderPickerRequest, cx: &mut Context<Self>) {
+        let answer = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: true,
+            prompt: None,
+        });
+        let op = request.op;
+        self._folder_picker = Some(cx.spawn(async move |this, cx| {
+            let result = match answer.await {
+                Ok(Ok(paths)) => Ok(paths.map(|paths| {
+                    paths
+                        .into_iter()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect()
+                })),
+                Ok(Err(error)) => Err(error.to_string()),
+                Err(_) => Ok(None),
+            };
+            this.update(cx, |runtime, cx| {
+                runtime.send(
+                    RuntimeInput::Settings(SettingsInput::FoldersPicked { op, result }),
+                    cx,
+                )
+            })
+            .ok();
+        }));
     }
 
     /// The answers of the lightbox model to the view's commands since the last call
@@ -307,6 +413,10 @@ impl Runtime {
 
     fn publish(&mut self, cx: &mut Context<Self>) {
         self.run_scripted_selection();
+        self.run_scripted_auto_scan();
+        if let Some(request) = self.driver.model_mut().take_folder_picker_request() {
+            self.open_folder_picker(request, cx);
+        }
         // The bulk model and the lightbox model get their answers and every commit
         // from the client's runtime itself. What is left belongs to a caller with
         // tickets of its own, and no view is one: dropped here so that it does not

@@ -131,6 +131,7 @@ pub fn run_scenario_with(
                         tag_list: start.tag_list,
                         dock: start.dock,
                         lightbox: start.lightbox,
+                        settings: start.settings,
                     },
                 ),
             )

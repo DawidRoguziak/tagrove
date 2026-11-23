@@ -45,6 +45,9 @@
 //!   navigation by global index, prefetch, tag, favorite, group and delete writes),
 //!   and what its view decides without a GUI: the side panel, the fading controls and
 //!   the delete confirmation.
+//! - [`settings`]: the settings page: the exclusive operation runner, the scan,
+//!   thumbnail and danger-zone operations, the section statuses, the navigation and
+//!   the About section.
 //! - [`runtime`], [`shell`], [`window_chrome`], [`shortcuts`]: the application runtime
 //!   (models for the application's lifetime, the view, the start sequence), what the
 //!   shell draws around the views, the window's own decorations and the registry of
@@ -67,6 +70,7 @@ pub mod progress;
 pub mod runtime;
 pub mod scenario;
 pub mod search;
+pub mod settings;
 pub mod shell;
 pub mod shortcuts;
 pub mod startup_scan;

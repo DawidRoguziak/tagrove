@@ -712,8 +712,8 @@
         "E02",
         "E06"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-23",
       "sources": [
         "src/features/settings/SettingsPanel.tsx",
         "src/features/settings/SettingsNavigation.tsx",

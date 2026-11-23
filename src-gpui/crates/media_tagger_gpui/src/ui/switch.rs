@@ -25,6 +25,7 @@ pub struct Switch {
     label: SharedString,
     text: Option<SharedString>,
     theme: Option<ThemeName>,
+    debug_selector: Option<SharedString>,
     on_change: Option<ChangeHandler>,
 }
 
@@ -38,6 +39,7 @@ impl Switch {
             label: label.into(),
             text: None,
             theme: None,
+            debug_selector: None,
             on_change: None,
         }
     }
@@ -55,6 +57,13 @@ impl Switch {
 
     pub fn theme(mut self, theme: ThemeName) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// A debug selector for tests (`VisualTestContext::debug_bounds`); a no-op outside
+    /// test builds.
+    pub fn debug_selector(mut self, selector: impl Into<SharedString>) -> Self {
+        self.debug_selector = Some(selector.into());
         self
     }
 
@@ -121,7 +130,10 @@ impl RenderOnce for Switch {
             .items_center()
             .gap_2()
             .child(track)
-            .when_some(self.text, |row, text| row.child(text));
+            .when_some(self.text, |row, text| row.child(text))
+            .when_some(self.debug_selector, |row, selector| {
+                row.debug_selector(move || selector.to_string())
+            });
         if self.disabled {
             return row.cursor_not_allowed();
         }

@@ -47,7 +47,7 @@ pub struct Button {
     leading_icon: Option<(IconName, f32)>,
     gap: Option<f32>,
     pressed: Option<bool>,
-    debug_selector: Option<&'static str>,
+    debug_selector: Option<SharedString>,
     size: Option<f32>,
     height: Option<f32>,
     text_size: Option<f32>,
@@ -214,8 +214,8 @@ impl Button {
 
     /// A debug selector for tests (`VisualTestContext::debug_bounds`); a no-op outside
     /// test builds.
-    pub fn debug_selector(mut self, selector: &'static str) -> Self {
-        self.debug_selector = Some(selector);
+    pub fn debug_selector(mut self, selector: impl Into<SharedString>) -> Self {
+        self.debug_selector = Some(selector.into());
         self
     }
 
@@ -311,7 +311,7 @@ impl RenderOnce for Button {
                 })
             })
             .when_some(self.debug_selector, |button, selector| {
-                button.debug_selector(move || selector.to_owned())
+                button.debug_selector(move || selector.to_string())
             })
             .when(focus_visible, |button| {
                 button.child(focus_ring(rest.focus_ring, rest.radius))

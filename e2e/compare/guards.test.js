@@ -281,6 +281,9 @@ test("unknown scenarios are refused before a session exists", (t) => {
     "lightbox-video\ttheme=dark\tseed=control",
     "search-applied\ttheme=dark\tseed=control",
     "search-suggestions\ttheme=dark\tseed=control",
+    "settings-appearance-language\ttheme=light\tseed=control",
+    "settings-danger-about\ttheme=dark\tseed=control",
+    "settings-scan\ttheme=dark\tseed=control",
     "shell-empty\ttheme=dark\tseed=empty",
     "shell-empty-light\ttheme=light\tseed=empty",
     "tag-list-modal\ttheme=dark\tseed=control"

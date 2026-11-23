@@ -78,6 +78,17 @@
 //! it runs, [`AppRuntime::maintenance_loading`] is set; when it found work, or failed,
 //! the library and the scan roots are refreshed again, and only after both answered
 //! is the scan [`StartupScanPhase::Finished`]. A launch without work refreshes nothing.
+//! The scan is an operation of the settings runner, which asks for those refreshes and
+//! reads their answers ([`Settings::startup_scanned`]): after a scan that found work a
+//! failed refresh is the scan line's error, as after a manual rescan.
+//!
+//! # Scan roots
+//!
+//! The runtime lists the roots at launch; a settings operation publishes every
+//! canonical list it read ([`SettingsEffect::Roots`]). A list an operation published
+//! supersedes a listing of the runtime that is still on its way (`rootsGeneration` of
+//! `createScanSettings`): the launch's listing answering late never replaces the roots
+//! of an operation that ran after it was asked for.
 
 use std::{sync::Arc, time::Duration};
 
@@ -98,12 +109,19 @@ use crate::{
     },
     model::{Dispatch, Model, RequestSlot, RequestToken, Runner, Tokens},
     prefs::{Prefs, PrefsStore},
+    progress,
     search::{
         run_suggestion_effect,
         suggestions::SuggestionIndexCache,
         tag_list::{TagList, TagListEffect, TagListInput},
         EditorId, Search, SearchCommand, SuggestionClient, SuggestionEffect, SuggestionEvent,
         SuggestionInput,
+    },
+    settings::{
+        model::{ClearedLibrary, FolderAddition, RemovedRoot, VideoTools},
+        progress::ThumbnailCounts,
+        FolderPickerRequest, OperationId, Settings, SettingsCall, SettingsCommand, SettingsEffect,
+        SettingsInput, SettingsReply,
     },
     theme::ThemeName,
 };
@@ -240,6 +258,10 @@ pub enum RuntimeInput {
     /// field's text and submits it; the tag list hears back once the query that
     /// started has answered.
     TagList(TagListInput),
+    /// A command of the settings page, the folder dialog's answer, or a reply or
+    /// progress event of a settings operation. The answers of the library to the
+    /// settings model's tickets are passed on by the runtime itself.
+    Settings(SettingsInput),
     /// Lists the scan roots again; an earlier listing still running is superseded.
     RefreshScanRoots,
     ScanRootsLoaded {
@@ -270,6 +292,11 @@ impl RuntimeInput {
     pub fn lightbox(command: LightboxCommand) -> Self {
         Self::Lightbox(command)
     }
+
+    /// A command of the settings page.
+    pub fn settings(command: SettingsCommand) -> Self {
+        Self::Settings(SettingsInput::Command(command))
+    }
 }
 
 /// Work for the [`RuntimeRunner`].
@@ -292,8 +319,15 @@ pub enum RuntimeEffect {
     /// `get_asset_summaries_by_ids` for the bulk model; answered with
     /// [`BulkInput::SummariesLoaded`].
     BulkSummaries(SummaryLoad),
+    /// A backend call of a settings operation, after a progress subscription when
+    /// the call reports progress ([`SettingsCall::progress`]).
+    Settings(SettingsCall),
     ListScanRoots(RequestToken),
-    ScanStartupRoots,
+    /// `scan_startup_roots`, with the progress of the startup operation forwarded to
+    /// the settings model when it began.
+    ScanStartupRoots {
+        progress: Option<OperationId>,
+    },
     SavePrefs(Prefs),
 }
 
@@ -320,10 +354,15 @@ pub struct AppRuntime {
     tag_list_apply: bool,
     /// The answers to ticketed query reads of other callers than the selection.
     query_events: Vec<QueryEvent>,
+    /// The settings page's operations, confirmations and video tools.
+    settings: Settings,
     scan_roots: Vec<ScanRoot>,
     scan_roots_error: Option<BackendError>,
     scan_roots_request: RequestSlot,
     startup_scan: StartupScanPhase,
+    /// The refreshes after the startup scan are the runtime's own: another operation
+    /// held the settings runner when the runtime started.
+    startup_refresh_own: bool,
     prefs_saving: bool,
     prefs_dirty: bool,
     prefs_error: Option<String>,
@@ -357,10 +396,12 @@ impl AppRuntime {
             tag_list: TagList::new(),
             tag_list_apply: false,
             query_events: Vec::new(),
+            settings: Settings::new(),
             scan_roots: Vec::new(),
             scan_roots_error: None,
             scan_roots_request: RequestSlot::default(),
             startup_scan: StartupScanPhase::default(),
+            startup_refresh_own: false,
             prefs_saving: false,
             prefs_dirty: false,
             prefs_error: None,
@@ -503,6 +544,11 @@ impl AppRuntime {
         self.scan_roots_error.as_ref()
     }
 
+    /// Whether a listing of the scan roots the runtime asked for is still on its way.
+    pub fn scan_roots_loading(&self) -> bool {
+        self.scan_roots_request.is_pending()
+    }
+
     /// `hasScanRoots`: the gallery's empty state offers "Add first folder" without
     /// one.
     pub fn has_scan_roots(&self) -> bool {
@@ -513,10 +559,22 @@ impl AppRuntime {
         &self.startup_scan
     }
 
-    /// `maintenanceLoading`: a maintenance operation runs (for now, the startup scan
-    /// with its refreshes).
+    /// `maintenanceLoading`: a maintenance operation runs: the startup scan with its
+    /// refreshes, or a settings operation that counts as maintenance.
     pub fn maintenance_loading(&self) -> bool {
-        self.startup_scan.is_running()
+        self.startup_scan.is_running() || self.settings.global_loading()
+    }
+
+    /// The settings model: the operation runner, the section statuses, the
+    /// confirmations and the video tools.
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// The folder dialog a settings operation waits for, once: the adapter opens it
+    /// and answers with [`SettingsInput::FoldersPicked`].
+    pub fn take_folder_picker_request(&mut self) -> Option<FolderPickerRequest> {
+        self.settings.take_folder_picker_request()
     }
 
     /// Why the last preference save failed; `None` after one that succeeded. A
@@ -646,6 +704,7 @@ impl AppRuntime {
         effects: &mut Vec<RuntimeEffect>,
     ) {
         loop {
+            let mut settings_fed = false;
             for effect in std::mem::take(&mut bulk) {
                 match effect {
                     BulkEffect::Library(input) => self.library_step(*input, effects),
@@ -686,6 +745,12 @@ impl AppRuntime {
                     lightbox.extend(self.feed_lightbox(LightboxInput::Library(event)));
                     continue;
                 }
+                if ticket.is_some_and(Settings::owns) {
+                    let asked = self.settings.handle(SettingsInput::Library(event));
+                    self.run_settings(asked, effects);
+                    settings_fed = true;
+                    continue;
+                }
                 if let LibraryEvent::Committed(commit) = &event {
                     bulk.extend(self.feed_bulk(BulkInput::Committed(commit.clone())));
                     lightbox.extend(self.feed_lightbox(LightboxInput::Committed(commit.clone())));
@@ -709,7 +774,7 @@ impl AppRuntime {
             }
             bulk.extend(self.feed_bulk(BulkInput::Sync));
             lightbox.extend(self.feed_lightbox(LightboxInput::Sync));
-            if bulk.is_empty() && lightbox.is_empty() {
+            if bulk.is_empty() && lightbox.is_empty() && !settings_fed {
                 break;
             }
         }
@@ -774,17 +839,60 @@ impl AppRuntime {
         vec![RuntimeEffect::SavePrefs(self.prefs())]
     }
 
-    /// Ends the startup scan once the refreshes it asked for have answered.
+    /// Ends the startup scan once the refreshes after it have answered: the settings
+    /// runner's operation has ended (it shows the outcome in the scan section and
+    /// releases its lock itself), or, when the refreshes are the runtime's own, the
+    /// library and the roots have answered.
     fn settle_startup_scan(&mut self) {
         if !matches!(self.startup_scan, StartupScanPhase::Refreshing(_))
-            || self.library.refreshing()
-            || self.scan_roots_request.is_pending()
+            || self.settings.startup_running()
+        {
+            return;
+        }
+        if self.startup_refresh_own
+            && (self.library.refreshing() || self.scan_roots_request.is_pending())
         {
             return;
         }
         if let StartupScanPhase::Refreshing(outcome) = std::mem::take(&mut self.startup_scan) {
             self.startup_scan = StartupScanPhase::Finished(outcome);
         }
+    }
+
+    /// Hands `input` to the settings model and applies what it asks of the runtime.
+    fn settings_input(&mut self, input: SettingsInput) -> Vec<RuntimeEffect> {
+        let mut effects = Vec::new();
+        let asked = self.settings.handle(input);
+        self.run_settings(asked, &mut effects);
+        effects
+    }
+
+    /// Applies the settings model's effects: its library commands in this turn, the
+    /// scan roots it read, and its backend calls for the runner.
+    fn run_settings(&mut self, asked: Vec<SettingsEffect>, effects: &mut Vec<RuntimeEffect>) {
+        for effect in asked {
+            match effect {
+                SettingsEffect::Call(call) => effects.push(RuntimeEffect::Settings(call)),
+                SettingsEffect::Library(input) => self.library_step(*input, effects),
+                SettingsEffect::Roots(roots) => {
+                    self.scan_roots = roots;
+                    self.scan_roots_error = None;
+                    // A listing of the runtime that is still out was asked for before
+                    // the operation read this list: its answer must not replace it.
+                    self.scan_roots_request.cancel();
+                }
+                SettingsEffect::RootAutoScanSaved { path, enabled } => {
+                    for root in &mut self.scan_roots {
+                        if root.path == path {
+                            root.auto_scan_on_startup = enabled;
+                        }
+                    }
+                }
+            }
+        }
+        // The operation that ended may have been the startup scan, or its list of
+        // roots the one the startup scan waited for.
+        self.settle_startup_scan();
     }
 }
 
@@ -821,10 +929,16 @@ impl AppRuntime {
                 }
                 self.started = true;
                 self.startup_scan = StartupScanPhase::Scanning;
+                let progress = self.settings.begin_startup();
                 let mut effects = self.refresh_library();
-                effects.push(RuntimeEffect::ScanStartupRoots);
+                effects.push(RuntimeEffect::ScanStartupRoots { progress });
                 effects.push(self.refresh_scan_roots());
                 effects.extend(self.save_prefs());
+                // `createScanSettings` reads the video tools once, when the runtime is
+                // made; here when it starts.
+                effects.extend(
+                    self.settings_input(SettingsInput::Command(SettingsCommand::LoadVideoTools)),
+                );
                 effects
             }
             RuntimeInput::OpenSettings => {
@@ -892,6 +1006,7 @@ impl AppRuntime {
                 self.feed_tag_list(input, &mut effects);
                 effects
             }
+            RuntimeInput::Settings(input) => self.settings_input(input),
             RuntimeInput::RefreshScanRoots => vec![self.refresh_scan_roots()],
             RuntimeInput::ScanRootsLoaded { token, result } => {
                 if !self.scan_roots_request.finish(token) {
@@ -911,17 +1026,26 @@ impl AppRuntime {
                 if !matches!(self.startup_scan, StartupScanPhase::Scanning) {
                     return Vec::new();
                 }
+                let mut effects = Vec::new();
+                // The settings runner's operation asks for the refreshes its answer
+                // calls for and ends once they answered.
+                let by_runner = self.settings.startup_running();
+                let asked = self.settings.startup_scanned(&result);
                 let outcome = match result {
-                    Ok(None) => {
-                        self.startup_scan = StartupScanPhase::Finished(StartupScanOutcome::NoWork);
-                        return Vec::new();
-                    }
+                    Ok(None) => StartupScanOutcome::NoWork,
                     Ok(Some(summary)) => StartupScanOutcome::Scanned(summary),
                     Err(error) => StartupScanOutcome::Failed(error),
                 };
+                let refreshes = !matches!(outcome, StartupScanOutcome::NoWork);
                 self.startup_scan = StartupScanPhase::Refreshing(outcome);
-                let mut effects = self.refresh_library();
-                effects.push(self.refresh_scan_roots());
+                if !by_runner && refreshes {
+                    // Another operation held the runner at start: the same refreshes,
+                    // without a line of the scan section.
+                    self.startup_refresh_own = true;
+                    effects.extend(self.refresh_library());
+                    effects.push(self.refresh_scan_roots());
+                }
+                self.run_settings(asked, &mut effects);
                 effects
             }
             RuntimeInput::PrefsSaved { result } => {
@@ -964,6 +1088,136 @@ impl RuntimeRunner {
             backend,
             prefs,
             suggestion_index: Arc::new(SuggestionIndexCache::new()),
+        }
+    }
+}
+
+/// The input that hands a settings operation's backend result back to it.
+fn reply<T: 'static>(
+    op: OperationId,
+    wrap: fn(BackendResult<T>) -> SettingsReply,
+) -> impl FnOnce(BackendResult<T>) -> RuntimeInput + Send + 'static {
+    move |result| {
+        RuntimeInput::Settings(SettingsInput::Reply {
+            op,
+            reply: wrap(result),
+        })
+    }
+}
+
+impl RuntimeRunner {
+    /// Forwards the backend's progress to the settings operation `op` until the
+    /// subscription is dropped.
+    fn forward_progress(
+        &self,
+        op: OperationId,
+        dispatch: &Dispatch<RuntimeInput>,
+    ) -> progress::ProgressSubscription {
+        progress::forward(self.backend.as_ref(), dispatch.sender(), move |progress| {
+            RuntimeInput::Settings(SettingsInput::Progress { op, progress })
+        })
+    }
+
+    /// Runs a backend call of a settings operation. A call that reports progress is
+    /// subscribed first; the subscription ends when the call returns, before its
+    /// reply is sent.
+    fn run_settings_call(&self, call: SettingsCall, dispatch: &Dispatch<RuntimeInput>) {
+        let subscription = call
+            .progress()
+            .map(|op| self.forward_progress(op, dispatch));
+        let backend = Arc::clone(&self.backend);
+        match call {
+            SettingsCall::AddFolders { op, paths } => dispatch.call(
+                "add_scan_root",
+                move || {
+                    let previous = backend
+                        .list_scan_roots()?
+                        .into_iter()
+                        .map(|root| root.path)
+                        .collect();
+                    for path in paths {
+                        backend.add_scan_root(path)?;
+                    }
+                    let roots = backend.list_scan_roots()?;
+                    Ok(FolderAddition { previous, roots })
+                },
+                reply(op, SettingsReply::FoldersAdded),
+            ),
+            SettingsCall::SetAutoScan { op, path, enabled } => dispatch.call(
+                "set_scan_root_auto_scan",
+                move || backend.set_scan_root_auto_scan(path, enabled),
+                reply(op, SettingsReply::AutoScanSaved),
+            ),
+            SettingsCall::Rescan { op, path } => dispatch.call(
+                "scan",
+                move || {
+                    let _subscription = subscription;
+                    match path {
+                        Some(path) => backend.scan_folder(path),
+                        None => backend.rescan_all_roots(),
+                    }
+                },
+                reply(op, SettingsReply::Scanned),
+            ),
+            SettingsCall::RemoveRoot { op, path } => dispatch.call(
+                "remove_scan_root",
+                move || {
+                    backend.remove_scan_root(path).map(|summary| RemovedRoot {
+                        assets: summary.removed_assets,
+                        thumbnails: summary.removed_thumbnails,
+                    })
+                },
+                reply(op, SettingsReply::RootRemoved),
+            ),
+            SettingsCall::RenderThumbnails { op, failed_only } => dispatch.call(
+                "thumbnail render",
+                move || {
+                    let _subscription = subscription;
+                    let summary = if failed_only {
+                        backend.render_failed_thumbnails()
+                    } else {
+                        backend.render_all_thumbnails()
+                    };
+                    summary.map(|summary| ThumbnailCounts::from(&summary))
+                },
+                reply(op, SettingsReply::Thumbnails),
+            ),
+            SettingsCall::ClearLibrary { op } => dispatch.call(
+                "clear_library_data",
+                move || {
+                    let _subscription = subscription;
+                    backend.clear_library_data().map(|summary| ClearedLibrary {
+                        assets: summary.removed_assets,
+                        roots: summary.removed_roots,
+                        thumbnails: summary.removed_thumbnails,
+                    })
+                },
+                reply(op, SettingsReply::Cleared),
+            ),
+            SettingsCall::ListRoots { op } => dispatch.call(
+                "list_scan_roots",
+                move || backend.list_scan_roots(),
+                reply(op, SettingsReply::RootsListed),
+            ),
+            SettingsCall::CancelThumbnailRender { render } => dispatch.call(
+                "cancel_render_all_thumbnails",
+                move || backend.cancel_render_all_thumbnails(),
+                move |result| {
+                    RuntimeInput::Settings(SettingsInput::ThumbnailCancelAnswered {
+                        render,
+                        result,
+                    })
+                },
+            ),
+            SettingsCall::LoadVideoTools => dispatch.call(
+                "get_video_tool_status",
+                move || {
+                    backend
+                        .get_video_tool_status()
+                        .map(|status| VideoTools::from(&status))
+                },
+                |result| RuntimeInput::Settings(SettingsInput::VideoToolsLoaded(result)),
+            ),
         }
     }
 }
@@ -1033,14 +1287,20 @@ impl Runner<AppRuntime> for RuntimeRunner {
                     move |result| RuntimeInput::ScanRootsLoaded { token, result },
                 );
             }
-            RuntimeEffect::ScanStartupRoots => {
+            RuntimeEffect::ScanStartupRoots { progress } => {
+                // Subscribed before the call, so no event of the scan is missed.
+                let subscription = progress.map(|op| self.forward_progress(op, dispatch));
                 let backend = Arc::clone(&self.backend);
                 dispatch.call(
                     "scan_startup_roots",
-                    move || backend.scan_startup_roots(),
+                    move || {
+                        let _subscription = subscription;
+                        backend.scan_startup_roots()
+                    },
                     |result| RuntimeInput::StartupScanFinished { result },
                 );
             }
+            RuntimeEffect::Settings(call) => self.run_settings_call(call, dispatch),
             RuntimeEffect::SavePrefs(prefs) => {
                 let store = Arc::clone(&self.prefs);
                 dispatch.call(

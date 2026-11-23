@@ -17,7 +17,10 @@ use gpui::{
 };
 use media_tagger_client::{
     runtime::{RuntimeInput, DEFAULT_TILE_SIZE},
-    scenario::{ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch, ScenarioTagList},
+    scenario::{
+        ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch, ScenarioSettings,
+        ScenarioTagList,
+    },
     theme::ThemeName,
 };
 
@@ -44,6 +47,8 @@ pub struct ShellStart {
     pub dock: Option<ScenarioDock>,
     /// The lightbox, open on a tile (`Scenario::lightbox`).
     pub lightbox: Option<ScenarioLightbox>,
+    /// The settings page, open (`Scenario::settings`).
+    pub settings: Option<ScenarioSettings>,
 }
 
 impl Default for ShellStart {
@@ -56,6 +61,7 @@ impl Default for ShellStart {
             tag_list: None,
             dock: None,
             lightbox: None,
+            settings: None,
         }
     }
 }
@@ -310,6 +316,9 @@ pub fn open_main_window_started(
         }
         if let Some(lightbox) = start.lightbox {
             runtime.script_lightbox(lightbox, cx);
+        }
+        if let Some(settings) = start.settings {
+            runtime.script_settings(settings, cx);
         }
     });
     let window = cx.open_window(options, |window, cx| {

@@ -23,7 +23,7 @@ use media_tagger_client::{
     runtime::DEFAULT_TILE_SIZE,
     scenario::{
         self, Scenario, ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch,
-        ScenarioTagList, ScenarioTags, Seed, SCENARIO_MEDIA_VARIABLE,
+        ScenarioSettings, ScenarioTagList, ScenarioTags, Seed, SCENARIO_MEDIA_VARIABLE,
     },
     theme::ThemeName,
 };
@@ -53,6 +53,8 @@ pub struct StartState {
     pub dock: Option<ScenarioDock>,
     /// The lightbox, open on a tile.
     pub lightbox: Option<ScenarioLightbox>,
+    /// The settings page, open.
+    pub settings: Option<ScenarioSettings>,
 }
 
 impl Default for StartState {
@@ -70,6 +72,7 @@ impl Default for StartState {
             tag_list: None,
             dock: None,
             lightbox: None,
+            settings: None,
         }
     }
 }
@@ -97,6 +100,7 @@ impl From<Scenario> for StartState {
             tag_list: scenario.tag_list,
             dock: scenario.dock,
             lightbox: scenario.lightbox,
+            settings: scenario.settings,
         }
     }
 }
@@ -289,6 +293,7 @@ mod tests {
                     tag_list: scenario.tag_list,
                     dock: scenario.dock,
                     lightbox: scenario.lightbox,
+                    settings: scenario.settings,
                 }),
                 "{}",
                 scenario.id

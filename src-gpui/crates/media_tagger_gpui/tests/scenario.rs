@@ -93,7 +93,8 @@ fn the_e2e_profile_refuses_an_unknown_scenario_before_the_display_check() {
          gallery-default, gallery-tiles-small, gallery-tiles-large, gallery-selection, \
          search-suggestions, search-applied, tag-list-modal, bulk-dock-tags, bulk-dock-group, \
          group-order-modal, lightbox-image, lightbox-image-zoomed, lightbox-gif, lightbox-video, \
-         lightbox-delete-confirm, kit"
+         lightbox-delete-confirm, settings-scan, settings-appearance-language, \
+         settings-danger-about, kit"
     );
     assert!(
         is_empty_dir(tmp.path()),

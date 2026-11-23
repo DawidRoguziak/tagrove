@@ -18,6 +18,7 @@ use crate::{
     library::QueryError,
     model::Driver,
     prefs::{MemoryPrefsStore, Prefs, PrefsStore},
+    settings::SettingsCommand,
     theme::ThemeName,
 };
 
@@ -187,8 +188,9 @@ fn the_scan_stays_running_until_both_refreshes_answered() {
         })
     });
     fx.send(RuntimeInput::Start);
-    // The query, the known tags, the scan, the roots and the preference save.
-    assert_eq!(fx.executor.run_all(), 5);
+    // The query, the known tags, the scan, the roots, the preference save and the
+    // video tools.
+    assert_eq!(fx.executor.run_all(), 6);
     fx.driver.pump();
     assert!(matches!(
         fx.runtime().startup_scan(),
@@ -247,6 +249,39 @@ fn a_failed_startup_scan_does_not_stop_the_runtime_and_is_kept() {
     assert_eq!(fx.runtime().view(), View::Settings);
     fx.send(RuntimeInput::Start);
     assert_eq!(fx.executor.pending(), 0, "a failed scan is not retried");
+}
+
+/// An operation that held the settings runner when the runtime started (the folder
+/// dialog) keeps the runner and its line. The startup scan is then no operation of the
+/// runner: the runtime refreshes the library and the roots itself after a scan that found
+/// work, and the scan is finished once both answered.
+#[test]
+fn a_startup_scan_that_cannot_take_the_runner_is_refreshed_by_the_runtime() {
+    let mut fx = Fixture::new();
+    fx.backend
+        .on_start_asset_query(|_| Ok(ready(1)))
+        .on_scan_startup_roots(|| Ok(Some(summary(3))))
+        .on_list_scan_roots(sequence([Ok(Vec::new()), Ok(vec![root("/media")])]));
+
+    fx.send(RuntimeInput::settings(SettingsCommand::PickFolder));
+    assert!(fx.runtime().settings().is_locked());
+    fx.send(RuntimeInput::Start);
+    assert!(!fx.runtime().settings().startup_running());
+    assert!(fx.runtime().maintenance_loading());
+    fx.settle();
+
+    assert_eq!(fx.calls("start_asset_query"), 2);
+    assert_eq!(fx.calls("list_scan_roots"), 2);
+    assert!(fx.runtime().has_scan_roots());
+    match fx.runtime().startup_scan().outcome() {
+        Some(StartupScanOutcome::Scanned(summary)) => assert_eq!(summary.indexed, 3),
+        other => panic!("unexpected outcome {other:?}"),
+    }
+    assert!(!fx.runtime().maintenance_loading());
+    assert!(
+        fx.runtime().settings().is_locked(),
+        "the folder dialog still holds the runner"
+    );
 }
 
 #[test]

@@ -38,8 +38,8 @@ const DARK_EN: RuntimeConfig = RuntimeConfig {
 };
 
 /// The jobs `Start` queues, in order: the library's query, its known tags, the startup
-/// scan, the scan roots, the preference save.
-const START_JOBS: usize = 5;
+/// scan, the scan roots, the preference save, the video tools.
+const START_JOBS: usize = 6;
 
 struct Fixture {
     fake: Option<Arc<FakeBackend>>,
@@ -152,10 +152,11 @@ fn a_startup_scan_with_work_publishes_the_rows_it_added_for_any_initial_library(
             "{count}: one start sequence"
         );
         // Everything but the scan answers first: the library's query and its known
-        // tags (both ahead of the scan), then the roots and the preference save (each
-        // now right behind the scan, which is the oldest job left).
+        // tags (both ahead of the scan), then the roots, the preference save and the
+        // video tools (each now right behind the scan, which is the oldest job left).
         assert!(fx.executor.run_nth(0));
         assert!(fx.executor.run_nth(0));
+        assert!(fx.executor.run_nth(1));
         assert!(fx.executor.run_nth(1));
         assert!(fx.executor.run_nth(1));
         assert_eq!(fx.executor.pending(), 1);

@@ -94,7 +94,8 @@ fn the_e2e_profile_refuses_an_unknown_scenario_before_the_display_check() {
          search-suggestions, search-applied, tag-list-modal, bulk-dock-tags, bulk-dock-group, \
          group-order-modal, lightbox-image, lightbox-image-zoomed, lightbox-gif, lightbox-video, \
          lightbox-delete-confirm, settings-scan, settings-appearance-language, \
-         settings-danger-about, kit"
+         settings-danger-about, settings-import-export, settings-duplicates, \
+         duplicates-resolver, kit"
     );
     assert!(
         is_empty_dir(tmp.path()),

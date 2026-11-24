@@ -316,6 +316,92 @@ keeps the same contract with its own types:
   page never shows the manual-address fallback.
 - **Video tools.** Read once when the runtime starts, as the Solid scan settings read them
   when the runtime is made; a failed read shows both tools missing.
+- **Import and export.** The four actions are operations of the same runner
+  (`settings::model::data`). Each takes the lock and asks the adapter for a file dialog
+  (`AppRuntime::take_path_dialog_request`, answered with `SettingsInput::PathPicked`); a
+  dialog closed without a file ends the operation with its cancellation line and without
+  a backend call, and a dialog that cannot open is the operation's error. An export sends
+  the chosen path and shows its summary; nothing is refreshed. A CSV import puts up the
+  mutation barrier (`LibraryInput::BeginMaintenance`) once the file is chosen and calls
+  `import_tags_csv` only when the barrier is granted, so a tag write already in flight
+  ends first and new ones are refused; whatever the import answers,
+  `LibraryInput::EndMaintenance` with `LibraryReset::Identity` follows before the library
+  is read again, and the summary is shown only after a refresh that succeeded. The
+  platform's dialogs (`App::prompt_for_new_path`, `App::prompt_for_paths`; the XDG portal
+  on Linux) take neither our title nor a file filter. A save dialog starts in the home
+  folder with the default name `tags-export-YYYY-MM-DD_HH-mm.csv` or
+  `media-backup-YYYY-MM-DD_HH-mm.zip`; the local time comes from the system's `date`,
+  read off the UI thread, and is UTC when `date` cannot answer.
+- **Restore.** Two operations with the confirmation between them, as in
+  `createImportExportSettings.ts`. The first chooses the archive, calls
+  `inspect_db_bundle` and, when the archive needs it, asks for one folder per root in the
+  archive's order; because the folder dialog cannot carry a title, the section's line
+  reads "Choose folder: <root>" while each of those dialogs is open (the Tauri page keeps
+  its pending line and puts the root into the dialog's title). Cancelling any dialog
+  stores nothing. When every root has its folder the archive and the mappings are stored
+  (`Settings::pending_import_db_source`), the lock is released and the overwrite
+  confirmation opens. Confirm takes the stored values before anything runs, so a second
+  Confirm finds nothing, puts up the mutation barrier and calls `import_db_bundle` once it
+  is granted; `LibraryInput::EndMaintenance` with `LibraryReset::Restored` follows
+  whatever the restore answers, then the roots and the library are read again. The stored
+  restore is given up by Cancel (Escape and a press beside the dialog are the same
+  command, refused while an operation runs), by the start of another choice of an archive
+  (`pick_bundle`: the confirmation can only ever restore the archive chosen last, however
+  the new choice ends) and when the page is left (`Settings::page_left`, on
+  `RuntimeInput::CloseSettings`). The open confirmation covers the page and takes Escape,
+  so no input of the user leaves the page with it; the last rule is for any other way out,
+  and differs from the Solid controller, whose stored restore would outlive the page.
+- **Failures of the worker.** Every backend call of a settings operation runs through
+  `Dispatch::call`, which answers the model exactly once: a call that panics, or a task
+  the executor dropped, comes back as that call's `WorkerFailed` error. The operation then
+  ends on its normal failure path, as a Tauri command whose promise rejects does through
+  the `finally` blocks of the Solid controllers: the error line, the lock released, and
+  for CSV import, restore and clear-library `LibraryInput::EndMaintenance` with the
+  operation's reset and the refreshes.
+- **Duplicates.** "Start" opens the resolver and scans (`find_duplicate_assets` with its
+  `duplicates-scan` progress; not maintenance of the gallery). The model keeps the scan's
+  groups, counts and revision; `Settings::duplicate_scan_generation` advances with every
+  result that replaced them. The resolver's form
+  (`settings::duplicates::DuplicateResolver`: the rename drafts and one staged change per
+  asset) belongs to the page: it starts over when the dialog opens or the generation
+  changes, and goes with the page. "Save all" is enabled only while no operation runs,
+  something is staged and `validate_changes` passes; the model does not repeat that
+  validation, it only refuses an empty name and an asset the scan does not know, and the
+  backend validates the whole batch again. A batch without a delete runs at once; one with
+  a delete is stored (`Settings::pending_duplicate_delete`) and runs only after its
+  confirmation, which lies over the resolver. One `apply_duplicate_resolution_batch`
+  request carries the scan's revision and the path and record version the scan saw of
+  each asset. After a structured result the library is read again and the duplicates are
+  scanned again, both best effort, and the line then says committed (with the count of
+  files that were already missing), rolled back, or recovery required with the reported
+  paths; a rejected batch is an error without refresh or rescan. The groups are a virtual
+  list (GPUI's `list`): only the rows near the visible part are drawn and ask for their
+  previews, which are thumbnails of the runtime's pipeline (`Thumbnails::sync_resolver`).
+  The open dialog hands the pipeline the previews of each frame it draws, so a frame
+  without a card (a rescan that found nothing) asks for none and keeps none pinned, also
+  while the resolver stays open.
+  A row is a group, or a run of at most eight files (`layout::resolver::ROW_ASSETS`) of a
+  larger group (`settings::duplicates::resolver_rows`); the rows of one group join into
+  one card, the first with the group's name. So the cards built, the rename fields kept
+  and the previews requested and pinned follow what is near the visible part and not the
+  size of a group or the files scrolled past: one file name can be in a library thousands
+  of times, and the scan lists the largest group first. After each frame the page drops
+  the rename field (a `TextInput` entity with its window focus listeners and theme
+  observer) of every card the frame did not draw; the draft stays in
+  `DuplicateResolver`, and the field is made again from it when its row comes back. A
+  focused field whose row scrolled away goes too, after the window took the focus back
+  (`on_focus_lost`), as the Tauri list unmounts it. The rename field is a bare
+  `TextInput` in a frame the card draws (`SettingsView::rename_field`,
+  `layout::resolver::INPUT_*`), because the card's classes (`input input-sm h-10 border
+  border-base-content/20 bg-base-100/70`) replace the frame of the stylesheet's `input`
+  with daisyUI's: 12 px text, a 20 % border on a 70 % fill, no shadow, and a 2 px outline
+  in the base content colour 2 px off the border while the field has the focus. The page is drawn again on every frame while a preview
+  shows its loader, so nothing walks all groups per frame: the validation of the staged
+  changes, the count of files and whether a group is resolved are worked out once per
+  scan generation and per `DuplicateResolver::revision`, which advances with what is
+  staged (the `createMemo`s of `createDuplicateResolver.ts`).
+  "Generate UUID" writes a version 4 UUID from the standard library's per-process hash
+  keys, which is enough for a file name and is not a cryptographic source.
 - **Page.** `media_tagger_gpui::views::settings::SettingsView` is made anew each time the
   page opens and keeps only what the Solid page loses on unmount: the scroll position, the
   expanded root list, the open language list and the open legal texts. Its scrolled
@@ -326,22 +412,47 @@ keeps the same contract with its own types:
   20 px (`UiIcon` keeps its own `h-5 w-5` over the link's `h-4 w-4`), which makes a link
   40 px high. Activating a link, by pointer or by keyboard, moves the focus to its section
   (`SettingsView::activate_section`; the sections are focusable without being tab stops,
-  as `tabindex="-1"` in `SettingsPanel.tsx`), scrolls the section to 96 px from the top
-  and marks it until the page scrolls; the next Tab reaches the section's first control,
+  as `tabindex="-1"` in `SettingsPanel.tsx`) and scrolls the section to 96 px from the top,
+  or as far as the page goes. What is marked afterwards follows the two handlers of
+  `SettingsNavigation.tsx` (`settings::navigation::NavigationMark`): a click that moved
+  the page is followed by the scroll event, which marks by position, so a section the
+  page ends before ("Danger zone" in a 900 px window) leaves About marked; a click that
+  moved nothing marks its own section until the page scrolls or the window is resized.
+  The next Tab reaches the section's first control,
   and the section draws the focus ring only while the keyboard is in use. Tab goes through
   the header, the navigation links and then the sections' controls, the order of the Tauri
   page's DOM: the navigation is drawn before the scrolled sections, and GPUI's tab order
   is the drawing order. Below the last
   section the page keeps 48 px (`pb-4` of the panel and `pb-8` of the page view). The
-  import/export and duplicate sections are empty anchors until epic E18. The two confirmations are `ModalState` dialogs
-  that follow the model's `remove_root_confirm` and `clear_confirm_open`; Escape and the
-  backdrop close them only while no operation runs.
-- **Tests.** `src-gpui/crates/media_tagger_client/tests/settings_core.rs` and
-  `settings_ported.rs`, `src-gpui/crates/media_tagger_gpui/tests/settings_window.rs` and
-  `settings_ported.rs`, and the comparison scenarios `settings-scan`,
-  `settings-appearance-language` and `settings-danger-about`. A scenario's navigation
+  import/export and duplicate sections (`views/settings/import_export.rs`,
+  `views/settings/duplicates.rs`) lie below the first screen of a 900 px window. The page
+  also keeps the form of the duplicate resolver. The five dialogs are `ModalState` dialogs
+  that follow the model: the two confirmations of the scan and danger sections
+  (`remove_root_confirm`, `clear_confirm_open`), the resolver
+  (`duplicate_dialog_open`), the delete confirmation drawn over it
+  (`pending_duplicate_delete`) and the overwrite confirmation of a restore
+  (`pending_import_db_source`); Escape and the backdrop close them only while no operation
+  runs, and their buttons are disabled meanwhile. Escape goes to the dialog on top and to
+  nothing under it: the delete confirmation closes and the resolver stays, a dialog closes
+  and the page stays, and a dialog that is locked keeps the page as well; with no dialog
+  open Escape is the page's, also while an operation runs (`App.tsx` registers
+  `closeSettings` without a lock check). A dialog's heading is 18 px on a 27 px line (an
+  `h3` without a size class, `layout::dialog`). A dialog that was closed stays drawn and
+  takes the pointer until its 100 ms fade has ended.
+- **Tests.** `src-gpui/crates/media_tagger_client/tests/settings_core.rs`,
+  `settings_ported.rs`, `settings_data.rs` (import/export, restore and duplicates,
+  with the scripted backend and, for the destructive flows, the real core on a fresh
+  temporary profile and fresh temporary media) and `settings_data_ported.rs` (the
+  TypeScript cases of those two sections at the model layer),
+  `src-gpui/crates/media_tagger_gpui/tests/settings_window.rs`, `settings_ported.rs`,
+  `settings_data_window.rs` and `settings_data_ported.rs` (their view halves), and the
+  comparison scenarios `settings-scan`,
+  `settings-appearance-language`, `settings-danger-about`, `settings-import-export`,
+  `settings-duplicates` and `duplicates-resolver`. A scenario's navigation
   click is made once the launch's work has ended and the page it left is laid out
-  (`Runtime::scripted_settings_section`), as the Tauri steps click on a settled page.
+  (`Runtime::scripted_settings_section`), as the Tauri steps click on a settled page; the
+  two duplicate scenarios then make "Start", and `settings-duplicates` closes the resolver
+  once the scan has answered (`Runtime::scripted_section_clicked`).
 
 ## Test map
 

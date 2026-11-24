@@ -7,7 +7,7 @@
 //! scratch app data. The guard runs before the display check, so a refused scenario
 //! touches neither a display nor the disk.
 //!
-//! A scenario with media ([`Seed::Control`]) indexes the directory the harness seeded
+//! A scenario with media ([`Seed::Control`], [`Seed::Duplicates`]) indexes the directory the harness seeded
 //! and named in `MEDIATAGGER_GPUI_SCENARIO_MEDIA`, as `app:control start` indexes the
 //! same files for the Tauri application: [`seed_library`] adds it as the one scan root
 //! and scans it before the window opens, so the first query already lists the assets.
@@ -227,7 +227,8 @@ fn seed_media(
 ) -> Result<(), ScenarioError> {
     match seed {
         Seed::Empty => Ok(()),
-        Seed::Control => {
+        // The harness wrote the seed's files, the duplicate in its subfolder included.
+        Seed::Control | Seed::Duplicates => {
             let media = media
                 .filter(|media| !media.is_empty())
                 .ok_or(ScenarioError::MediaUnset)?;

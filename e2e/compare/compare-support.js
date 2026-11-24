@@ -72,6 +72,22 @@ export function parseControllerLine(line) {
   return build ? { type: "build", id: build[1] } : null;
 }
 
+// The one scan root of an app:control session, from the value of its READY line (the session's
+// doctor): the media directory `app:control start` seeded and indexed. Only a directory below
+// `temporaryRoot` (the real path of the system's temporary directory, where app:control makes
+// its scratch root) is accepted.
+export function controlMediaRoot(ready, temporaryRoot) {
+  const roots = Array.isArray(ready?.roots) ? ready.roots : [];
+  const paths = roots.map((root) => (typeof root === "string" ? root : root?.path));
+  if (paths.length !== 1 || typeof paths[0] !== "string" || !path.isAbsolute(paths[0]))
+    throw new Error("The app:control session did not report exactly one absolute scan root.");
+  const root = path.resolve(paths[0]);
+  const base = path.resolve(temporaryRoot);
+  if (!path.isAbsolute(temporaryRoot) || base === path.parse(base).root || !root.startsWith(`${base}${path.sep}`))
+    throw new Error("Refusing a scan root outside the temporary directory.");
+  return root;
+}
+
 // What ends a path inside an error message.
 const PATH_CHARACTER = String.raw`[^\s:;,'"()|<>\]]`;
 const escapeRegExp = (text) => text.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");

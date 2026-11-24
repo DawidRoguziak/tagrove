@@ -762,8 +762,8 @@
       "deps": [
         "E17"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-24",
       "sources": [
         "src/features/settings/createImportExportSettings.ts",
         "src/features/settings/ImportDbOverwriteConfirmDialog.tsx",

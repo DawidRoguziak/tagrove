@@ -47,3 +47,6 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-23 | E17 | orkiestrator | in progress | workflow start od kroku implement | [E17](E17-settings-core.md)
 2026-11-23 | E17 | workflow | done | E17 gotowy: ustawienia (skan, miniatury, wygląd, język, strefa zagrożeń, o programie) zaimplementowane, testy i gate zielone, review czyste. | [E17](E17-settings-core.md)
 2026-11-23 | E17 | orkiestrator | done | Braki z audytu (G1–G9) zamknięte; checks, porównanie zrzutów i test:all przechodzą. | [E17](E17-settings-core.md)
+2026-11-24 | E18 | orkiestrator | in progress | workflow start od kroku implement | [E18](E18-settings-data.md)
+2026-11-24 | E18 | workflow | done | E18 zakończony: import/eksport, przywracanie i duplikaty zbudowane, sprawdzenia i bramka zielone; parytet compare:ui nieocenony (nie uruchomiono). | [E18](E18-settings-data.md)
+2026-11-24 | E18 | orkiestrator | done | Pozycje z audytu (G1–G6) zamknięte; checks, porównanie zrzutów (6 scenariuszy) i test:all przechodzą. | [E18](E18-settings-data.md)

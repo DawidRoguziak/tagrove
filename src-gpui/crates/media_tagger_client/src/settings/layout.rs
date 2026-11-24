@@ -161,6 +161,104 @@ pub mod danger {
     pub const HINT_SIZE: f32 = 12.0;
 }
 
+/// The import/export and the duplicate card: `grid gap-4 ... p-5`, a tighter column
+/// than the other cards'.
+pub mod data {
+    pub const GAP: f32 = 16.0;
+    /// The warning under the import/export status: `text-xs leading-[1.4] text-error`.
+    pub const HINT_SIZE: f32 = 12.0;
+    pub const HINT_LINE_HEIGHT: f32 = 1.4;
+    /// The duplicate section's Start button and its last result: `gap-2`, `text-xs`.
+    pub const START_GAP: f32 = 8.0;
+    pub const RESULT_SIZE: f32 = 12.0;
+}
+
+/// The duplicate resolver (`DuplicateResolverDialog.tsx`, `DuplicateGroupCard.tsx`,
+/// `DuplicateAssetCard.tsx`).
+pub mod resolver {
+    /// The dialog: `grid h-[min(88vh,900px)] grid-rows-[auto_auto_auto_1fr] gap-3`.
+    pub const HEIGHT_SHARE: f32 = 0.88;
+    pub const MAX_HEIGHT: f32 = 900.0;
+    pub const GAP: f32 = 12.0;
+
+    /// The dialog's height, padding included, in a viewport `viewport_height` high.
+    pub fn height(viewport_height: f32) -> f32 {
+        (viewport_height * HEIGHT_SHARE).min(MAX_HEIGHT)
+    }
+
+    /// The header: heading over the summary (`grid gap-1`), the actions beside them
+    /// (`gap-2`).
+    pub const TITLE_GAP: f32 = 4.0;
+    pub const ACTIONS_GAP: f32 = 8.0;
+    /// The summary and the hint line: `text-xs`.
+    pub const SMALL_SIZE: f32 = 12.0;
+    /// The list: `overflow-auto pr-1`, each group `pb-2` below it. Rows are estimated
+    /// at 360 px until they are measured, and two more than fit are kept drawn.
+    pub const LIST_PADDING_RIGHT: f32 = 4.0;
+    pub const ROW_GAP: f32 = 8.0;
+    pub const ESTIMATED_ROW: f32 = 360.0;
+    pub const OVERSCAN_ROWS: f32 = 2.0;
+    /// How many files of a group one row of the list holds. A group with more is drawn
+    /// as several rows that join into one card, so the cards built, their rename fields
+    /// and the previews asked for depend on what is near the visible part and not on
+    /// the size of the group.
+    pub const ROW_ASSETS: usize = 8;
+    /// "No duplicate groups found": `rounded border border-base-content/20
+    /// bg-base-200/40 p-3 text-sm`.
+    pub const EMPTY_PADDING: f32 = 12.0;
+    pub const EMPTY_BORDER_PERCENT: u8 = 20;
+    pub const EMPTY_FILL_PERCENT: u8 = 40;
+
+    /// A group card: `grid gap-2 rounded border p-3`, `border-base-content/20
+    /// bg-base-100/75`, or `border-primary/40 bg-primary/10` once it is resolved.
+    pub const GROUP_GAP: f32 = 8.0;
+    pub const GROUP_PADDING: f32 = 12.0;
+    pub const GROUP_BORDER_PERCENT: u8 = 20;
+    pub const GROUP_FILL_PERCENT: u8 = 75;
+    pub const RESOLVED_BORDER_PERCENT: u8 = 40;
+    pub const RESOLVED_FILL_PERCENT: u8 = 10;
+    /// The group's name: `text-sm`.
+    pub const GROUP_NAME_SIZE: f32 = 13.0;
+    /// The "Ready" badge: `border-primary/40 bg-primary/15 px-2 py-0.5 text-[10px]
+    /// font-semibold uppercase tracking-[0.12em]`.
+    pub const BADGE_PADDING_X: f32 = 8.0;
+    pub const BADGE_PADDING_Y: f32 = 2.0;
+    pub const BADGE_SIZE: f32 = 10.0;
+    pub const BADGE_LINE_HEIGHT: f32 = 1.5;
+    pub const BADGE_TRACKING_EM: f32 = 0.12;
+    pub const BADGE_FILL_PERCENT: u8 = 15;
+
+    /// An asset card: `grid gap-3 rounded border border-base-content/15 bg-base-200/35
+    /// p-2.5`, two columns (`150px minmax(0,1fr)`) from 768 px (`md`).
+    pub const ASSET_GAP: f32 = 12.0;
+    pub const ASSET_PADDING: f32 = 10.0;
+    pub const ASSET_BORDER_PERCENT: u8 = 15;
+    pub const ASSET_FILL_PERCENT: u8 = 35;
+    pub const TWO_COLUMNS_FROM: f32 = 768.0;
+    /// The preview: `h-[150px] w-[150px] border-base-content/15 bg-base-100/80`, its
+    /// loader on `bg-base-100/60`.
+    pub const PREVIEW_SIZE: f32 = 150.0;
+    pub const PREVIEW_FILL_PERCENT: u8 = 80;
+    pub const LOADER_VEIL_PERCENT: u8 = 60;
+    /// The details column: `grid content-start gap-2.5`, lines `text-xs`.
+    pub const DETAILS_GAP: f32 = 10.0;
+    /// The rename field: `input input-sm h-10 w-full border border-base-content/20
+    /// bg-base-100/70`. daisyUI's `.input` replaces the frame of the stylesheet's
+    /// `input`: `padding-inline: 0.75rem`, no shadow (`--depth: 0`) and, while it has
+    /// the focus, `outline: 2px solid` in the base content colour, 2 px off the
+    /// border; `.input-sm` makes the text 12 px. Disabled it keeps the 0.55 opacity of
+    /// `input:disabled`.
+    pub const INPUT_HEIGHT: f32 = 40.0;
+    pub const INPUT_PADDING_X: f32 = 12.0;
+    pub const INPUT_FONT_SIZE: f32 = 12.0;
+    pub const INPUT_BORDER_PERCENT: u8 = 20;
+    pub const INPUT_FILL_PERCENT: u8 = 70;
+    pub const INPUT_OUTLINE_WIDTH: f32 = 2.0;
+    pub const INPUT_OUTLINE_OFFSET: f32 = 2.0;
+    pub const INPUT_DISABLED_OPACITY: f32 = 0.55;
+    pub const BUTTONS_GAP: f32 = 8.0;
+}
+
 /// The About section.
 pub mod about {
     /// The product name: `mt-1 text-xl font-semibold`.
@@ -183,6 +281,14 @@ pub mod about {
     pub const MARKER_TRIANGLE: f32 = 10.0;
 }
 
+/// The heading of a dialog: an `h3` with no size class, so the 18 px of `h2, h3` on the
+/// root's line height of 1.5. That is 27 px, one less than a section's `text-lg`
+/// heading, which brings its own line height.
+pub mod dialog {
+    pub const HEADING_SIZE: f32 = 18.0;
+    pub const HEADING_LINE_HEIGHT: f32 = 27.0;
+}
+
 /// The two confirmations: `grid gap-2.5`, description `text-[13px] leading-[1.4]`,
 /// the remove dialog's path box `px-2.5 py-2 text-xs`, buttons `gap-2`.
 pub mod confirm {
@@ -195,4 +301,76 @@ pub mod confirm {
     pub const PATH_BORDER_PERCENT: u8 = 20;
     pub const PATH_FILL_PERCENT: u8 = 50;
     pub const BUTTONS_GAP: f32 = 8.0;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dialog, resolver};
+    use crate::theme::TYPOGRAPHY;
+
+    const STYLESHEET: &str = include_str!("../../../../../src/styles.css");
+    const ASSET_CARD: &str =
+        include_str!("../../../../../src/features/settings/DuplicateAssetCard.tsx");
+
+    #[test]
+    fn a_dialog_heading_is_an_h3_on_the_root_line_height() {
+        assert!(STYLESHEET.contains("h2, h3 { font-size: 18px; }"));
+        assert_eq!(dialog::HEADING_SIZE, TYPOGRAPHY.h2_size);
+        assert_eq!(
+            dialog::HEADING_LINE_HEIGHT,
+            TYPOGRAPHY.h2_size * TYPOGRAPHY.root_line_height
+        );
+        // No size class on the headings: `text-lg` would bring its own line height.
+        for (name, source) in [
+            (
+                "DuplicateResolverDialog.tsx",
+                include_str!("../../../../../src/features/settings/DuplicateResolverDialog.tsx"),
+            ),
+            (
+                "DuplicateDeleteConfirmDialog.tsx",
+                include_str!(
+                    "../../../../../src/features/settings/DuplicateDeleteConfirmDialog.tsx"
+                ),
+            ),
+            (
+                "ImportDbOverwriteConfirmDialog.tsx",
+                include_str!(
+                    "../../../../../src/features/settings/ImportDbOverwriteConfirmDialog.tsx"
+                ),
+            ),
+            (
+                "ClearLibraryConfirmDialog.tsx",
+                include_str!("../../../../../src/features/settings/ClearLibraryConfirmDialog.tsx"),
+            ),
+            (
+                "RemoveScanRootConfirmDialog.tsx",
+                include_str!(
+                    "../../../../../src/features/settings/RemoveScanRootConfirmDialog.tsx"
+                ),
+            ),
+        ] {
+            let heading = source
+                .split("<h3 ")
+                .nth(1)
+                .and_then(|rest| rest.split('>').next())
+                .unwrap_or_else(|| panic!("{name} has a heading"));
+            assert!(heading.contains("class=\"m-0\""), "{name}: {heading}");
+        }
+    }
+
+    #[test]
+    fn the_rename_field_still_has_the_classes_its_frame_copies() {
+        assert!(
+            ASSET_CARD.contains(
+                "class=\"input input-sm h-10 w-full rounded-[var(--radius-control)] border \
+                 border-base-content/20 bg-base-100/70\""
+            ),
+            "DuplicateAssetCard.tsx changed the rename field's classes"
+        );
+        assert!(STYLESHEET.contains("--depth: 0;"), "daisyUI's field shadow");
+        assert!(STYLESHEET
+            .contains("input:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }"));
+        assert_eq!(resolver::INPUT_FONT_SIZE, TYPOGRAPHY.xs.size);
+        assert_eq!(resolver::INPUT_DISABLED_OPACITY, 0.55);
+    }
 }

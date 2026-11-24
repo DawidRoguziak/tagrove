@@ -120,7 +120,8 @@ come and go:
   thumbnails (`thumbs::Thumbnails`), so decoded pictures survive a visit to the settings
   page while the grid's scroll position does not, as in the Solid view. The settings
   header has Back, the logo, the heading and the window buttons;
-  its sections are epics E17 and E18. Measures and texts are in
+  its seven sections are described in
+  [settings operations](../subsystems/settings-operations.md#gpui-port-settings). Measures and texts are in
   `media_tagger_client::shell`.
 - Start: the stored theme and language (else dark and the system's language); a
   comparison scenario starts in its own theme and in English, with its own tile size

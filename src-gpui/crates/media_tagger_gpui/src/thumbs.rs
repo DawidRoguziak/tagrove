@@ -5,8 +5,9 @@
 //! [`Thumbnails`] is an entity the [`Runtime`](crate::runtime::Runtime) owns, so the
 //! pictures survive a visit to the settings page. The grid tells it the tiles it
 //! renders ([`Thumbnails::sync`]) and reads a picture or a loading state per tile; the
-//! order board of the bulk dock and the video placeholder of the lightbox add theirs
-//! ([`Thumbnails::sync_board`], [`Thumbnails::sync_poster`]).
+//! order board of the bulk dock, the video placeholder of the lightbox and the
+//! duplicate resolver of the settings page add theirs ([`Thumbnails::sync_board`],
+//! [`Thumbnails::sync_poster`], [`Thumbnails::sync_resolver`]).
 //! What happens in between never runs on the UI thread:
 //!
 //! - requests go to the backend through the pipeline's
@@ -60,6 +61,9 @@ pub struct Thumbnails {
     /// The poster of the lightbox's video placeholder, which shows the selected asset
     /// wherever the grid is scrolled.
     poster: Vec<TileRequest>,
+    /// The previews of the duplicate resolver, which shows files wherever the grid is
+    /// scrolled, and while the gallery is not shown at all.
+    resolver: Vec<TileRequest>,
     /// Pictures the cache dropped whose textures are still in the atlas.
     retired: Vec<Picture>,
     decoding: usize,
@@ -108,6 +112,7 @@ impl Thumbnails {
             paused: false,
             board: Vec::new(),
             poster: Vec::new(),
+            resolver: Vec::new(),
             retired: Vec::new(),
             decoding: 0,
             _pump: pump,
@@ -146,15 +151,26 @@ impl Thumbnails {
         self.apply();
     }
 
+    /// The previews the duplicate resolver renders now; none when it is closed. They
+    /// are asked for next to the grid's tiles and keep their pictures while the
+    /// resolver shows them.
+    pub fn sync_resolver(&mut self, tiles: Vec<TileRequest>) {
+        if self.resolver == tiles {
+            return;
+        }
+        self.resolver = tiles;
+        self.apply();
+    }
+
     fn apply(&mut self) {
         let pictures = &self.pictures;
         let merged;
-        let tiles = if self.board.is_empty() && self.poster.is_empty() {
+        let tiles = if self.board.is_empty() && self.poster.is_empty() && self.resolver.is_empty() {
             &self.tiles
         } else {
             // A tile several show is asked for once, as the grid asks for it.
             let mut all = self.tiles.clone();
-            for tile in self.board.iter().chain(&self.poster) {
+            for tile in self.board.iter().chain(&self.poster).chain(&self.resolver) {
                 if !all.iter().any(|other| other.key == tile.key) {
                     all.push(tile.clone());
                 }

@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   buildResult,
+  controlMediaRoot,
   parseCompareArguments,
   parseControllerLine,
   portableError,
@@ -32,6 +33,26 @@ test("takes scenario ids, each once, or --list", () => {
   assert.throws(() => parseCompareArguments(["--scenario", "shell-empty"]), /Unknown option --scenario/);
   assert.throws(() => parseCompareArguments(["--list", "shell-empty"]), /Unknown option --list/);
   assert.throws(() => parseCompareArguments(["../../etc"]), /scenario id/);
+});
+
+test("the media root of an app:control session is its one scan root below the temporary directory", () => {
+  const temporary = "/synthetic/tmp";
+  const media = "/synthetic/tmp/media-tagger-control-abc/media";
+  assert.equal(controlMediaRoot({ roots: [{ path: media, auto_scan_on_startup: false }] }, temporary), media);
+  assert.equal(controlMediaRoot({ roots: [media] }, temporary), media);
+  for (const ready of [
+    undefined,
+    {},
+    { roots: [] },
+    { roots: [media, media] },
+    { roots: [{ path: "relative/media" }] },
+    { roots: [{}] }
+  ])
+    assert.throws(() => controlMediaRoot(ready, temporary), /exactly one absolute scan root/);
+  for (const outside of ["/synthetic/home/media", "/synthetic/tmp", "/synthetic/tmp-other/media", "/synthetic/tmp/../other/media"])
+    assert.throws(() => controlMediaRoot({ roots: [outside] }, temporary), /outside the temporary directory/);
+  assert.throws(() => controlMediaRoot({ roots: [media] }, "/"), /outside the temporary directory/);
+  assert.throws(() => controlMediaRoot({ roots: [media] }, "tmp"), /outside the temporary directory/);
 });
 
 test("output goes to artifacts/gpui-compare/<scenario> and nowhere else", () => {

@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { projectRoot } from "../../scripts/gpui-build-e2e.mjs";
 import {
   buildResult,
+  controlMediaRoot,
   GPUI_IMAGE,
   OUTPUT_DIRECTORY,
   parseCompareArguments,
@@ -27,6 +28,7 @@ import {
   SCREEN
 } from "./gpui-control-support.js";
 import { loadCatalog, requireScenario, tauriSteps } from "./scenarios.js";
+import { addControlDuplicate } from "./seed.js";
 
 // `bun run compare:ui <scenario...>`: captures the same named state of the Tauri application
 // (through app:control and the scenario's steps) and of the GPUI application (through
@@ -163,6 +165,12 @@ async function captureTauri(scenario, directory) {
   const controller = createController("tauri", tauriControl);
   return withController(controller, async (readyValue) => {
     try {
+      // The `duplicates` seed is the control seed `app:control start` indexed plus one file; the
+      // scenario's first steps rescan the root through the settings page (tauriSteps).
+      if (scenario.seed === "duplicates")
+        await addControlDuplicate(
+          controlMediaRoot(readyValue, await fs.realpath(os.tmpdir()))
+        );
       for (const [name, ...args] of tauriSteps(scenario)) await controller.command(name, ...args);
     } catch (error) {
       // Keep what the window showed when a step failed; it is not the reference image.

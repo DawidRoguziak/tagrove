@@ -217,6 +217,93 @@ fn a_navigation_click_brings_its_section_to_the_scroll_margin(cx: &mut TestAppCo
     }
 }
 
+/// The two handlers of `SettingsNavigation.tsx`. The click handler scrolls
+/// (`scrollIntoView`) and marks the clicked section; when the click moved the page, the
+/// scroll event that follows marks by position again. "Danger zone" cannot reach the
+/// scroll margin, because the page ends first, and the end of the page marks About. A
+/// second click on it moves nothing, so no scroll event follows and "Danger zone" stays
+/// marked until the page scrolls or the window is resized.
+#[gpui::test]
+fn a_click_on_a_section_the_page_ends_before_marks_the_last_section(cx: &mut TestAppContext) {
+    let fixture = Fixture::with_root();
+    let (window, mut cx) = open_settings(&fixture, cx);
+    let view = settings_view(&window, &cx);
+    let danger = settings::nav_link_id(SettingsSection::Danger);
+    let state = |cx: &mut VisualTestContext| {
+        view.read_with(cx, |view, _| {
+            (
+                -f32::from(view.scroll_handle().offset().y),
+                f32::from(view.scroll_handle().max_offset().y),
+                view.active_section(),
+            )
+        })
+    };
+    // What the position alone marks, from the sections as they are drawn.
+    let by_position = |cx: &mut VisualTestContext| {
+        let tops: Vec<f32> = SettingsSection::ALL
+            .iter()
+            .map(|section| f32::from(bounds(&settings::section_id(*section), cx).top()))
+            .collect();
+        let (offset, max_offset, _) = state(cx);
+        navigation::active_section(&tops, navigation::ScrollMetrics { offset, max_offset })
+    };
+
+    click(&danger, &fixture, &mut cx);
+    let (offset, max, active) = state(&mut cx);
+    assert!(offset > 0.0, "the click scrolled the page");
+    assert_eq!(offset, max, "to its end");
+    assert!(
+        bounds(&settings::section_id(SettingsSection::Danger), &mut cx).top()
+            > gpui::px(navigation::SCROLL_MARGIN_TOP),
+        "the section could not reach the scroll margin"
+    );
+    assert_eq!(
+        active,
+        SettingsSection::About,
+        "the end of the page marks the last section"
+    );
+
+    // Already at the end: the click scrolls nothing and its section stays marked.
+    click(&danger, &fixture, &mut cx);
+    assert_eq!(state(&mut cx), (max, max, SettingsSection::Danger));
+    view.update(&mut cx, |_, cx| cx.notify());
+    cx.run_until_parked();
+    assert_eq!(state(&mut cx).2, SettingsSection::Danger, "drawn again");
+
+    // A lower window scrolls nothing either, and its resize marks by position.
+    let viewport = cx.update(|window, _| window.viewport_size());
+    cx.simulate_resize(gpui::size(viewport.width, viewport.height - gpui::px(60.0)));
+    cx.run_until_parked();
+    let (resized_offset, resized_max, active) = state(&mut cx);
+    assert_eq!(resized_offset, max, "the page stayed where it was");
+    assert!(resized_max > max, "and is no longer at its end");
+    assert_ne!(active, SettingsSection::Danger);
+    assert_eq!(active, by_position(&mut cx));
+
+    // Back at the end without a scroll of its own, then scrolled: the position again.
+    click(&danger, &fixture, &mut cx);
+    click(&danger, &fixture, &mut cx);
+    assert_eq!(state(&mut cx).2, SettingsSection::Danger);
+    view.update(&mut cx, |view, cx| {
+        view.scroll_handle()
+            .set_offset(gpui::point(gpui::px(0.0), gpui::px(-(resized_max - 1.0))));
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        state(&mut cx).2,
+        SettingsSection::About,
+        "within a pixel of the end"
+    );
+    view.update(&mut cx, |view, cx| {
+        view.scroll_handle()
+            .set_offset(gpui::point(gpui::px(0.0), gpui::px(0.0)));
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert_eq!(state(&mut cx).2, SettingsSection::Scan);
+}
+
 /// The end of the page: `pb-4` of the panel and `pb-8` of the page view stay below
 /// the last section.
 #[gpui::test]
@@ -846,17 +933,28 @@ fn tab_goes_through_the_header_the_navigation_and_then_the_sections(cx: &mut Tes
         .map(|section| section.index())
         .filter(|index| in_sections.contains(index))
         .collect();
+    // Every section has a control since the import/export and duplicate sections were
+    // built (epic E18).
     assert_eq!(
         visited,
-        [
-            SettingsSection::Scan,
-            SettingsSection::Appearance,
-            SettingsSection::Language,
-            SettingsSection::Danger,
-            SettingsSection::About,
-        ]
-        .map(SettingsSection::index),
+        SettingsSection::ALL.map(SettingsSection::index),
         "every section with a control: {round:?}"
+    );
+    assert_eq!(
+        in_sections
+            .iter()
+            .filter(|index| **index == SettingsSection::ImportExport.index())
+            .count(),
+        4,
+        "the four import and export actions: {round:?}"
+    );
+    assert_eq!(
+        in_sections
+            .iter()
+            .filter(|index| **index == SettingsSection::Duplicates.index())
+            .count(),
+        1,
+        "the duplicate section's Start: {round:?}"
     );
     assert!(
         round[header_start..].iter().all(|at| *at == Place::Header),

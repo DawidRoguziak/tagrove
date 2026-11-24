@@ -107,13 +107,24 @@ const LIBRARY_EMPTY = [
   ["wait", "idle"]
 ];
 
+// The `duplicates` seed: the harness has added one file to the root `app:control start` indexed
+// (compare.js, `addControlDuplicate`); a rescan through the settings page indexes it.
+const LIBRARY_RESCAN = [
+  ["scroll", "#settings-scan"],
+  ["click", '//*[@data-testid="scan-settings-section"]//button[normalize-space(.)="Rescan all"]'],
+  ["wait", '//*[@data-testid="scan-settings-section"]//*[starts-with(normalize-space(text()),"Done. Indexed:")]'],
+  ["wait", "idle"]
+];
+
 // The app:control commands of one scenario, from the state `app:control start` leaves (English,
 // dark theme, the `control` seed indexed, gallery view): theme and seed through the settings
-// page and a reload, then the scenario's own steps, then a wait until no loader is visible.
+// page (the light theme chosen, the root removed for `empty` or rescanned for `duplicates`) and
+// a reload, then the scenario's own steps, then a wait until no loader is visible.
 export function tauriSteps(scenario) {
   const settings = [
     ...(scenario.theme === "light" ? THEME_LIGHT : []),
-    ...(scenario.seed === "empty" ? LIBRARY_EMPTY : [])
+    ...(scenario.seed === "empty" ? LIBRARY_EMPTY : []),
+    ...(scenario.seed === "duplicates" ? LIBRARY_RESCAN : [])
   ];
   return [
     ...(settings.length ? [...SETTINGS_OPEN, ...settings, ...SETTINGS_CLOSE] : []),

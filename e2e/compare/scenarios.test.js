@@ -134,6 +134,18 @@ test("the seeded dark state needs no setup", () => {
   assert.ok(!light.some(([, selector]) => selector?.includes("remove-scan-root")));
 });
 
+test("the duplicates seed is indexed by a rescan through the settings page, then a reload", () => {
+  const own = [["click", "#tile-size"]];
+  const steps = tauriSteps({ ...scenario, seed: "duplicates", tauri: own });
+  const commands = steps.map(([command]) => command);
+  assert.deepEqual(steps[0], ["click", 'button[aria-label="Open settings"]']);
+  const rescan = steps.findIndex(([, selector]) => selector?.includes('"Rescan all"'));
+  const done = steps.findIndex(([, selector]) => selector?.includes("Done. Indexed:"));
+  assert.ok(rescan > 0 && done > rescan && commands.indexOf("refresh") > done);
+  assert.ok(!steps.some(([, selector]) => selector?.includes("remove-scan-root")));
+  assert.deepEqual(steps.slice(-2), [...own, ["wait", "idle"]]);
+});
+
 test("a scenario file must carry its own id", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "mediatagger-scenarios-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));

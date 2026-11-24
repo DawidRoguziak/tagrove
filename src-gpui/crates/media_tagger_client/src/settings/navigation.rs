@@ -3,8 +3,17 @@
 //! The navigation marks the section the reader is in: the last section whose top has
 //! passed a line 120 px below the top of the scrolled page, or the last section once
 //! the page is scrolled to its end. A click scrolls its section to the top of the
-//! page, below the header (`scroll-margin-top: 96px` from the page's top), and marks
-//! it at once.
+//! page, below the header (`scroll-margin-top: 96px` from the page's top).
+//!
+//! What a click leaves marked ([`NavigationMark`]) follows the two handlers of
+//! `SettingsNavigation.tsx`. The click handler scrolls and then marks the clicked
+//! section. A click that moved the page is followed by a scroll event, whose handler
+//! marks by position again, before the frame is painted: a section that reached the
+//! scroll margin is the one the position rule marks anyway, and a section that could
+//! not reach it, because the page ended first, gives way to the last section. A click
+//! that moved nothing (the page already was where the click would bring it) fires no
+//! scroll event, so the clicked section stays marked until the page scrolls or the
+//! window is resized.
 
 use crate::icons::IconName;
 
@@ -129,6 +138,46 @@ pub fn active_section(section_tops: &[f32], metrics: ScrollMetrics) -> SettingsS
         .unwrap_or_default()
 }
 
+/// What a click on a navigation link leaves marked, until the page scrolls or the
+/// window is resized (`activeSection` of `SettingsNavigation.tsx` between its click
+/// handler and the next `scroll` or `resize` event).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct NavigationMark {
+    /// The clicked section and the scroll offset the click left the page at.
+    clicked: Option<(SettingsSection, f32)>,
+}
+
+impl NavigationMark {
+    /// A click on the link of `section` that scrolled the page from the offset
+    /// `before` to `after`. A click that moved the page marks nothing of its own: the
+    /// scroll event it fires marks by position. One that moved nothing marks its
+    /// section.
+    pub fn click(&mut self, section: SettingsSection, before: f32, after: f32) {
+        self.clicked = (before == after).then_some((section, after));
+    }
+
+    /// The window was resized: the page marks by position again (`resize` listener).
+    pub fn resized(&mut self) {
+        self.clicked = None;
+    }
+
+    /// The section the navigation marks: the clicked one while the page is where the
+    /// click left it, otherwise the one the position gives ([`active_section`]).
+    /// `section_tops` that do not cover every section (a page not laid out yet) mark
+    /// the first section.
+    pub fn active(&self, section_tops: &[f32], metrics: ScrollMetrics) -> SettingsSection {
+        if let Some((section, at)) = self.clicked {
+            if at == metrics.offset {
+                return section;
+            }
+        }
+        if section_tops.len() < SettingsSection::ALL.len() {
+            return SettingsSection::default();
+        }
+        active_section(section_tops, metrics)
+    }
+}
+
 /// The scroll offset that brings a section whose top is `section_top` (from the top
 /// of the page, as drawn at scroll offset `metrics.offset`) to the scroll margin,
 /// within the page's range. `viewport_top` is where the scrolled area begins, below
@@ -198,6 +247,89 @@ mod tests {
         assert_eq!(
             active_section(&tops, metrics(0.0, 0.0)),
             SettingsSection::Scan
+        );
+    }
+
+    /// The tops of seven sections 200 px apart, the first 96 px from the top of the
+    /// page, drawn at scroll offset `offset`.
+    fn tops_at(offset: f32) -> [f32; 7] {
+        std::array::from_fn(|index| 96.0 + 200.0 * index as f32 - offset)
+    }
+
+    /// A click on `section` of a page whose sections are [`tops_at`], scrolled to
+    /// `before` of at most `max`: where the page is afterwards and what is marked.
+    fn click(
+        mark: &mut NavigationMark,
+        section: SettingsSection,
+        before: f32,
+        max: f32,
+    ) -> (f32, SettingsSection) {
+        let top = tops_at(before)[section.index()];
+        let after = scroll_target(top, 80.0, metrics(before, max));
+        mark.click(section, before, after);
+        (after, mark.active(&tops_at(after), metrics(after, max)))
+    }
+
+    // SettingsNavigation.tsx: `scrollIntoView` then `setActiveSection(id)` in the click
+    // handler, and `update` on the scroll event that follows a click that scrolled.
+    #[test]
+    fn a_click_that_brings_its_section_to_the_margin_marks_it() {
+        let mut mark = NavigationMark::default();
+        let (after, active) = click(&mut mark, SettingsSection::Language, 0.0, 1000.0);
+        assert_eq!(after, 400.0);
+        assert_eq!(active, SettingsSection::Language);
+    }
+
+    #[test]
+    fn a_click_on_a_section_that_cannot_reach_the_margin_marks_the_last_section() {
+        // The page ends at 900: "Danger zone" would need 1000.
+        let mut mark = NavigationMark::default();
+        let (after, active) = click(&mut mark, SettingsSection::Danger, 0.0, 900.0);
+        assert_eq!(after, 900.0, "the page is at its end");
+        assert!(tops_at(after)[SettingsSection::Danger.index()] > SCROLL_MARGIN_TOP);
+        assert_eq!(
+            active,
+            SettingsSection::About,
+            "the scroll event marks by position: the end of the page"
+        );
+    }
+
+    #[test]
+    fn a_click_that_scrolls_nothing_marks_its_section_until_the_page_moves() {
+        // The page is at its end already, so the click on "Danger zone" fires no
+        // scroll event and the click handler's mark stays.
+        let mut mark = NavigationMark::default();
+        let (after, active) = click(&mut mark, SettingsSection::Danger, 900.0, 900.0);
+        assert_eq!(after, 900.0);
+        assert_eq!(active, SettingsSection::Danger);
+        // Drawn again where it is: still marked.
+        assert_eq!(
+            mark.active(&tops_at(900.0), metrics(900.0, 900.0)),
+            SettingsSection::Danger
+        );
+        // Scrolled: the position decides, also back at the end.
+        assert_eq!(
+            mark.active(&tops_at(850.0), metrics(850.0, 900.0)),
+            SettingsSection::Duplicates
+        );
+        let mut returned = mark;
+        returned.click(SettingsSection::Danger, 900.0, 900.0);
+        returned.resized();
+        assert_eq!(
+            returned.active(&tops_at(900.0), metrics(900.0, 900.0)),
+            SettingsSection::About,
+            "a resize marks by position again"
+        );
+    }
+
+    #[test]
+    fn a_page_that_is_not_laid_out_marks_the_first_or_the_clicked_section() {
+        let mut mark = NavigationMark::default();
+        assert_eq!(mark.active(&[], metrics(0.0, 0.0)), SettingsSection::Scan);
+        mark.click(SettingsSection::Language, 0.0, 0.0);
+        assert_eq!(
+            mark.active(&[], metrics(0.0, 0.0)),
+            SettingsSection::Language
         );
     }
 

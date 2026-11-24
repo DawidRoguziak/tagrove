@@ -4,6 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  addControlDuplicate,
+  CONTROL_DUPLICATE_DIRECTORY,
+  CONTROL_DUPLICATE_NAME,
+  CONTROL_DUPLICATE_SECONDS,
   CONTROL_SEED_BASE_SECONDS,
   CONTROL_SEED_ORDER,
   controlSeedModifiedSeconds,
@@ -21,8 +25,8 @@ async function freshRoot(t) {
   return root;
 }
 
-test("knows the empty and the control seed", () => {
-  assert.deepEqual(SEEDS, ["empty", "control"]);
+test("knows the empty, the control and the duplicates seed", () => {
+  assert.deepEqual(SEEDS, ["empty", "control", "duplicates"]);
   for (const seed of SEEDS) assert.equal(validateSeed(seed), seed);
   for (const seed of ["", "personal", undefined, "Empty"])
     assert.throws(() => validateSeed(seed), /Unknown seed/, String(seed));
@@ -63,6 +67,41 @@ async function galleryOrder(root) {
   assert.equal(new Set(seconds).size, seconds.length, `tied seconds: ${seconds}`);
   return entries.sort((a, b) => b.seconds - a.seconds).map((entry) => entry.name);
 }
+
+// Needs ffmpeg, as the control seed does.
+test("the duplicates seed is the control seed and one more file of the same name", async (t) => {
+  const root = await freshRoot(t);
+  const entries = await seedMedia(root, "duplicates");
+  assert.deepEqual(entries, [...CONTROL_SEED_ORDER, CONTROL_DUPLICATE_DIRECTORY].sort());
+  assert.deepEqual(await fs.readdir(path.join(root, CONTROL_DUPLICATE_DIRECTORY)), [
+    CONTROL_DUPLICATE_NAME
+  ]);
+  assert.ok(CONTROL_SEED_ORDER.includes(CONTROL_DUPLICATE_NAME));
+  const copy = await fs.readFile(path.join(root, CONTROL_DUPLICATE_DIRECTORY, CONTROL_DUPLICATE_NAME));
+  assert.deepEqual(copy, await fs.readFile(path.join(root, CONTROL_DUPLICATE_NAME)));
+  // Older than every control file: the seven control tiles keep their places.
+  const { mtimeMs } = await fs.stat(
+    path.join(root, CONTROL_DUPLICATE_DIRECTORY, CONTROL_DUPLICATE_NAME)
+  );
+  assert.equal(mtimeMs, CONTROL_DUPLICATE_SECONDS * 1000);
+  assert.ok(CONTROL_DUPLICATE_SECONDS < Math.min(...CONTROL_SEED_ORDER.map(controlSeedModifiedSeconds)));
+});
+
+test("a duplicate is added only to a directory that holds exactly the control seed", async (t) => {
+  const root = await freshRoot(t);
+  await assert.rejects(addControlDuplicate(root), /exactly the control seed/);
+  for (const name of CONTROL_SEED_ORDER) await fs.writeFile(path.join(root, name), name);
+  await fs.writeFile(path.join(root, "keep.png"), "x");
+  await assert.rejects(addControlDuplicate(root), /exactly the control seed/);
+  assert.deepEqual((await fs.readdir(root)).sort(), [...CONTROL_SEED_ORDER, "keep.png"].sort());
+  await fs.rm(path.join(root, "keep.png"));
+  assert.equal(
+    await addControlDuplicate(root),
+    path.join(CONTROL_DUPLICATE_DIRECTORY, CONTROL_DUPLICATE_NAME)
+  );
+  // A second call finds more than the control seed and writes nothing.
+  await assert.rejects(addControlDuplicate(root), /exactly the control seed/);
+});
 
 test("the control seed order is a fixed rule over the file names", () => {
   assert.deepEqual(CONTROL_SEED_ORDER, [

@@ -1,6 +1,7 @@
 //! The settings page (`AppSettingsView.tsx`, `SettingsPanel.tsx`): its header with
 //! Back, the logo, the heading and the window controls, the navigation, the sections
-//! and the two confirmations of the page.
+//! and the dialogs of the page. The import/export section is in [`import_export`],
+//! the duplicate section with its resolver in [`duplicates`].
 //!
 //! The page is a non-modal layer of the layer stack while it is shown, so Escape
 //! closes it; the shell registers and releases that layer, because it outlives the
@@ -9,7 +10,8 @@
 //! Everything that must outlive the page (the operations, their statuses, the
 //! confirmations, the video tools) lives in the runtime's settings model; the page
 //! keeps only what the Solid page loses when it unmounts: the scroll position, the
-//! expanded root list, the open language list and the open legal texts.
+//! expanded root list, the open language list, the open legal texts and the form of the
+//! duplicate resolver.
 //!
 //! Layout: the sections scroll below the header; the navigation stays where the Tauri
 //! page's sticky navigation stays, 96 px below the top of the window. The scrolled
@@ -38,7 +40,7 @@ use media_tagger_client::{
     settings::{
         about::{self, AboutLink, LegalText},
         layout,
-        navigation::{active_section, scroll_target, ScrollMetrics},
+        navigation::{scroll_target, NavigationMark, ScrollMetrics},
         progress::progress_label,
         scan::{expand_toggle_key, has_expand_toggle, video_tool_line, visible_roots},
         status::progress_bar,
@@ -53,6 +55,7 @@ use media_tagger_client::{
 use super::chrome::{self, drag_surface, no_drag};
 use crate::{
     runtime::{self, Runtime},
+    thumbs::Thumbnails,
     ui::{
         button::Button,
         fonts,
@@ -65,6 +68,23 @@ use crate::{
         switch::Switch,
         theme::{self, box_shadows, color, focus_ring, weight},
     },
+};
+
+mod duplicates;
+mod import_export;
+
+pub use duplicates::{
+    asset_control_id, group_ready_selector, group_selector, rename_outline_selector, AssetControl,
+    DUPLICATES_LAST_RESULT_SELECTOR, DUPLICATES_LOADER_SELECTOR, DUPLICATES_SECTION_SELECTOR,
+    DUPLICATE_DELETE_CANCEL_ID, DUPLICATE_DELETE_CONFIRM_ID, RESOLVER_CLOSE_ID,
+    RESOLVER_DISCARD_ID, RESOLVER_EMPTY_SELECTOR, RESOLVER_HINT_SELECTOR, RESOLVER_LIST_SELECTOR,
+    RESOLVER_LOADER_SELECTOR, RESOLVER_RESCAN_ID, RESOLVER_SAVE_ID, RESOLVER_SUMMARY_SELECTOR,
+    START_DUPLICATES_ID,
+};
+pub use import_export::{
+    EXPORT_CSV_ID, EXPORT_DB_BUNDLE_ID, IMPORT_CSV_ID, IMPORT_DB_BUNDLE_ID,
+    IMPORT_EXPORT_LOADER_SELECTOR, IMPORT_EXPORT_SECTION_SELECTOR, IMPORT_OVERWRITE_CANCEL_ID,
+    IMPORT_OVERWRITE_CONFIRM_ID,
 };
 
 /// Element id of the Back button.
@@ -198,9 +218,9 @@ pub struct SettingsView {
     runtime: Entity<Runtime>,
     drag: Rc<Cell<DragSurface>>,
     scroll: ScrollHandle,
-    /// The section a navigation click marked, with the scroll offset it left; it stays
-    /// marked until the page scrolls.
-    clicked: Option<(SettingsSection, f32)>,
+    /// What the last navigation click left marked: its section, when the click moved
+    /// nothing, until the page scrolls or the window is resized.
+    mark: NavigationMark,
     roots_expanded: bool,
     language_layer: Option<LayerId>,
     /// Where the last press outside the open list closed it. The field's own mouse down
@@ -226,6 +246,17 @@ pub struct SettingsView {
     remove_modal: Entity<ModalState>,
     clear_modal: Entity<ModalState>,
     remove_snapshot: ModalSnapshot<String>,
+    /// The duplicate resolver, the confirmation of a batch with deletes that lies over
+    /// it, and the overwrite confirmation of a restore.
+    resolver_modal: Entity<ModalState>,
+    duplicate_delete_modal: Entity<ModalState>,
+    import_overwrite_modal: Entity<ModalState>,
+    /// The changes and deletes the delete confirmation asked about.
+    delete_snapshot: ModalSnapshot<(usize, usize)>,
+    /// The resolver's form, list and rename fields.
+    resolver: duplicates::ResolverState,
+    /// The previews of the resolver's cards.
+    thumbnails: Entity<Thumbnails>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -233,11 +264,37 @@ impl SettingsView {
     pub fn new(runtime: Entity<Runtime>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let remove_modal = cx.new(ModalState::new);
         let clear_modal = cx.new(ModalState::new);
+        let resolver_modal = cx.new(ModalState::new);
+        let duplicate_delete_modal = cx.new(ModalState::new);
+        let import_overwrite_modal = cx.new(ModalState::new);
+        let thumbnails = runtime.read(cx).thumbnails().clone();
         let subscriptions = vec![
+            // A preview of the resolver arrived.
+            cx.observe(&thumbnails, |_, _, cx| cx.notify()),
+            cx.subscribe_in(&resolver_modal, window, |view, _, event, _, cx| {
+                if *event == ModalEvent::Dismiss {
+                    view.command(SettingsCommand::CloseDuplicateDialog, cx);
+                }
+            }),
+            cx.subscribe_in(&duplicate_delete_modal, window, |view, _, event, _, cx| {
+                if *event == ModalEvent::Dismiss {
+                    view.command(SettingsCommand::CancelDuplicateDelete, cx);
+                }
+            }),
+            cx.subscribe_in(&import_overwrite_modal, window, |view, _, event, _, cx| {
+                if *event == ModalEvent::Dismiss {
+                    view.command(SettingsCommand::CancelImportDbOverwrite, cx);
+                }
+            }),
             cx.observe_in(&runtime, window, |view, _, window, cx| {
                 view.sync(window, cx)
             }),
-            cx.observe_window_bounds(window, |_, _, cx| cx.notify()),
+            // The `resize` listener of `SettingsNavigation.tsx`: the navigation marks
+            // by position again.
+            cx.observe_window_bounds(window, |view, _, cx| {
+                view.mark.resized();
+                cx.notify();
+            }),
             cx.subscribe_in(&remove_modal, window, |view, _, event, _, cx| {
                 if *event == ModalEvent::Dismiss {
                     view.command(SettingsCommand::CancelRemoveRoot, cx);
@@ -249,18 +306,20 @@ impl SettingsView {
                 }
             }),
         ];
-        // A page that goes away with its language list open leaves no layer behind.
+        // A page that goes away with its language list open leaves no layer behind,
+        // and one that goes away with the resolver open asks for no preview any more.
         cx.on_release(|view: &mut Self, cx| {
             if let Some(layer) = view.language_layer.take() {
                 layers::forget(layer, cx);
             }
+            duplicates::forget_previews(view, cx);
         })
         .detach();
         let mut view = Self {
             runtime,
             drag: Rc::default(),
             scroll: ScrollHandle::new(),
-            clicked: None,
+            mark: NavigationMark::default(),
             roots_expanded: false,
             language_layer: None,
             language_closed_at: None,
@@ -276,6 +335,12 @@ impl SettingsView {
             remove_modal,
             clear_modal,
             remove_snapshot: ModalSnapshot::new(),
+            resolver_modal,
+            duplicate_delete_modal,
+            import_overwrite_modal,
+            delete_snapshot: ModalSnapshot::new(),
+            resolver: duplicates::ResolverState::new(),
+            thumbnails,
             _subscriptions: subscriptions,
         };
         view.sync(window, cx);
@@ -300,6 +365,21 @@ impl SettingsView {
     /// The clear confirmation's dialog.
     pub fn clear_modal(&self) -> &Entity<ModalState> {
         &self.clear_modal
+    }
+
+    /// The duplicate resolver's dialog.
+    pub fn resolver_modal(&self) -> &Entity<ModalState> {
+        &self.resolver_modal
+    }
+
+    /// The dialog that confirms a duplicate batch with deletes.
+    pub fn duplicate_delete_modal(&self) -> &Entity<ModalState> {
+        &self.duplicate_delete_modal
+    }
+
+    /// The dialog that confirms a restore.
+    pub fn import_overwrite_modal(&self) -> &Entity<ModalState> {
+        &self.import_overwrite_modal
     }
 
     /// Whether the language list is open.
@@ -360,19 +440,11 @@ impl SettingsView {
     /// The section the navigation marks now.
     pub fn active_section(&self) -> SettingsSection {
         let offset = f32::from(self.scroll.offset().y);
-        if let Some((section, at)) = self.clicked {
-            if at == offset {
-                return section;
-            }
-        }
         let tops: Vec<f32> = (0..SettingsSection::ALL.len())
             .map_while(|index| self.scroll.bounds_for_item(index))
             .map(|bounds| f32::from(bounds.top()) + offset)
             .collect();
-        if tops.len() < SettingsSection::ALL.len() {
-            return SettingsSection::default();
-        }
-        active_section(&tops, self.metrics())
+        self.mark.active(&tops, self.metrics())
     }
 
     fn metrics(&self) -> ScrollMetrics {
@@ -396,19 +468,20 @@ impl SettingsView {
     }
 
     /// The scrolling of an activated navigation link: its section to the top of the
-    /// page, below the header, and marked at once (`scrollIntoView({ block: "start" })`
-    /// with the section's scroll margin).
+    /// page, below the header (`scrollIntoView({ block: "start" })` with the section's
+    /// scroll margin). What is marked afterwards is [`NavigationMark`]'s: the position
+    /// when the page moved, as after the scroll event of the Tauri page, and the
+    /// clicked section when it did not.
     pub fn navigate(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
+        let metrics = self.metrics();
+        let mut after = metrics.offset;
         if let Some(bounds) = self.scroll.bounds_for_item(section.index()) {
-            let offset = f32::from(self.scroll.offset().y);
-            let top = f32::from(bounds.top()) + offset;
+            let top = f32::from(bounds.top()) - metrics.offset;
             let viewport_top = f32::from(self.scroll.bounds().top());
-            let target = scroll_target(top, viewport_top, self.metrics());
-            self.scroll.set_offset(point(px(0.), px(-target)));
-            self.clicked = Some((section, -target));
-        } else {
-            self.clicked = Some((section, f32::from(self.scroll.offset().y)));
+            after = scroll_target(top, viewport_top, metrics);
+            self.scroll.set_offset(point(px(0.), px(-after)));
         }
+        self.mark.click(section, metrics.offset, after);
         cx.notify();
     }
 
@@ -418,15 +491,24 @@ impl SettingsView {
         });
     }
 
-    /// Follows the model's confirmations with the two dialogs.
+    /// Follows the model's confirmations and its resolver with the dialogs, and starts
+    /// the resolver's form over when the dialog opened or its groups were replaced.
     fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_resolver_form(cx);
         let settings = self.runtime.read(cx).model().settings();
         let locked = settings.is_locked();
         let remove_open = settings.remove_root_confirm().is_some();
         let clear_open = settings.clear_confirm_open();
+        let resolver_open = settings.duplicate_dialog_open();
+        let delete_open = settings.pending_duplicate_delete().is_some();
+        let overwrite_open = settings.pending_import_db_source().is_some();
+        // The resolver before the confirmation that lies over it.
         for (modal, open) in [
             (self.remove_modal.clone(), remove_open),
             (self.clear_modal.clone(), clear_open),
+            (self.resolver_modal.clone(), resolver_open),
+            (self.duplicate_delete_modal.clone(), delete_open),
+            (self.import_overwrite_modal.clone(), overwrite_open),
         ] {
             modal.update(cx, |modal, cx| {
                 modal.set_close_on_escape(!locked, cx);
@@ -652,6 +734,54 @@ fn description(theme: ThemeName, text: impl Into<SharedString>) -> gpui::Div {
         .line_height(relative(layout::card::DESCRIPTION_LINE_HEIGHT))
         .text_color(color(theme.tokens().colors.text_muted))
         .child(text.into())
+}
+
+/// `.settings-operation`: a row with a description and, added by the caller, its
+/// actions.
+fn operation_row(theme: ThemeName, text: String) -> gpui::Div {
+    let colors = &theme.tokens().colors;
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(px(layout::operation::GAP))
+        .p(px(layout::operation::PADDING))
+        .rounded(px(RADII.control))
+        .bg(color(colors.surface_muted))
+        .child(
+            div()
+                .min_w_0()
+                .text_size(px(layout::operation::TEXT_SIZE))
+                .line_height(relative(layout::operation::TEXT_LINE_HEIGHT))
+                .text_color(color(colors.text_muted))
+                .child(text),
+        )
+}
+
+/// The heading of a dialog (`h3`).
+fn dialog_heading(text: String) -> gpui::Div {
+    div()
+        .text_size(px(layout::dialog::HEADING_SIZE))
+        .line_height(px(layout::dialog::HEADING_LINE_HEIGHT))
+        .font_weight(weight(TYPOGRAPHY.heading_weight))
+        .child(text)
+}
+
+/// A paragraph of a confirmation: `text-[13px] leading-[1.4] text-[var(--text-muted)]`.
+fn confirm_text(theme: ThemeName, text: String) -> gpui::Div {
+    div()
+        .text_size(px(layout::confirm::DESCRIPTION_SIZE))
+        .line_height(relative(layout::confirm::DESCRIPTION_LINE_HEIGHT))
+        .text_color(color(theme.tokens().colors.text_muted))
+        .child(text)
+}
+
+/// The row of a confirmation's buttons: `flex items-center gap-2`.
+fn confirm_buttons() -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(layout::confirm::BUTTONS_GAP))
 }
 
 /// `SectionOperationStatus`: the spinner while the operation runs, the line, and the
@@ -1001,24 +1131,7 @@ impl SettingsView {
                 )
             });
 
-        let operation = |text: String| {
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(layout::operation::GAP))
-                .p(px(layout::operation::PADDING))
-                .rounded(px(RADII.control))
-                .bg(color(colors.surface_muted))
-                .child(
-                    div()
-                        .min_w_0()
-                        .text_size(px(layout::operation::TEXT_SIZE))
-                        .line_height(relative(layout::operation::TEXT_LINE_HEIGHT))
-                        .text_color(muted)
-                        .child(text),
-                )
-        };
+        let operation = |text: String| operation_row(theme, text);
         let rescan = operation(i18n.t("settings.scan.rescanDescription")).child(
             Button::new(RESCAN_ALL_ID, i18n.t("settings.scan.rescanAll"))
                 .debug_selector(RESCAN_ALL_ID)
@@ -1770,6 +1883,9 @@ impl Render for SettingsView {
                     .update(cx, |runtime, _| runtime.take_scripted_settings_section());
                 if let Some(section) = section {
                     self.activate_section(section, window, cx);
+                    // What the scenario does after the click can go on.
+                    self.runtime
+                        .update(cx, |runtime, cx| runtime.scripted_section_clicked(cx));
                 }
             } else {
                 self.scripted_page_laid_out = true;
@@ -1848,10 +1964,8 @@ impl Render for SettingsView {
             self.scan_section(&i18n, theme, cx),
             self.appearance_section(&i18n, theme, window, cx),
             self.language_section(&i18n, theme, window, cx),
-            // The sections of epic E18: their anchors keep the page's order and the
-            // navigation's targets.
-            div().into_any_element(),
-            div().into_any_element(),
+            self.import_export_section(&i18n, theme, cx),
+            self.duplicates_section(&i18n, theme, cx),
             self.danger_section(&i18n, theme, cx),
             self.about_section(&i18n, theme, window, cx),
         ];
@@ -1900,7 +2014,11 @@ impl Render for SettingsView {
             .children(sections);
 
         let nav = self.nav(&i18n, theme, window, cx);
-        let dialogs = self.dialogs(&i18n, theme, cx);
+        let mut dialogs: Vec<AnyElement> = self.dialogs(&i18n, theme, cx).into();
+        // The resolver before the delete confirmation that lies over it.
+        dialogs.push(self.duplicate_resolver_dialog(&i18n, theme, window, cx));
+        dialogs.push(self.duplicate_delete_dialog(&i18n, theme, cx));
+        dialogs.push(self.import_overwrite_dialog(&i18n, theme, cx));
         div()
             .key_context(KeyContext::Settings.name())
             .relative()

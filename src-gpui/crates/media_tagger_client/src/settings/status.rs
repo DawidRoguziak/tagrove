@@ -9,6 +9,7 @@ use media_tagger_core::models::{ScanCompletion, ScanProgress, ScanSummary};
 use super::{
     progress::{progress_message, thumbnail_summary, ThumbnailCounts},
     scan::folder_add_message,
+    transfer::DialogTitle,
 };
 use crate::i18n::{I18n, Params};
 
@@ -107,6 +108,25 @@ pub enum StatusMessage {
         detail: String,
         raw: bool,
     },
+    /// The title of the file dialog an operation waits for, where the dialog cannot
+    /// show it itself.
+    Dialog(DialogTitle),
+    /// `<prefix>: <text of key>`: an error the interface found itself.
+    FailedKey {
+        prefix: &'static str,
+        key: &'static str,
+        params: Params,
+    },
+    /// A committed duplicate batch: how many changes were applied and how many groups
+    /// are left, and how many of the files were already gone.
+    DuplicatesApplied {
+        changes: usize,
+        groups: usize,
+        source_missing: usize,
+    },
+    /// A duplicate batch that could not be undone completely: the assets with a
+    /// reported recovery path.
+    DuplicateRecovery { items: Vec<(i64, String)> },
 }
 
 impl StatusMessage {
@@ -183,8 +203,54 @@ impl StatusMessage {
                 };
                 format!("{}: {detail}", i18n.t(prefix))
             }
+            Self::Dialog(title) => title.resolve(i18n),
+            Self::FailedKey {
+                prefix,
+                key,
+                params,
+            } => format!("{}: {}", i18n.t(prefix), i18n.t_with(key, params)),
+            Self::DuplicatesApplied {
+                changes,
+                groups,
+                source_missing,
+            } => {
+                let applied = i18n.t_with(
+                    "settings.actions.summary.duplicateApplied",
+                    &Params::new()
+                        .with_count(count(*changes))
+                        .with("groups", groups),
+                );
+                if *source_missing > 0 {
+                    format!(
+                        "{applied} {} ({source_missing})",
+                        i18n.t("lightbox.deleteConfirm.sourceMissing")
+                    )
+                } else {
+                    applied
+                }
+            }
+            Self::DuplicateRecovery { items } => {
+                let details = items
+                    .iter()
+                    .map(|(asset_id, path)| format!("#{asset_id}: {path}"))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                format!(
+                    "{} {details}",
+                    i18n.t_with(
+                        "settings.actions.summary.duplicateRecoveryRequired",
+                        &Params::new().with_count(count(items.len())),
+                    )
+                )
+                .trim()
+                .to_owned()
+            }
         }
     }
+}
+
+fn count(value: usize) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 /// What a section shows below its actions: a spinner while its operation runs, the

@@ -27,6 +27,19 @@ A SQLite transaction can protect only database statements. Filesystem rename/del
 
 The frontend serializes settings actions within the application-owned `createSettingsOperationRunner` and asks for confirmation before root removal, clear-library, bundle overwrite, and duplicate batches containing deletion. Confirmed bundle restore and clear-library additionally use the library-owned metadata-mutation maintenance barrier in `createAssetTagState`: they drain already-admitted (queued or dispatched) tag, favorite and group writes, block new ones, and invalidate identity-bound tag/details state before releasing the barrier whether the command resolves or rejects. On rejection they then attempt root/library refreshes because either backend workflow may have changed live state before returning an error. This remains user-interface orchestration only; bundle export/restore separately enforce their process-wide backend maintenance gate for direct IPC callers and other windows. Exact success refresh/reset order is documented in [settings operations](settings-operations.md).
 
+The GPUI interface (`src-gpui/`) reaches the same use cases through its `Backend` port and
+orchestrates them the same way: one settings runner, the same four confirmations, and the
+same maintenance barrier around clear-library, CSV import and confirmed restore, with the
+identity reset applied before the barrier comes down whether the call succeeded or not
+([settings operations, "GPUI port: settings"](settings-operations.md#gpui-port-settings)).
+A backend call that panics counts as one that failed: it answers its operation with an
+error, so the barrier comes down and the runner is released. The restore that waits for
+its overwrite confirmation is the archive chosen last: another choice of an archive, or
+leaving the settings page, gives it up.
+It adds no backend guarantee and removes none: the locks, the journal, the scan-revision
+check of a duplicate batch and the maintenance gate of bundle export and restore are the
+backend's, for either interface.
+
 The identity epoch also scopes lightbox favorite pending ownership. Retired completions
 cannot disable a reused ID or clear a current operation. This frontend presentation rule
 does not cancel backend writes; the maintenance barrier still drains admitted mutations.

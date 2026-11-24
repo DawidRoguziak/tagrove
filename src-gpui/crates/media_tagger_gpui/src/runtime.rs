@@ -26,10 +26,14 @@ use media_tagger_client::{
     prefs::PrefsStore,
     runtime::{AppRuntime, RuntimeConfig, RuntimeInput, RuntimeRunner},
     scenario::{
-        self, ScenarioClick, ScenarioDock, ScenarioLightbox, ScenarioSearch, ScenarioSettings,
-        ScenarioTagList,
+        self, ScenarioClick, ScenarioDock, ScenarioDuplicates, ScenarioLightbox, ScenarioSearch,
+        ScenarioSettings, ScenarioTagList,
     },
-    settings::{FolderPickerRequest, SettingsCommand, SettingsInput, SettingsSection},
+    settings::{
+        transfer::{export_file_name, is_export_timestamp, utc_export_timestamp},
+        FolderPickerRequest, PathDialogKind, PathDialogRequest, SettingsCommand, SettingsInput,
+        SettingsSection,
+    },
 };
 
 use crate::{thumbs::Thumbnails, ui};
@@ -122,8 +126,14 @@ pub struct Runtime {
     scripted_settings_section: Option<SettingsSection>,
     /// The startup-scan switch a comparison scenario sets on the first root.
     scripted_auto_scan: Option<bool>,
+    /// What a comparison scenario does with the duplicate resolver, and whether its
+    /// "Start" was made.
+    scripted_duplicates: Option<ScenarioDuplicates>,
+    scripted_duplicates_started: bool,
     /// The folder dialog that is open; its answer goes to the operation that asked.
     _folder_picker: Option<Task<()>>,
+    /// The file dialog of an import or export that is open.
+    _path_dialog: Option<Task<()>>,
     _pump: Task<()>,
 }
 
@@ -161,7 +171,10 @@ impl Runtime {
             scripted_lightbox: None,
             scripted_settings_section: None,
             scripted_auto_scan: None,
+            scripted_duplicates: None,
+            scripted_duplicates_started: false,
             _folder_picker: None,
+            _path_dialog: None,
             _pump: pump,
         }
     }
@@ -245,6 +258,8 @@ impl Runtime {
         self.driver.handle(RuntimeInput::OpenSettings);
         self.scripted_settings_section = settings.section;
         self.scripted_auto_scan = settings.first_root_auto_scan;
+        self.scripted_duplicates = settings.duplicates;
+        self.scripted_duplicates_started = false;
         self.publish(cx);
     }
 
@@ -275,6 +290,42 @@ impl Runtime {
         let section = self.scripted_settings_section()?;
         self.scripted_settings_section = None;
         Some(section)
+    }
+
+    /// The view made the scripted navigation click: what the scenario does after it
+    /// (the duplicate section's "Start") can go on.
+    pub fn scripted_section_clicked(&mut self, cx: &mut Context<Self>) {
+        self.publish(cx);
+    }
+
+    /// The duplicate steps of a scenario, after its navigation click: "Start" once the
+    /// launch's work has ended and no operation runs, and, for the scenario that shows
+    /// the section, "Close" of the resolver once that scan has answered.
+    fn run_scripted_duplicates(&mut self) {
+        let Some(script) = self.scripted_duplicates else {
+            return;
+        };
+        let model = self.driver.model();
+        if self.scripted_settings_section.is_some()
+            || self.scripted_auto_scan.is_some()
+            || !model.is_started()
+            || model.maintenance_loading()
+            || model.scan_roots_loading()
+            || model.settings().is_locked()
+        {
+            return;
+        }
+        let command = if !self.scripted_duplicates_started {
+            self.scripted_duplicates_started = true;
+            if script == ScenarioDuplicates::Resolver {
+                self.scripted_duplicates = None;
+            }
+            SettingsCommand::StartDuplicates
+        } else {
+            self.scripted_duplicates = None;
+            SettingsCommand::CloseDuplicateDialog
+        };
+        self.driver.handle(RuntimeInput::settings(command));
     }
 
     /// Sets the scripted startup-scan switch once nothing else runs and the roots are
@@ -330,6 +381,59 @@ impl Runtime {
             })
             .ok();
         }));
+    }
+
+    /// Opens the file dialog an import or export asked for and hands its answer to that
+    /// operation, as [`Self::open_folder_picker`] does for folders. The platform's
+    /// dialogs take neither a title nor a file filter. A save dialog starts in the home
+    /// folder with the export's default name, which carries the local time.
+    fn open_path_dialog(&mut self, request: PathDialogRequest, cx: &mut Context<Self>) {
+        let op = request.op;
+        let answered =
+            move |result| RuntimeInput::Settings(SettingsInput::PathPicked { op, result });
+        let task = match request.kind {
+            PathDialogKind::SaveFile { prefix, extension } => {
+                // The clock is read off the UI thread.
+                let timestamp = cx.background_spawn(async { local_export_timestamp() });
+                cx.spawn(async move |this, cx| {
+                    let name = export_file_name(prefix, &timestamp.await, extension);
+                    let directory = home_directory();
+                    let Ok(answer) =
+                        this.update(cx, |_, cx| cx.prompt_for_new_path(&directory, Some(&name)))
+                    else {
+                        return;
+                    };
+                    let result = match answer.await {
+                        Ok(Ok(path)) => Ok(path.map(|path| path.to_string_lossy().into_owned())),
+                        Ok(Err(error)) => Err(error.to_string()),
+                        Err(_) => Ok(None),
+                    };
+                    this.update(cx, |runtime, cx| runtime.send(answered(result), cx))
+                        .ok();
+                })
+            }
+            PathDialogKind::OpenFile { .. } | PathDialogKind::OpenFolder => {
+                let directories = request.kind == PathDialogKind::OpenFolder;
+                let answer = cx.prompt_for_paths(gpui::PathPromptOptions {
+                    files: !directories,
+                    directories,
+                    multiple: false,
+                    prompt: None,
+                });
+                cx.spawn(async move |this, cx| {
+                    let result = match answer.await {
+                        Ok(Ok(paths)) => Ok(paths
+                            .and_then(|paths| paths.into_iter().next())
+                            .map(|path| path.to_string_lossy().into_owned())),
+                        Ok(Err(error)) => Err(error.to_string()),
+                        Err(_) => Ok(None),
+                    };
+                    this.update(cx, |runtime, cx| runtime.send(answered(result), cx))
+                        .ok();
+                })
+            }
+        };
+        self._path_dialog = Some(task);
     }
 
     /// The answers of the lightbox model to the view's commands since the last call
@@ -414,8 +518,12 @@ impl Runtime {
     fn publish(&mut self, cx: &mut Context<Self>) {
         self.run_scripted_selection();
         self.run_scripted_auto_scan();
+        self.run_scripted_duplicates();
         if let Some(request) = self.driver.model_mut().take_folder_picker_request() {
             self.open_folder_picker(request, cx);
+        }
+        if let Some(request) = self.driver.model_mut().take_path_dialog_request() {
+            self.open_path_dialog(request, cx);
         }
         // The bulk model and the lightbox model get their answers and every commit
         // from the client's runtime itself. What is left belongs to a caller with
@@ -425,6 +533,37 @@ impl Runtime {
         ui::theme::set_active(self.model().theme(), cx);
         cx.notify();
     }
+}
+
+/// Where a save dialog starts: the home folder, else the working directory.
+fn home_directory() -> std::path::PathBuf {
+    std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| std::path::PathBuf::from("/"))
+}
+
+/// The local time as an export's default name carries it (`YYYY-MM-DD_HH-mm`). The
+/// standard library knows no time zone, so the system's `date` is asked; when it
+/// cannot answer, the time is UTC. Blocks: call it off the UI thread.
+fn local_export_timestamp() -> String {
+    let local = std::process::Command::new("date")
+        .arg("+%Y-%m-%d_%H-%M")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|text| text.trim().to_owned())
+        .filter(|text| is_export_timestamp(text));
+    local.unwrap_or_else(|| {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        utc_export_timestamp(now)
+    })
 }
 
 /// Sends `input` to `runtime` from a place that only has the `App`.

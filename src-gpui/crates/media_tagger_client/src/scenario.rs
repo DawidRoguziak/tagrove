@@ -32,6 +32,10 @@ pub enum Seed {
     /// and two MP4s in one scan root. The harness writes them into a fresh directory
     /// and names it in [`SCENARIO_MEDIA_VARIABLE`].
     Control,
+    /// [`Control`](Self::Control) and one more file in a subfolder of the root, with
+    /// the name of the first PNG: one duplicate group of two files
+    /// (`addControlDuplicate` of `e2e/compare/seed.js`).
+    Duplicates,
 }
 
 impl Seed {
@@ -40,6 +44,7 @@ impl Seed {
         match self {
             Self::Empty => "empty",
             Self::Control => "control",
+            Self::Duplicates => "duplicates",
         }
     }
 }
@@ -243,6 +248,18 @@ pub struct ScenarioSettings {
     pub section: Option<SettingsSection>,
     /// The startup-scan switch of the first root is set to this value.
     pub first_root_auto_scan: Option<bool>,
+    /// "Start" of the duplicate section is clicked after the navigation link.
+    pub duplicates: Option<ScenarioDuplicates>,
+}
+
+/// What a scenario does with the duplicate resolver its "Start" opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScenarioDuplicates {
+    /// The resolver is closed once the scan has answered: the section shows its last
+    /// result and the scan's summary.
+    Scanned,
+    /// The resolver stays open on the groups of the scan.
+    Resolver,
 }
 
 /// `settings-scan`: the scan section with the one root's startup scan turned on (a new
@@ -250,17 +267,39 @@ pub struct ScenarioSettings {
 pub const SETTINGS_SCAN: ScenarioSettings = ScenarioSettings {
     section: None,
     first_root_auto_scan: Some(true),
+    duplicates: None,
 };
 /// `settings-appearance-language`: the page scrolled to the appearance section.
 pub const SETTINGS_APPEARANCE_LANGUAGE: ScenarioSettings = ScenarioSettings {
     section: Some(SettingsSection::Appearance),
     first_root_auto_scan: None,
+    duplicates: None,
 };
 /// `settings-danger-about`: the page scrolled by the About link to its end, where the
 /// danger zone and the About section are.
 pub const SETTINGS_DANGER_ABOUT: ScenarioSettings = ScenarioSettings {
     section: Some(SettingsSection::About),
     first_root_auto_scan: None,
+    duplicates: None,
+};
+/// `settings-import-export`: the page scrolled to the import/export section.
+pub const SETTINGS_IMPORT_EXPORT: ScenarioSettings = ScenarioSettings {
+    section: Some(SettingsSection::ImportExport),
+    first_root_auto_scan: None,
+    duplicates: None,
+};
+/// `settings-duplicates`: the page scrolled to the duplicate section after a scan that
+/// found the seed's one group, the resolver closed again.
+pub const SETTINGS_DUPLICATES: ScenarioSettings = ScenarioSettings {
+    section: Some(SettingsSection::Duplicates),
+    first_root_auto_scan: None,
+    duplicates: Some(ScenarioDuplicates::Scanned),
+};
+/// `duplicates-resolver`: the resolver open on the seed's one group.
+pub const DUPLICATES_RESOLVER: ScenarioSettings = ScenarioSettings {
+    section: Some(SettingsSection::Duplicates),
+    first_root_auto_scan: None,
+    duplicates: Some(ScenarioDuplicates::Resolver),
 };
 
 /// One named start state.
@@ -339,7 +378,7 @@ pub fn selection_inputs(
 }
 
 /// Every scenario the GPUI interface can start in, on a fresh profile.
-pub const SCENARIOS: [Scenario; 20] = [
+pub const SCENARIOS: [Scenario; 23] = [
     Scenario {
         id: "shell-empty",
         theme: ThemeName::Dark,
@@ -607,6 +646,45 @@ pub const SCENARIOS: [Scenario; 20] = [
         dock: None,
         lightbox: None,
         settings: Some(SETTINGS_DANGER_ABOUT),
+    },
+    Scenario {
+        id: "settings-import-export",
+        theme: ThemeName::Dark,
+        seed: Seed::Control,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: None,
+        settings: Some(SETTINGS_IMPORT_EXPORT),
+    },
+    Scenario {
+        id: "settings-duplicates",
+        theme: ThemeName::Dark,
+        seed: Seed::Duplicates,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: None,
+        settings: Some(SETTINGS_DUPLICATES),
+    },
+    Scenario {
+        id: "duplicates-resolver",
+        theme: ThemeName::Dark,
+        seed: Seed::Duplicates,
+        tile_size: DEFAULT_TILE_SIZE,
+        selection: &[],
+        tags: &[],
+        search: None,
+        tag_list: None,
+        dock: None,
+        lightbox: None,
+        settings: Some(DUPLICATES_RESOLVER),
     },
 ];
 
@@ -1143,23 +1221,51 @@ mod tests {
 
     #[test]
     fn the_settings_scenarios_do_on_the_page_what_their_tauri_steps_do() {
-        // Parity scenarios of E17.
-        use super::{SETTINGS_APPEARANCE_LANGUAGE, SETTINGS_DANGER_ABOUT, SETTINGS_SCAN};
-        for (id, theme, expected) in [
-            ("settings-scan", ThemeName::Dark, SETTINGS_SCAN),
+        // Parity scenarios of E17 and E18.
+        use super::{
+            ScenarioDuplicates, DUPLICATES_RESOLVER, SETTINGS_APPEARANCE_LANGUAGE,
+            SETTINGS_DANGER_ABOUT, SETTINGS_DUPLICATES, SETTINGS_IMPORT_EXPORT, SETTINGS_SCAN,
+        };
+        for (id, theme, seed, expected) in [
+            (
+                "settings-scan",
+                ThemeName::Dark,
+                Seed::Control,
+                SETTINGS_SCAN,
+            ),
             (
                 "settings-appearance-language",
                 ThemeName::Light,
+                Seed::Control,
                 SETTINGS_APPEARANCE_LANGUAGE,
             ),
             (
                 "settings-danger-about",
                 ThemeName::Dark,
+                Seed::Control,
                 SETTINGS_DANGER_ABOUT,
+            ),
+            (
+                "settings-import-export",
+                ThemeName::Dark,
+                Seed::Control,
+                SETTINGS_IMPORT_EXPORT,
+            ),
+            (
+                "settings-duplicates",
+                ThemeName::Dark,
+                Seed::Duplicates,
+                SETTINGS_DUPLICATES,
+            ),
+            (
+                "duplicates-resolver",
+                ThemeName::Dark,
+                Seed::Duplicates,
+                DUPLICATES_RESOLVER,
             ),
         ] {
             let scenario = find(id).unwrap_or_else(|| panic!("{id} is a scenario"));
-            assert_eq!(scenario.seed, Seed::Control, "{id}");
+            assert_eq!(scenario.seed, seed, "{id}");
             assert_eq!(scenario.theme, theme, "{id}");
             assert_eq!(scenario.settings, Some(expected), "{id}");
 
@@ -1179,12 +1285,43 @@ mod tests {
                         .to_owned(),
                 );
             }
+            if let Some(duplicates) = expected.duplicates {
+                steps.push(
+                    r#"["click", '//*[@id="settings-duplicates"]//button[normalize-space(.)="Start"]']"#
+                        .to_owned(),
+                );
+                // The scan's one group is the seed's duplicate.
+                steps.push(
+                    r#"["wait", '//*[@role="dialog"]//h4[normalize-space(.)="control-1.png"]']"#
+                        .to_owned(),
+                );
+                if duplicates == ScenarioDuplicates::Scanned {
+                    steps.push(
+                        r#"["click", '//*[@role="dialog"][@aria-labelledby="duplicate-resolver-heading"]//button[normalize-space(.)="Close"]']"#
+                            .to_owned(),
+                    );
+                }
+            }
             assert_steps_in_order(id, &steps);
         }
+        // Only the two duplicate scenarios need the seed with a duplicate group.
+        let seed = std::fs::read_to_string(repository_root().join("e2e/compare/seed.js"))
+            .expect("read the seed");
+        assert!(seed.contains(r#"CONTROL_DUPLICATE_NAME = `${CONTROL_PNG_PREFIX}-1.png`"#));
         for scenario in SCENARIOS {
-            if !scenario.id.starts_with("settings-") {
+            let settings_scenario =
+                scenario.id.starts_with("settings-") || scenario.id == "duplicates-resolver";
+            if !settings_scenario {
                 assert!(scenario.settings.is_none(), "{}", scenario.id);
             }
+            assert_eq!(
+                scenario.seed == Seed::Duplicates,
+                scenario
+                    .settings
+                    .is_some_and(|settings| settings.duplicates.is_some()),
+                "{}",
+                scenario.id
+            );
         }
     }
 

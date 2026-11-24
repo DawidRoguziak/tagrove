@@ -118,10 +118,12 @@ use crate::{
         SuggestionInput,
     },
     settings::{
+        duplicates::{AppliedDuplicates, DuplicateScan},
         model::{ClearedLibrary, FolderAddition, RemovedRoot, VideoTools},
         progress::ThumbnailCounts,
-        FolderPickerRequest, OperationId, Settings, SettingsCall, SettingsCommand, SettingsEffect,
-        SettingsInput, SettingsReply,
+        transfer::{BundleCounts, BundleInspection, CsvImported},
+        FolderPickerRequest, OperationId, PathDialogRequest, Settings, SettingsCall,
+        SettingsCommand, SettingsEffect, SettingsInput, SettingsReply,
     },
     theme::ThemeName,
 };
@@ -577,6 +579,12 @@ impl AppRuntime {
         self.settings.take_folder_picker_request()
     }
 
+    /// The file dialog an import or export waits for, once: the adapter opens it and
+    /// answers with [`SettingsInput::PathPicked`].
+    pub fn take_path_dialog_request(&mut self) -> Option<PathDialogRequest> {
+        self.settings.take_path_dialog_request()
+    }
+
     /// Why the last preference save failed; `None` after one that succeeded. A
     /// failed save never undoes the change of the running session.
     pub fn prefs_error(&self) -> Option<&str> {
@@ -948,6 +956,7 @@ impl AppRuntime {
             RuntimeInput::CloseSettings => {
                 self.view = View::Gallery;
                 self.highlight_scan = false;
+                self.settings.page_left();
                 Vec::new()
             }
             RuntimeInput::OpenFirstFolderSettings => {
@@ -1217,6 +1226,65 @@ impl RuntimeRunner {
                         .map(|status| VideoTools::from(&status))
                 },
                 |result| RuntimeInput::Settings(SettingsInput::VideoToolsLoaded(result)),
+            ),
+            SettingsCall::ExportCsv { op, path } => dispatch.call(
+                "export_tags_csv",
+                move || backend.export_tags_csv(path).map(|summary| summary.rows),
+                reply(op, SettingsReply::CsvExported),
+            ),
+            SettingsCall::ImportCsv { op, path } => dispatch.call(
+                "import_tags_csv",
+                move || {
+                    backend
+                        .import_tags_csv(path)
+                        .map(|summary| CsvImported::from(&summary))
+                },
+                reply(op, SettingsReply::CsvImported),
+            ),
+            SettingsCall::ExportBundle { op, path } => dispatch.call(
+                "export_db_bundle",
+                move || {
+                    backend
+                        .export_db_bundle(path)
+                        .map(|summary| BundleCounts::from(&summary))
+                },
+                reply(op, SettingsReply::BundleExported),
+            ),
+            SettingsCall::InspectBundle { op, path } => dispatch.call(
+                "inspect_db_bundle",
+                move || backend.inspect_db_bundle(path).map(BundleInspection::from),
+                reply(op, SettingsReply::BundleInspected),
+            ),
+            SettingsCall::ImportBundle { op, path, mappings } => dispatch.call(
+                "import_db_bundle",
+                move || {
+                    backend
+                        .import_db_bundle(path, mappings)
+                        .map(|summary| BundleCounts::from(&summary))
+                },
+                reply(op, SettingsReply::BundleImported),
+            ),
+            SettingsCall::FindDuplicates { op } => dispatch.call(
+                "find_duplicate_assets",
+                move || {
+                    let _subscription = subscription;
+                    backend.find_duplicate_assets().map(DuplicateScan::from)
+                },
+                reply(op, SettingsReply::DuplicatesFound),
+            ),
+            SettingsCall::ApplyDuplicates { op, input } => dispatch.call(
+                "apply_duplicate_resolution_batch",
+                move || {
+                    backend
+                        .apply_duplicate_resolution_batch(input)
+                        .map(|summary| AppliedDuplicates::from(&summary))
+                },
+                reply(op, SettingsReply::DuplicatesApplied),
+            ),
+            SettingsCall::RescanDuplicates { op } => dispatch.call(
+                "find_duplicate_assets",
+                move || backend.find_duplicate_assets().map(DuplicateScan::from),
+                reply(op, SettingsReply::DuplicatesRescanned),
             ),
         }
     }

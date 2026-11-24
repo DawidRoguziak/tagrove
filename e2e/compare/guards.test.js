@@ -269,6 +269,7 @@ test("unknown scenarios are refused before a session exists", (t) => {
   assert.deepEqual(listed.stdout.trim().split("\n"), [
     "bulk-dock-group\ttheme=dark\tseed=control",
     "bulk-dock-tags\ttheme=dark\tseed=control",
+    "duplicates-resolver\ttheme=dark\tseed=duplicates",
     "gallery-default\ttheme=dark\tseed=control",
     "gallery-selection\ttheme=dark\tseed=control",
     "gallery-tiles-large\ttheme=dark\tseed=control",
@@ -283,6 +284,8 @@ test("unknown scenarios are refused before a session exists", (t) => {
     "search-suggestions\ttheme=dark\tseed=control",
     "settings-appearance-language\ttheme=light\tseed=control",
     "settings-danger-about\ttheme=dark\tseed=control",
+    "settings-duplicates\ttheme=dark\tseed=duplicates",
+    "settings-import-export\ttheme=dark\tseed=control",
     "settings-scan\ttheme=dark\tseed=control",
     "shell-empty\ttheme=dark\tseed=empty",
     "shell-empty-light\ttheme=light\tseed=empty",

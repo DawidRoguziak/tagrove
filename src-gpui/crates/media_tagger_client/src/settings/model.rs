@@ -1,6 +1,7 @@
 //! The settings model (`createSettings`, `createSettingsOperationRunner`,
 //! `createScanSettings`, `createDangerZoneSettings`): the exclusive operation runner
-//! and the operations of the scan, thumbnail and danger-zone sections.
+//! and the operations of the scan, thumbnail and danger-zone sections. The operations
+//! of the import/export and duplicate sections are in [`data`], on the same runner.
 //!
 //! # The runner
 //!
@@ -33,14 +34,23 @@
 //! this model's range ([`Settings::owns`]). The scan roots belong to the runtime:
 //! the model hands it every canonical list it read ([`SettingsEffect::Roots`]). The
 //! folder dialog is the adapter's: [`Settings::take_folder_picker_request`] asks for
-//! it and [`SettingsInput::FoldersPicked`] answers.
+//! it and [`SettingsInput::FoldersPicked`] answers. The file dialogs of import and
+//! export are the adapter's as well ([`Settings::take_path_dialog_request`],
+//! [`SettingsInput::PathPicked`]).
 
-use media_tagger_core::models::{ScanProgress, ScanRoot, ScanSummary, VideoToolStatus};
+use std::collections::VecDeque;
+
+use media_tagger_core::models::{
+    DbRootMapping, DuplicateGroup, DuplicateResolutionBatchInput, ScanProgress, ScanRoot,
+    ScanSummary, VideoToolStatus,
+};
 
 use super::{
+    duplicates::{AppliedDuplicates, DuplicateChange, DuplicateScan, PendingDuplicateDelete},
     progress::{PhaseFilter, ThumbnailCounts},
     scan::{added_paths, normalize_folder_selection},
     status::{OperationSection, ProgressEvent, SectionStatus, StatusMessage},
+    transfer::{BundleCounts, BundleInspection, CsvImported, PathDialogRequest},
 };
 use crate::{
     backend::BackendResult,
@@ -49,6 +59,8 @@ use crate::{
     lightbox::LIGHTBOX_TICKET_BASE,
     model::Model,
 };
+
+mod data;
 
 /// The first ticket of the settings model's library commands. Its range ends where the
 /// lightbox model's begins.
@@ -91,6 +103,29 @@ pub enum SettingsCommand {
     ConfirmClear,
     /// Reads whether ffmpeg and ffprobe were found, once.
     LoadVideoTools,
+    /// "Export tags CSV": a save dialog, then the export.
+    ExportCsv,
+    /// "Import tags CSV": a file dialog, then the import behind the mutation barrier.
+    ImportCsv,
+    /// "Export DB + thumbnails": a save dialog, then the backup.
+    ExportDbBundle,
+    /// "Import DB + thumbnails": chooses and inspects the archive, maps its roots and
+    /// opens the overwrite confirmation.
+    ImportDbBundle,
+    CancelImportDbOverwrite,
+    /// "Confirm" of the overwrite confirmation: the restore, behind the mutation
+    /// barrier.
+    ConfirmImportDbOverwrite,
+    /// "Start" of the duplicate section: opens the resolver and scans.
+    StartDuplicates,
+    /// "Rescan" of the resolver.
+    RescanDuplicates,
+    CloseDuplicateDialog,
+    /// "Save all" of the resolver with its staged changes. A batch with a delete opens
+    /// the delete confirmation instead of running.
+    SaveDuplicateChanges(Vec<DuplicateChange>),
+    CancelDuplicateDelete,
+    ConfirmDuplicateDelete,
 }
 
 /// The folders "Choose folder" added: the roots before and after.
@@ -125,6 +160,16 @@ pub enum SettingsReply {
     Thumbnails(BackendResult<ThumbnailCounts>),
     Cleared(BackendResult<ClearedLibrary>),
     RootsListed(BackendResult<Vec<ScanRoot>>),
+    /// The rows a CSV export wrote.
+    CsvExported(BackendResult<usize>),
+    CsvImported(BackendResult<CsvImported>),
+    BundleExported(BackendResult<BundleCounts>),
+    BundleInspected(BackendResult<BundleInspection>),
+    BundleImported(BackendResult<BundleCounts>),
+    DuplicatesFound(BackendResult<DuplicateScan>),
+    DuplicatesApplied(BackendResult<AppliedDuplicates>),
+    /// The duplicate scan that follows a batch.
+    DuplicatesRescanned(BackendResult<DuplicateScan>),
 }
 
 /// Whether ffmpeg and ffprobe were found (`VideoToolStatus`).
@@ -152,6 +197,12 @@ pub enum SettingsInput {
     FoldersPicked {
         op: OperationId,
         result: Result<Option<Vec<String>>, String>,
+    },
+    /// The file dialog of `op` closed: the chosen path, `None` when cancelled, or why
+    /// it could not open.
+    PathPicked {
+        op: OperationId,
+        result: Result<Option<String>, String>,
     },
     /// A progress event that arrived while `op` was subscribed.
     Progress {
@@ -210,6 +261,46 @@ pub enum SettingsCall {
         render: OperationId,
     },
     LoadVideoTools,
+    /// `export_tags_csv`; answered with [`SettingsReply::CsvExported`].
+    ExportCsv {
+        op: OperationId,
+        path: String,
+    },
+    /// `import_tags_csv`, behind the mutation barrier.
+    ImportCsv {
+        op: OperationId,
+        path: String,
+    },
+    /// `export_db_bundle`.
+    ExportBundle {
+        op: OperationId,
+        path: String,
+    },
+    /// `inspect_db_bundle`.
+    InspectBundle {
+        op: OperationId,
+        path: String,
+    },
+    /// `import_db_bundle`, behind the mutation barrier.
+    ImportBundle {
+        op: OperationId,
+        path: String,
+        mappings: Vec<DbRootMapping>,
+    },
+    /// `find_duplicate_assets`, with its progress.
+    FindDuplicates {
+        op: OperationId,
+    },
+    /// `apply_duplicate_resolution_batch`.
+    ApplyDuplicates {
+        op: OperationId,
+        input: DuplicateResolutionBatchInput,
+    },
+    /// `find_duplicate_assets` after a batch; answered with
+    /// [`SettingsReply::DuplicatesRescanned`]. Its progress is nobody's.
+    RescanDuplicates {
+        op: OperationId,
+    },
 }
 
 impl SettingsCall {
@@ -218,7 +309,8 @@ impl SettingsCall {
         match self {
             Self::Rescan { op, .. }
             | Self::RenderThumbnails { op, .. }
-            | Self::ClearLibrary { op } => Some(*op),
+            | Self::ClearLibrary { op }
+            | Self::FindDuplicates { op } => Some(*op),
             _ => None,
         }
     }
@@ -249,12 +341,46 @@ pub struct FolderPickerRequest {
 #[derive(Debug)]
 enum Kind {
     Startup,
-    PickFolder { selected: Vec<String> },
-    AutoScan { path: String, enabled: bool },
+    PickFolder {
+        selected: Vec<String>,
+    },
+    AutoScan {
+        path: String,
+        enabled: bool,
+    },
     RemoveRoot,
     Rescan,
-    Thumbnails { label_key: &'static str },
-    Clear { ticket: Ticket },
+    Thumbnails {
+        label_key: &'static str,
+    },
+    Clear {
+        ticket: Ticket,
+    },
+    ExportCsv,
+    /// The barrier's ticket and the chosen file, once the dialog answered.
+    ImportCsv {
+        barrier: Option<(Ticket, String)>,
+    },
+    ExportBundle,
+    /// Choosing the archive of a restore and the folders of its roots.
+    PickBundle {
+        source: Option<String>,
+        /// The roots that still need a folder.
+        roots: VecDeque<String>,
+        /// The root the open folder dialog asks about.
+        mapping: Option<String>,
+        mappings: Vec<DbRootMapping>,
+    },
+    RestoreBundle {
+        ticket: Ticket,
+        source: String,
+        mappings: Vec<DbRootMapping>,
+    },
+    DuplicateScan,
+    /// A batch with this many changes.
+    ApplyDuplicates {
+        changes: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -263,6 +389,8 @@ enum Stage {
     External,
     /// Waiting for the folder dialog.
     Dialog,
+    /// Waiting for a file dialog of an import or export.
+    PathDialog,
     /// Waiting for the mutation barrier.
     Barrier,
     /// Waiting for the backend call.
@@ -275,6 +403,8 @@ enum Stage {
 struct Settling {
     library: Option<Ticket>,
     roots: bool,
+    /// The duplicate scan after a batch is still out.
+    duplicates: bool,
     /// A failed refresh becomes the operation's error (after a success).
     strict: bool,
     refresh_error: Option<String>,
@@ -316,6 +446,19 @@ pub struct Settings {
     picker_request: Option<FolderPickerRequest>,
     video_tools: Option<VideoTools>,
     video_tools_requested: bool,
+    path_dialog_request: Option<PathDialogRequest>,
+    pending_import: Option<PendingBundleImport>,
+    duplicate_dialog_open: bool,
+    pending_duplicate_delete: Option<PendingDuplicateDelete>,
+    duplicates: DuplicateScan,
+    duplicate_scan_generation: u64,
+}
+
+/// The restore the overwrite confirmation asks about.
+#[derive(Debug)]
+struct PendingBundleImport {
+    source: String,
+    mappings: Vec<DbRootMapping>,
 }
 
 impl Default for Settings {
@@ -351,6 +494,12 @@ impl Settings {
             picker_request: None,
             video_tools: None,
             video_tools_requested: false,
+            path_dialog_request: None,
+            pending_import: None,
+            duplicate_dialog_open: false,
+            pending_duplicate_delete: None,
+            duplicates: DuplicateScan::default(),
+            duplicate_scan_generation: 0,
         }
     }
 
@@ -412,6 +561,62 @@ impl Settings {
     /// The folder dialog an operation waits for, without taking it.
     pub fn folder_picker_request(&self) -> Option<FolderPickerRequest> {
         self.picker_request
+    }
+
+    /// The file dialog of an import or export to open, once.
+    pub fn take_path_dialog_request(&mut self) -> Option<PathDialogRequest> {
+        self.path_dialog_request.take()
+    }
+
+    /// The file dialog an import or export waits for, without taking it.
+    pub fn path_dialog_request(&self) -> Option<&PathDialogRequest> {
+        self.path_dialog_request.as_ref()
+    }
+
+    /// `pendingImportDbSourcePath`: the archive the overwrite confirmation asks about.
+    pub fn pending_import_db_source(&self) -> Option<&str> {
+        self.pending_import
+            .as_ref()
+            .map(|pending| pending.source.as_str())
+    }
+
+    /// The folders chosen for the roots of the archive that waits for confirmation.
+    pub fn pending_import_db_mappings(&self) -> &[DbRootMapping] {
+        self.pending_import
+            .as_ref()
+            .map_or(&[], |pending| pending.mappings.as_slice())
+    }
+
+    /// `duplicateDialogOpen`: the resolver is shown.
+    pub fn duplicate_dialog_open(&self) -> bool {
+        self.duplicate_dialog_open
+    }
+
+    /// The batch the delete confirmation asks about.
+    pub fn pending_duplicate_delete(&self) -> Option<&PendingDuplicateDelete> {
+        self.pending_duplicate_delete.as_ref()
+    }
+
+    /// The duplicate groups of the last scan.
+    pub fn duplicate_groups(&self) -> &[DuplicateGroup] {
+        &self.duplicates.groups
+    }
+
+    /// `assetCount`: the files in the groups of the last scan, as the backend counted
+    /// them.
+    pub fn duplicate_asset_count(&self) -> usize {
+        self.duplicates.duplicate_assets
+    }
+
+    /// The library revision of the last scan; a batch names it.
+    pub fn duplicate_scan_revision(&self) -> i64 {
+        self.duplicates.revision
+    }
+
+    /// Advances with every scan result that replaced the groups. The resolver starts
+    /// its form over when it changes.
+    pub fn duplicate_scan_generation(&self) -> u64 {
+        self.duplicate_scan_generation
     }
 
     /// Begins the startup scan as an operation of the scan section. `None` when
@@ -533,6 +738,13 @@ impl Settings {
         status.loading = false;
     }
 
+    /// Ends the operation and releases the lock; the section's line stays what it was.
+    fn finish_keeping_line(&mut self) {
+        if let Some(active) = self.active.take() {
+            self.statuses[active.section.index()].loading = false;
+        }
+    }
+
     /// Ends the operation with its error prefix and `detail`.
     fn fail(&mut self, detail: impl Into<String>) {
         let Some(prefix) = self.active.as_ref().map(|active| active.error_prefix) else {
@@ -567,6 +779,7 @@ impl Settings {
         self.stage(Stage::Settling(Settling {
             library,
             roots,
+            duplicates: false,
             strict,
             refresh_error: None,
             outcome,
@@ -584,7 +797,7 @@ impl Settings {
         else {
             return;
         };
-        if settling.library.is_some() || settling.roots {
+        if settling.library.is_some() || settling.roots || settling.duplicates {
             return;
         }
         let message = match (settling.strict, settling.refresh_error.take()) {
@@ -732,6 +945,25 @@ impl Settings {
                 }
                 vec![SettingsEffect::Call(SettingsCall::LoadVideoTools)]
             }
+            SettingsCommand::ExportCsv => self.export_csv(),
+            SettingsCommand::ImportCsv => self.import_csv(),
+            SettingsCommand::ExportDbBundle => self.export_bundle(),
+            SettingsCommand::ImportDbBundle => self.pick_bundle(),
+            SettingsCommand::CancelImportDbOverwrite => self.cancel_import_db_overwrite(),
+            SettingsCommand::ConfirmImportDbOverwrite => self.confirm_import_db_overwrite(),
+            SettingsCommand::StartDuplicates => {
+                // The resolver opens even when the scan is refused.
+                self.duplicate_dialog_open = true;
+                self.scan_duplicates()
+            }
+            SettingsCommand::RescanDuplicates => self.scan_duplicates(),
+            SettingsCommand::CloseDuplicateDialog => {
+                self.duplicate_dialog_open = false;
+                Vec::new()
+            }
+            SettingsCommand::SaveDuplicateChanges(changes) => self.save_duplicate_changes(changes),
+            SettingsCommand::CancelDuplicateDelete => self.cancel_duplicate_delete(),
+            SettingsCommand::ConfirmDuplicateDelete => self.confirm_duplicate_delete(),
         }
     }
 
@@ -853,6 +1085,10 @@ impl Settings {
             self.try_settle();
             return effects;
         }
+        if let SettingsReply::DuplicatesRescanned(result) = reply {
+            self.duplicates_rescanned(result);
+            return Vec::new();
+        }
         if !matches!(
             self.active.as_ref().map(|active| &active.stage),
             Some(Stage::Call)
@@ -860,6 +1096,14 @@ impl Settings {
             return Vec::new();
         }
         match reply {
+            SettingsReply::CsvExported(result) => self.csv_exported(result),
+            SettingsReply::CsvImported(result) => self.csv_imported(result),
+            SettingsReply::BundleExported(result) => self.bundle_exported(result),
+            SettingsReply::BundleInspected(result) => self.bundle_inspected(op, result),
+            SettingsReply::BundleImported(result) => self.bundle_imported(result),
+            SettingsReply::DuplicatesFound(result) => self.duplicates_found(result),
+            SettingsReply::DuplicatesApplied(result) => self.duplicates_applied(op, result),
+            SettingsReply::DuplicatesRescanned(_) => Vec::new(),
             SettingsReply::FoldersAdded(result) => match result {
                 Ok(addition) => {
                     let selected = match self.active.as_ref().map(|active| &active.kind) {
@@ -999,26 +1243,64 @@ impl Settings {
         StatusMessage::failed(prefix, detail)
     }
 
-    fn library_event(&mut self, event: LibraryEvent) -> Vec<SettingsEffect> {
-        let clear_ticket = match self.active.as_ref() {
-            Some(Active {
-                kind: Kind::Clear { ticket },
-                stage: Stage::Barrier,
-                ..
-            }) => Some(*ticket),
+    /// The call an operation makes once its mutation barrier is granted, with the
+    /// barrier's ticket; `None` unless the operation waits for a barrier.
+    fn barrier_call(&self) -> Option<(Ticket, SettingsCall)> {
+        let active = self
+            .active
+            .as_ref()
+            .filter(|active| matches!(active.stage, Stage::Barrier))?;
+        let op = active.op;
+        match &active.kind {
+            Kind::Clear { ticket } => Some((*ticket, SettingsCall::ClearLibrary { op })),
+            Kind::ImportCsv {
+                barrier: Some((ticket, path)),
+            } => Some((
+                *ticket,
+                SettingsCall::ImportCsv {
+                    op,
+                    path: path.clone(),
+                },
+            )),
+            Kind::RestoreBundle {
+                ticket,
+                source,
+                mappings,
+            } => Some((
+                *ticket,
+                SettingsCall::ImportBundle {
+                    op,
+                    path: source.clone(),
+                    mappings: mappings.clone(),
+                },
+            )),
             _ => None,
-        };
+        }
+    }
+
+    fn library_event(&mut self, event: LibraryEvent) -> Vec<SettingsEffect> {
+        let barrier = self.barrier_call();
+        let barrier_ticket = barrier.as_ref().map(|(ticket, _)| *ticket);
         match event {
-            LibraryEvent::MaintenanceReady { ticket } if clear_ticket == Some(ticket) => {
-                let Some(op) = self.active_operation() else {
+            LibraryEvent::MaintenanceReady { ticket } if barrier_ticket == Some(ticket) => {
+                let Some((_, call)) = barrier else {
                     return Vec::new();
                 };
                 self.stage(Stage::Call);
-                vec![SettingsEffect::Call(SettingsCall::ClearLibrary { op })]
+                vec![SettingsEffect::Call(call)]
             }
-            LibraryEvent::MaintenanceRejected { ticket, error } if clear_ticket == Some(ticket) => {
+            LibraryEvent::MaintenanceRejected { ticket, error }
+                if barrier_ticket == Some(ticket) =>
+            {
+                // The operation never ran. The library is read again all the same (and
+                // the roots, for the operations that can change them), then its error
+                // is shown.
+                let roots = !matches!(
+                    self.active.as_ref().map(|active| &active.kind),
+                    Some(Kind::ImportCsv { .. })
+                );
                 let message = self.failure(&error.to_string());
-                self.settle(true, true, false, message)
+                self.settle(true, roots, false, message)
             }
             LibraryEvent::Refreshed { ticket, result } => {
                 let Some(settling) = self
@@ -1049,6 +1331,7 @@ impl Model for Settings {
         match input {
             SettingsInput::Command(command) => self.command(command),
             SettingsInput::FoldersPicked { op, result } => self.folders_picked(op, result),
+            SettingsInput::PathPicked { op, result } => self.path_picked(op, result),
             SettingsInput::Progress { op, progress } => {
                 if let Some(active) = self.active.as_ref().filter(|active| active.op == op) {
                     if active

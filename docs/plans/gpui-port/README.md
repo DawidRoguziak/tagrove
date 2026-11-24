@@ -134,7 +134,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | E15 | [Model lightboxa](E15-client-lightbox-model.md) | L | trudny | E08 | done 2026-11-22 |
 | E16 | [Lightbox: UI, przeglądarka obrazów, zaślepki GIF i wideo](E16-gpui-lightbox.md) | L | trudny | E09, E13, E15 | done 2026-11-23 |
 | E17 | [Ustawienia: szkielet, skan, miniatury, wygląd, język, strefa zagrożeń, o programie](E17-settings-core.md) | L | standardowy | E02, E06 | done 2026-11-23 |
-| E18 | [Ustawienia: import/eksport, przywracanie i duplikaty](E18-settings-data.md) | L | trudny | E17 | todo |
+| E18 | [Ustawienia: import/eksport, przywracanie i duplikaty](E18-settings-data.md) | L | trudny | E17 | done 2026-11-24 |
 | E19 | [Domknięcie: parytet, wydajność, klawiatura, dokumentacja](E19-acceptance.md) | L | trudny | E10, E14, E16, E18 | todo |
 | E20 | [Animacja GIF w lightboxie](E20-gif-animation.md) | M | standardowy | E16 | deferred |
 | E21 | [Natywne wideo (libmpv) w oknie GPUI](E21-native-video.md) | L | trudny | E16 | deferred |
@@ -179,7 +179,7 @@ Katalog jest w [epics.json](epics.json) (`scenarios`). Scenariusz to nazwany, de
 Dodanie scenariusza (harness z E01, opis w [testing.md](../../development/testing.md#comparison-harness-tauri-and-gpui)):
 
 1. wpis w `scenarios` w [epics.json](epics.json) (jeśli go jeszcze nie ma) i w `parity` epiku;
-2. plik `e2e/compare/scenarios/<id>.js` z polami `id`, `theme`, `seed` (`empty` albo `control`) i `tauri` (komendy `app:control`, które doprowadzają aplikację Tauri do tego stanu po zastosowaniu motywu i seeda);
+2. plik `e2e/compare/scenarios/<id>.js` z polami `id`, `theme`, `seed` (`empty`, `control` albo `duplicates`) i `tauri` (komendy `app:control`, które doprowadzają aplikację Tauri do tego stanu po zastosowaniu motywu i seeda);
 3. wpis w `SCENARIOS` w `src-gpui/crates/media_tagger_client/src/scenario.rs` ze stanem startowym GPUI (`media_tagger_gpui --scenario <id>`, tylko profil `.gpui.e2e`);
 4. `bun run test:compare` i `bun run test:client` pilnują zgodności tych trzech miejsc; `bun run compare:ui <id>` robi zrzuty do `artifacts/gpui-compare/<id>/`.
 

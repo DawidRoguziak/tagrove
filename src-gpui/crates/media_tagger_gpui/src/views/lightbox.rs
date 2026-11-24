@@ -788,6 +788,7 @@ impl LightboxView {
                 loading_text: None,
                 disabled: stamp.disabled,
                 input_label: i18n.t("lightbox.addTag").into(),
+                list_label: i18n.t("lightbox.taggingSuggestions").into(),
                 placeholder: i18n.t("lightbox.tagInputPlaceholder").into(),
                 remove_label: Some(Rc::new(move |tag: &str| {
                     SharedString::from(
@@ -1381,6 +1382,13 @@ impl Render for LightboxView {
             .overflow_hidden()
             .key_context(key_context().as_str())
             .track_focus(&focus_handle)
+            // Tab follows the order of the Solid DOM, not the drawing order: the stage,
+            // the action rail and the side panel are tab groups, and the stops of a
+            // group come after the stops beside it. The floating buttons, which must be
+            // drawn above the stage and so after the rail, are beside those groups and
+            // come first, as they do in `LightboxModal.tsx`. The dialog is a group too,
+            // which keeps this order its own.
+            .tab_group()
             // A press inside the dialog never reaches the backdrop.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .map(|dialog| {

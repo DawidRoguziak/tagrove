@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 
 use gpui::{AssetSource, SharedString};
-use media_tagger_client::icons::{filled_variant, IconName};
+use media_tagger_client::icons::{filled_variant, heavy_variant, IconName, IconVariant};
 
 /// Every icon file, by the name of `UiIconName`.
 const ICON_FILES: [(&str, &[u8]); 22] = [
@@ -81,27 +81,30 @@ pub struct Assets;
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
-        let Some((icon, filled)) = IconName::from_asset_path(path) else {
+        let Some((icon, variant)) = IconName::from_asset_path(path) else {
             return Ok(None);
         };
         let svg = icon_svg(icon);
-        Ok(Some(if filled {
-            // Every file has `fill="none"` on its root (tested).
-            Cow::Owned(
-                filled_variant(svg)
-                    .unwrap_or_else(|| svg.to_owned())
-                    .into_bytes(),
-            )
-        } else {
-            Cow::Borrowed(svg.as_bytes())
-        }))
+        // Every file has `fill="none"` and the stroke width of `UiIcon` on its root
+        // (tested).
+        let derived = match variant {
+            IconVariant::Plain => return Ok(Some(Cow::Borrowed(svg.as_bytes()))),
+            IconVariant::Filled => filled_variant(svg),
+            IconVariant::Heavy => heavy_variant(svg),
+        };
+        Ok(Some(Cow::Owned(
+            derived.unwrap_or_else(|| svg.to_owned()).into_bytes(),
+        )))
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
         let path = path.trim_end_matches('/');
         Ok(IconName::ALL
             .into_iter()
-            .flat_map(|icon| [icon.asset_path(false), icon.asset_path(true)])
+            .flat_map(|icon| {
+                [IconVariant::Plain, IconVariant::Filled, IconVariant::Heavy]
+                    .map(|variant| icon.variant_asset_path(variant))
+            })
             .filter(|asset| {
                 path.is_empty()
                     || asset
@@ -116,7 +119,7 @@ impl AssetSource for Assets {
 #[cfg(test)]
 mod tests {
     use gpui::AssetSource as _;
-    use media_tagger_client::icons::{IconName, ASSET_DIR, FILLED_ASSET_DIR};
+    use media_tagger_client::icons::{IconName, ASSET_DIR, FILLED_ASSET_DIR, HEAVY_ASSET_DIR};
 
     use super::{icon_svg, Assets, ICON_FILES};
 
@@ -224,11 +227,22 @@ mod tests {
         assert!(filled.starts_with(
             r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor""#
         ));
+        let heavy = Assets
+            .load("icons/heavy/close.svg")
+            .unwrap()
+            .expect("heavy close");
+        let heavy = std::str::from_utf8(&heavy).unwrap();
+        assert!(
+            heavy.contains(r#"stroke-width="2.4""#) && !heavy.contains(r#"stroke-width="1.8""#)
+        );
+        assert!(heavy.contains(r#"fill="none""#));
         assert!(Assets.load("icons/unknown.svg").unwrap().is_none());
+        assert!(Assets.load("icons/heavy/unknown.svg").unwrap().is_none());
         assert!(Assets.load("fonts/Inter.ttf").unwrap().is_none());
 
-        assert_eq!(Assets.list(ASSET_DIR).unwrap().len(), 44);
+        assert_eq!(Assets.list(ASSET_DIR).unwrap().len(), 66);
         assert_eq!(Assets.list(FILLED_ASSET_DIR).unwrap().len(), 22);
+        assert_eq!(Assets.list(HEAVY_ASSET_DIR).unwrap().len(), 22);
         assert!(Assets.list("nothing").unwrap().is_empty());
     }
 }

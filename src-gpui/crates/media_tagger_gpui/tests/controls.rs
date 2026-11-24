@@ -616,6 +616,68 @@ mod pointer_and_activation {
         assert_eq!(slider.read_with(&cx, |slider, _| slider.value()), 0.0);
     }
 
+    /// A CSS outline is measured from the border box. An absolutely placed child is
+    /// laid out from the padding box, so the ring of a control with a border is moved
+    /// out by that border: without it the ring of the button lies 1 px closer than its
+    /// outline in the webview (3 px instead of 4 px to the outer edge here). A
+    /// bordered control (a button: `border`, outline 2 px at 2 px) and a borderless one
+    /// (the slider's track: the base outline, 2 px at 3 px).
+    #[gpui::test]
+    fn the_focus_ring_lies_at_the_outline_s_distance_from_the_border_box(cx: &mut TestAppContext) {
+        use media_tagger_client::controls::{
+            button_visuals, slider_visuals, ButtonState, ButtonVariant,
+        };
+
+        fn grown(bounds: Bounds<Pixels>, by: f32) -> [Pixels; 4] {
+            [
+                bounds.left() - px(by),
+                bounds.top() - px(by),
+                bounds.right() + px(by),
+                bounds.bottom() + px(by),
+            ]
+        }
+        fn edges(bounds: Bounds<Pixels>) -> [Pixels; 4] {
+            [bounds.left(), bounds.top(), bounds.right(), bounds.bottom()]
+        }
+
+        let (board, mut cx) = open(cx);
+        let tokens = ThemeName::Dark.tokens();
+        assert!(
+            cx.debug_bounds(theme::FOCUS_RING_SELECTOR).is_none(),
+            "no ring before a key moved the focus"
+        );
+
+        // Tab from the root: the button, with the focus shown.
+        let action = board.read_with(&cx, |board, _| board.action.clone());
+        cx.simulate_keystrokes("tab");
+        assert!(focused(&action, &mut cx));
+        let visuals = button_visuals(tokens, ButtonVariant::Secondary, ButtonState::default());
+        assert_eq!(visuals.border_width, 1.0, "a bordered control");
+        assert_eq!(
+            (visuals.focus_ring.width, visuals.focus_ring.offset),
+            (2.0, 2.0)
+        );
+        let button = bounds("action", &mut cx);
+        let ring = bounds(theme::FOCUS_RING_SELECTOR, &mut cx);
+        assert_eq!(edges(ring), grown(button, 4.0), "the button's ring");
+
+        // The slider's track has no border.
+        let slider = board.read_with(&cx, |board, _| board.slider.clone());
+        let handle = slider.read_with(&cx, gpui::Focusable::focus_handle);
+        cx.update(|window, cx| window.focus(&handle, cx));
+        cx.run_until_parked();
+        cx.simulate_keystrokes("right");
+        let visuals = slider_visuals(tokens);
+        assert_eq!(
+            (visuals.focus_ring.width, visuals.focus_ring.offset),
+            (2.0, 3.0)
+        );
+        let track = bounds("slider", &mut cx);
+        assert_eq!(track.size.height, px(visuals.track_height));
+        let ring = bounds(theme::FOCUS_RING_SELECTOR, &mut cx);
+        assert_eq!(edges(ring), grown(track, 5.0), "the slider's ring");
+    }
+
     #[gpui::test]
     fn a_disabled_slider_takes_no_input(cx: &mut TestAppContext) {
         let (board, mut cx) = open(cx);

@@ -22,7 +22,7 @@ use media_tagger_client::{
 
 use super::{
     icon::Icon,
-    theme::{self, color, focus_ring, shadows_beneath, weight},
+    theme::{self, color, focus_ring, shadows_beneath, weight, RingBorder},
 };
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -53,6 +53,7 @@ pub struct Button {
     text_size: Option<f32>,
     transparent: bool,
     icon_half_turn: bool,
+    icon_heavy: bool,
     full_width: bool,
     inert: bool,
     on_click: Option<ClickHandler>,
@@ -78,6 +79,7 @@ impl Button {
             text_size: None,
             transparent: false,
             icon_half_turn: false,
+            icon_heavy: false,
             full_width: false,
             inert: false,
             on_click: None,
@@ -101,6 +103,13 @@ impl Button {
     /// `iconClassName`).
     pub fn icon_half_turn(mut self, half_turn: bool) -> Self {
         self.icon_half_turn = half_turn;
+        self
+    }
+
+    /// Draws the icon of an icon button with the heavier stroke (`[stroke-width:2.4]`
+    /// in the icon's class).
+    pub fn icon_heavy(mut self, heavy: bool) -> Self {
+        self.icon_heavy = heavy;
         self
     }
 
@@ -314,7 +323,11 @@ impl RenderOnce for Button {
                 button.debug_selector(move || selector.to_string())
             })
             .when(focus_visible, |button| {
-                button.child(focus_ring(rest.focus_ring, rest.radius))
+                button.child(focus_ring(
+                    rest.focus_ring,
+                    rest.radius,
+                    RingBorder::all(rest.border_width),
+                ))
             });
         let button = match self.content {
             Content::Label(label) => button
@@ -331,6 +344,7 @@ impl RenderOnce for Button {
                                 && matches!(kind, IconButtonKind::Active { .. }),
                         )
                         .half_turn(self.icon_half_turn)
+                        .heavy(self.icon_heavy)
                         .color(color(rest.text)),
                 )
             }

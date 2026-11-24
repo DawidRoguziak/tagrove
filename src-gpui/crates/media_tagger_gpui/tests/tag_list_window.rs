@@ -1144,3 +1144,154 @@ fn the_drawn_rows_are_the_rows_of_flex_wrap(cx: &mut TestAppContext) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Epic E19: keyboard and focus review, and parity of the dialog's filter.
+// ---------------------------------------------------------------------------
+
+/// What has the focus: the launcher, the dialog's filter, one of its tag buttons, or
+/// something else of the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stop {
+    Launcher,
+    Filter,
+    Chip,
+    Other,
+}
+
+fn stop(window: &WindowHandle<ShellView>, tags: &[&str], cx: &mut VisualTestContext) -> Stop {
+    window
+        .update(cx, |shell, window, cx| {
+            let gallery = shell.gallery().expect("the gallery").read(cx);
+            let list = gallery.search().read(cx).tag_list().read(cx);
+            if list.launcher_focus().is_focused(window) {
+                Stop::Launcher
+            } else if list.input().focus_handle(cx).is_focused(window) {
+                Stop::Filter
+            } else if tags.iter().any(|tag| {
+                list.chip_focus(tag)
+                    .is_some_and(|focus| focus.is_focused(window))
+            }) {
+                Stop::Chip
+            } else {
+                Stop::Other
+            }
+        })
+        .unwrap()
+}
+
+fn phase(
+    window: &WindowHandle<ShellView>,
+    cx: &mut VisualTestContext,
+) -> media_tagger_client::overlay::Phase {
+    window
+        .update(cx, |shell, _, cx| {
+            let gallery = shell.gallery().expect("the gallery").read(cx);
+            gallery
+                .search()
+                .read(cx)
+                .tag_list()
+                .read(cx)
+                .modal()
+                .read(cx)
+                .phase()
+        })
+        .unwrap()
+}
+
+/// `inert` on the closing `UiModal` content, for Tab in the real window: while the tag
+/// list fades out after Escape, a whole round of Tab and of Shift+Tab from the launcher
+/// passes over the dialog's filter and tag buttons and comes back to the launcher.
+#[gpui::test]
+fn tab_passes_over_the_tag_list_while_it_fades_out(cx: &mut TestAppContext) {
+    use media_tagger_client::overlay::Phase;
+
+    let tags = ["camera", "car", "cat"];
+    let fixture = Fixture::new(&tags);
+    let (window, mut cx) = open(&fixture, cx);
+    click(&fixture, tag_list::LAUNCHER_ID, &mut cx);
+    assert_eq!(stop(&window, &tags, &mut cx), Stop::Filter);
+    // Open, Tab reaches the tag buttons of the dialog.
+    cx.simulate_keystrokes("tab");
+    settle(&fixture, &mut cx);
+    assert_eq!(stop(&window, &tags, &mut cx), Stop::Chip);
+
+    cx.simulate_keystrokes("escape");
+    settle(&fixture, &mut cx);
+    assert!(!is_open(&window, &mut cx));
+    assert_eq!(phase(&window, &mut cx), Phase::Closing, "still fading out");
+    assert_eq!(stop(&window, &tags, &mut cx), Stop::Launcher);
+
+    for keystroke in ["tab", "shift-tab"] {
+        let mut round = Vec::new();
+        for _ in 0..200 {
+            cx.simulate_keystrokes(keystroke);
+            cx.run_until_parked();
+            let at = stop(&window, &tags, &mut cx);
+            round.push(at);
+            if at == Stop::Launcher {
+                break;
+            }
+        }
+        assert_eq!(
+            round.last(),
+            Some(&Stop::Launcher),
+            "{keystroke}: the round comes back to the launcher: {round:?}"
+        );
+        assert!(
+            round
+                .iter()
+                .all(|at| !matches!(at, Stop::Filter | Stop::Chip)),
+            "{keystroke}: no stop of the fading dialog: {round:?}"
+        );
+        assert_eq!(phase(&window, &mut cx), Phase::Closing);
+    }
+}
+
+/// The filter of `TagListModal`: `border px-3 py-2.5 text-sm`, one 13 px line at
+/// 1.428571 (18.57 px), 10 px above and below it and the border: 40.57 px, not the 42 px
+/// of Tailwind's 14 px `text-sm` (comparison scenario `tag-list-modal`). The field is
+/// drawn in the deferred dialog, and its text sits in the middle of it in the dialog's
+/// line height, not in the window's default 26 px.
+#[gpui::test]
+fn the_filter_is_one_small_line_high_with_its_text_in_the_middle(cx: &mut TestAppContext) {
+    use media_tagger_client::theme::TYPOGRAPHY;
+
+    let fixture = Fixture::new(&["camera", "car", "cat"]);
+    let (window, mut cx) = open(&fixture, cx);
+    click(&fixture, tag_list::LAUNCHER_ID, &mut cx);
+    cx.simulate_input("ca");
+    settle(&fixture, &mut cx);
+
+    let expected_height = 13.0 * (1.25 / 0.875) + 2.0 * 10.0 + 2.0;
+    assert!((expected_height - 40.571_f32).abs() < 0.001);
+    let field = cx
+        .debug_bounds(tag_list::FILTER_SELECTOR)
+        .expect("the filter");
+    // Above the field: the `text-xs` label and the 6 px gap.
+    let label = TYPOGRAPHY.xs.line_height_px() + 6.0;
+    let height = f32::from(field.size.height) - label;
+    assert!(
+        (height - expected_height).abs() <= 0.5,
+        "the field is {height} px high"
+    );
+
+    let (text, line_height) = window
+        .update(&mut cx, |shell, _, cx| {
+            let gallery = shell.gallery().expect("the gallery").read(cx);
+            let list = gallery.search().read(cx).tag_list().read(cx);
+            let input = list.input().read(cx);
+            (input.text_bounds(), input.painted_line_height())
+        })
+        .unwrap();
+    let text = text.expect("the line was drawn");
+    let line_height = f32::from(line_height.expect("the line was drawn"));
+    assert!(
+        (line_height - TYPOGRAPHY.sm.line_height_px()).abs() <= 0.5,
+        "the line is {line_height} px high, the dialog's `text-sm` line"
+    );
+    let field_top = f32::from(field.bottom()) - height;
+    let above = f32::from(text.top()) - field_top;
+    let below = f32::from(field.bottom() - text.bottom());
+    assert!((above - below).abs() <= 1.0, "{above} {below}");
+}

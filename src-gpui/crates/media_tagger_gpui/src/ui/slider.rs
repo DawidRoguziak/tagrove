@@ -15,7 +15,7 @@ use media_tagger_client::{
     theme::ThemeName,
 };
 
-use super::theme::{self, color, focus_ring};
+use super::theme::{self, color, focus_ring, RingBorder};
 
 /// The key context of a focused slider.
 pub const KEY_CONTEXT: &str = "UiSlider";
@@ -254,7 +254,11 @@ impl Render for Slider {
             )
             .child(thumb_lane)
             .when(focus_visible, |slider| {
-                slider.child(focus_ring(visuals.focus_ring, visuals.track_height / 2.0))
+                slider.child(focus_ring(
+                    visuals.focus_ring,
+                    visuals.track_height / 2.0,
+                    RingBorder::NONE,
+                ))
             })
             // The track is 4px high; the thumb and a little around the track take
             // presses too.

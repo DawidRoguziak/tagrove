@@ -33,4 +33,7 @@ pub use keymap::{command_for, Command, KEYMAP};
 pub use runs::{style_runs, RunSpec};
 pub use sanitize::single_line;
 pub use scroll::scroll_to_reveal;
-pub use visuals::{field_visuals, FieldChrome, FieldState, FieldVisuals, CARET_WIDTH};
+pub use visuals::{
+    field_visuals, FieldChrome, FieldState, FieldVisuals, CARET_WIDTH,
+    FRAMED_DISABLED_PLACEHOLDER_PERCENT, FRAMED_DISABLED_TEXT_PERCENT,
+};

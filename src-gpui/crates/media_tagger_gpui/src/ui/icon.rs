@@ -1,7 +1,7 @@
 //! `UiIcon`: one of the 22 icons, drawn in the current text colour.
 
 use gpui::{percentage, prelude::*, px, svg, App, Hsla, Transformation, Window};
-use media_tagger_client::icons::IconName;
+use media_tagger_client::icons::{IconName, IconVariant};
 
 /// The default size: `h-5 w-5`.
 pub const ICON_SIZE: f32 = 20.0;
@@ -10,6 +10,7 @@ pub const ICON_SIZE: f32 = 20.0;
 pub struct Icon {
     name: IconName,
     filled: bool,
+    heavy: bool,
     size: f32,
     color: Option<Hsla>,
     half_turn: bool,
@@ -20,6 +21,7 @@ impl Icon {
         Self {
             name,
             filled: false,
+            heavy: false,
             size: ICON_SIZE,
             color: None,
             half_turn: false,
@@ -29,6 +31,13 @@ impl Icon {
     /// `filled` of `UiIcon`: the shape is filled with the stroke colour.
     pub fn filled(mut self, filled: bool) -> Self {
         self.filled = filled;
+        self
+    }
+
+    /// `[stroke-width:2.4]` in the icon's class: the heavier stroke of the remove and
+    /// clear crosses. A filled icon stays filled.
+    pub fn heavy(mut self, heavy: bool) -> Self {
+        self.heavy = heavy;
         self
     }
 
@@ -59,7 +68,13 @@ impl RenderOnce for Icon {
         let color = self.color.unwrap_or_else(|| window.text_style().color);
         // An icon is decorative (aria-hidden) unless its owner names it.
         svg()
-            .path(self.name.asset_path(self.filled))
+            .path(self.name.variant_asset_path(if self.filled {
+                IconVariant::Filled
+            } else if self.heavy {
+                IconVariant::Heavy
+            } else {
+                IconVariant::Plain
+            }))
             .size(px(self.size))
             .flex_none()
             .text_color(color)

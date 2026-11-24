@@ -16,6 +16,13 @@ pub enum FieldChrome {
     /// A field inside a container that draws the frame and the focus ring itself, as
     /// the tag editor does (`border-0 bg-transparent px-1 shadow-none`).
     Bare,
+    /// The text of a daisyUI `.input` element, inside a container that draws that
+    /// element's frame, focus outline and the 0.55 of `input:disabled` over both (the
+    /// rename field of the duplicate resolver, `input input-sm`). The measures are
+    /// those of [`FieldChrome::Bare`]. Disabled, the field does not dim itself a second
+    /// time: it takes the colours of daisyUI's `.input:disabled`, 40 % of the base
+    /// content for the text and 20 % for the placeholder.
+    Framed,
     /// A field whose utility classes replace the frame of `input` with a border on the
     /// dialog's own background, as the tag list's filter does (`border
     /// border-base-content/12 bg-base-100 px-3 py-2.5 shadow-[var(--shadow-surface)]
@@ -53,7 +60,8 @@ pub struct FieldVisuals {
     pub radius: f32,
     pub padding_x: f32,
     pub padding_y: f32,
-    /// `input:disabled` is drawn at 0.55.
+    /// `input:disabled` is drawn at 0.55. A [`FieldChrome::Framed`] field leaves that
+    /// to its container.
     pub opacity: f32,
 }
 
@@ -70,6 +78,11 @@ const OUTLINE_PERCENT: u8 = 12;
 const OUTLINE_FOCUS_PERCENT: u8 = 40;
 /// `opacity` of `input:disabled`.
 const DISABLED_OPACITY: f32 = 0.55;
+/// daisyUI's `.input:disabled`: `color: color-mix(in oklab, var(--color-base-content)
+/// 40%, transparent)`, and its placeholder `color: var(--color-base-content); opacity:
+/// 0.2`.
+pub const FRAMED_DISABLED_TEXT_PERCENT: u8 = 40;
+pub const FRAMED_DISABLED_PLACEHOLDER_PERCENT: u8 = 20;
 
 pub fn field_visuals(tokens: &ThemeTokens, chrome: FieldChrome, state: FieldState) -> FieldVisuals {
     let colors = &tokens.colors;
@@ -86,7 +99,9 @@ pub fn field_visuals(tokens: &ThemeTokens, chrome: FieldChrome, state: FieldStat
             PADDING_X,
             PADDING_Y,
         ),
-        FieldChrome::Bare => (Rgba::TRANSPARENT, None, &[][..], BARE_PADDING_X, PADDING_Y),
+        FieldChrome::Bare | FieldChrome::Framed => {
+            (Rgba::TRANSPARENT, None, &[][..], BARE_PADDING_X, PADDING_Y)
+        }
         FieldChrome::Outlined => {
             let (border, shadows) = if focused {
                 (
@@ -108,11 +123,24 @@ pub fn field_visuals(tokens: &ThemeTokens, chrome: FieldChrome, state: FieldStat
             )
         }
     };
+    let framed_disabled = chrome == FieldChrome::Framed && state.disabled;
     FieldVisuals {
         background,
         border,
-        text: colors.base_content,
-        placeholder: colors.text_muted,
+        text: if framed_disabled {
+            colors
+                .base_content
+                .with_alpha_percent(FRAMED_DISABLED_TEXT_PERCENT)
+        } else {
+            colors.base_content
+        },
+        placeholder: if framed_disabled {
+            colors
+                .base_content
+                .with_alpha_percent(FRAMED_DISABLED_PLACEHOLDER_PERCENT)
+        } else {
+            colors.text_muted
+        },
         caret: colors.base_content,
         selection_background: colors.primary,
         selection_text: colors.primary_content,
@@ -120,7 +148,7 @@ pub fn field_visuals(tokens: &ThemeTokens, chrome: FieldChrome, state: FieldStat
         radius: RADII.control,
         padding_x,
         padding_y,
-        opacity: if state.disabled {
+        opacity: if state.disabled && !framed_disabled {
             DISABLED_OPACITY
         } else {
             1.0
@@ -252,6 +280,41 @@ mod tests {
             let disabled = field_visuals(tokens, FieldChrome::Outlined, DISABLED);
             assert_eq!(disabled.border, rest.border);
             assert_eq!(disabled.opacity, 0.55);
+        }
+    }
+
+    /// The rename field of the duplicate resolver: its frame carries the 0.55 of
+    /// `input:disabled`, so the text inside is 40 % of the base content once (0.22 in
+    /// all), not 0.55 twice (0.30).
+    #[test]
+    fn a_framed_field_takes_the_disabled_colours_of_the_daisy_input_and_no_opacity() {
+        const ASSET_CARD: &str =
+            include_str!("../../../../../src/features/settings/DuplicateAssetCard.tsx");
+        assert!(
+            ASSET_CARD.contains("class=\"input input-sm "),
+            "DuplicateAssetCard.tsx: the rename field is no daisyUI input any more"
+        );
+        for theme in ThemeName::ALL {
+            let tokens = theme.tokens();
+            let content = tokens.colors.base_content;
+            let bare = field_visuals(tokens, FieldChrome::Bare, FieldState::default());
+            for state in [FieldState::default(), FOCUSED] {
+                assert_eq!(field_visuals(tokens, FieldChrome::Framed, state), bare);
+            }
+
+            let disabled = field_visuals(tokens, FieldChrome::Framed, DISABLED);
+            assert_eq!(disabled.opacity, 1.0);
+            assert_eq!(disabled.text, content.with_alpha_percent(40));
+            assert_eq!(disabled.placeholder, content.with_alpha_percent(20));
+            assert_eq!(
+                (disabled.background, disabled.padding_x, disabled.padding_y),
+                (bare.background, bare.padding_x, bare.padding_y)
+            );
+            assert!(disabled.shadows.is_empty());
+            // The inner field of the tag editor is an `input` of its own: 0.55.
+            let bare_disabled = field_visuals(tokens, FieldChrome::Bare, DISABLED);
+            assert_eq!(bare_disabled.opacity, 0.55);
+            assert_eq!(bare_disabled.text, content);
         }
     }
 

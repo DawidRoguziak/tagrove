@@ -12,6 +12,8 @@
 //! itself; a key it does not handle (Escape in a text field, `text_input::Cancel`) falls
 //! through to these bindings. Escape that closes nothing goes on to the next binding;
 //! Tab moves to the next tab stop of the window, or of the top modal (wrapping inside it).
+//! The tab stops of a released modal that is still drawn (a dialog that fades out) are
+//! passed over, as a browser passes over `inert` content.
 //!
 //! # Focus
 //!
@@ -111,6 +113,9 @@ pub struct UiLayers {
     stack: LayerStack,
     entries: HashMap<LayerId, Entry>,
     root: FocusHandle,
+    /// The containers of released modals. One counts while it is still drawn, which is
+    /// as long as its dialog fades out: its tab stops are `inert` then.
+    released: Vec<WeakFocusHandle>,
 }
 
 impl Global for UiLayers {}
@@ -123,6 +128,7 @@ pub fn init(cx: &mut App) {
             stack: LayerStack::new(),
             entries: HashMap::new(),
             root,
+            released: Vec::new(),
         });
     }
     cx.bind_keys(key_bindings());
@@ -175,6 +181,11 @@ pub fn register(options: LayerOptions, window: &mut Window, cx: &mut App) -> Lay
     let id = layers
         .stack
         .register(options.modal, options.close_on_escape);
+    if let Some(container) = &options.container {
+        // A dialog opened again while it fades out takes input again.
+        let container = container.downgrade();
+        layers.released.retain(|released| *released != container);
+    }
     layers.entries.insert(
         id,
         Entry {
@@ -206,6 +217,12 @@ pub fn release(id: LayerId, restore_focus: Option<FocusHandle>, window: &mut Win
     }
     let layers = cx.global_mut::<UiLayers>();
     let entry = layers.entries.remove(&id);
+    if let Some(container) = entry.as_ref().and_then(|entry| entry.container.as_ref()) {
+        layers
+            .released
+            .retain(|released| released.upgrade().is_some());
+        layers.released.push(container.downgrade());
+    }
     let Release::Pending(pending) = layers.stack.release(id) else {
         return;
     };
@@ -326,8 +343,29 @@ fn focus_initial(id: LayerId, window: &mut Window, cx: &mut App) {
     }
 }
 
+/// The containers of released modals that the last frame still drew: dialogs that fade
+/// out. The ones that are gone are forgotten.
+fn fading_containers(window: &Window, cx: &mut App) -> Vec<FocusHandle> {
+    let Some(layers) = cx.try_global::<UiLayers>() else {
+        return Vec::new();
+    };
+    if layers.released.is_empty() {
+        return Vec::new();
+    }
+    let drawn: Vec<FocusHandle> = layers
+        .released
+        .iter()
+        .filter_map(|released| released.upgrade())
+        .filter(|container| is_rendered(container, window, cx))
+        .collect();
+    let kept: Vec<WeakFocusHandle> = drawn.iter().map(FocusHandle::downgrade).collect();
+    cx.global_mut::<UiLayers>().released = kept;
+    drawn
+}
+
 /// Tab and Shift+Tab. Inside a modal the focus wraps from its last tab stop to its first
-/// and back, and comes back into it from anywhere outside.
+/// and back, and comes back into it from anywhere outside. Without a modal the tab
+/// stops of a dialog that fades out are passed over.
 fn move_focus(forward: bool, window: &mut Window, cx: &mut App) {
     let step = |window: &mut Window, cx: &mut App| {
         if forward {
@@ -341,7 +379,34 @@ fn move_focus(forward: bool, window: &mut Window, cx: &mut App) {
         layers.entries.get(&modal)?.container.clone()
     });
     let Some(container) = container else {
-        step(window, cx);
+        let fading = fading_containers(window, cx);
+        if fading.is_empty() {
+            step(window, cx);
+            return;
+        }
+        let start = window.focused(cx);
+        let mut seen = Vec::new();
+        loop {
+            step(window, cx);
+            let Some(focused) = window.focused(cx) else {
+                return;
+            };
+            let inert = fading
+                .iter()
+                .any(|container| container == &focused || container.contains(&focused, window));
+            if !inert {
+                return;
+            }
+            if seen.contains(&focused) {
+                break;
+            }
+            seen.push(focused);
+        }
+        // Every tab stop of the window is in a fading dialog: the focus stays put.
+        match start {
+            Some(start) => window.focus(&start, cx),
+            None => focus_root(window, cx),
+        }
         return;
     };
     // Walk the window's tab order until a stop inside the modal comes up; the stops

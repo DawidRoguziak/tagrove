@@ -1183,3 +1183,50 @@ fn a_long_ctrl_press_never_opens_and_its_release_toggles_the_tile(cx: &mut TestA
     assert_eq!(ids(&window, &cx), [3]);
     assert!(opened.lock().unwrap().is_empty());
 }
+
+/// Ported from `e2e/gallery-scale/million.tsx` (epic E19), "Ctrl+A in bulk mode →
+/// counter shows 1,000,000 without reading a single ID": far down a million results,
+/// Ctrl+A selects every result as one range, materializes no ID, reads no ID range
+/// beyond the one-ID keepalive of the session (ADR 0029), and marks the tiles in view;
+/// a clear brings the count back to 0, three times.
+#[gpui::test]
+fn ctrl_a_selects_a_million_results_without_reading_their_ids(cx: &mut TestAppContext) {
+    const MILLION: usize = 1_000_000;
+    let fixture = Fixture::library(MILLION);
+    let (window, mut cx) = open(&fixture, cx);
+    toggle_mode(&fixture, &mut cx);
+    let focus =
+        gallery_view(&window, &cx).read_with(&cx, |gallery, _| gallery.grid_focus().clone());
+    cx.update(|window, cx| window.focus(&focus, cx));
+    cx.simulate_keystrokes("end");
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(150));
+    settle(&fixture, &mut cx);
+    assert!(bounds(gallery::tile_selector(MILLION - 1), &mut cx).is_some());
+
+    for sample in 0..3 {
+        assert_eq!(selection(&window, &cx, |selection| selection.count()), 0);
+        fixture.backend.take_calls();
+        cx.update(|window, cx| window.focus(&focus, cx));
+        cx.simulate_keystrokes("ctrl-a");
+        cx.run_until_parked();
+        assert_eq!(
+            selection(&window, &cx, |selection| selection.count()),
+            MILLION,
+            "sample {sample}"
+        );
+        assert!(selection(&window, &cx, |selection| selection.ranged()));
+        assert!(ids(&window, &cx).is_empty(), "no ID is materialized");
+        settle(&fixture, &mut cx);
+        let reads = fixture.take_id_ranges();
+        assert!(
+            reads.iter().all(|(start, end)| start == end),
+            "sample {sample}: only the keepalive's one-ID reads: {reads:?}"
+        );
+        assert!(marked(MILLION - 1, &mut cx), "the tiles in view are marked");
+
+        cx.simulate_keystrokes("escape");
+        settle(&fixture, &mut cx);
+        assert!(!marked(MILLION - 1, &mut cx));
+    }
+}

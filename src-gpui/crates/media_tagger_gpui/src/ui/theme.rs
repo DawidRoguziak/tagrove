@@ -97,24 +97,80 @@ pub fn app_root(root: Div, theme: ThemeName) -> Div {
         .bg(color(colors.bg_1))
 }
 
-/// The `:focus-visible` outline of an element with corner radius `radius`, as a
-/// child that the element must be `relative` for. It draws outside the element and
-/// takes no input.
-pub fn focus_ring(ring: FocusRing, radius: f32) -> Div {
-    let outset = px(ring.outset());
+/// The widths of the borders of the element a [`focus_ring`] is drawn around, in
+/// pixels. An element without a border is [`RingBorder::NONE`].
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct RingBorder {
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub left: f32,
+}
+
+impl RingBorder {
+    pub const NONE: Self = Self::all(0.0);
+
+    /// The same border on every side (`border`).
+    pub const fn all(width: f32) -> Self {
+        Self {
+            top: width,
+            right: width,
+            bottom: width,
+            left: width,
+        }
+    }
+
+    /// A border on the top edge only (`border-t`).
+    pub const fn top(width: f32) -> Self {
+        Self {
+            top: width,
+            ..Self::NONE
+        }
+    }
+
+    /// A border on the bottom edge only (`border-b-2`).
+    pub const fn bottom(width: f32) -> Self {
+        Self {
+            bottom: width,
+            ..Self::NONE
+        }
+    }
+}
+
+/// The debug selector of the ring [`focus_ring`] draws, unless its caller gives it
+/// another. One element has the keyboard focus at a time, so one ring is drawn.
+pub const FOCUS_RING_SELECTOR: &str = "focus-ring";
+
+/// The `:focus-visible` outline of an element with corner radius `radius` and the
+/// borders `border`, as a child that the element must be `relative` for. It draws
+/// outside the element and takes no input.
+///
+/// A CSS outline is measured from the border box. An absolutely placed child is laid
+/// out from the padding box, inside the borders, so each side is moved out by the
+/// border under it; without that the ring of a bordered element lies that much closer
+/// than the outline. `radius` is the element's own, of its border box.
+pub fn focus_ring(ring: FocusRing, radius: f32, border: RingBorder) -> Div {
+    let outset = ring.outset();
     let frame = div()
+        .debug_selector(|| FOCUS_RING_SELECTOR.to_owned())
         .absolute()
-        .top(-outset)
-        .left(-outset)
-        .right(-outset)
-        .bottom(-outset)
-        .rounded(px(radius + ring.outset()))
+        .top(px(-(outset + border.top)))
+        .left(px(-(outset + border.left)))
+        .right(px(-(outset + border.right)))
+        .bottom(px(-(outset + border.bottom)))
+        .rounded(px(radius + outset))
         .border_color(color(ring.color));
     if ring.width >= 2.0 {
         frame.border_2()
     } else {
         frame.border_1()
     }
+}
+
+/// [`focus_ring`] for an element without a corner radius: the outline of a square box
+/// has square corners.
+pub fn square_focus_ring(ring: FocusRing, border: RingBorder) -> Div {
+    focus_ring(ring, -ring.outset(), border)
 }
 
 #[cfg(test)]

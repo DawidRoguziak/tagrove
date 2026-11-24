@@ -52,9 +52,10 @@ use crate::{
         button::{keyed_focus_handle, Button},
         fonts,
         icon::Icon,
+        layers,
         modal::{Modal, ModalEvent, ModalState},
         text_input::{TextInput, TextInputEvent},
-        theme::{self, box_shadows, color, focus_ring, weight},
+        theme::{self, box_shadows, color, focus_ring, square_focus_ring, weight, RingBorder},
     },
 };
 
@@ -478,6 +479,7 @@ impl BulkDock {
                     .then(|| i18n.t("bulk.panel.loadingTags").into()),
                 disabled: stamp.disabled,
                 input_label: i18n.t("bulk.tagModal.addTag").into(),
+                list_label: i18n.t("bulk.tagModal.suggestions").into(),
                 placeholder: i18n.t("bulk.tagModal.tagInputPlaceholder").into(),
                 remove_label: stamp.removable.then(|| {
                     Rc::new(move |tag: &str| {
@@ -624,8 +626,10 @@ impl BulkDock {
             .font_weight(weight(TYPOGRAPHY.weight_semibold))
             .child(count.to_string())
             .child(
+                // `[stroke-width:2.4]` on the cross of the counter (`BulkDock.tsx`).
                 Icon::new(IconName::Close)
                     .size(header::COUNT_ICON_SIZE)
+                    .heavy(true)
                     .color(color(colors.primary_text)),
             );
         if disabled {
@@ -644,7 +648,12 @@ impl BulkDock {
                     .border_color(gpui::transparent_black())
             })
             .when(focus_visible, |button| {
-                button.child(focus_ring(FocusRing::base(theme.tokens()), RADII.control))
+                button.child(focus_ring(
+                    FocusRing::base(theme.tokens()),
+                    RADII.control,
+                    // `.bulk-dock-count`: `border: 1px solid`.
+                    RingBorder::all(1.0),
+                ))
             })
             .on_click(cx.listener(|this, _, window, cx| {
                 let effects = this.dock.clear_selection();
@@ -701,7 +710,11 @@ impl BulkDock {
                     button.hover(move |style| style.text_color(color(base_content)))
                 })
                 .when(focus_visible, |button| {
-                    button.child(focus_ring(FocusRing::base(theme.tokens()), RADII.field))
+                    // `.bulk-dock-tab` has no radius and a border under it only.
+                    button.child(square_focus_ring(
+                        FocusRing::base(theme.tokens()),
+                        RingBorder::bottom(tabs::INDICATOR),
+                    ))
                 })
                 .on_click(cx.listener(move |this, _, window, cx| this.select_tab(tab, window, cx)))
                 .on_action(cx.listener(move |this, _: &TabNext, window, cx| {
@@ -1273,8 +1286,18 @@ impl Render for BulkDock {
             .border_color(color(colors.border_strong))
             .bg(color(colors.surface_solid))
             .shadow(box_shadows(tokens.shadows.popover))
-            // A press or the wheel on the dock is none on the grid beneath it.
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            // A press or the wheel on the dock is none on the grid beneath it. A press
+            // that no control of the dock took (a blank part, a text, a disabled
+            // button) takes the focus out of the dock's field, as a press on a part of
+            // the page that cannot be focused does in the webview; the window's root
+            // stands for the body. The press goes no further, so the root does not get
+            // it by itself.
+            .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                if !window.default_prevented() {
+                    layers::focus_root(window, cx);
+                }
+                cx.stop_propagation();
+            })
             .on_scroll(|_, _, cx| cx.stop_propagation())
             // With the focus in the dock, the scroll keys are not the grid's.
             .on_action(|_: &ScrollStart, _, _| {})

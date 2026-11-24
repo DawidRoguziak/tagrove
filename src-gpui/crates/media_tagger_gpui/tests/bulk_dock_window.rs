@@ -34,7 +34,7 @@ use media_tagger_gpui::{
     profile,
     runtime::{Runtime, RuntimeParts},
     scenario::start_state,
-    ui::text_input::TextInputEvent,
+    ui::{layers, text_input::TextInputEvent},
     views::{
         bulk_dock::{self, BulkDock},
         gallery::{self, GalleryView},
@@ -370,6 +370,70 @@ fn a_press_on_the_dock_is_none_on_the_grid_beneath_it(cx: &mut TestAppContext) {
     settle(&fixture, &mut cx);
 
     assert_eq!(selected(&window, &cx), before);
+}
+
+/// `BulkDock.tsx` keeps no press from its default: in the webview a press on a part of
+/// the dock that cannot be focused takes the focus out of the dock's field and gives it
+/// to the body. Here the window's root stands for the body. A press on the field itself
+/// keeps the field, and the selection beneath the dock is never touched.
+#[gpui::test]
+fn a_press_on_blank_space_of_the_dock_takes_the_focus_out_of_its_field(cx: &mut TestAppContext) {
+    let fixture = Fixture::library();
+    let (window, mut cx) = open(&fixture, cx);
+    select(&[0, 1], &fixture, &mut cx);
+    let before = selected(&window, &cx);
+    let dock = dock(&window, &cx);
+    let editor = dock.read_with(&cx, |dock, _| dock.editor().clone());
+    let in_field = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| editor.focus_handle(cx).is_focused(window))
+    };
+    let at_root = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| layers::root_focus_handle(cx).is_focused(window))
+    };
+    let blank = |cx: &mut VisualTestContext| {
+        let header = shown(bulk_dock::HEADER_SELECTOR, cx);
+        let panel = shown(bulk_dock::PANEL_SELECTOR, cx);
+        // The dock's own padding, left of the header row.
+        gpui::point(panel.left() + gpui::px(4.), header.center().y)
+    };
+
+    // The tag field.
+    let field = shown(tag_editor::INPUT_SELECTOR, &mut cx);
+    cx.simulate_click(field.center(), Modifiers::none());
+    settle(&fixture, &mut cx);
+    assert!(in_field(&mut cx));
+    cx.simulate_click(field.center(), Modifiers::none());
+    settle(&fixture, &mut cx);
+    assert!(in_field(&mut cx), "a press on the field keeps it");
+
+    let point = blank(&mut cx);
+    cx.simulate_click(point, Modifiers::none());
+    settle(&fixture, &mut cx);
+    assert!(!in_field(&mut cx), "the field lost the focus");
+    assert!(at_root(&mut cx), "the focus is on the window's root");
+    // What is typed now goes into no field.
+    cx.simulate_input("x");
+    settle(&fixture, &mut cx);
+    assert_eq!(
+        editor.read_with(&cx, |editor, cx| editor.draft(cx).to_owned()),
+        ""
+    );
+    assert_eq!(selected(&window, &cx), before);
+
+    // A plain field: the group key.
+    click(DockTab::Group.test_id(), &fixture, &mut cx);
+    let key_bounds = shown(bulk_dock::GROUP_KEY_SELECTOR, &mut cx);
+    cx.simulate_click(key_bounds.center(), Modifiers::none());
+    settle(&fixture, &mut cx);
+    let key = dock.read_with(&cx, |dock, _| dock.group_key_input().clone());
+    assert!(cx.update(|window, cx| key.focus_handle(cx).is_focused(window)));
+    let point = blank(&mut cx);
+    cx.simulate_click(point, Modifiers::none());
+    settle(&fixture, &mut cx);
+    assert!(!cx.update(|window, cx| key.focus_handle(cx).is_focused(window)));
+    assert!(at_root(&mut cx));
+    assert_eq!(selected(&window, &cx), before);
+    assert!(cx.debug_bounds(bulk_dock::PANEL_SELECTOR).is_some());
 }
 
 #[gpui::test]
@@ -1086,4 +1150,23 @@ fn the_group_scenarios_start_with_the_key_typed_and_the_board_inline_or_in_the_l
             "{id}: nothing is saved"
         );
     }
+}
+
+/// `listboxAriaLabel={t("bulk.tagModal.suggestions")}` of `BulkDock`: the dock's tag
+/// editor names its suggestion list, which carries that name while it is shown (epic
+/// E19; the open position of the E14 notes).
+#[gpui::test]
+fn the_tag_editor_of_the_dock_names_its_suggestion_list(cx: &mut TestAppContext) {
+    let fixture = Fixture::library();
+    let (window, mut cx) = open(&fixture, cx);
+    select(&[1], &fixture, &mut cx);
+    let editor = dock(&window, &cx).read_with(&cx, |dock, _| dock.editor().clone());
+    let (list, field) = editor.read_with(&cx, |editor, _| {
+        (
+            editor.props().list_label.clone(),
+            editor.props().input_label.clone(),
+        )
+    });
+    assert_eq!(list.as_ref(), "Bulk tagging suggestions");
+    assert_eq!(field.as_ref(), "Add tag");
 }

@@ -18,7 +18,7 @@ use media_tagger_client::{
     theme::{ThemeName, MOTION},
 };
 
-use super::theme::{self, box_shadows, color, focus_ring, weight};
+use super::theme::{self, box_shadows, color, focus_ring, weight, RingBorder};
 
 /// The key context of the group.
 pub const KEY_CONTEXT: &str = "UiSegmented";
@@ -335,7 +335,11 @@ impl Render for SegmentedControl {
                         .child(option.label.clone()),
                 )
                 .when(focus_visible, |segment| {
-                    segment.child(focus_ring(visuals.focus_ring, visuals.label_radius))
+                    segment.child(focus_ring(
+                        visuals.focus_ring,
+                        visuals.label_radius,
+                        RingBorder::NONE,
+                    ))
                 })
                 .on_click(cx.listener(move |this, _, _, cx| this.request(index, cx)))
         });

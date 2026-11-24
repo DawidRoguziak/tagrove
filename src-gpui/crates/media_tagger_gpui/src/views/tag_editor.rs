@@ -56,6 +56,8 @@ pub struct TagEditorProps {
     pub disabled: bool,
     /// The field's accessible name (`inputAriaLabel`).
     pub input_label: SharedString,
+    /// The suggestion list's accessible name (`listboxAriaLabel`).
+    pub list_label: SharedString,
     pub placeholder: SharedString,
     /// Chips get a remove button with this name; `None`: add-only chips.
     pub remove_label: Option<RemoveLabel>,
@@ -327,6 +329,8 @@ impl TagEditor {
             div().debug_selector(move || remove_selector(index)).child(
                 Button::icon(("tag-editor-remove", index), IconName::Close, label(tag))
                     .size(layout::REMOVE_SIZE)
+                    // `[stroke-width:2.4]` on the chip's cross (`TagEditor.tsx`).
+                    .icon_heavy(true)
                     .transparent(true)
                     .disabled(disabled)
                     .on_click(move |_, _, cx| {
@@ -386,6 +390,7 @@ impl TagEditor {
         let this = cx.entity().downgrade();
         let body = suggestion_list_body(
             SuggestionListIds {
+                label: self.props.list_label.clone(),
                 list: LIST_SELECTOR,
                 option: "tag-editor-suggestion",
                 option_selector,

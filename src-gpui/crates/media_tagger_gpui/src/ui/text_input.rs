@@ -164,6 +164,8 @@ struct PaintedLine {
     placeholder: bool,
     /// The field had the focus.
     focused: bool,
+    /// The line height the glyphs were placed in.
+    line_height: Pixels,
 }
 
 pub struct TextInput {
@@ -282,6 +284,12 @@ impl TextInput {
         self.painted.as_ref().map(|painted| painted.bounds)
     }
 
+    /// The line height the last frame placed the glyphs in. The line is as high as
+    /// [`Self::text_bounds`]; a different value would draw the text off its middle.
+    pub fn painted_line_height(&self) -> Option<Pixels> {
+        self.painted.as_ref().map(|painted| painted.line_height)
+    }
+
     /// Replaces the text from outside; the caret goes to its end and the undo history
     /// is dropped. Setting the text the field already has changes nothing.
     pub fn set_text(&mut self, text: &str, cx: &mut Context<Self>) {
@@ -330,6 +338,11 @@ impl TextInput {
     pub fn set_chrome(&mut self, chrome: FieldChrome, cx: &mut Context<Self>) {
         self.chrome = chrome;
         cx.notify();
+    }
+
+    /// The frame the field draws, or leaves to its container.
+    pub fn chrome(&self) -> FieldChrome {
+        self.chrome
     }
 
     /// A fixed height in pixels (`h-8`, `h-10` of the Tauri interface), the line
@@ -779,6 +792,11 @@ struct TextLine {
 
 struct PrepaintState {
     line: ShapedLine,
+    /// The line height of the text style around the field. Read while the element is
+    /// prepainted: GPUI paints a deferred element (every dialog) without the text
+    /// styles of its ancestors outside it, so at paint time the window's default
+    /// line height would be read instead and the text would sit below the middle.
+    line_height: Pixels,
     /// Where the line starts: left of the element when it is scrolled.
     origin: Point<Pixels>,
     scroll: Pixels,
@@ -907,6 +925,7 @@ impl Element for TextLine {
         });
         PrepaintState {
             line,
+            line_height: window.line_height(),
             origin,
             scroll,
             placeholder,
@@ -938,7 +957,7 @@ impl Element for TextLine {
             );
         }
 
-        let line_height = window.line_height();
+        let line_height = prepaint.line_height;
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             if let Some(selection) = prepaint.selection.take() {
                 window.paint_quad(selection);
@@ -966,6 +985,7 @@ impl Element for TextLine {
             scroll: prepaint.scroll,
             placeholder: prepaint.placeholder,
             focused,
+            line_height,
         };
         self.input.update(cx, |input, _| {
             // The field took the focus, or the line is drawn somewhere else.

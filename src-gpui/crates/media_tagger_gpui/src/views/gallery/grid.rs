@@ -37,7 +37,7 @@ use crate::{
         fonts,
         icon::Icon,
         spinner::Spinner,
-        theme::{box_shadow, box_shadows, color, focus_ring, weight},
+        theme::{box_shadow, box_shadows, color, focus_ring, weight, RingBorder},
     },
 };
 
@@ -331,6 +331,7 @@ pub fn placeholder(
                     offset: 0.0,
                 },
                 RADII.surface,
+                RingBorder::NONE,
             ))
         });
     if pulsing {
@@ -543,7 +544,8 @@ impl RenderOnce for RetryButton {
             })
             .on_click(self.on_click)
             .when(focus_visible, |button| {
-                button.child(focus_ring(ring, RADII.field))
+                // `btn-outline`: a 1 px border.
+                button.child(focus_ring(ring, RADII.field, RingBorder::all(1.0)))
             })
             .child(self.label)
     }

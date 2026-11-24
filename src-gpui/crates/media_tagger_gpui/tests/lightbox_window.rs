@@ -16,7 +16,7 @@ use media_tagger_client::{
     prefs::MemoryPrefsStore,
     runtime::RuntimeConfig,
     scenario::{ScenarioLightbox, LIGHTBOX_DELETE_CONFIRM, LIGHTBOX_IMAGE_ZOOMED},
-    theme::ThemeName,
+    theme::{ThemeName, TYPOGRAPHY},
 };
 use media_tagger_core::models::{
     AssetDetails, AssetQueryPageResult, AssetQueryPositionResult, AssetQuerySectionsResult,
@@ -26,6 +26,7 @@ use media_tagger_core::models::{
 use media_tagger_gpui::{
     profile,
     runtime::RuntimeParts,
+    ui,
     views::{
         gallery,
         lightbox::{self, LightboxView},
@@ -450,6 +451,112 @@ fn a_narrow_window_has_a_drawer_that_escape_closes_before_the_lightbox(cx: &mut 
     assert_eq!(selected_id(&window, &cx), None);
 }
 
+/// The control with the keyboard focus, by its debug selector: the one the focus ring
+/// is drawn around.
+fn ringed(stops: &[&'static str], cx: &mut VisualTestContext) -> Option<&'static str> {
+    let ring = cx.debug_bounds(ui::theme::FOCUS_RING_SELECTOR)?;
+    stops.iter().copied().find(|stop| {
+        cx.debug_bounds(stop).is_some_and(|control| {
+            ring.left() <= control.left()
+                && ring.top() <= control.top()
+                && ring.right() >= control.right()
+                && ring.bottom() >= control.bottom()
+                && ring.size.width - control.size.width <= px(12.0)
+                && ring.size.height - control.size.height <= px(12.0)
+        })
+    })
+}
+
+/// Tab goes through the dialog in the order of the DOM of `LightboxModal.tsx`. With the
+/// panel closed the floating buttons (open the panel, close) come first, although they
+/// are drawn above the stage and so after the action rail; then the rail. With the
+/// panel open the rail comes before the panel. Shift+Tab goes the same way back.
+#[gpui::test]
+fn tab_goes_round_the_dialog_in_the_order_of_the_solid_dom(cx: &mut TestAppContext) {
+    const CLOSED: [&str; 6] = [
+        lightbox::TRIGGER_ID,
+        lightbox::FLOATING_CLOSE_ID,
+        lightbox::FAVORITE_ID,
+        lightbox::RESET_ZOOM_ID,
+        lightbox::FULLSCREEN_ID,
+        lightbox::DELETE_ID,
+    ];
+    let fixture = Fixture::new();
+    let (window, mut cx) = open(&fixture, cx);
+    let view = lightbox_view(&window, &cx);
+    // A narrow window opens the lightbox with the panel closed.
+    cx.simulate_resize(size(px(700.0), px(720.0)));
+    settle(&fixture, &mut cx);
+    open_tile(&fixture, 0, &mut cx);
+    assert!(cx.debug_bounds(lightbox::SIDEBAR_SELECTOR).is_none());
+    // The lightbox opened by a click: the focus is on the reopen button, without a ring.
+    assert_eq!(ringed(&CLOSED, &mut cx), None);
+
+    let press = |keys: &str, cx: &mut VisualTestContext| {
+        cx.simulate_keystrokes(keys);
+        settle(&fixture, cx);
+        ringed(&CLOSED, cx)
+    };
+    // A whole round from the reopen button, and one stop more.
+    let forward: Vec<_> = (0..=CLOSED.len()).map(|_| press("tab", &mut cx)).collect();
+    let expected: Vec<_> = (1..=CLOSED.len() + 1)
+        .map(|index| Some(CLOSED[index % CLOSED.len()]))
+        .collect();
+    assert_eq!(forward, expected, "Tab");
+    assert_eq!(forward.last(), Some(&Some(lightbox::FLOATING_CLOSE_ID)));
+    // The same way back, past the first stop to the last.
+    let backward: Vec<_> = (0..CLOSED.len())
+        .map(|_| press("shift-tab", &mut cx))
+        .collect();
+    let expected: Vec<_> = [0, 5, 4, 3, 2, 1].map(|index| Some(CLOSED[index])).to_vec();
+    assert_eq!(backward, expected, "Shift+Tab");
+    assert!(view.read_with(&cx, |view, _| view.is_open()));
+    assert_eq!(selected_id(&window, &cx), Some(1), "Tab moved no picture");
+
+    // The panel open: the rail's last button is followed by the panel's first, and
+    // Shift+Tab from the rail's first button wraps to the panel's last.
+    const OPEN: [&str; 4] = [
+        lightbox::FAVORITE_ID,
+        lightbox::DELETE_ID,
+        lightbox::SIDEBAR_CLOSE_ID,
+        lightbox::INFO_TOGGLE_ID,
+    ];
+    cx.simulate_keystrokes("escape");
+    rest(&fixture, &mut cx);
+    cx.simulate_resize(size(px(1440.0), px(900.0)));
+    settle(&fixture, &mut cx);
+    open_tile(&fixture, 0, &mut cx);
+    rest(&fixture, &mut cx);
+    assert!(cx.debug_bounds(lightbox::SIDEBAR_SELECTOR).is_some());
+    assert!(cx.debug_bounds(lightbox::TRIGGER_ID).is_none());
+    let press = |keys: &str, cx: &mut VisualTestContext| {
+        cx.simulate_keystrokes(keys);
+        settle(&fixture, cx);
+        ringed(&OPEN, cx)
+    };
+    let until = |stop: &'static str, cx: &mut VisualTestContext| {
+        for _ in 0..24 {
+            if press("tab", cx) == Some(stop) {
+                return;
+            }
+        }
+        panic!("Tab never reaches {stop}");
+    };
+    until(lightbox::FAVORITE_ID, &mut cx);
+    assert_eq!(
+        press("shift-tab", &mut cx),
+        Some(lightbox::INFO_TOGGLE_ID),
+        "before the rail's first button: the panel's last stop"
+    );
+    assert_eq!(press("tab", &mut cx), Some(lightbox::FAVORITE_ID));
+    until(lightbox::DELETE_ID, &mut cx);
+    assert_eq!(
+        press("tab", &mut cx),
+        Some(lightbox::SIDEBAR_CLOSE_ID),
+        "after the rail's last button: the panel's first stop"
+    );
+}
+
 /// The main window in a start state that opens the lightbox, as
 /// `media_tagger_gpui --scenario lightbox-*` starts it, over the scripted library.
 fn open_scripted(
@@ -590,4 +697,103 @@ fn a_scripted_start_opens_the_delete_confirmation_with_its_word_typed(cx: &mut T
     click_selector(lightbox::CONFIRM_SUBMIT_ID, &mut cx);
     settle(&fixture, &mut cx);
     assert_eq!(fixture.deletions(), [5]);
+}
+
+/// GPUI paints a deferred element, which every dialog is, without the text styles of
+/// the ancestors outside it. The field reads its line height while it is prepainted,
+/// so its text sits in the middle of the field and not 3 px below it (the window's
+/// default line height is 26 px, the application's 19.5 px).
+#[gpui::test]
+fn the_fields_of_the_dialog_draw_their_text_in_the_line_height_around_them(
+    cx: &mut TestAppContext,
+) {
+    let fixture = Fixture::new();
+    let (window, mut cx) = open(&fixture, cx);
+    open_tile(&fixture, 1, &mut cx);
+    rest(&fixture, &mut cx);
+    let view = lightbox_view(&window, &cx);
+
+    // `Window::line_height` rounds to whole pixels.
+    let expected = px((TYPOGRAPHY.body_size * TYPOGRAPHY.root_line_height).round());
+    for (name, selector, drawn) in [
+        (
+            "group key",
+            lightbox::GROUP_KEY_SELECTOR,
+            view.read_with(&cx, |view, cx| {
+                let input = view.group_key_input().read(cx);
+                (input.text_bounds(), input.painted_line_height())
+            }),
+        ),
+        (
+            "group order",
+            lightbox::GROUP_ORDER_SELECTOR,
+            view.read_with(&cx, |view, cx| {
+                let input = view.group_order_input().read(cx);
+                (input.text_bounds(), input.painted_line_height())
+            }),
+        ),
+    ] {
+        let field = cx.debug_bounds(selector).expect(name);
+        let (text, line_height) = drawn;
+        let text = text.expect("the line was drawn");
+        assert_eq!(line_height, Some(expected), "{name}");
+        // The line is in the middle of the field, to the pixel the layout rounds to.
+        let above = text.top() - field.top();
+        let below = field.bottom() - text.bottom();
+        assert!(
+            (above - below).abs() <= px(1.),
+            "{name}: {above:?} {below:?}"
+        );
+    }
+}
+
+/// `listboxAriaLabel={t("lightbox.taggingSuggestions")}` of `LightboxTagPanel`: the tag
+/// editor of the side panel names its suggestion list (epic E19).
+#[gpui::test]
+fn the_tag_editor_of_the_side_panel_names_its_suggestion_list(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let (window, mut cx) = open(&fixture, cx);
+    open_tile(&fixture, 0, &mut cx);
+    let view = lightbox_view(&window, &cx);
+    let editor = view.read_with(&cx, |view, _| view.editor().clone());
+    let (list, field) = editor.read_with(&cx, |editor, _| {
+        (
+            editor.props().list_label.clone(),
+            editor.props().input_label.clone(),
+        )
+    });
+    assert_eq!(list.as_ref(), "Tagging suggestions");
+    assert_eq!(field.as_ref(), "Add tag");
+}
+
+/// The field of the delete confirmation is drawn inside the deferred dialog as well:
+/// its text sits in the middle of the field in the line height around it, not in the
+/// window's default 26 px (the comparison scenario `lightbox-delete-confirm`, epic E19).
+#[gpui::test]
+fn the_confirmation_field_draws_its_text_in_the_line_height_around_it(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let (window, mut cx) = open(&fixture, cx);
+    open_tile(&fixture, 0, &mut cx);
+    rest(&fixture, &mut cx);
+    click_selector(lightbox::DELETE_ID, &mut cx);
+    settle(&fixture, &mut cx);
+    cx.simulate_input("yes");
+    settle(&fixture, &mut cx);
+    rest(&fixture, &mut cx);
+    let view = lightbox_view(&window, &cx);
+
+    let expected = px((TYPOGRAPHY.body_size * TYPOGRAPHY.root_line_height).round());
+    let (text, line_height) = view.read_with(&cx, |view, cx| {
+        let input = view.confirm_input().read(cx);
+        (input.text_bounds(), input.painted_line_height())
+    });
+    let field = cx
+        .debug_bounds(lightbox::CONFIRM_INPUT_SELECTOR)
+        .expect("the confirmation field");
+    let text = text.expect("the line was drawn");
+    assert_eq!(line_height, Some(expected));
+    assert_ne!(line_height, Some(px(26.)), "not the window's default");
+    let above = text.top() - field.top();
+    let below = field.bottom() - text.bottom();
+    assert!((above - below).abs() <= px(1.), "{above:?} {below:?}");
 }

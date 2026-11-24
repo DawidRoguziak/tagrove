@@ -471,9 +471,15 @@ the draft/applied split and the suggestion rules above; the code lives in
   `normal` of its `font` shorthand (14 pixels, 16 with padding); the divider before the
   tag list's button is a filled box one pixel wide, since GPUI draws no left border on a
   box only that wide.
-- **Not ported yet.** The `title` tooltips of the field (`search.syntaxHint`) and of the
-  favourites button wait for a tooltip primitive. The list does not fade in; it is drawn
-  only with items, which is what the Solid list shows.
+- **Accessibility.** The suggestion list has the role `ListBox` and the name
+  `search.tagSuggestions`; its options have the role `ListBoxOption`, the active one
+  selected (`views::search::suggestion_list_body`, shared with the tag editor, whose
+  owners name their list through `TagEditorProps::list_label`:
+  `lightbox.taggingSuggestions` and `bulk.tagModal.suggestions`).
+- **Not ported.** The `title` tooltips of the field (`search.syntaxHint`) and of the
+  favourites button: the port shows no tooltips
+  ([keyboard and focus](../frontend/gpui-architecture.md#keyboard-and-focus)). The list
+  does not fade in; it is drawn only with items, which is what the Solid list shows.
 
 ## GPUI port: tag list and tag editor
 
@@ -635,7 +641,9 @@ The Tauri path is unchanged. The code lives in `media_tagger_client::bulk`, the 
   bottom centre of its viewport, 16 pixels above the edge: a 100-pixel chip without a
   selection, else up to 760 pixels wide, and on the group tab `min(72 %, 680px)` of the
   viewport tall. A press or the wheel on it never reaches the grid, and with the focus inside
-  it the gallery's scroll keys do nothing. The tablist has one tab stop, the selected tab;
+  it the gallery's scroll keys do nothing. A press on a part of the dock that takes no focus
+  (blank space, a text, a disabled button) takes the focus out of the dock's field and gives
+  it to the window's root, as the webview gives it to the body. The tablist has one tab stop, the selected tab;
   Left and Right wrap, Home and End jump, and the focus follows (key context `BulkDockTab`).
   The key row of the group tab is the Solid grid: the field, a 40-pixel track with the
   36-pixel "Generate UUID" button at its start, and Apply, 8 pixels apart

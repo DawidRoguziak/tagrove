@@ -390,12 +390,14 @@ keeps the same contract with its own types:
   observer) of every card the frame did not draw; the draft stays in
   `DuplicateResolver`, and the field is made again from it when its row comes back. A
   focused field whose row scrolled away goes too, after the window took the focus back
-  (`on_focus_lost`), as the Tauri list unmounts it. The rename field is a bare
-  `TextInput` in a frame the card draws (`SettingsView::rename_field`,
+  (`on_focus_lost`), as the Tauri list unmounts it. The rename field is a
+  `TextInput` without a frame of its own (`FieldChrome::Framed`) in a frame the card draws (`SettingsView::rename_field`,
   `layout::resolver::INPUT_*`), because the card's classes (`input input-sm h-10 border
   border-base-content/20 bg-base-100/70`) replace the frame of the stylesheet's `input`
   with daisyUI's: 12 px text, a 20 % border on a 70 % fill, no shadow, and a 2 px outline
-  in the base content colour 2 px off the border while the field has the focus. The page is drawn again on every frame while a preview
+  in the base content colour 2 px off the border while the field has the focus. A disabled
+  field is dimmed once, frame and text, by the 0.55 of `input:disabled`, and its text is
+  40 % of the base content as daisyUI's `.input:disabled` makes it (0.22 in all). The page is drawn again on every frame while a preview
   shows its loader, so nothing walks all groups per frame: the validation of the staged
   changes, the count of files and whether a group is resolved are worked out once per
   scan generation and per `DuplicateResolver::revision`, which advances with what is

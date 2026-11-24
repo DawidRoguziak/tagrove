@@ -826,6 +826,87 @@ pub mod test_support {
             path.to_string_lossy().into_owned()
         }
 
+        /// Fills the library with `rows` synthetic assets by SQL, for measurements on
+        /// a large library: the statements of `seed_library` in
+        /// `src-tauri/tests/grid_baseline.rs`, so that a measurement made here and one
+        /// made there are on the same data. The rows have kinds (one video in 20, one
+        /// GIF in 50), favourites, four-item media groups, 2,000 vocabulary tags plus
+        /// `common` (every fifth asset) and `rare` (every 200th), pseudo-random
+        /// modification times over ten years with 0.1 % of them zero, and one scan
+        /// root, `/synthetic/library`. No file exists behind any of them. Returns the
+        /// time the seeding took.
+        ///
+        /// # Panics
+        ///
+        /// When the library already has tags, or a statement fails.
+        pub fn seed_synthetic_library(&self, rows: i64) -> std::time::Duration {
+            let started = std::time::Instant::now();
+            let conn = media_tagger_core::db::open_connection(&self.data_dir().join("media.db"))
+                .expect("open the profile's database");
+            let tx = conn.unchecked_transaction().expect("begin the seed");
+            tx.execute_batch(&format!(
+                "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < {rows}),
+                 shaped AS (
+                   SELECT i,
+                     CASE WHEN i % 20 = 0 THEN 'video' WHEN i % 50 = 1 THEN 'gif' ELSE 'image' END AS kind,
+                     'asset-' || printf('%07d', i) ||
+                       CASE WHEN i % 20 = 0 THEN '.mp4' WHEN i % 50 = 1 THEN '.gif' ELSE '.jpg' END AS file_name,
+                     CASE WHEN i % 1000 = 7 THEN 0
+                       ELSE 1420070400 + ((i * 2654435761) % 315360000) END AS modified_at,
+                     (i / 4) % 10 = 0 AS grouped
+                   FROM n
+                 )
+                 INSERT INTO assets(
+                   path, file_name, file_name_key, kind, size_bytes, modified_at, width, height,
+                   duration_ms, fingerprint_mtime_ns, is_favorite, media_group_key,
+                   media_group_key_normalized, media_group_order
+                 )
+                 SELECT
+                   '/synthetic/library/' || printf('%03d', i % 1000) || '/' || file_name,
+                   file_name, lower(file_name), kind,
+                   50000 + (i * 7919) % 5000000,
+                   modified_at,
+                   CASE WHEN kind = 'video' THEN 1920 ELSE 4000 END,
+                   CASE WHEN kind = 'video' THEN 1080 ELSE 3000 END,
+                   CASE WHEN kind = 'video' THEN 15000 + (i % 600) * 1000 ELSE NULL END,
+                   modified_at * 1000000000,
+                   CASE WHEN (i * 31) % 20 = 3 THEN 1 ELSE 0 END,
+                   CASE WHEN grouped THEN 'Group ' || (i / 4) ELSE NULL END,
+                   CASE WHEN grouped THEN 'group ' || (i / 4) ELSE NULL END,
+                   CASE WHEN grouped THEN (i % 4) + 1 ELSE NULL END
+                 FROM shaped;
+                 WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 1999)
+                 INSERT INTO tags(id, name) SELECT i + 1, 'tag-' || printf('%04d', i) FROM n;
+                 INSERT INTO tags(id, name) VALUES (2001, 'common'), (2002, 'rare');
+                 INSERT INTO asset_tags(asset_id, tag_id)
+                   SELECT a.id, ((a.id * 13 + j.j * 101) % 2000) + 1
+                   FROM assets a
+                   JOIN (SELECT 0 AS j UNION ALL SELECT 1 UNION ALL SELECT 2) j ON j.j < a.id % 4;
+                 INSERT INTO asset_tags(asset_id, tag_id) SELECT id, 2001 FROM assets WHERE id % 5 = 2;
+                 INSERT INTO asset_tags(asset_id, tag_id) SELECT id, 2002 FROM assets WHERE id % 200 = 3;
+                 UPDATE assets SET tag_count = (SELECT COUNT(*) FROM asset_tags WHERE asset_id = assets.id);
+                 -- Every indexed asset belongs to a scan root; unmapped rows are
+                 -- pruned as orphans by the next completed scan of any root.
+                 INSERT INTO scan_roots(path) VALUES ('/synthetic/library');
+                 INSERT INTO asset_scan_roots(asset_id, root_path, last_seen_generation)
+                   SELECT id, '/synthetic/library', 1 FROM assets;"
+            ))
+            .expect("seed the synthetic library");
+            tx.commit().expect("commit the seed");
+            // The running core learns of the rows as of any other write: by the
+            // library revision, which the next query start compares.
+            media_tagger_core::db::bump_library_revision(&conn).expect("bump the revision");
+            // Sort keys are kept by triggers (ADR 0004), so rows seeded by SQL have
+            // the keys the application's writes give.
+            assert_eq!(
+                media_tagger_core::db::count_inconsistent_sort_keys(&conn)
+                    .expect("count sort keys"),
+                0
+            );
+            media_tagger_core::db::optimize(&conn).expect("optimize");
+            started.elapsed()
+        }
+
         /// Holds the core's scan lock as a running scan does, until the returned
         /// value is dropped: on a thread of its own, through the helper a scan
         /// takes it with. Returns once the lock is held. Calls that must not wait

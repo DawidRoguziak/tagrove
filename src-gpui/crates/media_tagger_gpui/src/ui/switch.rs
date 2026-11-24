@@ -12,7 +12,7 @@ use media_tagger_client::{
 
 use super::{
     button::keyed_focus_handle,
-    theme::{self, color, focus_ring},
+    theme::{self, color, focus_ring, RingBorder},
 };
 
 type ChangeHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
@@ -114,7 +114,11 @@ impl RenderOnce for Switch {
             .opacity(visuals.opacity)
             .child(knob)
             .when(focus_visible, |track| {
-                track.child(focus_ring(visuals.focus_ring, visuals.radius))
+                track.child(focus_ring(
+                    visuals.focus_ring,
+                    visuals.radius,
+                    RingBorder::all(visuals.border_width),
+                ))
             });
         let checked = self.checked;
         let row = div()

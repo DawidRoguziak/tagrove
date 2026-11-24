@@ -97,9 +97,11 @@ pub mod layout {
     pub const CHIP_PADDING_X: f32 = 8.0;
     pub const CHIP_PADDING_Y: f32 = 4.0;
     pub const CHIP_LINE_HEIGHT: f32 = 16.0;
-    /// The remove button: `h-5 w-5` with an icon `h-3 w-3`.
+    /// The remove button: `h-5 w-5`. Its icon carries `h-3 w-3`, which loses to the
+    /// `h-5 w-5` of `UiIcon` in the generated stylesheet (`.h-3` and `.w-3` are emitted
+    /// before `.h-5` and `.w-5`, with the same specificity), so the cross is drawn in
+    /// 20 px like every icon of an icon button.
     pub const REMOVE_SIZE: f32 = 20.0;
-    pub const REMOVE_ICON_SIZE: f32 = 12.0;
     /// The field's box: `flex-[1_1_9rem] max-w-full`; the input `h-8`.
     pub const INPUT_BASIS: f32 = 144.0;
     pub const INPUT_HEIGHT: f32 = 32.0;

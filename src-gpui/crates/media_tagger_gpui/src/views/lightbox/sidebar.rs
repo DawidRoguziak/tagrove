@@ -38,7 +38,7 @@ use crate::ui::{
     alert::Alert,
     button::{keyed_focus_handle, Button},
     fonts,
-    theme::{color, focus_ring, weight},
+    theme::{color, square_focus_ring, weight, RingBorder},
 };
 
 /// A section heading: `h3` at the size and line height its utility class gives it.
@@ -378,7 +378,11 @@ impl LightboxView {
                 .text_color(color(colors.text_muted))
                 .cursor_pointer()
                 .when(focus_visible, |toggle| {
-                    toggle.child(focus_ring(FocusRing::base(tokens), RADII.field))
+                    // The toggle has no radius and a border above it only (`border-t`).
+                    toggle.child(square_focus_ring(
+                        FocusRing::base(tokens),
+                        RingBorder::top(1.0),
+                    ))
                 })
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.update_session(window, cx, |session, _| session.toggle_info())
@@ -455,6 +459,8 @@ impl LightboxView {
             .aria_label(SharedString::from(i18n.t("lightbox.sidebarAria")))
             // What the panel contains has the focus or not (`sidebar_focused`).
             .track_focus(&self.sidebar_focus)
+            // After the media column in the Tab order (`LightboxView::render`).
+            .tab_group()
             .relative()
             .size_full()
             .flex()

@@ -1166,9 +1166,15 @@ fn a_rename_field_has_the_frame_and_the_focus_outline_of_the_cards_input(cx: &mu
             .is_some_and(|draft| draft.contains('x')));
     });
 
-    // A file staged for deletion has a disabled field: no focus, no outline.
+    // A file staged for deletion has a disabled field: no focus, no outline. The frame
+    // dims the whole of it once (`input:disabled`); the field inside is the text of a
+    // daisyUI `.input`, which takes the disabled colour and no opacity of its own.
     click(&control(AssetControl::Delete, 1), &fixture, &mut cx);
     assert!(field(&mut cx).read_with(&cx, |input, _| input.is_disabled()));
+    assert_eq!(
+        field(&mut cx).read_with(&cx, |input, _| input.chrome()),
+        media_tagger_client::text::FieldChrome::Framed
+    );
     assert!(!drawn(&outline, &mut cx));
     cx.simulate_click(
         gpui::point(frame.left() + gpui::px(4.0), frame.center().y),

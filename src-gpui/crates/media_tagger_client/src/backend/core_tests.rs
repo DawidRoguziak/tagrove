@@ -1514,3 +1514,57 @@ fn calls_from_many_executor_threads_all_finish() {
     }
     assert!(executor.wait_until_quiet(WAIT));
 }
+
+/// `TempCore::seed_synthetic_library` gives the library the rows of the grid
+/// baseline's seed: the running core sees them with its next query (the seed moves
+/// the library revision), with the kinds, favourites and tags the measurements
+/// filter by.
+#[test]
+fn the_synthetic_library_is_queried_like_an_indexed_one() {
+    let core = TempCore::start();
+    let backend = core.backend();
+    assert_eq!(query(backend, AssetQueryRequest::new("seed", 1)).total, 0);
+
+    core.seed_synthetic_library(2_000);
+    let all = query(backend, AssetQueryRequest::new("seed", 2));
+    assert_eq!(all.total, 2_000);
+    assert_eq!(all.items.len(), 128);
+
+    let mut generation = 2;
+    let mut total = |change: &dyn Fn(&mut AssetQueryRequest)| {
+        generation += 1;
+        let mut request = AssetQueryRequest::new("seed", generation);
+        change(&mut request);
+        query(backend, request).total
+    };
+    // One video in 20, one favourite in 20, `common` on every fifth asset and
+    // `rare` on every 200th.
+    assert_eq!(total(&|request| request.kind = Some(MediaKind::Video)), 100);
+    assert_eq!(total(&|request| request.favorites_only = true), 100);
+    assert_eq!(
+        total(&|request| request.tags_and = vec!["common".to_owned()]),
+        400
+    );
+    assert_eq!(
+        total(&|request| request.tags_and = vec!["rare".to_owned()]),
+        10
+    );
+    assert_eq!(
+        total(&|request| request.tags_not = vec!["common".to_owned()]),
+        1_600
+    );
+
+    let roots = backend.list_scan_roots().expect("list the roots");
+    assert_eq!(
+        roots
+            .iter()
+            .map(|root| root.path.as_str())
+            .collect::<Vec<_>>(),
+        ["/synthetic/library"]
+    );
+    // The known tags: 2,000 of the vocabulary and the two the filters use.
+    let tags = backend
+        .list_tags(String::new(), 0, 100)
+        .expect("list the tags");
+    assert_eq!(tags.total, 2_002);
+}

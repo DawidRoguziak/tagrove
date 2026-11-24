@@ -17,8 +17,8 @@ use std::{rc::Rc, sync::Arc};
 
 use gpui::{
     actions, deferred, div, point, prelude::*, px, relative, AnyElement, App, BoxShadow, Context,
-    Div, Entity, FocusHandle, Focusable, FontWeight, HighlightStyle, KeyBinding, MouseButton,
-    Stateful, StyledText, Subscription, Window,
+    Div, Entity, FocusHandle, Focusable, FontWeight, HighlightStyle, KeyBinding, MouseButton, Role,
+    SharedString, Stateful, StyledText, Subscription, Window,
 };
 use media_tagger_client::{
     controls::{AlertTone, ButtonVariant},
@@ -250,6 +250,12 @@ impl SearchBar {
         &self.runtime
     }
 
+    /// The suggestion list's accessible name (`listboxAriaLabel` of
+    /// `SearchTagatorWrapper`: `search.tagSuggestions`).
+    pub fn suggestion_list_label(&self, cx: &App) -> SharedString {
+        SharedString::from(self.runtime.read(cx).i18n().t("search.tagSuggestions"))
+    }
+
     /// The tag list's launcher and dialog.
     pub fn tag_list(&self) -> &Entity<TagListModal> {
         &self.tag_list
@@ -413,6 +419,7 @@ impl SearchBar {
         let max_height = list::max_height(f32::from(window.viewport_size().height));
         let body = suggestion_list_body(
             SuggestionListIds {
+                label: self.suggestion_list_label(cx),
                 list: LIST_SELECTOR,
                 option: "search-suggestion",
                 option_selector,
@@ -446,6 +453,8 @@ pub(crate) type PickHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
 /// The ids of a suggestion list and its options.
 pub(crate) struct SuggestionListIds {
+    /// The list's accessible name (`listboxAriaLabel`).
+    pub label: SharedString,
     /// The list's element id and debug selector.
     pub list: &'static str,
     /// The element id of the options, with their index.
@@ -485,6 +494,8 @@ pub(crate) fn suggestion_list_body(
         div()
             .id((ids.option, index))
             .debug_selector(move || option_selector(index))
+            .role(Role::ListBoxOption)
+            .aria_selected(is_active)
             .w_full()
             .px(px(list::OPTION_PADDING_X))
             .py(px(list::OPTION_PADDING_Y))
@@ -523,6 +534,8 @@ pub(crate) fn suggestion_list_body(
     div()
         .id(ids.list)
         .debug_selector(move || list_selector.to_owned())
+        .role(Role::ListBox)
+        .aria_label(ids.label)
         .occlude()
         // The options use the application's font; the mono font is the input's.
         .font_family(fonts::SANS)

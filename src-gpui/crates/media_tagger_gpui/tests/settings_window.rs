@@ -1025,3 +1025,24 @@ fn tab_goes_through_the_header_the_navigation_and_then_the_sections(cx: &mut Tes
     press("tab", &fixture, &mut cx);
     assert!(focused(&field, &mut cx), "the section's first control");
 }
+
+/// The settings header of `SettingsPage.tsx`: `py-3` around the heading block
+/// (`text-2xl leading-tight` 30 px, `mt-0.5`, and a `text-xs` description of 16 px
+/// line height) and its `border-b`, so its bottom border is the pixel row at y 72 as
+/// in the Tauri window, not 74 (comparison scenarios `settings-*`, epic E19). The
+/// heading block starts at the padding.
+#[gpui::test]
+fn the_settings_header_is_as_high_as_the_tauri_header(cx: &mut TestAppContext) {
+    let fixture = Fixture::with_root();
+    let (_window, mut cx) = open_settings(&fixture, cx);
+    let header = bounds(settings::HEADER_SELECTOR, &mut cx);
+    let heading = bounds(settings::HEADING_SELECTOR, &mut cx);
+    // 12 + 30 + 2 + 16 + 12, and the 1 px border.
+    assert_eq!(header.size.height, gpui::px(73.), "{header:?}");
+    assert_eq!(header.bottom() - gpui::px(1.), header.top() + gpui::px(72.));
+    assert_eq!(heading.top(), header.top() + gpui::px(12.));
+    assert_eq!(heading.size.height, gpui::px(30.));
+    // The page below starts under the header.
+    let body = bounds(settings::BODY_SELECTOR, &mut cx);
+    assert!(body.top() >= header.bottom());
+}

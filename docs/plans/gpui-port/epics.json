@@ -810,8 +810,8 @@
         "E16",
         "E18"
       ],
-      "status": "todo",
-      "updated": null,
+      "status": "done",
+      "updated": "2026-11-24",
       "sources": [
         "docs/plans/gpui-port/README.md",
         "e2e/gallery-scale",

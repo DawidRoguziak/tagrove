@@ -39,7 +39,7 @@ use crate::{
         fonts,
         icon::Icon,
         spinner::Spinner,
-        theme::{box_shadows, color, focus_ring, weight},
+        theme::{box_shadows, color, focus_ring, weight, RingBorder},
     },
 };
 
@@ -538,7 +538,11 @@ impl BulkDock {
                     .cursor(CursorStyle::OpenHand)
                     .hover(move |style| style.bg(color(hover)))
                     .when(focus_visible, |grip| {
-                        grip.child(focus_ring(FocusRing::base(tokens), RADII.control))
+                        grip.child(focus_ring(
+                            FocusRing::base(tokens),
+                            RADII.control,
+                            RingBorder::NONE,
+                        ))
                     })
                     .on_action(cx.listener(move |this, _: &MoveLeft, window, cx| {
                         this.board_key(kind, id, BoardKey::Left, window, cx)

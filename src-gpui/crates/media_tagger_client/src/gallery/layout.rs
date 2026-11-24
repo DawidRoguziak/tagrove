@@ -108,9 +108,10 @@ pub mod footer {
     /// The rule with the mark: `max-w-sm gap-4`.
     pub const RULE_MAX_WIDTH: f32 = 384.0;
     pub const RULE_GAP: f32 = 16.0;
-    /// `size-10` with a `size-6` icon.
+    /// `size-10`. The icon's `size-6` loses to the `h-5 w-5` of `UiIcon` itself,
+    /// which the generated stylesheet lists later, so the icon is 20 px.
     pub const MARK_SIZE: f32 = 40.0;
-    pub const MARK_ICON_SIZE: f32 = 24.0;
+    pub const MARK_ICON_SIZE: f32 = 20.0;
     /// `text-xl font-semibold`.
     pub const TITLE_SIZE: f32 = 20.0;
     pub const TITLE_LINE_HEIGHT: f32 = 28.0;

@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -149,14 +150,69 @@ class ModelTests(unittest.TestCase):
                 matched = state.batch_files(REPO, {**batch, "globs": [pattern], "tests": True})
                 self.assertTrue(matched, f"{batch['id']}: {pattern!r} matches no file")
             batched.update(state.batch_files(REPO, {**batch, "tests": True}))
-        sources = [REPO / "src-tauri/src", REPO / "src-tauri/crates/media_tagger_core/src"]
+        sources = [
+            REPO / "src-tauri/src",
+            REPO / "src-tauri/crates/media_tagger_core/src",
+            # The GPUI port: both crates of the workspace src-gpui/.
+            REPO / "src-gpui/crates/media_tagger_client/src",
+            REPO / "src-gpui/crates/media_tagger_gpui/src",
+        ]
+        for root in sources:
+            self.assertTrue(root.is_dir(), f"{root} is not a source directory")
         unbatched = sorted(
             path.relative_to(REPO).as_posix()
             for root in sources
             for path in root.rglob("*.rs")
             if path.name != "mod.rs" and path.relative_to(REPO).as_posix() not in batched
         )
-        self.assertEqual(unbatched, [], "backend sources outside every audit batch")
+        self.assertEqual(unbatched, [], "Rust sources outside every audit batch")
+
+    def test_gpui_sources_are_audited_by_default_with_the_gpui_lens(self):
+        config = lib.load_reference("batches.json")
+        self.assertEqual(config["lens_agents"]["gpui"], "review-gpui")
+        default = [batch for batch in config["batches"] if not batch.get("optional")]
+        covered = set()
+        for batch in default:
+            covered.update(state.batch_files(REPO, batch))
+        adapter = sorted(
+            path.relative_to(REPO).as_posix()
+            for path in (REPO / "src-gpui/crates/media_tagger_gpui/src").rglob("*.rs")
+        )
+        self.assertTrue(adapter)
+        self.assertEqual([path for path in adapter if path not in covered], [],
+                         "adapter sources only in optional batches")
+        with_lens = set()
+        for batch in default:
+            if "gpui" in batch["lenses"]:
+                with_lens.update(state.batch_files(REPO, batch))
+        self.assertEqual([path for path in adapter if path not in with_lens], [],
+                         "adapter sources without the gpui lens")
+        # The integration tests of both crates are an optional batch, like the Tauri ones.
+        optional = [batch for batch in config["batches"] if batch.get("optional")]
+        tests = set()
+        for batch in optional:
+            tests.update(state.batch_files(REPO, batch))
+        self.assertIn("src-gpui/crates/media_tagger_gpui/tests/gallery_grid.rs", tests)
+        self.assertIn("src-gpui/crates/media_tagger_client/tests/port_contract.rs", tests)
+
+    def test_audit_readme_states_the_batch_and_finder_counts_of_batches_json(self):
+        config = lib.load_reference("batches.json")
+        default = [batch for batch in config["batches"] if not batch.get("optional")]
+        finders = sum(len(batch["lenses"]) for batch in default)
+        readme = (REPO / "docs/development/audit/README.md").read_text(encoding="utf-8")
+        stated = re.findall(r"Finders: (\d+)|about (\d+) finders", readme)
+        self.assertGreaterEqual(len(stated), 2, "the README no longer states the finder count")
+        for exact, about in stated:
+            self.assertEqual(int(exact or about), finders)
+        self.assertIn(f"({len(config['batches'])} batches;", readme)
+        # The sentence naming the batches of the gpui lens lists exactly the batches that carry it.
+        sentence = re.search(r"The `gpui` lens \(the `review-gpui` agent\) runs on ([^;.]+)", readme)
+        self.assertIsNotNone(sentence, "the README no longer names the batches of the gpui lens")
+        named = set()
+        for first, last in re.findall(r"(B\d+[a-z]?)(?: to (B\d+[a-z]?))?", sentence.group(1)):
+            ids = [batch["id"] for batch in config["batches"]]
+            named.update(ids[ids.index(first):ids.index(last or first) + 1])
+        self.assertEqual(named, {batch["id"] for batch in config["batches"] if "gpui" in batch["lenses"]})
 
 
 class StaticFlowTests(FakeRepo):

@@ -565,3 +565,29 @@ fn the_window_text_uses_the_bundled_fonts() {
         }
     }
 }
+
+/// `GalleryEmptyState`: the icon tile is `h-16 w-16` with `ring-1`, a box shadow that
+/// lies outside the tile and takes no room, so the ring is drawn 66 px wide around the
+/// 64 px tile, centred on it (comparison scenarios `shell-empty`, epic E19).
+#[gpui::test]
+fn the_ring_of_the_empty_state_icon_tile_lies_outside_the_tile(cx: &mut TestAppContext) {
+    let fixture = Fixture::empty();
+    let (_window, mut cx) = open(&fixture, ThemeName::Dark, cx);
+    settle(&fixture, &mut cx);
+    let tile = cx
+        .debug_bounds(gallery::EMPTY_STATE_ICON_TILE_SELECTOR)
+        .expect("the icon tile");
+    let ring = cx
+        .debug_bounds(gallery::EMPTY_STATE_ICON_RING_SELECTOR)
+        .expect("the ring");
+    assert_eq!(tile.size, gpui::size(px(64.), px(64.)));
+    assert_eq!(ring.size, gpui::size(px(66.), px(66.)));
+    assert_eq!(ring.center(), tile.center());
+    // The ring takes no room: the title below starts 4 px (`mb-1`) and one 12 px gap
+    // (`gap-3`) below the tile, not below the ring.
+    let title = cx
+        .debug_bounds(gallery::EMPTY_STATE_TITLE_SELECTOR)
+        .expect("the title");
+    assert_eq!(title.top() - tile.bottom(), px(4. + 12.));
+    assert_eq!(title.top() - ring.bottom(), px(4. + 12. - 1.));
+}

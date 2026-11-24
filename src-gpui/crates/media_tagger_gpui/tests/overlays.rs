@@ -335,6 +335,67 @@ fn a_closing_dialog_takes_no_keys_while_it_fades_out(cx: &mut TestAppContext) {
     );
 }
 
+/// `inert` of the closing `UiModal` content, for Tab: while a dialog fades out, Tab
+/// from the window's root passes over its buttons and reaches the page's own tab stop,
+/// in both directions; once the dialog opens again its buttons are tab stops again.
+#[gpui::test]
+fn tab_passes_over_a_dialog_that_fades_out(cx: &mut TestAppContext) {
+    let (shell, mut cx) = open(cx);
+    let (trigger, buttons) = shell.read_with(&cx, |shell, _| {
+        (shell.trigger.clone(), shell.lower_buttons.clone())
+    });
+    // Opened with the focus on the root: closing has no trigger to give the focus to.
+    set_open(&shell, "lower", true, &mut cx);
+    next_frame(&mut cx);
+    assert!(focused(&buttons[0], &mut cx), "the first tab stop");
+
+    set_open(&shell, "lower", false, &mut cx);
+    next_frame(&mut cx);
+    let lower = shell.read_with(&cx, |shell, _| shell.lower.clone());
+    assert_eq!(
+        lower.read_with(&cx, |modal, _| modal.phase()),
+        Phase::Closing
+    );
+    let root = cx.update(|_, cx| layers::root_focus_handle(cx));
+    assert!(focused(&root, &mut cx));
+
+    cx.simulate_keystrokes("tab");
+    assert!(
+        focused(&trigger, &mut cx),
+        "Tab reaches the page, not the fading dialog"
+    );
+    cx.simulate_keystrokes("tab");
+    assert!(
+        focused(&trigger, &mut cx),
+        "the page's only tab stop keeps the focus"
+    );
+    cx.simulate_keystrokes("shift-tab");
+    assert!(focused(&trigger, &mut cx), "and backwards");
+    for button in &buttons {
+        assert!(!focused(button, &mut cx));
+    }
+
+    // Opened again before the fade ended: a modal with its own tab stops.
+    set_open(&shell, "lower", true, &mut cx);
+    next_frame(&mut cx);
+    assert!(focused(&buttons[0], &mut cx));
+    cx.simulate_keystrokes("tab");
+    assert!(focused(&buttons[1], &mut cx));
+
+    // Once the dialog is gone nothing of it is remembered.
+    set_open(&shell, "lower", false, &mut cx);
+    next_frame(&mut cx);
+    cx.executor().advance_clock(Duration::from_millis(500));
+    next_frame(&mut cx);
+    assert_eq!(
+        lower.read_with(&cx, |modal, _| modal.phase()),
+        Phase::Hidden
+    );
+    cx.simulate_keystrokes("tab");
+    cx.simulate_keystrokes("tab");
+    assert!(focused(&trigger, &mut cx));
+}
+
 /// Ported from `UiLayerProvider.test.tsx` (with the settings page and the bulk mode as
 /// nonmodal layers, as in `App.tsx`) and the rest of `UiModal.test.tsx`.
 mod nonmodal_layers {

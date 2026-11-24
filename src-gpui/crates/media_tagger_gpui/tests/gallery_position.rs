@@ -838,3 +838,139 @@ fn a_timeline_click_released_before_the_next_frame_ends_its_drag(cx: &mut TestAp
     assert!(!read(&window, &cx, |g| g.timeline().dragging()));
     assert!(!read(&window, &cx, |g| g.grid().paused()));
 }
+
+// ---------------------------------------------------------------------------
+// Ported from e2e/gallery-scale/million.tsx (epic E19): one million results over 120
+// months, the backend splitting months larger than 5,000 (ADR 0007).
+// ---------------------------------------------------------------------------
+
+const MILLION: usize = 1_000_000;
+const MILLION_MONTHS: usize = 120;
+const MILLION_SPLIT: usize = 5_000;
+
+/// The sections of `million.tsx`: December 2025 (newest) back to January 2016, sizes
+/// differing by at most one, each month split into sections of at most 5,000. Returns
+/// the sections and the start of the oldest month.
+fn million_sections() -> (Vec<AssetQuerySection>, usize) {
+    let mut sections = Vec::new();
+    let mut start = 0;
+    let mut oldest = 0;
+    for m in 0..MILLION_MONTHS {
+        let count = MILLION / MILLION_MONTHS + usize::from(m < MILLION % MILLION_MONTHS);
+        let year = 2025 - (m / 12) as u32;
+        let t = year * 100 + (12 - (m % 12) as u32);
+        let mut offset = 0;
+        while offset < count {
+            sections.push(section(
+                t,
+                start + offset,
+                MILLION_SPLIT.min(count - offset),
+            ));
+            offset += MILLION_SPLIT;
+        }
+        oldest = start;
+        start += count;
+    }
+    assert_eq!(start, MILLION);
+    (sections, oldest)
+}
+
+/// A tile with data (not a placeholder) inside the viewport.
+fn tile_visible(index: usize, cx: &mut VisualTestContext) -> bool {
+    let selector: &'static str = Box::leak(gallery::tile_selector(index).into_boxed_str());
+    let viewport = viewport(cx);
+    bounds(selector, cx)
+        .is_some_and(|tile| tile.bottom() > viewport.top() && tile.top() < viewport.bottom())
+}
+
+fn million_page_offsets(fixture: &Fixture) -> Vec<usize> {
+    fixture
+        .backend
+        .take_calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            media_tagger_client::backend::fake::Call::GetAssetQueryPage { offset, .. } => {
+                Some(offset)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// "Timeline: native End on the focused rail → tiles of the oldest month with data", and
+/// Home back to the first tile: the split sections are merged into 120 months
+/// (`aria-valuemax`), End fetches the far page (it is not served from the cache) and
+/// shows the first tiles of January 2016, which the rail names, and Home shows the
+/// first tile again. Repeated, as the fixture's samples are.
+#[gpui::test]
+fn end_on_the_timeline_of_a_million_results_shows_the_oldest_month(cx: &mut TestAppContext) {
+    let (sections, oldest) = million_sections();
+    assert!(sections.len() > MILLION_MONTHS, "months are split");
+    let fixture = Fixture::library(MILLION, sections);
+    let (window, mut cx) = open(&fixture, cx);
+    assert!(tile_visible(0, &mut cx));
+    assert_eq!(
+        read(&window, &cx, |g| g.timeline().value_max()),
+        MILLION_MONTHS,
+        "merged months"
+    );
+    let focus = read(&window, &cx, |g| g.timeline_focus().clone());
+
+    for sample in 0..3 {
+        cx.update(|window, cx| window.focus(&focus, cx));
+        cx.run_until_parked();
+        million_page_offsets(&fixture);
+
+        cx.simulate_keystrokes("end");
+        cx.executor().advance_clock(Duration::from_millis(150));
+        settle(&fixture, &mut cx);
+        let pages = million_page_offsets(&fixture);
+        assert!(
+            tile_visible(oldest, &mut cx) && tile_visible(oldest + 4, &mut cx),
+            "sample {sample}: the first tiles of the oldest month"
+        );
+        assert!(
+            pages.contains(&(oldest / PAGE * PAGE)),
+            "sample {sample}: End fetched the page of the oldest month: {pages:?}"
+        );
+        assert_eq!(
+            read(&window, &cx, |g| g.timeline().value_now()),
+            MILLION_MONTHS
+        );
+        let text = read(&window, &cx, |g| {
+            let timeline = g.timeline();
+            timeline.month_text(timeline.current(), Language::En, "")
+        });
+        assert_eq!(text, "January 2016");
+
+        cx.update(|window, cx| window.focus(&focus, cx));
+        cx.simulate_keystrokes("home");
+        cx.executor().advance_clock(Duration::from_millis(150));
+        settle(&fixture, &mut cx);
+        assert!(
+            tile_visible(0, &mut cx) && tile_visible(4, &mut cx),
+            "sample {sample}: Home shows the first tiles again"
+        );
+        assert_eq!(read(&window, &cx, |g| g.timeline().value_now()), 1);
+
+        // A fresh session for the next sample: its page cache starts empty, so End
+        // fetches again.
+        if sample < 2 {
+            let session = sample as u64 + 2;
+            let (sections, _) = million_sections();
+            fixture.serve(session, MILLION, sections);
+            let runtime = window
+                .read_with(&cx, |shell, _| shell.runtime().clone())
+                .expect("the window is open");
+            runtime.update(&mut cx, |runtime, cx| {
+                runtime.send(RuntimeInput::Query(QueryInput::Refresh), cx)
+            });
+            settle(&fixture, &mut cx);
+            assert!(tile_visible(0, &mut cx));
+            assert_eq!(
+                read(&window, &cx, |g| g.timeline().value_max()),
+                MILLION_MONTHS
+            );
+        }
+    }
+}

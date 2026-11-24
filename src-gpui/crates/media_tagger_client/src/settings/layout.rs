@@ -109,10 +109,16 @@ pub mod theme_choice {
     /// The legend: `text-xs font-semibold`, 8 px above the cards.
     pub const LEGEND_SIZE: f32 = 12.0;
     pub const LEGEND_MARGIN_BOTTOM: f32 = 8.0;
-    /// A card: `gap 8px; padding 8px; font-size 12px; font-weight 600`.
+    /// A card: `gap 8px; padding 8px; border: 1px solid; font-size 12px; font-weight
+    /// 600`.
     pub const CARD_GAP: f32 = 8.0;
     pub const CARD_PADDING: f32 = 8.0;
+    pub const CARD_BORDER: f32 = 1.0;
     pub const CARD_FONT_SIZE: f32 = 12.0;
+    /// The card of the focused radio: `.choice-input:focus-visible + span { outline:
+    /// 2px solid var(--color-primary); outline-offset: 2px; }`, 2 px off the card's
+    /// border and not the 3 px of the base `:focus-visible` rule.
+    pub const FOCUS_OUTLINE_OFFSET: f32 = 2.0;
     /// The preview: 64 px high, a 14 px bar over a tile row and a 24 % panel, 5 px
     /// gaps, radius 6.
     pub const PREVIEW_HEIGHT: f32 = 64.0;
@@ -247,7 +253,10 @@ pub mod resolver {
     /// `input`: `padding-inline: 0.75rem`, no shadow (`--depth: 0`) and, while it has
     /// the focus, `outline: 2px solid` in the base content colour, 2 px off the
     /// border; `.input-sm` makes the text 12 px. Disabled it keeps the 0.55 opacity of
-    /// `input:disabled`.
+    /// `input:disabled` over the frame and the text, and daisyUI's `.input:disabled`
+    /// makes the text 40 % of the base content (`text::FieldChrome::Framed`): 0.22 in
+    /// all. The border and the fill stay those of the utility classes, which win over
+    /// daisyUI's layer.
     pub const INPUT_HEIGHT: f32 = 40.0;
     pub const INPUT_PADDING_X: f32 = 12.0;
     pub const INPUT_FONT_SIZE: f32 = 12.0;
@@ -372,5 +381,25 @@ mod tests {
             .contains("input:disabled, select:disabled { cursor: not-allowed; opacity: 0.55; }"));
         assert_eq!(resolver::INPUT_FONT_SIZE, TYPOGRAPHY.xs.size);
         assert_eq!(resolver::INPUT_DISABLED_OPACITY, 0.55);
+        // The text of the disabled field: 40 % of the base content under that opacity.
+        let text = f32::from(crate::text::FRAMED_DISABLED_TEXT_PERCENT) / 100.0;
+        assert!((text * resolver::INPUT_DISABLED_OPACITY - 0.22).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_theme_card_has_the_outline_of_a_choice_input_around_its_border() {
+        assert!(STYLESHEET.contains(
+            ".choice-input:focus-visible + span { outline: 2px solid var(--color-primary); outline-offset: 2px; }"
+        ));
+        assert!(STYLESHEET.contains(
+            ".theme-choice > span { display: grid; gap: 8px; padding: 8px; border: 1px solid var(--border-soft);"
+        ));
+        assert_eq!(
+            (
+                super::theme_choice::FOCUS_OUTLINE_OFFSET,
+                super::theme_choice::CARD_BORDER
+            ),
+            (2.0, 1.0)
+        );
     }
 }

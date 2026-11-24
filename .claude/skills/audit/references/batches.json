@@ -7,7 +7,8 @@
     "perf": "review-performance",
     "stability": "review-stability",
     "conventions": "review-conventions",
-    "tooling": "review-tooling"
+    "tooling": "review-tooling",
+    "gpui": "review-gpui"
   },
   "batches": [
     {
@@ -410,6 +411,191 @@
         "src-tauri/tests/tag_vocabulary.rs",
         "src-tauri/tests/thumbnail_bulk.rs",
         "src-tauri/tests/thumbnail_clear.rs"
+      ],
+      "lenses": ["tooling"]
+    },
+    {
+      "id": "B16a",
+      "title": "GPUI client: Backend port, executors, runtime",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/src/lib.rs",
+        "src-gpui/crates/media_tagger_client/src/backend.rs",
+        "src-gpui/crates/media_tagger_client/src/backend/*.rs",
+        "src-gpui/crates/media_tagger_client/src/exec.rs",
+        "src-gpui/crates/media_tagger_client/src/exec/*.rs",
+        "src-gpui/crates/media_tagger_client/src/model.rs",
+        "src-gpui/crates/media_tagger_client/src/progress.rs",
+        "src-gpui/crates/media_tagger_client/src/startup_scan.rs",
+        "src-gpui/crates/media_tagger_client/src/runtime.rs",
+        "src-gpui/crates/media_tagger_client/src/runtime/*.rs",
+        "src-gpui/crates/media_tagger_client/src/scenario.rs",
+        "src-gpui/crates/media_tagger_client/src/shell.rs",
+        "src-gpui/crates/media_tagger_client/src/shortcuts.rs",
+        "src-gpui/crates/media_tagger_client/src/window_chrome.rs",
+        "src-gpui/crates/media_tagger_client/Cargo.toml"
+      ],
+      "lenses": ["rust", "stability", "gpui"]
+    },
+    {
+      "id": "B16b",
+      "title": "GPUI client: query model, page cache, metadata writes, vocabulary",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/src/library.rs",
+        "src-gpui/crates/media_tagger_client/src/library/**/*.rs"
+      ],
+      "lenses": ["rust", "perf", "stability"]
+    },
+    {
+      "id": "B16c",
+      "title": "GPUI client: gallery grid, selection, timeline, thumbnail pipeline",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/src/gallery.rs",
+        "src-gpui/crates/media_tagger_client/src/gallery/**/*.rs",
+        "src-gpui/crates/media_tagger_client/src/thumbs.rs"
+      ],
+      "lenses": ["rust", "perf", "stability"]
+    },
+    {
+      "id": "B16d",
+      "title": "GPUI client: search, tag list, tagging, bulk dock",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/src/search.rs",
+        "src-gpui/crates/media_tagger_client/src/search/**/*.rs",
+        "src-gpui/crates/media_tagger_client/src/tagging.rs",
+        "src-gpui/crates/media_tagger_client/src/bulk.rs",
+        "src-gpui/crates/media_tagger_client/src/bulk/*.rs"
+      ],
+      "lenses": ["rust", "perf", "stability"]
+    },
+    {
+      "id": "B16e",
+      "title": "GPUI client: lightbox model and viewer",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/src/lightbox.rs",
+        "src-gpui/crates/media_tagger_client/src/lightbox/**/*.rs"
+      ],
+      "lenses": ["rust", "stability"]
+    },
+    {
+      "id": "B16f",
+      "title": "GPUI client: settings operations, transfer, duplicates",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/src/settings.rs",
+        "src-gpui/crates/media_tagger_client/src/settings/**/*.rs"
+      ],
+      "lenses": ["rust", "stability"]
+    },
+    {
+      "id": "B16g",
+      "title": "GPUI client: i18n, theme, preferences, text editing, controls, overlays",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/src/i18n.rs",
+        "src-gpui/crates/media_tagger_client/src/i18n/*.rs",
+        "src-gpui/crates/media_tagger_client/src/theme.rs",
+        "src-gpui/crates/media_tagger_client/src/theme/*.rs",
+        "src-gpui/crates/media_tagger_client/src/prefs.rs",
+        "src-gpui/crates/media_tagger_client/src/prefs/*.rs",
+        "src-gpui/crates/media_tagger_client/src/text.rs",
+        "src-gpui/crates/media_tagger_client/src/text/*.rs",
+        "src-gpui/crates/media_tagger_client/src/controls.rs",
+        "src-gpui/crates/media_tagger_client/src/controls/*.rs",
+        "src-gpui/crates/media_tagger_client/src/overlay.rs",
+        "src-gpui/crates/media_tagger_client/src/overlay/*.rs",
+        "src-gpui/crates/media_tagger_client/src/icons.rs",
+        "src-gpui/crates/media_tagger_client/src/kit.rs"
+      ],
+      "lenses": ["rust", "conventions"]
+    },
+    {
+      "id": "B17a",
+      "title": "GPUI adapter: startup, profile, runtime glue, thumbnails, originals",
+      "critical": false,
+      "globs": [
+        "src-gpui/Cargo.toml",
+        "src-gpui/crates/media_tagger_gpui/Cargo.toml",
+        "src-gpui/crates/media_tagger_gpui/build.rs",
+        "src-gpui/crates/media_tagger_gpui/src/lib.rs",
+        "src-gpui/crates/media_tagger_gpui/src/main.rs",
+        "src-gpui/crates/media_tagger_gpui/src/boot.rs",
+        "src-gpui/crates/media_tagger_gpui/src/cli.rs",
+        "src-gpui/crates/media_tagger_gpui/src/profile.rs",
+        "src-gpui/crates/media_tagger_gpui/src/runtime.rs",
+        "src-gpui/crates/media_tagger_gpui/src/scenario.rs",
+        "src-gpui/crates/media_tagger_gpui/src/window.rs",
+        "src-gpui/crates/media_tagger_gpui/src/thumbs.rs",
+        "src-gpui/crates/media_tagger_gpui/src/media.rs"
+      ],
+      "lenses": ["gpui", "rust", "stability"]
+    },
+    {
+      "id": "B17b",
+      "title": "GPUI adapter: UI primitives, text field, layers, modal",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_gpui/src/ui.rs",
+        "src-gpui/crates/media_tagger_gpui/src/ui/*.rs",
+        "src-gpui/crates/media_tagger_gpui/assets/icons/*.svg"
+      ],
+      "lenses": ["gpui", "stability"]
+    },
+    {
+      "id": "B17c",
+      "title": "GPUI adapter: shell, gallery, search, tag list, bulk dock views",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_gpui/src/views.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/shell.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/chrome.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/kit.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/gallery.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/gallery/*.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/search.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/tag_list.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/tag_editor.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/bulk_dock.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/bulk_dock/*.rs"
+      ],
+      "lenses": ["gpui", "perf", "stability"]
+    },
+    {
+      "id": "B17d",
+      "title": "GPUI adapter: lightbox and settings views",
+      "critical": false,
+      "globs": [
+        "src-gpui/crates/media_tagger_gpui/src/views/lightbox.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/lightbox/*.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/settings.rs",
+        "src-gpui/crates/media_tagger_gpui/src/views/settings/*.rs"
+      ],
+      "lenses": ["gpui", "stability"]
+    },
+    {
+      "id": "B17e",
+      "title": "Comparison harness Tauri and GPUI",
+      "critical": false,
+      "tests": true,
+      "globs": [
+        "e2e/compare/*.js",
+        "e2e/compare/scenarios/*.js"
+      ],
+      "lenses": ["tooling", "stability"]
+    },
+    {
+      "id": "B17f",
+      "title": "GPUI test targets",
+      "critical": false,
+      "optional": true,
+      "tests": true,
+      "globs": [
+        "src-gpui/crates/media_tagger_client/tests/*.rs",
+        "src-gpui/crates/media_tagger_gpui/tests/*.rs"
       ],
       "lenses": ["tooling"]
     }

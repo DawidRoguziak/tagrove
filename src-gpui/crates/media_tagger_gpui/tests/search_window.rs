@@ -527,3 +527,23 @@ fn the_tools_divider_is_drawn() {
         "the divider is 20 pixels high, not the row's height"
     );
 }
+
+/// `role="listbox"` with `aria-label={listboxAriaLabel}` of `SearchSuggestionsList`: the
+/// header's suggestion list is named by `search.tagSuggestions` (`SearchTagatorWrapper`)
+/// in the language of the interface, and it is drawn while it has options (epic E19,
+/// keyboard and accessibility review).
+#[gpui::test]
+fn the_suggestion_list_has_the_translated_name_of_the_header_list(cx: &mut TestAppContext) {
+    let fixture = Fixture::new(&["camera", "car", "cat", "dog"]);
+    let (window, mut cx) = open(&fixture, cx);
+    key(&fixture, "ctrl-k", &mut cx);
+    type_text(&fixture, "ca", &mut cx);
+    assert!(cx.debug_bounds(search::LIST_SELECTOR).is_some());
+    let label = window
+        .update(&mut cx, |shell, _, cx| {
+            let gallery = shell.gallery().expect("the gallery").read(cx);
+            gallery.search().read(cx).suggestion_list_label(cx)
+        })
+        .unwrap();
+    assert_eq!(label.as_ref(), "Tag suggestions");
+}

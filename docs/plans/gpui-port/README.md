@@ -135,7 +135,7 @@ Od E00 pilnują jej kompilator i `src-tauri/tests/architecture_boundaries.rs`:
 | E16 | [Lightbox: UI, przeglądarka obrazów, zaślepki GIF i wideo](E16-gpui-lightbox.md) | L | trudny | E09, E13, E15 | done 2026-11-23 |
 | E17 | [Ustawienia: szkielet, skan, miniatury, wygląd, język, strefa zagrożeń, o programie](E17-settings-core.md) | L | standardowy | E02, E06 | done 2026-11-23 |
 | E18 | [Ustawienia: import/eksport, przywracanie i duplikaty](E18-settings-data.md) | L | trudny | E17 | done 2026-11-24 |
-| E19 | [Domknięcie: parytet, wydajność, klawiatura, dokumentacja](E19-acceptance.md) | L | trudny | E10, E14, E16, E18 | todo |
+| E19 | [Domknięcie: parytet, wydajność, klawiatura, dokumentacja](E19-acceptance.md) | L | trudny | E10, E14, E16, E18 | done 2026-11-24 |
 | E20 | [Animacja GIF w lightboxie](E20-gif-animation.md) | M | standardowy | E16 | deferred |
 | E21 | [Natywne wideo (libmpv) w oknie GPUI](E21-native-video.md) | L | trudny | E16 | deferred |
 | E22 | [Przełączenie: identyfikator wydania, pakowanie, usunięcie Tauri](E22-cutover.md) | L | trudny | E19, E21 | deferred |

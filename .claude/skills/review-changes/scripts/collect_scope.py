@@ -49,6 +49,14 @@ HOT_PATHS = (
     "src-gpui/crates/media_tagger_gpui/src/thumbs.rs",
     "src-gpui/crates/media_tagger_gpui/src/views/gallery.rs",
     "src-gpui/crates/media_tagger_gpui/src/views/gallery/**",
+    # GPUI port: the query model with its page cache, and search with the tag list
+    # (the counterparts of src/library/** and src/features/search/**).
+    "src-gpui/crates/media_tagger_client/src/library.rs",
+    "src-gpui/crates/media_tagger_client/src/library/**",
+    "src-gpui/crates/media_tagger_client/src/search.rs",
+    "src-gpui/crates/media_tagger_client/src/search/**",
+    "src-gpui/crates/media_tagger_gpui/src/views/search.rs",
+    "src-gpui/crates/media_tagger_gpui/src/views/tag_list.rs",
 )
 
 # A change larger than this (in Rust/frontend source lines) also gets the

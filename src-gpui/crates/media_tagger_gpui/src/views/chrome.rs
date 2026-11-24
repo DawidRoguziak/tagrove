@@ -27,7 +27,7 @@ use media_tagger_client::{
 
 use crate::ui::{
     button::keyed_focus_handle,
-    theme::{color, focus_ring},
+    theme::{color, focus_ring, RingBorder},
 };
 
 /// Debug selector of a window button (`VisualTestContext::debug_bounds`).
@@ -131,7 +131,7 @@ impl RenderOnce for WindowButton {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(move |_, window, _| activate(control, window))
             .when(focus_visible, |button| {
-                button.child(focus_ring(ring, RADII.control))
+                button.child(focus_ring(ring, RADII.control, RingBorder::NONE))
             })
             .child(
                 svg()

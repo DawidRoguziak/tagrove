@@ -11,7 +11,7 @@ The audit looks for bugs, performance problems, and stability problems in the wh
 
 A third pass assembles a report with coverage and gaps.
 
-Results live in `docs/review/<run>/`, which is git-ignored (`/docs/review/`). Run directories can contain a private dataset path, logs, and screenshots, so never commit them. The process itself (skill, scripts, agents, workflows, these docs) is tracked. The audit is separate from `/review-changes` and `/deep-review`, which review a diff; the audit reviews the whole tree and drives the app. It reuses the `review-rust`, `review-frontend`, `review-performance`, `review-conventions`, and `review-verifier` agents and adds `review-stability`, `review-tooling`, `audit-judge`, `audit-clerk`, `qa-tester`, and `qa-refuter`.
+Results live in `docs/review/<run>/`, which is git-ignored (`/docs/review/`). Run directories can contain a private dataset path, logs, and screenshots, so never commit them. The process itself (skill, scripts, agents, workflows, these docs) is tracked. The audit is separate from `/review-changes` and `/deep-review`, which review a diff; the audit reviews the whole tree and drives the app. It reuses the `review-rust`, `review-frontend`, `review-performance`, `review-conventions`, `review-gpui`, and `review-verifier` agents and adds `review-stability`, `review-tooling`, `audit-judge`, `audit-clerk`, `qa-tester`, and `qa-refuter`.
 
 Each stage runs one saved workflow (`.claude/workflows/audit-<stage>.js`); `/audit` chains all of them. The coordinator runs scripts and the workflow and reads only counters and `STATUS.md`; agents do the reading and clicking. State is on disk, so every stage is resumable.
 
@@ -36,7 +36,7 @@ Rules that hold for the verification stages:
 - The judge's static verdicts are `confirmed`, `rejected`, `duplicate`, `known`, and `unproven`. `known` needs a `known_source` (see known-sources.md). `unproven` needs a `missing_fact`: it means a runtime fact is missing, it is final for statics, and it **feeds the QA planner**, which turns such records (and confirmed findings visible in the UI) into targeted `QA-T*` suites. QA verdicts are `confirmed`, `rejected`, `not-reproducible`, `duplicate`, and `known`.
 - A **dispute** is a record where the refuter answered `uncertain`, or `rejected` a P0/P1 finding, or proposed a priority at least two levels away from the finder's (`is_dispute` in `audit_state.py`). Disputes and P0/P1 records get the strongest judge (`judge_high`).
 - Judges open the decisive evidence of both sides themselves and do not run a new investigation. Neither refuter nor judge sees the finder's notes beyond the record.
-- Static batches are in `batches.json` (26 batches; the optional Rust integration-test batches B15a and B15b run only with `--include-optional`). Test files are excluded unless a batch sets `tests`.
+- Static batches are in `batches.json` (39 batches; the optional test batches B15a, B15b and B17f run only with `--include-optional`). B1 to B15b cover the Tauri application, its core and its tooling; B16a to B16g cover the GPUI client crate `media_tagger_client`, B17a to B17d the GPUI adapter `media_tagger_gpui`, B17e the comparison harness and B17f the test targets of the GPUI workspace. The `gpui` lens (the `review-gpui` agent) runs on B16a and on B17a to B17d; the other client batches get the Rust, performance, stability and conventions lenses. `test_audit_scripts.py` fails when a Rust source of the Tauri adapter, the core or either GPUI crate is in no batch. Test files are excluded unless a batch sets `tests`.
 - QA blocks are in `qa-blocks.json` and run strictly one after another: S1 scale (QA-01..09, QA-09 needs a separate `VITE_MEDIATAGGER_PERF=1` build), S2 mutations and data safety (QA-10..14, all destructive, edge-file creation allowed), S3 media (QA-15), S4 keyboard, accessibility, window (QA-16), plus targeted `QA-T*` suites from the plan. A tool-runner failure or failing test is itself a candidate finding.
 
 ## Roles and models
@@ -46,8 +46,8 @@ Roles resolve through [`models.json`](../../../.claude/skills/audit/references/m
 | Role | Model | Effort | Used for | Approximate count |
 | --- | --- | --- | --- | --- |
 | `finder_critical` | fable | high | rust, frontend, perf, stability lenses in B3a, B3b, B4a, B4b, B5 | 15 |
-| `finder` | opus | high | the same lenses in all other batches | 36 |
-| `finder_rules` | sonnet | high | conventions and tooling lenses | 14 |
+| `finder` | opus | high | the same lenses and the gpui lens in all other batches | 64 |
+| `finder_rules` | sonnet | high | conventions and tooling lenses | 16 |
 | `static_refuter_high` | fable | high | `review-verifier` for P0/P1 candidates | share of candidates |
 | `static_refuter_low` | sonnet | high | `review-verifier` for P2/P3 candidates | rest of candidates |
 | `judge_high` | fable | high | `audit-judge` for P0/P1 or a dispute (static and QA) | share of candidates |
@@ -63,7 +63,7 @@ Roles resolve through [`models.json`](../../../.claude/skills/audit/references/m
 
 ### Agent count for a full run
 
-- **Finders: 65** (without B15a/B15b): 15 on Fable (the 15 non-conventions lenses in the five critical batches), 36 on Opus (non-critical rust, frontend, perf, stability lenses), 14 on Sonnet (conventions and tooling lenses). With `--include-optional`, two more tooling finders on Sonnet.
+- **Finders: 95** (without B15a, B15b and B17f): 15 on Fable (the 15 non-conventions lenses in the five critical batches), 64 on Opus (non-critical rust, frontend, perf, stability and gpui lenses; 28 of them in the GPUI batches), 16 on Sonnet (conventions and tooling lenses). With `--include-optional`, three more tooling finders on Sonnet.
 - **Refuters and judges:** one of each per candidate record, so with `N` candidates after dedup there are `N` refuters and `N` judges. Refuters: P0/P1 candidates on Fable, the rest on Sonnet (QA: Opus, Fable for S2 and data-safety). Judges: Fable for P0/P1 and disputes, Opus for the rest. Expect roughly 10-20% of candidates on Fable refuters and 20-30% on Fable judges. Total verification agents = `2 * (N_static + N_qa)`. The number is not known before the finders finish.
 - **QA:** 1 planner (Fable); 11 base Sonnet tester suites (S1 nine, S3 one, S4 one) and 5 Fable tester suites (S2), plus the targeted `QA-T*` suites the planner adds; narrative dedup on Sonnet; clerks on Haiku for the sweep, every session start/wait/copy/stop/guard, and triage; 1 report editor.
 
@@ -108,7 +108,7 @@ writes `report.md`, without asking anything. The dataset path is stored only in 
 - **Resuming.** `/audit` without `--new` resumes the latest unfinished run where it stopped;
   every step is idempotent and results are write-once. `--new` starts a new run.
   `--models role=model[:effort]` points roles at other models.
-- **Scale.** Invoking `/audit` is the explicit request for full scale (about 65 finders in the
+- **Scale.** Invoking `/audit` is the explicit request for full scale (about 95 finders in the
   static stage). Raising "Dynamic workflow size" in `/config` is optional; per-workflow
   concurrency is `min(16, CPUs - 2)`, 14 on a 16-CPU host.
 - **Single stages** stay available for debugging: `/audit init|static|static-verify|qa-prep|qa-run [S1-S4]|qa-verify|report|status`.

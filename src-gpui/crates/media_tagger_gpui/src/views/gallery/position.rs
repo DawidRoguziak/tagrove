@@ -51,7 +51,7 @@ use super::{
 };
 use crate::ui::{
     fonts,
-    theme::{box_shadows, color, focus_ring},
+    theme::{box_shadows, color, focus_ring, RingBorder},
 };
 
 /// Debug selectors (`VisualTestContext::debug_bounds`).
@@ -330,6 +330,7 @@ impl GalleryView {
                 bar.child(deferred(focus_ring(
                     visuals.focus_ring,
                     SCROLLBAR_WIDTH / 2.0,
+                    RingBorder::NONE,
                 )))
             })
             .child(drag_listeners(
@@ -491,6 +492,7 @@ impl GalleryView {
                 rail.child(deferred(focus_ring(
                     visuals.focus_ring,
                     TIMELINE_WIDTH / 2.0,
+                    RingBorder::NONE,
                 )))
             })
             .child(drag_listeners(

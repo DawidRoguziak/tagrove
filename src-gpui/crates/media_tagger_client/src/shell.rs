@@ -96,8 +96,11 @@ pub mod settings_header {
     pub const HEADING_LINE_HEIGHT: f32 = 1.25;
     /// `mt-0.5 text-xs`.
     pub const DESCRIPTION_MARGIN_TOP: f32 = 2.0;
-    /// The back button's arrow (`h-4 w-4`).
-    pub const BACK_ICON_SIZE: f32 = 16.0;
+    /// The back button's arrow. Its `h-4 w-4` loses to the `h-5 w-5` of `UiIcon`
+    /// itself, which the generated stylesheet lists later, so the arrow is 20 px.
+    pub const BACK_ICON_SIZE: f32 = 20.0;
+    /// `gap-2` on the back button, in place of the button's own 6 px.
+    pub const BACK_GAP: f32 = 8.0;
     /// The page below the header (`pt-5`).
     pub const BODY_PADDING_TOP: f32 = 20.0;
 }
@@ -119,6 +122,10 @@ pub mod empty_state {
     pub const ICON_SIZE: f32 = 32.0;
     pub const ICON_TILE_FILL_PERCENT: u8 = 10;
     pub const ICON_TILE_RING_PERCENT: u8 = 15;
+    /// `ring-1` is a box shadow: it lies outside the 64 px tile and takes no room. The
+    /// corners of a spread shadow are the element's radius plus the spread, so the ring
+    /// around the `rounded-[var(--radius-control)]` tile has a radius of 6 + 1 px.
+    pub const ICON_TILE_RING_WIDTH: f32 = 1.0;
     /// `text-2xl leading-tight`.
     pub const TITLE_SIZE: f32 = 24.0;
     pub const TITLE_LINE_HEIGHT: f32 = 1.25;
@@ -225,6 +232,34 @@ mod tests {
         let polish = I18n::new(Language::Pl);
         assert_ne!(item_count(&polish, 2), item_count(&polish, 5));
         assert!(item_count(&polish, 5).starts_with('5'));
+    }
+
+    #[test]
+    fn the_icon_tile_of_the_empty_state_still_has_the_classes_copied_here() {
+        use super::empty_state as layout;
+        const SOURCE: &str = include_str!("../../../../src/features/gallery/GalleryEmptyState.tsx");
+        const STYLESHEET: &str = include_str!("../../../../src/styles.css");
+        assert!(
+            SOURCE.contains(
+                "mb-1 grid h-16 w-16 place-items-center rounded-[var(--radius-control)] \
+                 bg-primary/10 text-primary-text ring-1 ring-primary/15"
+            ),
+            "GalleryEmptyState.tsx changed the icon tile"
+        );
+        assert!(SOURCE.contains(r#"className="h-8 w-8""#));
+        assert!(STYLESHEET.contains("--radius-control: 6px;"));
+        assert_eq!(crate::theme::RADII.control, 6.0);
+        assert_eq!(
+            (
+                layout::ICON_TILE_SIZE,
+                layout::ICON_TILE_MARGIN_BOTTOM,
+                layout::ICON_SIZE,
+                layout::ICON_TILE_FILL_PERCENT,
+                layout::ICON_TILE_RING_PERCENT,
+                layout::ICON_TILE_RING_WIDTH,
+            ),
+            (64.0, 4.0, 32.0, 10, 15, 1.0)
+        );
     }
 
     #[test]

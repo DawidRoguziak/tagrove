@@ -488,6 +488,10 @@ animation is epic E20, native video epic E21). The Tauri path is unchanged.
   dialog that is disabled or removed (the heart while its write runs, Apply, the
   confirmation's field during a deletion) leaves GPUI's frame; the dialog takes the focus
   then, not the window's root, which is outside the dialog's key context.
+  Tab follows the order of the DOM of `LightboxModal.tsx`: the floating reopen and close
+  buttons, the action rail, then the side panel. The floating buttons are drawn above the
+  stage and so after the rail; the stage, the rail and the panel are GPUI tab groups, whose
+  stops come after the stops beside them, and the dialog is a group of its own.
 - **Layout.** The dialog keeps 20 px to the window's edges up to 1920 x 1280 (`shell::size`).
   At 768 px and wider the side panel is a 340 px column; below, it is a drawer over the
   media with a scrim, closed until asked for. It slides out in 200 ms and keeps its place
@@ -570,7 +574,7 @@ animation is epic E20, native video epic E21). The Tauri path is unchanged.
 - Final staged-delete cleanup can fail after DB commit; the UI reports the recovery path and the durable journal retries cleanup at startup.
 - Details and media failures have localized error UI; details also has Retry. Clipboard failure clears feedback, and some fullscreen shortcut failures are caught without an alert.
 - A video whose audio track cannot be played because no audio device opens plays silently, with no indication in the UI.
-- GPUI port: a picture over the decode budget shows the media error instead of a reduced picture; a strongly reduced picture is drawn without mipmaps; headings have no letter spacing, so a long heading can wrap where the webview's fits; the tab order puts the floating reopen and close buttons after the action rail (they are drawn above the stage); a touch-only pointer is not detected, so the controls always fade; a window manager that grants a fullscreen request more than three seconds late, after the lightbox has left fullscreen, keeps the window fullscreen until the user takes it out.
+- GPUI port: a picture over the decode budget shows the media error instead of a reduced picture; a strongly reduced picture is drawn without mipmaps, and a small one enlarged many times has edges that fade over half a source pixel (the GPU sampler, where the webview draws a sharp edge); headings have no letter spacing, so a long heading can wrap where the webview's fits; a touch-only pointer is not detected, so the controls always fade; a window manager that grants a fullscreen request more than three seconds late, after the lightbox has left fullscreen, keeps the window fullscreen until the user takes it out.
 
 ## Change checklist
 

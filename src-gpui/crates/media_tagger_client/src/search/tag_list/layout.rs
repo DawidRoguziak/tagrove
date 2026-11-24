@@ -28,8 +28,13 @@ pub mod dialog {
     pub const MESSAGE_PADDING_Y: f32 = 8.0;
     /// The buttons: `flex items-center justify-end gap-2`.
     pub const FOOTER_GAP: f32 = 8.0;
-    /// The filter: `px-3 py-2.5 text-sm`.
-    pub const INPUT_HEIGHT: f32 = 42.0;
+    /// The filter: `border px-3 py-2.5 text-sm`: one `text-sm` line (13 px at
+    /// 1.428571, not Tailwind's 14 px at 20 px), 10 px above and below it, and the
+    /// border.
+    pub const INPUT_HEIGHT: f32 = crate::theme::TYPOGRAPHY.sm.size
+        * crate::theme::TYPOGRAPHY.sm.line_height
+        + 2.0 * 10.0
+        + 2.0;
 }
 
 /// The height the dialog's content may take inside the window: the window's height

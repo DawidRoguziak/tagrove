@@ -321,6 +321,8 @@ impl LightboxView {
         let mut stage_element = div()
             .id(STAGE_SELECTOR)
             .debug_selector(|| STAGE_SELECTOR.to_owned())
+            // After the floating buttons in the Tab order (`LightboxView::render`).
+            .tab_group()
             .relative()
             .flex_1()
             .min_h_0()
@@ -702,6 +704,8 @@ impl LightboxView {
         let island = div()
             .id(RAIL_SELECTOR)
             .debug_selector(|| RAIL_SELECTOR.to_owned())
+            // After the floating buttons in the Tab order (`LightboxView::render`).
+            .tab_group()
             .flex()
             .flex_wrap()
             .items_center()

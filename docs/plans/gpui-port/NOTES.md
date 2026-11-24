@@ -50,3 +50,6 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-24 | E18 | orkiestrator | in progress | workflow start od kroku implement | [E18](E18-settings-data.md)
 2026-11-24 | E18 | workflow | done | E18 zakończony: import/eksport, przywracanie i duplikaty zbudowane, sprawdzenia i bramka zielone; parytet compare:ui nieocenony (nie uruchomiono). | [E18](E18-settings-data.md)
 2026-11-24 | E18 | orkiestrator | done | Pozycje z audytu (G1–G6) zamknięte; checks, porównanie zrzutów (6 scenariuszy) i test:all przechodzą. | [E18](E18-settings-data.md)
+2026-11-24 | E19 | orkiestrator | in progress | workflow start od kroku implement | [E19](E19-acceptance.md)
+2026-11-24 | E19 | workflow | done | E19 ukończony: parytet, klawiatura, wydajność i dokumentacja zrobione, przegląd czysty, bramka zielona. | [E19](E19-acceptance.md)
+2026-11-24 | E19 | orkiestrator | done | Pozycje z audytu F2–F6 zamknięte, F1 (CLAUDE.md i reguły) czeka na zgodę użytkownika; checks, porównanie 23 scenariuszy i test:all przechodzą. | [E19](E19-acceptance.md)

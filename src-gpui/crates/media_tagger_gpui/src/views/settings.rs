@@ -66,7 +66,7 @@ use crate::{
         progress::ProgressBar,
         spinner::Spinner,
         switch::Switch,
-        theme::{self, box_shadows, color, focus_ring, weight},
+        theme::{self, box_shadows, color, focus_ring, square_focus_ring, weight, RingBorder},
     },
 };
 
@@ -894,21 +894,22 @@ impl SettingsView {
                             ..ring
                         },
                         RADII.control,
+                        RingBorder::NONE,
                     ))
                 });
             if current {
                 link.aria_selected(true)
                     .bg(color(colors.tagator_suggestion_active_bg))
                     .text_color(color(colors.primary_text))
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .top_0()
-                            .bottom_0()
-                            .w(px(layout::nav::ACTIVE_EDGE))
-                            .bg(color(colors.primary)),
-                    )
+                    // `box-shadow: inset 2px 0`: the edge follows the link's rounded
+                    // corners, which a bar clipped to the link's rectangle would not.
+                    .shadow(vec![gpui::BoxShadow {
+                        color: color(colors.primary),
+                        offset: gpui::point(px(layout::nav::ACTIVE_EDGE), px(0.)),
+                        blur_radius: px(0.),
+                        spread_radius: px(0.),
+                        inset: true,
+                    }])
             } else {
                 let hover_bg = color(colors.surface_raised);
                 let hover_text = color(colors.base_content);
@@ -1338,7 +1339,15 @@ impl SettingsView {
                     ThemeName::Dark => "settings.appearance.theme.dark",
                 }))
                 .when(focus_visible, |card| {
-                    card.child(focus_ring(FocusRing::base(tokens), RADII.surface))
+                    // `.choice-input:focus-visible + span`: 2 px off the card's border.
+                    card.child(focus_ring(
+                        FocusRing {
+                            offset: layout::theme_choice::FOCUS_OUTLINE_OFFSET,
+                            ..FocusRing::base(tokens)
+                        },
+                        RADII.surface,
+                        RingBorder::all(layout::theme_choice::CARD_BORDER),
+                    ))
                 });
             let hover = color(colors.surface_raised);
             let card = card.hover(move |style| style.bg(hover));
@@ -1693,7 +1702,11 @@ impl SettingsView {
                         )
                         .child(i18n.t(text.summary_key()))
                         .when(focus_visible, |summary| {
-                            summary.child(focus_ring(FocusRing::base(tokens), RADII.control))
+                            summary.child(focus_ring(
+                                FocusRing::base(tokens),
+                                RADII.control,
+                                RingBorder::NONE,
+                            ))
                         }),
                 )
                 .when(open, |details| {
@@ -1922,6 +1935,7 @@ impl Render for SettingsView {
                         Button::new(BACK_ID, back.clone())
                             .variant(ButtonVariant::Ghost)
                             .leading_icon(IconName::ArrowLeft, settings_header::BACK_ICON_SIZE)
+                            .gap(settings_header::BACK_GAP)
                             .aria_label(back)
                             .on_click(move |_, _, cx| {
                                 runtime::send(&runtime, RuntimeInput::CloseSettings, cx)
@@ -1949,6 +1963,7 @@ impl Render for SettingsView {
                             div()
                                 .mt(px(settings_header::DESCRIPTION_MARGIN_TOP))
                                 .text_size(px(TYPOGRAPHY.xs.size))
+                                .line_height(px(TYPOGRAPHY.xs.line_height_px()))
                                 .text_color(color(colors.text_muted))
                                 .child(i18n.t("settings.page.description")),
                         ),
@@ -1987,7 +2002,7 @@ impl Render for SettingsView {
                     // `.settings-section` has no radius of its own: a square ring.
                     .when(focus_visible, |wrapper| {
                         wrapper.child(
-                            focus_ring(section_ring, -section_ring.outset())
+                            square_focus_ring(section_ring, RingBorder::NONE)
                                 .debug_selector(|| SECTION_FOCUS_RING_SELECTOR.to_owned()),
                         )
                     })

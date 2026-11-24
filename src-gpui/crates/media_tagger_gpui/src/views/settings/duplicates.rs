@@ -60,7 +60,7 @@ use crate::{
         modal::Modal,
         spinner::Spinner,
         text_input::{TextInput, TextInputEvent},
-        theme::{self, box_shadows, color, focus_ring, weight},
+        theme::{self, box_shadows, color, focus_ring, weight, RingBorder},
     },
 };
 
@@ -392,7 +392,7 @@ impl SettingsView {
         let input = cx.new(|cx| {
             let mut input = TextInput::themed(window, cx);
             // The card draws the field's frame ([`Self::rename_field`]).
-            input.set_chrome(FieldChrome::Bare, cx);
+            input.set_chrome(FieldChrome::Framed, cx);
             input.set_height(Some(measures::INPUT_HEIGHT - 2.0), cx);
             input.set_placeholder(placeholder.clone(), cx);
             input.set_label(placeholder, cx);
@@ -458,14 +458,16 @@ impl SettingsView {
                 - 1.0
                 - media_tagger_client::text::field_visuals(
                     theme.tokens(),
-                    FieldChrome::Bare,
+                    FieldChrome::Framed,
                     media_tagger_client::text::FieldState::default(),
                 )
                 .padding_x))
             .text_size(px(measures::INPUT_FONT_SIZE))
             .line_height(px(TYPOGRAPHY.xs.line_height_px()))
             .when(disabled, |frame| {
-                // The field dims its own text; this dims the frame with it.
+                // `input:disabled` dims the whole element once, the frame and the
+                // text; the field inside only takes the text colour of daisyUI's
+                // `.input:disabled` (`FieldChrome::Framed`).
                 frame.opacity(measures::INPUT_DISABLED_OPACITY)
             })
             .when(!disabled, |frame| {
@@ -481,17 +483,15 @@ impl SettingsView {
             })
             .child(input)
             .when(focused, |frame| {
-                // The ring is laid out from the frame's padding box and an outline
-                // from the border box: the border's pixel is added to the offset and
-                // taken from the corner radius.
                 frame.child(
                     focus_ring(
                         FocusRing {
                             color: colors.base_content,
                             width: measures::INPUT_OUTLINE_WIDTH,
-                            offset: measures::INPUT_OUTLINE_OFFSET + 1.0,
+                            offset: measures::INPUT_OUTLINE_OFFSET,
                         },
-                        RADII.control - 1.0,
+                        RADII.control,
+                        RingBorder::all(1.0),
                     )
                     .debug_selector(move || rename_outline_selector(asset_id)),
                 )

@@ -108,6 +108,10 @@ pub const SEARCH_SLOT_SELECTOR: &str = "workspace-search-slot";
 pub const IDENTITY_SELECTOR: &str = "workspace-identity";
 pub const COUNT_SELECTOR: &str = "workspace-count";
 pub const EMPTY_STATE_SELECTOR: &str = "gallery-empty-state";
+/// The empty state's icon tile and the ring drawn around it.
+pub const EMPTY_STATE_ICON_TILE_SELECTOR: &str = "gallery-empty-state-icon-tile";
+pub const EMPTY_STATE_ICON_RING_SELECTOR: &str = "gallery-empty-state-icon-ring";
+pub const EMPTY_STATE_TITLE_SELECTOR: &str = "gallery-empty-state-title";
 pub const ADD_FIRST_FOLDER_ID: &str = "gallery-add-first-folder";
 
 /// What the thumbnails were last told: the cache version of the rows, the range and
@@ -722,6 +726,7 @@ impl GalleryView {
             .text_center()
             .child(
                 div()
+                    .debug_selector(|| EMPTY_STATE_ICON_TILE_SELECTOR.to_owned())
                     .mb(px(layout::ICON_TILE_MARGIN_BOTTOM))
                     .size(px(layout::ICON_TILE_SIZE))
                     .flex()
@@ -734,12 +739,25 @@ impl GalleryView {
                             .primary
                             .with_alpha_percent(layout::ICON_TILE_FILL_PERCENT),
                     ))
-                    .border_1()
-                    .border_color(color(
-                        colors
-                            .primary
-                            .with_alpha_percent(layout::ICON_TILE_RING_PERCENT),
-                    ))
+                    .relative()
+                    // The ring is drawn around the tile, not beneath it: the fill is
+                    // translucent and a shadow would show through it.
+                    .child(
+                        div()
+                            .debug_selector(|| EMPTY_STATE_ICON_RING_SELECTOR.to_owned())
+                            .absolute()
+                            .top(px(-layout::ICON_TILE_RING_WIDTH))
+                            .left(px(-layout::ICON_TILE_RING_WIDTH))
+                            .right(px(-layout::ICON_TILE_RING_WIDTH))
+                            .bottom(px(-layout::ICON_TILE_RING_WIDTH))
+                            .rounded(px(RADII.control + layout::ICON_TILE_RING_WIDTH))
+                            .border_1()
+                            .border_color(color(
+                                colors
+                                    .primary
+                                    .with_alpha_percent(layout::ICON_TILE_RING_PERCENT),
+                            )),
+                    )
                     .child(
                         Icon::new(state.icon())
                             .size(layout::ICON_SIZE)
@@ -748,6 +766,7 @@ impl GalleryView {
             )
             .child(
                 div()
+                    .debug_selector(|| EMPTY_STATE_TITLE_SELECTOR.to_owned())
                     .text_size(px(layout::TITLE_SIZE))
                     .line_height(relative(layout::TITLE_LINE_HEIGHT))
                     .font_weight(weight(TYPOGRAPHY.heading_weight))

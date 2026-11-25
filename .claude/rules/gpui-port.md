@@ -13,7 +13,7 @@ paths:
 
 # GPUI port
 
-Read `docs/plans/gpui-port/README.md` (decisions D1 to D15, agent rules, epic flow).
+Read `docs/plans/gpui-port/README.md` (decisions D1 to D15, agent rules, epic flow). For work on the interface itself (composition, state ownership, rules for a view, traps of the pinned GPUI, keyboard and focus, known differences from Tauri) start from `docs/frontend/gpui-architecture.md`.
 
 - The Tauri/Solid app keeps its behaviour and wire contract for the whole port. `bun run test:all` stays green after every epic.
 - The port is its own Cargo workspace, `src-gpui/` (own `Cargo.lock` and target directories), with the core as a path dependency. `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` never gain a GPUI or git dependency.
@@ -29,5 +29,6 @@ Read `docs/plans/gpui-port/README.md` (decisions D1 to D15, agent rules, epic fl
 - Cargo commands for the port take `--manifest-path src-gpui/Cargo.toml --locked`. `src-gpui/Cargo.lock` changes only with an intended dependency change; after a change to a core dependency run `bun run gpui:lock-parity`. A Zed rev bump follows `docs/development/setup-and-build.md` ("Updating the pinned Zed commit").
 - Profiles are `com.example.mediatagger.gpui.dev` and `.gpui.e2e` only (`src-gpui/crates/media_tagger_gpui/src/profile.rs`); the identifier is baked in by `build.rs`. Never add a Tauri identifier or a release identifier to that list (cutover epic E22).
 - Layer rules are enforced by `src-tauri/tests/architecture_boundaries.rs`: the client imports `media_tagger_core::{models, error}` only, outside `backend/core_backend.rs`; the adapter reaches the core only in `boot.rs` and never `db::`, lock helpers, `Connection` or `admit`. Architecture and tests: `docs/architecture/system-overview.md` ("GPUI port"), `docs/development/testing.md` ("GPUI workspace"), ADR 0036, ADR 0037.
+- An element of our own reads the text style (`window.text_style()`, `window.line_height()`) in `request_layout` or `prepaint` and keeps the value; it never reads it in `paint`. A `deferred(...)` subtree (every dialog, the lightbox, a suggestion list) is painted with the window's defaults, not the text styles of its ancestors (`ui/text_input.rs`, `PrepaintState::line_height`). The other traps: `docs/frontend/gpui-architecture.md` ("Traps of the pinned GPUI").
 - Every glob in this rule must match a file.
 - After changing the scripts or the workflow: `python3 -m unittest discover -s .claude/skills/gpui-port/scripts`.

@@ -189,3 +189,9 @@ Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
 - Odkryte: notatka workflow zgodna z `checks.steps.json` (9/9 kroków, kod 0).
 - Zostało: F1, czyli punkt zakresu „aktualizacja CLAUDE.md i reguł .claude/rules/”, nie jest wykonany. Implementer i agent poprawkowy uznali, że zmiana plików instrukcji agentów wymaga zgody użytkownika; gotowy tekst zmian jest w raporcie agenta i w notatkach E22. Poprawki po audycie nie przeszły ponownie przez soczewki review; mają testy regresji i zieloną bramkę. Pomiaru `--test million` nie powtórzono po poprawkach. Braki przekazane do E20–E22 bez zmian.
 - Testy: `job.py start E19 checks` → pass (9/9); `job.py start E19 compare` (23 scenariusze, przebieg agenta poprawkowego) → pass; `job.py start E19 test-all` → pass (`[E2E] COMPLETE PASS`, exit 0).
+
+### 2026-11-25 — F1: instrukcje agentów (za zgodą użytkownika)
+
+- Zrobione: F1 zamknięte. `CLAUDE.md`: aktualne moduły obu crate'ów GPUI w bloku „Layout”, wiersz indeksu dla `docs/frontend/gpui-architecture.md`, opis celów przy `bun run test:gpui`, komenda pomiaru `--test million`. `.claude/rules/gpui-port.md` i `.claude/rules/frontend.md`: wskazanie nowej strony i reguła, że własny element czyta styl tekstu w `request_layout` albo `prepaint`, nie w `paint`. `.claude/skills/audit/SKILL.md`: 95 finderów.
+- Zostało: bez zmian względem wpisu wyżej (poprawki po audycie bez ponownego review, pomiar `--test million` niepowtórzony, braki przekazane do E20–E22).
+- Testy: `python3 -m unittest discover -s .claude/skills/gpui-port/scripts` → OK (36); `python3 -m unittest discover -s .claude/skills/audit/scripts` → OK (34); `port_state.py validate` → ok; `git diff --check` czysto. Zmiana tylko w plikach instrukcji i notatkach, kod bez zmian.

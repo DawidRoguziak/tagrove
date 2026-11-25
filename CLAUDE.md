@@ -61,8 +61,8 @@ src-tauri/                Cargo workspace (Cargo.toml: members, [workspace.depen
     indexer.rs, thumbs.rs, models.rs, error.rs, utils/, test_support.rs (feature test-support)
   tests/                 Rust integration targets (adapter package; import media_tagger_core)
 src-gpui/                 second Cargo workspace: the GPUI port (own Cargo.toml, Cargo.lock, target/, target-e2e/; ADR 0036)
-  crates/media_tagger_client/   presentation logic without a GUI (ADR 0037): backend.rs + backend/ (the `Backend` port; core_backend.rs is the only file that names core use cases, every other file imports core models/error only), model.rs (model convention), exec/ (executors), progress.rs, startup_scan.rs, thumbs.rs (thumbnail pipeline), i18n.rs, theme.rs, scenario.rs (comparison scenario catalogue)
-  crates/media_tagger_gpui/     GPUI adapter and binary `media_tagger_gpui`: lib.rs (run), cli.rs (strict arguments), profile.rs, scenario.rs (`--scenario` start states, E2E profile only), boot.rs (startup composition), window.rs, views/, build.rs (bakes the identifier)
+  crates/media_tagger_client/   presentation logic without a GUI (ADR 0037): backend.rs + backend/ (the `Backend` port; core_backend.rs is the only file that names core use cases, every other file imports core models/error only), model.rs (model convention), exec/ (executors), progress.rs, startup_scan.rs, thumbs.rs (thumbnail pipeline), runtime.rs (`AppRuntime`: models for the app's lifetime), library/ (query model, page cache, metadata writes, vocabulary), gallery/ (grid geometry, virtual grid, thumbnail demand, picture cache, scrollbar, timeline, selection), search/ (grammar, suggestions, tag list), tagging.rs (tag editor), bulk/ (dock model, order board), lightbox/ (model, session, pan/zoom, decode budget), settings/ (operation runner, scan, transfer, duplicates), text/ (text field editing model), controls/, icons.rs, overlay/ (layer stack, modal presence), shell.rs, window_chrome.rs, shortcuts.rs (key contexts and shortcuts), i18n/, theme/, prefs/, kit.rs, scenario.rs (comparison scenario catalogue)
+  crates/media_tagger_gpui/     GPUI adapter and binary `media_tagger_gpui`: lib.rs (run), cli.rs (strict arguments), profile.rs, scenario.rs (`--scenario` start states, E2E profile only), boot.rs (startup composition; the only file that names the core), runtime.rs (`Runtime` entity holding the client's `AppRuntime`), window.rs, thumbs.rs and media.rs (thumbnails and originals decoded off the UI thread), ui/ (text field, controls, modal, layer stack, icons, fonts), views/ (shell, chrome, gallery, search, tag list, tag editor, bulk dock, lightbox, settings, kit), build.rs (bakes the identifier)
 e2e/                     WebdriverIO desktop E2E (specs/), app:control driver (control.js)
   compare/               Tauri ↔ GPUI comparison harness: gpui-control.js, compare.js, scenarios/ (testing.md "Comparison harness")
 docs/                    owning documentation per subsystem (see index below)
@@ -119,8 +119,10 @@ bun run gpui:dev                  # GPUI adapter on its dev profile ("Tagrove GP
 bun run gpui:build:e2e            # E2E-profile binary in src-gpui/target-e2e (guards identifier and target dir)
 bun run gpui:fmt && bun run gpui:clippy && bun run gpui:check
 bun run test:client               # media_tagger_client (no GUI stack)
-bun run test:gpui                 # media_tagger_gpui: unit tests + shell_window/shell_ported (TestAppContext, headless renderer) + startup (guards, binary exit)
+bun run test:gpui                 # media_tagger_gpui: unit tests + the window tests of every screen area (`*_window`, `*_ported`, controls, overlays, gallery, text input; TestAppContext, headless renderer) + scenario + startup (guards, binary exit); targets listed in testing.md "Package scripts"
 cargo test --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_gpui <name>
+# measurement, not a check (ignored; run alone, release mode, TMPDIR on a disk-backed file system): 1,000,000 results on the real core
+TMPDIR=/var/tmp cargo test --manifest-path src-gpui/Cargo.toml --locked --release -p media_tagger_gpui --test million -- --ignored --nocapture
 cargo tree --manifest-path src-gpui/Cargo.toml --locked -p media_tagger_client -e normal   # must list no gpui/wgpu/blade/tauri/gtk/webkit/libmpv
 bun run gpui:lock-parity          # core dependencies identical in both Cargo.lock files; only reviewed sources in src-gpui/Cargo.lock
 bun run test:gpui-tools && bun run audit:gpui
@@ -194,6 +196,7 @@ Read only the pages relevant to the task. For work that crosses subsystems, also
 | Architecture decisions: why things are the way they are, rejected alternatives, when to write an ADR | `docs/adr/README.md` |
 | Tauri commands, payloads, serialization, query sessions, channels, progress events, contract-change rules | `docs/architecture/ipc-contract.md` |
 | Frontend composition, state ownership, layer boundaries, UI primitives, modals, theme, a11y | `docs/frontend/architecture-and-ui-conventions.md` |
+| GPUI interface: composition of the two crates, state ownership, rules for a view, traps of the pinned GPUI, keyboard and focus, parity with Tauri, million-result measurement, what is missing | `docs/frontend/gpui-architecture.md` |
 | SQLite schema, migrations, pooling, derived fields, query semantics, ordering, library revisions | `docs/subsystems/database.md` |
 | Scan roots, discovery, fingerprints, incremental indexing, partial scans, cleanup | `docs/subsystems/scanning-and-indexing.md` |
 | Query sessions, page cache, summary/details boundary, virtual gallery, invalidation | `docs/subsystems/library-query-and-gallery.md` |

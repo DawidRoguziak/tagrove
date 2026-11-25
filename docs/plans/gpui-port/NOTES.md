@@ -53,3 +53,4 @@ Format: `YYYY-MM-DD | epik | rola | status | jedno zdanie | link do epiku`
 2026-11-24 | E19 | orkiestrator | in progress | workflow start od kroku implement | [E19](E19-acceptance.md)
 2026-11-24 | E19 | workflow | done | E19 ukończony: parytet, klawiatura, wydajność i dokumentacja zrobione, przegląd czysty, bramka zielona. | [E19](E19-acceptance.md)
 2026-11-24 | E19 | orkiestrator | done | Pozycje z audytu F2–F6 zamknięte, F1 (CLAUDE.md i reguły) czeka na zgodę użytkownika; checks, porównanie 23 scenariuszy i test:all przechodzą. | [E19](E19-acceptance.md)
+2026-11-25 | E19 | orkiestrator | done | F1 zamknięte za zgodą użytkownika: CLAUDE.md, reguły gpui-port i frontend, SKILL.md audytu zaktualizowane. | [E19](E19-acceptance.md)

@@ -10,7 +10,7 @@ argument-hint: "[--dataset <path>] [--new] [--name x] [--models role=model[:effo
 The process, roles, models, safety model and cost are described in
 [docs/development/audit/README.md](../../../docs/development/audit/README.md). This file is the
 coordinator's procedure. Invoking `/audit` is the user's explicit opt-in to run the saved audit
-Workflows at full scale (about 65 finder agents in the static stage, more in verification);
+Workflows at full scale (about 95 finder agents in the static stage, more in verification);
 do not shrink the stages to the default workflow size.
 
 ## Modes

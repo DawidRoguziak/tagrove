@@ -91,3 +91,7 @@ Wpisy tylko dopisywane, format w [README](README.md#protokół-notatek).
 
 - Z epiku E19 (sprostowanie wpisu implementera wyżej, punkt „drobne różnice układu”): cztery z wymienionych tam różnic zostały poprawione w E19 i nie należą już do E22: pierścień fokusu na elementach z obwódką (`ui::theme::focus_ring` bierze obwódki elementu, `RingBorder`), krycie tekstu wyłączonego pola nazwy resolvera (`FieldChrome::Framed`, 0,22), kolejność Tab w lightboxie (grupy Tab, kolejność DOM) i fokus po naciśnięciu pustego miejsca doku. Zostaje z tego punktu tylko 1 px na polach o ułamkowej pozycji. Doszła jedna drobna różnica: naciśnięcie na chip tagu w edytorze tagów zostawia fokus tam, gdzie był (`docs/frontend/gpui-architecture.md`, „Keyboard and focus”).
 - Z epiku E19: punkt „instrukcje agentów” z wpisu implementera pozostaje otwarty i czeka na zgodę użytkownika (`CLAUDE.md`, `.claude/rules/gpui-port.md`, `.claude/rules/frontend.md`, `.claude/skills/audit/SKILL.md`). Do listy doszły: aktualne moduły obu crate'ów GPUI w bloku „Layout” i opis celów testowych przy `bun run test:gpui`.
+
+### 2026-11-25 — F1 z epiku E19 zamknięte
+
+- Z epiku E19: punkt „instrukcje agentów” z dwóch wpisów wyżej jest wykonany za zgodą użytkownika (`CLAUDE.md`, `.claude/rules/gpui-port.md`, `.claude/rules/frontend.md`, `.claude/skills/audit/SKILL.md`) i nie należy już do E22.
